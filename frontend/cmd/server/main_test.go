@@ -8,8 +8,17 @@ import (
 	"testing"
 )
 
+// initBuildInfoForTests loads the package-level buildInfo from the current
+// env. Tests that exercise /healthz must call this — main() is what loads
+// buildInfo in production, and that does not run during `go test`.
+func initBuildInfoForTests(t *testing.T) {
+	t.Helper()
+	buildInfo = loadBuildInfo()
+}
+
 func TestHealthz_ReturnsOK(t *testing.T) {
 	t.Parallel()
+	initBuildInfoForTests(t)
 	r := newRouter()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
@@ -22,6 +31,7 @@ func TestHealthz_ReturnsOK(t *testing.T) {
 
 func TestHealthz_BodyShape(t *testing.T) {
 	t.Parallel()
+	initBuildInfoForTests(t)
 	r := newRouter()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
@@ -50,6 +60,7 @@ func TestHealthz_BodyShape(t *testing.T) {
 
 func TestHealthz_ContentTypeJSON(t *testing.T) {
 	t.Parallel()
+	initBuildInfoForTests(t)
 	r := newRouter()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
@@ -63,6 +74,7 @@ func TestHealthz_ContentTypeJSON(t *testing.T) {
 
 func TestHealthz_NoAuthRequired(t *testing.T) {
 	t.Parallel()
+	initBuildInfoForTests(t)
 	r := newRouter()
 	// No Authorization header — container orchestrators probe healthz without credentials.
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
@@ -76,6 +88,7 @@ func TestHealthz_NoAuthRequired(t *testing.T) {
 
 func TestHealthz_DoesNotLeakSecrets(t *testing.T) {
 	t.Parallel()
+	initBuildInfoForTests(t)
 	r := newRouter()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
@@ -113,5 +126,46 @@ func TestEnvDefault_UsesFallbackWhenEmpty(t *testing.T) {
 	got := envDefault("FRONTEND_EMPTY_KEY", "fallback")
 	if got != "fallback" {
 		t.Errorf("envDefault with empty env returned %q, want fallback", got)
+	}
+}
+
+func TestLoadBuildInfo_AppliesEnvOverrides(t *testing.T) {
+	// Confirms the startup-cache path actually reads env. t.Setenv prevents
+	// parallel execution, which is fine — this is a small synchronous check.
+	t.Setenv("HUB_VERSION", "9.9.9")
+	t.Setenv("HUB_REVISION", "deadbeef")
+	t.Setenv("HUB_BUILD_DATE", "2099-12-31T23:59:59Z")
+	t.Setenv("HUB_REPO_URL", "https://example.invalid/fork")
+
+	got := loadBuildInfo()
+	if got.Version != "9.9.9" {
+		t.Errorf("Version = %q, want %q", got.Version, "9.9.9")
+	}
+	if got.Revision != "deadbeef" {
+		t.Errorf("Revision = %q, want %q", got.Revision, "deadbeef")
+	}
+	if got.BuildDate != "2099-12-31T23:59:59Z" {
+		t.Errorf("BuildDate = %q, want %q", got.BuildDate, "2099-12-31T23:59:59Z")
+	}
+	if got.Repository != "https://example.invalid/fork" {
+		t.Errorf("Repository = %q, want override URL", got.Repository)
+	}
+}
+
+func TestLoadBuildInfo_UsesDefaultsWhenUnset(t *testing.T) {
+	t.Setenv("HUB_VERSION", "")
+	t.Setenv("HUB_REVISION", "")
+	t.Setenv("HUB_BUILD_DATE", "")
+	t.Setenv("HUB_REPO_URL", "")
+
+	got := loadBuildInfo()
+	if got.Status != "ok" {
+		t.Errorf("Status = %q, want %q", got.Status, "ok")
+	}
+	if got.Version != "0.0.0-dev" {
+		t.Errorf("Version = %q, want default %q", got.Version, "0.0.0-dev")
+	}
+	if got.Repository != defaultRepoURL {
+		t.Errorf("Repository = %q, want default %q", got.Repository, defaultRepoURL)
 	}
 }
