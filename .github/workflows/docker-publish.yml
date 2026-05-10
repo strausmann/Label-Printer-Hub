@@ -64,6 +64,14 @@ jobs:
           images: |
             ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
             ${{ secrets.DOCKERHUB_USERNAME && format('docker.io/{0}/label-printer-hub', secrets.DOCKERHUB_USERNAME) || '' }}
+          # Tag scheme (mandatory — every stable release gets ALL of these):
+          #   1.0.0    full semver
+          #   1.0      major.minor (only for stable releases)
+          #   1        major       (only for stable releases)
+          #   latest                (only for stable releases)
+          # Pre-releases (e.g. 1.0.0-rc.1) get ONLY the full version tag —
+          # docker/metadata-action skips {{major}}.{{minor}} and {{major}} on
+          # pre-releases automatically. `latest` is gated by the `-` check.
           tags: |
             type=semver,pattern={{version}},value=${{ steps.tag.outputs.tag }}
             type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.tag }}
@@ -75,6 +83,8 @@ jobs:
             org.opencontainers.image.url=https://github.com/strausmann/label-printer-hub
             org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
             org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
 
       - name: Build and push
         uses: docker/build-push-action@v6

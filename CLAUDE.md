@@ -192,6 +192,35 @@ immediately with a JobId instead of blocking until print is done.
 
 Configuration: `.releaserc.json`.
 
+### 6.1 Docker image tag scheme — MANDATORY
+
+Every **stable** release publishes the image with **four** tags pointing to the same digest:
+
+| Tag | Example for `1.0.0` | Purpose |
+|---|---|---|
+| `<major>.<minor>.<patch>` | `1.0.0` | Pin to exact version |
+| `<major>.<minor>` | `1.0` | Track latest patch in a minor line |
+| `<major>` | `1` | Track latest minor.patch in a major line |
+| `latest` | `latest` | Always points to the most recent stable |
+
+Example for `2.4.7`: tags `2.4.7`, `2.4`, `2`, `latest`.
+
+**Pre-releases** (semver with hyphen, e.g. `1.0.0-rc.1` or `2.0.0-beta.3`) publish **only** the full version tag — never `<major>.<minor>`, `<major>`, or `latest`. This prevents a pre-release from accidentally becoming the default for a major or minor line.
+
+Implementation: `.github/workflows/docker-publish.yml` via `docker/metadata-action`. The `type=semver` extractor automatically skips the `{{major}}.{{minor}}` and `{{major}}` patterns for pre-releases; `latest` is gated by an explicit hyphen check.
+
+**Registries** (both receive identical tags + digests):
+- GHCR: `ghcr.io/strausmann/label-printer-hub`
+- Docker Hub: `docker.io/strausmann/label-printer-hub` (only when `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN` secrets are set)
+
+**Architectures:** every release builds `linux/amd64` + `linux/arm64`.
+
+**OCI labels** every image carries:
+- `org.opencontainers.image.version` — the full semver
+- `org.opencontainers.image.revision` — the git SHA
+- `org.opencontainers.image.source` — the GitHub repo URL
+- `org.opencontainers.image.licenses` — `MIT`
+
 ---
 
 ## 7. Dependency management — Dependabot

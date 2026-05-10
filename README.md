@@ -33,6 +33,21 @@ This project is being designed against the [Brother PT-E550W/P750W/P710BT Raster
 - **Container**: Docker, GHCR + Docker Hub publishing
 - **CI/CD**: GitHub Actions, semantic-release, Dependabot
 
+## Container images and tags
+
+Every stable release publishes to **GitHub Container Registry (GHCR)** and **Docker Hub** with this tag scheme:
+
+| Tag | Example for `1.0.0` | Use when |
+|---|---|---|
+| `1.0.0` | exact version | You want full reproducibility |
+| `1.0` | latest patch in 1.0.x | Auto-update bug fixes |
+| `1` | latest minor.patch in 1.x.x | Stay on major version, get features |
+| `latest` | most recent stable | You're fine with anything new |
+
+Pre-releases (`1.0.0-rc.1` etc.) publish **only the full version tag** — never `latest`, `<major>`, or `<major>.<minor>` — so a pre-release can never silently become the default.
+
+Both registries receive identical multi-arch images (`linux/amd64`, `linux/arm64`).
+
 ## Quick Start
 
 See [`examples/README.md`](examples/README.md) for sample compose files (standalone / Traefik / Pangolin / Caddy).
