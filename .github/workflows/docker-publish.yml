@@ -1,5 +1,25 @@
 name: Docker — publish to GHCR + Docker Hub
 
+# =============================================================================
+# Two-phase build to keep arm64 off QEMU.
+#
+# Phase 1 (`build`):  matrix = service × platform → 4 jobs, each on a NATIVE
+#   runner (amd64 on ubuntu-24.04, arm64 on ubuntu-24.04-arm). Each job
+#   builds its single-platform image, pushes it BY DIGEST (no tag), and
+#   uploads the digest as an artifact for the merge phase.
+#
+# Phase 2 (`merge`): matrix = service → 2 jobs. Downloads all digests for
+#   its service, asks the registry to compose a multi-arch manifest index
+#   pointing at the per-platform digests, and applies every tag and the
+#   index-level annotations in one shot via `docker buildx imagetools
+#   create`. No re-build, no re-push of layers — just manifest assembly.
+#
+# Why: QEMU-emulated arm64 Python+Pillow builds took ~3 minutes per leg.
+# Native arm64 runners (free for public repos since 2025-01) bring that
+# down to ~30 seconds. End-to-end run time is now bounded by the slowest
+# single-platform build, not the sum of all platforms in series.
+# =============================================================================
+
 on:
   release:
     types: [published]
@@ -16,35 +36,41 @@ permissions:
 
 env:
   REGISTRY_GHCR: ghcr.io
-  # By default docker/metadata-action emits annotations with the `manifest:`
-  # prefix only — that lands on per-platform manifests but NOT on the multi-
-  # arch manifest list (the "index"). GHCR's package UI reads the package
-  # description from `index:org.opencontainers.image.description`; without
-  # the index level, the package page shows "No description provided".
-  # Setting this env var makes the action emit BOTH levels so per-platform
-  # inspectors and registry UIs see the metadata.
+  # Annotate both per-platform manifests AND the index. GHCR's package UI
+  # reads the package description from the index annotation; without this
+  # the page shows "No description provided".
   DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
 
 jobs:
-  publish:
-    name: Build and push (${{ matrix.service }})
-    runs-on: ubuntu-24.04
+  # ---------------------------------------------------------------------------
+  # Phase 1: build each (service, platform) leg on its NATIVE runner.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.service }} / ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     strategy:
-      # Each image stands on its own — a verify-step crash on one service
-      # must not cancel the other half-built. We tolerate the rare case
-      # where one image gets a tag and the other doesn't; the user can
-      # re-run the failing matrix leg from the Actions UI.
       fail-fast: false
       matrix:
         service: [backend, frontend]
+        platform:
+          - linux/amd64
+          - linux/arm64
+        # `include` adds the runner/arch fields to each existing matrix
+        # combination that matches the `platform` key, without multiplying
+        # the matrix further. Net result: 4 jobs (2 services × 2 platforms),
+        # each with the right runner.
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
     steps:
       - uses: actions/checkout@v6
 
       - name: Verify Dockerfile exists for ${{ matrix.service }}
         run: test -f "${{ matrix.service }}/Dockerfile"
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -56,10 +82,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # `secrets.*` is not allowed in step-level `if:` expressions — Actions
-      # rejects it as "Unrecognized named-value: 'secrets'". We surface the
-      # value into the step env first, then condition on env.* which IS
-      # allowed.
+      # `secrets.*` is not allowed in step-level `if:` expressions — we
+      # surface the value into the step env first, then condition on env.*.
       - name: Log in to Docker Hub
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -81,26 +105,14 @@ jobs:
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
+      # The build phase only needs labels (per-platform metadata). Tags
+      # and index-level annotations are applied in the merge phase.
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: |
             ${{ env.REGISTRY_GHCR }}/${{ github.repository }}-${{ matrix.service }}
-            ${{ secrets.DOCKERHUB_USERNAME && format('docker.io/{0}/label-printer-hub-{1}', secrets.DOCKERHUB_USERNAME, matrix.service) || '' }}
-          # Tag scheme (mandatory — every stable release gets ALL of these):
-          #   1.0.0    full semver
-          #   1.0      major.minor (only for stable releases)
-          #   1        major       (only for stable releases)
-          #   latest                (only for stable releases)
-          # Pre-releases (e.g. 1.0.0-rc.1) get ONLY the full version tag —
-          # docker/metadata-action skips {{major}}.{{minor}} and {{major}} on
-          # pre-releases automatically. `latest` is gated by the `-` check.
-          tags: |
-            type=semver,pattern={{version}},value=${{ steps.tag.outputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.tag }}
-            type=semver,pattern={{major}},value=${{ steps.tag.outputs.tag }}
-            type=raw,value=latest,enable=${{ !contains(steps.tag.outputs.tag, '-') }}
           labels: |
             org.opencontainers.image.title=label-printer-hub-${{ matrix.service }}
             org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series — ${{ matrix.service }} container
@@ -114,41 +126,177 @@ jobs:
         id: builddate
         run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push
+      # Push BY DIGEST: registry stores the blob and returns sha256:…,
+      # but no tag is created yet. We capture the digest and hand it
+      # off to the merge phase via an artifact.
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: ./${{ matrix.service }}
           file: ./${{ matrix.service }}/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Pass through the annotations metadata-action computed (with both
-          # manifest:* and index:* levels, see DOCKER_METADATA_ANNOTATIONS_LEVELS
-          # at the workflow root). Without this the package shows up on GHCR
-          # with "No description provided".
-          annotations: ${{ steps.meta.outputs.annotations }}
-          # Build-args flow into the Dockerfile's ARG VERSION / REVISION /
-          # BUILD_DATE, which the Dockerfile then bakes into both OCI image
-          # labels (via LABEL) and runtime ENV vars (HUB_VERSION, …) so the
-          # running app can surface them through /healthz.
+          # `push-by-digest=true` skips the tag write and returns digest in
+          # `steps.build.outputs.digest`. `name-canonical=true` makes the
+          # registry reference the image by its canonical name.
+          outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ github.repository }}-${{ matrix.service }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             VERSION=${{ steps.tag.outputs.tag }}
             REVISION=${{ github.sha }}
             BUILD_DATE=${{ steps.builddate.outputs.date }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          # Cache scope is per (service, arch) so amd64 and arm64 builds
+          # don't trash each other's caches.
+          cache-from: type=gha,scope=${{ matrix.service }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-${{ matrix.arch }}
           provenance: true
           sbom: true
 
-      # `steps.meta.outputs.tags` is a newline-separated list. Interpolating
-      # it directly into the shell command (`for tag in ${{ … }}`) injects
-      # raw newlines into the script body and breaks the parser. Pipe via
-      # env: instead, then read line-by-line.
+      # Each leg writes its digest into a per-leg file (no name collisions),
+      # then uploads it as an artifact. The merge phase downloads all of
+      # them at once.
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          # Strip the "sha256:" prefix — buildx imagetools wants just the hex.
+          # Filename is the bare digest; we don't need the arch in the name
+          # because the digest is already unique.
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: digests-${{ matrix.service }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Phase 2: compose the multi-arch manifest index for each service.
+  # ---------------------------------------------------------------------------
+  merge:
+    name: Merge manifest (${{ matrix.service }})
+    runs-on: ubuntu-24.04
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [backend, frontend]
+    steps:
+      - name: Download digests for ${{ matrix.service }}
+        uses: actions/download-artifact@v5
+        with:
+          # Wildcard merges artifacts from every (service, arch) leg.
+          pattern: digests-${{ matrix.service }}-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            tag="${{ github.event.release.tag_name }}"
+            tag="${tag#v}"
+          else
+            tag="${{ inputs.tag }}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      # Metadata again — the merge job needs the tag list and the
+      # index-level annotations. Labels are NOT applied here (they live
+      # on each per-platform manifest from the build phase).
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: |
+            ${{ env.REGISTRY_GHCR }}/${{ github.repository }}-${{ matrix.service }}
+            ${{ secrets.DOCKERHUB_USERNAME && format('docker.io/{0}/label-printer-hub-{1}', secrets.DOCKERHUB_USERNAME, matrix.service) || '' }}
+          # Same tag scheme as before:
+          #   1.0.0     full semver (always)
+          #   1.0       major.minor (stable only)
+          #   1         major       (stable only)
+          #   latest                (stable only)
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.tag.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ steps.tag.outputs.tag }}
+            type=raw,value=latest,enable=${{ !contains(steps.tag.outputs.tag, '-') }}
+          # Annotations are emitted at both manifest and index level (see env
+          # at workflow root). For a manifest-list-create operation only the
+          # index level applies — the merge step filters them.
+          annotations: |
+            org.opencontainers.image.title=label-printer-hub-${{ matrix.service }}
+            org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series — ${{ matrix.service }} container
+            org.opencontainers.image.url=https://github.com/strausmann/label-printer-hub
+            org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # `docker buildx imagetools create` composes a manifest list from
+      # source digests and pushes it to the registry under one or more tags.
+      # Annotations passed with `--annotation index:KEY=VAL` land on the
+      # multi-arch index (the only place a list-create can write to).
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        env:
+          DIGEST_REPO: ${{ env.REGISTRY_GHCR }}/${{ github.repository }}-${{ matrix.service }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          ANNOTATIONS: ${{ steps.meta.outputs.annotations }}
+        run: |
+          set -euo pipefail
+          tag_args=()
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            tag_args+=( -t "$tag" )
+          done <<< "$TAGS"
+
+          # Forward only `index:` annotations — `manifest:` annotations
+          # come from the per-platform build phase and are already baked
+          # into each leg's manifest.
+          ann_args=()
+          while IFS= read -r ann; do
+            case "$ann" in
+              index:*) ann_args+=( --annotation "$ann" ) ;;
+            esac
+          done <<< "$ANNOTATIONS"
+
+          # Source manifest references: REPO@sha256:DIGEST for each digest
+          # file present (filenames are the bare hex digests).
+          src_args=()
+          for d in *; do
+            src_args+=( "${DIGEST_REPO}@sha256:${d}" )
+          done
+
+          docker buildx imagetools create "${tag_args[@]}" "${ann_args[@]}" "${src_args[@]}"
+
       - name: Verify multi-arch manifest
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
+          set -euo pipefail
           fail=0
           while IFS= read -r tag; do
             [ -z "$tag" ] && continue
