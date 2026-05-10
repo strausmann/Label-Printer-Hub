@@ -18,7 +18,7 @@ jobs:
     name: Python — lint, type, test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Detect Python project
         id: pyproject
@@ -35,7 +35,7 @@ jobs:
 
       - name: Set up Python (with cache)
         if: steps.pyproject.outputs.exists == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -43,7 +43,7 @@ jobs:
 
       - name: Set up Python (without cache, no pyproject.toml yet)
         if: steps.pyproject.outputs.exists != 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -76,7 +76,7 @@ jobs:
 
       - name: Upload coverage
         if: always() && hashFiles('backend/coverage.xml', 'coverage.xml') != ''
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           files: backend/coverage.xml,coverage.xml
           fail_ci_if_error: false
@@ -89,7 +89,7 @@ jobs:
     name: Go — vet, test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Check for Go module
         id: go-check
@@ -102,7 +102,7 @@ jobs:
 
       - name: Set up Go
         if: steps.go-check.outputs.exists == 'true'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: stable
           cache-dependency-path: frontend/go.sum
@@ -121,10 +121,10 @@ jobs:
     name: Docker — build smoke test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Check for Dockerfile
         id: docker-check
@@ -137,7 +137,7 @@ jobs:
 
       - name: Build (no push)
         if: steps.docker-check.outputs.exists == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
@@ -149,7 +149,7 @@ jobs:
     name: Privacy / secret scan
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
