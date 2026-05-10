@@ -149,7 +149,7 @@ class TestPtSeriesParsing:
 
     def test_no_errors(self) -> None:
         sb = StatusBlockParser.parse(PT_READY_12MM_WHITE_BLACK)
-        assert sb.errors == []
+        assert sb.errors == PrinterError.NONE
         assert sb.is_ready is True
         assert sb.is_printing is False
 
@@ -167,8 +167,8 @@ class TestQlSeriesParsing:
 
     def test_qlseries_has_no_tape_colour(self) -> None:
         sb = StatusBlockParser.parse(QL_READY_12MM_CONTINUOUS)
-        # QL doesn't populate these — bytes should land on zero/unknown
-        assert sb.tape_color in (TapeColor.UNKNOWN, TapeColor.WHITE) or sb.tape_color is None
+        # QL leaves byte 24 reserved (0x00) — must map to UNKNOWN, not WHITE
+        assert sb.tape_color == TapeColor.UNKNOWN
 
 
 class TestErrorFlags:
@@ -271,6 +271,15 @@ class TestRoundtrip:
         assert sb.raw == PT_READY_12MM_WHITE_BLACK
 
     def test_dataclass_is_frozen(self) -> None:
+        import dataclasses
+
         sb = StatusBlockParser.parse(PT_READY_12MM_WHITE_BLACK)
-        with pytest.raises((AttributeError, Exception)):  # FrozenInstanceError or similar
+        with pytest.raises(dataclasses.FrozenInstanceError):
             sb.media_width_mm = 99  # type: ignore[misc]
+
+    def test_errors_field_is_immutable_intflag(self) -> None:
+        """The errors field is a single IntFlag value (not a mutable list)."""
+        sb = StatusBlockParser.parse(PT_READY_12MM_WHITE_BLACK)
+        assert isinstance(sb.errors, PrinterError)
+        # IntFlag in/membership is bitwise; NONE has no bits set
+        assert sb.errors == PrinterError.NONE

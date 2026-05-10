@@ -22,7 +22,7 @@ See also:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import IntEnum, IntFlag
 
 STATUS_BLOCK_SIZE: int = 32
@@ -166,11 +166,17 @@ class PrinterError(IntFlag):
 
 @dataclass(frozen=True, slots=True)
 class StatusBlock:
-    """Parsed Brother status block.
+    """Parsed Brother status block — fully immutable.
 
     Field names mirror the Brother spec column names where reasonable.
     Unknown enum values land on the ``UNKNOWN`` member so consumers don't
     have to defend against ValueError on every field access.
+
+    The ``errors`` field is a single :class:`PrinterError` ``IntFlag`` value —
+    use Python's bitwise membership test to check for individual flags::
+
+        if PrinterError.NO_MEDIA in status.errors:
+            ...
     """
 
     raw: bytes
@@ -180,8 +186,6 @@ class StatusBlock:
     series_code: int
     model_code: int
     country_code: int
-    error_flags_1: int
-    error_flags_2: int
     media_width_mm: int
     media_type: MediaType
     media_length_mm: int
@@ -192,8 +196,7 @@ class StatusBlock:
     notification: NotificationCode
     tape_color: TapeColor
     text_color: TextColor
-
-    errors: list[PrinterError] = field(default_factory=list)
+    errors: PrinterError
 
     @property
     def is_ready(self) -> bool:
@@ -201,7 +204,7 @@ class StatusBlock:
         return (
             self.status_type == StatusType.REPLY
             and self.phase_type == PhaseType.EDITING
-            and not self.errors
+            and self.errors == PrinterError.NONE
         )
 
     @property
@@ -218,35 +221,18 @@ def _safe_enum[E: IntEnum](enum_cls: type[E], value: int, default: E) -> E:
         return default
 
 
-def _decode_errors(error_flags_1: int, error_flags_2: int) -> list[PrinterError]:
-    """Translate Brother error info 1+2 into a list of distinct flags."""
-    flags: list[PrinterError] = []
-    bit_map_1: list[tuple[int, PrinterError]] = [
-        (0x01, PrinterError.NO_MEDIA),
-        (0x02, PrinterError.END_OF_MEDIA),
-        (0x04, PrinterError.CUTTER_JAM),
-        (0x08, PrinterError.WEAK_BATTERIES),
-        (0x10, PrinterError.PRINTER_IN_USE),
-        (0x20, PrinterError.PRINTER_TURNED_OFF),
-        (0x40, PrinterError.HIGH_VOLTAGE_ADAPTER),
-        (0x80, PrinterError.FAN_MOTOR_ERROR),
-    ]
-    bit_map_2: list[tuple[int, PrinterError]] = [
-        (0x01, PrinterError.REPLACE_MEDIA),
-        (0x02, PrinterError.EXPANSION_BUFFER_FULL),
-        (0x04, PrinterError.COMMUNICATION_ERROR),
-        (0x10, PrinterError.COVER_OPEN),
-        (0x20, PrinterError.OVERHEATING),
-        (0x40, PrinterError.MEDIA_CANNOT_BE_FED),
-        (0x80, PrinterError.SYSTEM_ERROR),
-    ]
-    for mask, flag in bit_map_1:
-        if error_flags_1 & mask:
-            flags.append(flag)
-    for mask, flag in bit_map_2:
-        if error_flags_2 & mask:
-            flags.append(flag)
-    return flags
+def _decode_errors(error_flags_1: int, error_flags_2: int) -> PrinterError:
+    """Translate Brother error info 1 + 2 into a combined :class:`PrinterError`.
+
+    The :class:`PrinterError` ``IntFlag`` is laid out so that error info 1 maps
+    to the low byte (bits 0-7) and error info 2 maps to the high byte
+    (bits 8-15). Combining them is therefore a single bitwise operation.
+
+    Unknown bits are silently dropped — Python ``IntFlag`` (default
+    ``CONFORM`` boundary) masks them off automatically.
+    """
+    combined = error_flags_1 | (error_flags_2 << 8)
+    return PrinterError(combined)
 
 
 class StatusBlockParser:
@@ -267,8 +253,6 @@ class StatusBlockParser:
                 f"Status block must be exactly {STATUS_BLOCK_SIZE} bytes, got {len(raw)}"
             )
 
-        error_flags_1 = raw[8]
-        error_flags_2 = raw[9]
         return StatusBlock(
             raw=raw,
             print_head_mark=raw[0],
@@ -277,8 +261,7 @@ class StatusBlockParser:
             series_code=raw[3],
             model_code=raw[4],
             country_code=raw[5],
-            error_flags_1=error_flags_1,
-            error_flags_2=error_flags_2,
+            errors=_decode_errors(raw[8], raw[9]),
             media_width_mm=raw[10],
             media_type=_safe_enum(MediaType, raw[11], MediaType.UNKNOWN),
             media_length_mm=raw[17],
@@ -289,5 +272,4 @@ class StatusBlockParser:
             notification=_safe_enum(NotificationCode, raw[22], NotificationCode.UNKNOWN),
             tape_color=_safe_enum(TapeColor, raw[24], TapeColor.UNKNOWN),
             text_color=_safe_enum(TextColor, raw[25], TextColor.UNKNOWN),
-            errors=_decode_errors(error_flags_1, error_flags_2),
         )
