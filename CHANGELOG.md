@@ -11,6 +11,8 @@ The project is in active **pre-1.0 development**. The public API (REST endpoints
 When `1.0.0` ships, that release will mark the first stable, supported version. The expected breaking-change cadence will follow normal SemVer rules from there on.
 
 <!--
-Release notes are appended below this line by semantic-release on each
-scheduled or manual release run. Do not edit them by hand.
+semantic-release prepends new release entries directly under the
+"# Changelog" title above (newest first). The "## Pre-1.0 development"
+section will sink down the file as new releases land — that's expected.
+Do not edit release entries by hand; semantic-release regenerates them.
 -->
