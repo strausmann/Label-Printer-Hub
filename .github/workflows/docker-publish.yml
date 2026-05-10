@@ -89,6 +89,10 @@ jobs:
             org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
             org.opencontainers.image.revision=${{ github.sha }}
 
+      - name: Compute build date
+        id: builddate
+        run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -98,6 +102,14 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Build-args flow into the Dockerfile's ARG VERSION / REVISION /
+          # BUILD_DATE, which the Dockerfile then bakes into both OCI image
+          # labels (via LABEL) and runtime ENV vars (HUB_VERSION, …) so the
+          # running app can surface them through /healthz.
+          build-args: |
+            VERSION=${{ steps.tag.outputs.tag }}
+            REVISION=${{ github.sha }}
+            BUILD_DATE=${{ steps.builddate.outputs.date }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
           provenance: true

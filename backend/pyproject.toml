@@ -2,7 +2,7 @@
 name = "label-printer-hub-backend"
 version = "0.0.0-dev"
 description = "Self-hosted label printer hub for Brother PT/QL series — backend"
-readme = "../README.md"
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 authors = [

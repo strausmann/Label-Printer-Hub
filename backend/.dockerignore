@@ -1,0 +1,48 @@
+# Keep build context minimal.
+
+# Python development
+.venv/
+venv/
+.python-version
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Test / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Tests are not copied into the image (only app/ + pyproject.toml are)
+# but explicitly ignoring them keeps the context smaller anyway
+tests/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local dev
+.env
+.env.local
+*.log
+data/
+*.db
+*.db-journal
+
+# Secrets — never copy
+*.pem
+*.key
+*.crt
+secrets/
+
+# Git
+.git/
+.gitignore
