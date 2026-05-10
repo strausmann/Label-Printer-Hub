@@ -22,7 +22,11 @@ jobs:
     name: Build and push (${{ matrix.service }})
     runs-on: ubuntu-24.04
     strategy:
-      fail-fast: true   # if backend fails, don't push frontend mismatched
+      # Each image stands on its own — a verify-step crash on one service
+      # must not cancel the other half-built. We tolerate the rare case
+      # where one image gets a tag and the other doesn't; the user can
+      # re-run the failing matrix leg from the Actions UI.
+      fail-fast: false
       matrix:
         service: [backend, frontend]
     steps:
@@ -124,9 +128,17 @@ jobs:
           provenance: true
           sbom: true
 
+      # `steps.meta.outputs.tags` is a newline-separated list. Interpolating
+      # it directly into the shell command (`for tag in ${{ … }}`) injects
+      # raw newlines into the script body and breaks the parser. Pipe via
+      # env: instead, then read line-by-line.
       - name: Verify multi-arch manifest
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          for tag in ${{ steps.meta.outputs.tags }}; do
+          fail=0
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
             echo "Inspecting $tag …"
             archs=$(docker buildx imagetools inspect "$tag" --raw \
               | jq -r '.manifests[].platform | "\(.os)/\(.architecture)"' \
@@ -134,10 +146,11 @@ jobs:
             echo "  architectures: $(echo "$archs" | tr '\n' ' ')"
             if ! echo "$archs" | grep -q "linux/amd64"; then
               echo "::error::Missing linux/amd64 in $tag"
-              exit 1
+              fail=1
             fi
             if ! echo "$archs" | grep -q "linux/arm64"; then
               echo "::error::Missing linux/arm64 in $tag"
-              exit 1
+              fail=1
             fi
-          done
+          done <<< "$TAGS"
+          exit "$fail"
