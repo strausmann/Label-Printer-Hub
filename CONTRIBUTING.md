@@ -154,6 +154,8 @@ This project takes **AI-assisted code review seriously** as part of the standard
 
 **One feature = one branch = one PR.** Don't bundle unrelated changes — that defeats the review value. If you discover an unrelated bug while working on a feature, file a separate issue and a separate PR.
 
+**Before opening a PR, skim [`docs/learnings/code-review-patterns.md`](docs/learnings/code-review-patterns.md).** It collects recurring findings from previous AI reviews so you can self-correct in advance. When an AI review surfaces a *new* recurring pattern that's likely to bite future PRs, add it to that file in the same follow-up commit.
+
 **Wait for the AI reviewers, even on small PRs.** Gemini and Copilot post within ~1-2 minutes. Merging a small "trivial" PR with `--admin` before they've commented forfeits the review value and makes follow-up comments awkward to address. If a PR is *truly* time-critical (security fix, broken main), call it out explicitly in the PR description and own that you're skipping the review window — and address any post-merge comments in a follow-up PR.
 
 **Side-effects must be in the PR description.** If a PR primarily fixes A but also changes B, list both in the description. Reviewers shouldn't have to discover changes by reading the diff line by line.

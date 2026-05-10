@@ -11,6 +11,10 @@ The full project rules live in [CLAUDE.md](../CLAUDE.md). This file is a working
 - **Tests:** pytest (Python), `testing` package + Playwright (Go/e2e)
 - **CI:** GitHub Actions, semantic-release, Dependabot
 
+## Repeated patterns we want to follow
+
+Before suggesting code, skim [`docs/learnings/code-review-patterns.md`](../docs/learnings/code-review-patterns.md). It collects findings from previous AI reviews so we don't keep re-suggesting things this codebase has explicitly rejected (e.g. `list[Flag]` instead of `IntFlag`, hyphenated `workflow_dispatch` inputs, broad `except Exception` in tests).
+
 ## Mandatory conventions
 
 1. **Conventional Commits.** Every commit message: `<type>(<scope>): <subject>`. semantic-release depends on this.

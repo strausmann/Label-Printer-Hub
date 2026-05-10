@@ -6,6 +6,10 @@ This document teaches Gemini how to review PRs in this repository. Rules echo th
 
 Self-hosted hub for Brother PT/QL label printers. Python (FastAPI) backend + Go (Tailwind/HTMX/PWA) frontend. Plugin-based for new printer models.
 
+## Recurring review patterns
+
+Findings you've raised on previous PRs are collected in [`docs/learnings/code-review-patterns.md`](../docs/learnings/code-review-patterns.md). We aim to address those proactively. If you find yourself about to surface the same pattern a third time, instead suggest a change to that file so the rule becomes more explicit.
+
 ## Review priorities (highest first)
 
 1. **Privacy violations.** Flag any hardcoded LAN IPs, real hostnames, real domains, real tokens, or PII. The maintainer's network must not be deducible from this repository.
