@@ -16,6 +16,14 @@ permissions:
 
 env:
   REGISTRY_GHCR: ghcr.io
+  # By default docker/metadata-action emits annotations with the `manifest:`
+  # prefix only — that lands on per-platform manifests but NOT on the multi-
+  # arch manifest list (the "index"). GHCR's package UI reads the package
+  # description from `index:org.opencontainers.image.description`; without
+  # the index level, the package page shows "No description provided".
+  # Setting this env var makes the action emit BOTH levels so per-platform
+  # inspectors and registry UIs see the metadata.
+  DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
 
 jobs:
   publish:
@@ -115,6 +123,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Pass through the annotations metadata-action computed (with both
+          # manifest:* and index:* levels, see DOCKER_METADATA_ANNOTATIONS_LEVELS
+          # at the workflow root). Without this the package shows up on GHCR
+          # with "No description provided".
+          annotations: ${{ steps.meta.outputs.annotations }}
           # Build-args flow into the Dockerfile's ARG VERSION / REVISION /
           # BUILD_DATE, which the Dockerfile then bakes into both OCI image
           # labels (via LABEL) and runtime ENV vars (HUB_VERSION, …) so the
