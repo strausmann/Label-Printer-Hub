@@ -1,0 +1,53 @@
+# ============================================================================
+# Label Printer Hub — Pangolin
+# Assumes a Pangolin/Newt setup is already running with a network called
+# "pangolin-newt". Uses Blueprint Labels with the Two-Resources pattern:
+# - Main UI behind Pangolin SSO
+# - Webhook subroute with auth bypass (uses WEBHOOK_API_KEY instead)
+# ============================================================================
+
+services:
+  label-printer-hub:
+    image: ghcr.io/strausmann/label-printer-hub:latest
+    container_name: label-printer-hub
+    user: "1000:1000"
+    networks:
+      - pangolin-newt
+    environment:
+      - PRINTERS=${PRINTERS}
+      - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/printer-hub.db}
+      - WEBHOOK_API_KEY=${WEBHOOK_API_KEY}
+      - UI_BASE_URL=https://${PRINTERHUB_HOST}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "pangolin.enable=true"
+
+      # Main UI behind SSO
+      - "pangolin.resources.printerhub.protocol=https"
+      - "pangolin.resources.printerhub.full-domain=${PRINTERHUB_HOST}"
+      - "pangolin.resources.printerhub.port=8080"
+      - "pangolin.resources.printerhub.auth.sso-enabled=true"
+
+      # Webhook subroute without SSO (Two-Resources pattern)
+      - "pangolin.resources.printerhub-webhooks.protocol=https"
+      - "pangolin.resources.printerhub-webhooks.full-domain=${PRINTERHUB_HOST}"
+      - "pangolin.resources.printerhub-webhooks.path-prefix=/api/webhook/"
+      - "pangolin.resources.printerhub-webhooks.port=8080"
+      - "pangolin.resources.printerhub-webhooks.auth.bypass=true"
+
+networks:
+  pangolin-newt:
+    external: true
+
+# After deploy, restart the newt container so blueprint labels are reloaded:
+#   docker restart pangolin-newt

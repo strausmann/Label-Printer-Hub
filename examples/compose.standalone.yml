@@ -1,0 +1,27 @@
+# ============================================================================
+# Label Printer Hub — standalone (no reverse proxy)
+# Exposes the hub directly on port 8080. Use only on a trusted LAN.
+# ============================================================================
+
+services:
+  label-printer-hub:
+    image: ghcr.io/strausmann/label-printer-hub:latest
+    container_name: label-printer-hub
+    user: "1000:1000"
+    ports:
+      - "8080:8080"
+    environment:
+      - PRINTERS=${PRINTERS}
+      - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/printer-hub.db}
+      - WEBHOOK_API_KEY=${WEBHOOK_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

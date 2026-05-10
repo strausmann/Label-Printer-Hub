@@ -1,0 +1,38 @@
+# ============================================================================
+# Label Printer Hub — Caddy
+# Assumes a Caddy 2 instance with caddy-docker-proxy is running on a docker
+# network called "caddy". Caddy obtains TLS certificates automatically.
+# ============================================================================
+
+services:
+  label-printer-hub:
+    image: ghcr.io/strausmann/label-printer-hub:latest
+    container_name: label-printer-hub
+    user: "1000:1000"
+    networks:
+      - caddy
+    environment:
+      - PRINTERS=${PRINTERS}
+      - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/printer-hub.db}
+      - WEBHOOK_API_KEY=${WEBHOOK_API_KEY}
+      - UI_BASE_URL=https://${PRINTERHUB_HOST}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      caddy: ${PRINTERHUB_HOST}
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+      # SSE: disable response buffering for live updates
+      caddy.reverse_proxy.flush_interval: "-1"
+
+networks:
+  caddy:
+    external: true
