@@ -64,7 +64,10 @@ jobs:
         working-directory: ${{ steps.pyproject.outputs.path }}
         run: ruff format --check .
 
-      - name: Mypy
+      # Mypy is a HARD CI gate — strict mode is configured in pyproject.toml
+      # ([tool.mypy] strict = true). We do not use `|| true` here; type-check
+      # regressions must fail CI, not be merged silently. See CONTRIBUTING.md.
+      - name: Mypy (strict, blocking)
         if: steps.pyproject.outputs.exists == 'true'
         working-directory: ${{ steps.pyproject.outputs.path }}
         run: mypy app/
