@@ -17,9 +17,13 @@ See:
 from __future__ import annotations
 
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app import __version__
+
+# Per ADR 0011 we pin the OpenAPI version explicitly rather than relying on
+# FastAPI's default, so a FastAPI upgrade can't drift the API contract version.
+OPENAPI_VERSION = "3.1.0"
 
 
 class Healthz(BaseModel):
@@ -28,7 +32,13 @@ class Healthz(BaseModel):
     Intentionally minimal — no dependencies, no configuration, no PII.
     Container orchestrators check the HTTP status and read the JSON for
     a quick version sanity-check.
+
+    Frozen so callers can't accidentally mutate the response model in-place
+    (the same immutability discipline we apply to dataclasses — see
+    `docs/learnings/code-review-patterns.md`).
     """
+
+    model_config = ConfigDict(frozen=True)
 
     status: str
     version: str
@@ -49,6 +59,8 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
     )
+    # Pin OpenAPI spec version per ADR 0011 (override the FastAPI default).
+    app.openapi_version = OPENAPI_VERSION
 
     @app.get(
         "/healthz",
@@ -62,7 +74,10 @@ def create_app() -> FastAPI:
             "database, the printer queue, SNMP, or any integration."
         ),
     )
-    def healthz() -> Healthz:
+    async def healthz() -> Healthz:
+        # async def avoids the threadpool roundtrip for this hot, dependency-
+        # free endpoint. FastAPI runs sync route handlers in a threadpool
+        # by default, which is wasted overhead for trivial responders.
         return Healthz(status="ok", version=__version__)
 
     return app

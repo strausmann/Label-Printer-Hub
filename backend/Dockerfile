@@ -3,7 +3,10 @@
 #
 # Multi-stage build:
 #   1) builder       — installs Python deps into an isolated /opt/venv
-#   2) runtime       — copies the venv + app onto a slim base, runs as UID 1000
+#   2) runtime       — copies the venv onto a slim base, runs as UID 1000
+#
+# Build context: the `backend/` directory. Cache-friendly layer order: deps
+# first (rare changes), source code last (frequent changes).
 #
 # References:
 #   docs/decisions/0001-two-container-architecture.md  (two-container split)
@@ -25,7 +28,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_ROOT_USER_ACTION=ignore
 
 # Build tools for any deps with native extensions (Pillow, brother_ql, etc.)
-# Keep the list tight; runtime image won't carry these.
+# Kept tight; runtime image won't carry these.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
@@ -40,12 +43,21 @@ WORKDIR /build
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:${PATH}"
 
-# Install the project. Copying pyproject.toml first lets the layer cache
-# kick in when only app code changes (deps stay unchanged).
-COPY pyproject.toml ./
-COPY app/ ./app/
-RUN pip install --upgrade pip \
+# Stage A: deps only. Copying pyproject.toml + README first means Docker can
+# reuse this layer until either of those files changes — re-running pip install
+# on every source edit would be wasteful.
+COPY pyproject.toml README.md ./
+# Create an empty package skeleton so hatchling can resolve [project] but
+# nothing app-specific is installed yet — purely a dependency-resolution pass.
+RUN mkdir -p app && touch app/__init__.py \
+    && pip install --upgrade pip \
     && pip install .
+
+# Stage B: real source. Replaces the placeholder app/ and reinstalls so
+# entry-points (uvicorn discovers the module via the venv) reflect the actual
+# code. Without the prior layer, every code change would re-download all deps.
+COPY app/ ./app/
+RUN pip install --no-deps --force-reinstall .
 
 # -----------------------------------------------------------------------------
 # Stage 2: runtime
@@ -55,11 +67,19 @@ FROM python:3.12-slim-bookworm AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:${PATH}" \
-    PORT=8000
+    # The internal HTTP port the backend listens on. Override at deploy time
+    # to run the container on a different port without rebuilding the image.
+    # The compose files in examples/ set this via the .env file.
+    PORT=8000 \
+    # uvicorn FORWARDED_ALLOW_IPS default — safe restriction to localhost only.
+    # Deployments behind a reverse proxy (the Go frontend per ADR 0001) must
+    # override this with the proxy's IP or CIDR via the FORWARDED_ALLOW_IPS
+    # env var. The sample compose files set it to a docker-internal subnet.
+    FORWARDED_ALLOW_IPS=127.0.0.1
 
 # Minimal runtime deps:
 # - libjpeg62-turbo, zlib1g: Pillow runtime
-# - curl: healthcheck (alternative would be wget; curl is more diagnostic-friendly)
+# - curl: HEALTHCHECK
 # - tini: PID 1 signal handler so uvicorn shuts down cleanly on SIGTERM
 # - ca-certificates: outbound HTTPS to Snipe-IT / Grocy / Spoolman / printer web UIs
 RUN apt-get update \
@@ -79,28 +99,34 @@ RUN groupadd --system --gid 1000 hub \
     && mkdir -p /data \
     && chown -R hub:hub /data
 
-# Bring the venv + app source from the builder.
+# The application code is already installed into /opt/venv during the builder
+# stage, so we only need to copy the venv. We do NOT copy app/ again — the
+# package is importable via the venv's site-packages.
 COPY --from=builder --chown=hub:hub /opt/venv /opt/venv
-COPY --chown=hub:hub app/ /app/app/
 
-WORKDIR /app
+WORKDIR /home/hub
 
 USER hub
 
+# EXPOSE documents the DEFAULT port — overridden by the PORT env var at
+# runtime. Adjust the `docker run -p` mapping or compose `ports` to match
+# the value of PORT if you change it.
 EXPOSE 8000
 
 VOLUME ["/data"]
 
+# Shell-form HEALTHCHECK so $PORT is expanded by the shell. Falls back to
+# the ENV default of 8000 if PORT is somehow unset.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl --fail --silent --show-error http://localhost:8000/healthz || exit 1
+    CMD curl --fail --silent --show-error "http://localhost:${PORT:-8000}/healthz" || exit 1
 
-# tini reaps zombies and propagates SIGTERM to uvicorn cleanly.
-# --proxy-headers + --forwarded-allow-ips='*' so we get correct client IPs
-# behind the Go frontend (which proxies / and /api/*).
+# tini reaps zombies and propagates SIGTERM to uvicorn cleanly. Shell-form
+# CMD expands $PORT and $FORWARDED_ALLOW_IPS at start so deployments can
+# change them without rebuilding the image.
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--proxy-headers", \
-     "--forwarded-allow-ips=*", \
-     "--no-server-header"]
+CMD ["sh", "-c", "exec uvicorn app.main:app \
+    --host 0.0.0.0 \
+    --port \"${PORT}\" \
+    --proxy-headers \
+    --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS}\" \
+    --no-server-header"]

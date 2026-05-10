@@ -58,7 +58,8 @@ class TestAppMetadata:
         response = client.get("/openapi.json")
         assert response.status_code == 200
         data = response.json()
-        assert data["openapi"].startswith("3.")
+        # Per ADR 0011 we pin OpenAPI 3.1.0 explicitly; any drift is a regression.
+        assert data["openapi"] == "3.1.0"
 
     def test_openapi_title(self, client: TestClient) -> None:
         response = client.get("/openapi.json")
@@ -76,3 +77,14 @@ class TestAppMetadata:
         response = client.get("/redoc")
         assert response.status_code == 200
         assert b"redoc" in response.content.lower()
+
+
+class TestHealthzModel:
+    def test_response_model_is_frozen(self) -> None:
+        """Healthz response model must be frozen — see code-review-patterns.md."""
+        from app.main import Healthz
+        from pydantic import ValidationError
+
+        instance = Healthz(status="ok", version="1.2.3")
+        with pytest.raises(ValidationError):
+            instance.status = "tampered"  # type: ignore[misc]

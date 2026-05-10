@@ -8,9 +8,11 @@ import importlib.metadata
 def get_version() -> str:
     """Return the installed package version, or '0.0.0-dev' when running from source.
 
-    The container build pins this to the released version via the
-    setup.py / pyproject.toml metadata; in development, the editable install
-    keeps it at whatever the pyproject declares.
+    The container build resolves this from the package metadata
+    (`importlib.metadata.version`), which hatchling fills in from
+    `pyproject.toml`'s `[project] version` at install time. In editable
+    development installs the value is whatever the pyproject declares
+    (typically ``"0.0.0-dev"``).
     """
     try:
         return importlib.metadata.version("label-printer-hub-backend")
