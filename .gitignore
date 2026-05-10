@@ -55,3 +55,4 @@ data/
 *.key
 *.crt
 secrets/
+backend/.venv/
