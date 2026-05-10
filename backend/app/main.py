@@ -17,8 +17,10 @@ See:
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, ConfigDict
 
 from app import __version__
@@ -59,6 +61,30 @@ class Healthz(BaseModel):
     repository: str
 
 
+def _pinned_openapi_schema(app: FastAPI) -> Any:
+    """Build the OpenAPI schema with an explicitly pinned version.
+
+    Per ADR 0011 we lock the OpenAPI document version to a known value so a
+    future FastAPI upgrade can't silently change it. We do this by overriding
+    ``app.openapi`` with a function that calls FastAPI's own ``get_openapi``
+    with our chosen ``openapi_version`` — that is the framework-supported
+    extension point and stays stable across FastAPI releases. The result is
+    cached on ``app.openapi_schema`` so the schema is only built once.
+    """
+    if app.openapi_schema:
+        return app.openapi_schema
+    app.openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        openapi_version=OPENAPI_VERSION,
+        description=app.description,
+        routes=app.routes,
+        tags=app.openapi_tags,
+        servers=app.servers,
+    )
+    return app.openapi_schema
+
+
 def create_app() -> FastAPI:
     """Build the FastAPI app. Kept as a factory so tests can re-instantiate."""
     app = FastAPI(
@@ -74,8 +100,9 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
     )
-    # Pin OpenAPI spec version per ADR 0011 (override the FastAPI default).
-    app.openapi_version = OPENAPI_VERSION
+    # Pin the OpenAPI document version per ADR 0011 via the supported
+    # extension point: replace `app.openapi` with our wrapped builder.
+    app.openapi = lambda: _pinned_openapi_schema(app)  # type: ignore[method-assign]
 
     @app.get(
         "/healthz",
