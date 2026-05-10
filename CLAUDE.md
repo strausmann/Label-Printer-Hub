@@ -11,7 +11,8 @@ When you start working in this repository, read in this order:
 3. [`docs/decisions/`](docs/decisions/) — ADRs explaining **why** every architectural choice was made
 4. [`docs/policies/privacy.md`](docs/policies/privacy.md) — what must NOT be committed (binding)
 5. [`docs/policies/trademarks.md`](docs/policies/trademarks.md) — Brother trademark rules (binding)
-6. [`CONTRIBUTING.md`](CONTRIBUTING.md) — Conventional Commits, TDD workflow, PR rules
+6. [`docs/learnings/code-review-patterns.md`](docs/learnings/code-review-patterns.md) — recurring AI-review findings, **avoid these proactively** so we don't burn review cycles on the same mistakes
+7. [`CONTRIBUTING.md`](CONTRIBUTING.md) — Conventional Commits, TDD workflow, PR rules
 
 If you're about to make a non-trivial change without having read those first, stop and read them.
 
