@@ -34,14 +34,18 @@ We adopt **[Conventional Commits 1.0.0](https://www.conventionalcommits.org/)** 
 
 Allowed scopes: `printer-models`, `queue`, `status`, `api`, `ui`, `webhook`, `docker`, `ci`, `examples`, `docs`, `integration`, `pwa`, `security`, `release`. Validated by `commitlint` on PR titles.
 
-**Release trigger:** push to `main`. Maintainers do not manually tag releases.
+**Release trigger:** **scheduled (nightly 04:00 UTC) + manual via `workflow_dispatch`**. Merges to `main` do NOT publish releases — they only accumulate changes for the next release window. This separation means merging stays cheap and frequent, while releasing remains a deliberate event the maintainer can review or postpone.
+
+Maintainers do not manually tag releases. To trigger an unscheduled release (e.g. for a security hotfix), use the **Run workflow** button on the Release workflow.
 
 **Release pipeline:**
-1. Push to `main`
-2. `release.yml` workflow runs `semantic-release`
-3. semantic-release inspects commits since last tag → decides version bump
-4. Updates `CHANGELOG.md`, creates Git tag, creates GitHub Release
+1. Schedule fires at 04:00 UTC (or maintainer hits "Run workflow")
+2. `release.yml` workflow runs `semantic-release` against `main` HEAD
+3. semantic-release inspects commits since last tag → decides version bump (or skips if nothing releasable)
+4. If a release is due: updates `CHANGELOG.md`, creates Git tag, creates GitHub Release
 5. Release-published event triggers `docker-publish.yml` → builds and pushes both backend and frontend images per ADR 0007
+
+To skip a release on a given day, push only commit types that don't bump the version (`chore`, `docs`, `refactor`, `test`, `ci`, `style`, `build`).
 
 ## Options considered
 

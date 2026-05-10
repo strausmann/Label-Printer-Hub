@@ -182,10 +182,18 @@ The CI workflow runs the same. PRs that fail any check won't be reviewed until g
 
 ## Releases
 
-Releases are **fully automated** via semantic-release on push to `main`:
-- Conventional commit messages → version bump + changelog → tag → GitHub Release → Docker images on GHCR + Docker Hub.
+Releases are **scheduled, not on every merge.** Merging to `main` does NOT publish a release — it only bundles changes for the next scheduled release window.
 
-Maintainers do not manually tag releases.
+| Trigger | When |
+|---|---|
+| `cron: '0 4 * * *'` | Nightly at 04:00 UTC. semantic-release analyses commits since the last tag and publishes if there's anything releasable, otherwise skips silently |
+| `workflow_dispatch` | Manual button in the Actions tab. Optional `dry-run` input lets a maintainer preview what would be released without publishing |
+
+Behind the scenes, semantic-release reads the Conventional Commit messages on `main` since the previous tag, decides the next semver version, generates the `CHANGELOG.md` entry, creates the Git tag and GitHub Release, and triggers the Docker image push to GHCR and Docker Hub.
+
+**To skip a scheduled release on a given day**, push only commits with types that don't bump the version: `chore`, `docs`, `refactor`, `test`, `ci`, `style`, `build`.
+
+Maintainers do not manually tag releases. If a hotfix needs to ship before the next scheduled window, use the **Run workflow** button on the Release workflow in the Actions tab.
 
 ## Trademarks
 
