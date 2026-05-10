@@ -154,6 +154,10 @@ This project takes **AI-assisted code review seriously** as part of the standard
 
 **One feature = one branch = one PR.** Don't bundle unrelated changes — that defeats the review value. If you discover an unrelated bug while working on a feature, file a separate issue and a separate PR.
 
+**Wait for the AI reviewers, even on small PRs.** Gemini and Copilot post within ~1-2 minutes. Merging a small "trivial" PR with `--admin` before they've commented forfeits the review value and makes follow-up comments awkward to address. If a PR is *truly* time-critical (security fix, broken main), call it out explicitly in the PR description and own that you're skipping the review window — and address any post-merge comments in a follow-up PR.
+
+**Side-effects must be in the PR description.** If a PR primarily fixes A but also changes B, list both in the description. Reviewers shouldn't have to discover changes by reading the diff line by line.
+
 ## Adding a new printer model (plugin)
 
 Want to add support for a new Brother model (or even a non-Brother printer)? Excellent.
@@ -169,16 +173,24 @@ We try to verify each plugin against real hardware before merging when feasible.
 
 ## Local CI checks
 
-Before opening a PR:
+Before opening a PR, run from `backend/`:
 
 ```bash
-ruff check .                  # linting
-ruff format --check .         # formatting
-mypy app/                     # type checking
-pytest                        # tests
+ruff check .                  # linting (blocking in CI)
+ruff format --check .         # formatting (blocking in CI)
+mypy app/                     # type checking (blocking in CI — strict mode)
+pytest                        # tests (blocking in CI)
 ```
 
-The CI workflow runs the same. PRs that fail any check won't be reviewed until green.
+The CI workflow runs the same. **All four are hard gates** — no warn-only:
+
+- `ruff check` and `ruff format --check` reject style/lint issues
+- `mypy` runs in strict mode (configured in `pyproject.toml` `[tool.mypy] strict = true`); type-check failures fail the build
+- `pytest` requires all tests pass; coverage floor is 80% (configured in `pyproject.toml`)
+
+If you want to bypass a gate locally during exploration, use `mypy --no-strict-optional` etc., but the merged code must pass strict checks.
+
+PRs that fail any check won't be reviewed until green.
 
 ## Releases
 
