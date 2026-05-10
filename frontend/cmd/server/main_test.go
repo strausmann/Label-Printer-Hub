@@ -5,15 +5,24 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
 // initBuildInfoForTests loads the package-level buildInfo from the current
 // env. Tests that exercise /healthz must call this — main() is what loads
 // buildInfo in production, and that does not run during `go test`.
+//
+// sync.Once makes this safe for `t.Parallel()` tests: many goroutines may
+// call it concurrently, but the write to the global `buildInfo` only
+// happens once. Without this, `go test -race` (which CI runs) fails.
+var initBuildInfoOnce sync.Once
+
 func initBuildInfoForTests(t *testing.T) {
 	t.Helper()
-	buildInfo = loadBuildInfo()
+	initBuildInfoOnce.Do(func() {
+		buildInfo = loadBuildInfo()
+	})
 }
 
 func TestHealthz_ReturnsOK(t *testing.T) {
