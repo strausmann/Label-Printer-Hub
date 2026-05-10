@@ -57,6 +57,24 @@ The full status-block schema, error bitmaps, tape codes and colour tables are do
 - `EventBus` receives a `tape_changed` event when the cached state diverges from a fresh `ESC i S` read
 - Documentation must clearly mark which methods are safe during a print and which aren't (see `docs/architecture.md`)
 
+## Phase-0 hardware notes — PT vs QL behaviour differs
+
+Empirical testing during Phase 0 (2026-05-10) revealed an important difference between the two model families:
+
+| Behaviour | PT-Series (PT-P750W) | QL-Series (QL-820NWB) |
+|---|---|---|
+| `ESC i S` standalone over TCP/9100 | ✅ Returns 32-byte status block | ❌ Returns nothing (no response) |
+| `ESC i S` after Invalidate + Initialize + `ESC i a 01` | ✅ Returns | ❌ Returns nothing |
+| `ESC i S` embedded in a print-job stream | ✅ Works | ✅ Works (per `brother_ql` library) |
+| SNMP Display-OID, Page-Counter, Brother Enterprise OIDs | ✅ Works | ✅ Works (identical OID map) |
+| Automatic status notifications during print | ✅ Sent unprompted | ✅ Sent unprompted |
+
+**Implication:** the `PT-Series` plugin can perform a pre-print status probe via `ESC i S` over TCP/9100 directly. The `QL-Series` plugin must instead use SNMP for pre-print check (since standalone `ESC i S` returns nothing). Status during an active print works the same way for both (passive read of automatic notifications).
+
+This is **plugin-encapsulated** behaviour — the public `PrinterModel.query_status()` API is identical; the implementation differs internally. See [ADR 0004](0004-plugin-architecture-for-printer-models.md).
+
+If a future QL firmware version starts answering standalone `ESC i S` (or a contributor finds the magic command sequence we're missing), the QL plugin can be updated without affecting the rest of the system.
+
 ## References
 
 - Brother Raster Command Reference v1.02, sections 1 ("Printing using raster commands"), 4 ("Printing command details" → `ESC i S`), and 5 ("Flow charts")
