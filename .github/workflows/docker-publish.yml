@@ -72,6 +72,20 @@ jobs:
       - name: Verify Dockerfile exists for ${{ matrix.service }}
         run: test -f "${{ matrix.service }}/Dockerfile"
 
+      # GitHub's repo path retains the user's original capitalisation
+      # (`strausmann/Label-Printer-Hub`), but Docker/OCI registry refs MUST
+      # be all-lowercase. `docker/metadata-action` does this implicitly for
+      # its own outputs, but `build-push-action`'s `outputs: name=…` is a
+      # raw passthrough — we have to lowercase the path ourselves before
+      # using it in the digest-push reference and in the merge step.
+      - name: Compute lowercase image ref
+        id: image
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          repo_lc="${REPO,,}"
+          echo "ref=${{ env.REGISTRY_GHCR }}/${repo_lc}-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -112,7 +126,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ${{ env.REGISTRY_GHCR }}/${{ github.repository }}-${{ matrix.service }}
+            ${{ steps.image.outputs.ref }}
           labels: |
             org.opencontainers.image.title=label-printer-hub-${{ matrix.service }}
             org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series — ${{ matrix.service }} container
@@ -139,8 +153,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           # `push-by-digest=true` skips the tag write and returns digest in
           # `steps.build.outputs.digest`. `name-canonical=true` makes the
-          # registry reference the image by its canonical name.
-          outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ github.repository }}-${{ matrix.service }},push-by-digest=true,name-canonical=true,push=true
+          # registry reference the image by its canonical name. The image
+          # ref MUST be lowercase — see the `Compute lowercase image ref`
+          # step above.
+          outputs: type=image,name=${{ steps.image.outputs.ref }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             VERSION=${{ steps.tag.outputs.tag }}
             REVISION=${{ github.sha }}
@@ -192,6 +208,15 @@ jobs:
           path: /tmp/digests
           merge-multiple: true
 
+      # Mirror of the build-phase lowercase step (see comment there).
+      - name: Compute lowercase image ref
+        id: image
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          repo_lc="${REPO,,}"
+          echo "ref=${{ env.REGISTRY_GHCR }}/${repo_lc}-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -231,7 +256,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ${{ env.REGISTRY_GHCR }}/${{ github.repository }}-${{ matrix.service }}
+            ${{ steps.image.outputs.ref }}
             ${{ secrets.DOCKERHUB_USERNAME && format('docker.io/{0}/label-printer-hub-{1}', secrets.DOCKERHUB_USERNAME, matrix.service) || '' }}
           # Same tag scheme as before:
           #   1.0.0     full semver (always)
@@ -262,7 +287,7 @@ jobs:
       - name: Create manifest list and push
         working-directory: /tmp/digests
         env:
-          DIGEST_REPO: ${{ env.REGISTRY_GHCR }}/${{ github.repository }}-${{ matrix.service }}
+          DIGEST_REPO: ${{ steps.image.outputs.ref }}
           TAGS: ${{ steps.meta.outputs.tags }}
           ANNOTATIONS: ${{ steps.meta.outputs.annotations }}
         run: |
