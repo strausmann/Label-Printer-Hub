@@ -1,9 +1,33 @@
 name: Release
 
+# Releases are triggered on a fixed schedule, not on every merge.
+# This separates "code merged to main" from "version published" — merging
+# is still cheap and frequent, releasing is a deliberate, reviewable event.
+#
+# Triggers:
+#   - schedule: nightly at 04:00 UTC. semantic-release inspects all commits
+#     since the previous tag and publishes if there's at least one
+#     releasable commit (feat, fix, perf). Otherwise the run skips silently.
+#   - workflow_dispatch: manual trigger from the Actions tab when a
+#     release should happen ahead of schedule.
+#
+# When a scheduled run skips publishing:
+#   semantic-release evaluates the ENTIRE history since the last tag, not
+#   just commits made since the previous run. A scheduled release only
+#   skips if NO releasable commits (feat/fix/perf) exist between the last
+#   tag and HEAD. Adding a chore/docs/etc. commit on top of an already-
+#   present feat does NOT suppress the release — the existing feat will
+#   still trigger it.
 on:
-  push:
-    branches: [main]
+  schedule:
+    - cron: '0 4 * * *'   # daily at 04:00 UTC
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — analyse commits but don't publish"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write       # create tags + GitHub Releases
@@ -20,6 +44,9 @@ jobs:
   release:
     name: semantic-release
     runs-on: ubuntu-24.04
+    # workflow_dispatch can be triggered against any ref via the Actions UI.
+    # Releases must only ever come from main — refuse to run on anything else.
+    if: github.ref == 'refs/heads/main'
     outputs:
       new-release-published: ${{ steps.semantic.outputs.new_release_published }}
       new-release-version: ${{ steps.semantic.outputs.new_release_version }}
@@ -38,6 +65,7 @@ jobs:
         id: semantic
         uses: cycjimmy/semantic-release-action@v6
         with:
+          dry_run: ${{ inputs.dry_run || false }}
           extra_plugins: |
             @semantic-release/changelog@6
             @semantic-release/git@10
