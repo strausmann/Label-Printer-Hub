@@ -21,13 +21,15 @@ jobs:
   publish:
     name: Build and push (${{ matrix.service }})
     runs-on: ubuntu-24.04
-    if: hashFiles(format('{0}/Dockerfile', matrix.service)) != ''
     strategy:
       fail-fast: true   # if backend fails, don't push frontend mismatched
       matrix:
         service: [backend, frontend]
     steps:
       - uses: actions/checkout@v6
+
+      - name: Verify Dockerfile exists for ${{ matrix.service }}
+        run: test -f "${{ matrix.service }}/Dockerfile"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -42,8 +44,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # `secrets.*` is not allowed in step-level `if:` expressions — Actions
+      # rejects it as "Unrecognized named-value: 'secrets'". We surface the
+      # value into the step env first, then condition on env.* which IS
+      # allowed.
       - name: Log in to Docker Hub
-        if: secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != ''
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
