@@ -191,9 +191,9 @@ Releases are **scheduled, not on every merge.** Merging to `main` does NOT publi
 
 Behind the scenes, semantic-release reads the Conventional Commit messages on `main` since the previous tag, decides the next semver version, generates the `CHANGELOG.md` entry, creates the Git tag and GitHub Release, and triggers the Docker image push to GHCR and Docker Hub.
 
-**To skip a scheduled release on a given day**, push only commits with types that don't bump the version: `chore`, `docs`, `refactor`, `test`, `ci`, `style`, `build`.
+**A scheduled run only skips publishing when there are no releasable commits since the last tag.** semantic-release evaluates the entire history since the previous release, not just "today's" commits. If a `feat`, `fix`, or `perf` commit is already on `main` from an earlier merge, the next scheduled run **will** publish — adding a `chore` or `docs` commit on top doesn't suppress that. To genuinely skip a release window, the only options are: rely on there being no releasable commits, or postpone merges that would bump the version.
 
-Maintainers do not manually tag releases. If a hotfix needs to ship before the next scheduled window, use the **Run workflow** button on the Release workflow in the Actions tab.
+Maintainers do not manually tag releases. If a hotfix needs to ship before the next scheduled window, use the **Run workflow** button on the Release workflow in the Actions tab. The dry-run input lets a maintainer preview which version would be published before committing.
 
 ## Trademarks
 
