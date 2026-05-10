@@ -1,0 +1,20 @@
+# Gemini Code Assist configuration for this repository.
+# Reference: https://developers.google.com/gemini-code-assist/docs/customize-gemini-behavior-github
+
+have_fun: false  # focus on substance over jokes
+code_review:
+  disable: false
+  comment_severity_threshold: MEDIUM
+  max_review_comments: -1  # unlimited
+  pull_request_opened:
+    help: false
+    summary: true
+    code_review: true
+  ignore_patterns:
+    - "**/*.md"
+    - "docs/research/brother-spec/**"   # Brother PDFs are vendor-supplied, not our code
+    - "examples/**/*.yml"               # Sample compose files — review separately
+    - "**/__pycache__/**"
+    - "**/.venv/**"
+    - "node_modules/**"
+    - "frontend/dist/**"

@@ -1,0 +1,18 @@
+# CODEOWNERS — automatic review requests
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: maintainer owns everything
+*                                @strausmann
+
+# Architecture and process docs require maintainer review
+CLAUDE.md                        @strausmann
+CONTRIBUTING.md                  @strausmann
+CODE_OF_CONDUCT.md               @strausmann
+SECURITY.md                      @strausmann
+README.md                        @strausmann
+LICENSE                          @strausmann
+.github/                         @strausmann
+.gemini/                         @strausmann
+.releaserc*                      @strausmann
+docs/architecture.md             @strausmann
+docs/plugin-development.md       @strausmann

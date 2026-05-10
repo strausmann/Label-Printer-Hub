@@ -1,0 +1,68 @@
+name: Plugin request — new printer model
+description: Add support for a new printer model
+title: "feat(printer-models): add <Model> plugin"
+labels:
+  - "type:plugin"
+  - "area:printer-models"
+  - "status:needs-triage"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for adding support for a new Brother model — or even a non-Brother printer if you're up for the protocol research.
+
+        See [`docs/plugin-development.md`](../../blob/main/docs/plugin-development.md) for the contribution path.
+
+  - type: input
+    id: model
+    attributes:
+      label: Printer model
+      placeholder: e.g. Brother PT-D610BT, Brother QL-1110NWB, DYMO LabelWriter 550
+    validations:
+      required: true
+
+  - type: input
+    id: connection
+    attributes:
+      label: Network connectivity
+      placeholder: e.g. Ethernet, WiFi, Bluetooth, USB-only
+    validations:
+      required: true
+
+  - type: input
+    id: protocol-doc
+    attributes:
+      label: Link to protocol documentation
+      description: Brother Raster Command Reference / equivalent vendor SDK doc / reverse-engineering notes
+      placeholder: https://download.brother.com/...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: existing-lib
+    attributes:
+      label: Is there an existing Python library?
+      options:
+        - "Yes — pklaus/brother_ql"
+        - "Yes — nbuchwitz/ptouch"
+        - "Yes — other (please link in additional context)"
+        - "No, this needs custom implementation"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: hardware-access
+    attributes:
+      label: Do you have access to the hardware?
+      options:
+        - "Yes — I can develop and test"
+        - "Yes — I can test what someone else writes"
+        - "No, I'm requesting it for someone else"
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Tape sizes you'll use, expected use cases, any quirks you already know about

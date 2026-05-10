@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/strausmann/label-printer-hub/discussions
+    about: Ask questions, share ideas, get help with deployment
+  - name: Security vulnerability
+    url: https://github.com/strausmann/label-printer-hub/security/advisories/new
+    about: Report a security issue privately (do NOT open a public issue)

@@ -1,0 +1,97 @@
+name: Bug report
+description: Something isn't working as documented
+title: "bug: <one-line summary>"
+labels:
+  - "type:bug"
+  - "status:needs-triage"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        **Before submitting:**
+        - Check existing [issues](../issues?q=is%3Aissue) to avoid duplicates
+        - For security vulnerabilities, use the [security advisory](../../security/advisories/new) instead
+        - **Do not include private IP addresses, hostnames, domains, or credentials** in the report. Use placeholders like `192.0.2.1` or `printer.example.com`.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Brief description of what's wrong
+    validations:
+      required: true
+
+  - type: dropdown
+    id: printer
+    attributes:
+      label: Affected printer model
+      multiple: true
+      options:
+        - Brother PT-E550W
+        - Brother PT-P710BT
+        - Brother PT-P750W
+        - Brother QL-800
+        - Brother QL-810W
+        - Brother QL-820NWB / QL-820NWBc
+        - Brother QL-1100 / 1110NWB
+        - Other (please specify in description)
+        - Not printer-specific
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. The maintainer needs to recreate the bug to fix it.
+      placeholder: |
+        1. Deploy with `compose.standalone.yml`
+        2. Submit a print job for tape size 12mm
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include error messages, log excerpts (sanitised — no IPs/tokens)
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Hub version
+      placeholder: v0.1.0 / commit hash / "main as of YYYY-MM-DD"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Container runtime, host OS, deployment style (compose variant), reverse proxy
+      placeholder: |
+        - Container runtime: Docker 27.x
+        - Host OS: Ubuntu 24.04
+        - Compose variant: traefik
+        - Reverse proxy: Traefik 3.x
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Screenshots, related issues, anything else

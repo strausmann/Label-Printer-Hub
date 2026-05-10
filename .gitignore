@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+pip-wheel-metadata/
+
+# Go (if used in frontend)
+/bin/
+/dist/
+*.exe
+*.test
+*.prof
+
+# Node (Tailwind build, semantic-release)
+node_modules/
+package-lock.json.backup
+.npm/
+.pnpm-store/
+
+# Tailwind output
+app/ui/static/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local dev
+.env
+.env.local
+data/
+*.db
+*.db-journal
+*.log
+
+# Docker
+.dockerignore.local
+
+# Secrets — never commit
+*.pem
+*.key
+*.crt
+secrets/

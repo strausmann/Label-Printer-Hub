@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write       # create tags + GitHub Releases
+  issues: write         # post comments on closed issues
+  pull-requests: write  # comment on PRs
+  packages: write       # push to GHCR
+  id-token: write       # OIDC if needed
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: semantic-release
+    runs-on: ubuntu-24.04
+    outputs:
+      new-release-published: ${{ steps.semantic.outputs.new_release_published }}
+      new-release-version: ${{ steps.semantic.outputs.new_release_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: semantic-release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          extra_plugins: |
+            @semantic-release/changelog@6
+            @semantic-release/git@10
+            @semantic-release/exec@6
+            conventional-changelog-conventionalcommits@7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,30 @@
+{
+  "name": "label-printer-hub",
+  "version": "0.0.0-development",
+  "private": true,
+  "description": "Self-hosted label printer hub for Brother PT-Series and QL-Series",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/strausmann/label-printer-hub.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.0",
+    "@semantic-release/exec": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^11.0.0",
+    "@semantic-release/release-notes-generator": "^14.0.1",
+    "conventional-changelog-conventionalcommits": "^7.0.2",
+    "semantic-release": "^24.1.2"
+  },
+  "scripts": {
+    "release": "semantic-release",
+    "commitlint": "commitlint --edit"
+  }
+}

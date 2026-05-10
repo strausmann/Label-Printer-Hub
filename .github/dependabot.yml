@@ -1,0 +1,104 @@
+version: 2
+updates:
+  # Python dependencies (pyproject.toml / requirements*.txt)
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - python
+    commit-message:
+      prefix: chore
+      prefix-development: chore
+      include: scope
+    groups:
+      python-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        applies-to: version-updates
+
+  # Go dependencies (frontend, when added)
+  - package-ecosystem: gomod
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - go
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      go-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        applies-to: version-updates
+
+  # Node tooling (Tailwind build pipeline, semantic-release)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - javascript
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        applies-to: version-updates
+
+  # Docker base images
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # GitHub Actions workflow updates
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions-all:
+        patterns:
+          - "*"

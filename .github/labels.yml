@@ -1,0 +1,217 @@
+# Labels are managed in this file and synced via .github/workflows/labels-sync.yml.
+# Do NOT create labels in the GitHub UI — they will be removed on the next sync.
+#
+# Schema: https://github.com/EndBug/label-sync#config-files
+# Format: name, color (hex without #), description, optional aliases
+
+# ============================================================================
+# Type — what kind of work is this?
+# ============================================================================
+- name: "type:bug"
+  color: "d73a4a"
+  description: "Something isn't working"
+
+- name: "type:feature"
+  color: "a2eeef"
+  description: "New feature or enhancement"
+
+- name: "type:docs"
+  color: "0075ca"
+  description: "Documentation only"
+
+- name: "type:refactor"
+  color: "fef2c0"
+  description: "Code change without behaviour change"
+
+- name: "type:test"
+  color: "fbca04"
+  description: "Test additions or fixes"
+
+- name: "type:chore"
+  color: "cccccc"
+  description: "Tooling, deps, CI, housekeeping"
+
+- name: "type:plugin"
+  color: "8a2be2"
+  description: "New printer model plugin"
+
+- name: "type:question"
+  color: "d876e3"
+  description: "Question or discussion"
+
+# ============================================================================
+# Area — which part of the system?
+# ============================================================================
+- name: "area:backend"
+  color: "1d76db"
+  description: "Python FastAPI backend"
+
+- name: "area:frontend"
+  color: "0e8a16"
+  description: "Frontend (Go + Tailwind + HTMX + PWA)"
+
+- name: "area:printer-models"
+  color: "5319e7"
+  description: "Printer model plugins"
+
+- name: "area:queue"
+  color: "f9d0c4"
+  description: "Print queue + job lifecycle"
+
+- name: "area:status"
+  color: "bfd4f2"
+  description: "Status block, SNMP, status probe"
+
+- name: "area:api"
+  color: "0052cc"
+  description: "REST API + SSE endpoints"
+
+- name: "area:ui"
+  color: "c5def5"
+  description: "User interface, HTMX components"
+
+- name: "area:pwa"
+  color: "f0a3ff"
+  description: "Progressive Web App (manifest, service worker, push)"
+
+- name: "area:webhook"
+  color: "ff9f1c"
+  description: "Spoolman, Grocy webhook integration"
+
+- name: "area:integration"
+  color: "ffc107"
+  description: "Snipe-IT, Grocy, Spoolman lookup clients"
+
+- name: "area:examples"
+  color: "fef2c0"
+  description: "Sample compose files and deployment examples"
+
+- name: "area:ci"
+  color: "ededed"
+  description: "GitHub Actions, releases, build pipeline"
+
+- name: "area:docs"
+  color: "0075ca"
+  description: "Docs only"
+
+- name: "area:security"
+  color: "ee0701"
+  description: "Security-relevant changes"
+
+# ============================================================================
+# Status — workflow state
+# ============================================================================
+- name: "status:needs-triage"
+  color: "ededed"
+  description: "Awaiting maintainer triage"
+
+- name: "status:needs-info"
+  color: "fbca04"
+  description: "Waiting for more information from reporter"
+
+- name: "status:in-progress"
+  color: "0e8a16"
+  description: "Someone is actively working on this"
+
+- name: "status:blocked"
+  color: "b60205"
+  description: "Blocked on external dependency or decision"
+
+- name: "status:ready-for-review"
+  color: "0e8a16"
+  description: "Ready for review"
+
+- name: "status:wontfix"
+  color: "ffffff"
+  description: "Decided not to address"
+
+- name: "status:duplicate"
+  color: "cccccc"
+  description: "Duplicate of another issue/PR"
+
+# ============================================================================
+# Priority
+# ============================================================================
+- name: "priority:critical"
+  color: "b60205"
+  description: "Drop everything"
+
+- name: "priority:high"
+  color: "d93f0b"
+  description: "Address soon"
+
+- name: "priority:medium"
+  color: "fbca04"
+  description: "Normal priority"
+
+- name: "priority:low"
+  color: "0e8a16"
+  description: "Nice to have"
+
+# ============================================================================
+# Community
+# ============================================================================
+- name: "good-first-issue"
+  color: "7057ff"
+  description: "Good for new contributors"
+
+- name: "help-wanted"
+  color: "008672"
+  description: "Extra attention needed"
+
+- name: "hacktoberfest"
+  color: "ff7518"
+  description: "Hacktoberfest-eligible task"
+
+# ============================================================================
+# Dependabot ecosystem labels
+# ============================================================================
+- name: "dependencies"
+  color: "0366d6"
+  description: "Pull requests that update a dependency file"
+
+- name: "python"
+  color: "3572A5"
+  description: "Python dependencies"
+
+- name: "go"
+  color: "00ADD8"
+  description: "Go dependencies"
+
+- name: "javascript"
+  color: "f1e05a"
+  description: "JavaScript/Node dependencies"
+
+- name: "docker"
+  color: "2496ED"
+  description: "Docker image dependencies"
+
+- name: "github-actions"
+  color: "2088FF"
+  description: "GitHub Actions workflow dependencies"
+
+# ============================================================================
+# Release / breaking
+# ============================================================================
+- name: "breaking-change"
+  color: "b60205"
+  description: "Major version bump required"
+
+- name: "release-note"
+  color: "0e8a16"
+  description: "Mention in release notes"
+
+# ============================================================================
+# Hardware
+# ============================================================================
+- name: "hardware:pt-series"
+  color: "8a2be2"
+  description: "Brother PT-Series printer"
+
+- name: "hardware:ql-series"
+  color: "8a2be2"
+  description: "Brother QL-Series printer"
+
+- name: "hardware:other"
+  color: "8a2be2"
+  description: "Other printer model (non-Brother or unsupported family)"

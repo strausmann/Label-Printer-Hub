@@ -1,0 +1,61 @@
+name: Feature request
+description: Suggest an enhancement
+title: "feat: <one-line summary>"
+labels:
+  - "type:feature"
+  - "status:needs-triage"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion.
+
+        **For new printer model support, please use the "Plugin request" template instead.**
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the user need, not the implementation. "I want to ..." or "Currently I have to ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Optional. If you have an idea for how to solve it, share it.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about and why you didn't pick them
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Suggested area
+      multiple: true
+      options:
+        - Backend (Python / FastAPI)
+        - Frontend (Go / Tailwind / HTMX / PWA)
+        - Print queue
+        - Status / SNMP / Web UI scraping
+        - API
+        - Webhook integration (Spoolman / Grocy)
+        - App lookup (Snipe-IT / Grocy / Spoolman)
+        - Examples / deployment
+        - Documentation
+        - CI / release tooling
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I'm willing to submit a PR for this feature
+        - label: I can test it on my hardware

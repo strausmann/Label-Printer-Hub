@@ -1,0 +1,165 @@
+# Contributing to Label Printer Hub
+
+Thanks for your interest in contributing! This document explains how to participate effectively.
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By participating, you agree to abide by its terms.
+
+## Ways to contribute
+
+| Contribution | Where |
+|---|---|
+| Report a bug | [Issues → Bug report](../../issues/new?template=bug_report.yml) |
+| Suggest a feature | [Issues → Feature request](../../issues/new?template=feature_request.yml) |
+| **Add a new printer model** | [Issues → Plugin request](../../issues/new?template=plugin_request.yml) — see also [`docs/plugin-development.md`](docs/plugin-development.md) |
+| Ask a question | [Discussions](../../discussions) |
+| Improve documentation | PR directly |
+| Security issue | See [SECURITY.md](SECURITY.md) (do **not** open a public issue) |
+
+## Development workflow
+
+### 1. Fork & clone
+
+```bash
+gh repo fork strausmann/label-printer-hub --clone
+cd label-printer-hub
+```
+
+### 2. Set up your environment
+
+Backend (Python):
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+pre-commit install
+```
+
+Frontend: see [`docs/architecture.md`](docs/architecture.md) once finalised.
+
+### 3. Create a branch
+
+Branch naming follows Conventional Commits prefix:
+
+| Prefix | Use for |
+|---|---|
+| `feat/` | New feature |
+| `fix/` | Bug fix |
+| `docs/` | Documentation only |
+| `refactor/` | Code change without behaviour change |
+| `test/` | Test additions/changes |
+| `chore/` | Tooling, deps, CI |
+| `perf/` | Performance |
+| `ci/` | CI changes only |
+
+Example: `git checkout -b feat/ptouch-tape-detection`.
+
+### 4. Make changes — TDD please
+
+This project follows **Test-Driven Development**. Every behaviour change requires:
+
+1. Write a failing test first
+2. Make the test pass with minimal code
+3. Refactor if needed
+4. Commit (Conventional Commits)
+
+Run tests:
+```bash
+pytest                          # all
+pytest tests/unit -v            # unit only
+pytest tests/integration -v     # integration
+pytest tests/hardware -v -m hw  # hardware-in-the-loop (skipped by default)
+```
+
+### 5. Commit messages — Conventional Commits
+
+This is **mandatory**. We use [semantic-release](https://github.com/semantic-release/semantic-release) which generates version numbers and changelogs automatically from commit messages.
+
+Format:
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+Examples:
+```
+feat(printer-models): add Brother PT-D610BT plugin
+
+Implements PrinterModel protocol for the PT-D610BT desktop label printer.
+Tested with TZe-12mm and TZe-24mm tapes.
+
+Closes #42
+```
+
+```
+fix(queue): retry job no longer duplicates on race
+
+Adds idempotency check before enqueueing the retry copy.
+```
+
+```
+feat!: rename PrinterService.print() to submit_job()
+
+BREAKING CHANGE: API consumers must update method calls. The new method
+returns immediately with a JobId instead of blocking until print is done.
+```
+
+| Type | Effect on version | When to use |
+|---|---|---|
+| `feat` | minor (1.x.0) | New feature |
+| `fix` | patch (1.0.x) | Bug fix |
+| `perf` | patch | Performance improvement |
+| `docs` | none (no release) | Docs only |
+| `test`, `refactor`, `chore`, `ci`, `style` | none | Internal |
+| `feat!` or `BREAKING CHANGE:` footer | major (x.0.0) | Breaking API change |
+
+Scopes we use: `printer-models`, `queue`, `status`, `api`, `ui`, `webhook`, `docker`, `ci`, `examples`.
+
+### 6. Push & open a Pull Request
+
+- Use the [PR template](.github/pull_request_template.md) — fill in all sections
+- Link the issue with `Closes #<num>` or `Refs #<num>`
+- Wait for CI to pass
+- Address review comments
+
+We squash-merge by default. The squash commit message **must** follow Conventional Commits — semantic-release will use it.
+
+## Adding a new printer model (plugin)
+
+Want to add support for a new Brother model (or even a non-Brother printer)? Excellent.
+
+1. Open a [Plugin request issue](../../issues/new?template=plugin_request.yml) so others know it's in progress
+2. Read [`docs/plugin-development.md`](docs/plugin-development.md)
+3. Implement `app/printer_models/<your_model>.py` against the `PrinterModel` protocol
+4. Add tests in `tests/unit/printer_models/test_<your_model>.py`
+5. If you have hardware: add an integration test under `tests/hardware/`
+6. Open a PR — title `feat(printer-models): add <Model> plugin`
+
+We try to verify each plugin against real hardware before merging when feasible. If you're contributing a plugin for hardware we don't have access to, we'll merge based on tests + your hardware confirmation.
+
+## Local CI checks
+
+Before opening a PR:
+
+```bash
+ruff check .                  # linting
+ruff format --check .         # formatting
+mypy app/                     # type checking
+pytest                        # tests
+```
+
+The CI workflow runs the same. PRs that fail any check won't be reviewed until green.
+
+## Releases
+
+Releases are **fully automated** via semantic-release on push to `main`:
+- Conventional commit messages → version bump + changelog → tag → GitHub Release → Docker images on GHCR + Docker Hub.
+
+Maintainers do not manually tag releases.
+
+## Trademarks
+
+Please remember Brother trademarks are the property of Brother Industries, Ltd. (see [README](README.md#trademarks-and-disclaimer)). Don't add wording that suggests endorsement, partnership, or affiliation with Brother Industries, Ltd.
