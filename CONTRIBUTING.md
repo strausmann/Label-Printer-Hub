@@ -127,6 +127,33 @@ Scopes we use: `printer-models`, `queue`, `status`, `api`, `ui`, `webhook`, `doc
 
 We squash-merge by default. The squash commit message **must** follow Conventional Commits — semantic-release will use it.
 
+### 7. Code review — humans and AIs
+
+This project takes **AI-assisted code review seriously** as part of the standard PR workflow:
+
+| Reviewer | What they look at | How to read their feedback |
+|---|---|---|
+| **Maintainer (human)** | Architecture fit, ADR compliance, hardware-specific behaviour, judgement calls | Authoritative — addresses or explains why not |
+| **Gemini Code Assist** | Style, common pitfalls, security smells, language idiom — configured in [`.gemini/styleguide.md`](.gemini/styleguide.md) | Take seriously — false positives exist but the signal is good. Reply inline if disagreeing |
+| **GitHub Copilot Chat** | (When invoked on a PR) similar to Gemini, plus deep code context. Following [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | Same — read every comment, reply or fix |
+
+**Workflow:**
+
+1. Open the PR (draft is fine — push triggers reviews)
+2. Wait for CI green + AI reviews to land (usually within 1-2 minutes)
+3. **Read every AI comment.** Even when you disagree, write a brief reply explaining why — that builds the project's institutional memory of "we don't do X because Y"
+4. Address legitimate findings with a follow-up commit; the reviewers re-run on push
+5. Mark the PR ready for review when AI feedback is addressed
+6. The maintainer reviews next; squash-merge follows their approval
+
+**A PR is not ready to merge if:**
+- AI reviewers found issues that haven't been addressed or explicitly dismissed (with reasoning)
+- CI is red
+- The PR title doesn't follow Conventional Commits
+- The PR description is missing the linked issue or hardware-impact note (where relevant)
+
+**One feature = one branch = one PR.** Don't bundle unrelated changes — that defeats the review value. If you discover an unrelated bug while working on a feature, file a separate issue and a separate PR.
+
 ## Adding a new printer model (plugin)
 
 Want to add support for a new Brother model (or even a non-Brother printer)? Excellent.

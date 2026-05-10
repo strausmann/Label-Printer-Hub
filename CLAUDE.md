@@ -51,6 +51,19 @@ If you're about to make a non-trivial change without having read those first, st
 
 Ask in the PR description or open a draft PR with questions. Don't fabricate — especially around Brother protocol details, library APIs, or maintainer-specific deployment values.
 
+## Peer-review with other AI assistants
+
+Pull requests in this project receive review from **GitHub Copilot Chat** (configured via [`.github/copilot-instructions.md`](.github/copilot-instructions.md)) and **Gemini Code Assist** (configured via [`.gemini/styleguide.md`](.gemini/styleguide.md)).
+
+When working on a PR:
+
+- **Read their comments carefully** — they often catch real issues (security, style, language idioms) that the maintainer is happy to defer to. Their false-positive rate is non-zero but the signal is good.
+- **Reply to every comment** — either fix or explain why not. Silent dismissal is bad form and loses the review's value.
+- **Don't pretend their feedback didn't happen**. If a Gemini comment says "this looks like SQL injection", and you decide it's actually parameterised query, write that reply explicitly.
+- **Treat them as colleagues, not gates**. Their suggestions are inputs to your judgement, not commands. The maintainer is the final arbiter.
+
+The full review workflow is documented in [CONTRIBUTING.md](CONTRIBUTING.md) section 7.
+
 ## Privacy reminder
 
 You will sometimes be invoked from contexts that have access to the maintainer's private repos and notes (e.g. `homelab-pangolin-client`). **Never** transcribe values from those contexts into this public repository. Use placeholders. The CI `privacy-scan` job will reject obvious leaks but it can't catch everything — your judgement is the first line of defence.
