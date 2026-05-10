@@ -1,0 +1,40 @@
+# Keep build context minimal.
+
+# Build output
+/bin/
+/dist/
+/out/
+*.exe
+*.test
+*.prof
+
+# Test artefacts
+coverage.out
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local dev
+.env
+.env.local
+*.log
+
+# Secrets — never copy
+*.pem
+*.key
+*.crt
+secrets/
+
+# Git
+.git/
+.gitignore
+
+# Node toolchain (Tailwind build cache — comes in a later PR)
+node_modules/
+.npm/
+.pnpm-store/
