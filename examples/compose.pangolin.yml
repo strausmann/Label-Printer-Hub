@@ -1,18 +1,21 @@
 # ============================================================================
 # Label Printer Hub — Pangolin
-# Assumes a Pangolin/Newt setup is already running with a network called
-# "pangolin-newt". Uses Blueprint Labels with the Two-Resources pattern:
+# Two-container setup: only the frontend is exposed via Pangolin. Backend stays
+# on an internal network. Frontend proxies all API calls + SSE to backend.
+# Uses Blueprint Labels with the Two-Resources pattern:
 # - Main UI behind Pangolin SSO
 # - Webhook subroute with auth bypass (uses WEBHOOK_API_KEY instead)
 # ============================================================================
 
 services:
-  label-printer-hub:
-    image: ghcr.io/strausmann/label-printer-hub:latest
-    container_name: label-printer-hub
+  backend:
+    image: ghcr.io/strausmann/label-printer-hub-backend:${HUB_VERSION:-latest}
+    container_name: label-printer-hub-backend
     user: "1000:1000"
     networks:
-      - pangolin-newt
+      - hub-internal
+    expose:
+      - "8000"
     environment:
       - PRINTERS=${PRINTERS}
       - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
@@ -24,11 +27,32 @@ services:
       - ./data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  frontend:
+    image: ghcr.io/strausmann/label-printer-hub-frontend:${HUB_VERSION:-latest}
+    container_name: label-printer-hub-frontend
+    user: "1000:1000"
+    networks:
+      - pangolin-newt
+      - hub-internal
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     labels:
       - "pangolin.enable=true"
 
@@ -48,6 +72,8 @@ services:
 networks:
   pangolin-newt:
     external: true
+  hub-internal:
+    driver: bridge
 
 # After deploy, restart the newt container so blueprint labels are reloaded:
 #   docker restart pangolin-newt

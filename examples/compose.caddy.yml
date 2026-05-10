@@ -1,16 +1,20 @@
 # ============================================================================
 # Label Printer Hub — Caddy
+# Two-container setup: only the frontend is exposed via Caddy. Backend stays
+# on an internal network. Caddy obtains TLS certificates automatically.
 # Assumes a Caddy 2 instance with caddy-docker-proxy is running on a docker
-# network called "caddy". Caddy obtains TLS certificates automatically.
+# network called "caddy".
 # ============================================================================
 
 services:
-  label-printer-hub:
-    image: ghcr.io/strausmann/label-printer-hub:latest
-    container_name: label-printer-hub
+  backend:
+    image: ghcr.io/strausmann/label-printer-hub-backend:${HUB_VERSION:-latest}
+    container_name: label-printer-hub-backend
     user: "1000:1000"
     networks:
-      - caddy
+      - hub-internal
+    expose:
+      - "8000"
     environment:
       - PRINTERS=${PRINTERS}
       - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
@@ -22,11 +26,32 @@ services:
       - ./data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  frontend:
+    image: ghcr.io/strausmann/label-printer-hub-frontend:${HUB_VERSION:-latest}
+    container_name: label-printer-hub-frontend
+    user: "1000:1000"
+    networks:
+      - caddy
+      - hub-internal
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     labels:
       caddy: ${PRINTERHUB_HOST}
       caddy.reverse_proxy: "{{upstreams 8080}}"
@@ -36,3 +61,5 @@ services:
 networks:
   caddy:
     external: true
+  hub-internal:
+    driver: bridge

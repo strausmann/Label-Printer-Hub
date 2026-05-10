@@ -130,24 +130,45 @@ jobs:
       - name: Scan for private network artefacts
         run: |
           set +e
-          patterns=(
-            "172\.16\.[0-9]+\.[0-9]+"
-            "192\.168\.[0-9]+\.[0-9]+"
-            "10\.[0-9]+\.[0-9]+\.[0-9]+"
-            "100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\."
-            "hhdocker"
-            "hhplex"
-            "strausmann\.cloud"
-            "strausmann\.de"
-            "strausmann\.net"
-            "lager\.strausmann"
+          # IP-like patterns use PCRE negative lookbehind/lookahead so that
+          # they only match real IPv4 addresses, not SNMP OIDs (1.3.6.1.…)
+          # or version strings.
+          ip_patterns=(
+            '(?<![0-9.])172\.16\.[0-9]+\.[0-9]+(?![0-9.])'
+            '(?<![0-9.])192\.168\.[0-9]+\.[0-9]+(?![0-9.])'
+            '(?<![0-9.])10\.[0-9]+\.[0-9]+\.[0-9]+(?![0-9.])'
+            '(?<![0-9.])100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]+\.[0-9]+(?![0-9.])'
           )
-          # Allowlist: documentation/RFC ranges and example domains are OK
-          allowlist='192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|example\.com|example\.org'
+          # String patterns use ERE (no boundary tricks needed)
+          str_patterns=(
+            'hhdocker'
+            'hhplex'
+            'strausmann\.cloud'
+            'strausmann\.de'
+            'strausmann\.net'
+            'lager\.strausmann'
+          )
+          # Files exempted because they DOCUMENT the policy (the patterns are
+          # listed there as "don't do this" examples). All other markdown is
+          # scanned — README, examples, wiki-mirrored content, ADRs, etc.
+          exempt=(
+            ':!docs/policies/privacy.md'
+            ':!.gemini/styleguide.md'
+            ':!.github/copilot-instructions.md'
+            ':!.github/workflows/ci.yml'
+          )
 
           fail=0
-          for p in "${patterns[@]}"; do
-            hits=$(git grep -nIE "$p" -- ':!*.md' ':!CLAUDE.md' ':!.github/workflows/ci.yml' ':!.gemini/styleguide.md' ':!.github/copilot-instructions.md' || true)
+          for p in "${ip_patterns[@]}"; do
+            hits=$(git grep -nIP "$p" -- "${exempt[@]}" || true)
+            if [ -n "$hits" ]; then
+              echo "::error title=Private IP detected::Pattern '$p' matched:"
+              echo "$hits"
+              fail=1
+            fi
+          done
+          for p in "${str_patterns[@]}"; do
+            hits=$(git grep -nIE "$p" -- "${exempt[@]}" || true)
             if [ -n "$hits" ]; then
               echo "::error title=Private artefact detected::Pattern '$p' matched:"
               echo "$hits"

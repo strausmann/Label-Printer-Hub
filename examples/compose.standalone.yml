@@ -1,15 +1,22 @@
 # ============================================================================
 # Label Printer Hub — standalone (no reverse proxy)
-# Exposes the hub directly on port 8080. Use only on a trusted LAN.
+# Two-container setup: backend (Python/FastAPI) + frontend (Go/Tailwind/HTMX/PWA).
+# Frontend exposes the user-facing port; it talks to backend on the internal
+# docker network. Use only on a trusted LAN.
 # ============================================================================
 
+x-version: &version
+  HUB_VERSION: ${HUB_VERSION:-latest}
+
 services:
-  label-printer-hub:
-    image: ghcr.io/strausmann/label-printer-hub:latest
-    container_name: label-printer-hub
+  backend:
+    image: ghcr.io/strausmann/label-printer-hub-backend:${HUB_VERSION:-latest}
+    container_name: label-printer-hub-backend
     user: "1000:1000"
-    ports:
-      - "8080:8080"
+    networks:
+      - hub-internal
+    expose:
+      - "8000"
     environment:
       - PRINTERS=${PRINTERS}
       - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
@@ -20,8 +27,34 @@ services:
       - ./data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  frontend:
+    image: ghcr.io/strausmann/label-printer-hub-frontend:${HUB_VERSION:-latest}
+    container_name: label-printer-hub-frontend
+    user: "1000:1000"
+    networks:
+      - hub-internal
+    ports:
+      - "8080:8080"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  hub-internal:
+    driver: bridge

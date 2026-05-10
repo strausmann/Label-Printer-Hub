@@ -2,7 +2,18 @@
 
 Pre-made deployment recipes for different reverse-proxy stacks. Pick the one that matches your setup.
 
-> **Note:** the container image `ghcr.io/strausmann/label-printer-hub` is not published yet — this project is in early development. These compose files describe the *intended* deployment. They will be functional once the first release lands. Track progress in [issue #1](../../issues/1) and the project board.
+> **Note:** the container images are not published yet — this project is in early development. These compose files describe the *intended* deployment. They will be functional once the first release lands. Track progress in the [project board](../../projects).
+
+## Two-container architecture
+
+The hub ships as **two containers**:
+
+- `ghcr.io/strausmann/label-printer-hub-backend` — Python/FastAPI, talks to printers, runs the queue
+- `ghcr.io/strausmann/label-printer-hub-frontend` — Go web server, serves the UI + PWA assets, proxies API calls and SSE to the backend
+
+Both images are versioned together. Pin both with the same `HUB_VERSION` env var in your `.env`. Mixing major.minor versions between backend and frontend is unsupported.
+
+Only the frontend is exposed to the network. The backend stays on the internal `hub-internal` docker network.
 
 ## Which variant should I use?
 

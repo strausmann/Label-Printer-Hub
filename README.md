@@ -27,10 +27,12 @@ This project is being designed against the [Brother PT-E550W/P750W/P710BT Raster
 
 ## Tech Stack
 
-- **Backend**: Python 3.12+, FastAPI, SQLModel (SQLite), asyncio
-- **Printer protocols**: `nbuchwitz/ptouch` (PT-Series), `pklaus/brother_ql` (QL-Series), pysnmp
-- **Frontend**: Go (web server) + Tailwind CSS + HTMX, PWA-installable *(architecture under discussion — see [#1](../../issues/1))*
-- **Container**: Docker, GHCR + Docker Hub publishing
+**Two-container split:** backend (printer protocols, queue, API) and frontend (UI, PWA) are separate containers. They release together at the same semver version, communicate over HTTP/JSON, and the frontend proxies SSE for live status updates.
+
+- **Backend** (`label-printer-hub-backend`): Python 3.12+, FastAPI, SQLModel (SQLite), asyncio
+- **Printer protocols**: `nbuchwitz/ptouch` (PT-Series), `pklaus/brother_ql` (QL-Series), `pysnmp` for status polling
+- **Frontend** (`label-printer-hub-frontend`): Go web server, Tailwind CSS, HTMX, PWA (manifest + service worker + Web Notifications API)
+- **Container**: Docker (multi-stage per service), GHCR + Docker Hub publishing, multi-arch (amd64 + arm64)
 - **CI/CD**: GitHub Actions, semantic-release, Dependabot
 
 ## Container images and tags
@@ -62,11 +64,24 @@ docker compose -f compose.standalone.yml up -d
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md)
-- [Plugin Development](docs/plugin-development.md) — adding new printer models
-- [API Reference](docs/api.md)
-- [Architecture](docs/architecture.md)
-- [CONTRIBUTING.md](CONTRIBUTING.md)
+**In this repository (engineering — change with code):**
+
+- [Architecture overview](docs/architecture.md) — how the pieces fit
+- [Decisions (ADRs)](docs/decisions/) — *why* each architectural choice was made
+- [Plugin development](docs/plugin-development.md) (TBD) — adding new printer models
+- [Privacy policy](docs/policies/privacy.md), [Trademark policy](docs/policies/trademarks.md)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — Conventional Commits, TDD, PR workflow
+
+**On the wiki (tutorials and platform recipes — community-friendly):**
+
+- [Getting started](https://github.com/strausmann/label-printer-hub/wiki/Getting-Started)
+- [Snipe-IT integration](https://github.com/strausmann/label-printer-hub/wiki/Snipe-IT-Integration)
+- [Grocy integration](https://github.com/strausmann/label-printer-hub/wiki/Grocy-Integration)
+- [Spoolman integration](https://github.com/strausmann/label-printer-hub/wiki/Spoolman-Integration)
+- [Install as PWA](https://github.com/strausmann/label-printer-hub/wiki/Install-as-PWA) (TBD)
+- [Troubleshooting](https://github.com/strausmann/label-printer-hub/wiki/Troubleshooting) (TBD)
+
+**Live API reference** (when running): `/openapi.json`, `/docs` (Swagger UI), `/redoc` — see [ADR 0011](docs/decisions/0011-openapi-as-api-contract.md).
 
 ## Contributing
 

@@ -16,13 +16,16 @@ permissions:
 
 env:
   REGISTRY_GHCR: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   publish:
-    name: Build and push multi-arch image
+    name: Build and push (${{ matrix.service }})
     runs-on: ubuntu-24.04
-    if: hashFiles('Dockerfile') != ''
+    if: hashFiles(format('{0}/Dockerfile', matrix.service)) != ''
+    strategy:
+      fail-fast: true   # if backend fails, don't push frontend mismatched
+      matrix:
+        service: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
 
@@ -62,8 +65,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME }}
-            ${{ secrets.DOCKERHUB_USERNAME && format('docker.io/{0}/label-printer-hub', secrets.DOCKERHUB_USERNAME) || '' }}
+            ${{ env.REGISTRY_GHCR }}/${{ github.repository }}-${{ matrix.service }}
+            ${{ secrets.DOCKERHUB_USERNAME && format('docker.io/{0}/label-printer-hub-{1}', secrets.DOCKERHUB_USERNAME, matrix.service) || '' }}
           # Tag scheme (mandatory — every stable release gets ALL of these):
           #   1.0.0    full semver
           #   1.0      major.minor (only for stable releases)
@@ -78,8 +81,8 @@ jobs:
             type=semver,pattern={{major}},value=${{ steps.tag.outputs.tag }}
             type=raw,value=latest,enable=${{ !contains(steps.tag.outputs.tag, '-') }}
           labels: |
-            org.opencontainers.image.title=label-printer-hub
-            org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series
+            org.opencontainers.image.title=label-printer-hub-${{ matrix.service }}
+            org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series — ${{ matrix.service }} container
             org.opencontainers.image.url=https://github.com/strausmann/label-printer-hub
             org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
             org.opencontainers.image.licenses=MIT
@@ -89,12 +92,31 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
           provenance: true
           sbom: true
+
+      - name: Verify multi-arch manifest
+        run: |
+          for tag in ${{ steps.meta.outputs.tags }}; do
+            echo "Inspecting $tag …"
+            archs=$(docker buildx imagetools inspect "$tag" --raw \
+              | jq -r '.manifests[].platform | "\(.os)/\(.architecture)"' \
+              | sort -u)
+            echo "  architectures: $(echo "$archs" | tr '\n' ' ')"
+            if ! echo "$archs" | grep -q "linux/amd64"; then
+              echo "::error::Missing linux/amd64 in $tag"
+              exit 1
+            fi
+            if ! echo "$archs" | grep -q "linux/arm64"; then
+              echo "::error::Missing linux/arm64 in $tag"
+              exit 1
+            fi
+          done

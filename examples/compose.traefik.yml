@@ -1,16 +1,20 @@
 # ============================================================================
 # Label Printer Hub — Traefik
+# Two-container setup: only the frontend is exposed via Traefik. Backend stays
+# on an internal network and is reached by the frontend over docker DNS.
 # Assumes a Traefik instance with HTTPS and a "letsencrypt" certresolver
 # is already running, attached to a docker network called "traefik".
 # ============================================================================
 
 services:
-  label-printer-hub:
-    image: ghcr.io/strausmann/label-printer-hub:latest
-    container_name: label-printer-hub
+  backend:
+    image: ghcr.io/strausmann/label-printer-hub-backend:${HUB_VERSION:-latest}
+    container_name: label-printer-hub-backend
     user: "1000:1000"
     networks:
-      - traefik
+      - hub-internal
+    expose:
+      - "8000"
     environment:
       - PRINTERS=${PRINTERS}
       - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
@@ -22,11 +26,32 @@ services:
       - ./data:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  frontend:
+    image: ghcr.io/strausmann/label-printer-hub-frontend:${HUB_VERSION:-latest}
+    container_name: label-printer-hub-frontend
+    user: "1000:1000"
+    networks:
+      - traefik
+      - hub-internal
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     labels:
       - "traefik.enable=true"
 
@@ -46,9 +71,11 @@ services:
       - "traefik.http.routers.printerhub-webhooks.service=printerhub"
 
       - "traefik.http.services.printerhub.loadbalancer.server.port=8080"
-      # SSE: disable buffering for live status updates
+      # SSE: disable buffering for live status updates (frontend proxies SSE from backend)
       - "traefik.http.services.printerhub.loadbalancer.responseforwarding.flushinterval=100ms"
 
 networks:
   traefik:
     external: true
+  hub-internal:
+    driver: bridge
