@@ -90,11 +90,13 @@ frontend/
 9. Backend pushes `job` and `status` events on the EventBus → SSE → frontend → browser DOM updates
 10. Job completes; SSE event triggers a browser notification (if enabled — [ADR 0010](decisions/0010-pwa-progressive-enhancement.md))
 
-### Push mode — Spoolman/Grocy webhook
+### Push mode — Grocy webhook (only Grocy)
 
-1. Spoolman/Grocy posts to `https://printerhub.example.com/api/webhook/<spoolman|grocy>`
+Among the three integrations, only **Grocy** can post webhooks to the hub (and only when `FEATURE_FLAG_LABEL_PRINTING=true` is set in Grocy's `data/config.php`). Snipe-IT and Spoolman do not have webhook-out functionality at the time of this document, so they're pull-only via the hub UI.
+
+1. Grocy posts to `https://printerhub.example.com/api/webhook/grocy`
 2. Reverse proxy routes the webhook subroute **without SSO** to the frontend, which proxies to backend
-3. Backend validates `X-API-Key`, fetches label data, renders, enqueues job
+3. Backend validates `X-API-Key`, picks the default layout for `(grocy, default_tape)` (or a `layout_id` override if the payload includes one), fetches label data, renders, enqueues job
 4. Returns `202` with job ID; webhook caller doesn't wait for print completion
 5. Backend prints; any active SSE consumer sees the live state changes
 

@@ -36,6 +36,7 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0009](0009-server-sent-events-over-websockets.md) | Server-Sent Events instead of WebSockets | Accepted |
 | [0010](0010-pwa-progressive-enhancement.md) | PWA with progressive enhancement | Accepted |
 | [0011](0011-openapi-as-api-contract.md) | OpenAPI as the canonical API contract (oapi-codegen + interactive docs) | Accepted |
+| [0012](0012-label-layout-management.md) | Label layouts are first-class, integration-scoped, multi-instance | Accepted |
 
 ## How to write a new ADR
 
