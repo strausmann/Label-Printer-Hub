@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## 0.2.0 (2026-05-10)
+
+* feat(backend): FastAPI app skeleton + /healthz endpoint + Dockerfile (#34) ([0efbb0c](https://github.com/strausmann/label-printer-hub/commit/0efbb0c)), closes [#34](https://github.com/strausmann/label-printer-hub/issues/34) [#34](https://github.com/strausmann/label-printer-hub/issues/34) [#34](https://github.com/strausmann/label-printer-hub/issues/34) [#34](https://github.com/strausmann/label-printer-hub/issues/34)
+* feat(frontend): Go web server skeleton with /healthz + Dockerfile (#35) ([0b3ed6b](https://github.com/strausmann/label-printer-hub/commit/0b3ed6b)), closes [#35](https://github.com/strausmann/label-printer-hub/issues/35)
+
 ## 0.1.0 (2026-05-10)
 
 * docs: refactor — ADRs in docs/decisions/, policies in docs/policies/, slim CLAUDE.md ([51c2cf1](https://github.com/strausmann/label-printer-hub/commit/51c2cf1)), closes [#1](https://github.com/strausmann/label-printer-hub/issues/1)
