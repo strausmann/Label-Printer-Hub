@@ -99,7 +99,8 @@ func TestEnvDefault_UsesFallbackWhenUnset(t *testing.T) {
 }
 
 func TestEnvDefault_UsesEnvWhenSet(t *testing.T) {
-	t.Parallel()
+	// t.Setenv is incompatible with t.Parallel — Go's testing package
+	// panics if both are used on the same test.
 	t.Setenv("FRONTEND_TEST_KEY", "expected")
 	got := envDefault("FRONTEND_TEST_KEY", "fallback")
 	if got != "expected" {
@@ -108,7 +109,6 @@ func TestEnvDefault_UsesEnvWhenSet(t *testing.T) {
 }
 
 func TestEnvDefault_UsesFallbackWhenEmpty(t *testing.T) {
-	t.Parallel()
 	t.Setenv("FRONTEND_EMPTY_KEY", "")
 	got := envDefault("FRONTEND_EMPTY_KEY", "fallback")
 	if got != "fallback" {
