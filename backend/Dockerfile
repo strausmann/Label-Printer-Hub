@@ -64,9 +64,40 @@ RUN pip install --no-deps --force-reinstall .
 # -----------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm AS runtime
 
+# Build-time arguments — set by the CI workflow (or locally with --build-arg).
+# These flow into BOTH OCI image labels (visible via `docker inspect`) AND
+# runtime ENV vars (visible to the running app via os.environ).
+#
+# Defaults are placeholders for unattended local builds; production builds via
+# .github/workflows/docker-publish.yml always pass real values.
+ARG VERSION=0.0.0-dev
+ARG REVISION=unknown
+ARG BUILD_DATE=1970-01-01T00:00:00Z
+
+# OCI Image Spec labels — see https://specs.opencontainers.org/image-spec/annotations/
+# Visible via `docker inspect ghcr.io/strausmann/label-printer-hub-backend:VERSION`.
+LABEL org.opencontainers.image.title="label-printer-hub-backend" \
+      org.opencontainers.image.description="Self-hosted label printer hub for Brother PT/QL series — backend container (Python/FastAPI)" \
+      org.opencontainers.image.url="https://github.com/strausmann/label-printer-hub" \
+      org.opencontainers.image.source="https://github.com/strausmann/label-printer-hub" \
+      org.opencontainers.image.documentation="https://github.com/strausmann/label-printer-hub/tree/main/docs" \
+      org.opencontainers.image.authors="Björn Strausmann <strausmannservices@googlemail.com>" \
+      org.opencontainers.image.vendor="strausmann (independent open-source project; not affiliated with Brother Industries, Ltd.)" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.base.name="docker.io/library/python:3.12-slim-bookworm"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:${PATH}" \
+    # Build-info ENV vars — surfaced through the application (e.g. /healthz).
+    # Set from the build ARGs above so they're baked into each image.
+    HUB_VERSION="${VERSION}" \
+    HUB_REVISION="${REVISION}" \
+    HUB_BUILD_DATE="${BUILD_DATE}" \
+    HUB_REPO_URL="https://github.com/strausmann/label-printer-hub" \
     # The internal HTTP port the backend listens on. Override at deploy time
     # to run the container on a different port without rebuilding the image.
     # The compose files in examples/ set this via the .env file.

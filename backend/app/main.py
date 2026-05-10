@@ -16,6 +16,8 @@ See:
 
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict
 
@@ -25,23 +27,36 @@ from app import __version__
 # FastAPI's default, so a FastAPI upgrade can't drift the API contract version.
 OPENAPI_VERSION = "3.1.0"
 
+# Build-info ENV vars are set by the Dockerfile at build time. Fall back to
+# sensible defaults so local non-container runs and unit tests still work.
+HUB_VERSION: str = os.environ.get("HUB_VERSION") or __version__
+HUB_REVISION: str = os.environ.get("HUB_REVISION", "unknown")
+HUB_BUILD_DATE: str = os.environ.get("HUB_BUILD_DATE", "1970-01-01T00:00:00Z")
+HUB_REPO_URL: str = os.environ.get(
+    "HUB_REPO_URL", "https://github.com/strausmann/label-printer-hub"
+)
+
 
 class Healthz(BaseModel):
     """Response body of /healthz.
 
     Intentionally minimal — no dependencies, no configuration, no PII.
     Container orchestrators check the HTTP status and read the JSON for
-    a quick version sanity-check.
+    a quick version sanity-check; ops use the build-info fields to confirm
+    which image is running without digging through ``docker inspect``.
 
     Frozen so callers can't accidentally mutate the response model in-place
     (the same immutability discipline we apply to dataclasses — see
-    `docs/learnings/code-review-patterns.md`).
+    ``docs/learnings/code-review-patterns.md``).
     """
 
     model_config = ConfigDict(frozen=True)
 
     status: str
     version: str
+    revision: str
+    build_date: str
+    repository: str
 
 
 def create_app() -> FastAPI:
@@ -78,7 +93,13 @@ def create_app() -> FastAPI:
         # async def avoids the threadpool roundtrip for this hot, dependency-
         # free endpoint. FastAPI runs sync route handlers in a threadpool
         # by default, which is wasted overhead for trivial responders.
-        return Healthz(status="ok", version=__version__)
+        return Healthz(
+            status="ok",
+            version=HUB_VERSION,
+            revision=HUB_REVISION,
+            build_date=HUB_BUILD_DATE,
+            repository=HUB_REPO_URL,
+        )
 
     return app
 

@@ -38,6 +38,20 @@ class TestHealthz:
         assert isinstance(body["version"], str)
         assert body["version"]  # not empty
 
+    def test_includes_build_info(self, client: TestClient) -> None:
+        """Build metadata identifies the exact build (image label parity)."""
+        response = client.get("/healthz")
+        body = response.json()
+        # All build-info fields are required by the Healthz schema; presence is
+        # guaranteed by Pydantic. Verify they're populated as strings.
+        for field in ("revision", "build_date", "repository"):
+            assert field in body, f"healthz missing {field}"
+            assert isinstance(body[field], str)
+            assert body[field], f"healthz {field} is empty"
+        # Repo URL points at the public GitHub project — useful for users
+        # who curl healthz on an unfamiliar host.
+        assert "github.com/strausmann/label-printer-hub" in body["repository"]
+
     def test_no_authentication_required(self, client: TestClient) -> None:
         """Container orchestrators probe healthz without credentials."""
         # No Authorization header — must still succeed
@@ -85,6 +99,12 @@ class TestHealthzModel:
         from app.main import Healthz
         from pydantic import ValidationError
 
-        instance = Healthz(status="ok", version="1.2.3")
+        instance = Healthz(
+            status="ok",
+            version="1.2.3",
+            revision="abc1234",
+            build_date="2026-05-10T12:00:00Z",
+            repository="https://github.com/strausmann/label-printer-hub",
+        )
         with pytest.raises(ValidationError):
             instance.status = "tampered"  # type: ignore[misc]
