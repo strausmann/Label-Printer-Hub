@@ -46,13 +46,14 @@ class _PrinterLike(Protocol):
 
     Real printer plugins (PR for Tasks 2.1/2.2) implement the richer
     PrinterModel Protocol (PR #48). The queue depends only on `id` and
-    `print_image` — the `**kwargs` signature avoids repeating the full
-    option set here, which belongs to the driver layer.
+    `print_image`. `tape_mm` is required as a keyword-only argument so mypy
+    strict can verify that conforming printer plugins accept it explicitly;
+    `**options` carries driver-specific extras that vary per plugin.
     """
 
     id: str
 
-    async def print_image(self, image: Image.Image, **kwargs: Any) -> None: ...
+    async def print_image(self, image: Image.Image, *, tape_mm: int, **options: Any) -> None: ...
 
 
 class PrintQueue:
@@ -70,6 +71,9 @@ class PrintQueue:
         # All resume events start "set" so a never-paused worker doesn't block.
         for ev in self._worker_resume_events.values():
             ev.set()
+        # TODO(phase5): _jobs grows unbounded over the service lifetime; evict
+        #               terminal jobs older than a configurable window once
+        #               persistence lands.
         self._jobs: dict[str, Job] = {}
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._running: bool = False
@@ -123,6 +127,8 @@ class PrintQueue:
 
     async def wait_for_job(self, job_id: str, timeout_s: float = 60.0) -> Job:
         job = self._jobs[job_id]
+        # TODO(phase5): expose Job.wait_done() to remove this cross-module
+        #               private access to _done_event.
         await asyncio.wait_for(job._done_event.wait(), timeout=timeout_s)
         return job
 
@@ -148,7 +154,15 @@ class PrintQueue:
         return True
 
     async def resume_job(self, job_id: str) -> bool:
-        """Re-enqueue a paused job at the tail of the queue (FIFO preserved)."""
+        """Re-enqueue a paused job at the tail of the queue (FIFO preserved).
+
+        Note: the job's original reference remains in the asyncio.Queue from
+        when it was first submitted. After resume, a new reference is appended
+        at the tail. The worker filters by state on pop, so the stale reference
+        drains cleanly (state != QUEUED on the second pop). asyncio.Queue.qsize()
+        will be +1 high until that drain happens — use list_queue() for accurate
+        active-job counts.
+        """
         job = self._jobs[job_id]
         if job.state != JobState.PAUSED:
             return False
@@ -240,6 +254,10 @@ class PrintQueue:
 
             try:
                 JobStateMachine.transition(job, JobState.PRINTING)
+                if job.tape_mm is None:
+                    raise RuntimeError(
+                        f"Job {job.id} has no tape_mm — submit() and retry_job() must populate it"
+                    )
                 if job.image_payload is None:
                     raise RuntimeError(f"Job {job.id} has no image payload")
                 image = Image.open(BytesIO(job.image_payload))

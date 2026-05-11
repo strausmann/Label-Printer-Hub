@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -19,7 +20,7 @@ async def test_queue_submit_returns_job_id() -> None:
     img = Image.new("1", (300, 76))
     job_id = await queue.submit("pt750w", img, tape_mm=12)
     assert isinstance(job_id, str)
-    assert len(job_id) >= 8  # UUID-like
+    uuid.UUID(job_id)  # raises ValueError if not a valid UUID
 
 
 @pytest.mark.asyncio
