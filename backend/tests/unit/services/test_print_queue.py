@@ -89,17 +89,80 @@ async def test_queue_pause_printer_blocks_worker() -> None:
         img = Image.new("1", (300, 76))
         job_id = await queue.submit("pt750w", img, tape_mm=12)
 
-        # Deterministic check: worker is paused, job stays in asyncio.Queue.
+        # Deterministic check: worker is paused and must not start printing.
+        # With the post-get pause loop, the worker pops the job and then blocks —
+        # qsize() drops to 0 but the job state remains QUEUED (not PRINTING).
         await asyncio.sleep(0)  # yield to event loop; worker should not proceed
         assert queue._worker_states["pt750w"].value == "paused"
-        assert queue._queues["pt750w"].qsize() == 1
         assert (await queue.get(job_id)).state == JobState.QUEUED
+        assert fake_printer.print_image.await_count == 0
 
         await queue.resume_printer("pt750w")
         await queue.wait_for_job(job_id, timeout_s=5)
         assert (await queue.get(job_id)).state == JobState.COMPLETED
     finally:
         await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_queue_pause_after_idle_worker_is_respected() -> None:
+    """Pausing while the worker is idle at queue.get() must still block the next pop."""
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    fake_printer.print_image = AsyncMock()
+    queue = PrintQueue([fake_printer])
+    await queue.start()
+    try:
+        # Worker is now idle at queue.get() with an empty queue.
+        # Give the loop a tick so the worker is actually blocked.
+        await asyncio.sleep(0)
+
+        # Pause AFTER the worker has entered queue.get().
+        await queue.pause_printer("pt750w", reason="race test")
+
+        # Submit a job. The pause must hold.
+        img = Image.new("1", (300, 76))
+        job_id = await queue.submit("pt750w", img, tape_mm=12)
+
+        # Yield a few times — worker would print here if pause was ignored.
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert (await queue.get(job_id)).state == JobState.QUEUED
+        assert fake_printer.print_image.await_count == 0
+
+        # Resume — job should complete now.
+        await queue.resume_printer("pt750w")
+        await queue.wait_for_job(job_id, timeout_s=5)
+        assert (await queue.get(job_id)).state == JobState.COMPLETED
+    finally:
+        await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_queue_stop_drains_in_flight_job() -> None:
+    """stop() must wait for the currently-printing job to complete cleanly."""
+    started = asyncio.Event()
+    finished = asyncio.Event()
+
+    async def slow_print(image, *, tape_mm, **kw):
+        started.set()
+        await asyncio.sleep(0.1)
+        finished.set()
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    fake_printer.print_image = AsyncMock(side_effect=slow_print)
+    queue = PrintQueue([fake_printer])
+    await queue.start()
+
+    img = Image.new("1", (300, 76))
+    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    await started.wait()  # printer is in the middle of printing
+
+    await queue.stop(timeout_s=5.0)
+    # The in-flight print finished cleanly (was not cancelled).
+    assert finished.is_set()
+    assert (await queue.get(job_id)).state == JobState.COMPLETED
 
 
 @pytest.mark.asyncio

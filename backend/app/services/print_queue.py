@@ -34,6 +34,13 @@ from app.services.job_lifecycle import (
 logger = logging.getLogger(__name__)
 
 
+def _serialize_image_to_png(image: Image.Image) -> bytes:
+    """Encode *image* as PNG bytes (CPU-bound; intended for asyncio.to_thread)."""
+    buf = BytesIO()
+    image.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 class PrinterWorkerState(StrEnum):
     """Per-printer worker state, orthogonal to per-job state."""
 
@@ -61,7 +68,11 @@ class PrintQueue:
 
     def __init__(self, printers: list[_PrinterLike]) -> None:
         self._printers: dict[str, _PrinterLike] = {p.id: p for p in printers}
-        self._queues: dict[str, asyncio.Queue[Job]] = {p.id: asyncio.Queue() for p in printers}
+        # Queue type is Job | None — None is the sentinel used by stop() to wake
+        # workers that are blocked at queue.get().
+        self._queues: dict[str, asyncio.Queue[Job | None]] = {
+            p.id: asyncio.Queue() for p in printers
+        }
         self._worker_states: dict[str, PrinterWorkerState] = {
             p.id: PrinterWorkerState.ACTIVE for p in printers
         }
@@ -77,6 +88,7 @@ class PrintQueue:
         self._jobs: dict[str, Job] = {}
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._running: bool = False
+        self._stopping: bool = False
 
     # --- lifecycle ----------------------------------------------------------
 
@@ -89,13 +101,38 @@ class PrintQueue:
             )
         self._running = True
 
-    async def stop(self) -> None:
-        for task in self._workers.values():
-            task.cancel()
+    async def stop(self, timeout_s: float = 30.0) -> None:
+        """Stop all workers.
+
+        Workers are signalled to exit and given up to *timeout_s* seconds to
+        finish the job they are currently printing. After the timeout, they are
+        cancelled forcibly — that leaves the printer in an undefined state for
+        that one job. Callers should pass enough timeout to cover a normal
+        print.
+        """
+        self._stopping = True
+        # Wake up any worker waiting on a paused resume event so it sees the
+        # stop signal.
+        for ev in self._worker_resume_events.values():
+            ev.set()
+        # Put a sentinel (None) onto each queue so workers blocked at queue.get()
+        # wake up and see the stop flag.
+        for q in self._queues.values():
+            await q.put(None)
         if self._workers:
-            await asyncio.gather(*self._workers.values(), return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._workers.values(), return_exceptions=True),
+                    timeout=timeout_s,
+                )
+            except TimeoutError:
+                for task in self._workers.values():
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*self._workers.values(), return_exceptions=True)
         self._workers.clear()
         self._running = False
+        self._stopping = False
 
     # --- job CRUD -----------------------------------------------------------
 
@@ -108,12 +145,11 @@ class PrintQueue:
     ) -> str:
         if printer_id not in self._queues:
             raise KeyError(f"Unknown printer: {printer_id}")
-        buf = BytesIO()
-        image.save(buf, format="PNG")
+        payload = await asyncio.to_thread(_serialize_image_to_png, image)
         job = Job(
             id=str(uuid.uuid4()),
             printer_id=printer_id,
-            image_payload=buf.getvalue(),
+            image_payload=payload,
             tape_mm=tape_mm,
             options=dict(options),
         )
@@ -207,7 +243,11 @@ class PrintQueue:
         logger.info("Printer %s resumed", printer_id)
 
     async def list_queue(self, printer_id: str) -> list[Job]:
-        """All non-terminal jobs for a printer (queued + paused + printing)."""
+        """All non-terminal jobs for a printer (queued + paused + printing).
+
+        O(N) over all-time jobs — acceptable at MVP scale; see TODO(phase5)
+        on the _jobs declaration in __init__.
+        """
         if printer_id not in self._queues:
             raise KeyError(f"Unknown printer: {printer_id}")
         non_terminal = (JobState.QUEUED, JobState.PAUSED, JobState.PRINTING)
@@ -216,7 +256,11 @@ class PrintQueue:
         ]
 
     async def clear_queue(self, printer_id: str) -> int:
-        """Cancel all queued + paused jobs for a printer. Returns the count."""
+        """Cancel all queued + paused jobs for a printer. Returns the count.
+
+        O(N) over all-time jobs — acceptable at MVP scale; see TODO(phase5)
+        on the _jobs declaration in __init__.
+        """
         if printer_id not in self._queues:
             raise KeyError(f"Unknown printer: {printer_id}")
         cancelled = 0
@@ -234,19 +278,27 @@ class PrintQueue:
     async def _worker(self, printer_id: str) -> None:
         """Consume the queue for one printer, one job at a time.
 
-        The worker waits on `_worker_resume_events[printer_id]` when the
-        printer is paused, so no jobs are dequeued until the printer is
-        resumed. Each job is checked again after dequeue — it may have been
-        cancelled or paused between submit and the worker picking it up.
+        After popping a job the worker checks the pause state — this handles
+        the race where pause_printer() is called while the worker is blocked at
+        queue.get(). A sentinel value of None signals that stop() wants the
+        worker to exit cleanly.
         """
         printer = self._printers[printer_id]
         queue = self._queues[printer_id]
         while True:
-            # Block here if the printer is paused; resume_printer() sets the event.
-            if self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
-                await self._worker_resume_events[printer_id].wait()
+            item = await queue.get()
 
-            job = await queue.get()
+            if item is None:  # sentinel — stop() requested a clean exit
+                return
+
+            job = item
+
+            # Wait while paused — pause may have been set while we were idle at
+            # queue.get(), so this check must come AFTER the pop.
+            while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
+                if self._stopping:
+                    return
+                await self._worker_resume_events[printer_id].wait()
 
             # Job may have been cancelled or paused between submit and pop.
             if job.state != JobState.QUEUED:
@@ -260,12 +312,12 @@ class PrintQueue:
                     )
                 if job.image_payload is None:
                     raise RuntimeError(f"Job {job.id} has no image payload")
-                image = Image.open(BytesIO(job.image_payload))
+                image = await asyncio.to_thread(Image.open, BytesIO(job.image_payload))
                 await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
                 JobStateMachine.transition(job, JobState.COMPLETED)
                 logger.info("Job %s completed on %s", job.id, printer_id)
             except asyncio.CancelledError:
-                # queue.stop() cancelled this task — re-raise so the task exits.
+                # Forcible cancel after stop() timeout — re-raise so the task exits.
                 raise
             except Exception as exc:
                 job.error_msg = str(exc)
