@@ -32,6 +32,8 @@ class TapeRegistry:
         elif media_type == MediaType.HEAT_SHRINK_2_1:
             table = PT_HS_2_1_TAPES
         else:
+            # MediaType.HEAT_SHRINK_3_1 and QL-Series types are intentionally
+            # unregistered — add a new table and branch here when supported.
             raise UnknownTapeError(f"No PT-Series tape table for media_type={media_type.name}")
 
         for spec in table:

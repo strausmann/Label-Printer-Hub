@@ -28,3 +28,10 @@ def test_lookup_pt_heat_shrink_2_1() -> None:
     spec = TapeRegistry.lookup_pt(width_mm=12, media_type=MediaType.HEAT_SHRINK_2_1)
     # 12mm HS 2:1 (~11.7mm tape) — 66 print pins per Brother spec
     assert spec.print_area_pins == 66
+
+
+def test_lookup_pt_series_non_laminated_uses_tze_table() -> None:
+    """MediaType.NON_LAMINATED resolves via the TZe table (same geometry)."""
+    spec = TapeRegistry.lookup_pt(width_mm=12, media_type=MediaType.NON_LAMINATED)
+    assert spec.print_area_pins == 70  # same as 12mm laminated TZe
+    assert spec.media_type == MediaType.LAMINATED  # returned spec is the laminated record

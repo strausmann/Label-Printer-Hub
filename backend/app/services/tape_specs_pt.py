@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from app.services.status_block import MediaType
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class TapeSpec:
     width_mm: int
     media_type: MediaType
@@ -26,7 +26,7 @@ class TapeSpec:
 # TZe laminated tapes. The non-laminated TZe-N* variants share the same
 # print-area geometry — only the material differs — so we reuse this list
 # for MediaType.NON_LAMINATED in the registry.
-PT_TZE_TAPES: list[TapeSpec] = [
+PT_TZE_TAPES: tuple[TapeSpec, ...] = (
     TapeSpec(
         width_mm=4,
         media_type=MediaType.LAMINATED,
@@ -87,12 +87,12 @@ PT_TZE_TAPES: list[TapeSpec] = [
         max_length_mm=1000,
         cutter_min_length_mm=24.5,
     ),
-]
+)
 
 # Heat-shrink tubing 2:1 (status-block media-type byte = 0x11).
 # Widths are nominal — actual tape is slightly narrower (e.g. 12mm HS = ~11.7mm).
 # Pin counts are the Brother-published values.
-PT_HS_2_1_TAPES: list[TapeSpec] = [
+PT_HS_2_1_TAPES: tuple[TapeSpec, ...] = (
     TapeSpec(
         width_mm=6,
         media_type=MediaType.HEAT_SHRINK_2_1,
@@ -143,4 +143,4 @@ PT_HS_2_1_TAPES: list[TapeSpec] = [
         max_length_mm=500,
         cutter_min_length_mm=24.5,
     ),
-]
+)
