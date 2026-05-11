@@ -24,6 +24,16 @@ class ModelRegistry:
     @classmethod
     def register(cls, model: PrinterModel) -> None:
         """Append *model* to the registry. Duplicate registrations are not prevented."""
+        if any(not sig for sig in model.pjl_signatures):
+            raise ValueError(
+                f"PrinterModel {model.model_id!r} has an empty PJL signature; "
+                "empty substrings match every input and would shadow other plugins"
+            )
+        if not model.snmp_model_oid_value_substr:
+            raise ValueError(
+                f"PrinterModel {model.model_id!r} has an empty SNMP OID substring; "
+                "empty substrings match every input and would shadow other plugins"
+            )
         cls._models.append(model)
 
     @classmethod
