@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from app.services.job_lifecycle import (
@@ -95,6 +95,16 @@ def test_done_event_set_on_cancelled() -> None:
     JobStateMachine.transition(job, JobState.CANCELLED)
     assert job._done_event.is_set()
     assert job.finished_at is not None
+
+
+def test_timestamps_are_utc_aware() -> None:
+    """submitted_at, started_at and finished_at must carry UTC tzinfo."""
+    job = Job(id="abc", printer_id="pt750w", state=JobState.QUEUED)
+    JobStateMachine.transition(job, JobState.PRINTING)
+    JobStateMachine.transition(job, JobState.COMPLETED)
+    assert job.submitted_at.tzinfo is UTC
+    assert job.started_at is not None and job.started_at.tzinfo is UTC
+    assert job.finished_at is not None and job.finished_at.tzinfo is UTC
 
 
 def test_terminal_states_absorb_no_outgoing_transitions() -> None:

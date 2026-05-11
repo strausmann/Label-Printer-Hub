@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -76,18 +76,23 @@ class Job:
     id: str
     printer_id: str
     state: JobState = JobState.QUEUED
-    submitted_at: datetime = field(default_factory=datetime.now)
+    submitted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None
     finished_at: datetime | None = None
     image_payload: bytes | None = field(default=None, repr=False)
     tape_mm: int | None = None
+    # `options` carries heterogeneous per-job kwargs (e.g. parent_job_id from
+    # retry, downstream printer flags). `Any` is contained to this field and
+    # does not leak into transition() logic; a structured type can replace it
+    # once the option set stabilises.
     options: dict[str, Any] = field(default_factory=dict)
     error_msg: str | None = None
     error_flags: int | None = None
     retry_count: int = 0
-    # asyncio.Event is allowed on a dataclass field because asyncio fields on
-    # Jobs are only awaited from within an event loop; constructing them at
-    # import time is OK since asyncio.Event does not require a running loop.
+    # asyncio.Event is mutable but safe to use as a dataclass field default_factory:
+    # it's constructed when a Job instance is created (not at import time), and
+    # since Python 3.10 the Event does not pin to a specific event loop at
+    # construction — it binds to the running loop on first wait/set.
     _done_event: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
 
 
@@ -116,8 +121,8 @@ class JobStateMachine:
         job.state = new_state
 
         if new_state == JobState.PRINTING and job.started_at is None:
-            job.started_at = datetime.now()
+            job.started_at = datetime.now(UTC)
 
         if new_state in _TERMINAL_STATES:
-            job.finished_at = datetime.now()
+            job.finished_at = datetime.now(UTC)
             job._done_event.set()
