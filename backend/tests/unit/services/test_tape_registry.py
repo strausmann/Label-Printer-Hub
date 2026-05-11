@@ -31,7 +31,7 @@ def test_lookup_pt_heat_shrink_2_1() -> None:
 
 
 def test_lookup_pt_series_non_laminated_uses_tze_table() -> None:
-    """MediaType.NON_LAMINATED resolves via the TZe table (same geometry)."""
+    """NON_LAMINATED resolves via the TZe table; returned spec carries the queried media_type."""
     spec = TapeRegistry.lookup_pt(width_mm=12, media_type=MediaType.NON_LAMINATED)
-    assert spec.print_area_pins == 70  # same as 12mm laminated TZe
-    assert spec.media_type == MediaType.LAMINATED  # returned spec is the laminated record
+    assert spec.print_area_pins == 70  # same geometry as 12mm laminated TZe
+    assert spec.media_type == MediaType.NON_LAMINATED  # spec reflects what was requested

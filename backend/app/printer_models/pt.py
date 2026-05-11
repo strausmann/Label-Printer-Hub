@@ -1,4 +1,4 @@
-"""Tape specifications for Brother PT-Series printers (180 DPI, 128-pin head).
+"""Tape data for Brother PT-Series printers (180 DPI, 128-pin head).
 
 Source: Brother Raster Command Reference (PT-E550W / PT-P710BT / PT-P750W) v1.02.
 The numbers here come straight from the manufacturer's printable-area tables.
@@ -6,22 +6,8 @@ The numbers here come straight from the manufacturer's printable-area tables.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+from app.models.tape import TapeSpec
 from app.services.status_block import MediaType
-
-
-@dataclass(frozen=True, slots=True)
-class TapeSpec:
-    width_mm: int
-    media_type: MediaType
-    print_area_pins: int
-    print_area_dots: int
-    bytes_per_raster: int
-    min_length_mm: float
-    max_length_mm: int
-    cutter_min_length_mm: float
-
 
 # TZe laminated tapes. The non-laminated TZe-N* variants share the same
 # print-area geometry — only the material differs — so we reuse this list

@@ -1,17 +1,16 @@
 """Lookup of Brother tape specifications by physical width + media type.
 
-QL-Series die-cut labels will be added once Phase 2 hardware tests confirm the
-status-block byte sequence — see `docs/superpowers/plans/2026-05-11-label-printer-hub.md`.
+QL-Series die-cut labels will be added once their byte-sequence reproducible
+fixtures are in place — see docs/decisions/0004-plugin-architecture-for-printer-models.md.
 """
 
 from __future__ import annotations
 
+import dataclasses
+
+from app.models.tape import TapeSpec
+from app.printer_models.pt import PT_HS_2_1_TAPES, PT_TZE_TAPES
 from app.services.status_block import MediaType
-from app.services.tape_specs_pt import (
-    PT_HS_2_1_TAPES,
-    PT_TZE_TAPES,
-    TapeSpec,
-)
 
 
 class UnknownTapeError(Exception):
@@ -25,7 +24,8 @@ class TapeRegistry:
 
         Non-laminated TZe-N tapes share TZe laminated dimensions, so both
         MediaType.LAMINATED and MediaType.NON_LAMINATED resolve to the same
-        PT_TZE_TAPES table.
+        PT_TZE_TAPES table. The returned spec always carries the queried
+        media_type so callers see the media_type they asked for.
         """
         if media_type in (MediaType.LAMINATED, MediaType.NON_LAMINATED):
             table = PT_TZE_TAPES
@@ -38,6 +38,8 @@ class TapeRegistry:
 
         for spec in table:
             if spec.width_mm == width_mm:
+                if spec.media_type != media_type:
+                    return dataclasses.replace(spec, media_type=media_type)
                 return spec
 
         raise UnknownTapeError(
