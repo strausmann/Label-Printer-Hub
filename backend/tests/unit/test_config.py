@@ -19,7 +19,7 @@ def test_settings_load_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "grocy-key")
     monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "https://spoolman.example")
 
-    settings = Settings()
+    settings = Settings(_env_file=None)
 
     assert settings.database_url == f"sqlite:///{tmp_path}/test.db"
     assert settings.ql820_host == "192.0.2.10"
@@ -35,4 +35,4 @@ def test_settings_load_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 def test_settings_rejects_short_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PRINTER_HUB_WEBHOOK_API_KEY", "too-short")
     with pytest.raises(ValueError, match="at least 32"):
-        Settings()
+        Settings(_env_file=None)

@@ -15,8 +15,9 @@ Usage::
 :func:`get_settings` is cached with :func:`functools.lru_cache` so that
 settings are only parsed once per process. Tests that instantiate
 :class:`Settings` directly bypass the cache and get a fresh read each time —
-this is intentional and safe because the two test functions here don't call
-:func:`get_settings`.
+this is intentional and safe. To keep tests hermetic and independent of any
+local ``.env`` file, pass ``_env_file=None`` when constructing
+:class:`Settings` in test code.
 """
 
 from __future__ import annotations
@@ -81,9 +82,7 @@ class Settings(BaseSettings):
         """
         secret = v.get_secret_value()
         if secret and len(secret) < 32:
-            raise ValueError(
-                "PRINTER_HUB_WEBHOOK_API_KEY must be at least 32 characters"
-            )
+            raise ValueError("PRINTER_HUB_WEBHOOK_API_KEY must be at least 32 characters")
         return v
 
 
