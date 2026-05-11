@@ -1,5 +1,6 @@
 import pytest
 from app.schemas.label_data import LabelData
+from pydantic_core import ValidationError
 
 
 def test_label_data_minimal() -> None:
@@ -30,15 +31,13 @@ def test_label_data_with_secondary_fields() -> None:
 
 def test_label_data_is_frozen() -> None:
     """LabelData is an immutable value object — mutating fields after construction must fail."""
-    import pydantic
-
     data = LabelData(
         title="t",
         primary_id="p",
         qr_payload="q",
         source_app="snipeit",
     )
-    with pytest.raises(pydantic.ValidationError):
+    with pytest.raises(ValidationError, match="frozen_instance"):
         data.title = "different"  # type: ignore[misc]
 
 

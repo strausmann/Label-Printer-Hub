@@ -73,6 +73,24 @@ async def test_lookup_strips_trailing_slash_from_base_url() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_lookup_missing_id_raises_value_error() -> None:
+    """Snipe-IT response without 'id' field must fail loudly.
+
+    Regression guard: must not silently produce …/hardware/None.
+    """
+    respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={"asset_tag": "A-1", "name": "Broken Asset"},  # no 'id'
+        )
+    )
+    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    with pytest.raises(ValueError, match="missing required field 'id'"):
+        await client.lookup("A-1")
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_lookup_5xx_raises_httpx_error() -> None:
     """A 500 from upstream must surface as httpx.HTTPStatusError (no swallowing)."""
     respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
