@@ -79,7 +79,7 @@ def test_render_with_qr_element_includes_black_pixels() -> None:
 
     img = LabelRenderer().render(data, template)
     qr_region = img.crop((0, 0, 200, 200))
-    black_count = sum(1 for p in qr_region.getdata() if p == 0)
+    black_count = sum(1 for p in qr_region.get_flattened_data() if p == 0)
     assert black_count > 100, f"Expected QR to produce many black pixels, got {black_count}"
 
 
@@ -105,8 +105,17 @@ def test_render_resolves_secondary_tuple_field() -> None:
     img = LabelRenderer().render(data, template)
     # The text region should not be entirely white (some pixels must be drawn).
     region = img.crop((10, 100, DEFAULT_LABEL_WIDTH_PX, 120))
-    black_count = sum(1 for p in region.getdata() if p == 0)
+    black_count = sum(1 for p in region.get_flattened_data() if p == 0)
     assert black_count > 0
+
+
+def test_render_empty_template_produces_blank_image() -> None:
+    """An empty template (no elements) must render a blank white canvas."""
+    template = TemplateSchema(id="t", name="T", app="snipeit", tape_mm=24, elements=[])
+    data = LabelData(title="X", primary_id="X", qr_payload="x", source_app="snipeit")
+    img = LabelRenderer().render(data, template)
+    # All pixels should be 1 (white background).
+    assert all(p == 1 for p in img.get_flattened_data())
 
 
 def test_render_with_missing_data_field_renders_empty_string() -> None:

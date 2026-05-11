@@ -39,6 +39,16 @@ def test_template_text_requires_font_size() -> None:
         LayoutElement(type="text", x=0, y=0, field="title")
 
 
+def test_template_qr_rejects_zero_size() -> None:
+    with pytest.raises(ValueError, match="positive size"):
+        LayoutElement(type="qr", x=0, y=0, size=0, data_field="qr_payload")
+
+
+def test_template_text_rejects_zero_font_size() -> None:
+    with pytest.raises(ValueError, match="positive font_size"):
+        LayoutElement(type="text", x=0, y=0, field="title", font_size=0)
+
+
 def test_template_app_must_be_one_of_known() -> None:
     with pytest.raises(ValueError):
         TemplateSchema(

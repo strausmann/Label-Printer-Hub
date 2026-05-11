@@ -31,9 +31,10 @@ TAPE_HEIGHT_PX: Final[dict[int, int]] = {
     62: 696,  # endless QL tape
 }
 
-# Default label width in pixels — wide enough for typical asset/product labels.
-# Real width is set later by the print job based on actual rendered content;
-# this is just the canvas the renderer paints on.
+# Default label width in pixels — 600 px at 300 DPI ≈ 50.8mm, suitable for
+# typical asset/product label lengths. The actual width the printer receives
+# is determined by the print job; this is just the canvas the renderer
+# paints on.
 DEFAULT_LABEL_WIDTH_PX: Final[int] = 600
 
 
@@ -65,7 +66,9 @@ class LabelRenderer:
         return img
 
     def _draw_qr(self, img: Image.Image, element: LayoutElement, data: LabelData) -> None:
-        # Validation in LayoutElement.model_validator guarantees these are not None for type="qr".
+        # LayoutElement.model_validator guarantees these are non-None for type="qr".
+        # The asserts document the invariant for readers and mypy; they are NOT
+        # runtime guards (python -O strips them).
         assert element.data_field is not None
         assert element.size is not None
 
@@ -88,6 +91,9 @@ class LabelRenderer:
         element: LayoutElement,
         data: LabelData,
     ) -> None:
+        # LayoutElement.model_validator guarantees these are non-None for type="text".
+        # The asserts document the invariant for readers and mypy; they are NOT
+        # runtime guards (python -O strips them).
         assert element.field is not None
         assert element.font_size is not None
 
@@ -100,6 +106,9 @@ class LabelRenderer:
         """Read `field` off `data`, coercing tuples/lists to a single ' | '-joined string."""
         value = getattr(data, field, "")
         if isinstance(value, (list, tuple)):
+            # Separator " | " chosen for single-line tape labels. If a future phase
+            # adds multi-line text fields, this should become a per-element
+            # `separator` attribute on LayoutElement.
             return " | ".join(str(v) for v in value)
         return str(value)
 

@@ -40,13 +40,13 @@ class LayoutElement(BaseModel):
         if self.type == "qr":
             if not self.data_field:
                 raise ValueError("qr element requires data_field")
-            if not self.size:
-                raise ValueError("qr element requires size")
+            if self.size is None or self.size <= 0:
+                raise ValueError("qr element requires a positive size (got None or 0)")
         else:  # type == "text"
             if not self.field:
                 raise ValueError("text element requires field")
-            if not self.font_size:
-                raise ValueError("text element requires font_size")
+            if self.font_size is None or self.font_size <= 0:
+                raise ValueError("text element requires a positive font_size (got None or 0)")
         return self
 
 
