@@ -15,13 +15,13 @@ AppLookupNotFoundError — the two failure modes are operationally distinct:
 
 from __future__ import annotations
 
-from typing import Literal, Protocol
+from typing import Literal, Protocol, get_args
 
 from app.schemas.label_data import LabelData
 
 _AppName = Literal["snipeit", "grocy", "spoolman"]
 
-AVAILABLE_APPS: tuple[_AppName, ...] = ("snipeit", "grocy", "spoolman")
+AVAILABLE_APPS: tuple[_AppName, ...] = get_args(_AppName)
 
 
 class _LookupClient(Protocol):
@@ -54,9 +54,16 @@ class AppLookupService:
             "grocy": grocy,
             "spoolman": spoolman,
         }
+        # Computed once at construction — _clients never mutates after __init__.
+        self.available_apps: tuple[str, ...] = tuple(sorted(self._clients))
 
     async def lookup(self, source_app: str, identifier: str) -> LabelData:
         """Dispatch to `source_app`'s client.
+
+        `source_app` is validated against the registry at runtime. The
+        `_AppName` Literal exists for static-analysis tooling only and does
+        NOT restrict what strings callers may pass — UnknownAppError covers
+        the runtime mismatch case.
 
         Raises UnknownAppError if `source_app` is not registered. Any
         AppLookupNotFoundError from the underlying client propagates
@@ -66,8 +73,3 @@ class AppLookupService:
         if client is None:
             raise UnknownAppError(f"Unknown app {source_app!r}. Available: {sorted(self._clients)}")
         return await client.lookup(identifier)
-
-    @property
-    def available_apps(self) -> tuple[str, ...]:
-        """Return the registered app names in stable order — useful for API discovery."""
-        return tuple(sorted(self._clients))
