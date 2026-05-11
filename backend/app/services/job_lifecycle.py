@@ -79,7 +79,7 @@ class Job:
     submitted_at: datetime = field(default_factory=datetime.now)
     started_at: datetime | None = None
     finished_at: datetime | None = None
-    image_payload: bytes | None = None
+    image_payload: bytes | None = field(default=None, repr=False)
     tape_mm: int | None = None
     options: dict[str, Any] = field(default_factory=dict)
     error_msg: str | None = None
@@ -88,7 +88,7 @@ class Job:
     # asyncio.Event is allowed on a dataclass field because asyncio fields on
     # Jobs are only awaited from within an event loop; constructing them at
     # import time is OK since asyncio.Event does not require a running loop.
-    _done_event: asyncio.Event = field(default_factory=asyncio.Event)
+    _done_event: asyncio.Event = field(default_factory=asyncio.Event, init=False, repr=False)
 
 
 class JobStateMachine:

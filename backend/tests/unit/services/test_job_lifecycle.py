@@ -79,3 +79,30 @@ def test_done_event_not_set_on_pause() -> None:
     job = Job(id="abc", printer_id="pt750w", state=JobState.QUEUED)
     JobStateMachine.transition(job, JobState.PAUSED)
     assert not job._done_event.is_set()
+
+
+def test_done_event_set_on_failed() -> None:
+    """Transition to FAILED must also set _done_event (parity with COMPLETED)."""
+    job = Job(id="abc", printer_id="pt750w", state=JobState.PRINTING)
+    JobStateMachine.transition(job, JobState.FAILED)
+    assert job._done_event.is_set()
+    assert job.finished_at is not None
+
+
+def test_done_event_set_on_cancelled() -> None:
+    """Transition to CANCELLED must also set _done_event (parity with COMPLETED)."""
+    job = Job(id="abc", printer_id="pt750w", state=JobState.QUEUED)
+    JobStateMachine.transition(job, JobState.CANCELLED)
+    assert job._done_event.is_set()
+    assert job.finished_at is not None
+
+
+def test_terminal_states_absorb_no_outgoing_transitions() -> None:
+    """FAILED and CANCELLED behave like COMPLETED — no further transitions allowed."""
+    for terminal in (JobState.FAILED, JobState.CANCELLED):
+        job = Job(id="abc", printer_id="pt750w", state=terminal)
+        for target in JobState:
+            if target == terminal:
+                continue
+            with pytest.raises(InvalidStateTransitionError):
+                JobStateMachine.transition(job, target)
