@@ -4,6 +4,21 @@ import respx
 from app.services.snipeit_client import SnipeITClient, SnipeITNotFoundError
 
 
+def test_not_found_error_is_app_lookup_not_found() -> None:
+    """All concrete NotFoundErrors must inherit from AppLookupNotFoundError.
+
+    Ensures the aggregator can catch any client's not-found in a single clause.
+    """
+    from app.services.errors import AppLookupNotFoundError
+    from app.services.grocy_client import GrocyNotFoundError
+    from app.services.snipeit_client import SnipeITNotFoundError
+    from app.services.spoolman_client import SpoolmanNotFoundError
+
+    assert issubclass(SnipeITNotFoundError, AppLookupNotFoundError)
+    assert issubclass(GrocyNotFoundError, AppLookupNotFoundError)
+    assert issubclass(SpoolmanNotFoundError, AppLookupNotFoundError)
+
+
 @pytest.mark.asyncio
 @respx.mock
 async def test_lookup_asset_returns_label_data() -> None:

@@ -14,9 +14,10 @@ from urllib.parse import quote
 import httpx
 
 from app.schemas.label_data import LabelData
+from app.services.errors import AppLookupNotFoundError
 
 
-class SnipeITNotFoundError(Exception):
+class SnipeITNotFoundError(AppLookupNotFoundError):
     """Raised when no Snipe-IT asset matches the given tag."""
 
 
