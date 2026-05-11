@@ -133,3 +133,12 @@ def test_render_with_missing_data_field_renders_empty_string() -> None:
     # Must NOT raise — missing fields render as empty strings.
     img = LabelRenderer().render(data, template)
     assert img is not None
+
+
+def test_font_loader_is_cached() -> None:
+    """Same font_size returns the same font instance (LRU-cached)."""
+    from app.services.label_renderer import _load_font_cached
+
+    a = _load_font_cached(24)
+    b = _load_font_cached(24)
+    assert a is b

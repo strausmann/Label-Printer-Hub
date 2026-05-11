@@ -67,3 +67,29 @@ def test_template_schema_is_frozen() -> None:
     template = TemplateSchema(id="t", name="t", app="snipeit", tape_mm=24, elements=[])
     with pytest.raises(ValidationError, match="frozen_instance"):
         template.name = "different"  # type: ignore[misc]
+
+
+def test_template_elements_is_immutable() -> None:
+    """elements is a tuple — appending must raise AttributeError, not silently mutate."""
+    template = TemplateSchema(
+        id="t",
+        name="t",
+        app="snipeit",
+        tape_mm=24,
+        elements=[LayoutElement(type="text", x=0, y=0, field="title", font_size=12)],
+    )
+    with pytest.raises(AttributeError):
+        template.elements.append(  # type: ignore[attr-defined]
+            LayoutElement(type="text", x=10, y=10, field="primary_id", font_size=12)
+        )
+    assert isinstance(template.elements, tuple)
+
+
+def test_template_qr_rejects_negative_size() -> None:
+    with pytest.raises(ValueError, match="positive size"):
+        LayoutElement(type="qr", x=0, y=0, size=-10, data_field="qr_payload")
+
+
+def test_template_text_rejects_negative_font_size() -> None:
+    with pytest.raises(ValueError, match="positive font_size"):
+        LayoutElement(type="text", x=0, y=0, field="title", font_size=-12)

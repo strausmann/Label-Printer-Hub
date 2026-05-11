@@ -12,6 +12,7 @@ see `TAPE_HEIGHT_PX` for the supported widths.
 
 from __future__ import annotations
 
+import functools
 from typing import Final
 
 import qrcode
@@ -36,6 +37,19 @@ TAPE_HEIGHT_PX: Final[dict[int, int]] = {
 # is determined by the print job; this is just the canvas the renderer
 # paints on.
 DEFAULT_LABEL_WIDTH_PX: Final[int] = 600
+
+
+@functools.lru_cache(maxsize=32)
+def _load_font_cached(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Load DejaVuSans at `size`px (cached), fall back to PIL's bitmap default if unavailable.
+
+    The cache is bounded at 32 entries — far more than any realistic template uses.
+    Repeated calls with the same size return the same font instance without disk I/O.
+    """
+    try:
+        return ImageFont.truetype("DejaVuSans.ttf", size)
+    except OSError:
+        return ImageFont.load_default()
 
 
 class LabelRenderer:
@@ -98,7 +112,7 @@ class LabelRenderer:
         assert element.font_size is not None
 
         text = self._resolve_field(data, element.field)
-        font = self._load_font(element.font_size)
+        font = _load_font_cached(element.font_size)
         draw.text((element.x, element.y), text, fill=0, font=font)
 
     @staticmethod
@@ -111,11 +125,3 @@ class LabelRenderer:
             # `separator` attribute on LayoutElement.
             return " | ".join(str(v) for v in value)
         return str(value)
-
-    @staticmethod
-    def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-        """Load DejaVuSans at `size`px, fall back to PIL's bitmap default if unavailable."""
-        try:
-            return ImageFont.truetype("DejaVuSans.ttf", size)
-        except OSError:
-            return ImageFont.load_default()

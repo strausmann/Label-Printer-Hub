@@ -41,12 +41,14 @@ class LayoutElement(BaseModel):
             if not self.data_field:
                 raise ValueError("qr element requires data_field")
             if self.size is None or self.size <= 0:
-                raise ValueError("qr element requires a positive size (got None or 0)")
+                raise ValueError(f"qr element requires a positive size (got {self.size!r})")
         else:  # type == "text"
             if not self.field:
                 raise ValueError("text element requires field")
             if self.font_size is None or self.font_size <= 0:
-                raise ValueError("text element requires a positive font_size (got None or 0)")
+                raise ValueError(
+                    f"text element requires a positive font_size (got {self.font_size!r})"
+                )
         return self
 
 
@@ -59,4 +61,4 @@ class TemplateSchema(BaseModel):
     name: str
     app: Literal["snipeit", "grocy", "spoolman"]
     tape_mm: int
-    elements: list[LayoutElement]
+    elements: tuple[LayoutElement, ...]
