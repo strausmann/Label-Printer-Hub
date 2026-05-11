@@ -23,7 +23,7 @@ class ModelRegistry:
 
     @classmethod
     def register(cls, model: PrinterModel) -> None:
-        """Add a plugin to the registry. Idempotent on duplicates is NOT required."""
+        """Append *model* to the registry. Duplicate registrations are not prevented."""
         cls._models.append(model)
 
     @classmethod
@@ -35,6 +35,9 @@ class ModelRegistry:
     def find_by_pjl(cls, pjl_string: str) -> PrinterModel:
         """Match a plugin by PJL MDL substring.
 
+        Returns the first registered plugin whose signature matches. Registration
+        order determines priority if multiple plugins match.
+
         Example pjl_string: 'MFG:Brother;CMD:PJL;MDL:PT-P750W;CLS:PRINTER;'
         """
         for model in cls._models:
@@ -45,7 +48,11 @@ class ModelRegistry:
 
     @classmethod
     def find_by_snmp_oid_value(cls, oid_value: str) -> PrinterModel:
-        """Match a plugin by SNMP model-OID value substring."""
+        """Match a plugin by SNMP model-OID value substring.
+
+        Returns the first registered plugin whose signature matches. Registration
+        order determines priority if multiple plugins match.
+        """
         for model in cls._models:
             if model.snmp_model_oid_value_substr in oid_value:
                 return model

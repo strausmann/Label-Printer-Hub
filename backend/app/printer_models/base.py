@@ -4,8 +4,9 @@ Each printer-model family (PT-Series, QL-Series, future series) lives in its
 own module under app.printer_models.<series>, implements this Protocol, and
 registers itself in app.printer_models.registry.ModelRegistry.
 
-The Protocol is `runtime_checkable` so the registry can `isinstance()`-verify
-candidates before adding them.
+The Protocol is `@runtime_checkable` so plugin authors and guard utilities
+can validate candidates with isinstance() if desired; the registry itself
+does not enforce this at registration.
 """
 
 from __future__ import annotations
