@@ -15,9 +15,10 @@ from urllib.parse import quote
 import httpx
 
 from app.schemas.label_data import LabelData
+from app.services.errors import AppLookupNotFoundError
 
 
-class SpoolmanNotFoundError(Exception):
+class SpoolmanNotFoundError(AppLookupNotFoundError):
     """Raised when no Spoolman spool matches the given id."""
 
 
@@ -63,7 +64,10 @@ class SpoolmanClient:
         secondary_parts: list[str] = []
         remaining = payload.get("remaining_weight")
         if remaining is not None:
-            secondary_parts.append(f"{math.floor(float(remaining) + 0.5)}g remaining")
+            # Round half up — Python's round() and f"{x:.0f}" use banker's rounding,
+            # which would display 850 for 850.5. Wrong for a weight label.
+            grams = math.floor(float(remaining) + 0.5)
+            secondary_parts.append(f"{grams}g remaining")
 
         return LabelData(
             title=f"{vendor_name} {material}",

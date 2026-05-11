@@ -90,8 +90,10 @@ async def test_lookup_url_encodes_spool_id() -> None:
         )
     )
     client = SpoolmanClient(base_url="https://spoolman.example")
-    await client.lookup("A/1")
-    # The mock URL matches only if encoding worked.
+    data = await client.lookup("A/1")
+    # If encoding worked the mock matched and we got LabelData back.
+    assert data.source_app == "spoolman"
+    assert data.primary_id == "#1"
 
 
 @pytest.mark.asyncio
@@ -112,6 +114,18 @@ async def test_lookup_missing_id_raises_value_error() -> None:
     client = SpoolmanClient(base_url="https://spoolman.example")
     with pytest.raises(ValueError, match="missing required field 'id'"):
         await client.lookup("1")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_spool_with_null_filament() -> None:
+    """Spoolman with filament: null must produce 'Unknown Unknown' title without crashing."""
+    respx.get("https://spoolman.example/api/v1/spool/1").mock(
+        return_value=httpx.Response(200, json={"id": 1, "filament": None})
+    )
+    client = SpoolmanClient(base_url="https://spoolman.example")
+    data = await client.lookup("1")
+    assert data.title == "Unknown Unknown"
 
 
 @pytest.mark.asyncio

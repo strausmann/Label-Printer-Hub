@@ -13,9 +13,10 @@ from urllib.parse import quote
 import httpx
 
 from app.schemas.label_data import LabelData
+from app.services.errors import AppLookupNotFoundError
 
 
-class GrocyNotFoundError(Exception):
+class GrocyNotFoundError(AppLookupNotFoundError):
     """Raised when no Grocy product matches the given id."""
 
 
