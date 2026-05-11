@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## <small>0.2.1 (2026-05-11)</small>
+
+* fix(ci): emit GHCR package description as index annotation (#39) ([12c6b6c](https://github.com/strausmann/label-printer-hub/commit/12c6b6c)), closes [#39](https://github.com/strausmann/label-printer-hub/issues/39)
+* fix(ci): lowercase image ref before push-by-digest (#41) ([9dd954e](https://github.com/strausmann/label-printer-hub/commit/9dd954e)), closes [#41](https://github.com/strausmann/label-printer-hub/issues/41)
+* fix(ci): repair docker-publish.yml startup failure (#37) ([fb7cb59](https://github.com/strausmann/label-printer-hub/commit/fb7cb59)), closes [#37](https://github.com/strausmann/label-printer-hub/issues/37)
+* fix(ci): repair Verify multi-arch manifest step + drop fail-fast (#38) ([5d2ff7d](https://github.com/strausmann/label-printer-hub/commit/5d2ff7d)), closes [#38](https://github.com/strausmann/label-printer-hub/issues/38)
+* refactor(ci): split docker-publish into native-arch matrix + manifest merge (#40) ([8cd824d](https://github.com/strausmann/label-printer-hub/commit/8cd824d)), closes [#40](https://github.com/strausmann/label-printer-hub/issues/40)
+* chore(deps): bump github.com/go-chi/chi/v5 from 5.1.0 to 5.2.2 in /frontend (#36) ([a5971b9](https://github.com/strausmann/label-printer-hub/commit/a5971b9)), closes [#36](https://github.com/strausmann/label-printer-hub/issues/36)
+
 ## 0.2.0 (2026-05-10)
 
 * feat(backend): FastAPI app skeleton + /healthz endpoint + Dockerfile (#34) ([0efbb0c](https://github.com/strausmann/label-printer-hub/commit/0efbb0c)), closes [#34](https://github.com/strausmann/label-printer-hub/issues/34) [#34](https://github.com/strausmann/label-printer-hub/issues/34) [#34](https://github.com/strausmann/label-printer-hub/issues/34) [#34](https://github.com/strausmann/label-printer-hub/issues/34)
