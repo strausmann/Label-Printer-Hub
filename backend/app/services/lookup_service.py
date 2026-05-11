@@ -15,7 +15,7 @@ AppLookupNotFoundError — the two failure modes are operationally distinct:
 
 from __future__ import annotations
 
-from typing import Literal, Protocol, get_args
+from typing import Literal, Protocol, cast, get_args
 
 from app.schemas.label_data import LabelData
 
@@ -49,13 +49,13 @@ class AppLookupService:
         grocy: _LookupClient,
         spoolman: _LookupClient,
     ) -> None:
-        self._clients: dict[str, _LookupClient] = {
+        self._clients: dict[_AppName, _LookupClient] = {
             "snipeit": snipeit,
             "grocy": grocy,
             "spoolman": spoolman,
         }
         # Computed once at construction — _clients never mutates after __init__.
-        self.available_apps: tuple[str, ...] = tuple(sorted(self._clients))
+        self.available_apps: tuple[_AppName, ...] = tuple(sorted(self._clients))
 
     async def lookup(self, source_app: str, identifier: str) -> LabelData:
         """Dispatch to `source_app`'s client.
@@ -69,7 +69,9 @@ class AppLookupService:
         AppLookupNotFoundError from the underlying client propagates
         unchanged so callers can catch it uniformly.
         """
-        client = self._clients.get(source_app)
+        client = self._clients.get(cast(_AppName, source_app))
         if client is None:
-            raise UnknownAppError(f"Unknown app {source_app!r}. Available: {sorted(self._clients)}")
+            raise UnknownAppError(
+                f"Unknown app {source_app!r}. Available: {list(self.available_apps)}"
+            )
         return await client.lookup(identifier)
