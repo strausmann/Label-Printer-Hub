@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -44,24 +44,24 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:////data/printer-hub.db"
 
-    # Drucker — Brother QL-820NWB (address label printer)
+    # Brother QL-820NWB — address label printer
     ql820_host: str = ""
     ql820_port: int = 9100
 
-    # Drucker — Brother PT-750W (cable/panel label printer)
+    # Brother PT-750W — cable / panel label printer
     pt750w_host: str = ""
     pt750w_port: int = 9100
 
     # Webhook authentication
-    webhook_api_key: SecretStr = Field(default=SecretStr(""))
+    webhook_api_key: SecretStr = SecretStr("")
 
     # Snipe-IT integration (optional)
     snipeit_url: str = ""
-    snipeit_api_key: SecretStr = Field(default=SecretStr(""))
+    snipeit_api_key: SecretStr = SecretStr("")
 
     # Grocy integration (optional)
     grocy_url: str = ""
-    grocy_api_key: SecretStr = Field(default=SecretStr(""))
+    grocy_api_key: SecretStr = SecretStr("")
 
     # Spoolman integration (no API key needed)
     spoolman_url: str = ""
