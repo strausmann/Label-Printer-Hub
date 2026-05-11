@@ -26,7 +26,7 @@ async def test_lookup_asset_returns_label_data() -> None:
     assert data.primary_id == "ASSET-12345"
     assert data.qr_payload == "https://snipe-it.example/hardware/123"
     assert data.source_app == "snipeit"
-    assert data.secondary == ["S/N: C02XYZ"]
+    assert data.secondary == ("S/N: C02XYZ",)
 
 
 @pytest.mark.asyncio
@@ -56,7 +56,7 @@ async def test_lookup_asset_without_serial_has_no_secondary_line() -> None:
     client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
     data = await client.lookup("A-1")
 
-    assert data.secondary == []
+    assert data.secondary == ()
 
 
 @pytest.mark.asyncio
@@ -99,3 +99,34 @@ async def test_lookup_5xx_raises_httpx_error() -> None:
     client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
     with pytest.raises(httpx.HTTPStatusError):
         await client.lookup("A-1")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_url_encodes_asset_tag() -> None:
+    """Asset tags with special chars (/, ?, space) must be percent-encoded."""
+    respx.get("https://snipe-it.example/api/v1/hardware/bytag/A%2F1%20test").mock(
+        return_value=httpx.Response(
+            200,
+            json={"id": 1, "asset_tag": "A/1 test", "name": "Thing"},
+        )
+    )
+    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    data = await client.lookup("A/1 test")
+    assert data.title == "Thing"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_sends_bearer_auth_header() -> None:
+    """lookup() must send Authorization: Bearer … and Accept: application/json."""
+    route = respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
+        return_value=httpx.Response(200, json={"id": 1, "asset_tag": "A-1", "name": "T"})
+    )
+    client = SnipeITClient(base_url="https://snipe-it.example", api_key="secret-key-42")
+    await client.lookup("A-1")
+
+    assert route.called
+    sent_request = route.calls.last.request
+    assert sent_request.headers["Authorization"] == "Bearer secret-key-42"
+    assert sent_request.headers["Accept"] == "application/json"

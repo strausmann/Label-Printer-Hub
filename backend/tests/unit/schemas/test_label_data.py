@@ -14,7 +14,7 @@ def test_label_data_minimal() -> None:
     assert data.primary_id == "ASSET-12345"
     assert data.qr_payload == "https://snipe-it.example/assets/12345"
     assert data.source_app == "snipeit"
-    assert data.secondary == []
+    assert data.secondary == ()
 
 
 def test_label_data_with_secondary_fields() -> None:
@@ -27,6 +27,8 @@ def test_label_data_with_secondary_fields() -> None:
     )
     assert len(data.secondary) == 2
     assert data.secondary[0] == "Color: Black"
+    # The tuple is the actual immutability guarantee — confirm.
+    assert isinstance(data.secondary, tuple)
 
 
 def test_label_data_is_frozen() -> None:
@@ -41,9 +43,14 @@ def test_label_data_is_frozen() -> None:
         data.title = "different"  # type: ignore[misc]
 
 
-def test_label_data_default_secondary_is_distinct_per_instance() -> None:
-    """The default empty list must NOT be a shared mutable default."""
-    a = LabelData(title="a", primary_id="a", qr_payload="a", source_app="snipeit")
-    b = LabelData(title="b", primary_id="b", qr_payload="b", source_app="snipeit")
-    # With frozen=True we cannot append, but we can still verify the lists are distinct objects.
-    assert a.secondary is not b.secondary
+def test_label_data_secondary_is_immutable() -> None:
+    """A tuple field cannot be mutated in-place — append must raise AttributeError."""
+    data = LabelData(
+        title="t",
+        primary_id="p",
+        qr_payload="q",
+        source_app="snipeit",
+        secondary=["a"],
+    )
+    with pytest.raises(AttributeError):
+        data.secondary.append("b")  # type: ignore[attr-defined]

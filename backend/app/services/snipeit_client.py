@@ -9,6 +9,7 @@ shape.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -41,7 +42,10 @@ class SnipeITClient:
 
     async def lookup(self, asset_tag: str) -> LabelData:
         """Return LabelData for `asset_tag`, or raise SnipeITNotFoundError."""
-        url = f"{self._base_url}/api/v1/hardware/bytag/{asset_tag}"
+        # TODO(phase6): inject a shared httpx.AsyncClient for connection pooling
+        #               when this client is consumed by the FastAPI request handler.
+        encoded_tag = quote(asset_tag, safe="")
+        url = f"{self._base_url}/api/v1/hardware/bytag/{encoded_tag}"
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Accept": "application/json",
@@ -71,5 +75,5 @@ class SnipeITClient:
             primary_id=str(payload.get("asset_tag") or asset_tag),
             qr_payload=f"{self._base_url}/hardware/{asset_id}",
             source_app="snipeit",
-            secondary=secondary,
+            secondary=tuple(secondary),
         )

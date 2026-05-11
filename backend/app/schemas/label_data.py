@@ -12,7 +12,7 @@ side — they are NOT in this model.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class LabelData(BaseModel):
@@ -24,4 +24,5 @@ class LabelData(BaseModel):
     primary_id: str
     qr_payload: str
     source_app: str
-    secondary: list[str] = Field(default_factory=list)
+    secondary: tuple[str, ...] = ()
+    """Additional label lines below the primary identifier."""
