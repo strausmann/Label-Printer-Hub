@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## 0.3.0 (2026-05-12)
+
+* feat(config): pydantic-settings module with env-driven runtime configuration (#45) ([878e9e0](https://github.com/strausmann/label-printer-hub/commit/878e9e0)), closes [#45](https://github.com/strausmann/label-printer-hub/issues/45)
+* feat(integrations): AppLookupService aggregator — Phase 3 complete (#53) ([222bef4](https://github.com/strausmann/label-printer-hub/commit/222bef4)), closes [#53](https://github.com/strausmann/label-printer-hub/issues/53)
+* feat(integrations): Grocy + Spoolman lookup clients with shared NotFoundError base (#52) ([b1c9c3c](https://github.com/strausmann/label-printer-hub/commit/b1c9c3c)), closes [#52](https://github.com/strausmann/label-printer-hub/issues/52)
+* feat(integrations): LabelData schema + Snipe-IT lookup client (#51) ([3bc180f](https://github.com/strausmann/label-printer-hub/commit/3bc180f)), closes [#51](https://github.com/strausmann/label-printer-hub/issues/51)
+* feat(label-renderer): Template schema + Pillow/qrcode renderer for 1-bit label bitmaps (#54) ([fb77028](https://github.com/strausmann/label-printer-hub/commit/fb77028)), closes [#54](https://github.com/strausmann/label-printer-hub/issues/54)
+* feat(printer-models): Brother PT-Series TapeRegistry with TZe and heat-shrink specs (#47) ([7526019](https://github.com/strausmann/label-printer-hub/commit/7526019)), closes [#47](https://github.com/strausmann/label-printer-hub/issues/47)
+* feat(printer-models): Job lifecycle FSM with explicit state machine (#49) ([1a8c40e](https://github.com/strausmann/label-printer-hub/commit/1a8c40e)), closes [#49](https://github.com/strausmann/label-printer-hub/issues/49)
+* feat(printer-models): PrinterModel Protocol + ModelRegistry for plugin discovery (#48) ([2ae0e09](https://github.com/strausmann/label-printer-hub/commit/2ae0e09)), closes [#48](https://github.com/strausmann/label-printer-hub/issues/48)
+* feat(printer-models): PrintQueue worker with pause/resume/cancel/retry (#50) ([dfdf6fe](https://github.com/strausmann/label-printer-hub/commit/dfdf6fe)), closes [#50](https://github.com/strausmann/label-printer-hub/issues/50)
+
 ## <small>0.2.1 (2026-05-11)</small>
 
 * fix(ci): emit GHCR package description as index annotation (#39) ([12c6b6c](https://github.com/strausmann/label-printer-hub/commit/12c6b6c)), closes [#39](https://github.com/strausmann/label-printer-hub/issues/39)
