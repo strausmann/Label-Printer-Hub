@@ -31,7 +31,9 @@ class TemplateLoader:
     def _load_single(cls, path: Path) -> TemplateSchema:
         """Parse one YAML file, raise TemplateValidationError on any failure."""
         try:
-            raw = yaml.safe_load(path.read_text())
+            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except OSError as e:
+            raise TemplateValidationError(f"{path.name}: could not read file: {e}") from e
         except yaml.YAMLError as e:
             raise TemplateValidationError(f"{path.name}: YAML parse error: {e}") from e
 
@@ -57,14 +59,29 @@ class TemplateLoader:
     def load_dir(cls, directory: Path) -> None:
         """Parse every ``*.yaml`` in ``directory`` and cache by template id.
 
-        Strict: any single-file failure raises TemplateValidationError
-        and the cache is left in whatever state it was before the call
-        (the broken file is not silently skipped — shipping a broken
-        seed template is a build-time bug).
+        Atomic: all files are parsed into a staging dict before the cache is
+        replaced. A failure during any single-file load raises
+        TemplateValidationError and the cache remains in its previous state.
+
+        Duplicate ids across YAML files raise TemplateValidationError —
+        silently overwriting a previously-loaded template would mask a
+        real authoring bug.
         """
+        staging: dict[str, TemplateSchema] = {}
+        duplicate_origin: dict[str, str] = {}  # id -> filename that first defined it
+
         for path in sorted(directory.glob("*.yaml")):
             template = cls._load_single(path)
-            cls._cache[template.id] = template
+            if template.id in staging:
+                raise TemplateValidationError(
+                    f"{path.name}: duplicate template id {template.id!r} "
+                    f"(first defined in {duplicate_origin[template.id]})"
+                )
+            staging[template.id] = template
+            duplicate_origin[template.id] = path.name
+
+        # Atomic replace — only reached if every file parsed cleanly.
+        cls._cache = staging
 
     @classmethod
     def get(cls, template_id: str) -> TemplateSchema:
@@ -88,9 +105,12 @@ class TemplateLoader:
 
     @classmethod
     def reload(cls, directory: Path) -> None:
-        """Drop the cache then re-run load_dir.
+        """Replace the cache with templates from ``directory`` atomically.
 
-        Used by the future template editor (Phase 7) after a YAML write.
+        Unlike a naive ``clear() + load_dir()``, this method only mutates
+        ``cls._cache`` if every YAML in the directory parses cleanly. A
+        broken file (e.g. mid-edit save from the Phase-7 editor) raises
+        TemplateValidationError and the cache stays on the previous valid
+        set.
         """
-        cls._cache.clear()
-        cls.load_dir(directory)
+        cls.load_dir(directory)  # load_dir is now atomic — same semantics

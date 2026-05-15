@@ -333,3 +333,101 @@ def test_reload_removes_stale_entries(tmp_path: Path) -> None:
     p.unlink()
     TemplateLoader.reload(tmp_path)
     assert "a" not in TemplateLoader._cache
+
+
+def test_load_single_wraps_oserror_in_template_validation_error(tmp_path: Path) -> None:
+    """OSError from path.read_text() must be wrapped, not propagated raw."""
+    # File doesn't exist — read_text raises FileNotFoundError (a subclass of OSError)
+    missing = tmp_path / "does-not-exist.yaml"
+    with pytest.raises(TemplateValidationError, match="could not read file"):
+        TemplateLoader._load_single(missing)
+
+
+def test_load_dir_atomic_on_failure_keeps_previous_cache(tmp_path: Path) -> None:
+    """A failure in any file leaves the cache exactly as it was before the call."""
+    # First, populate the cache with a known-good template
+    _write_yaml(
+        tmp_path,
+        "good.yaml",
+        """
+        schema_version: 1
+        id: good
+        name: Good
+        app: snipeit
+        tape_mm: 24
+        elements: []
+    """,
+    )
+    TemplateLoader.load_dir(tmp_path)
+    snapshot = dict(TemplateLoader._cache)
+
+    # Add a broken sibling and try to reload
+    _write_yaml(tmp_path, "bad.yaml", "this is not yaml: [unclosed\n")
+
+    with pytest.raises(TemplateValidationError):
+        TemplateLoader.load_dir(tmp_path)
+
+    # Cache is the pre-call snapshot — `good` is still loaded
+    assert dict(TemplateLoader._cache) == snapshot
+    assert "good" in TemplateLoader._cache
+
+
+def test_load_dir_rejects_duplicate_ids(tmp_path: Path) -> None:
+    """Two YAMLs declaring the same id must fail loudly."""
+    _write_yaml(
+        tmp_path,
+        "a.yaml",
+        """
+        schema_version: 1
+        id: duplicate
+        name: First
+        app: snipeit
+        tape_mm: 24
+        elements: []
+    """,
+    )
+    _write_yaml(
+        tmp_path,
+        "b.yaml",
+        """
+        schema_version: 1
+        id: duplicate
+        name: Second
+        app: grocy
+        tape_mm: 18
+        elements: []
+    """,
+    )
+
+    with pytest.raises(TemplateValidationError, match=r"duplicate template id 'duplicate'"):
+        TemplateLoader.load_dir(tmp_path)
+
+    # Neither got into the cache — the failure happens during the staging loop
+    assert "duplicate" not in TemplateLoader._cache
+
+
+def test_reload_preserves_cache_on_failure(tmp_path: Path) -> None:
+    """reload() on a directory with a broken file leaves the previous cache intact."""
+    _write_yaml(
+        tmp_path,
+        "a.yaml",
+        """
+        schema_version: 1
+        id: a
+        name: A
+        app: snipeit
+        tape_mm: 24
+        elements: []
+    """,
+    )
+    TemplateLoader.load_dir(tmp_path)
+    assert "a" in TemplateLoader._cache
+
+    # Add a broken YAML; reload must fail without wiping the cache
+    _write_yaml(tmp_path, "broken.yaml", "this is not yaml: [unclosed\n")
+
+    with pytest.raises(TemplateValidationError):
+        TemplateLoader.reload(tmp_path)
+
+    # Previous cache is intact
+    assert "a" in TemplateLoader._cache
