@@ -265,6 +265,59 @@ class TestUnknownEnums:
         assert sb.media_type == MediaType.INCOMPATIBLE
 
 
+def _full_status_block(
+    *,
+    errors: PrinterError = PrinterError.NONE,
+    media_width_mm: int = 24,
+) -> StatusBlock:
+    return StatusBlock(
+        raw=b"\x00" * 32,
+        print_head_mark=0x80,
+        size=0x20,
+        brother_code=ord("B"),
+        series_code=0,
+        model_code=0,
+        country_code=0x30,
+        media_width_mm=media_width_mm,
+        media_type=MediaType.LAMINATED,
+        media_length_mm=0,
+        mode=0,
+        status_type=StatusType.REPLY,
+        phase_type=PhaseType.EDITING,
+        phase_number=0,
+        notification=NotificationCode.NOT_AVAILABLE,
+        tape_color=TapeColor.UNKNOWN,
+        text_color=TextColor.UNKNOWN,
+        errors=errors,
+    )
+
+
+class TestDerivedProperties:
+    def test_loaded_tape_mm_is_media_width(self) -> None:
+        sb = _full_status_block(media_width_mm=18)
+        assert sb.loaded_tape_mm == 18
+
+    def test_tape_empty_when_no_media_flag_set(self) -> None:
+        sb = _full_status_block(errors=PrinterError.NO_MEDIA)
+        assert sb.tape_empty is True
+
+    def test_tape_empty_when_end_of_media_flag_set(self) -> None:
+        sb = _full_status_block(errors=PrinterError.END_OF_MEDIA)
+        assert sb.tape_empty is True
+
+    def test_tape_empty_false_when_other_errors(self) -> None:
+        sb = _full_status_block(errors=PrinterError.COVER_OPEN)
+        assert sb.tape_empty is False
+
+    def test_cover_open_flag(self) -> None:
+        sb = _full_status_block(errors=PrinterError.COVER_OPEN)
+        assert sb.cover_open is True
+
+    def test_cover_open_false_when_no_cover_error(self) -> None:
+        sb = _full_status_block(errors=PrinterError.NONE)
+        assert sb.cover_open is False
+
+
 class TestRoundtrip:
     def test_raw_bytes_preserved(self) -> None:
         sb = StatusBlockParser.parse(PT_READY_12MM_WHITE_BLACK)

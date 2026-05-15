@@ -212,6 +212,21 @@ class StatusBlock:
         """True if the printer is mid-print."""
         return self.phase_type == PhaseType.PRINTING
 
+    @property
+    def loaded_tape_mm(self) -> int:
+        """Width of the tape currently loaded, in mm. 0 when no tape inserted."""
+        return self.media_width_mm
+
+    @property
+    def tape_empty(self) -> bool:
+        """True when no media is loaded or the tape ran out mid-print."""
+        return bool(self.errors & (PrinterError.NO_MEDIA | PrinterError.END_OF_MEDIA))
+
+    @property
+    def cover_open(self) -> bool:
+        """True when the printer cover is open."""
+        return PrinterError.COVER_OPEN in self.errors
+
 
 def _safe_enum[E: IntEnum](enum_cls: type[E], value: int, default: E) -> E:
     """Map a raw byte to an enum member, falling back to ``default`` on misses."""
