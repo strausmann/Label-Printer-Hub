@@ -140,6 +140,36 @@ def test_discover_handles_duplicate_registration(
     )
 
 
+def test_discover_handles_non_string_name_typeerror(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A plugin with a non-string `name` makes Registry raise TypeError —
+    discovery must catch it and continue with the next plugin instead of
+    aborting the loop."""
+
+    class _BadNamePlugin:
+        name = 42  # int, not str — Registry rejects this
+        display_name = "Bad"
+
+        async def lookup(self, identifier: str) -> object:
+            raise NotImplementedError
+
+    monkeypatch.setattr(
+        "importlib.metadata.entry_points",
+        lambda group: [
+            _FakeEntryPoint("bad-name", _BadNamePlugin),
+            _FakeEntryPoint("alpha", _AlphaPlugin),
+        ],
+    )
+    with caplog.at_level("ERROR"):
+        _discover_plugins()
+    # The good plugin still registered — bad one didn't kill the process
+    assert IntegrationRegistry.names() == ["alpha"]
+    # Bad plugin's entry-point name appears in error log
+    assert any("bad-name" in r.message for r in caplog.records)
+
+
 def test_protocol_rejects_incomplete_class() -> None:
     """A class missing required attributes does not satisfy the Protocol.
 

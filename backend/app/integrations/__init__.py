@@ -26,27 +26,29 @@ def _discover_plugins() -> None:
     """Load every plugin under the 'label_hub.integrations' entry-points group.
 
     Each entry point is loaded independently — a failure in one does not
-    prevent the others from registering. Three failure modes are handled:
-    the loaded object is not an IntegrationPlugin, ep.load() itself raises,
-    or two plugins share a name (collision).
+    prevent the others from registering. Four failure modes are handled:
+
+    1. The entry-point's `ep.load()` raises (broken third-party package).
+    2. Instantiating the loaded class raises (constructor error).
+    3. The loaded object does not satisfy the IntegrationPlugin Protocol
+       (missing attributes or wrong shape).
+    4. The plugin's `name` collides with an already-registered plugin, or
+       has the wrong type (Registry rejects with ValueError / TypeError).
     """
     for ep in importlib.metadata.entry_points(group="label_hub.integrations"):
         try:
             plugin_cls = ep.load()
-        except Exception as e:  # third-party load can raise anything
-            _logger.error(
-                "Failed to load entry-point %r: %s", ep.name, e
-            )
+        except Exception:
+            _logger.exception("Failed to load entry-point %r", ep.name)
             continue
 
         try:
             instance = plugin_cls()
-        except Exception as e:
-            _logger.error(
-                "Failed to instantiate entry-point %r (class %r): %s",
+        except Exception:
+            _logger.exception(
+                "Failed to instantiate entry-point %r (class %s)",
                 ep.name,
-                plugin_cls.__name__ if hasattr(plugin_cls, "__name__") else plugin_cls,
-                e,
+                getattr(plugin_cls, "__name__", repr(plugin_cls)),
             )
             continue
 
@@ -61,7 +63,7 @@ def _discover_plugins() -> None:
 
         try:
             IntegrationRegistry.register(instance)
-        except ValueError as e:
+        except (ValueError, TypeError) as e:
             _logger.error(
                 "Entry-point %r could not register: %s", ep.name, e
             )
