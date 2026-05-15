@@ -1892,7 +1892,7 @@ feat(printer-backends): PTouchBackend wrapping ptouch library
 
 Implements PrinterBackend against the ptouch Python library:
 
-* query_status — uses the raw-socket ESC i S helper, retries 3 times
+* query_status — uses the raw-socket ESC i S helper, makes exactly 3 attempts
   with back-off (0s, 1s, 2s) on PrinterOfflineError.
 * print_image — pre-validates against query_status (tape_empty,
   cover_open, tape mismatch); dispatches the synchronous ptouch.print
@@ -2438,7 +2438,8 @@ def test_constants() -> None:
 
 async def test_query_status_delegates_to_backend(backend: MockPrinterBackend) -> None:
     driver = PTP750WDriver(backend=backend)
-    status = await driver.query_status()
+    # `host` is required by the Protocol; empty string means "use the bound backend's host"
+    status = await driver.query_status(host="")
     assert status.loaded_tape_mm == 24
 
 
@@ -2452,6 +2453,18 @@ async def test_query_status_accepts_matching_host(backend: MockPrinterBackend) -
     driver = PTP750WDriver(backend=backend)
     status = await driver.query_status(host=backend.host)
     assert status.loaded_tape_mm == 24
+
+
+def test_build_print_job_raises_not_implemented(backend: MockPrinterBackend) -> None:
+    driver = PTP750WDriver(backend=backend)
+    image = Image.new("1", (200, 128))
+    spec = TapeSpec(
+        width_mm=24, media_type=MediaType.LAMINATED,
+        print_area_pins=128, print_area_dots=128, bytes_per_raster=16,
+        min_length_mm=4.4, max_length_mm=1000, cutter_min_length_mm=24.5,
+    )
+    with pytest.raises(NotImplementedError):
+        driver.build_print_job(image, spec)
 
 
 def test_width_to_pixels(backend: MockPrinterBackend) -> None:
@@ -2545,8 +2558,14 @@ class PTP750WDriver:
 
     # --- PrinterModel ---
     async def query_status(
-        self, host: str = "", port: int = 9100, timeout_s: float = 5.0  # noqa: ARG002
+        self, host: str, port: int = 9100, timeout_s: float = 5.0  # noqa: ARG002
     ) -> StatusBlock:
+        # Protocol requires `host` positionally. The driver is bound to a
+        # backend that already knows its host, so the only sensible call is
+        # `driver.query_status(driver._backend.host, ...)` or — when callers
+        # have a bound driver and don't care — `driver.query_status("", ...)`.
+        # We accept the empty string as "use bound backend's host" without
+        # raising, but reject any other non-matching host loudly.
         if host and host != self._backend.host:
             raise ValueError(
                 f"Driver bound to backend.host={self._backend.host!r}; "
@@ -2565,10 +2584,16 @@ class PTP750WDriver:
 
         Callers wanting raw bytes for export/debug can be added later; the
         First-Print path goes through backend.print_image() and never calls
-        this method. Returning empty bytes lets static analyzers see a
-        bytes-return path without forcing an unreachable NotImplementedError.
+        this method. We raise NotImplementedError rather than returning empty
+        bytes so any unintended caller fails loudly instead of silently
+        sending no data. The pyproject coverage config excludes
+        `raise NotImplementedError` from coverage.
         """
-        return b""
+        raise NotImplementedError(
+            "PTP750WDriver delegates encoding to backend.print_image(). "
+            "build_print_job() will be implemented when a real caller "
+            "(raw-export, debugging, non-library backend) appears."
+        )
 
     # --- queue-printer factory ---
     def make_queue_printer(
@@ -3550,7 +3575,9 @@ async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
         community = getattr(http.app.state, "printer_snmp_community", "public")
         if host:
             try:
-                live = await query_live_status(host, community=community)
+                # Short timeout — this is on the request path, must stay snappy.
+                # If SNMP is slow or unavailable, omit the live block (non-fatal).
+                live = await query_live_status(host, community=community, timeout_s=1.0)
             except SnmpQueryError:
                 _log.warning("live SNMP query failed for job %s", job_id, exc_info=True)
                 live = None
@@ -4471,7 +4498,7 @@ Reload the printer with a 12mm tape (template wants 24mm). Re-run the smoke. Exp
 
 - [ ] **Step 8: Manual: power off the printer**
 
-Power off the PT-P750W, re-run the smoke. Expected: `PrinterOfflineError` after exactly 3 retries (back-off 0s + 1s + 2s ≈ 3 seconds total before the error).
+Power off the PT-P750W, re-run the smoke. Expected: `PrinterOfflineError` after exactly 3 attempts (initial + 2 retries; back-off sleeps 0s, 1s, 2s; total ~3 seconds plus socket-timeout per attempt before the error).
 
 ### Task 16.2: Stop point — wait for human review
 
@@ -4509,7 +4536,7 @@ cd /opt/repos/label-printer-hub && git log --oneline main..HEAD
 | Acceptance 2 — status sequence queued/printing/completed | 14.1 |
 | Acceptance 3 — mock received the expected image | 14.1, 4.1 |
 | Acceptance 4 — tape mismatch ends failed with code+detail | 14.2 |
-| Acceptance 5 — offline ends failed after exactly 3 retries | 14.2, 6.2 |
+| Acceptance 5 — offline ends failed after exactly 3 attempts | 14.2, 6.2 |
 | Acceptance 6 — template not found is sync 404 | 14.1, 11.1 |
 | Acceptance 7 — lookup failure is sync 502 | 11.1 |
 | Acceptance 8 — lifespan shutdown stops queue within timeout | 13.1 |
