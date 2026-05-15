@@ -3,14 +3,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from app.printer_backends.snmp_helper import LiveStatus
 from app.schemas.print_response import (
     PrintJobResponse,
     PrintJobStatusResponse,
 )
 from app.services.job_lifecycle import JobState
+from pydantic import ValidationError
 
 
 def test_print_job_response_status_is_literal_queued() -> None:

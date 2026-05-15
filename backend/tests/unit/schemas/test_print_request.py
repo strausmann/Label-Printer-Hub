@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
-
 from app.schemas.print_request import (
     PrintLookupRequest,
     PrintOptions,
     PrintRequest,
     RawLabelData,
 )
+from pydantic import ValidationError
 
 
 def test_print_options_defaults_independent() -> None:
