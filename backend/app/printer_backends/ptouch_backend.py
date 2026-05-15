@@ -40,13 +40,13 @@ _PTOUCH_PRINTER_CLASSES: dict[str, type] = {
 }
 
 _PTOUCH_TAPE_CLASSES: dict[int, type] = {
-    4: ptouch.LaminatedTape3_5mm,
-    6: ptouch.LaminatedTape6mm,
-    9: ptouch.LaminatedTape9mm,
-    12: ptouch.LaminatedTape12mm,
-    18: ptouch.LaminatedTape18mm,
-    24: ptouch.LaminatedTape24mm,
-    36: ptouch.LaminatedTape36mm,
+    4: ptouch.Tape3_5mm,  # 3.5mm tape — closest match for "4mm" lookups
+    6: ptouch.Tape6mm,
+    9: ptouch.Tape9mm,
+    12: ptouch.Tape12mm,
+    18: ptouch.Tape18mm,
+    24: ptouch.Tape24mm,
+    36: ptouch.Tape36mm,
 }
 
 

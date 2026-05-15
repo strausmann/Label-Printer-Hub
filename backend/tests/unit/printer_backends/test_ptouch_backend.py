@@ -218,3 +218,24 @@ def test_from_settings_empty_host_raises() -> None:
 
     with pytest.raises(ValueError, match="pt750w_host"):
         PTouchBackend.from_settings(S())
+
+
+def test_tape_class_map_uses_generic_ptouch_tape_classes() -> None:
+    """Hardware smoke revealed PTP750W.get_tape_config() rejects LaminatedTape*mm
+    subclasses (raises ValueError). Only the generic Tape*mm classes are
+    whitelisted by the ptouch library. This test pins the dict to the
+    generic flavour so the regression doesn't come back.
+    """
+    import ptouch
+    from app.printer_backends.ptouch_backend import _PTOUCH_TAPE_CLASSES
+
+    assert _PTOUCH_TAPE_CLASSES[12] is ptouch.Tape12mm
+    assert _PTOUCH_TAPE_CLASSES[24] is ptouch.Tape24mm
+    assert _PTOUCH_TAPE_CLASSES[18] is ptouch.Tape18mm
+    # The whole set must be generic (no LaminatedTape subclass anywhere)
+    for tape_mm, tape_cls in _PTOUCH_TAPE_CLASSES.items():
+        assert "Laminated" not in tape_cls.__name__, (
+            f"_PTOUCH_TAPE_CLASSES[{tape_mm}] = {tape_cls.__name__} — "
+            "must be generic Tape*mm, ptouch's PT-Series whitelist rejects "
+            "LaminatedTape*mm subclasses (verified on real hardware)."
+        )
