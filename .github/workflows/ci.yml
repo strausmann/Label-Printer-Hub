@@ -77,12 +77,14 @@ jobs:
         working-directory: ${{ steps.pyproject.outputs.path }}
         run: pytest --cov=app --cov-report=xml -v
 
-      - name: Upload coverage
+      - name: Upload coverage to Codecov
         if: always() && hashFiles('backend/coverage.xml', 'coverage.xml') != ''
         uses: codecov/codecov-action@v6
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: backend/coverage.xml,coverage.xml
           fail_ci_if_error: false
+          flags: backend
 
       - name: No-op (no Python project yet — skipped)
         if: steps.pyproject.outputs.exists != 'true'
