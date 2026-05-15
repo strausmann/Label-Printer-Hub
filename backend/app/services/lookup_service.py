@@ -1,77 +1,47 @@
-"""Aggregator that routes lookup requests to the right per-app client.
+"""Aggregator that routes lookup requests to the right integration plugin.
 
-The service does not know any client's internals — it just dispatches by
-`source_app` to a registered async lookup callable. New apps (e.g.
-OpenFoodFacts) plug in by extending the constructor and the `_AppName`
-literal.
+The service uses IntegrationRegistry as its source of truth. New apps
+register themselves via entry_points (group 'label_hub.integrations') and
+become available without touching this module.
 
 UnknownAppError signals a configuration mismatch (the caller asked for an
 app that wasn't registered). It deliberately does NOT inherit from
 AppLookupNotFoundError — the two failure modes are operationally distinct:
 
 - UnknownAppError: "you misconfigured the request"
-- AppLookupNotFoundError (from any client): "the entity doesn't exist"
+- AppLookupNotFoundError (from any plugin): "the entity doesn't exist"
 """
 
 from __future__ import annotations
 
-from typing import Literal, Protocol, cast, get_args
-
+from app.integrations.registry import (
+    IntegrationNotFoundError,
+    IntegrationRegistry,
+)
 from app.schemas.label_data import LabelData
-
-_AppName = Literal["snipeit", "grocy", "spoolman"]
-
-AVAILABLE_APPS: tuple[_AppName, ...] = get_args(_AppName)
-
-
-class _LookupClient(Protocol):
-    """Minimal contract every per-app client satisfies.
-
-    SnipeITPlugin.lookup, GrocyPlugin.lookup, SpoolmanPlugin.lookup all
-    match this shape — `Protocol` lets us depend on the method without
-    importing concrete classes (avoids a cycle and keeps tests trivial).
-    """
-
-    async def lookup(self, identifier: str) -> LabelData: ...
 
 
 class UnknownAppError(Exception):
-    """Raised when `source_app` does not match any registered client."""
+    """Raised when `source_app` does not match any registered plugin."""
 
 
 class AppLookupService:
-    """Route `lookup(source_app, id)` to the right per-app client."""
-
-    def __init__(
-        self,
-        *,
-        snipeit: _LookupClient,
-        grocy: _LookupClient,
-        spoolman: _LookupClient,
-    ) -> None:
-        self._clients: dict[_AppName, _LookupClient] = {
-            "snipeit": snipeit,
-            "grocy": grocy,
-            "spoolman": spoolman,
-        }
-        # Computed once at construction — _clients never mutates after __init__.
-        self.available_apps: tuple[_AppName, ...] = tuple(sorted(self._clients))
+    """Route `lookup(source_app, id)` through IntegrationRegistry."""
 
     async def lookup(self, source_app: str, identifier: str) -> LabelData:
-        """Dispatch to `source_app`'s client.
+        """Dispatch to the registered plugin for `source_app`.
 
-        `source_app` is validated against the registry at runtime. The
-        `_AppName` Literal exists for static-analysis tooling only and does
-        NOT restrict what strings callers may pass — UnknownAppError covers
-        the runtime mismatch case.
-
-        Raises UnknownAppError if `source_app` is not registered. Any
-        AppLookupNotFoundError from the underlying client propagates
+        Raises UnknownAppError if no plugin is registered. Any
+        AppLookupNotFoundError raised by the underlying plugin propagates
         unchanged so callers can catch it uniformly.
         """
-        client = self._clients.get(cast(_AppName, source_app))
-        if client is None:
-            raise UnknownAppError(
-                f"Unknown app {source_app!r}. Available: {list(self.available_apps)}"
-            )
-        return await client.lookup(identifier)
+        try:
+            plugin = IntegrationRegistry.get(source_app)
+        except IntegrationNotFoundError as e:
+            raise UnknownAppError(str(e)) from e
+        return await plugin.lookup(identifier)
+
+    @property
+    def available_apps(self) -> list[str]:
+        """Names of currently registered plugins, sorted alphabetically."""
+        return IntegrationRegistry.names()
