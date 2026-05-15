@@ -57,6 +57,7 @@ class TemplateSchema(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    schema_version: int = 1
     id: str
     name: str
     app: Literal["snipeit", "grocy", "spoolman"]

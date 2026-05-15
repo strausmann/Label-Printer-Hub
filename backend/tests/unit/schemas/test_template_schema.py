@@ -93,3 +93,27 @@ def test_template_qr_rejects_negative_size() -> None:
 def test_template_text_rejects_negative_font_size() -> None:
     with pytest.raises(ValueError, match="positive font_size"):
         LayoutElement(type="text", x=0, y=0, field="title", font_size=-12)
+
+
+def test_template_schema_has_schema_version_field_defaulting_to_1() -> None:
+    """schema_version is a versioning hook for future YAML migrations."""
+    t = TemplateSchema(
+        id="x",
+        name="X",
+        app="snipeit",
+        tape_mm=24,
+        elements=(),
+    )
+    assert t.schema_version == 1
+
+
+def test_template_schema_accepts_explicit_schema_version() -> None:
+    t = TemplateSchema(
+        id="x",
+        name="X",
+        app="snipeit",
+        tape_mm=24,
+        elements=(),
+        schema_version=1,
+    )
+    assert t.schema_version == 1
