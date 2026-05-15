@@ -112,7 +112,7 @@ async def test_get_jobs_returns_status_with_live_block(
     monkeypatch.setattr("app.api.routes.print.query_live_status", fake_live)
 
     app = _app(fake_service, fake_queue)
-    app.state.printer_host = "10.0.0.5"
+    app.state.printer_host = "192.0.2.10"
     app.state.printer_snmp_community = "public"
     async with _client(app) as c:
         r = await c.get("/jobs/job-1")
@@ -148,7 +148,7 @@ async def test_get_jobs_live_snmp_failure_is_non_fatal(
     monkeypatch.setattr("app.api.routes.print.query_live_status", fake_live)
 
     app = _app(fake_service, fake_queue)
-    app.state.printer_host = "10.0.0.5"
+    app.state.printer_host = "192.0.2.10"
     app.state.printer_snmp_community = "public"
     async with _client(app) as c:
         r = await c.get("/jobs/job-1")

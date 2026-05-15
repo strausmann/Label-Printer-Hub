@@ -61,7 +61,7 @@ async def test_query_status_delegates_to_socket_helper(monkeypatch: pytest.Monke
     healthy = make_status_block(loaded_tape_mm=24)
 
     async def fake_query(host: str, port: int, *, timeout_s: float):
-        assert host == "10.0.0.5"
+        assert host == "192.0.2.10"
         assert port == 9100
         return healthy
 
@@ -69,7 +69,7 @@ async def test_query_status_delegates_to_socket_helper(monkeypatch: pytest.Monke
         "app.printer_backends.ptouch_backend.query_status_over_socket",
         fake_query,
     )
-    backend = PTouchBackend(host="10.0.0.5")
+    backend = PTouchBackend(host="192.0.2.10")
     status = await backend.query_status()
     assert status is healthy
 
@@ -186,9 +186,9 @@ async def test_print_image_invokes_ptouch_when_healthy(
         "app.printer_backends.ptouch_backend._ptouch_print",
         fake_print,
     )
-    backend = PTouchBackend(host="10.0.0.5")
+    backend = PTouchBackend(host="192.0.2.10")
     await backend.print_image(img_128, tape_24, auto_cut=True, high_resolution=False)
-    assert captured["host"] == "10.0.0.5"
+    assert captured["host"] == "192.0.2.10"
     assert captured["port"] == 9100
     assert captured["tape_mm"] == 24
     assert captured["model_id"] == "PT-P750W"
@@ -231,12 +231,12 @@ async def test_print_image_wraps_ptouch_exception(
 
 def test_from_settings_reads_pt750w_host() -> None:
     class S:
-        pt750w_host = "10.0.0.5"
+        pt750w_host = "192.0.2.10"
         pt750w_port = 9100
         printer_model = "PT-P750W"
 
     backend = PTouchBackend.from_settings(S())
-    assert backend.host == "10.0.0.5"
+    assert backend.host == "192.0.2.10"
 
 
 def test_from_settings_empty_host_raises() -> None:

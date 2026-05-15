@@ -52,7 +52,7 @@ async def test_query_model_pjl_happy_path(monkeypatch: pytest.MonkeyPatch) -> No
         return (None, None, 0, [(first_oid, rfc1902.OctetString(expected_pjl))])
 
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
-    pjl = await query_model_pjl("10.0.0.5", community="public", timeout_s=1.0)
+    pjl = await query_model_pjl("192.0.2.10", community="public", timeout_s=1.0)
     assert pjl == expected_pjl
 
 
@@ -62,7 +62,7 @@ async def test_query_model_pjl_timeout_raises(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
     with pytest.raises(SnmpDiscoveryError, match=r"timed out|requestTimedOut"):
-        await query_model_pjl("10.0.0.5", community="public", timeout_s=1.0)
+        await query_model_pjl("192.0.2.10", community="public", timeout_s=1.0)
 
 
 async def test_query_live_status_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,7 +83,7 @@ async def test_query_live_status_happy_path(monkeypatch: pytest.MonkeyPatch) -> 
         )
 
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
-    ls = await query_live_status("10.0.0.5", community="public", timeout_s=1.0)
+    ls = await query_live_status("192.0.2.10", community="public", timeout_s=1.0)
     assert isinstance(ls, LiveStatus)
     assert ls.hr_printer_status == "printing"
     assert "noPaper" in ls.error_flags
@@ -97,7 +97,7 @@ async def test_query_live_status_failure_is_separate_exception(
 
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
     with pytest.raises(SnmpQueryError):
-        await query_live_status("10.0.0.5", community="public", timeout_s=1.0)
+        await query_live_status("192.0.2.10", community="public", timeout_s=1.0)
 
 
 def test_prt_input_media_type_oid_constant() -> None:

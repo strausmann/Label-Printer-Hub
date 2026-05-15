@@ -6,7 +6,7 @@
 # — no pre-built image required, no GHCR pull. Designed for the early
 # development phase where the frontend container isn't ready yet.
 #
-# Usage on hhdocker03 (or any docker host on the same LAN as the printer):
+# Usage on any docker host on the same LAN as the printer:
 #
 #   git clone --branch feat/first-print https://github.com/strausmann/Label-Printer-Hub.git
 #   cd Label-Printer-Hub

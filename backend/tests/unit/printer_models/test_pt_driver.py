@@ -12,7 +12,7 @@ from PIL import Image
 
 @pytest.fixture
 def backend() -> MockPrinterBackend:
-    return MockPrinterBackend(host="10.0.0.5")
+    return MockPrinterBackend(host="192.0.2.10")
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def test_make_queue_printer_returns_printer_like(
     driver = PTP750WDriver(backend=backend)
     qp = driver.make_queue_printer(tape_registry)
     assert isinstance(qp, _PrinterLike)
-    assert qp.id == "PT-P750W@10.0.0.5"
+    assert qp.id == "PT-P750W@192.0.2.10"
 
 
 async def test_queue_printer_print_calls_backend(
