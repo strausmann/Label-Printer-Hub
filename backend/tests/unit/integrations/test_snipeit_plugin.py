@@ -9,9 +9,9 @@ def test_not_found_error_is_app_lookup_not_found() -> None:
 
     Ensures the aggregator can catch any client's not-found in a single clause.
     """
+    from app.integrations.grocy.plugin import GrocyNotFoundError
     from app.integrations.spoolman.plugin import SpoolmanNotFoundError
     from app.services.errors import AppLookupNotFoundError
-    from app.services.grocy_client import GrocyNotFoundError
 
     assert issubclass(SnipeITNotFoundError, AppLookupNotFoundError)
     assert issubclass(GrocyNotFoundError, AppLookupNotFoundError)

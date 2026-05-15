@@ -1,8 +1,8 @@
-"""Grocy REST API client — product lookup by id.
+"""Grocy integration plugin — product lookup by id.
 
 Grocy uses a custom `GROCY-API-KEY` header (not Bearer) and returns 400
 with `{"error_message": "..."}` for missing products instead of 404 —
-both quirks are explicit in the client's mapping logic.
+both quirks are explicit in the plugin's mapping logic.
 """
 
 from __future__ import annotations
@@ -20,8 +20,17 @@ class GrocyNotFoundError(AppLookupNotFoundError):
     """Raised when no Grocy product matches the given id."""
 
 
-class GrocyClient:
-    """Async client for Grocy's REST API."""
+class GrocyPlugin:
+    """Grocy integration plugin.
+
+    Implements the IntegrationPlugin protocol — exposes `name`,
+    `display_name`, and an async `lookup` resolving product-id →
+    LabelData. Configuration injection follows the same pattern as
+    SnipeITPlugin and SpoolmanPlugin.
+    """
+
+    name = "grocy"
+    display_name = "Grocy"
 
     def __init__(
         self,
