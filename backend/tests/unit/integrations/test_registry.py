@@ -1,5 +1,7 @@
 """Unit tests for IntegrationRegistry."""
 
+from collections.abc import Generator
+
 import pytest
 from app.integrations.base import IntegrationPlugin
 from app.integrations.registry import IntegrationNotFoundError, IntegrationRegistry
@@ -20,8 +22,10 @@ class _FakePlugin:
 
 
 @pytest.fixture(autouse=True)
-def _clear_registry() -> None:
-    """Each test starts with an empty registry."""
+def _clear_registry() -> Generator[None, None, None]:
+    """Each test starts with an empty registry; clean up after as well."""
+    IntegrationRegistry._plugins.clear()
+    yield
     IntegrationRegistry._plugins.clear()
 
 
@@ -34,6 +38,19 @@ def test_register_stores_plugin() -> None:
 def test_register_rejects_empty_name() -> None:
     p = _FakePlugin(name="")
     with pytest.raises(ValueError, match="non-empty name"):
+        IntegrationRegistry.register(p)
+
+
+def test_register_rejects_whitespace_only_name() -> None:
+    p = _FakePlugin(name="   ")
+    with pytest.raises(ValueError, match="non-empty name"):
+        IntegrationRegistry.register(p)
+
+
+def test_register_rejects_non_string_name() -> None:
+    p = _FakePlugin()
+    p.name = 42  # type: ignore[assignment]
+    with pytest.raises(TypeError, match="must be a string"):
         IntegrationRegistry.register(p)
 
 

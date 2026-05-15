@@ -23,8 +23,15 @@ class IntegrationRegistry:
 
     @classmethod
     def register(cls, plugin: IntegrationPlugin) -> None:
-        """Add `plugin` under its `.name`. Rejects empty names and duplicates."""
-        if not plugin.name:
+        """Add `plugin` under its `.name`.
+
+        Rejects empty, whitespace-only, or non-string names and duplicates.
+        """
+        if not isinstance(plugin.name, str):
+            raise TypeError(
+                f"IntegrationPlugin name must be a string; got {type(plugin.name).__name__}"
+            )
+        if not plugin.name.strip():
             raise ValueError(
                 f"IntegrationPlugin requires a non-empty name; got {plugin.name!r}"
             )
