@@ -1,0 +1,1 @@
+"""Spoolman integration plugin."""

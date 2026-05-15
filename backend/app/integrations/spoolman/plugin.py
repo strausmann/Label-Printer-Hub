@@ -22,8 +22,18 @@ class SpoolmanNotFoundError(AppLookupNotFoundError):
     """Raised when no Spoolman spool matches the given id."""
 
 
-class SpoolmanClient:
-    """Async client for Spoolman's REST API."""
+class SpoolmanPlugin:
+    """Spoolman integration plugin.
+
+    Implements the IntegrationPlugin protocol — exposes `name`,
+    `display_name`, and an async `lookup` resolving spool-id → LabelData.
+    Configuration (base URL, optional API key, timeout) is injected the
+    same way as SnipeITPlugin so production and respx-mocked tests use
+    the same instance without hidden global state.
+    """
+
+    name = "spoolman"
+    display_name = "Spoolman"
 
     def __init__(
         self,
