@@ -88,6 +88,10 @@ class Job:
     options: dict[str, Any] = field(default_factory=dict)
     error_msg: str | None = None
     error_flags: int | None = None
+    # Set by the worker when a PrinterError subclass surfaces from print_image.
+    error_code: str | None = None
+    error_message: str | None = None
+    error_detail: dict[str, Any] | None = None
     retry_count: int = 0
     # asyncio.Event is mutable but safe to use as a dataclass field default_factory:
     # it's constructed when a Job instance is created (not at import time), and
