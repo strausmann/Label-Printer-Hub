@@ -89,16 +89,14 @@ async def test_lookup_asset_without_serial_has_no_secondary_line() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_lookup_strips_trailing_slash_from_base_url() -> None:
+async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
     """base_url='https://snipe-it.example/' must not produce a double slash."""
     respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(200, json={"id": 1, "asset_tag": "A-1", "name": "Thing"})
     )
     # Trailing slash is injected via env var — the plugin must strip it.
-    import os
-
     from app.config import get_settings
-    os.environ["PRINTER_HUB_SNIPEIT_URL"] = "https://snipe-it.example/"
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipe-it.example/")
     get_settings.cache_clear()
     client = SnipeITPlugin()
     data = await client.lookup("A-1")
@@ -152,11 +150,10 @@ async def test_lookup_url_encodes_asset_tag() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_lookup_sends_bearer_auth_header() -> None:
+async def test_lookup_sends_bearer_auth_header(monkeypatch: pytest.MonkeyPatch) -> None:
     """lookup() must send Authorization: Bearer … and Accept: application/json."""
-    import os
-    os.environ["PRINTER_HUB_SNIPEIT_API_KEY"] = "secret-key-42"
     from app.config import get_settings
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "secret-key-42")
     get_settings.cache_clear()
 
     route = respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(

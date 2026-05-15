@@ -82,15 +82,14 @@ async def test_lookup_spool_with_missing_vendor_name() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_lookup_strips_trailing_slash() -> None:
+async def test_lookup_strips_trailing_slash(monkeypatch: pytest.MonkeyPatch) -> None:
     respx.get("https://spoolman.example/api/v1/spool/7").mock(
         return_value=httpx.Response(
             200, json={"id": 7, "filament": {"vendor": {"name": "V"}, "name": "M"}}
         )
     )
-    import os
-    os.environ["PRINTER_HUB_SPOOLMAN_URL"] = "https://spoolman.example/"
     from app.config import get_settings
+    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "https://spoolman.example/")
     get_settings.cache_clear()
     client = SpoolmanPlugin()
     data = await client.lookup("7")
