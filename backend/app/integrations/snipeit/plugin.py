@@ -21,14 +21,18 @@ class SnipeITNotFoundError(AppLookupNotFoundError):
     """Raised when no Snipe-IT asset matches the given tag."""
 
 
-class SnipeITClient:
-    """Async client for Snipe-IT's REST API.
+class SnipeITPlugin:
+    """Snipe-IT integration plugin.
 
-    Authenticates with a bearer token (Snipe-IT API key). Configuration —
-    base URL, API key, timeout — is injected so the same class can hit the
-    user's live instance from production and a respx-mocked endpoint from
-    tests, with no hidden global state.
+    Implements the IntegrationPlugin protocol — exposes `name`,
+    `display_name`, and an async `lookup` resolving asset_tag → LabelData.
+    Configuration (base URL, API key, timeout) is injected so the same
+    instance can hit the user's live Snipe-IT from production and a
+    respx-mocked endpoint from tests, with no hidden global state.
     """
+
+    name = "snipeit"
+    display_name = "Snipe-IT"
 
     def __init__(
         self,

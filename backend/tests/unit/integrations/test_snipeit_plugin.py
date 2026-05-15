@@ -1,7 +1,7 @@
 import httpx
 import pytest
 import respx
-from app.services.snipeit_client import SnipeITClient, SnipeITNotFoundError
+from app.integrations.snipeit.plugin import SnipeITNotFoundError, SnipeITPlugin
 
 
 def test_not_found_error_is_app_lookup_not_found() -> None:
@@ -11,7 +11,6 @@ def test_not_found_error_is_app_lookup_not_found() -> None:
     """
     from app.services.errors import AppLookupNotFoundError
     from app.services.grocy_client import GrocyNotFoundError
-    from app.services.snipeit_client import SnipeITNotFoundError
     from app.services.spoolman_client import SpoolmanNotFoundError
 
     assert issubclass(SnipeITNotFoundError, AppLookupNotFoundError)
@@ -34,7 +33,7 @@ async def test_lookup_asset_returns_label_data() -> None:
         )
     )
 
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
     data = await client.lookup("ASSET-12345")
 
     assert data.title == "MacBook Pro 16"
@@ -51,7 +50,7 @@ async def test_lookup_asset_404_raises_not_found() -> None:
         return_value=httpx.Response(404)
     )
 
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
 
     with pytest.raises(SnipeITNotFoundError, match="UNKNOWN"):
         await client.lookup("UNKNOWN")
@@ -68,7 +67,7 @@ async def test_lookup_asset_without_serial_has_no_secondary_line() -> None:
         )
     )
 
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
     data = await client.lookup("A-1")
 
     assert data.secondary == ()
@@ -81,7 +80,7 @@ async def test_lookup_strips_trailing_slash_from_base_url() -> None:
     respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(200, json={"id": 1, "asset_tag": "A-1", "name": "Thing"})
     )
-    client = SnipeITClient(base_url="https://snipe-it.example/", api_key="test-key")
+    client = SnipeITPlugin(base_url="https://snipe-it.example/", api_key="test-key")
     data = await client.lookup("A-1")
     assert data.qr_payload == "https://snipe-it.example/hardware/1"
 
@@ -99,7 +98,7 @@ async def test_lookup_missing_id_raises_value_error() -> None:
             json={"asset_tag": "A-1", "name": "Broken Asset"},  # no 'id'
         )
     )
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
     with pytest.raises(ValueError, match="missing required field 'id'"):
         await client.lookup("A-1")
 
@@ -111,7 +110,7 @@ async def test_lookup_5xx_raises_httpx_error() -> None:
     respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(500)
     )
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
     with pytest.raises(httpx.HTTPStatusError):
         await client.lookup("A-1")
 
@@ -126,7 +125,7 @@ async def test_lookup_url_encodes_asset_tag() -> None:
             json={"id": 1, "asset_tag": "A/1 test", "name": "Thing"},
         )
     )
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
     data = await client.lookup("A/1 test")
     assert data.title == "Thing"
 
@@ -138,7 +137,7 @@ async def test_lookup_sends_bearer_auth_header() -> None:
     route = respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(200, json={"id": 1, "asset_tag": "A-1", "name": "T"})
     )
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="secret-key-42")
+    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="secret-key-42")
     await client.lookup("A-1")
 
     assert route.called

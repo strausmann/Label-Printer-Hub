@@ -27,7 +27,7 @@ AVAILABLE_APPS: tuple[_AppName, ...] = get_args(_AppName)
 class _LookupClient(Protocol):
     """Minimal contract every per-app client satisfies.
 
-    SnipeITClient.lookup, GrocyClient.lookup, SpoolmanClient.lookup all
+    SnipeITPlugin.lookup, GrocyPlugin.lookup, SpoolmanPlugin.lookup all
     match this shape — `Protocol` lets us depend on the method without
     importing concrete classes (avoids a cycle and keeps tests trivial).
     """
