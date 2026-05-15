@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import types
 from importlib.metadata import entry_points
 from typing import ClassVar
 
@@ -133,6 +134,39 @@ class ModelRegistry:
                 driver_cls = ep.load()
             except Exception:
                 log.exception("Failed to load printer-model entry-point %r", ep.name)
+                continue
+            if isinstance(driver_cls, types.ModuleType):
+                # Entry-point declared as a module (e.g. "app.printer_models.pt").
+                # The module normally registers its driver(s) as a side-effect of
+                # being imported.  That side-effect ran at first import but won't
+                # re-run if the registry was cleared (tests do this).  To remain
+                # idempotent across clear()+ensure_discovered() cycles, we scan the
+                # module for concrete classes that look like PrinterModel plugins
+                # (they expose model_id, pjl_signatures, snmp_model_oid_value_substr)
+                # and register any that are not already present.
+                import inspect as _inspect
+
+                existing_ids = {
+                    getattr(e if isinstance(e, type) else type(e), "model_id", None)
+                    for e in cls._models
+                }
+                for _name, obj in _inspect.getmembers(driver_cls, _inspect.isclass):
+                    if (
+                        obj.__module__ == driver_cls.__name__
+                        and hasattr(obj, "model_id")
+                        and hasattr(obj, "pjl_signatures")
+                        and hasattr(obj, "snmp_model_oid_value_substr")
+                        and getattr(obj, "model_id", None) not in existing_ids
+                    ):
+                        try:
+                            cls.register(obj)
+                            existing_ids.add(obj.model_id)
+                        except (ValueError, TypeError, AttributeError):
+                            log.exception(
+                                "Failed to register printer-model %r from module %r",
+                                _name,
+                                ep.name,
+                            )
                 continue
             try:
                 cls.register(driver_cls)
