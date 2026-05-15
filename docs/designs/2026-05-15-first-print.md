@@ -23,7 +23,7 @@ In scope:
 
 - `PrinterBackend` Protocol as the extension point for hardware adapters.
 - `PTouchBackend` as the first concrete adapter, wrapping the `ptouch` library.
-- `PTP750WDriver` (PrinterModel, see ADR 0004) and `PTP750WPrinter` (bridge to PrintQueue's `_PrinterLike` Protocol).
+- `PTP750WDriver` (PrinterModel, see ADR 0004) plus a private `_PTPQueuePrinter` bridge it produces via `make_queue_printer(...)` for the PrintQueue's `_PrinterLike` Protocol.
 - `PrintService` orchestrating lookup → render → enqueue.
 - REST endpoints `POST /print` and `GET /jobs/{job_id}`.
 - App lifespan initialization with backend selection from settings.
@@ -50,7 +50,7 @@ flowchart LR
     LR[LabelRenderer]
     TL[TemplateLoader]
     PQ[PrintQueue]
-    PR[PTP750WPrinter]
+    PR[_PTPQueuePrinter bridge]
     DR[PTP750WDriver]
     BE[PrinterBackend]
     HW[(PT-P750W)]
@@ -76,8 +76,9 @@ flowchart LR
 | `PTouchBackend` | `app/printer_backends/ptouch_backend.py` | Wraps the `ptouch` library; synchronous I/O is dispatched via `asyncio.to_thread` |
 | `MockPrinterBackend` | `app/printer_backends/mock_backend.py` | Mock for tests and local dev without hardware |
 | Exceptions | `app/printer_backends/exceptions.py` | `PrinterError` hierarchy |
-| `PTP750WDriver` | `app/printer_models/pt.py` (extends existing module) | PrinterModel driver, holds model-specific constants |
-| `PTP750WPrinter` | `app/printer_models/pt.py` (extends existing module) | Bridge: PrinterModel + Backend → PrintQueue's `_PrinterLike`. Per ADR 0004 model-specific code lives in `printer_models/<series>.py`. |
+| `PTP750WDriver` | `app/printer_models/pt.py` (extends existing module) | PrinterModel driver + `make_queue_printer(...)` factory that returns a `_PrinterLike`. Per ADR 0004 all PT-specific code lives in this file. |
+| `ModelRegistry` | `app/printer_models/registry.py` (existing, extended) | Discovers driver plugins via `setuptools entry_points` (group `label_hub.printer_models`); ships with the built-in PT-Series driver registered |
+| Backend registry | `app/printer_backends/__init__.py` (new) | Discovers backend plugins via `setuptools entry_points` (group `label_hub.printer_backends`); ships with `ptouch` + `mock` registered |
 | `PrintService` | `app/services/print_service.py` | Use-case orchestrator |
 | REST routes | `app/api/routes/print.py` | `POST /print`, `GET /jobs/{id}`, exception mapping |
 | Lifespan init | `app/main.py` | Backend selection, queue start/stop |
@@ -121,30 +122,58 @@ class PrinterBackend(Protocol):
 - `print_image` validates against the cached status (see Error handling) and calls `printer.print(label, auto_cut=..., high_resolution=...)`.
 - `send_bytes` opens a raw TCP connection to `host:9100` via `asyncio.open_connection` (so the call is non-blocking inside an `async def`), writes the bytes, and closes.
 
-### `PTP750WDriver` (PrinterModel)
+### `PTP750WDriver` (PrinterModel + queue-printer factory)
 
-- `model_id = "PT-P750W"`, `dpi=(180, 180)`, `print_head_pins=128`.
-- `width_to_pixels(tape_spec)` returns `tape_spec.print_area_pins`.
-- `build_print_job` raises `NotImplementedError` — encoding is done inside `ptouch`, not in the driver.
-- `query_status(host="", port=9100, timeout_s=5.0)` delegates to `self._backend.query_status()`. The `host` argument is ignored because the backend is already bound to a connection.
-
-### `PTP750WPrinter` (bridge to PrintQueue)
-
-Adapter that combines PrinterModel + backend into the shape `PrintQueue._PrinterLike` expects (`async def print_image(image, *, tape_mm, **options)`):
+The driver implements the existing `PrinterModel` Protocol AND provides a factory method that produces a `_PrinterLike` for the queue. Keeping the bridge as a method on the driver means: subclassing the driver automatically inherits the bridge, and `printer_models/pt.py` stays the single home for PT-specific code (ADR 0004).
 
 ```python
-class PTP750WPrinter:
-    # `_PrinterLike` (print_queue.py) requires the attribute `id: str`.
-    id: str  # e.g. "pt-p750w@<host>"
+class PTP750WDriver:
+    # PrinterModel attrs
+    model_id = "PT-P750W"
+    pjl_signatures = ["PT-P750W"]
+    snmp_model_oid_value_substr = "PT-P750W"
+    dpi = (180, 180)
+    print_head_pins = 128
 
-    def __init__(
+    def __init__(self, backend: PrinterBackend) -> None:
+        self._backend = backend
+
+    # --- PrinterModel methods ---
+    async def query_status(self, host: str = "", port: int = 9100, timeout_s: float = 5.0):
+        # host is bound to the backend already; argument kept for Protocol compat
+        return await self._backend.query_status()
+
+    def width_to_pixels(self, tape_spec: TapeSpec) -> int:
+        return tape_spec.print_area_pins
+
+    def build_print_job(self, image, tape_spec, auto_cut=True, high_resolution=False) -> bytes:
+        raise NotImplementedError(
+            "PT-P750W uses high-level backend.print_image; "
+            "raw raster encoding stays inside the ptouch library."
+        )
+
+    # --- queue-printer factory ---
+    def make_queue_printer(
         self,
-        driver: PTP750WDriver,
-        backend: PrinterBackend,
         tape_registry: TapeRegistry,
         *,
         default_media_type: MediaType = MediaType.LAMINATED,
-    ) -> None: ...
+    ) -> "_PTPQueuePrinter":
+        """Return a `_PrinterLike` bound to this driver + its backend."""
+        return _PTPQueuePrinter(
+            driver=self,
+            backend=self._backend,
+            tape_registry=tape_registry,
+            default_media_type=default_media_type,
+        )
+
+
+class _PTPQueuePrinter:
+    """Internal `_PrinterLike` adapter — not part of the public API. Use the
+    driver's `make_queue_printer(...)` factory to construct one.
+    """
+    # `_PrinterLike` (print_queue.py) requires `id: str`.
+    id: str  # e.g. "pt-p750w@<host>"
 
     async def print_image(self, image, *, tape_mm, **options):
         media_type = options.get("media_type", self._default_media_type)
@@ -156,7 +185,13 @@ class PTP750WPrinter:
         )
 ```
 
-**Note on TapeRegistry API:** the existing `TapeRegistry.lookup_pt(width_mm, media_type)` requires an explicit `MediaType` (laminated, non-laminated, etc.). The bridge falls back to a `default_media_type` injected at construction time (typically `MediaType.LAMINATED` because TZe-Tapes dominate PT-Series use), and lets a per-print `options["media_type"]` override it. This avoids silently picking a tape the printer doesn't have loaded.
+**Why the factory pattern:**
+
+- A custom driver (e.g. `class PTP710BTDriver(PTP750WDriver)`) inherits `make_queue_printer` for free — no second adapter class to subclass.
+- The PT-series adapter (`_PTPQueuePrinter`) is shared across every PT model and stays private to `pt.py`.
+- The QL series will mirror this in `ql.py` with its own `_QLQueuePrinter` adapter; no cross-series coupling.
+
+**TapeRegistry API:** `TapeRegistry.lookup_pt(width_mm, media_type)` requires an explicit `MediaType` (laminated, non-laminated, ...). The PT adapter takes a `default_media_type` from the factory (typically `MediaType.LAMINATED` because TZe-Tapes dominate PT use) and lets a per-print `options["media_type"]` override it. The pre-print status check catches a mismatched physical tape via `TapeMismatchError`.
 
 ## Data Flow
 
@@ -171,7 +206,7 @@ class PTP750WPrinter:
 5. PrintService calls `LabelRenderer.render(template, label_data)` → PIL image.
 6. PrintService calls `PrintQueue.enqueue(image, tape_mm=template.tape_mm, options=...)` → `job_id`.
 7. The API responds `202 {job_id, status: "queued"}`.
-8. The queue worker dequeues (existing FSM) and calls `PTP750WPrinter.print_image(...)`.
+8. The queue worker dequeues (existing FSM) and calls `print_image(...)` on the `_PrinterLike` returned by `driver.make_queue_printer(...)`.
 9. The backend runs pre-print validation and prints.
 10. Job status transitions: `queued → running → done` (or `→ failed` with `error_code`).
 
@@ -233,9 +268,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     TemplateLoader.load_dir(_SEED_TEMPLATES_DIR)  # already from Phase 4
 
+    # Discover all driver + backend plugins via entry_points (built-ins ship pre-registered)
+    ModelRegistry.ensure_discovered()
+    BackendRegistry.ensure_discovered()
+
     backend = _build_backend(settings)
-    driver = PTP750WDriver(backend=backend)
-    printer = PTP750WPrinter(driver=driver, backend=backend, tape_registry=tape_registry)
+    driver_cls = ModelRegistry.find_by_model_id(settings.printer_model)
+    driver = driver_cls(backend=backend)
+    printer = driver.make_queue_printer(tape_registry)
     queue = PrintQueue(printers=[printer])  # matches current __init__ signature
     await queue.start()
 
@@ -255,20 +295,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def _build_backend(settings: Settings) -> PrinterBackend:
-    if settings.printer_backend == "mock":
-        # MockPrinterBackend lives under app/printer_backends/ so this import works
-        # in production deployments too — it stays useful for local dev without hardware.
-        from app.printer_backends.mock_backend import MockPrinterBackend
-        return MockPrinterBackend()
-    if settings.printer_backend == "ptouch":
-        if not settings.printer_pt_host:
-            raise ConfigurationError("printer_pt_host required for printer_backend=ptouch")
-        return PTouchBackend(
-            host=settings.printer_pt_host,
-            ptouch_printer_cls=_resolve_ptouch_model(settings.printer_pt_model),
-        )
-    raise ConfigurationError(f"unknown printer_backend: {settings.printer_backend}")
+    """Backend factory — discovers backend implementations via entry_points
+    (group `label_hub.printer_backends`) and instantiates the one named by
+    `settings.printer_backend`. The built-in `ptouch` and `mock` backends
+    self-register; third-party backends ship as separate pip packages.
+    """
+    backend_factory = BackendRegistry.find_by_backend_id(settings.printer_backend)
+    return backend_factory.from_settings(settings)
 ```
+
+Each backend factory exposes a tiny `from_settings(settings) → PrinterBackend` class method so the lifespan code stays trivial and series-agnostic. `PTouchBackend.from_settings` checks `printer_pt_host` and looks up the ptouch class for the configured `printer_model`; `MockPrinterBackend.from_settings` ignores host/model and returns a fresh mock.
 
 **Mock backend lives in `app/`, not `tests/`** — the earlier open question is resolved. Rationale:
 
@@ -281,15 +317,97 @@ def _build_backend(settings: Settings) -> PrinterBackend:
 ```python
 class Settings(BaseSettings):
     # ...existing fields...
-    printer_backend: Literal["ptouch", "mock"] = "ptouch"
-    printer_pt_host: str | None = None
-    printer_pt_model: str = "PT-P750W"
+    printer_backend: str = "ptouch"           # backend_id; default built-ins: "ptouch", "mock"
+    printer_model: str = "PT-P750W"           # model_id resolved against ModelRegistry
+    printer_pt_host: str | None = None        # required for ptouch backend
     printer_queue_timeout_s: float = 30.0
 ```
 
 The env-var prefix `PRINTER_HUB_` is already established. Example: `PRINTER_HUB_PRINTER_PT_HOST=<printer-ip>`.
 
+`printer_backend` and `printer_model` are plain strings (not `Literal[...]`), so a freshly installed third-party plugin can be selected without a code change. Validation happens at app start — if either value does not resolve to a registered plugin, the lifespan fails fast with a clear error.
+
 Per-printer concurrency is **not** a setting — `PrintQueue` already gives each printer its own dedicated worker (one in flight per printer at a time). Concurrency would only become a knob if a single physical printer could process several jobs in parallel, which Brother PT-Series doesn't.
+
+## Extensibility — Adding More Printers Without Core Changes
+
+The core (PrintQueue, LabelRenderer, TemplateLoader, PrintService, REST routes, both Protocols) does not change when new hardware is added. Five extension paths cover the realistic scenarios, ordered from smallest to largest intervention:
+
+### Path 1 — New model in the same series (e.g. PT-P900)
+
+Add a class to `app/printer_models/pt.py`:
+
+```python
+class PTP900Driver(PTP750WDriver):
+    model_id = "PT-P900"
+    pjl_signatures = ["PT-P900"]
+    snmp_model_oid_value_substr = "PT-P900"
+    dpi = (360, 360)
+    print_head_pins = 454
+```
+
+Register at import time (via the module-level `ModelRegistry.register(PTP900Driver)` call that already exists in `pt.py`). The bridge is inherited via `make_queue_printer`. Users select it with `PRINTER_HUB_PRINTER_MODEL=PT-P900`. **One file, no core change.**
+
+### Path 2 — Decorator backend (smallest fix for vendor-library bugs)
+
+When the existing backend is 95% right but one method needs a patch — e.g. PT-P710BT firmware lies about `tape_empty`:
+
+```python
+class QuirkyPTP710BTBackend:
+    backend_id = "ptouch-p710bt-quirk"
+    def __init__(self, inner: PTouchBackend) -> None:
+        self._inner = inner
+        self.host = inner.host
+    async def query_status(self) -> StatusBlock:
+        status = await self._inner.query_status()
+        if status.tape_empty and self._secondary_check_says_ok():
+            status = replace(status, tape_empty=False)
+        return status
+    async def print_image(self, image, tape_spec, **kw):
+        await self._inner.print_image(image, tape_spec, **kw)
+    async def send_bytes(self, raster):
+        await self._inner.send_bytes(raster)
+```
+
+One wrapper class implementing `PrinterBackend` again. `ptouch` library stays untouched, no driver change.
+
+### Path 3 — Subclass driver (model-specific status / encoding)
+
+When the anomaly lives in the driver layer (status-block parsing, raster encoding for one model), subclass the closest driver and override the affected method. The bridge factory is inherited; no other changes are needed.
+
+### Path 4 — New series with its own backend (e.g. QL via `brother-ql`)
+
+```
+app/printer_models/ql.py            (new — QL drivers, QL tape data)
+app/printer_backends/brother_ql.py  (new — wraps brother-ql library)
+```
+
+Both register via `ensure_discovered()` at app start. `PrinterBackend` Protocol is unchanged — its contract already covers `brother-ql`. **Core unchanged, two new files.**
+
+### Path 5 — Third-party driver / backend as a separate pip package
+
+External package ships its own `pyproject.toml`:
+
+```toml
+[project.entry-points."label_hub.printer_models"]
+zebra-zd420 = "label_hub_zebra.driver:ZebraZD420Driver"
+
+[project.entry-points."label_hub.printer_backends"]
+zebra-zpl = "label_hub_zebra.backend:ZebraZPLBackend"
+```
+
+`pip install label-hub-zebra-driver` → at app start the discovery loop in `app/printer_models/__init__.py` and `app/printer_backends/__init__.py` picks them up automatically. User sets `PRINTER_HUB_PRINTER_MODEL=zebra-zd420` and `PRINTER_HUB_PRINTER_BACKEND=zebra-zpl`. **Zero edits in the core repository.**
+
+### What this means for First-Print scope
+
+To enable paths 1, 2, 4 and 5 from day one, First-Print delivers:
+
+1. `ModelRegistry` is driven by `setuptools entry_points` (group `label_hub.printer_models`); built-in PT driver self-registers.
+2. A new `BackendRegistry` mirrors that for backends (group `label_hub.printer_backends`); built-in `ptouch` and `mock` backends self-register.
+3. Backends expose `from_settings(settings) → PrinterBackend` so the lifespan stays trivial.
+4. Driver exposes `make_queue_printer(...)` so subclasses inherit the bridge.
+
+Path 3 (subclass driver) needs no extra plumbing — it falls out of the inheritance model. Lifecycle hooks (pre/post-print) are deliberately **out of scope** for First-Print (YAGNI): paths 2 and 3 cover every realistic case today. They can be added to `PrinterModel` later as optional methods with a default no-op if a concrete need arises.
 
 ## Error Handling
 
@@ -363,8 +481,10 @@ Plus `TemplateNotFoundError` and `LookupFailedError` on the lookup/template side
 | `tests/services/test_pt_printer_bridge.py` | Bridge calls backend with correct `TapeSpec`; `_PrinterLike` conformance |
 | `tests/services/test_print_service.py` | Lookup/render/enqueue order; raw `data` path bypasses integration |
 | `tests/api/test_print_routes.py` | 202 with `job_id`; XOR validation; `GET /jobs/{id}` for all statuses |
-| `tests/test_lifespan.py` | Mock backend starts; `queue.stop()` runs in `finally` |
-| `tests/test_settings_printer.py` | `printer_pt_host` required when `printer_backend=ptouch` |
+| `tests/test_lifespan.py` | Mock backend starts; plugin discovery runs; `queue.stop()` runs in `finally` |
+| `tests/test_settings_printer.py` | `printer_pt_host` required when `printer_backend=ptouch`; unknown `printer_model` / `printer_backend` fail fast at startup |
+| `tests/printer_models/test_registry.py` | `ModelRegistry.find_by_model_id` returns the right driver; entry-point discovery picks up a fake plugin |
+| `tests/printer_backends/test_registry.py` | `BackendRegistry.find_by_backend_id` returns the right backend factory; built-in `ptouch` + `mock` are pre-registered |
 
 ### Integration tests
 
@@ -403,15 +523,18 @@ Two additional manual scenarios:
 7. Lookup failure is a synchronous 502; no job record is created.
 8. Lifespan shutdown stops the queue within `printer_queue_timeout_s`.
 9. Settings without `printer_pt_host` and `printer_backend=ptouch` fail at app start with a clear error.
-10. `scripts/smoke_first_print.py` prints successfully on a real PT-P750W (verified manually).
-11. Coverage ≥80%; `ruff check`, `ruff format --check`, and `mypy --strict` all green.
+10. An unknown `printer_model` or `printer_backend` fails at app start with a clear error listing the registered options.
+11. A fake driver plugin registered via `setuptools entry_points` is picked up by `ModelRegistry.ensure_discovered()` in a test, demonstrating that third-party drivers work end-to-end without core changes.
+12. `scripts/smoke_first_print.py` prints successfully on a real PT-P750W (verified manually).
+13. Coverage ≥80%; `ruff check`, `ruff format --check`, and `mypy --strict` all green.
 
 ## Open Questions and Risks
 
 - **ptouch status parsing:** which fields the `ptouch` library exposes from the status block must be verified in plan Phase 1 (read `ptouch.printers.PT_P750W.get_status`). If the fields are insufficient (e.g. no `loaded_tape_mm`), we need a fall-back raw parser following the Brother Raster Command Reference (PT-Series).
-- **PT-P750W transport:** the design assumes network TCP. The library may force a specific connection class — the class lookup in `_resolve_ptouch_model` is a plain string map and easy to extend.
+- **PT-P750W transport:** the design assumes network TCP. The ptouch class lookup happens inside `PTouchBackend.from_settings` and is easy to extend if a future model needs a different connection class.
 - **In-memory TTL drift:** the 5-minute TTL could expire during very long polls. Not blocking for First-Print; will be revisited together with the persistence work in Phase 5.
 - **Default `MediaType` for the bridge:** `MediaType.LAMINATED` covers the common TZe-Tape case, but the bridge accepts a per-print `options["media_type"]` override. If a request comes in with the wrong media type, the pre-print status check will catch the mismatch via `TapeMismatchError`.
+- **Lifecycle hooks (`before_print` / `after_print`):** intentionally **not** part of First-Print. Adding them would extend the `PrinterModel` Protocol once (with no-op defaults). Deferred until a concrete need surfaces — paths 2 and 3 in the Extensibility section cover every realistic case today.
 
 ## References
 
