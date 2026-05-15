@@ -212,6 +212,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         print_queue=queue,
         lookup_service=AppLookupService(),
         printer_id=printer.id,
+        backend=backend,
     )
 
     try:

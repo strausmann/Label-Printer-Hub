@@ -161,3 +161,172 @@ async def test_get_jobs_unknown_is_404(fake_service, fake_queue) -> None:
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.get("/jobs/does-not-exist")
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /print — new synchronous error types
+# ---------------------------------------------------------------------------
+
+
+async def test_post_print_tape_mismatch_fail_is_409_with_detail(fake_service, fake_queue) -> None:
+    from app.printer_backends.exceptions import TapeMismatchError
+
+    fake_service.submit_print_job.side_effect = TapeMismatchError(expected_mm=24, loaded_mm=12)
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post(
+            "/print",
+            json={
+                "template_id": "t",
+                "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
+            },
+        )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error_code"] == "tape_mismatch"
+    assert body["error_detail"] == {"expected_mm": 24, "loaded_mm": 12}
+
+
+async def test_post_print_tape_mismatch_no_tape_loaded(fake_service, fake_queue) -> None:
+    from app.printer_backends.exceptions import TapeMismatchError
+
+    fake_service.submit_print_job.side_effect = TapeMismatchError(expected_mm=24, loaded_mm=None)
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post(
+            "/print",
+            json={
+                "template_id": "t",
+                "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
+            },
+        )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error_code"] == "tape_mismatch"
+    assert body["error_detail"] == {"expected_mm": 24, "loaded_mm": None}
+
+
+async def test_post_print_printer_offline_is_503(fake_service, fake_queue) -> None:
+    from app.printer_backends.exceptions import PrinterOfflineError
+
+    fake_service.submit_print_job.side_effect = PrinterOfflineError("host unreachable")
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post(
+            "/print",
+            json={
+                "template_id": "t",
+                "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
+            },
+        )
+    assert r.status_code == 503
+    assert r.json()["error_code"] == "printer_offline"
+
+
+async def test_post_print_tape_empty_is_409(fake_service, fake_queue) -> None:
+    from app.printer_backends.exceptions import TapeEmptyError
+
+    fake_service.submit_print_job.side_effect = TapeEmptyError()
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post(
+            "/print",
+            json={
+                "template_id": "t",
+                "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
+            },
+        )
+    assert r.status_code == 409
+    assert r.json()["error_code"] == "tape_empty"
+
+
+async def test_post_print_cover_open_is_409(fake_service, fake_queue) -> None:
+    from app.printer_backends.exceptions import PrinterCoverOpenError
+
+    fake_service.submit_print_job.side_effect = PrinterCoverOpenError()
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post(
+            "/print",
+            json={
+                "template_id": "t",
+                "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
+            },
+        )
+    assert r.status_code == 409
+    assert r.json()["error_code"] == "printer_cover_open"
+
+
+# ---------------------------------------------------------------------------
+# POST /jobs/{job_id}/resume
+# ---------------------------------------------------------------------------
+
+
+async def test_resume_job_transitions_paused_to_queued(fake_service, fake_queue) -> None:
+    """Resume a PAUSED job → 200 with state=queued and cleared error metadata."""
+    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
+    # Manually set PAUSED state (as PrintService would after tape mismatch+queue)
+    from app.services.job_lifecycle import JobStateMachine
+
+    JobStateMachine.transition(job, JobState.PAUSED)
+    job.error_code = "tape_mismatch"
+    job.error_message = "Expected 24mm tape, loaded 12mm"
+    job.error_detail = {"expected_mm": 24, "loaded_mm": 12}
+    job.submitted_at = datetime.now(UTC)
+
+    fake_queue.get = AsyncMock(return_value=job)
+    fake_queue.resume_job = AsyncMock(side_effect=lambda job_id: _resume_side_effect(job))
+
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post("/jobs/job-1/resume")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["job_id"] == "job-1"
+    assert body["status"] == "queued"
+    assert body["error_code"] is None
+    assert body["error_message"] is None
+    assert body["error_detail"] is None
+
+
+def _resume_side_effect(job: Job) -> None:
+    """Simulate PrintQueue.resume_job transitioning PAUSED → QUEUED."""
+    from app.services.job_lifecycle import JobStateMachine
+
+    JobStateMachine.transition(job, JobState.QUEUED)
+
+
+async def test_resume_job_not_paused_is_409(fake_service, fake_queue) -> None:
+    """Resuming a job that is not PAUSED returns 409."""
+    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
+    # job.state is QUEUED by default
+    job.submitted_at = datetime.now(UTC)
+    fake_queue.get = AsyncMock(return_value=job)
+
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post("/jobs/job-1/resume")
+
+    assert r.status_code == 409
+    assert "not PAUSED" in r.json()["detail"]
+
+
+async def test_resume_job_unknown_is_404(fake_service, fake_queue) -> None:
+    """Resuming an unknown job returns 404."""
+    fake_queue.get = AsyncMock(side_effect=KeyError("nope"))
+
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post("/jobs/does-not-exist/resume")
+
+    assert r.status_code == 404
+
+
+async def test_resume_job_completed_is_409(fake_service, fake_queue) -> None:
+    """Resuming a COMPLETED job returns 409."""
+    from app.services.job_lifecycle import JobStateMachine
+
+    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
+    # Transition to COMPLETED via PRINTING
+    JobStateMachine.transition(job, JobState.PRINTING)
+    JobStateMachine.transition(job, JobState.COMPLETED)
+    job.submitted_at = datetime.now(UTC)
+    fake_queue.get = AsyncMock(return_value=job)
+
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post("/jobs/job-1/resume")
+
+    assert r.status_code == 409

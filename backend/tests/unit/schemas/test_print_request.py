@@ -69,3 +69,26 @@ def test_copies_bounds() -> None:
         PrintOptions(copies=0)
     with pytest.raises(ValidationError):
         PrintOptions(copies=11)
+
+
+def test_on_tape_mismatch_defaults_to_fail() -> None:
+    r = PrintRequest(template_id="t", data=RawLabelData(title="x", primary_id="1", qr_payload="u"))
+    assert r.on_tape_mismatch == "fail"
+
+
+def test_on_tape_mismatch_accepts_queue() -> None:
+    r = PrintRequest(
+        template_id="t",
+        data=RawLabelData(title="x", primary_id="1", qr_payload="u"),
+        on_tape_mismatch="queue",
+    )
+    assert r.on_tape_mismatch == "queue"
+
+
+def test_on_tape_mismatch_rejects_unknown_value() -> None:
+    with pytest.raises(ValidationError):
+        PrintRequest(
+            template_id="t",
+            data=RawLabelData(title="x", primary_id="1", qr_payload="u"),
+            on_tape_mismatch="abort",  # not in the Literal set
+        )

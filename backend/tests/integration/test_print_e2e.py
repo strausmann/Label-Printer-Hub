@@ -103,7 +103,8 @@ def mismatched_mock_backend():
     yield
 
 
-async def test_tape_mismatch_ends_failed(mismatched_mock_backend) -> None:
+async def test_tape_mismatch_synchronous_409(mismatched_mock_backend) -> None:
+    """Tape mismatch now triggers synchronous 409 via preflight (no job created)."""
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
@@ -113,8 +114,8 @@ async def test_tape_mismatch_ends_failed(mismatched_mock_backend) -> None:
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
             },
         )
-        assert r.status_code == 202
-        body = await _poll_until(c, r.json()["job_id"], target="failed")
+        assert r.status_code == 409
+        body = r.json()
         assert body["error_code"] == "tape_mismatch"
         assert body["error_detail"] == {"expected_mm": 24, "loaded_mm": 12}
 
@@ -127,7 +128,8 @@ def offline_mock_backend():
     yield
 
 
-async def test_offline_ends_failed_after_retries(offline_mock_backend) -> None:
+async def test_offline_synchronous_503(offline_mock_backend) -> None:
+    """Printer offline now triggers synchronous 503 via preflight (no job created)."""
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
@@ -137,6 +139,6 @@ async def test_offline_ends_failed_after_retries(offline_mock_backend) -> None:
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
             },
         )
-        assert r.status_code == 202
-        body = await _poll_until(c, r.json()["job_id"], target="failed", timeout_s=10.0)
+        assert r.status_code == 503
+        body = r.json()
         assert body["error_code"] == "printer_offline"

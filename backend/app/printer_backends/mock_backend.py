@@ -18,6 +18,7 @@ from app.printer_backends.exceptions import (
     TapeEmptyError,
     TapeMismatchError,
 )
+from app.printer_backends.snmp_helper import PreflightStatus
 from app.services.status_block import (
     MediaType,
     NotificationCode,
@@ -106,6 +107,25 @@ class MockPrinterBackend:
             media_type=self._loaded_media_type,
             tape_empty=self._tape_empty,
             cover_open=self._cover_open,
+        )
+
+    async def preflight_check(self) -> PreflightStatus:
+        """Mock SNMP preflight — raises the same errors as PTouchBackend."""
+        if self._offline:
+            raise PrinterOfflineError(f"mock backend marked offline at {self.host!r}")
+        error_flags: list[str] = []
+        if self._tape_empty:
+            error_flags.append("noPaper")
+        if self._cover_open:
+            error_flags.append("doorOpen")
+        if self._tape_empty:
+            raise TapeEmptyError()
+        if self._cover_open:
+            raise PrinterCoverOpenError()
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=self._loaded_tape_mm,
+            error_flags=error_flags,
         )
 
     async def print_image(

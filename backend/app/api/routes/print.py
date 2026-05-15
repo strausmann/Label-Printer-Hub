@@ -1,4 +1,4 @@
-"""POST /print + GET /jobs/{job_id}."""
+"""POST /print + GET /jobs/{job_id} + POST /jobs/{job_id}/resume."""
 
 from __future__ import annotations
 
@@ -8,7 +8,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from app.printer_backends.exceptions import SnmpQueryError
+from app.printer_backends.exceptions import (
+    PrinterCoverOpenError,
+    PrinterOfflineError,
+    SnmpQueryError,
+    TapeEmptyError,
+    TapeMismatchError,
+)
 from app.printer_backends.snmp_helper import LiveStatus, query_live_status
 from app.schemas.print_request import PrintRequest
 from app.schemas.print_response import PrintJobResponse, PrintJobStatusResponse
@@ -23,6 +29,10 @@ router = APIRouter()
 _SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     TemplateNotFoundError: (404, "template_not_found"),
     LookupFailedError: (502, "integration_lookup_failed"),
+    TapeMismatchError: (409, "tape_mismatch"),
+    TapeEmptyError: (409, "tape_empty"),
+    PrinterCoverOpenError: (409, "printer_cover_open"),
+    PrinterOfflineError: (503, "printer_offline"),
 }
 
 
@@ -37,10 +47,13 @@ async def create_print_job(request: PrintRequest, http: Request) -> Any:
         job_id = await service.submit_print_job(request)
     except tuple(_SYNC_ERROR_MAP) as exc:
         http_status, code = _SYNC_ERROR_MAP[type(exc)]
-        return JSONResponse(
-            status_code=http_status,
-            content={"error_code": code, "error_message": str(exc)},
-        )
+        body: dict[str, object] = {"error_code": code, "error_message": str(exc)}
+        if isinstance(exc, TapeMismatchError):
+            body["error_detail"] = {
+                "expected_mm": exc.expected_mm,
+                "loaded_mm": exc.loaded_mm,
+            }
+        return JSONResponse(status_code=http_status, content=body)
     return PrintJobResponse(job_id=job_id, status="queued")
 
 
@@ -78,4 +91,53 @@ async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
         started_at=getattr(job, "started_at", None),
         finished_at=getattr(job, "finished_at", None),
         live=live,
+    )
+
+
+@router.post(
+    "/jobs/{job_id}/resume",
+    status_code=status.HTTP_200_OK,
+    response_model=PrintJobStatusResponse,
+)
+async def resume_job(job_id: str, http: Request) -> PrintJobStatusResponse:
+    """Resume a job that is PAUSED waiting for a tape change.
+
+    User-driven workflow: client posted /print with on_tape_mismatch=queue,
+    got 202 + job_id with state=PAUSED. User changes physical tape,
+    calls this endpoint. The job transitions PAUSED → QUEUED and the worker
+    picks it up.
+
+    Returns 200 with the updated status.
+    Returns 404 if job not found.
+    Returns 409 if job is not in PAUSED state (error_code=invalid_state).
+    """
+    queue = http.app.state.print_queue
+    try:
+        job = await queue.get(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"job not found: {job_id}") from exc
+
+    if job.state != JobState.PAUSED:
+        raise HTTPException(
+            status_code=409,
+            detail=f"job {job_id} is in state {job.state.value!r}, not PAUSED",
+        )
+
+    # resume_job() transitions PAUSED → QUEUED and re-enqueues the job.
+    # It also clears error metadata on the job object.
+    await queue.resume_job(job_id)
+    job.error_code = None
+    job.error_message = None
+    job.error_detail = None
+
+    return PrintJobStatusResponse(
+        job_id=job.id,
+        status=job.state,
+        error_code=None,
+        error_message=None,
+        error_detail=None,
+        created_at=job.submitted_at,
+        started_at=getattr(job, "started_at", None),
+        finished_at=getattr(job, "finished_at", None),
+        live=None,
     )

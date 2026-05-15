@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -45,6 +45,7 @@ class PrintRequest(BaseModel):
     lookup: PrintLookupRequest | None = None
     data: RawLabelData | None = None
     options: PrintOptions = Field(default_factory=PrintOptions)
+    on_tape_mismatch: Literal["fail", "queue"] = "fail"
 
     @model_validator(mode="after")
     def _exactly_one_source(self) -> Self:
