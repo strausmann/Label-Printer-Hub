@@ -4,7 +4,9 @@ Each external app (Snipe-IT, Spoolman, Grocy, future integrations) lives
 in its own module under app.integrations.<name>, implements this Protocol,
 and registers itself via setuptools entry-points (group
 'label_hub.integrations'). The Protocol is @runtime_checkable so the
-registry can validate candidates with isinstance() at registration time.
+entry-points discovery in `app.integrations.__init__` can validate each
+loaded class with isinstance() before registering it, rejecting broken
+third-party plugins with a clear log message.
 """
 
 from __future__ import annotations
