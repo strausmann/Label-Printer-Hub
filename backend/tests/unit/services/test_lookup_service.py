@@ -91,3 +91,31 @@ def test_unknown_app_error_does_not_inherit_from_app_lookup_not_found() -> None:
     from app.services.errors import AppLookupNotFoundError
 
     assert not issubclass(UnknownAppError, AppLookupNotFoundError)
+
+
+# ---------------------------------------------------------------------------
+# Task 1.5.3 — LookupFailedError umbrella
+# ---------------------------------------------------------------------------
+
+from app.services.lookup_service import LookupFailedError  # noqa: E402
+
+
+def test_unknown_app_is_lookup_failed() -> None:
+    assert issubclass(UnknownAppError, LookupFailedError)
+
+
+@pytest.mark.asyncio
+async def test_plugin_runtime_exception_becomes_lookup_failed(monkeypatch) -> None:
+    class _Boom:
+        async def lookup(self, identifier: str):
+            raise RuntimeError("upstream HTTP 503")
+
+    # lookup_service imports IntegrationRegistry from app.integrations.registry,
+    # so the monkeypatch target is the registry module (not app.integrations).
+    monkeypatch.setattr(
+        "app.integrations.registry.IntegrationRegistry.get",
+        classmethod(lambda _cls, _name: _Boom()),
+    )
+    svc = AppLookupService()
+    with pytest.raises(LookupFailedError, match="upstream HTTP 503"):
+        await svc.lookup("snipeit", "123")
