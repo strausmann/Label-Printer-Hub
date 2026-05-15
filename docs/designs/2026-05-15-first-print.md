@@ -23,6 +23,9 @@ In scope:
 
 - `PrinterBackend` Protocol as the extension point for hardware adapters.
 - `PTouchBackend` as the first concrete adapter, wrapping the `ptouch` library.
+- **SNMP query helpers** for two purposes that the print TCP channel cannot serve:
+  1. **Model discovery at startup** — read the printer's PJL string (`1.3.6.1.4.1.2435.2.3.9.1.1.7.0`) and resolve it via `ModelRegistry.find_by_pjl`. Fulfils ADR 0004.
+  2. **Live status during print** — Brother PT-Series allows only **one** TCP/9100 session, so ESC i S cannot be polled while ptouch holds the print connection. SNMP runs on UDP/161 and stays usable.
 - `PTP750WDriver` (PrinterModel, see ADR 0004) plus a private `_PTPQueuePrinter` bridge it produces via `make_queue_printer(...)` for the PrintQueue's `_PrinterLike` Protocol.
 - `PrintService` orchestrating lookup → render → enqueue.
 - REST endpoints `POST /print` and `GET /jobs/{job_id}`.
@@ -53,6 +56,7 @@ flowchart LR
     PR[_PTPQueuePrinter bridge]
     DR[PTP750WDriver]
     BE[PrinterBackend]
+    SNMP[SNMP helper]
     HW[(PT-P750W)]
 
     Client -->|POST /print| API
@@ -64,9 +68,13 @@ flowchart LR
     PQ -->|worker| PR
     PR --> DR
     PR --> BE
-    BE -->|raster bytes| HW
+    BE -->|TCP/9100 raster| HW
+    SNMP -->|UDP/161 query| HW
+    API -.->|GET /jobs/id live phase| SNMP
     Client -->|GET /jobs/id| API
 ```
+
+The SNMP helper sits beside the backend, not behind it. The backend keeps owning print + pre-print ESC i S validation on TCP/9100; SNMP owns discovery and during-print live status on UDP/161. Both can run concurrently against the same physical printer.
 
 ### Component map
 
@@ -80,9 +88,10 @@ flowchart LR
 | `ModelRegistry` | `app/printer_models/registry.py` (existing, extended) | Discovers driver plugins via `setuptools entry_points` (group `label_hub.printer_models`); ships with the built-in PT-Series driver registered |
 | Backend registry | `app/printer_backends/__init__.py` (new) | Discovers backend plugins via `setuptools entry_points` (group `label_hub.printer_backends`); ships with `ptouch` + `mock` registered |
 | `PrintService` | `app/services/print_service.py` | Use-case orchestrator |
-| REST routes | `app/api/routes/print.py` | `POST /print`, `GET /jobs/{id}`, exception mapping |
-| Lifespan init | `app/main.py` | Backend selection, queue start/stop |
-| Settings | `app/config.py` | `printer_backend`, `printer_model`, reuses existing `pt750w_host` / `pt750w_port` |
+| SNMP helper | `app/printer_backends/snmp_helper.py` (new) | UDP/161 queries: PJL-string for model discovery, `hrPrinterStatus` + `hrPrinterDetectedErrorState` for live status |
+| REST routes | `app/api/routes/print.py` | `POST /print`, `GET /jobs/{id}` (includes live SNMP phase when the queue says the job is printing), exception mapping |
+| Lifespan init | `app/main.py` | SNMP-discovery → resolve model from PJL → backend selection → queue start/stop |
+| Settings | `app/config.py` | `printer_backend`, `printer_model`, `printer_discover_via_snmp`, `printer_snmp_community`, reuses existing `pt750w_host` / `pt750w_port` |
 
 ## Backend Protocol
 
@@ -371,7 +380,9 @@ class Settings(BaseSettings):
 
     # --- NEW for First-Print ---
     printer_backend: str = "ptouch"           # backend_id; default built-ins: "ptouch", "mock"
-    printer_model: str = "PT-P750W"           # model_id resolved against ModelRegistry
+    printer_model: str = "PT-P750W"           # fallback model_id when SNMP discovery is off or fails
+    printer_discover_via_snmp: bool = True    # try SNMP first, fall back to printer_model
+    printer_snmp_community: str = "public"    # SNMP v2c community (read-only)
     printer_queue_timeout_s: float = 30.0
 ```
 
@@ -469,6 +480,85 @@ To enable paths 1, 2, 4 and 5 from day one, First-Print delivers:
 
 Path 3 (subclass driver) needs no extra plumbing — it falls out of the inheritance model. Lifecycle hooks (pre/post-print) are deliberately **out of scope** for First-Print (YAGNI): paths 2 and 3 cover every realistic case today. They can be added to `PrinterModel` later as optional methods with a default no-op if a concrete need arises.
 
+## SNMP — discovery + live status
+
+The print path uses TCP/9100 (single session, owned by ptouch during a print). SNMP gives us a second, parallel channel for the things TCP/9100 cannot serve.
+
+### Two helper functions, both async
+
+```python
+# app/printer_backends/snmp_helper.py
+async def query_model_pjl(host: str, *, community: str = "public", timeout_s: float = 3.0) -> str:
+    """Read Brother private OID 1.3.6.1.4.1.2435.2.3.9.1.1.7.0 → PJL identification string.
+    Example reply: 'MFG:Brother;CMD:PJL;MDL:PT-P750W;CLS:PRINTER;DES:Brother PT-P750W;'
+    """
+
+async def query_live_status(host: str, *, community: str = "public", timeout_s: float = 3.0) -> LiveStatus:
+    """Read standard Host-Resources Printer-MIB:
+       * hrPrinterStatus       1.3.6.1.2.1.25.3.5.1.1.1  → idle | printing | warmup | other
+       * hrPrinterDetectedErrorState  1.3.6.1.2.1.25.3.5.1.2.1  → 8-byte bitmask
+    Returns a small LiveStatus dataclass — used by GET /jobs/{id} to surface
+    "really printing right now" vs "queued behind another job".
+    """
+```
+
+Both helpers use `pysnmp.hlapi.v3arch.asyncio.get_cmd` (asyncio-native, no thread dispatch needed). `pysnmp>=6.2` is already pinned in `pyproject.toml`.
+
+### What SNMP gives us that ESC i S does not
+
+| Use case | ESC i S (TCP/9100) | SNMP (UDP/161) |
+|---|---|---|
+| Pre-print validation (tape mm, media type) | direct integer/byte | text description — parsing needed |
+| **Model auto-discovery (PJL string for ADR 0004)** | **no** — only series/model code bytes | **yes** — full `MFG:Brother;...;MDL:PT-P750W;...` |
+| **Live status during a running print** | **no** — TCP is busy | **yes** — UDP independent |
+| Brother-specific error bits (jam, overheating) | yes | no — only standard `hrPrinterDetectedErrorState` |
+
+We keep both. ESC i S in `PTouchBackend.print_image` does the detailed pre-print check it is already good at. SNMP does discovery at startup and live-status during print.
+
+### Lifespan discovery flow
+
+```python
+async def _resolve_printer_model(settings: Settings, host: str) -> str:
+    """Returns the model_id that ModelRegistry.find_by_model_id will use."""
+    if not settings.printer_discover_via_snmp:
+        return settings.printer_model
+    try:
+        pjl = await query_model_pjl(host, community=settings.printer_snmp_community)
+    except SnmpDiscoveryError as exc:
+        if settings.printer_model:
+            log.warning("SNMP discovery failed (%s); falling back to printer_model=%r", exc, settings.printer_model)
+            return settings.printer_model
+        raise  # no fallback configured → fail fast
+    driver = ModelRegistry.find_by_pjl(pjl)
+    return driver.model_id
+```
+
+Three configurations:
+
+| `printer_discover_via_snmp` | `printer_model` (env) | Behaviour |
+|---|---|---|
+| `True` (default) | `""` | SNMP must succeed; failure raises at app start |
+| `True` (default) | `"PT-P750W"` | Try SNMP, fall back to env var if SNMP fails (warned in log) |
+| `False` | `"PT-P750W"` | Skip SNMP entirely, use env var |
+| `False` | `""` | Refused at app start |
+
+### Live-status path
+
+`GET /jobs/{job_id}` keeps reading the in-memory FSM (Job.state, error_code, ...) as today. **Additionally**: when `job.state == JobState.PRINTING`, the route handler calls `query_live_status(host)` and attaches the returned `LiveStatus` to the response as a sub-object. Failure of the SNMP query is non-fatal — the live block is just omitted.
+
+Schema sketch:
+
+```python
+class LiveStatus(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    hr_printer_status: Literal["other", "unknown", "idle", "printing", "warmup"]
+    error_flags: list[str]  # decoded bit names from hrPrinterDetectedErrorState
+
+class PrintJobStatusResponse(BaseModel):
+    # ...existing fields...
+    live: LiveStatus | None = None  # populated only while job.state == PRINTING
+```
+
 ## Error Handling
 
 ### Exception hierarchy
@@ -483,6 +573,8 @@ class TapeEmptyError(PrinterError): ...
 class PrinterCoverOpenError(PrinterError): ...
 class PrintFailedError(PrinterError): ...
 class StatusQueryFailedError(PrinterError): ...
+class SnmpDiscoveryError(PrinterError): ...   # SNMP unreachable / OID missing
+class SnmpQueryError(PrinterError): ...       # live-status SNMP failed at runtime (non-fatal)
 ```
 
 Plus `TemplateNotFoundError` and `LookupFailedError` on the lookup/template side.
@@ -507,6 +599,7 @@ Plus `TemplateNotFoundError` and `LookupFailedError` on the lookup/template side
 | `PrinterOfflineError` | 503 | `printer_offline` |
 | `StatusQueryFailedError` | 503 | `printer_status_unavailable` |
 | `PrintFailedError` | 500 | `print_failed` |
+| `SnmpDiscoveryError` | 503 (only at app start; never reaches a request) | `snmp_discovery_failed` |
 
 **Important:** `TemplateNotFoundError` and `LookupFailedError` are mapped to HTTP errors **synchronously** in the POST handler (they happen before the enqueue). All other errors come from the worker and end up in the job record (`status="failed"`).
 
@@ -585,8 +678,11 @@ Two additional manual scenarios:
 9. Empty `pt750w_host` with `printer_backend=ptouch` and `printer_model=PT-P750W` fails at app start with a clear error.
 10. An unknown `printer_model` or `printer_backend` fails at app start with a clear error listing the registered options.
 11. A fake driver plugin registered via `setuptools entry_points` is picked up by `ModelRegistry.ensure_discovered()` in a test, demonstrating that third-party drivers work end-to-end without core changes.
-12. `scripts/smoke_first_print.py` prints successfully on a real PT-P750W (verified manually).
-13. Coverage ≥80%; `ruff check`, `ruff format --check`, and `mypy --strict` all green.
+12. SNMP discovery resolves a stubbed PJL-string reply (`MFG:Brother;...;MDL:PT-P750W;...`) to the `PTP750WDriver` via `ModelRegistry.find_by_pjl` in an integration test.
+13. With `printer_discover_via_snmp=True` and an unreachable host, app start fails with `SnmpDiscoveryError` **only when** `printer_model` is empty; with a populated `printer_model` the lifespan falls back to it and logs a warning.
+14. `GET /jobs/{job_id}` for a job in `JobState.PRINTING` includes a `live` sub-object with `hr_printer_status` and `error_flags`; for any other job state `live` is `None`.
+15. `scripts/smoke_first_print.py` prints successfully on a real PT-P750W (verified manually).
+16. Coverage ≥80%; `ruff check`, `ruff format --check`, and `mypy --strict` all green.
 
 ## Open Questions and Risks
 
