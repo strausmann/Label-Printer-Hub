@@ -53,13 +53,21 @@ class LayoutElement(BaseModel):
 
 
 class TemplateSchema(BaseModel):
-    """A complete label template — identity, target app, tape size, and layout."""
+    """A complete label template — identity, target app, tape size, and layout.
+
+    ``app`` is the canonical plugin name (e.g. ``"snipeit"``) matching a
+    registered ``IntegrationPlugin``. ``app=None`` marks a generic template
+    (e.g. QR-only) that works with any plugin. The plugin reference is
+    validated at load time against ``IntegrationRegistry``; the schema
+    itself accepts any string so plugins can be added without a schema
+    migration.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     schema_version: int = 1
     id: str
     name: str
-    app: Literal["snipeit", "grocy", "spoolman"]
+    app: str | None
     tape_mm: int
     elements: tuple[LayoutElement, ...]
