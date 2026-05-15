@@ -1,0 +1,140 @@
+"""SNMP query helpers — discovery (PJL string) + live status.
+
+Uses pysnmp's asyncio API; the call is fully non-blocking, no thread
+dispatch needed. SNMPv2c with a configurable community (default 'public').
+
+pysnmp 7.x API note: UdpTransportTarget no longer accepts the address in
+__init__; use ``await UdpTransportTarget.create((host, port), ...)`` instead.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from typing import Literal
+
+from pysnmp.hlapi.v3arch.asyncio import (
+    CommunityData,
+    ContextData,
+    ObjectIdentity,
+    ObjectType,
+    SnmpEngine,
+    UdpTransportTarget,
+    get_cmd,
+)
+
+from app.printer_backends.exceptions import SnmpDiscoveryError, SnmpQueryError
+
+_logger = logging.getLogger(__name__)
+
+BROTHER_PJL_OID = "1.3.6.1.4.1.2435.2.3.9.1.1.7.0"
+HR_PRINTER_STATUS_OID = "1.3.6.1.2.1.25.3.5.1.1.1"
+HR_PRINTER_DETECTED_ERROR_STATE_OID = "1.3.6.1.2.1.25.3.5.1.2.1"
+
+_PRINTER_STATUS_MAP: dict[int, Literal["other", "unknown", "idle", "printing", "warmup"]] = {
+    1: "other",
+    2: "unknown",
+    3: "idle",
+    4: "printing",
+    5: "warmup",
+}
+
+# (byte_index, bitmask, flag_name) — RFC 3805 hrPrinterDetectedErrorState
+_ERROR_BITS: tuple[tuple[int, int, str], ...] = (
+    (0, 0x80, "lowPaper"),
+    (0, 0x40, "noPaper"),
+    (0, 0x20, "lowToner"),
+    (0, 0x10, "noToner"),
+    (0, 0x08, "doorOpen"),
+    (0, 0x04, "jammed"),
+    (0, 0x02, "offline"),
+    (0, 0x01, "serviceRequested"),
+    (1, 0x80, "inputTrayMissing"),
+    (1, 0x40, "outputTrayMissing"),
+    (1, 0x20, "markerSupplyMissing"),
+    (1, 0x10, "outputFull"),
+    (1, 0x08, "inputTrayEmpty"),
+    (1, 0x04, "overduePreventMaint"),
+)
+
+
+def decode_error_flags(blob: bytes) -> list[str]:
+    """Decode the hrPrinterDetectedErrorState OCTET STRING into bit names."""
+    out: list[str] = []
+    for byte_idx, mask, name in _ERROR_BITS:
+        if byte_idx < len(blob) and blob[byte_idx] & mask:
+            out.append(name)
+    return out
+
+
+@dataclass(frozen=True)
+class LiveStatus:
+    """Live phase + error flags read from SNMP during a print."""
+
+    hr_printer_status: Literal["other", "unknown", "idle", "printing", "warmup"]
+    error_flags: list[str] = field(default_factory=list)
+
+
+async def query_model_pjl(host: str, *, community: str = "public", timeout_s: float = 3.0) -> str:
+    """Read Brother private OID → PJL identification string.
+
+    Raises SnmpDiscoveryError on any failure (timeout, OID missing, refused).
+
+    pysnmp 7.x requires ``await UdpTransportTarget.create(...)`` for address
+    resolution; the monkeypatched get_cmd in tests bypasses this entirely.
+    """
+    transport = await UdpTransportTarget.create(
+        (host, 161),
+        timeout=timeout_s,
+        retries=0,
+    )
+    error_indication, error_status, _, var_binds = await get_cmd(
+        SnmpEngine(),
+        CommunityData(community, mpModel=1),
+        transport,
+        ContextData(),
+        ObjectType(ObjectIdentity(BROTHER_PJL_OID)),
+    )
+    if error_indication:
+        raise SnmpDiscoveryError(f"SNMP discovery timed out / failed: {error_indication}")
+    if error_status:
+        raise SnmpDiscoveryError(f"SNMP returned error status: {error_status}")
+    if not var_binds:
+        raise SnmpDiscoveryError("Empty SNMP reply for PJL OID")
+    return str(var_binds[0][1])
+
+
+async def query_live_status(
+    host: str, *, community: str = "public", timeout_s: float = 3.0
+) -> LiveStatus:
+    """Read hrPrinterStatus + hrPrinterDetectedErrorState in one round trip.
+
+    Raises SnmpQueryError on any failure; this is non-fatal at request time
+    (the live block is omitted from the /jobs/{id} response).
+    """
+    transport = await UdpTransportTarget.create(
+        (host, 161),
+        timeout=timeout_s,
+        retries=0,
+    )
+    error_indication, error_status, _, var_binds = await get_cmd(
+        SnmpEngine(),
+        CommunityData(community, mpModel=1),
+        transport,
+        ContextData(),
+        ObjectType(ObjectIdentity(HR_PRINTER_STATUS_OID)),
+        ObjectType(ObjectIdentity(HR_PRINTER_DETECTED_ERROR_STATE_OID)),
+    )
+    if error_indication:
+        raise SnmpQueryError(f"SNMP live-status timed out / failed: {error_indication}")
+    if error_status:
+        raise SnmpQueryError(f"SNMP returned error status: {error_status}")
+    if len(var_binds) < 2:
+        raise SnmpQueryError("Incomplete SNMP reply")
+
+    raw_status = int(var_binds[0][1])
+    raw_error_blob = bytes(var_binds[1][1])
+    return LiveStatus(
+        hr_printer_status=_PRINTER_STATUS_MAP.get(raw_status, "other"),
+        error_flags=decode_error_flags(raw_error_blob),
+    )
