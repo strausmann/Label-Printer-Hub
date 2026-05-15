@@ -1,0 +1,11 @@
+# Compact layout: QR + primary_id + title fit on a 12mm tape (106 px).
+# 80x80 QR is the largest that keeps a 4px top/bottom margin.
+schema_version: 1
+id: snipeit-12mm
+name: "Snipe-IT Asset (12mm)"
+app: snipeit
+tape_mm: 12
+elements:
+  - { type: qr,   x: 8,   y: 13, size: 80, data_field: qr_payload }
+  - { type: text, x: 100, y: 18, field: primary_id, font_size: 22 }
+  - { type: text, x: 100, y: 60, field: title,      font_size: 14 }

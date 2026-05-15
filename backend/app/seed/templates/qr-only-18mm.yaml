@@ -1,0 +1,8 @@
+# 140px QR -> x = (600 - 140) / 2 = 230.
+schema_version: 1
+id: qr-only-18mm
+name: "QR-Code only (18mm)"
+app: null
+tape_mm: 18
+elements:
+  - { type: qr, x: 230, y: 13, size: 140, data_field: qr_payload }

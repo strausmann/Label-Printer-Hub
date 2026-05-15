@@ -1,0 +1,11 @@
+# 18mm — adds the secondary line (remaining grams, colour).
+schema_version: 1
+id: spoolman-18mm
+name: "Spoolman Spool (18mm)"
+app: spoolman
+tape_mm: 18
+elements:
+  - { type: qr,   x: 13,  y: 13,  size: 140, data_field: qr_payload }
+  - { type: text, x: 170, y: 20,  field: primary_id, font_size: 32 }
+  - { type: text, x: 170, y: 70,  field: title,      font_size: 20 }
+  - { type: text, x: 170, y: 110, field: secondary,  font_size: 14 }

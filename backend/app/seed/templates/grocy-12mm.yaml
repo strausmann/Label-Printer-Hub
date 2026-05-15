@@ -1,0 +1,11 @@
+# Compact: QR + product id + name. Grocy LabelData has empty secondary,
+# so the 12mm layout (no secondary slot) is the natural fit.
+schema_version: 1
+id: grocy-12mm
+name: "Grocy Product (12mm)"
+app: grocy
+tape_mm: 12
+elements:
+  - { type: qr,   x: 8,   y: 13, size: 80, data_field: qr_payload }
+  - { type: text, x: 100, y: 18, field: primary_id, font_size: 22 }
+  - { type: text, x: 100, y: 60, field: title,      font_size: 14 }

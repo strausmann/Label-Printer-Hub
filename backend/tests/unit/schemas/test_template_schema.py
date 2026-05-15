@@ -49,15 +49,16 @@ def test_template_text_rejects_zero_font_size() -> None:
         LayoutElement(type="text", x=0, y=0, field="title", font_size=0)
 
 
-def test_template_app_must_be_one_of_known() -> None:
-    with pytest.raises(ValueError):
-        TemplateSchema(
-            id="t",
-            name="t",
-            app="unknown",  # not in Literal
-            tape_mm=24,
-            elements=[],
-        )
+def test_template_app_accepts_known_string() -> None:
+    """app is a plain str | None — no Literal gating at schema level."""
+    t = TemplateSchema(
+        id="t",
+        name="t",
+        app="snipeit",
+        tape_mm=24,
+        elements=[],
+    )
+    assert t.app == "snipeit"
 
 
 def test_template_schema_is_frozen() -> None:
@@ -93,3 +94,51 @@ def test_template_qr_rejects_negative_size() -> None:
 def test_template_text_rejects_negative_font_size() -> None:
     with pytest.raises(ValueError, match="positive font_size"):
         LayoutElement(type="text", x=0, y=0, field="title", font_size=-12)
+
+
+def test_template_schema_has_schema_version_field_defaulting_to_1() -> None:
+    """schema_version is a versioning hook for future YAML migrations."""
+    t = TemplateSchema(
+        id="x",
+        name="X",
+        app="snipeit",
+        tape_mm=24,
+        elements=(),
+    )
+    assert t.schema_version == 1
+
+
+def test_template_schema_accepts_explicit_schema_version() -> None:
+    t = TemplateSchema(
+        id="x",
+        name="X",
+        app="snipeit",
+        tape_mm=24,
+        elements=(),
+        schema_version=1,
+    )
+    assert t.schema_version == 1
+
+
+def test_template_schema_app_allows_none_for_generic_templates() -> None:
+    """app=None marks the template as generic — usable with any plugin."""
+    t = TemplateSchema(
+        id="qr-only-24mm",
+        name="QR-Code only (24mm)",
+        app=None,
+        tape_mm=24,
+        elements=(),
+    )
+    assert t.app is None
+
+
+def test_template_schema_app_accepts_arbitrary_string() -> None:
+    """Schema does not gate the integration name — the loader validates against the registry."""
+    t = TemplateSchema(
+        id="x",
+        name="X",
+        app="future_integration_not_yet_implemented",
+        tape_mm=24,
+        elements=(),
+    )
+    assert t.app == "future_integration_not_yet_implemented"
