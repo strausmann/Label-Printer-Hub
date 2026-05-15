@@ -346,7 +346,542 @@ EOF
 
 ---
 
+## Phase 1.5 — Domain Model Extensions
+
+The Spec assumes a handful of conveniences that the existing codebase does not yet expose. Adding them now — before any `printer_backends/` code is written — keeps every later phase honest. Six small additions, each its own task.
+
+### Task 1.5.1: Extend `StatusBlock` with derived properties + add a test helper
+
+**Files:**
+- Modify: `backend/app/services/status_block.py`
+- Modify: `backend/tests/unit/services/test_status_block.py`
+- Create: `backend/tests/_helpers/__init__.py`
+- Create: `backend/tests/_helpers/status.py`
+
+The real `StatusBlock` already has every byte the printer returns: `errors: PrinterError` (IntFlag), `media_width_mm: int`, `media_type: MediaType`, etc. The Spec's pre-print validation talks about `tape_empty` / `cover_open` / `loaded_tape_mm` as if they were attributes — make them so via `@property`, without breaking the existing API.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+# backend/tests/unit/services/test_status_block.py — APPEND
+from app.services.status_block import (
+    MediaType, PhaseType, PrinterError, StatusBlock, StatusType,
+    NotificationCode, TapeColor, TextColor,
+)
+
+
+def _full_status_block(*, errors: PrinterError = PrinterError.NONE, media_width_mm: int = 24) -> StatusBlock:
+    return StatusBlock(
+        raw=b"\x00" * 32, print_head_mark=0x80, size=0x20,
+        brother_code=ord("B"), series_code=0, model_code=0, country_code=0x30,
+        media_width_mm=media_width_mm, media_type=MediaType.LAMINATED,
+        media_length_mm=0, mode=0,
+        status_type=StatusType.REPLY, phase_type=PhaseType.EDITING, phase_number=0,
+        notification=NotificationCode.NONE, tape_color=TapeColor.NONE, text_color=TextColor.NONE,
+        errors=errors,
+    )
+
+
+class TestDerivedProperties:
+    def test_loaded_tape_mm_is_media_width(self) -> None:
+        sb = _full_status_block(media_width_mm=18)
+        assert sb.loaded_tape_mm == 18
+
+    def test_tape_empty_when_no_media_flag_set(self) -> None:
+        sb = _full_status_block(errors=PrinterError.NO_MEDIA)
+        assert sb.tape_empty is True
+
+    def test_tape_empty_when_end_of_media_flag_set(self) -> None:
+        sb = _full_status_block(errors=PrinterError.END_OF_MEDIA)
+        assert sb.tape_empty is True
+
+    def test_tape_empty_false_when_other_errors(self) -> None:
+        sb = _full_status_block(errors=PrinterError.COVER_OPEN)
+        assert sb.tape_empty is False
+
+    def test_cover_open_flag(self) -> None:
+        sb = _full_status_block(errors=PrinterError.COVER_OPEN)
+        assert sb.cover_open is True
+
+    def test_cover_open_false_when_no_cover_error(self) -> None:
+        sb = _full_status_block(errors=PrinterError.NONE)
+        assert sb.cover_open is False
+```
+
+- [ ] **Step 2: Run — verify failure**
+
+```bash
+cd backend && pytest tests/unit/services/test_status_block.py::TestDerivedProperties -q
+```
+
+Expected: `AttributeError: 'StatusBlock' object has no attribute 'loaded_tape_mm'`.
+
+- [ ] **Step 3: Implement — add 3 properties to `StatusBlock`**
+
+Add to `backend/app/services/status_block.py` inside `class StatusBlock` (after the existing `is_ready` and `is_printing` properties):
+
+```python
+    @property
+    def loaded_tape_mm(self) -> int:
+        """Width of the tape currently loaded, in mm. 0 when no tape inserted."""
+        return self.media_width_mm
+
+    @property
+    def tape_empty(self) -> bool:
+        """True when no media is loaded or the tape ran out mid-print."""
+        return bool(self.errors & (PrinterError.NO_MEDIA | PrinterError.END_OF_MEDIA))
+
+    @property
+    def cover_open(self) -> bool:
+        """True when the printer cover is open."""
+        return PrinterError.COVER_OPEN in self.errors
+```
+
+- [ ] **Step 4: Run — verify pass**
+
+```bash
+cd backend && pytest tests/unit/services/test_status_block.py -q
+```
+
+Expected: all existing tests still pass, plus 6 new tests in `TestDerivedProperties`.
+
+- [ ] **Step 5: Add the test helper**
+
+```python
+# backend/tests/_helpers/__init__.py
+"""Shared test utilities (not part of the application)."""
+```
+
+```python
+# backend/tests/_helpers/status.py
+"""Helper to build StatusBlock instances in tests with minimal boilerplate.
+
+The real StatusBlock has 18 fields. Most tests only care about three:
+loaded media width, tape-empty / cover-open flags. `make_status_block`
+takes those as kwargs and fills the rest with neutral defaults.
+"""
+
+from __future__ import annotations
+
+from app.services.status_block import (
+    MediaType, NotificationCode, PhaseType, PrinterError,
+    StatusBlock, StatusType, TapeColor, TextColor,
+)
+
+
+def make_status_block(
+    *,
+    loaded_tape_mm: int = 24,
+    media_type: MediaType = MediaType.LAMINATED,
+    tape_empty: bool = False,
+    cover_open: bool = False,
+    extra_errors: PrinterError = PrinterError.NONE,
+) -> StatusBlock:
+    """Build a StatusBlock with neutral defaults and a small derived-error API."""
+    errors = extra_errors
+    if tape_empty:
+        errors |= PrinterError.NO_MEDIA
+    if cover_open:
+        errors |= PrinterError.COVER_OPEN
+    return StatusBlock(
+        raw=b"\x00" * 32, print_head_mark=0x80, size=0x20,
+        brother_code=ord("B"), series_code=0, model_code=0, country_code=0x30,
+        media_width_mm=loaded_tape_mm, media_type=media_type,
+        media_length_mm=0, mode=0,
+        status_type=StatusType.REPLY, phase_type=PhaseType.EDITING, phase_number=0,
+        notification=NotificationCode.NONE, tape_color=TapeColor.NONE, text_color=TextColor.NONE,
+        errors=errors,
+    )
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/app/services/status_block.py \
+        backend/tests/unit/services/test_status_block.py \
+        backend/tests/_helpers/__init__.py \
+        backend/tests/_helpers/status.py
+git commit -m "$(cat <<'EOF'
+feat(status): derived tape_empty / cover_open / loaded_tape_mm properties
+
+StatusBlock already carries every Brother byte (media_width_mm,
+media_type, errors IntFlag, ...). The First-Print backend layer
+prefers a tape_empty / cover_open / loaded_tape_mm vocabulary in
+its validation chain. Add the three as @property on the existing
+dataclass without changing the parser or any persisted field.
+
+Plus tests/_helpers/status.py: make_status_block(loaded_tape_mm=...,
+tape_empty=..., cover_open=...) so every later test stops needing
+to spell out all 18 dataclass fields.
+
+Refs #22
+EOF
+)"
+```
+
+### Task 1.5.2: Add `TemplateNotFoundError`
+
+**Files:**
+- Modify: `backend/app/services/template_loader.py`
+- Modify: `backend/tests/unit/services/test_template_loader.py`
+
+`TemplateLoader.get` currently raises `KeyError`. The REST layer needs a typed exception to map to HTTP 404 (Acceptance #6).
+
+- [ ] **Step 1: Failing test**
+
+```python
+# tests/unit/services/test_template_loader.py — APPEND
+import pytest
+from app.services.template_loader import TemplateLoader, TemplateNotFoundError
+
+
+def test_get_unknown_raises_template_not_found() -> None:
+    TemplateLoader._templates.clear()
+    with pytest.raises(TemplateNotFoundError) as exc:
+        TemplateLoader.get("does-not-exist")
+    assert "does-not-exist" in str(exc.value)
+```
+
+- [ ] **Step 2: Implement**
+
+In `backend/app/services/template_loader.py` add:
+
+```python
+class TemplateNotFoundError(KeyError):
+    """Requested template id is not registered. Subclasses KeyError so legacy
+    callers that catch KeyError keep working."""
+```
+
+Change `TemplateLoader.get(template_id)` to `raise TemplateNotFoundError(template_id)` instead of `KeyError`.
+
+- [ ] **Step 3: Run + commit**
+
+```bash
+cd backend && pytest tests/unit/services/test_template_loader.py -q
+git add backend/app/services/template_loader.py backend/tests/unit/services/test_template_loader.py
+git commit -m "$(cat <<'EOF'
+feat(api): TemplateNotFoundError typed exception
+
+TemplateLoader.get() raised bare KeyError. The /print route needs a
+typed exception to map onto HTTP 404 (Acceptance #6).
+TemplateNotFoundError subclasses KeyError so any existing catcher
+keeps working; new code can pattern-match precisely.
+
+Refs #22
+EOF
+)"
+```
+
+### Task 1.5.3: Add `LookupFailedError` + wrap `UnknownAppError`
+
+**Files:**
+- Modify: `backend/app/services/lookup_service.py`
+- Modify: `backend/tests/unit/services/test_lookup_service.py`
+
+The REST layer needs a typed exception for HTTP 502 (Acceptance #7). `UnknownAppError` is a config mismatch (client asked for an unknown app), not a transport failure. Introduce `LookupFailedError` as the umbrella; make `UnknownAppError` a subclass; wrap plugin-internal exceptions too.
+
+- [ ] **Step 1: Failing test (APPEND)**
+
+```python
+# tests/unit/services/test_lookup_service.py — APPEND
+import pytest
+from app.services.lookup_service import (
+    AppLookupService, LookupFailedError, UnknownAppError,
+)
+
+
+def test_unknown_app_is_lookup_failed() -> None:
+    assert issubclass(UnknownAppError, LookupFailedError)
+
+
+async def test_plugin_runtime_exception_becomes_lookup_failed(monkeypatch) -> None:
+    class _Boom:
+        async def lookup(self, identifier: str):  # noqa: ARG002
+            raise RuntimeError("upstream HTTP 503")
+
+    monkeypatch.setattr("app.integrations.IntegrationRegistry.get", lambda _: _Boom())
+    svc = AppLookupService()
+    with pytest.raises(LookupFailedError, match="upstream HTTP 503"):
+        await svc.lookup("snipeit", "123")
+```
+
+- [ ] **Step 2: Implement**
+
+```python
+# backend/app/services/lookup_service.py
+class LookupFailedError(Exception):
+    """Resolving label data via an integration plugin failed."""
+
+
+class UnknownAppError(LookupFailedError):
+    """The requested app is not registered with IntegrationRegistry."""
+
+
+class AppLookupService:
+    async def lookup(self, app: str, identifier: str) -> LabelData:
+        try:
+            plugin = IntegrationRegistry.get(app)
+        except KeyError as e:
+            raise UnknownAppError(str(e)) from e
+        try:
+            return await plugin.lookup(identifier)
+        except LookupFailedError:
+            raise
+        except Exception as e:
+            raise LookupFailedError(f"{app} lookup failed: {e}") from e
+```
+
+- [ ] **Step 3: Run + commit**
+
+```bash
+cd backend && pytest tests/unit/services/test_lookup_service.py -q
+git add backend/app/services/lookup_service.py backend/tests/unit/services/test_lookup_service.py
+git commit -m "$(cat <<'EOF'
+feat(api): LookupFailedError umbrella exception
+
+Typed exception family for /print route HTTP 502 (Acceptance #7).
+LookupFailedError is the umbrella; UnknownAppError (config mismatch)
+is a subclass. AppLookupService.lookup wraps any runtime exception
+from the plugin into LookupFailedError so the REST layer has one
+type to catch.
+
+Refs #22
+EOF
+)"
+```
+
+### Task 1.5.4: Extend `Job` with error_code / error_message / error_detail
+
+**Files:**
+- Modify: `backend/app/services/job_lifecycle.py`
+- Modify: `backend/tests/unit/services/test_job_lifecycle.py`
+
+The REST `PrintJobStatusResponse` carries `error_code`, `error_message`, `error_detail`. Today `Job` has only `error_msg: str | None` and `error_flags: int | None`. Add the three structured fields; the worker (next task) populates them; the route handler surfaces them (Acceptance #4).
+
+- [ ] **Step 1: Failing test (APPEND)**
+
+```python
+# tests/unit/services/test_job_lifecycle.py — APPEND
+from app.services.job_lifecycle import Job
+
+
+def test_job_has_error_code_default_none() -> None:
+    job = Job(id="j", printer_id="p")
+    assert job.error_code is None
+    assert job.error_message is None
+    assert job.error_detail is None
+
+
+def test_job_error_fields_writable() -> None:
+    job = Job(id="j", printer_id="p")
+    job.error_code = "tape_mismatch"
+    job.error_message = "expected 24mm, loaded 12mm"
+    job.error_detail = {"expected_mm": 24, "loaded_mm": 12}
+    assert job.error_code == "tape_mismatch"
+    assert job.error_detail == {"expected_mm": 24, "loaded_mm": 12}
+```
+
+- [ ] **Step 2: Implement**
+
+In `backend/app/services/job_lifecycle.py` add to `class Job`:
+
+```python
+    # Set by the worker when a PrinterError subclass surfaces from print_image.
+    error_code: str | None = None
+    error_message: str | None = None
+    error_detail: dict[str, Any] | None = None
+```
+
+(`Any` is already imported.)
+
+- [ ] **Step 3: Run + commit**
+
+```bash
+cd backend && pytest tests/unit/services/test_job_lifecycle.py -q
+git add backend/app/services/job_lifecycle.py backend/tests/unit/services/test_job_lifecycle.py
+git commit -m "$(cat <<'EOF'
+feat(queue): Job carries error_code / error_message / error_detail
+
+REST /jobs/{id} surfaces these to the client (Acceptance #4 — tape
+mismatch must produce error_code='tape_mismatch' and
+error_detail={'expected_mm':24,'loaded_mm':12}). The worker (next
+task) populates them when a PrinterError subclass surfaces from
+the printer.print_image call. The existing error_msg / error_flags
+fields stay for backward compatibility.
+
+Refs #22
+EOF
+)"
+```
+
+### Task 1.5.5: PrintQueue worker translates `PrinterError` → Job error fields
+
+**Files:**
+- Modify: `backend/app/services/print_queue.py`
+- Modify: `backend/tests/unit/services/test_print_queue.py`
+
+Today `_worker` lets exceptions escape and the FSM transitions to `FAILED` with only `error_msg`. Wrap `printer.print_image` so any `PrinterError` populates the new structured fields before the FAILED transition.
+
+- [ ] **Step 1: Failing test (APPEND)**
+
+```python
+# tests/unit/services/test_print_queue.py — APPEND
+import pytest
+from PIL import Image
+
+from app.printer_backends.exceptions import TapeMismatchError
+from app.services.job_lifecycle import JobState
+from app.services.print_queue import PrintQueue
+
+
+class _MismatchPrinter:
+    id = "p1"
+
+    async def print_image(self, image, *, tape_mm, **_options):  # noqa: ARG002
+        raise TapeMismatchError(expected_mm=tape_mm, loaded_mm=12)
+
+
+async def test_worker_records_printer_error_fields() -> None:
+    queue = PrintQueue(printers=[_MismatchPrinter()])
+    await queue.start()
+    try:
+        image = Image.new("1", (200, 128))
+        job_id = await queue.submit("p1", image, tape_mm=24)
+        job = await queue.wait_for_job(job_id, timeout_s=2.0)
+        assert job.state == JobState.FAILED
+        assert job.error_code == "tape_mismatch"
+        assert job.error_message
+        assert job.error_detail == {"expected_mm": 24, "loaded_mm": 12}
+    finally:
+        await queue.stop(timeout_s=2.0)
+```
+
+- [ ] **Step 2: Implement** — add a mapping helper + wrap the worker call site
+
+```python
+# top of backend/app/services/print_queue.py — new imports
+from app.printer_backends.exceptions import (
+    PrinterCoverOpenError,
+    PrinterError as _PE,
+    PrinterOfflineError,
+    PrintFailedError,
+    StatusQueryFailedError,
+    TapeEmptyError,
+    TapeMismatchError,
+)
+
+
+_ERROR_CODE_MAP: dict[type[_PE], str] = {
+    TapeMismatchError: "tape_mismatch",
+    TapeEmptyError: "tape_empty",
+    PrinterCoverOpenError: "printer_cover_open",
+    PrinterOfflineError: "printer_offline",
+    StatusQueryFailedError: "printer_status_unavailable",
+    PrintFailedError: "print_failed",
+}
+
+
+def _printer_error_to_record(exc: _PE) -> tuple[str, str, dict[str, Any] | None]:
+    code = _ERROR_CODE_MAP.get(type(exc), "print_failed")
+    detail: dict[str, Any] | None = None
+    if isinstance(exc, TapeMismatchError):
+        detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
+    return code, str(exc) or code, detail
+```
+
+In `_worker`, around the `printer.print_image(...)` call site (it already has a `try`/`except` for the generic `Exception` path; replace it with):
+
+```python
+try:
+    await printer.print_image(...)
+except _PE as exc:
+    code, msg, detail = _printer_error_to_record(exc)
+    job.error_code = code
+    job.error_message = msg
+    job.error_detail = detail
+    job.error_msg = msg  # legacy field kept in sync
+    JobStateMachine.transition(job, JobState.FAILED)
+    continue
+```
+
+- [ ] **Step 3: Run + commit**
+
+```bash
+cd backend && pytest tests/unit/services/test_print_queue.py -q
+git add backend/app/services/print_queue.py backend/tests/unit/services/test_print_queue.py
+git commit -m "$(cat <<'EOF'
+feat(queue): worker maps PrinterError subclasses to Job error fields
+
+When printer.print_image raises a PrinterError, the worker now
+writes a structured (error_code, error_message, error_detail)
+record onto the Job before transitioning to FAILED. TapeMismatchError
+gets a typed detail dict carrying expected_mm + loaded_mm so the
+REST client gets actionable diagnostics.
+
+Other PrinterError subclasses map to error_code only. The legacy
+error_msg field is kept in sync for backwards-compatible callers.
+
+Refs #22
+EOF
+)"
+```
+
+### Task 1.5.6: `@runtime_checkable` on `_PrinterLike`
+
+**Files:**
+- Modify: `backend/app/services/print_queue.py`
+
+Phase 8 uses `isinstance(qp, _PrinterLike)`. That requires the decorator.
+
+- [ ] **Step 1: Verify the gap**
+
+```bash
+cd backend && python -c "
+from app.services.print_queue import _PrinterLike
+class _Stub:
+    id = 's'
+    async def print_image(self, image, *, tape_mm, **_): pass
+isinstance(_Stub(), _PrinterLike)
+"
+```
+
+Expected: `TypeError: Instance and class checks can only be used with @runtime_checkable protocols`.
+
+- [ ] **Step 2: Implement**
+
+```python
+from typing import Any, Protocol, runtime_checkable
+
+
+@runtime_checkable
+class _PrinterLike(Protocol):
+    ...
+```
+
+- [ ] **Step 3: Re-run + commit**
+
+The one-liner now prints `True`.
+
+```bash
+git add backend/app/services/print_queue.py
+git commit -m "$(cat <<'EOF'
+refactor(queue): runtime_checkable _PrinterLike
+
+Phase 8 tests do isinstance(qp, _PrinterLike). That requires the
+@runtime_checkable decorator; otherwise Python raises TypeError at
+the isinstance call. runtime_checkable only relaxes isinstance —
+the Protocol's structural shape is unchanged.
+
+Refs #22
+EOF
+)"
+```
+
+---
+
 ## Phase 2 — Exceptions
+
+> **Test-fixture convention from here on:** every test that needs a `StatusBlock` builds it with `make_status_block(...)` from `tests/_helpers/status.py` (introduced in Task 1.5.1). The helper accepts only the fields the test cares about (`loaded_tape_mm`, `tape_empty`, `cover_open`, `extra_errors`) and fills the remaining 14 dataclass fields with neutral defaults. If a code sample below shows `StatusBlock(loaded_tape_mm=24, ...)` as shorthand — that is the helper, not the raw dataclass constructor. The implementer **must** rewrite the `StatusBlock(...)` call sites in this plan to `make_status_block(...)` with the same kwargs (one site per test, ~6 total). The helper accepts `extra_errors=PrinterError.OVERHEATING` etc. when a test needs other errors.
 
 ### Task 2.1: PrinterError hierarchy with TDD
 
@@ -1325,7 +1860,7 @@ from app.printer_backends.exceptions import (
     PrinterOfflineError,
     StatusQueryFailedError,
 )
-from app.services.status_block import MediaType, StatusBlock
+from app.services.status_block import StatusBlock, StatusBlockError, StatusBlockParser
 
 ESC_I_S_REQUEST: bytes = b"\x1bi\x53"
 _STATUS_REPLY_LEN: int = 32
@@ -1333,13 +1868,9 @@ _HEAD_MARK: int = 0x80
 _SIZE_BYTE: int = 0x20
 _BRAND_BYTE: int = ord("B")
 
-_MEDIA_TYPE_LOOKUP: dict[int, MediaType] = {
-    0x00: MediaType.NONE,
-    0x01: MediaType.LAMINATED,
-    0x03: MediaType.NON_LAMINATED,
-    0x11: MediaType.HEAT_SHRINK_2_1,
-    0x17: MediaType.HEAT_SHRINK_3_1,
-}
+# Note: media-type decoding (byte 11 → MediaType enum) is owned by
+# StatusBlockParser. parse_status_reply() delegates to it; no parallel
+# lookup table lives in this helper module.
 
 
 def parse_status_reply(reply: bytes) -> StatusBlock:
@@ -1352,15 +1883,15 @@ def parse_status_reply(reply: bytes) -> StatusBlock:
         raise StatusQueryFailedError(
             f"Bad reply header: head={reply[0]:#x} brand={reply[2]:#x}"
         )
-    err1 = reply[8]
-    err2 = reply[9]
-    return StatusBlock(
-        tape_empty=bool(err1 & 0x03),  # bit 0 (no media) | bit 1 (end of media)
-        cover_open=bool(err2 & 0x10),  # bit 4
-        error_flags=(err1 << 8) | err2,
-        loaded_tape_mm=reply[10],
-        media_type=_MEDIA_TYPE_LOOKUP.get(reply[11], MediaType.NONE),
-    )
+    # Delegate the heavy lifting to the existing StatusBlockParser. It already
+    # turns the 32 raw bytes into a fully populated StatusBlock (all 18 fields)
+    # and uses _safe_enum() for resilience against unknown values. Our wrapper
+    # just adds the cheap header sanity check above so a malformed reply gets
+    # a typed StatusQueryFailedError instead of bubbling StatusBlockError up.
+    try:
+        return StatusBlockParser.parse(reply)
+    except StatusBlockError as exc:
+        raise StatusQueryFailedError(str(exc)) from exc
 
 
 async def query_status_over_socket(
@@ -1750,22 +2281,27 @@ def _ptouch_print(
     image: Image.Image,
     tape_mm: int,
     *,
+    model_id: str,
     auto_cut: bool,
     high_resolution: bool,
 ) -> None:
     """Synchronous helper: open connection, send one Label, close.
 
-    Lives at module level so tests can monkeypatch it.
+    Lives at module level so tests can monkeypatch it. The ptouch printer
+    class is resolved from `model_id` via `_PTOUCH_PRINTER_CLASSES`; this is
+    what enables the Extensibility Path 1 (PT-P900, PT-E550W, etc.) without
+    forking the backend.
     """
     try:
         tape_cls = _PTOUCH_TAPE_CLASSES[tape_mm]
     except KeyError as exc:
         raise PrintFailedError(f"No ptouch tape class for {tape_mm}mm") from exc
+    try:
+        printer_cls = _PTOUCH_PRINTER_CLASSES[model_id]
+    except KeyError as exc:
+        raise PrintFailedError(f"No ptouch printer class for model {model_id!r}") from exc
     connection = ptouch.ConnectionNetwork(host, port=port, timeout=10.0)
-    printer = ptouch.PTP750W(
-        connection=connection,
-        high_resolution=high_resolution,
-    )
+    printer = printer_cls(connection=connection, high_resolution=high_resolution)
     label = ptouch.Label(image=image, tape=tape_cls)
     printer.print(label, auto_cut=auto_cut, high_resolution=high_resolution)
 
@@ -1840,6 +2376,7 @@ class PTouchBackend:
                 self._port,
                 image,
                 tape_spec.width_mm,
+                model_id=self._model_id,
                 auto_cut=auto_cut,
                 high_resolution=high_resolution,
             )
@@ -2683,9 +3220,11 @@ produces a private _PTPQueuePrinter satisfying PrintQueue._PrinterLike.
 
 query_status raises ValueError on a non-matching host argument rather
 than silently ignoring it (the driver is bound to one backend).
-build_print_job returns empty bytes for Protocol conformance — the
-First-Print happy path uses backend.print_image directly; raw-byte
-encoding is deferred until a concrete caller appears.
+build_print_job raises NotImplementedError so any unintended caller
+fails loudly instead of silently sending no data. The First-Print
+happy path uses backend.print_image directly; raw-byte encoding is
+deferred until a concrete caller (raw export, debug dump, non-
+library backend) appears.
 
 Registered at module import via ModelRegistry.register and via the
 label_hub.printer_models entry-points group.
@@ -3191,7 +3730,10 @@ async def test_options_passed_to_queue(loader, renderer, queue, lookup_service) 
     assert kwargs["tape_mm"] == 24
     assert kwargs["auto_cut"] is False
     assert kwargs["high_resolution"] is True
-    assert kwargs["copies"] == 2
+    # `copies` is deliberately NOT forwarded to the queue in First-Print —
+    # see the comment in PrintService.submit_print_job. Multi-copy handling
+    # is a Phase-5 follow-up.
+    assert "copies" not in kwargs
 ```
 
 - [ ] **Step 2: Run — verify failure**
@@ -3270,12 +3812,15 @@ class PrintService:
         # 3. Render
         image = self._renderer.render(template, label_data)
 
-        # 4. Enqueue
+        # 4. Enqueue. `copies` is intentionally not forwarded: the queue
+        # delivers one print per job, and the queue worker does not loop on
+        # copies for First-Print (see Open Questions in the spec). Clients
+        # that need multi-copy can post N times; structured copies handling
+        # is a Phase-5 follow-up.
         return await self._queue.submit(
             self._printer_id,
             image,
             tape_mm=template.tape_mm,
-            copies=request.options.copies,
             auto_cut=request.options.auto_cut,
             high_resolution=request.options.high_resolution,
         )
@@ -3304,8 +3849,9 @@ print_queue.submit(printer_id, image, tape_mm=, **options).
 
 source_app for the raw-data path is fixed to "manual" here so the
 wire schema doesn't have to police it. Options propagate to submit
-as keyword args (auto_cut, high_resolution, copies); Phase 13 wires
-copies into the worker by submitting once per copy.
+as keyword args (auto_cut, high_resolution). `copies` is intentionally
+NOT forwarded for First-Print — multi-copy delivery is a Phase-5
+follow-up (clients can post N times today).
 
 Refs #22
 EOF
@@ -3514,6 +4060,7 @@ Expected: `ModuleNotFoundError: app.api.routes.print`.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -3523,14 +4070,19 @@ from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterOfflineError,
     PrintFailedError,
+    SnmpQueryError,
     StatusQueryFailedError,
     TapeEmptyError,
     TapeMismatchError,
 )
+from app.printer_backends.snmp_helper import LiveStatus, query_live_status
 from app.schemas.print_request import PrintRequest
 from app.schemas.print_response import PrintJobResponse, PrintJobStatusResponse
+from app.services.job_lifecycle import JobState
 from app.services.lookup_service import LookupFailedError
 from app.services.template_loader import TemplateNotFoundError
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -3595,17 +4147,7 @@ async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
     )
 ```
 
-Required imports for the route module:
-
-```python
-import logging
-
-from app.printer_backends.exceptions import SnmpQueryError
-from app.printer_backends.snmp_helper import LiveStatus, query_live_status
-from app.services.job_lifecycle import JobState
-
-_log = logging.getLogger(__name__)
-```
+All required imports are already in the file header above — no separate "imports" block to merge.
 
 - [ ] **Step 4: Add tests dir init**
 
@@ -3902,6 +4444,7 @@ Expected: failures because the lifespan does not yet do plugin discovery / build
 # backend/app/main.py (sketch — preserve existing imports + routes)
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
