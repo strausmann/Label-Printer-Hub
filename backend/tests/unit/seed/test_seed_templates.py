@@ -78,6 +78,6 @@ def test_each_template_renders_with_dummy_label_data(
 ) -> None:
     """Every shipped template must produce a 1-bit PIL image without raising."""
     template = TemplateLoader.get(template_id)
-    image = LabelRenderer().render(dummy_data, template)
+    image = LabelRenderer().render(template, dummy_data)
     assert image.mode == "1"
     assert image.size == (DEFAULT_LABEL_WIDTH_PX, TAPE_HEIGHT_PX[template.tape_mm])

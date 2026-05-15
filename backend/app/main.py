@@ -208,7 +208,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.printer_snmp_community = settings.printer_snmp_community
     app.state.print_service = PrintService(
         template_loader=TemplateLoader,
-        renderer=LabelRenderer(),  # type: ignore[arg-type]  # arg order matches _RendererProto
+        renderer=LabelRenderer(),
         print_queue=queue,
         lookup_service=AppLookupService(),
         printer_id=printer.id,

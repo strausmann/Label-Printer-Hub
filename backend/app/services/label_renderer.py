@@ -53,9 +53,9 @@ def _load_font_cached(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont
 
 
 class LabelRenderer:
-    """Render a (LabelData, TemplateSchema) pair into a 1-bit PIL Image."""
+    """Render a (TemplateSchema, LabelData) pair into a 1-bit PIL Image."""
 
-    def render(self, data: LabelData, template: TemplateSchema) -> Image.Image:
+    def render(self, template: TemplateSchema, data: LabelData) -> Image.Image:
         """Return a 1-bit image sized for the template's tape width.
 
         Raises:

@@ -26,7 +26,7 @@ def test_render_produces_image_with_correct_height_24mm() -> None:
         source_app="snipeit",
     )
 
-    img = LabelRenderer().render(data, template)
+    img = LabelRenderer().render(template, data)
 
     assert isinstance(img, Image.Image)
     assert img.height == TAPE_HEIGHT_PX[24]
@@ -42,7 +42,7 @@ def test_render_produces_image_with_correct_height_12mm() -> None:
         elements=[LayoutElement(type="text", x=5, y=5, field="title", font_size=16)],
     )
     data = LabelData(title="x", primary_id="x", qr_payload="x", source_app="snipeit")
-    img = LabelRenderer().render(data, template)
+    img = LabelRenderer().render(template, data)
     assert img.height == TAPE_HEIGHT_PX[12]
 
 
@@ -56,7 +56,7 @@ def test_render_rejects_unsupported_tape_mm() -> None:
     )
     data = LabelData(title="x", primary_id="x", qr_payload="x", source_app="snipeit")
     with pytest.raises(ValueError, match="99"):
-        LabelRenderer().render(data, template)
+        LabelRenderer().render(template, data)
 
 
 def test_render_with_qr_element_includes_black_pixels() -> None:
@@ -77,7 +77,7 @@ def test_render_with_qr_element_includes_black_pixels() -> None:
         source_app="snipeit",
     )
 
-    img = LabelRenderer().render(data, template)
+    img = LabelRenderer().render(template, data)
     qr_region = img.crop((0, 0, 200, 200))
     black_count = sum(1 for p in qr_region.get_flattened_data() if p == 0)
     assert black_count > 100, f"Expected QR to produce many black pixels, got {black_count}"
@@ -102,7 +102,7 @@ def test_render_resolves_secondary_tuple_field() -> None:
         secondary=("Color: Black", "Weight: 850g"),
     )
 
-    img = LabelRenderer().render(data, template)
+    img = LabelRenderer().render(template, data)
     # The text region should not be entirely white (some pixels must be drawn).
     region = img.crop((10, 100, DEFAULT_LABEL_WIDTH_PX, 120))
     black_count = sum(1 for p in region.get_flattened_data() if p == 0)
@@ -113,7 +113,7 @@ def test_render_empty_template_produces_blank_image() -> None:
     """An empty template (no elements) must render a blank white canvas."""
     template = TemplateSchema(id="t", name="T", app="snipeit", tape_mm=24, elements=[])
     data = LabelData(title="X", primary_id="X", qr_payload="x", source_app="snipeit")
-    img = LabelRenderer().render(data, template)
+    img = LabelRenderer().render(template, data)
     # All pixels should be 1 (white background).
     assert all(p == 1 for p in img.get_flattened_data())
 
@@ -131,7 +131,7 @@ def test_render_with_missing_data_field_renders_empty_string() -> None:
     )
     data = LabelData(title="X", primary_id="X", qr_payload="x", source_app="snipeit")
     # Must NOT raise — missing fields render as empty strings.
-    img = LabelRenderer().render(data, template)
+    img = LabelRenderer().render(template, data)
     assert img is not None
 
 
