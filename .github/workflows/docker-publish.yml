@@ -181,7 +181,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: digests-${{ matrix.service }}-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -201,7 +201,7 @@ jobs:
         service: [backend, frontend]
     steps:
       - name: Download digests for ${{ matrix.service }}
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           # Wildcard merges artifacts from every (service, arch) leg.
           pattern: digests-${{ matrix.service }}-*
