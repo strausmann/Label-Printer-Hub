@@ -74,10 +74,10 @@ flowchart LR
 |---|---|---|
 | `PrinterBackend` Protocol | `app/printer_backends/base.py` | Transport + encoding contract: `print_image`, `send_bytes`, `query_status` |
 | `PTouchBackend` | `app/printer_backends/ptouch_backend.py` | Wraps the `ptouch` library; synchronous I/O is dispatched via `asyncio.to_thread` |
-| `MockPrinterBackend` | `tests/_fakes/mock_backend.py` | Test double, no network I/O |
+| `MockPrinterBackend` | `app/printer_backends/mock_backend.py` | Mock for tests and local dev without hardware |
 | Exceptions | `app/printer_backends/exceptions.py` | `PrinterError` hierarchy |
-| `PTP750WDriver` | `app/printer_models/ptp750w.py` | PrinterModel driver, holds model-specific constants |
-| `PTP750WPrinter` | `app/services/printers.py` | Bridge: PrinterModel + Backend → PrintQueue's `_PrinterLike` |
+| `PTP750WDriver` | `app/printer_models/pt.py` (extends existing module) | PrinterModel driver, holds model-specific constants |
+| `PTP750WPrinter` | `app/printer_models/pt.py` (extends existing module) | Bridge: PrinterModel + Backend → PrintQueue's `_PrinterLike`. Per ADR 0004 model-specific code lives in `printer_models/<series>.py`. |
 | `PrintService` | `app/services/print_service.py` | Use-case orchestrator |
 | REST routes | `app/api/routes/print.py` | `POST /print`, `GET /jobs/{id}`, exception mapping |
 | Lifespan init | `app/main.py` | Backend selection, queue start/stop |
@@ -119,7 +119,7 @@ class PrinterBackend(Protocol):
 - All `ptouch` calls are synchronous and dispatched via `asyncio.to_thread`.
 - `query_status` parses the ptouch status block into our `StatusBlock` dataclass.
 - `print_image` validates against the cached status (see Error handling) and calls `printer.print(label, auto_cut=..., high_resolution=...)`.
-- `send_bytes` opens a raw TCP connection to `host:9100`, writes the bytes, and closes.
+- `send_bytes` opens a raw TCP connection to `host:9100` via `asyncio.open_connection` (so the call is non-blocking inside an `async def`), writes the bytes, and closes.
 
 ### `PTP750WDriver` (PrinterModel)
 
@@ -134,16 +134,29 @@ Adapter that combines PrinterModel + backend into the shape `PrintQueue._Printer
 
 ```python
 class PTP750WPrinter:
-    printer_id: str  # "PT-P750W@<host>"
+    # `_PrinterLike` (print_queue.py) requires the attribute `id: str`.
+    id: str  # e.g. "pt-p750w@<host>"
+
+    def __init__(
+        self,
+        driver: PTP750WDriver,
+        backend: PrinterBackend,
+        tape_registry: TapeRegistry,
+        *,
+        default_media_type: MediaType = MediaType.LAMINATED,
+    ) -> None: ...
 
     async def print_image(self, image, *, tape_mm, **options):
-        tape_spec = self._tape_registry.for_pt_series(tape_mm)
+        media_type = options.get("media_type", self._default_media_type)
+        tape_spec = self._tape_registry.lookup_pt(tape_mm, media_type)
         await self._backend.print_image(
             image, tape_spec,
             auto_cut=options.get("auto_cut", True),
             high_resolution=options.get("high_resolution", False),
         )
 ```
+
+**Note on TapeRegistry API:** the existing `TapeRegistry.lookup_pt(width_mm, media_type)` requires an explicit `MediaType` (laminated, non-laminated, etc.). The bridge falls back to a `default_media_type` injected at construction time (typically `MediaType.LAMINATED` because TZe-Tapes dominate PT-Series use), and lets a per-print `options["media_type"]` override it. This avoids silently picking a tape the printer doesn't have loaded.
 
 ## Data Flow
 
@@ -223,10 +236,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     backend = _build_backend(settings)
     driver = PTP750WDriver(backend=backend)
     printer = PTP750WPrinter(driver=driver, backend=backend, tape_registry=tape_registry)
-    queue = PrintQueue(printer=printer, max_concurrency=settings.printer_max_concurrency)
+    queue = PrintQueue(printers=[printer])  # matches current __init__ signature
     await queue.start()
 
     app.state.print_queue = queue
+    app.state.printer_id = printer.id  # callers reference this on enqueue()
     app.state.print_service = PrintService(
         template_loader=TemplateLoader,
         renderer=LabelRenderer(),
@@ -242,8 +256,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def _build_backend(settings: Settings) -> PrinterBackend:
     if settings.printer_backend == "mock":
-        # Import locally so production deployments without test deps still start
-        from tests._fakes.mock_backend import MockPrinterBackend
+        # MockPrinterBackend lives under app/printer_backends/ so this import works
+        # in production deployments too — it stays useful for local dev without hardware.
+        from app.printer_backends.mock_backend import MockPrinterBackend
         return MockPrinterBackend()
     if settings.printer_backend == "ptouch":
         if not settings.printer_pt_host:
@@ -255,7 +270,11 @@ def _build_backend(settings: Settings) -> PrinterBackend:
     raise ConfigurationError(f"unknown printer_backend: {settings.printer_backend}")
 ```
 
-Open question: the mock backend currently lives under `tests/_fakes/`. If we want it to be usable for local development without hardware, we should consider moving it to `app/printer_backends/mock_backend.py` instead and feature-flagging it via settings. To be decided during the implementation plan.
+**Mock backend lives in `app/`, not `tests/`** — the earlier open question is resolved. Rationale:
+
+- Importing from `tests/` in production code is a maintainability anti-pattern (Gemini-flagged).
+- Local dev without real hardware is a real use case (`PRINTER_HUB_PRINTER_BACKEND=mock`), so the mock needs to ship with the application.
+- Tests still pick the mock up the same way — just import path moves to `app.printer_backends.mock_backend`.
 
 ## Settings
 
@@ -265,11 +284,12 @@ class Settings(BaseSettings):
     printer_backend: Literal["ptouch", "mock"] = "ptouch"
     printer_pt_host: str | None = None
     printer_pt_model: str = "PT-P750W"
-    printer_max_concurrency: int = 1
     printer_queue_timeout_s: float = 30.0
 ```
 
 The env-var prefix `PRINTER_HUB_` is already established. Example: `PRINTER_HUB_PRINTER_PT_HOST=<printer-ip>`.
+
+Per-printer concurrency is **not** a setting — `PrintQueue` already gives each printer its own dedicated worker (one in flight per printer at a time). Concurrency would only become a knob if a single physical printer could process several jobs in parallel, which Brother PT-Series doesn't.
 
 ## Error Handling
 
@@ -391,7 +411,7 @@ Two additional manual scenarios:
 - **ptouch status parsing:** which fields the `ptouch` library exposes from the status block must be verified in plan Phase 1 (read `ptouch.printers.PT_P750W.get_status`). If the fields are insufficient (e.g. no `loaded_tape_mm`), we need a fall-back raw parser following the Brother Raster Command Reference (PT-Series).
 - **PT-P750W transport:** the design assumes network TCP. The library may force a specific connection class — the class lookup in `_resolve_ptouch_model` is a plain string map and easy to extend.
 - **In-memory TTL drift:** the 5-minute TTL could expire during very long polls. Not blocking for First-Print; will be revisited together with the persistence work in Phase 5.
-- **Mock backend location:** see App-Lifespan section above — open decision whether to move the mock backend from `tests/` into `app/` for local dev use without hardware.
+- **Default `MediaType` for the bridge:** `MediaType.LAMINATED` covers the common TZe-Tape case, but the bridge accepts a per-print `options["media_type"]` override. If a request comes in with the wrong media type, the pre-print status check will catch the mismatch via `TapeMismatchError`.
 
 ## References
 
