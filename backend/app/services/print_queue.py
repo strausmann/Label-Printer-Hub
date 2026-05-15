@@ -20,7 +20,7 @@ import logging
 import uuid
 from enum import StrEnum
 from io import BytesIO
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from PIL import Image
 
@@ -75,6 +75,7 @@ class PrinterWorkerState(StrEnum):
     PAUSED = "paused"
 
 
+@runtime_checkable
 class _PrinterLike(Protocol):
     """Minimal printer contract this queue depends on.
 
