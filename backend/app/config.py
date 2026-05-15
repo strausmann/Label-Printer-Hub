@@ -59,13 +59,16 @@ class Settings(BaseSettings):
     # Snipe-IT integration (optional)
     snipeit_url: str = ""
     snipeit_api_key: SecretStr = SecretStr("")
+    snipeit_timeout: float = 5.0
 
     # Grocy integration (optional)
     grocy_url: str = ""
     grocy_api_key: SecretStr = SecretStr("")
+    grocy_timeout: float = 5.0
 
     # Spoolman integration (no API key needed)
     spoolman_url: str = ""
+    spoolman_timeout: float = 5.0
 
     # Server
     server_port: int = 8090

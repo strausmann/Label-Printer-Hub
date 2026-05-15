@@ -3,6 +3,20 @@ import pytest
 import respx
 from app.integrations.snipeit.plugin import SnipeITNotFoundError, SnipeITPlugin
 
+# ---------------------------------------------------------------------------
+# Settings fixture — env vars are read by the plugin constructor via get_settings()
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the plugin at a fake host. respx mocks the actual HTTP."""
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipe-it.example")
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "test-key")
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_TIMEOUT", "5.0")
+    # Clear the lru_cache so the plugin picks up the patched env vars.
+    from app.config import get_settings
+    get_settings.cache_clear()
+
 
 def test_not_found_error_is_app_lookup_not_found() -> None:
     """All concrete NotFoundErrors must inherit from AppLookupNotFoundError.
@@ -33,7 +47,7 @@ async def test_lookup_asset_returns_label_data() -> None:
         )
     )
 
-    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
     data = await client.lookup("ASSET-12345")
 
     assert data.title == "MacBook Pro 16"
@@ -50,7 +64,7 @@ async def test_lookup_asset_404_raises_not_found() -> None:
         return_value=httpx.Response(404)
     )
 
-    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
 
     with pytest.raises(SnipeITNotFoundError, match="UNKNOWN"):
         await client.lookup("UNKNOWN")
@@ -67,7 +81,7 @@ async def test_lookup_asset_without_serial_has_no_secondary_line() -> None:
         )
     )
 
-    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
     data = await client.lookup("A-1")
 
     assert data.secondary == ()
@@ -80,7 +94,13 @@ async def test_lookup_strips_trailing_slash_from_base_url() -> None:
     respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(200, json={"id": 1, "asset_tag": "A-1", "name": "Thing"})
     )
-    client = SnipeITPlugin(base_url="https://snipe-it.example/", api_key="test-key")
+    # Trailing slash is injected via env var — the plugin must strip it.
+    import os
+
+    from app.config import get_settings
+    os.environ["PRINTER_HUB_SNIPEIT_URL"] = "https://snipe-it.example/"
+    get_settings.cache_clear()
+    client = SnipeITPlugin()
     data = await client.lookup("A-1")
     assert data.qr_payload == "https://snipe-it.example/hardware/1"
 
@@ -98,7 +118,7 @@ async def test_lookup_missing_id_raises_value_error() -> None:
             json={"asset_tag": "A-1", "name": "Broken Asset"},  # no 'id'
         )
     )
-    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
     with pytest.raises(ValueError, match="missing required field 'id'"):
         await client.lookup("A-1")
 
@@ -110,7 +130,7 @@ async def test_lookup_5xx_raises_httpx_error() -> None:
     respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(500)
     )
-    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
     with pytest.raises(httpx.HTTPStatusError):
         await client.lookup("A-1")
 
@@ -125,7 +145,7 @@ async def test_lookup_url_encodes_asset_tag() -> None:
             json={"id": 1, "asset_tag": "A/1 test", "name": "Thing"},
         )
     )
-    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
     data = await client.lookup("A/1 test")
     assert data.title == "Thing"
 
@@ -134,10 +154,15 @@ async def test_lookup_url_encodes_asset_tag() -> None:
 @respx.mock
 async def test_lookup_sends_bearer_auth_header() -> None:
     """lookup() must send Authorization: Bearer … and Accept: application/json."""
+    import os
+    os.environ["PRINTER_HUB_SNIPEIT_API_KEY"] = "secret-key-42"
+    from app.config import get_settings
+    get_settings.cache_clear()
+
     route = respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(200, json={"id": 1, "asset_tag": "A-1", "name": "T"})
     )
-    client = SnipeITPlugin(base_url="https://snipe-it.example", api_key="secret-key-42")
+    client = SnipeITPlugin()
     await client.lookup("A-1")
 
     assert route.called

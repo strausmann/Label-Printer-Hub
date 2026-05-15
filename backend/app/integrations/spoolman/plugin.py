@@ -35,14 +35,11 @@ class SpoolmanPlugin:
     name = "spoolman"
     display_name = "Spoolman"
 
-    def __init__(
-        self,
-        *,
-        base_url: str,
-        timeout: float = 5.0,
-    ) -> None:
-        self._base_url = base_url.rstrip("/")
-        self._timeout = timeout
+    def __init__(self) -> None:
+        from app.config import get_settings
+        settings = get_settings()
+        self._base_url = settings.spoolman_url.rstrip("/")
+        self._timeout = settings.spoolman_timeout
 
     async def lookup(self, spool_id: str) -> LabelData:
         """Return LabelData for `spool_id`, or raise SpoolmanNotFoundError."""

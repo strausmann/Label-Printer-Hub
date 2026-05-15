@@ -32,16 +32,12 @@ class GrocyPlugin:
     name = "grocy"
     display_name = "Grocy"
 
-    def __init__(
-        self,
-        *,
-        base_url: str,
-        api_key: str,
-        timeout: float = 5.0,
-    ) -> None:
-        self._base_url = base_url.rstrip("/")
-        self._api_key = api_key
-        self._timeout = timeout
+    def __init__(self) -> None:
+        from app.config import get_settings
+        settings = get_settings()
+        self._base_url = settings.grocy_url.rstrip("/")
+        self._api_key = settings.grocy_api_key.get_secret_value()
+        self._timeout = settings.grocy_timeout
 
     async def lookup(self, product_id: str) -> LabelData:
         """Return LabelData for `product_id`, or raise GrocyNotFoundError."""

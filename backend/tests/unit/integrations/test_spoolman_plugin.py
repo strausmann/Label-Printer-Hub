@@ -3,6 +3,18 @@ import pytest
 import respx
 from app.integrations.spoolman.plugin import SpoolmanNotFoundError, SpoolmanPlugin
 
+# ---------------------------------------------------------------------------
+# Settings fixture
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the plugin at a fake host. respx mocks the actual HTTP."""
+    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "https://spoolman.example")
+    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_TIMEOUT", "5.0")
+    from app.config import get_settings
+    get_settings.cache_clear()
+
 
 @pytest.mark.asyncio
 @respx.mock
@@ -21,7 +33,7 @@ async def test_lookup_spool_returns_label_data() -> None:
             },
         )
     )
-    client = SpoolmanPlugin(base_url="https://spoolman.example")
+    client = SpoolmanPlugin()
     data = await client.lookup("42")
 
     assert data.title == "BambuLab PLA Black"
@@ -35,7 +47,7 @@ async def test_lookup_spool_returns_label_data() -> None:
 @respx.mock
 async def test_lookup_spool_404_raises() -> None:
     respx.get("https://spoolman.example/api/v1/spool/999").mock(return_value=httpx.Response(404))
-    client = SpoolmanPlugin(base_url="https://spoolman.example")
+    client = SpoolmanPlugin()
     with pytest.raises(SpoolmanNotFoundError, match="999"):
         await client.lookup("999")
 
@@ -49,7 +61,7 @@ async def test_lookup_spool_without_remaining_weight() -> None:
             json={"id": 1, "filament": {"vendor": {"name": "V"}, "name": "M"}},
         )
     )
-    client = SpoolmanPlugin(base_url="https://spoolman.example")
+    client = SpoolmanPlugin()
     data = await client.lookup("1")
     assert data.secondary == ()
 
@@ -63,7 +75,7 @@ async def test_lookup_spool_with_missing_vendor_name() -> None:
             json={"id": 1, "filament": {"name": "PLA"}},
         )
     )
-    client = SpoolmanPlugin(base_url="https://spoolman.example")
+    client = SpoolmanPlugin()
     data = await client.lookup("1")
     assert data.title == "Unknown PLA"
 
@@ -76,7 +88,11 @@ async def test_lookup_strips_trailing_slash() -> None:
             200, json={"id": 7, "filament": {"vendor": {"name": "V"}, "name": "M"}}
         )
     )
-    client = SpoolmanPlugin(base_url="https://spoolman.example/")
+    import os
+    os.environ["PRINTER_HUB_SPOOLMAN_URL"] = "https://spoolman.example/"
+    from app.config import get_settings
+    get_settings.cache_clear()
+    client = SpoolmanPlugin()
     data = await client.lookup("7")
     assert data.qr_payload == "https://spoolman.example/spool/show/7"
 
@@ -89,7 +105,7 @@ async def test_lookup_url_encodes_spool_id() -> None:
             200, json={"id": 1, "filament": {"vendor": {"name": "V"}, "name": "M"}}
         )
     )
-    client = SpoolmanPlugin(base_url="https://spoolman.example")
+    client = SpoolmanPlugin()
     data = await client.lookup("A/1")
     # If encoding worked the mock matched and we got LabelData back.
     assert data.source_app == "spoolman"
@@ -100,7 +116,7 @@ async def test_lookup_url_encodes_spool_id() -> None:
 @respx.mock
 async def test_lookup_5xx_raises_httpx_error() -> None:
     respx.get("https://spoolman.example/api/v1/spool/1").mock(return_value=httpx.Response(503))
-    client = SpoolmanPlugin(base_url="https://spoolman.example")
+    client = SpoolmanPlugin()
     with pytest.raises(httpx.HTTPStatusError):
         await client.lookup("1")
 
@@ -111,7 +127,7 @@ async def test_lookup_missing_id_raises_value_error() -> None:
     respx.get("https://spoolman.example/api/v1/spool/1").mock(
         return_value=httpx.Response(200, json={"filament": {"vendor": {"name": "V"}, "name": "M"}})
     )
-    client = SpoolmanPlugin(base_url="https://spoolman.example")
+    client = SpoolmanPlugin()
     with pytest.raises(ValueError, match="missing required field 'id'"):
         await client.lookup("1")
 
@@ -123,7 +139,7 @@ async def test_lookup_spool_with_null_filament() -> None:
     respx.get("https://spoolman.example/api/v1/spool/1").mock(
         return_value=httpx.Response(200, json={"id": 1, "filament": None})
     )
-    client = SpoolmanPlugin(base_url="https://spoolman.example")
+    client = SpoolmanPlugin()
     data = await client.lookup("1")
     assert data.title == "Unknown Unknown"
 
@@ -137,7 +153,7 @@ async def test_lookup_sends_no_auth_header() -> None:
             200, json={"id": 1, "filament": {"vendor": {"name": "V"}, "name": "M"}}
         )
     )
-    client = SpoolmanPlugin(base_url="https://spoolman.example")
+    client = SpoolmanPlugin()
     await client.lookup("1")
 
     assert route.called

@@ -34,16 +34,12 @@ class SnipeITPlugin:
     name = "snipeit"
     display_name = "Snipe-IT"
 
-    def __init__(
-        self,
-        *,
-        base_url: str,
-        api_key: str,
-        timeout: float = 5.0,
-    ) -> None:
-        self._base_url = base_url.rstrip("/")
-        self._api_key = api_key
-        self._timeout = timeout
+    def __init__(self) -> None:
+        from app.config import get_settings
+        settings = get_settings()
+        self._base_url = settings.snipeit_url.rstrip("/")
+        self._api_key = settings.snipeit_api_key.get_secret_value()
+        self._timeout = settings.snipeit_timeout
 
     async def lookup(self, asset_tag: str) -> LabelData:
         """Return LabelData for `asset_tag`, or raise SnipeITNotFoundError."""
