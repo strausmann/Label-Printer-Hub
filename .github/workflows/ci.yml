@@ -72,10 +72,15 @@ jobs:
         working-directory: ${{ steps.pyproject.outputs.path }}
         run: mypy app/
 
+      # --cov-fail-under is a HARD CI gate. The 80% floor mirrors
+      # [tool.coverage.report].fail_under in pyproject.toml — declaring it
+      # again on the command line makes the failure surface in the test step
+      # itself (with the exact `TOTAL` line) instead of in a separate
+      # `coverage report` step that pytest-cov would silently swallow.
       - name: Tests
         if: steps.pyproject.outputs.exists == 'true'
         working-directory: ${{ steps.pyproject.outputs.path }}
-        run: pytest --cov=app --cov-report=xml --junitxml=junit.xml -o junit_family=legacy -v
+        run: pytest --cov=app --cov-report=xml --cov-fail-under=80 --junitxml=junit.xml -o junit_family=legacy -v
 
       - name: Upload coverage to Codecov
         if: always() && hashFiles('backend/coverage.xml', 'coverage.xml') != ''

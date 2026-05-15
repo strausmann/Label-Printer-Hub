@@ -26,9 +26,13 @@ pip-wheel-metadata/
 
 # Node (Tailwind build, semantic-release)
 node_modules/
+package-lock.json
 package-lock.json.backup
 .npm/
 .pnpm-store/
+
+# uv lockfile — backend uses pip, uv.lock is a stray artefact from local tooling.
+backend/uv.lock
 
 # Tailwind output
 app/ui/static/dist/

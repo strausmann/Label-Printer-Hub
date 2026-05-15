@@ -117,9 +117,17 @@ markers = [
 [tool.coverage.run]
 source = ["app"]
 branch = true
+# Package-metadata files only — `__init__.py` re-exports symbols and holds
+# no measurable logic. Everything else (including app/main.py's lifespan
+# wiring) stays in coverage and is exercised via integration tests.
+omit = [
+    "app/__init__.py",
+]
 
 [tool.coverage.report]
 fail_under = 80
+show_missing = true
+skip_covered = false
 exclude_lines = [
     "pragma: no cover",
     "raise NotImplementedError",

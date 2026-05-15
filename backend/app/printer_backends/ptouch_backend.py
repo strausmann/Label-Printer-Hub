@@ -52,7 +52,7 @@ _PTOUCH_TAPE_CLASSES: dict[int, type] = {
 }
 
 
-def _ptouch_print(
+def _ptouch_print(  # pragma: no cover - real-hardware-only, tests monkeypatch this
     host: str,
     port: int,
     image: Image.Image,
@@ -66,6 +66,13 @@ def _ptouch_print(
 
     Model-aware: uses _PTOUCH_PRINTER_CLASSES[model_id] so the same code
     serves PT-P750W, PT-P900, PT-E550W, etc.
+
+    Excluded from coverage: the function only runs against the real ptouch
+    library against actual hardware. Every unit test in
+    `tests/unit/printer_backends/test_ptouch_backend.py` replaces it via
+    monkeypatch on `app.printer_backends.ptouch_backend._ptouch_print`.
+    Hardware verification lives in `tests/hardware/` and the manual
+    `scripts/smoke_first_print.py`.
     """
     try:
         tape_cls = _PTOUCH_TAPE_CLASSES[tape_mm]
