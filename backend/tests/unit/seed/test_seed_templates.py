@@ -80,4 +80,6 @@ def test_each_template_renders_with_dummy_label_data(
     template = TemplateLoader.get(template_id)
     image = LabelRenderer().render(template, dummy_data)
     assert image.mode == "1"
-    assert image.size == (DEFAULT_LABEL_WIDTH_PX, TAPE_HEIGHT_PX[template.tape_mm])
+    # Height (tape axis) is pin-locked; width may be trimmed to inked content.
+    assert image.height == TAPE_HEIGHT_PX[template.tape_mm]
+    assert 1 <= image.width <= DEFAULT_LABEL_WIDTH_PX

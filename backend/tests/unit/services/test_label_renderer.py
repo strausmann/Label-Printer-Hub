@@ -142,3 +142,50 @@ def test_font_loader_is_cached() -> None:
     a = _load_font_cached(24)
     b = _load_font_cached(24)
     assert a is b
+
+
+class TestWhitespaceTrim:
+    """Cropping the inked content to save tape material on the length axis."""
+
+    def test_qr_only_template_is_trimmed_to_content_plus_margin(self) -> None:
+        template = TemplateSchema(
+            schema_version=1,
+            id="qr-only-12mm-test",
+            name="QR only test",
+            app=None,
+            tape_mm=12,
+            elements=(LayoutElement(type="qr", x=260, y=13, size=80, data_field="qr_payload"),),
+        )
+        data = LabelData(
+            title="Smoke",
+            primary_id="X",
+            qr_payload="https://example.test/smoke",
+            secondary=(),
+            source_app="manual",
+        )
+        img = LabelRenderer().render(template, data)
+        # The QR sits at x=260..340 with size=80; after trim with 6px margin,
+        # width should be 80 + 2*6 = 92 px (give or take a pixel for QR rendering).
+        assert img.width < 200, f"Expected compact label, got width={img.width}"
+        assert img.height == 106, "Tape-axis height must stay fixed"
+
+    def test_entirely_blank_template_returns_unchanged_canvas(self) -> None:
+        template = TemplateSchema(
+            schema_version=1,
+            id="blank-test",
+            name="Blank",
+            app=None,
+            tape_mm=12,
+            elements=(),
+        )
+        data = LabelData(
+            title="X",
+            primary_id="X",
+            qr_payload="X",
+            secondary=(),
+            source_app="manual",
+        )
+        img = LabelRenderer().render(template, data)
+        # No ink → no trim → full default canvas
+        assert img.width == 600
+        assert img.height == 106
