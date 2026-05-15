@@ -64,9 +64,7 @@ def _discover_plugins() -> None:
         try:
             IntegrationRegistry.register(instance)
         except (ValueError, TypeError) as e:
-            _logger.error(
-                "Entry-point %r could not register: %s", ep.name, e
-            )
+            _logger.error("Entry-point %r could not register: %s", ep.name, e)
 
 
 _discover_plugins()

@@ -34,6 +34,7 @@ class GrocyPlugin:
 
     def __init__(self) -> None:
         from app.config import get_settings
+
         settings = get_settings()
         self._base_url = settings.grocy_url.rstrip("/")
         self._api_key = settings.grocy_api_key.get_secret_value()

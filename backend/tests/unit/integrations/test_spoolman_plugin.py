@@ -7,12 +7,14 @@ from app.integrations.spoolman.plugin import SpoolmanNotFoundError, SpoolmanPlug
 # Settings fixture
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Point the plugin at a fake host. respx mocks the actual HTTP."""
     monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "https://spoolman.example")
     monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_TIMEOUT", "5.0")
     from app.config import get_settings
+
     get_settings.cache_clear()
 
 
@@ -89,6 +91,7 @@ async def test_lookup_strips_trailing_slash(monkeypatch: pytest.MonkeyPatch) -> 
         )
     )
     from app.config import get_settings
+
     monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "https://spoolman.example/")
     get_settings.cache_clear()
     client = SpoolmanPlugin()

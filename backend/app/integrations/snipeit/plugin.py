@@ -36,6 +36,7 @@ class SnipeITPlugin:
 
     def __init__(self) -> None:
         from app.config import get_settings
+
         settings = get_settings()
         self._base_url = settings.snipeit_url.rstrip("/")
         self._api_key = settings.snipeit_api_key.get_secret_value()

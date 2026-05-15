@@ -37,6 +37,7 @@ class SpoolmanPlugin:
 
     def __init__(self) -> None:
         from app.config import get_settings
+
         settings = get_settings()
         self._base_url = settings.spoolman_url.rstrip("/")
         self._timeout = settings.spoolman_timeout

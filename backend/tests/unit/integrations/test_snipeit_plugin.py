@@ -7,6 +7,7 @@ from app.integrations.snipeit.plugin import SnipeITNotFoundError, SnipeITPlugin
 # Settings fixture — env vars are read by the plugin constructor via get_settings()
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Point the plugin at a fake host. respx mocks the actual HTTP."""
@@ -15,6 +16,7 @@ def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PRINTER_HUB_SNIPEIT_TIMEOUT", "5.0")
     # Clear the lru_cache so the plugin picks up the patched env vars.
     from app.config import get_settings
+
     get_settings.cache_clear()
 
 
@@ -96,6 +98,7 @@ async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.Mo
     )
     # Trailing slash is injected via env var — the plugin must strip it.
     from app.config import get_settings
+
     monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipe-it.example/")
     get_settings.cache_clear()
     client = SnipeITPlugin()
@@ -153,6 +156,7 @@ async def test_lookup_url_encodes_asset_tag() -> None:
 async def test_lookup_sends_bearer_auth_header(monkeypatch: pytest.MonkeyPatch) -> None:
     """lookup() must send Authorization: Bearer … and Accept: application/json."""
     from app.config import get_settings
+
     monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "secret-key-42")
     get_settings.cache_clear()
 

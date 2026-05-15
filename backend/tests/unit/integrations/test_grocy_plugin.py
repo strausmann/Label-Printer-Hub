@@ -7,6 +7,7 @@ from app.integrations.grocy.plugin import GrocyNotFoundError, GrocyPlugin
 # Settings fixture
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Point the plugin at a fake host. respx mocks the actual HTTP."""
@@ -14,6 +15,7 @@ def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "grocy-key")
     monkeypatch.setenv("PRINTER_HUB_GROCY_TIMEOUT", "5.0")
     from app.config import get_settings
+
     get_settings.cache_clear()
 
 
@@ -68,6 +70,7 @@ async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.Mo
         return_value=httpx.Response(200, json={"id": 7, "name": "X"})
     )
     from app.config import get_settings
+
     monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "https://grocy.example/")
     get_settings.cache_clear()
     client = GrocyPlugin()
@@ -112,6 +115,7 @@ async def test_lookup_missing_id_raises_value_error() -> None:
 async def test_lookup_sends_grocy_api_key_header(monkeypatch: pytest.MonkeyPatch) -> None:
     """Outgoing request must carry GROCY-API-KEY header (not Bearer)."""
     from app.config import get_settings
+
     monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "my-grocy-key-42")
     get_settings.cache_clear()
 

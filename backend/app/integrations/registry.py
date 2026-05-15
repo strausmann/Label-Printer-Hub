@@ -32,13 +32,9 @@ class IntegrationRegistry:
                 f"IntegrationPlugin name must be a string; got {type(plugin.name).__name__}"
             )
         if not plugin.name.strip():
-            raise ValueError(
-                f"IntegrationPlugin requires a non-empty name; got {plugin.name!r}"
-            )
+            raise ValueError(f"IntegrationPlugin requires a non-empty name; got {plugin.name!r}")
         if plugin.name in cls._plugins:
-            raise ValueError(
-                f"Plugin {plugin.name!r} already registered"
-            )
+            raise ValueError(f"Plugin {plugin.name!r} already registered")
         cls._plugins[plugin.name] = plugin
 
     @classmethod

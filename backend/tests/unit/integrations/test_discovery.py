@@ -135,8 +135,7 @@ def test_discover_handles_duplicate_registration(
     # Registry has the first one; the second was skipped with an error
     assert IntegrationRegistry.names() == ["alpha"]
     assert any(
-        "alpha-dup" in r.message or "already registered" in r.message
-        for r in caplog.records
+        "alpha-dup" in r.message or "already registered" in r.message for r in caplog.records
     )
 
 

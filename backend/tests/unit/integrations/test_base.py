@@ -7,6 +7,7 @@ from app.integrations.base import IntegrationPlugin
 
 def test_protocol_is_runtime_checkable() -> None:
     """isinstance() must work — the registry uses it defensively."""
+
     class _Fake:
         name = "x"
         display_name = "X"

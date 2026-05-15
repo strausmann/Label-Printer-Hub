@@ -16,9 +16,7 @@ class _FakePlugin:
         self.display_name = display_name
 
     async def lookup(self, identifier: str) -> LabelData:
-        return LabelData(
-            title="fake", primary_id=identifier, qr_payload="x", source_app=self.name
-        )
+        return LabelData(title="fake", primary_id=identifier, qr_payload="x", source_app=self.name)
 
 
 @pytest.fixture(autouse=True)

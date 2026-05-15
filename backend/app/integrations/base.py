@@ -20,7 +20,7 @@ from app.schemas.label_data import LabelData
 class IntegrationPlugin(Protocol):
     """Per-integration lookup contract."""
 
-    name: str          # canonical id, e.g. "snipeit" — matches TemplateSchema.app
+    name: str  # canonical id, e.g. "snipeit" — matches TemplateSchema.app
     display_name: str  # UI-friendly, e.g. "Snipe-IT"
 
     async def lookup(self, identifier: str) -> LabelData:
