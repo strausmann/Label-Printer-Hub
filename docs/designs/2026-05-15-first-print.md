@@ -82,7 +82,7 @@ flowchart LR
 | `PrintService` | `app/services/print_service.py` | Use-case orchestrator |
 | REST routes | `app/api/routes/print.py` | `POST /print`, `GET /jobs/{id}`, exception mapping |
 | Lifespan init | `app/main.py` | Backend selection, queue start/stop |
-| Settings | `app/config.py` | `printer_backend`, `printer_pt_host`, ... |
+| Settings | `app/config.py` | `printer_backend`, `printer_model`, reuses existing `pt750w_host` / `pt750w_port` |
 
 ## Backend Protocol
 
@@ -120,7 +120,7 @@ class PrinterBackend(Protocol):
 - All `ptouch` calls are synchronous and dispatched via `asyncio.to_thread`.
 - `query_status` parses the ptouch status block into our `StatusBlock` dataclass.
 - `print_image` validates against the cached status (see Error handling) and calls `printer.print(label, auto_cut=..., high_resolution=...)`.
-- `send_bytes` opens a raw TCP connection to `host:9100` via `asyncio.open_connection` (so the call is non-blocking inside an `async def`), writes the bytes, and closes.
+- `send_bytes` opens a raw TCP connection to `host:9100` via `asyncio.open_connection`. The implementation sequence is `writer.write(raster)` → `await writer.drain()` (flush pending data and respect backpressure) → `writer.close()` → `await writer.wait_closed()`. Skipping `drain`/`wait_closed` can truncate the raster stream when the kernel buffer is small, so both are mandatory.
 
 ### `PTP750WDriver` (PrinterModel + queue-printer factory)
 
@@ -140,17 +140,35 @@ class PTP750WDriver:
 
     # --- PrinterModel methods ---
     async def query_status(self, host: str = "", port: int = 9100, timeout_s: float = 5.0):
-        # host is bound to the backend already; argument kept for Protocol compat
+        # The backend is already bound to a host. If the caller passes an explicit
+        # non-empty host that doesn't match, that's a programmer error — fail loudly
+        # rather than silently querying a different printer.
+        if host and host != self._backend.host:
+            raise ValueError(
+                f"Driver bound to backend.host={self._backend.host!r}; "
+                f"got host={host!r}. Construct a new driver/backend pair instead."
+            )
         return await self._backend.query_status()
 
     def width_to_pixels(self, tape_spec: TapeSpec) -> int:
         return tape_spec.print_area_pins
 
     def build_print_job(self, image, tape_spec, auto_cut=True, high_resolution=False) -> bytes:
-        raise NotImplementedError(
-            "PT-P750W uses high-level backend.print_image; "
-            "raw raster encoding stays inside the ptouch library."
-        )
+        """Encode an image into the Brother raster byte stream for PT-Series.
+
+        Used by callers that need the raw bytes (raw `send_bytes` path, future
+        export-to-file, or a backend without an in-library encoder). The
+        First-Print happy path goes through `backend.print_image()` and does
+        **not** call this method.
+
+        Implementation: delegates to the ptouch library's internal raster
+        builder (e.g. `ptouch.label.ImageLabel(image, ...).encode()`). The
+        exact entry point will be confirmed in implementation Phase 1 — if
+        ptouch does not expose a public encoder, the fallback is a raw
+        encoder built from the Brother Raster Command Reference.
+        """
+        # impl details deferred to plan
+        ...
 
     # --- queue-printer factory ---
     def make_queue_printer(
@@ -202,23 +220,25 @@ class _PTPQueuePrinter:
 3. PrintService loads the template via `TemplateLoader.get(template_id)`. On miss → `TemplateNotFoundError` (404, synchronous).
 4. PrintService resolves `LabelData`:
    - When `lookup` is set: `AppLookupService.lookup(app, identifier)` → `LabelData`. On failure → `LookupFailedError` (502, synchronous).
-   - When `data` is set: `LabelData.from_dict(data)`.
+   - When `data` is set: PrintService constructs `LabelData(**raw.model_dump(), source_app="manual")` from the validated `RawLabelData`. The list-to-tuple coercion for `secondary` happens during the `LabelData` construction (since `LabelData.secondary: tuple[str, ...]`).
 5. PrintService calls `LabelRenderer.render(template, label_data)` → PIL image.
-6. PrintService calls `PrintQueue.enqueue(image, tape_mm=template.tape_mm, options=...)` → `job_id`.
+6. PrintService calls `PrintQueue.submit(printer_id, image, tape_mm=template.tape_mm, **options)` → `job_id`. The `printer_id` is the only printer's `id` from `app.state.printer_id` (First-Print supports one printer; multi-printer routing comes with the persistence work).
 7. The API responds `202 {job_id, status: "queued"}`.
 8. The queue worker dequeues (existing FSM) and calls `print_image(...)` on the `_PrinterLike` returned by `driver.make_queue_printer(...)`.
 9. The backend runs pre-print validation and prints.
-10. Job status transitions: `queued → running → done` (or `→ failed` with `error_code`).
+10. Job status transitions: `queued → printing → completed` (or `→ failed` with `error_code`). These are the literal `JobState` enum values from `app/services/job_lifecycle.py`. The other enum members (`paused`, `cancelled`) are not produced by the First-Print path but remain visible in `/jobs/{id}` for forward compatibility.
 
 ### GET /jobs/{job_id}
 
 - Lookup in the in-memory job store of `PrintQueue`.
-- 404 when the job ID does not exist (or the TTL has expired).
+- 404 when the job ID does not exist (since there is no eviction in First-Print, this is only the case for unknown/typo job IDs; the dict survives until process restart).
 - Response contains `status`, `error_code`, `error_message`, `error_detail`, timestamps.
 
 ### Persistence
 
-In-memory store with a 5-minute TTL (existing). No database in this phase.
+In-memory store, no eviction (the current `PrintQueue._jobs` dict keeps every job for the process lifetime — there is a TODO in the queue source about unbounded growth). A bounded job store with TTL or LRU eviction is **planned for Phase 5** alongside SQLite persistence; not part of First-Print.
+
+For First-Print the practical impact is acceptable: jobs are tiny (a few KB each — PNG payload + metadata), the maintainer's deployment prints maybe dozens of labels per day, and a periodic process restart (e.g. via Watchtower image updates) acts as a coarse eviction in practice. If memory becomes an issue before Phase 5, the simplest stop-gap is a startup-time cap on the dict size with FIFO eviction — kept out of scope here to avoid scope creep.
 
 ## REST Schemas
 
@@ -228,15 +248,30 @@ class PrintLookupRequest(BaseModel):
     identifier: str
 
 class PrintOptions(BaseModel):
+    model_config = ConfigDict(frozen=True)
     copies: int = Field(1, ge=1, le=10)
     auto_cut: bool = True
     high_resolution: bool = False
 
+class RawLabelData(BaseModel):
+    """Payload shape accepted by the raw-data path. Validated into a
+    `LabelData` instance inside `PrintService` via `LabelData.model_validate`.
+    Mirrors `LabelData` field-by-field, but lets the client pass `secondary`
+    as a JSON array (Pydantic coerces to tuple).
+    """
+    title: str
+    primary_id: str
+    qr_payload: str
+    secondary: list[str] = Field(default_factory=list)
+    # source_app is set to "manual" by PrintService — not accepted from the client
+
 class PrintRequest(BaseModel):
     template_id: str
     lookup: PrintLookupRequest | None = None
-    data: dict[str, str] | None = None
-    options: PrintOptions = PrintOptions()
+    data: RawLabelData | None = None
+    # Use default_factory so each PrintRequest gets its own PrintOptions instance
+    # rather than sharing a single mutable default (Pydantic anti-pattern).
+    options: PrintOptions = Field(default_factory=PrintOptions)
 
     @model_validator(mode="after")
     def _exactly_one_source(self) -> Self:
@@ -250,7 +285,7 @@ class PrintJobResponse(BaseModel):
 
 class PrintJobStatusResponse(BaseModel):
     job_id: str
-    status: Literal["queued", "running", "done", "failed"]
+    status: JobState   # queued | paused | printing | completed | failed | cancelled
     error_code: str | None = None
     error_message: str | None = None
     error_detail: dict[str, Any] | None = None
@@ -280,7 +315,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await queue.start()
 
     app.state.print_queue = queue
-    app.state.printer_id = printer.id  # callers reference this on enqueue()
+    app.state.printer_id = printer.id  # PrintService passes this to PrintQueue.submit(...)
     app.state.print_service = PrintService(
         template_loader=TemplateLoader,
         renderer=LabelRenderer(),
@@ -304,7 +339,7 @@ def _build_backend(settings: Settings) -> PrinterBackend:
     return backend_factory.from_settings(settings)
 ```
 
-Each backend factory exposes a tiny `from_settings(settings) → PrinterBackend` class method so the lifespan code stays trivial and series-agnostic. `PTouchBackend.from_settings` checks `printer_pt_host` and looks up the ptouch class for the configured `printer_model`; `MockPrinterBackend.from_settings` ignores host/model and returns a fresh mock.
+Each backend factory exposes a tiny `from_settings(settings) → PrinterBackend` class method so the lifespan code stays trivial and series-agnostic. `PTouchBackend.from_settings` reads `settings.pt750w_host` / `settings.pt750w_port` (existing PT-Series fields) and looks up the ptouch class for the configured `printer_model`; `MockPrinterBackend.from_settings` ignores host/model and returns a fresh mock.
 
 **Mock backend lives in `app/`, not `tests/`** — the earlier open question is resolved. Rationale:
 
@@ -314,16 +349,34 @@ Each backend factory exposes a tiny `from_settings(settings) → PrinterBackend`
 
 ## Settings
 
+First-Print **reuses the existing per-model fields** in `app/config.py` (e.g. `pt750w_host`, `pt750w_port`, `ql820_host`, `ql820_port`) rather than renaming them. New fields are added on top:
+
 ```python
 class Settings(BaseSettings):
-    # ...existing fields...
+    # --- existing (kept as-is) ---
+    pt750w_host: str = ""
+    pt750w_port: int = 9100
+    ql820_host: str = ""
+    ql820_port: int = 9100
+    # ...
+
+    # --- NEW for First-Print ---
     printer_backend: str = "ptouch"           # backend_id; default built-ins: "ptouch", "mock"
     printer_model: str = "PT-P750W"           # model_id resolved against ModelRegistry
-    printer_pt_host: str | None = None        # required for ptouch backend
     printer_queue_timeout_s: float = 30.0
 ```
 
-The env-var prefix `PRINTER_HUB_` is already established. Example: `PRINTER_HUB_PRINTER_PT_HOST=<printer-ip>`.
+Env-var prefix `PRINTER_HUB_` is established. Examples:
+
+```
+PRINTER_HUB_PT750W_HOST=<printer-ip>         # existing
+PRINTER_HUB_PRINTER_MODEL=PT-P750W           # new
+PRINTER_HUB_PRINTER_BACKEND=ptouch           # new
+```
+
+`PTouchBackend.from_settings(settings)` reads `settings.pt750w_host` / `settings.pt750w_port` for PT-Series, similarly `BrotherQLBackend.from_settings` (when QL lands) reads `settings.ql820_*`. The mapping from `printer_model` to the right host field lives inside each backend's `from_settings`; the lifespan does not need to know.
+
+If multi-printer or multi-instance support becomes a real requirement, the per-model host/port pairs will be refactored into a more general structure (e.g. a list of printer configs). That refactor is deferred — it has no design-shaping impact today.
 
 `printer_backend` and `printer_model` are plain strings (not `Literal[...]`), so a freshly installed third-party plugin can be selected without a code change. Validation happens at app start — if either value does not resolve to a registered plugin, the lifespan fails fast with a clear error.
 
@@ -482,7 +535,7 @@ Plus `TemplateNotFoundError` and `LookupFailedError` on the lookup/template side
 | `tests/services/test_print_service.py` | Lookup/render/enqueue order; raw `data` path bypasses integration |
 | `tests/api/test_print_routes.py` | 202 with `job_id`; XOR validation; `GET /jobs/{id}` for all statuses |
 | `tests/test_lifespan.py` | Mock backend starts; plugin discovery runs; `queue.stop()` runs in `finally` |
-| `tests/test_settings_printer.py` | `printer_pt_host` required when `printer_backend=ptouch`; unknown `printer_model` / `printer_backend` fail fast at startup |
+| `tests/test_settings_printer.py` | Empty `pt750w_host` with `printer_backend=ptouch` + `printer_model=PT-P750W` fails fast; unknown `printer_model` / `printer_backend` fail fast at startup |
 | `tests/printer_models/test_registry.py` | `ModelRegistry.find_by_model_id` returns the right driver; entry-point discovery picks up a fake plugin |
 | `tests/printer_backends/test_registry.py` | `BackendRegistry.find_by_backend_id` returns the right backend factory; built-in `ptouch` + `mock` are pre-registered |
 
@@ -490,7 +543,7 @@ Plus `TemplateNotFoundError` and `LookupFailedError` on the lookup/template side
 
 `tests/api/test_print_e2e.py` with scenarios:
 
-- Happy path (raw data) → `done`; mock backend received exactly one image with correct dimensions.
+- Happy path (raw data) → `completed`; mock backend received exactly one image with correct dimensions.
 - Tape mismatch (mock `loaded_tape_mm=12`, template `tape_mm=24`) → `failed`, `error_code=tape_mismatch`.
 - Offline (mock `offline=True`) → `failed` after 3 retries, `error_code=printer_offline`.
 - Template not found → 404 synchronous.
@@ -515,14 +568,14 @@ Two additional manual scenarios:
 ## Acceptance Criteria
 
 1. `POST /print` with `template_id="qr-only-24mm"` and `data={"primary_id": "X"}` returns 202 with a `job_id`.
-2. `GET /jobs/{job_id}` returns statuses in sequence: `queued`, `running`, `done`.
+2. `GET /jobs/{job_id}` returns statuses in sequence: `queued`, `printing`, `completed` (the literal `JobState` enum values).
 3. The mock backend received exactly the expected image (dimensions match the `TapeSpec`).
 4. Tape mismatch ends as `failed` with the correct `error_code` and `error_detail`.
 5. Printer offline ends as `failed` after exactly 3 status query attempts.
 6. Template-not-found is a synchronous 404; no job record is created.
 7. Lookup failure is a synchronous 502; no job record is created.
 8. Lifespan shutdown stops the queue within `printer_queue_timeout_s`.
-9. Settings without `printer_pt_host` and `printer_backend=ptouch` fail at app start with a clear error.
+9. Empty `pt750w_host` with `printer_backend=ptouch` and `printer_model=PT-P750W` fails at app start with a clear error.
 10. An unknown `printer_model` or `printer_backend` fails at app start with a clear error listing the registered options.
 11. A fake driver plugin registered via `setuptools entry_points` is picked up by `ModelRegistry.ensure_discovered()` in a test, demonstrating that third-party drivers work end-to-end without core changes.
 12. `scripts/smoke_first_print.py` prints successfully on a real PT-P750W (verified manually).
