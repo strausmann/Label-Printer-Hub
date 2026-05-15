@@ -72,7 +72,7 @@ flowchart LR
 
 | Component | File | Responsibility |
 |---|---|---|
-| `PrinterBackend` Protocol | `app/printer_backends/base.py` | Transport + encoding contract: `print_image`, `send_bytes`, `query_status` |
+| `PrinterBackend` Protocol | `app/printer_backends/base.py` | Transport + encoding contract: `print_image` + `query_status` |
 | `PTouchBackend` | `app/printer_backends/ptouch_backend.py` | Wraps the `ptouch` library; synchronous I/O is dispatched via `asyncio.to_thread` |
 | `MockPrinterBackend` | `app/printer_backends/mock_backend.py` | Mock for tests and local dev without hardware |
 | Exceptions | `app/printer_backends/exceptions.py` | `PrinterError` hierarchy |
@@ -103,16 +103,15 @@ class PrinterBackend(Protocol):
         high_resolution: bool = False,
     ) -> None: ...
 
-    async def send_bytes(self, raster: bytes) -> None: ...
-
     async def query_status(self) -> StatusBlock: ...
 ```
 
-**Hybrid-API rationale:**
+**Two-method surface, deliberate YAGNI:**
 
-- `print_image` is the high-level path — the caller hands in a PIL image plus a `TapeSpec` and the backend encodes and sends.
-- `send_bytes` is the escape hatch for future raw raster experiments (template editor, power users). The caller is responsible for validation.
+- `print_image` is the only print path. Caller hands in a PIL image plus a `TapeSpec`; the backend encodes and sends.
 - `query_status` is the cheap pre-print check and health probe.
+
+An earlier draft included a `send_bytes(raster: bytes)` escape hatch for raw raster experiments (template editor, custom encoders). It was removed: there is no concrete caller in First-Print, adding it now means parallel TCP/9100 connection logic that must be tested and maintained, and Brother PT hardware allows only one TCP session at a time — opening a raw socket while `ptouch` holds one would cause `Resource Busy` errors. The hook can be added back additively if a real use case appears (Customization Path 2 — decorator backend — does not need `send_bytes`).
 
 ### `PTouchBackend` implementation
 
@@ -120,7 +119,6 @@ class PrinterBackend(Protocol):
 - All `ptouch` calls are synchronous and dispatched via `asyncio.to_thread`.
 - `query_status` parses the ptouch status block into our `StatusBlock` dataclass.
 - `print_image` validates against the cached status (see Error handling) and calls `printer.print(label, auto_cut=..., high_resolution=...)`.
-- `send_bytes` opens a raw TCP connection to `host:9100` via `asyncio.open_connection`. The implementation sequence is `writer.write(raster)` → `await writer.drain()` (flush pending data and respect backpressure) → `writer.close()` → `await writer.wait_closed()`. Skipping `drain`/`wait_closed` can truncate the raster stream when the kernel buffer is small, so both are mandatory.
 
 ### `PTP750WDriver` (PrinterModel + queue-printer factory)
 
@@ -143,6 +141,12 @@ class PTP750WDriver:
         # The backend is already bound to a host. If the caller passes an explicit
         # non-empty host that doesn't match, that's a programmer error — fail loudly
         # rather than silently querying a different printer.
+        #
+        # Note on Protocol shape: the `host` argument originally implies a stateless
+        # driver. With the bound-backend design the driver is stateful and `host` is
+        # dead. A cleaner long-term fix is to refactor `PrinterModel.query_status`
+        # to take no `host` argument; that is a follow-up PR that touches the
+        # Protocol itself and is intentionally not bundled with First-Print.
         if host and host != self._backend.host:
             raise ValueError(
                 f"Driver bound to backend.host={self._backend.host!r}; "
@@ -156,16 +160,21 @@ class PTP750WDriver:
     def build_print_job(self, image, tape_spec, auto_cut=True, high_resolution=False) -> bytes:
         """Encode an image into the Brother raster byte stream for PT-Series.
 
-        Used by callers that need the raw bytes (raw `send_bytes` path, future
-        export-to-file, or a backend without an in-library encoder). The
         First-Print happy path goes through `backend.print_image()` and does
-        **not** call this method.
+        **not** call this method. It is kept here for callers that need raw
+        bytes (export-to-file, debugging) and for Protocol conformance.
 
         Implementation: delegates to the ptouch library's internal raster
         builder (e.g. `ptouch.label.ImageLabel(image, ...).encode()`). The
         exact entry point will be confirmed in implementation Phase 1 — if
         ptouch does not expose a public encoder, the fallback is a raw
         encoder built from the Brother Raster Command Reference.
+
+        Alternative considered: refactoring `PrinterModel` so rasterization
+        is in a separate sub-protocol (`RasterizablePrinterModel`). That is
+        a cleaner shape if a backend genuinely cannot expose an encoder
+        and is flagged as a possible follow-up. For First-Print we keep the
+        Protocol unchanged and assume the ptouch encoder is reachable.
         """
         # impl details deferred to plan
         ...
@@ -418,8 +427,6 @@ class QuirkyPTP710BTBackend:
         return status
     async def print_image(self, image, tape_spec, **kw):
         await self._inner.print_image(image, tape_spec, **kw)
-    async def send_bytes(self, raster):
-        await self._inner.send_bytes(raster)
 ```
 
 One wrapper class implementing `PrinterBackend` again. `ptouch` library stays untouched, no driver change.
@@ -585,9 +592,11 @@ Two additional manual scenarios:
 
 - **ptouch status parsing:** which fields the `ptouch` library exposes from the status block must be verified in plan Phase 1 (read `ptouch.printers.PT_P750W.get_status`). If the fields are insufficient (e.g. no `loaded_tape_mm`), we need a fall-back raw parser following the Brother Raster Command Reference (PT-Series).
 - **PT-P750W transport:** the design assumes network TCP. The ptouch class lookup happens inside `PTouchBackend.from_settings` and is easy to extend if a future model needs a different connection class.
-- **In-memory TTL drift:** the 5-minute TTL could expire during very long polls. Not blocking for First-Print; will be revisited together with the persistence work in Phase 5.
+- **Job eviction:** the current `_jobs` dict grows unbounded (existing TODO). Bounded eviction is part of the Phase 5 persistence work; deliberately not in First-Print.
 - **Default `MediaType` for the bridge:** `MediaType.LAMINATED` covers the common TZe-Tape case, but the bridge accepts a per-print `options["media_type"]` override. If a request comes in with the wrong media type, the pre-print status check will catch the mismatch via `TapeMismatchError`.
 - **Lifecycle hooks (`before_print` / `after_print`):** intentionally **not** part of First-Print. Adding them would extend the `PrinterModel` Protocol once (with no-op defaults). Deferred until a concrete need surfaces — paths 2 and 3 in the Extensibility section cover every realistic case today.
+- **PrinterModel Protocol shape — possible follow-up:** two parts of the current Protocol are awkward with the bound-backend driver design: (a) `query_status(host=...)` has a dead `host` argument, and (b) `build_print_job` is required even when a backend owns encoding. A clean follow-up PR would refactor the Protocol — either make `query_status` stateless-less (`query_status()` without `host`) or split rasterization into a `RasterizablePrinterModel` sub-protocol. Bundling that into First-Print would mean touching every existing PrinterModel call site; out of scope here.
+- **Raw-bytes path:** removed for now (`send_bytes` is **not** part of `PrinterBackend`). If a real caller appears — e.g. a future template editor that wants to send pre-encoded raster, or a non-library backend — `send_bytes` can be added additively to the Protocol with no breaking change. Until then, every print goes through `print_image`.
 
 ## References
 
