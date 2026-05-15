@@ -45,6 +45,13 @@ def test_register_rejects_whitespace_only_name() -> None:
         IntegrationRegistry.register(p)
 
 
+def test_register_rejects_padded_name() -> None:
+    """Canonical ids must not have leading/trailing whitespace."""
+    p = _FakePlugin(name="  snipeit  ")
+    with pytest.raises(ValueError, match="leading/trailing whitespace"):
+        IntegrationRegistry.register(p)
+
+
 def test_register_rejects_non_string_name() -> None:
     p = _FakePlugin()
     p.name = 42  # type: ignore[assignment]

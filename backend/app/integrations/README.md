@@ -29,14 +29,28 @@ entry-points.
            ...
    ```
 
-2. Register the entry-point in `backend/pyproject.toml`:
+2. Add the plugin's configuration fields to `backend/app/config.py`:
+
+   ```python
+   class Settings(BaseSettings):
+       # ... existing fields ...
+       myapp_url: str = ""
+       myapp_api_key: SecretStr = SecretStr("")
+       myapp_timeout: float = 5.0
+   ```
+
+   Settings reads them from environment variables prefixed with
+   `PRINTER_HUB_` (e.g. `PRINTER_HUB_MYAPP_URL`). Match the field
+   names you read in the plugin constructor.
+
+3. Register the entry-point in `backend/pyproject.toml`:
 
    ```toml
    [project.entry-points."label_hub.integrations"]
    myapp = "app.integrations.myapp.plugin:MyAppPlugin"
    ```
 
-3. Re-install the package (`pip install -e backend`) and the plugin
+4. Re-install the package (`pip install -e backend`) and the plugin
    loads at app start. `IntegrationRegistry.names()` will include
    `"myapp"`.
 
@@ -52,6 +66,17 @@ openfoodfacts = "label_hub_openfoodfacts.plugin:OpenFoodFactsPlugin"
 
 After `pip install label-hub-openfoodfacts` the plugin is registered
 the same way bundled plugins are — no Label-Hub repo change needed.
+
+Third-party plugins cannot add fields to the core `app.config.Settings`
+class — it uses `extra="ignore"`, and pip-installed packages cannot
+modify the host application's source. External plugins should manage
+their own configuration: read environment variables directly (with
+`os.environ` or a local `pydantic_settings.BaseSettings` subclass),
+or accept a dedicated env-var prefix (e.g. `LABEL_HUB_OPENFOODFACTS_*`)
+that does not collide with the core `PRINTER_HUB_*` namespace.
+
+Bundled plugins use `app.config.get_settings()`; third-party plugins
+must NOT, because adding a field there requires a core repo change.
 
 ## Plugin contract
 

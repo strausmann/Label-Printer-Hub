@@ -27,9 +27,8 @@ class SpoolmanPlugin:
 
     Implements the IntegrationPlugin protocol — exposes `name`,
     `display_name`, and an async `lookup` resolving spool-id → LabelData.
-    Configuration (base URL, optional API key, timeout) is injected the
-    same way as SnipeITPlugin so production and respx-mocked tests use
-    the same instance without hidden global state.
+    Configuration (base URL + timeout) is read from settings; Spoolman
+    requires no authentication, so there is no api_key field.
     """
 
     name = "spoolman"

@@ -14,6 +14,11 @@ AppLookupNotFoundError — the two failure modes are operationally distinct:
 
 from __future__ import annotations
 
+# Trigger plugin discovery — importing this module guarantees the
+# registry is populated regardless of whether main.py has imported
+# app.integrations yet. The discovery is idempotent (registry
+# rejects duplicates), so multiple imports are safe.
+import app.integrations  # noqa: F401
 from app.integrations.registry import (
     IntegrationNotFoundError,
     IntegrationRegistry,
