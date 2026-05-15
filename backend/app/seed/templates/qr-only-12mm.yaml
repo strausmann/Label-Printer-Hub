@@ -1,0 +1,8 @@
+# 600px canvas, 80px QR -> x = (600 - 80) / 2 = 260.
+schema_version: 1
+id: qr-only-12mm
+name: "QR-Code only (12mm)"
+app: null
+tape_mm: 12
+elements:
+  - { type: qr, x: 260, y: 13, size: 80, data_field: qr_payload }
