@@ -1,7 +1,22 @@
 import httpx
 import pytest
 import respx
-from app.services.grocy_client import GrocyClient, GrocyNotFoundError
+from app.integrations.grocy.plugin import GrocyNotFoundError, GrocyPlugin
+
+# ---------------------------------------------------------------------------
+# Settings fixture
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the plugin at a fake host. respx mocks the actual HTTP."""
+    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "https://grocy.example")
+    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "grocy-key")
+    monkeypatch.setenv("PRINTER_HUB_GROCY_TIMEOUT", "5.0")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
 
 
 @pytest.mark.asyncio
@@ -14,7 +29,7 @@ async def test_lookup_product_returns_label_data() -> None:
         )
     )
 
-    client = GrocyClient(base_url="https://grocy.example", api_key="grocy-key")
+    client = GrocyPlugin()
     data = await client.lookup("42")
 
     assert data.title == "Milch 1L"
@@ -31,7 +46,7 @@ async def test_lookup_product_400_raises_not_found() -> None:
     respx.get("https://grocy.example/api/objects/products/999").mock(
         return_value=httpx.Response(400, json={"error_message": "No such product"})
     )
-    client = GrocyClient(base_url="https://grocy.example", api_key="grocy-key")
+    client = GrocyPlugin()
     with pytest.raises(GrocyNotFoundError, match="999"):
         await client.lookup("999")
 
@@ -43,18 +58,22 @@ async def test_lookup_product_404_also_raises_not_found() -> None:
     respx.get("https://grocy.example/api/objects/products/999").mock(
         return_value=httpx.Response(404)
     )
-    client = GrocyClient(base_url="https://grocy.example", api_key="grocy-key")
+    client = GrocyPlugin()
     with pytest.raises(GrocyNotFoundError):
         await client.lookup("999")
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_lookup_strips_trailing_slash_from_base_url() -> None:
+async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
     respx.get("https://grocy.example/api/objects/products/7").mock(
         return_value=httpx.Response(200, json={"id": 7, "name": "X"})
     )
-    client = GrocyClient(base_url="https://grocy.example/", api_key="grocy-key")
+    from app.config import get_settings
+
+    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "https://grocy.example/")
+    get_settings.cache_clear()
+    client = GrocyPlugin()
     data = await client.lookup("7")
     assert data.qr_payload == "https://grocy.example/product/7"
 
@@ -65,7 +84,7 @@ async def test_lookup_url_encodes_product_id() -> None:
     respx.get("https://grocy.example/api/objects/products/A%2F1").mock(
         return_value=httpx.Response(200, json={"id": 1, "name": "Encoded"})
     )
-    client = GrocyClient(base_url="https://grocy.example", api_key="grocy-key")
+    client = GrocyPlugin()
     data = await client.lookup("A/1")
     assert data.title == "Encoded"
 
@@ -74,7 +93,7 @@ async def test_lookup_url_encodes_product_id() -> None:
 @respx.mock
 async def test_lookup_5xx_raises_httpx_error() -> None:
     respx.get("https://grocy.example/api/objects/products/1").mock(return_value=httpx.Response(500))
-    client = GrocyClient(base_url="https://grocy.example", api_key="grocy-key")
+    client = GrocyPlugin()
     with pytest.raises(httpx.HTTPStatusError):
         await client.lookup("1")
 
@@ -86,19 +105,24 @@ async def test_lookup_missing_id_raises_value_error() -> None:
     respx.get("https://grocy.example/api/objects/products/1").mock(
         return_value=httpx.Response(200, json={"name": "Broken"})  # no id
     )
-    client = GrocyClient(base_url="https://grocy.example", api_key="grocy-key")
+    client = GrocyPlugin()
     with pytest.raises(ValueError, match="missing required field 'id'"):
         await client.lookup("1")
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_lookup_sends_grocy_api_key_header() -> None:
+async def test_lookup_sends_grocy_api_key_header(monkeypatch: pytest.MonkeyPatch) -> None:
     """Outgoing request must carry GROCY-API-KEY header (not Bearer)."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "my-grocy-key-42")
+    get_settings.cache_clear()
+
     route = respx.get("https://grocy.example/api/objects/products/1").mock(
         return_value=httpx.Response(200, json={"id": 1, "name": "x"})
     )
-    client = GrocyClient(base_url="https://grocy.example", api_key="my-grocy-key-42")
+    client = GrocyPlugin()
     await client.lookup("1")
 
     assert route.called

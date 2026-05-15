@@ -21,25 +21,26 @@ class SnipeITNotFoundError(AppLookupNotFoundError):
     """Raised when no Snipe-IT asset matches the given tag."""
 
 
-class SnipeITClient:
-    """Async client for Snipe-IT's REST API.
+class SnipeITPlugin:
+    """Snipe-IT integration plugin.
 
-    Authenticates with a bearer token (Snipe-IT API key). Configuration —
-    base URL, API key, timeout — is injected so the same class can hit the
-    user's live instance from production and a respx-mocked endpoint from
-    tests, with no hidden global state.
+    Implements the IntegrationPlugin protocol — exposes `name`,
+    `display_name`, and an async `lookup` resolving asset_tag → LabelData.
+    Configuration (base URL, API key, timeout) is injected so the same
+    instance can hit the user's live Snipe-IT from production and a
+    respx-mocked endpoint from tests, with no hidden global state.
     """
 
-    def __init__(
-        self,
-        *,
-        base_url: str,
-        api_key: str,
-        timeout: float = 5.0,
-    ) -> None:
-        self._base_url = base_url.rstrip("/")
-        self._api_key = api_key
-        self._timeout = timeout
+    name = "snipeit"
+    display_name = "Snipe-IT"
+
+    def __init__(self) -> None:
+        from app.config import get_settings
+
+        settings = get_settings()
+        self._base_url = settings.snipeit_url.rstrip("/")
+        self._api_key = settings.snipeit_api_key.get_secret_value()
+        self._timeout = settings.snipeit_timeout
 
     async def lookup(self, asset_tag: str) -> LabelData:
         """Return LabelData for `asset_tag`, or raise SnipeITNotFoundError."""

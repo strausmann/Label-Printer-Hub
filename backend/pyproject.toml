@@ -44,6 +44,11 @@ dev = [
     "mypy>=1.13",
 ]
 
+[project.entry-points."label_hub.integrations"]
+snipeit = "app.integrations.snipeit.plugin:SnipeITPlugin"
+spoolman = "app.integrations.spoolman.plugin:SpoolmanPlugin"
+grocy = "app.integrations.grocy.plugin:GrocyPlugin"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

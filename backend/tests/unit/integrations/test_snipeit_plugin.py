@@ -1,7 +1,23 @@
 import httpx
 import pytest
 import respx
-from app.services.snipeit_client import SnipeITClient, SnipeITNotFoundError
+from app.integrations.snipeit.plugin import SnipeITNotFoundError, SnipeITPlugin
+
+# ---------------------------------------------------------------------------
+# Settings fixture — env vars are read by the plugin constructor via get_settings()
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the plugin at a fake host. respx mocks the actual HTTP."""
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipe-it.example")
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "test-key")
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_TIMEOUT", "5.0")
+    # Clear the lru_cache so the plugin picks up the patched env vars.
+    from app.config import get_settings
+
+    get_settings.cache_clear()
 
 
 def test_not_found_error_is_app_lookup_not_found() -> None:
@@ -9,10 +25,9 @@ def test_not_found_error_is_app_lookup_not_found() -> None:
 
     Ensures the aggregator can catch any client's not-found in a single clause.
     """
+    from app.integrations.grocy.plugin import GrocyNotFoundError
+    from app.integrations.spoolman.plugin import SpoolmanNotFoundError
     from app.services.errors import AppLookupNotFoundError
-    from app.services.grocy_client import GrocyNotFoundError
-    from app.services.snipeit_client import SnipeITNotFoundError
-    from app.services.spoolman_client import SpoolmanNotFoundError
 
     assert issubclass(SnipeITNotFoundError, AppLookupNotFoundError)
     assert issubclass(GrocyNotFoundError, AppLookupNotFoundError)
@@ -34,7 +49,7 @@ async def test_lookup_asset_returns_label_data() -> None:
         )
     )
 
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
     data = await client.lookup("ASSET-12345")
 
     assert data.title == "MacBook Pro 16"
@@ -51,7 +66,7 @@ async def test_lookup_asset_404_raises_not_found() -> None:
         return_value=httpx.Response(404)
     )
 
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
 
     with pytest.raises(SnipeITNotFoundError, match="UNKNOWN"):
         await client.lookup("UNKNOWN")
@@ -68,7 +83,7 @@ async def test_lookup_asset_without_serial_has_no_secondary_line() -> None:
         )
     )
 
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
     data = await client.lookup("A-1")
 
     assert data.secondary == ()
@@ -76,12 +91,17 @@ async def test_lookup_asset_without_serial_has_no_secondary_line() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_lookup_strips_trailing_slash_from_base_url() -> None:
+async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
     """base_url='https://snipe-it.example/' must not produce a double slash."""
     respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(200, json={"id": 1, "asset_tag": "A-1", "name": "Thing"})
     )
-    client = SnipeITClient(base_url="https://snipe-it.example/", api_key="test-key")
+    # Trailing slash is injected via env var — the plugin must strip it.
+    from app.config import get_settings
+
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipe-it.example/")
+    get_settings.cache_clear()
+    client = SnipeITPlugin()
     data = await client.lookup("A-1")
     assert data.qr_payload == "https://snipe-it.example/hardware/1"
 
@@ -99,7 +119,7 @@ async def test_lookup_missing_id_raises_value_error() -> None:
             json={"asset_tag": "A-1", "name": "Broken Asset"},  # no 'id'
         )
     )
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
     with pytest.raises(ValueError, match="missing required field 'id'"):
         await client.lookup("A-1")
 
@@ -111,7 +131,7 @@ async def test_lookup_5xx_raises_httpx_error() -> None:
     respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(500)
     )
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
     with pytest.raises(httpx.HTTPStatusError):
         await client.lookup("A-1")
 
@@ -126,19 +146,24 @@ async def test_lookup_url_encodes_asset_tag() -> None:
             json={"id": 1, "asset_tag": "A/1 test", "name": "Thing"},
         )
     )
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="test-key")
+    client = SnipeITPlugin()
     data = await client.lookup("A/1 test")
     assert data.title == "Thing"
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_lookup_sends_bearer_auth_header() -> None:
+async def test_lookup_sends_bearer_auth_header(monkeypatch: pytest.MonkeyPatch) -> None:
     """lookup() must send Authorization: Bearer … and Accept: application/json."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "secret-key-42")
+    get_settings.cache_clear()
+
     route = respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(200, json={"id": 1, "asset_tag": "A-1", "name": "T"})
     )
-    client = SnipeITClient(base_url="https://snipe-it.example", api_key="secret-key-42")
+    client = SnipeITPlugin()
     await client.lookup("A-1")
 
     assert route.called
