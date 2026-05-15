@@ -1,4 +1,4 @@
-"""SNMP query helpers — discovery (PJL string) + live status.
+"""SNMP query helpers — discovery (PJL string) + live status + preflight.
 
 Uses pysnmp's asyncio API; the call is fully non-blocking, no thread
 dispatch needed. SNMPv2c with a configurable community (default 'public').
@@ -10,6 +10,7 @@ __init__; use ``await UdpTransportTarget.create((host, port), ...)`` instead.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -30,6 +31,7 @@ _logger = logging.getLogger(__name__)
 BROTHER_PJL_OID = "1.3.6.1.4.1.2435.2.3.9.1.1.7.0"
 HR_PRINTER_STATUS_OID = "1.3.6.1.2.1.25.3.5.1.1.1"
 HR_PRINTER_DETECTED_ERROR_STATE_OID = "1.3.6.1.2.1.25.3.5.1.2.1"
+PRT_INPUT_MEDIA_TYPE_OID = "1.3.6.1.2.1.43.8.2.1.12.1.1"
 
 _PRINTER_STATUS_MAP: dict[int, Literal["other", "unknown", "idle", "printing", "warmup"]] = {
     1: "other",
@@ -73,6 +75,86 @@ class LiveStatus:
 
     hr_printer_status: Literal["other", "unknown", "idle", "printing", "warmup"]
     error_flags: list[str] = field(default_factory=list)
+
+
+_TAPE_MM_RE = re.compile(r"^\s*(\d+)\s*mm", re.IGNORECASE)
+
+
+def parse_loaded_tape_mm(text: str) -> int | None:
+    """Parse prtInputMediaType reply like '12mm(0.47")' → 12.
+
+    Returns None for empty / unparsable replies (no tape inserted).
+    """
+    if not text:
+        return None
+    match = _TAPE_MM_RE.match(text)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+@dataclass(frozen=True)
+class PreflightStatus:
+    """Combined preflight: printer status + loaded tape + error bitmap."""
+
+    hr_printer_status: Literal["other", "unknown", "idle", "printing", "warmup"]
+    loaded_tape_mm: int | None
+    error_flags: list[str] = field(default_factory=list)
+
+
+async def query_loaded_tape_mm(
+    host: str, *, community: str = "public", timeout_s: float = 3.0
+) -> int | None:
+    """Query prtInputMediaType OID and return the loaded tape width in mm."""
+    error_indication, error_status, _, var_binds = await get_cmd(
+        SnmpEngine(),
+        CommunityData(community, mpModel=1),
+        await UdpTransportTarget.create((host, 161), timeout=timeout_s, retries=0),
+        ContextData(),
+        ObjectType(ObjectIdentity(PRT_INPUT_MEDIA_TYPE_OID)),
+    )
+    if error_indication:
+        raise SnmpQueryError(f"prtInputMediaType failed: {error_indication}")
+    if error_status:
+        raise SnmpQueryError(f"prtInputMediaType returned error: {error_status}")
+    if not var_binds:
+        return None
+    return parse_loaded_tape_mm(str(var_binds[0][1]))
+
+
+async def query_preflight(
+    host: str, *, community: str = "public", timeout_s: float = 3.0
+) -> PreflightStatus:
+    """Single round-trip: status + error-state + loaded tape.
+
+    Used by PTouchBackend.preflight_check() to validate before sending a
+    print job. Raises SnmpQueryError on transport failure.
+    """
+    error_indication, error_status, _, var_binds = await get_cmd(
+        SnmpEngine(),
+        CommunityData(community, mpModel=1),
+        await UdpTransportTarget.create((host, 161), timeout=timeout_s, retries=0),
+        ContextData(),
+        ObjectType(ObjectIdentity(HR_PRINTER_STATUS_OID)),
+        ObjectType(ObjectIdentity(HR_PRINTER_DETECTED_ERROR_STATE_OID)),
+        ObjectType(ObjectIdentity(PRT_INPUT_MEDIA_TYPE_OID)),
+    )
+    if error_indication:
+        raise SnmpQueryError(f"preflight SNMP failed: {error_indication}")
+    if error_status:
+        raise SnmpQueryError(f"preflight SNMP returned error: {error_status}")
+    if len(var_binds) < 3:
+        raise SnmpQueryError("incomplete preflight reply")
+
+    raw_status = int(var_binds[0][1])
+    raw_error_blob = bytes(var_binds[1][1])
+    raw_media_text = str(var_binds[2][1])
+
+    return PreflightStatus(
+        hr_printer_status=_PRINTER_STATUS_MAP.get(raw_status, "other"),
+        loaded_tape_mm=parse_loaded_tape_mm(raw_media_text),
+        error_flags=decode_error_flags(raw_error_blob),
+    )
 
 
 async def query_model_pjl(host: str, *, community: str = "public", timeout_s: float = 3.0) -> str:
