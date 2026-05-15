@@ -1,0 +1,10 @@
+# Compact: QR + spool id + filament title.
+schema_version: 1
+id: spoolman-12mm
+name: "Spoolman Spool (12mm)"
+app: spoolman
+tape_mm: 12
+elements:
+  - { type: qr,   x: 8,   y: 13, size: 80, data_field: qr_payload }
+  - { type: text, x: 100, y: 18, field: primary_id, font_size: 22 }
+  - { type: text, x: 100, y: 60, field: title,      font_size: 14 }
