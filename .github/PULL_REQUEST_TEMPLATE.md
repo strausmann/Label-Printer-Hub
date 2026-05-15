@@ -7,6 +7,14 @@ The PR title MUST follow Conventional Commits — see CONTRIBUTING.md.
 
 <!-- One paragraph: what does this PR do, why is it needed? -->
 
+## Contributor License Agreement (CLA)
+
+By opening this pull request you affirm that you have read and agree to the
+project's [Contributor License Agreement](../CLA.md) for the contribution(s)
+included here.
+
+- [ ] I have read and agree to the [Contributor License Agreement](../CLA.md).
+
 ## Linked issue
 
 Closes #
