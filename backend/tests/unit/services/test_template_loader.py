@@ -219,8 +219,10 @@ def test_get_returns_cached_template(tmp_path: Path) -> None:
 
 
 def test_get_raises_keyerror_for_unknown_id(tmp_path: Path) -> None:
+    from app.services.template_loader import TemplateNotFoundError
+
     TemplateLoader.load_dir(tmp_path)  # empty dir
-    with pytest.raises(KeyError, match="not loaded"):
+    with pytest.raises(TemplateNotFoundError):
         TemplateLoader.get("nope")
 
 
@@ -404,6 +406,15 @@ def test_load_dir_rejects_duplicate_ids(tmp_path: Path) -> None:
 
     # Neither got into the cache — the failure happens during the staging loop
     assert "duplicate" not in TemplateLoader._cache
+
+
+def test_get_unknown_raises_template_not_found() -> None:
+    TemplateLoader._cache.clear()
+    from app.services.template_loader import TemplateNotFoundError
+
+    with pytest.raises(TemplateNotFoundError) as exc:
+        TemplateLoader.get("does-not-exist")
+    assert "does-not-exist" in str(exc.value)
 
 
 def test_reload_preserves_cache_on_failure(tmp_path: Path) -> None:

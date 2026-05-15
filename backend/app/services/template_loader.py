@@ -22,6 +22,11 @@ class TemplateValidationError(Exception):
     """A YAML file failed to parse into a valid TemplateSchema."""
 
 
+class TemplateNotFoundError(KeyError):
+    """Requested template id is not registered. Subclasses KeyError so legacy
+    callers that catch KeyError keep working."""
+
+
 class TemplateLoader:
     """Class-level cache of seed templates."""
 
@@ -85,9 +90,9 @@ class TemplateLoader:
 
     @classmethod
     def get(cls, template_id: str) -> TemplateSchema:
-        """Return the cached template or raise KeyError."""
+        """Return the cached template or raise TemplateNotFoundError."""
         if template_id not in cls._cache:
-            raise KeyError(f"Template {template_id!r} not loaded")
+            raise TemplateNotFoundError(template_id)
         return cls._cache[template_id]
 
     @classmethod
