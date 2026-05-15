@@ -7,6 +7,7 @@ import pytest
 from app.models.tape import TapeSpec
 from app.printer_backends.base import PrinterBackend
 from app.printer_backends.exceptions import (
+    PrinterCoverOpenError,
     PrinterOfflineError,
     PrintFailedError,
     TapeEmptyError,
@@ -239,3 +240,109 @@ def test_tape_class_map_uses_generic_ptouch_tape_classes() -> None:
             "must be generic Tape*mm, ptouch's PT-Series whitelist rejects "
             "LaminatedTape*mm subclasses (verified on real hardware)."
         )
+
+
+# ---------------------------------------------------------------------------
+# preflight_check() — SNMP-based pre-print validation
+# ---------------------------------------------------------------------------
+
+
+async def test_preflight_check_returns_preflight_status_on_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=12,
+            error_flags=[],
+        )
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
+    )
+    backend = PTouchBackend(host="192.0.2.10")
+    pf = await backend.preflight_check()
+    assert pf.loaded_tape_mm == 12
+    assert pf.hr_printer_status == "idle"
+
+
+async def test_preflight_check_raises_tape_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="other",
+            loaded_tape_mm=None,
+            error_flags=["noPaper"],
+        )
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
+    )
+    backend = PTouchBackend(host="192.0.2.10")
+    with pytest.raises(TapeEmptyError):
+        await backend.preflight_check()
+
+
+async def test_preflight_check_raises_cover_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="other",
+            loaded_tape_mm=12,
+            error_flags=["doorOpen"],
+        )
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
+    )
+    backend = PTouchBackend(host="192.0.2.10")
+    with pytest.raises(PrinterCoverOpenError):
+        await backend.preflight_check()
+
+
+async def test_preflight_check_wraps_snmp_failure_as_offline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.printer_backends.exceptions import SnmpQueryError
+
+    async def fake_preflight(*_a, **_kw):
+        raise SnmpQueryError("timed out")
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
+    )
+    backend = PTouchBackend(host="192.0.2.10")
+    with pytest.raises(PrinterOfflineError):
+        await backend.preflight_check()
+
+
+async def test_preflight_check_does_not_raise_tape_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """preflight_check is backend-agnostic; it returns loaded_tape_mm and
+    lets the caller (PrintService) decide on mismatch."""
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=12,
+            error_flags=[],
+        )
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
+    )
+    backend = PTouchBackend(host="192.0.2.10")
+    pf = await backend.preflight_check()
+    # No exception — caller is responsible for raising TapeMismatchError
+    assert pf.loaded_tape_mm == 12

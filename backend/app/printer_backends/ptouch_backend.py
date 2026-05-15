@@ -20,9 +20,11 @@ from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterOfflineError,
     PrintFailedError,
+    SnmpQueryError,
     TapeEmptyError,
     TapeMismatchError,
 )
+from app.printer_backends.snmp_helper import PreflightStatus, query_preflight
 from app.printer_backends.status_query import query_status_over_socket
 from app.services.status_block import StatusBlock
 
@@ -121,6 +123,43 @@ class PTouchBackend:
                 last_exc = exc
         assert last_exc is not None
         raise last_exc
+
+    async def preflight_check(
+        self,
+        *,
+        community: str = "public",
+        timeout_s: float = 3.0,
+    ) -> PreflightStatus:
+        """SNMP-based preflight: hrPrinterStatus + error bitmap + loaded tape.
+
+        Use this BEFORE submitting a print job to validate the printer is
+        ready and the loaded tape matches the requested width. ESC i S
+        (used by query_status) is unreliable on PT-Series in idle state
+        — SNMP runs in parallel on UDP/161 and returns reliably.
+
+        Raises:
+            PrinterOfflineError: SNMP query failed (host unreachable or timeout)
+            TapeEmptyError: hrPrinterDetectedErrorState has noPaper bit
+            PrinterCoverOpenError: hrPrinterDetectedErrorState has doorOpen bit
+
+        Does NOT raise TapeMismatchError — the caller compares
+        `preflight.loaded_tape_mm` to the request's tape_mm and raises if
+        needed. This keeps PTouchBackend agnostic of what's being printed.
+        """
+        try:
+            preflight = await query_preflight(
+                self.host,
+                community=community,
+                timeout_s=timeout_s,
+            )
+        except SnmpQueryError as exc:
+            raise PrinterOfflineError(f"preflight SNMP failed: {exc}") from exc
+
+        if "noPaper" in preflight.error_flags:
+            raise TapeEmptyError()
+        if "doorOpen" in preflight.error_flags:
+            raise PrinterCoverOpenError()
+        return preflight
 
     async def print_image(
         self,
