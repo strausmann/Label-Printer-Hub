@@ -326,7 +326,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     BackendRegistry.ensure_discovered()
 
     backend = _build_backend(settings)
-    driver_cls = ModelRegistry.find_by_model_id(settings.printer_model)
+    # Resolve model via SNMP first (when enabled), fall back to settings.printer_model.
+    # The full flow is in the "SNMP — discovery + live status" section.
+    discovery_host = settings.pt750w_host or ""
+    if discovery_host and settings.printer_discover_via_snmp:
+        model_id = await _resolve_printer_model(settings, discovery_host)
+    else:
+        model_id = settings.printer_model
+        if not model_id:
+            raise ValueError("printer_model is empty and SNMP discovery is disabled.")
+
+    driver_cls = ModelRegistry.find_by_model_id(model_id)
     driver = driver_cls(backend=backend)
     printer = driver.make_queue_printer(tape_registry)
     queue = PrintQueue(printers=[printer])  # matches current __init__ signature
@@ -334,11 +344,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     app.state.print_queue = queue
     app.state.printer_id = printer.id  # PrintService passes this to PrintQueue.submit(...)
+    app.state.printer_host = discovery_host  # used by route handler for live SNMP
+    app.state.printer_snmp_community = settings.printer_snmp_community
     app.state.print_service = PrintService(
         template_loader=TemplateLoader,
         renderer=LabelRenderer(),
         print_queue=queue,
-        integration_registry=IntegrationRegistry,
+        lookup_service=AppLookupService(),
+        printer_id=printer.id,
     )
 
     try:
