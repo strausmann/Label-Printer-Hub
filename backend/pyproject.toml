@@ -51,6 +51,9 @@ snipeit = "app.integrations.snipeit.plugin:SnipeITPlugin"
 spoolman = "app.integrations.spoolman.plugin:SpoolmanPlugin"
 grocy = "app.integrations.grocy.plugin:GrocyPlugin"
 
+[project.entry-points."label_hub.printer_backends"]
+mock = "app.printer_backends.mock_backend:MockPrinterBackend"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
