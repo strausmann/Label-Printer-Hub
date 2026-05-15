@@ -24,6 +24,7 @@ module.exports = {
       1,
       'always',
       [
+        'printer-backends',
         'printer-models',
         'queue',
         'status',
