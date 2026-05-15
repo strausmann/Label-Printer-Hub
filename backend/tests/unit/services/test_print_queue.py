@@ -185,3 +185,33 @@ async def test_queue_retry_failed_creates_new_job() -> None:
     assert new_job.state == JobState.QUEUED
     assert new_job.retry_count == 1
     assert new_job.options.get("parent_job_id") == job_id
+
+
+# ---------------------------------------------------------------------------
+# Task 1.5.5 — PrinterError → Job structured error fields
+# ---------------------------------------------------------------------------
+
+
+class _MismatchPrinter:
+    id = "p1"
+
+    async def print_image(self, image: Image.Image, *, tape_mm: int, **_options: object) -> None:
+        from app.printer_backends.exceptions import TapeMismatchError
+
+        raise TapeMismatchError(expected_mm=tape_mm, loaded_mm=12)
+
+
+@pytest.mark.asyncio
+async def test_worker_records_printer_error_fields() -> None:
+    queue = PrintQueue(printers=[_MismatchPrinter()])
+    await queue.start()
+    try:
+        image = Image.new("1", (200, 128))
+        job_id = await queue.submit("p1", image, tape_mm=24)
+        job = await queue.wait_for_job(job_id, timeout_s=2.0)
+        assert job.state == JobState.FAILED
+        assert job.error_code == "tape_mismatch"
+        assert job.error_message
+        assert job.error_detail == {"expected_mm": 24, "loaded_mm": 12}
+    finally:
+        await queue.stop(timeout_s=2.0)

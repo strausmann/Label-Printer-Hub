@@ -24,6 +24,15 @@ from typing import Any, Protocol
 
 from PIL import Image
 
+from app.printer_backends.exceptions import (
+    PrinterCoverOpenError,
+    PrinterError,
+    PrinterOfflineError,
+    PrintFailedError,
+    StatusQueryFailedError,
+    TapeEmptyError,
+    TapeMismatchError,
+)
 from app.services.job_lifecycle import (
     InvalidStateTransitionError,
     Job,
@@ -32,6 +41,24 @@ from app.services.job_lifecycle import (
 )
 
 logger = logging.getLogger(__name__)
+
+_ERROR_CODE_MAP: dict[type[PrinterError], str] = {
+    TapeMismatchError: "tape_mismatch",
+    TapeEmptyError: "tape_empty",
+    PrinterCoverOpenError: "printer_cover_open",
+    PrinterOfflineError: "printer_offline",
+    StatusQueryFailedError: "printer_status_unavailable",
+    PrintFailedError: "print_failed",
+}
+
+
+def _printer_error_to_record(exc: PrinterError) -> tuple[str, str, dict[str, Any] | None]:
+    """Map a PrinterError subclass to (error_code, error_message, error_detail)."""
+    code = _ERROR_CODE_MAP.get(type(exc), "print_failed")
+    detail: dict[str, Any] | None = None
+    if isinstance(exc, TapeMismatchError):
+        detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
+    return code, str(exc) or code, detail
 
 
 def _serialize_image_to_png(image: Image.Image) -> bytes:
@@ -319,6 +346,22 @@ class PrintQueue:
             except asyncio.CancelledError:
                 # Forcible cancel after stop() timeout — re-raise so the task exits.
                 raise
+            except PrinterError as exc:
+                code, msg, detail = _printer_error_to_record(exc)
+                job.error_code = code
+                job.error_message = msg
+                job.error_detail = detail
+                job.error_msg = msg  # legacy field kept in sync
+                try:
+                    JobStateMachine.transition(job, JobState.FAILED)
+                except InvalidStateTransitionError:
+                    logger.warning(
+                        "Job %s: unexpected state %s after PrinterError; error was: %s",
+                        job.id,
+                        job.state,
+                        exc,
+                    )
+                logger.exception("Job %s failed on %s (printer error)", job.id, printer_id)
             except Exception as exc:
                 job.error_msg = str(exc)
                 try:
