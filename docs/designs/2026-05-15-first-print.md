@@ -350,7 +350,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         template_loader=TemplateLoader,
         renderer=LabelRenderer(),
         print_queue=queue,
-        integration_registry=IntegrationRegistry,
+        lookup_service=AppLookupService(),
+        printer_id=printer.id,
     )
 
     try:
