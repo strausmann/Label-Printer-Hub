@@ -53,6 +53,7 @@ grocy = "app.integrations.grocy.plugin:GrocyPlugin"
 
 [project.entry-points."label_hub.printer_backends"]
 mock = "app.printer_backends.mock_backend:MockPrinterBackend"
+ptouch = "app.printer_backends.ptouch_backend:PTouchBackend"
 
 [build-system]
 requires = ["hatchling"]
