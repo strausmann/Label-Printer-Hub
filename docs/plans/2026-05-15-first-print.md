@@ -1505,7 +1505,7 @@ async def test_query_status_delegates_to_socket_helper(
     monkeypatch: pytest.MonkeyPatch, healthy_status: StatusBlock
 ) -> None:
     async def fake_query(host: str, port: int, *, timeout_s: float) -> StatusBlock:
-        assert host == "10.0.0.5"
+        assert host == "192.0.2.10"
         assert port == 9100
         return healthy_status
 
@@ -1513,7 +1513,7 @@ async def test_query_status_delegates_to_socket_helper(
         "app.printer_backends.ptouch_backend.query_status_over_socket",
         fake_query,
     )
-    backend = PTouchBackend(host="10.0.0.5")
+    backend = PTouchBackend(host="192.0.2.10")
     status = await backend.query_status()
     assert status is healthy_status
 
@@ -1619,9 +1619,9 @@ async def test_print_image_invokes_ptouch_when_healthy(
         "app.printer_backends.ptouch_backend._ptouch_print",
         fake_print,
     )
-    backend = PTouchBackend(host="10.0.0.5")
+    backend = PTouchBackend(host="192.0.2.10")
     await backend.print_image(img_128, tape_24, auto_cut=True, high_resolution=False)
-    assert captured["host"] == "10.0.0.5"
+    assert captured["host"] == "192.0.2.10"
     assert captured["port"] == 9100
     assert captured["tape_mm"] == 24
     assert captured["auto_cut"] is True
@@ -1657,12 +1657,12 @@ async def test_print_image_wraps_ptouch_exception(
 
 def test_from_settings_reads_pt750w_host() -> None:
     class S:
-        pt750w_host = "10.0.0.5"
+        pt750w_host = "192.0.2.10"
         pt750w_port = 9100
         printer_model = "PT-P750W"
 
     backend = PTouchBackend.from_settings(S())  # type: ignore[arg-type]
-    assert backend.host == "10.0.0.5"
+    assert backend.host == "192.0.2.10"
 
 
 def test_from_settings_empty_host_raises() -> None:
@@ -1978,7 +1978,7 @@ async def test_query_model_pjl_happy_path(monkeypatch: pytest.MonkeyPatch) -> No
         return ok_pdu
 
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
-    pjl = await query_model_pjl("10.0.0.5", community="public", timeout_s=1.0)
+    pjl = await query_model_pjl("192.0.2.10", community="public", timeout_s=1.0)
     assert pjl == expected_pjl
     assert BROTHER_PJL_OID in captured["oids"][0]
 
@@ -1989,7 +1989,7 @@ async def test_query_model_pjl_unreachable_raises(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
     with pytest.raises(SnmpDiscoveryError, match="timed out"):
-        await query_model_pjl("10.0.0.5", community="public", timeout_s=1.0)
+        await query_model_pjl("192.0.2.10", community="public", timeout_s=1.0)
 
 
 async def test_query_live_status_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2006,7 +2006,7 @@ async def test_query_live_status_happy_path(monkeypatch: pytest.MonkeyPatch) -> 
         )
 
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
-    ls = await query_live_status("10.0.0.5", community="public", timeout_s=1.0)
+    ls = await query_live_status("192.0.2.10", community="public", timeout_s=1.0)
     assert isinstance(ls, LiveStatus)
     assert ls.hr_printer_status == "printing"
     assert "noPaper" in ls.error_flags
@@ -2020,7 +2020,7 @@ async def test_query_live_status_failure_is_separate_exception(
 
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
     with pytest.raises(SnmpQueryError):
-        await query_live_status("10.0.0.5", community="public", timeout_s=1.0)
+        await query_live_status("192.0.2.10", community="public", timeout_s=1.0)
 ```
 
 - [ ] **Step 2: Run — verify failure**
@@ -2420,7 +2420,7 @@ from app.services.tape_registry import TapeRegistry
 
 @pytest.fixture
 def backend() -> MockPrinterBackend:
-    return MockPrinterBackend(host="10.0.0.5")
+    return MockPrinterBackend(host="192.0.2.10")
 
 
 @pytest.fixture
@@ -2470,7 +2470,7 @@ def test_make_queue_printer_returns_printer_like(
     driver = PTP750WDriver(backend=backend)
     qp = driver.make_queue_printer(tape_registry)
     assert isinstance(qp, _PrinterLike)
-    assert qp.id == "PT-P750W@10.0.0.5"
+    assert qp.id == "PT-P750W@192.0.2.10"
 
 
 async def test_queue_printer_print_calls_backend(
@@ -3410,7 +3410,7 @@ async def test_get_jobs_returns_status(fake_service, fake_queue, monkeypatch) ->
     monkeypatch.setattr("app.api.routes.print.query_live_status", fake_live)
 
     app = _app(fake_service, fake_queue)
-    app.state.printer_host = "10.0.0.5"
+    app.state.printer_host = "192.0.2.10"
     app.state.printer_snmp_community = "public"
     async with await _client(app) as c:
         r = await c.get("/jobs/job-1")
@@ -3458,7 +3458,7 @@ async def test_get_jobs_live_snmp_failure_is_non_fatal(fake_service, fake_queue,
     monkeypatch.setattr("app.api.routes.print.query_live_status", fake_live)
 
     app = _app(fake_service, fake_queue)
-    app.state.printer_host = "10.0.0.5"
+    app.state.printer_host = "192.0.2.10"
     app.state.printer_snmp_community = "public"
     async with await _client(app) as c:
         r = await c.get("/jobs/job-1")
@@ -3795,7 +3795,7 @@ async def test_snmp_discovery_resolves_model(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
     monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "true")
     monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "")  # require SNMP
-    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "10.0.0.5")
+    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "192.0.2.10")
 
     async def fake_query(host: str, *, community: str = "public", timeout_s: float = 3.0):  # noqa: ARG001
         return "MFG:Brother;CMD:PJL;MDL:PT-P750W;CLS:PRINTER;DES:Brother PT-P750W;"
@@ -3816,7 +3816,7 @@ async def test_snmp_discovery_fallback_to_setting(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
     monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "true")
     monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "PT-P750W")
-    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "10.0.0.5")
+    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "192.0.2.10")
 
     from app.printer_backends.exceptions import SnmpDiscoveryError
 
@@ -3836,7 +3836,7 @@ async def test_snmp_discovery_no_fallback_fails(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
     monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "true")
     monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "")
-    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "10.0.0.5")
+    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "192.0.2.10")
 
     from app.printer_backends.exceptions import SnmpDiscoveryError
 
