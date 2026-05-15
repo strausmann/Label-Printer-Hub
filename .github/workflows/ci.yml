@@ -75,7 +75,7 @@ jobs:
       - name: Tests
         if: steps.pyproject.outputs.exists == 'true'
         working-directory: ${{ steps.pyproject.outputs.path }}
-        run: pytest --cov=app --cov-report=xml -v
+        run: pytest --cov=app --cov-report=xml --junitxml=junit.xml -o junit_family=legacy -v
 
       - name: Upload coverage to Codecov
         if: always() && hashFiles('backend/coverage.xml', 'coverage.xml') != ''
@@ -85,6 +85,13 @@ jobs:
           files: backend/coverage.xml,coverage.xml
           fail_ci_if_error: false
           flags: backend
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() && hashFiles('backend/junit.xml', 'junit.xml') != '' }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: backend/junit.xml,junit.xml
 
       - name: No-op (no Python project yet — skipped)
         if: steps.pyproject.outputs.exists != 'true'

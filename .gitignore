@@ -9,7 +9,9 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.xml
 htmlcov/
+junit.xml
 *.egg-info/
 build/
 dist/

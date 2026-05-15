@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/ci.yml/badge.svg)](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/codeql.yml/badge.svg)](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/codeql.yml)
-[![codecov](https://codecov.io/gh/strausmann/Label-Printer-Hub/branch/main/graph/badge.svg)](https://codecov.io/gh/strausmann/Label-Printer-Hub)
+[![codecov](https://codecov.io/github/strausmann/Label-Printer-Hub/graph/badge.svg?token=JRG4PDU2QX)](https://codecov.io/github/strausmann/Label-Printer-Hub)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
