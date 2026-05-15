@@ -17,13 +17,16 @@ See:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, ConfigDict
 
+import app.integrations as _integrations_init  # noqa: F401  # triggers entry-points plugin discovery
 from app import __version__
+from app.services.template_loader import TemplateLoader
 
 # Per ADR 0011 we pin the OpenAPI version explicitly rather than relying on
 # FastAPI's default, so a FastAPI upgrade can't drift the API contract version.
@@ -132,3 +135,9 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+# Plugins are discovered when app.integrations is imported above (entry-points
+# side-effect). Loading templates AFTER plugin registration ensures the
+# registry-validation in TemplateLoader sees all known plugins.
+_SEED_TEMPLATES_DIR = Path(__file__).parent / "seed" / "templates"
+TemplateLoader.load_dir(_SEED_TEMPLATES_DIR)
