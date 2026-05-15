@@ -42,6 +42,13 @@ from app.services.job_lifecycle import (
 
 logger = logging.getLogger(__name__)
 
+_RECOVERABLE_PRINTER_ERRORS: tuple[type[PrinterError], ...] = (
+    TapeMismatchError,
+    TapeEmptyError,
+    PrinterCoverOpenError,
+    PrinterOfflineError,
+)
+
 _ERROR_CODE_MAP: dict[type[PrinterError], str] = {
     TapeMismatchError: "tape_mismatch",
     TapeEmptyError: "tape_empty",
@@ -363,6 +370,11 @@ class PrintQueue:
                         exc,
                     )
                 logger.exception("Job %s failed on %s (printer error)", job.id, printer_id)
+                if isinstance(exc, _RECOVERABLE_PRINTER_ERRORS):
+                    # Halt the whole printer queue — user must change tape /
+                    # close cover / fix connectivity, then POST /printer/resume
+                    # to release the queue.
+                    await self.pause_printer(printer_id, reason=code)
             except Exception as exc:
                 job.error_msg = str(exc)
                 try:

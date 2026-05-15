@@ -100,14 +100,21 @@ async def test_print_image_validates_status_first(
     img_128: Image.Image,
     tape_24: TapeSpec,
 ) -> None:
-    bad = make_status_block(tape_empty=True, loaded_tape_mm=0)
+    # print_image now goes through preflight_check (SNMP-based), not
+    # query_status_over_socket (ESC i S, unreliable in idle). Monkeypatch
+    # query_preflight to return a noPaper condition.
+    from app.printer_backends.snmp_helper import PreflightStatus
 
-    async def fake_query(*_a, **_kw):
-        return bad
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="other",
+            loaded_tape_mm=0,
+            error_flags=["noPaper"],
+        )
 
     monkeypatch.setattr(
-        "app.printer_backends.ptouch_backend.query_status_over_socket",
-        fake_query,
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
     )
     ptouch_print = MagicMock()
     monkeypatch.setattr(
@@ -125,12 +132,19 @@ async def test_print_image_raises_tape_mismatch(
     img_128: Image.Image,
     tape_24: TapeSpec,
 ) -> None:
-    async def fake_query(*_a, **_kw):
-        return make_status_block(loaded_tape_mm=12)
+    # preflight returns loaded_tape_mm=12; tape_spec.width_mm=24 → mismatch.
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=12,
+            error_flags=[],
+        )
 
     monkeypatch.setattr(
-        "app.printer_backends.ptouch_backend.query_status_over_socket",
-        fake_query,
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
     )
     backend = PTouchBackend(host="x")
     with pytest.raises(TapeMismatchError) as exc:
@@ -144,12 +158,19 @@ async def test_print_image_invokes_ptouch_when_healthy(
     img_128: Image.Image,
     tape_24: TapeSpec,
 ) -> None:
-    async def fake_query(*_a, **_kw):
-        return make_status_block(loaded_tape_mm=24)
+    # Healthy preflight: loaded_tape_mm=24 matches tape_spec.width_mm=24, no errors.
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=24,
+            error_flags=[],
+        )
 
     monkeypatch.setattr(
-        "app.printer_backends.ptouch_backend.query_status_over_socket",
-        fake_query,
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
     )
     captured: dict[str, Any] = {}
 
@@ -181,15 +202,22 @@ async def test_print_image_wraps_ptouch_exception(
 ) -> None:
     import ptouch as _ptouch
 
-    async def fake_query(*_a, **_kw):
-        return make_status_block(loaded_tape_mm=24)
+    # Healthy preflight — the exception comes from the actual print call.
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=24,
+            error_flags=[],
+        )
 
     def fake_print(*_a, **_kw):
         raise _ptouch.PrinterWriteError("disk full")
 
     monkeypatch.setattr(
-        "app.printer_backends.ptouch_backend.query_status_over_socket",
-        fake_query,
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
     )
     monkeypatch.setattr(
         "app.printer_backends.ptouch_backend._ptouch_print",

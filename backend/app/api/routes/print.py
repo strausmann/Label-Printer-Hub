@@ -95,6 +95,36 @@ async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
 
 
 @router.post(
+    "/printer/resume",
+    status_code=status.HTTP_200_OK,
+)
+async def resume_printer(http: Request) -> dict[str, str]:
+    """Resume the printer queue after a recoverable error halted it.
+
+    Recoverable errors (TapeEmpty, CoverOpen, TapeMismatch, PrinterOffline)
+    pause the printer worker. After the user fixes the underlying issue
+    (changes tape, closes cover, reconnects), they call this endpoint to
+    unblock subsequent jobs in the queue.
+
+    Returns 200 with ``{ "printer_id": ..., "state": "active" }``.
+    Returns 404 if no printer is configured.
+    Returns 409 if the printer is already active.
+    """
+    queue = http.app.state.print_queue
+    printer_id = getattr(http.app.state, "printer_id", None)
+    if printer_id is None:
+        raise HTTPException(status_code=404, detail="no printer configured")
+    try:
+        await queue.resume_printer(printer_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"unknown printer_id: {printer_id}",
+        ) from exc
+    return {"printer_id": printer_id, "state": "active"}
+
+
+@router.post(
     "/jobs/{job_id}/resume",
     status_code=status.HTTP_200_OK,
     response_model=PrintJobStatusResponse,

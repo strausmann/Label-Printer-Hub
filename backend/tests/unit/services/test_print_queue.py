@@ -188,6 +188,67 @@ async def test_queue_retry_failed_creates_new_job() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Recoverable errors → printer paused; fatal errors → printer stays active
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_worker_pauses_printer_on_recoverable_error() -> None:
+    """When a worker catches TapeEmptyError, the printer transitions to PAUSED
+    so subsequent jobs in the queue are NOT processed until resume_printer."""
+    from app.printer_backends.exceptions import TapeEmptyError
+    from app.services.job_lifecycle import JobState
+    from app.services.print_queue import PrinterWorkerState
+
+    class _EmptyPrinter:
+        id = "p1"
+
+        async def print_image(self, image, *, tape_mm, **_options):
+            raise TapeEmptyError()
+
+    queue = PrintQueue(printers=[_EmptyPrinter()])
+    await queue.start()
+    try:
+        image = Image.new("1", (200, 128))
+        job_id = await queue.submit("p1", image, tape_mm=24)
+        job = await queue.wait_for_job(job_id, timeout_s=2.0)
+        assert job.state == JobState.FAILED
+        assert job.error_code == "tape_empty"
+        # The printer is now PAUSED
+        assert queue._worker_states["p1"] == PrinterWorkerState.PAUSED
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+@pytest.mark.asyncio
+async def test_worker_does_not_pause_on_fatal_error() -> None:
+    """PrintFailedError is NOT recoverable; the worker stays active so
+    subsequent jobs are still attempted."""
+    from app.printer_backends.exceptions import PrintFailedError
+    from app.services.job_lifecycle import JobState
+    from app.services.print_queue import PrinterWorkerState
+
+    class _FailPrinter:
+        id = "p1"
+
+        async def print_image(self, image, *, tape_mm, **_options):
+            raise PrintFailedError("bad raster")
+
+    queue = PrintQueue(printers=[_FailPrinter()])
+    await queue.start()
+    try:
+        image = Image.new("1", (200, 128))
+        job_id = await queue.submit("p1", image, tape_mm=24)
+        job = await queue.wait_for_job(job_id, timeout_s=2.0)
+        assert job.state == JobState.FAILED
+        assert job.error_code == "print_failed"
+        # Printer NOT paused — fatal error doesn't halt the queue
+        assert queue._worker_states["p1"] == PrinterWorkerState.ACTIVE
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+# ---------------------------------------------------------------------------
 # Task 1.5.5 — PrinterError → Job structured error fields
 # ---------------------------------------------------------------------------
 

@@ -169,15 +169,22 @@ class PTouchBackend:
         auto_cut: bool = True,
         high_resolution: bool = False,
     ) -> None:
-        status = await self.query_status()
-        if status.tape_empty:
-            raise TapeEmptyError()
-        if status.cover_open:
-            raise PrinterCoverOpenError()
-        if status.loaded_tape_mm != tape_spec.width_mm:
+        """Pre-print validation via SNMP, then dispatch ptouch.print.
+
+        Uses preflight_check() (SNMP-based, reliable on PT-P750W in idle)
+        instead of the broken ESC i S query_status() path. preflight_check
+        raises TapeEmptyError / PrinterCoverOpenError / PrinterOfflineError on
+        detected issues. TapeMismatchError is raised here after comparing the
+        loaded tape to the requested tape_spec.
+        """
+        # SNMP preflight — replaces the broken ESC i S query_status path for
+        # PT-Series. preflight_check raises TapeEmptyError / PrinterCoverOpenError
+        # / PrinterOfflineError on detected issues.
+        preflight = await self.preflight_check()
+        if preflight.loaded_tape_mm != tape_spec.width_mm:
             raise TapeMismatchError(
                 expected_mm=tape_spec.width_mm,
-                loaded_mm=status.loaded_tape_mm,
+                loaded_mm=preflight.loaded_tape_mm,
             )
 
         try:

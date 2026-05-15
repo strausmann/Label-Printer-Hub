@@ -253,6 +253,31 @@ async def test_post_print_cover_open_is_409(fake_service, fake_queue) -> None:
 
 
 # ---------------------------------------------------------------------------
+# POST /printer/resume
+# ---------------------------------------------------------------------------
+
+
+async def test_resume_printer_endpoint(fake_service, fake_queue) -> None:
+    fake_queue.resume_printer = AsyncMock(return_value=None)
+    app = _app(fake_service, fake_queue)
+    app.state.printer_id = "pt@x"
+    async with _client(app) as c:
+        r = await c.post("/printer/resume")
+    assert r.status_code == 200
+    body = r.json()
+    assert body == {"printer_id": "pt@x", "state": "active"}
+    fake_queue.resume_printer.assert_awaited_once_with("pt@x")
+
+
+async def test_resume_printer_404_when_no_printer_configured(fake_service, fake_queue) -> None:
+    app = _app(fake_service, fake_queue)
+    # NOT setting app.state.printer_id
+    async with _client(app) as c:
+        r = await c.post("/printer/resume")
+    assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # POST /jobs/{job_id}/resume
 # ---------------------------------------------------------------------------
 
