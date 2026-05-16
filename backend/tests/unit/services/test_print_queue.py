@@ -501,3 +501,44 @@ async def test_stop_sets_done_event_for_in_flight_jobs() -> None:
 
     assert job.state == JobState.FAILED, f"Expected FAILED after shutdown, got {job.state}"
     assert job.error_code == "shutdown", f"Expected error_code='shutdown', got {job.error_code!r}"
+
+
+@pytest.mark.asyncio
+async def test_stop_syncs_legacy_error_msg_for_in_flight_jobs() -> None:
+    """stop() must keep the legacy error_msg field in sync with error_message.
+
+    Downstream consumers that still read the legacy ``error_msg`` field (e.g.
+    pre-Phase-5 code paths) would see stale data if stop() sets error_message
+    but omits error_msg.  This mirrors the pattern used in the worker's
+    PrinterError handler (print_queue.py line 466).
+    """
+    printing_started = asyncio.Event()
+
+    async def _blocking_print(image, *, tape_mm, **kw):
+        printing_started.set()
+        # Block until cancelled by stop().
+        await asyncio.get_event_loop().create_future()
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    fake_printer.print_image = AsyncMock(side_effect=_blocking_print)
+
+    queue = PrintQueue([fake_printer])
+    await queue.start()
+
+    img = Image.new("1", (300, 76))
+    job_id = await queue.submit("pt750w", img, tape_mm=12)
+
+    await printing_started.wait()
+    assert (await queue.get(job_id)).state == JobState.PRINTING
+
+    await queue.stop(timeout_s=0.05)
+
+    job = await asyncio.wait_for(queue.wait_for_job(job_id, timeout_s=5.0), timeout=1.0)
+
+    assert job.state == JobState.FAILED
+    # Legacy field must match the canonical field — no stale value.
+    assert job.error_msg == job.error_message, (
+        f"error_msg {job.error_msg!r} != error_message {job.error_message!r}"
+    )
+    assert job.error_msg == "Print queue stopped during job execution"

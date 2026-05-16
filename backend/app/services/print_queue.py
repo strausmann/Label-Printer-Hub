@@ -215,6 +215,7 @@ class PrintQueue:
             if job.state == JobState.PRINTING:
                 job.error_code = "shutdown"
                 job.error_message = "Print queue stopped during job execution"
+                job.error_msg = job.error_message  # keep legacy field in sync (see line 466)
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
                 except InvalidStateTransitionError:
