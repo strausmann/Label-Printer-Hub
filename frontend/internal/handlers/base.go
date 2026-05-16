@@ -82,7 +82,7 @@ func (h *PageHandler) renderError(w http.ResponseWriter, r *http.Request, code i
 const stubTemplates = `
 {{define "layout"}}<!DOCTYPE html><html><head><link rel="stylesheet" href="/static/app.css"></head><body>{{block "content" .}}{{end}}</body></html>{{end}}
 {{define "error-content"}}<div class="error">{{.StatusCode}} {{.Error}}</div>{{end}}
-{{define "dashboard-content"}}<div id="printer-grid">dashboard</div>{{end}}
+{{define "dashboard-content"}}<div id="printer-grid">{{range .Printers}}<span>{{.Name}}</span>{{end}}</div>{{end}}
 {{define "printer-content"}}<div id="printer-detail">printer</div>{{end}}
 {{define "jobs-content"}}<div id="jobs-table-container">jobs</div>{{end}}
 {{define "job-content"}}<div id="job-detail">job</div>{{end}}

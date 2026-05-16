@@ -158,10 +158,12 @@ func newRouter(ph *handlers.PageHandler, backendURL string) *chi.Mux {
 	backendProxy := proxy.New(backendURL)
 	r.Handle("/api/*", backendProxy)
 
-	// Page handlers are wired here as they are implemented in subsequent tasks.
+	// Page handlers: dashboard (Task 5) and further routes (Tasks 6–11).
 	// ph is always non-nil in production; nil only happens if tests call
 	// newRouter(nil, "") directly — those tests only hit /healthz and /api/*.
-	_ = ph // Dashboard and other routes are added in Task 5+.
+	if ph != nil {
+		r.Get("/", ph.Dashboard)
+	}
 
 	return r
 }
