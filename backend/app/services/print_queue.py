@@ -177,6 +177,12 @@ class PrintQueue:
         cancelled forcibly — that leaves the printer in an undefined state for
         that one job. Callers should pass enough timeout to cover a normal
         print.
+
+        After all workers have stopped (gracefully or via cancellation), any
+        job still in PRINTING state is transitioned to FAILED with
+        error_code='shutdown' and its _done_event is set. This releases any
+        caller blocked in wait_for_job() so they receive a FAILED result
+        immediately instead of hanging until their own timeout fires.
         """
         self._stopping = True
         # Wake up any worker waiting on a paused resume event so it sees the
@@ -201,6 +207,24 @@ class PrintQueue:
         self._workers.clear()
         self._running = False
         self._stopping = False
+
+        # Release any wait_for_job() callers that are still waiting on a
+        # PRINTING job whose worker was cancelled before completion.
+        # Transition those jobs to FAILED so their _done_event is set.
+        for job in self._jobs.values():
+            if job.state == JobState.PRINTING:
+                job.error_code = "shutdown"
+                job.error_message = "Print queue stopped during job execution"
+                try:
+                    JobStateMachine.transition(job, JobState.FAILED)
+                except InvalidStateTransitionError:
+                    # Defensive: job already moved to a terminal state by the
+                    # worker — just ensure _done_event is set.
+                    job._done_event.set()
+                logger.warning(
+                    "Job %s left in PRINTING state after stop(); marked FAILED(shutdown)",
+                    job.id,
+                )
 
     # --- job CRUD -----------------------------------------------------------
 
