@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from app.schemas.label_data import LabelData
 from app.schemas.template import LayoutElement, TemplateSchema
@@ -6,7 +8,7 @@ from app.services.label_renderer import (
     TAPE_HEIGHT_PX,
     LabelRenderer,
 )
-from PIL import Image
+from PIL import Image, ImageFont
 
 
 def test_render_produces_image_with_correct_height_24mm() -> None:
@@ -142,6 +144,35 @@ def test_font_loader_is_cached() -> None:
     a = _load_font_cached(24)
     b = _load_font_cached(24)
     assert a is b
+
+
+def test_load_font_calls_truetype_only_once_per_size() -> None:
+    """ImageFont.truetype() must be called exactly once per (font, size) pair.
+
+    The lru_cache on _load_font_cached memoises the result — repeated calls
+    with the same size must not re-read the font file from disk.
+    """
+    from app.services.label_renderer import _load_font_cached
+
+    # Clear the cache so we control how many truetype() calls happen in this test.
+    _load_font_cached.cache_clear()
+    call_count = 0
+    original_truetype = ImageFont.truetype
+
+    def counting_truetype(font: object, size: object, **kwargs: object) -> ImageFont.FreeTypeFont:
+        nonlocal call_count
+        call_count += 1
+        return original_truetype(font, size, **kwargs)  # type: ignore[arg-type]
+
+    with patch.object(ImageFont, "truetype", counting_truetype):
+        _load_font_cached(16)
+        _load_font_cached(16)
+        _load_font_cached(16)
+
+    assert call_count == 1, (
+        f"Expected ImageFont.truetype to be called once for size=16 "
+        f"(lru_cache should memoize), but it was called {call_count} time(s)"
+    )
 
 
 class TestWhitespaceTrim:
