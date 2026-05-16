@@ -107,9 +107,7 @@ async def _resolve_printer_uuid(session: AsyncSession) -> str:
         "found (rather than JSON, so it renders cleanly on a phone browser)."
     ),
 )
-async def loc_landing(
-    request: Request, entity_id: str, session: SessionDep
-) -> HTMLResponse:
+async def loc_landing(request: Request, entity_id: str, session: SessionDep) -> HTMLResponse:
     """Render the location detail page for ``entity_id``."""
     printer_id = await _resolve_printer_uuid(session)
     try:
@@ -156,9 +154,7 @@ async def loc_landing(
         "printed asset labels.  Returns 404 HTML when the asset is not found."
     ),
 )
-async def asset_landing(
-    request: Request, entity_id: str, session: SessionDep
-) -> HTMLResponse:
+async def asset_landing(request: Request, entity_id: str, session: SessionDep) -> HTMLResponse:
     """Render the asset detail page for ``entity_id``."""
     printer_id = await _resolve_printer_uuid(session)
     try:
@@ -205,9 +201,7 @@ async def asset_landing(
         "printed spool labels.  Returns 404 HTML when the spool is not found."
     ),
 )
-async def spool_landing(
-    request: Request, entity_id: str, session: SessionDep
-) -> HTMLResponse:
+async def spool_landing(request: Request, entity_id: str, session: SessionDep) -> HTMLResponse:
     """Render the spool detail page for ``entity_id``."""
     printer_id = await _resolve_printer_uuid(session)
     try:
@@ -254,9 +248,7 @@ async def spool_landing(
         "labels.  Returns 404 HTML when the product is not found."
     ),
 )
-async def product_landing(
-    request: Request, entity_id: str, session: SessionDep
-) -> HTMLResponse:
+async def product_landing(request: Request, entity_id: str, session: SessionDep) -> HTMLResponse:
     """Render the product detail page for ``entity_id``."""
     printer_id = await _resolve_printer_uuid(session)
     try:

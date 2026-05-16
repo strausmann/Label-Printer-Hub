@@ -139,15 +139,13 @@ async def test_bus_event_arrives_via_sse_stream() -> None:
     assert len(received_frames) == 1, f"expected 1 data frame, got {len(received_frames)}"
     sse_frame = received_frames[0]
     # Verify event type via the "event:" metadata line
-    event_line = next(
-        (ln for ln in sse_frame.splitlines() if ln.startswith("event:")), None
-    )
+    event_line = next((ln for ln in sse_frame.splitlines() if ln.startswith("event:")), None)
     assert event_line is not None, "no event: line in SSE frame"
     assert "job.state_changed" in event_line
     # Verify data payload is HTML (raw fragment, not JSON)
     data_lines = [ln for ln in sse_frame.splitlines() if ln.startswith("data:")]
     assert data_lines, "no data: lines in SSE frame"
-    combined_data = "\n".join(ln[len("data:"):].lstrip(" ") for ln in data_lines)
+    combined_data = "\n".join(ln[len("data:") :].lstrip(" ") for ln in data_lines)
     assert "<" in combined_data, f"expected HTML in data payload, got: {combined_data!r}"
 
 
@@ -228,12 +226,10 @@ async def test_state_transition_propagates_as_sse_frame() -> None:
 
     assert len(raw_frames) >= 1
     # Verify event type via "event:" metadata line
-    event_line = next(
-        (ln for ln in raw_frames[0].splitlines() if ln.startswith("event:")), None
-    )
+    event_line = next((ln for ln in raw_frames[0].splitlines() if ln.startswith("event:")), None)
     assert event_line is not None, "no event: line in SSE frame"
     assert "job.state_changed" in event_line
     # Verify data payload is HTML
     data_lines = [ln for ln in raw_frames[0].splitlines() if ln.startswith("data:")]
-    combined_data = "\n".join(ln[len("data:"):].lstrip(" ") for ln in data_lines)
+    combined_data = "\n".join(ln[len("data:") :].lstrip(" ") for ln in data_lines)
     assert "<" in combined_data, f"expected HTML in data payload, got: {combined_data!r}"

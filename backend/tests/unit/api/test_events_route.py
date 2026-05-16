@@ -233,7 +233,7 @@ async def test_event_delivered_to_sse_stream() -> None:
     data_lines = [ln for ln in lines if ln.startswith("data:")]
     assert data_lines, "no data: lines in SSE frame"
     # data payload is raw HTML — must contain '<'
-    combined_data = "\n".join(ln[len("data:"):].lstrip(" ") for ln in data_lines)
+    combined_data = "\n".join(ln[len("data:") :].lstrip(" ") for ln in data_lines)
     assert "<" in combined_data, f"data payload must be HTML, got: {combined_data!r}"
 
 
@@ -292,8 +292,6 @@ async def test_multichannel_multiplex_all_arrive() -> None:
     mock_request.client = None
     mock_request.is_disconnected = _is_disconnected
 
-    received_frames: list[dict] = []  # type: ignore[type-arg]
-
     gen = events_module._sse_stream(printer_id, bus, mock_request, subscriber_id, channels)
     frame_queue: asyncio.Queue[str] = asyncio.Queue()
 
@@ -322,7 +320,7 @@ async def test_multichannel_multiplex_all_arrive() -> None:
                     (ln for ln in frame.splitlines() if ln.startswith("event:")), None
                 )
                 if event_line:
-                    received_event_types.append(event_line[len("event:"):].strip())
+                    received_event_types.append(event_line[len("event:") :].strip())
         except TimeoutError:
             continue
 
@@ -650,7 +648,7 @@ async def test_sse_data_line_is_raw_html_not_json() -> None:
     data_lines = [ln for ln in frame.splitlines() if ln.startswith("data:")]
     assert data_lines, "no data: lines in SSE frame"
     # Reconstruct the data payload from potentially multi-line data:
-    data_payload = "\n".join(ln[len("data:"):].lstrip(" ") for ln in data_lines)
+    data_payload = "\n".join(ln[len("data:") :].lstrip(" ") for ln in data_lines)
     # Must be HTML (contains '<'), NOT a JSON object
     assert "<" in data_payload, f"expected HTML in data payload, got: {data_payload!r}"
     assert not data_payload.strip().startswith("{"), (
@@ -730,7 +728,7 @@ async def test_sse_frame_includes_html_field_from_fragment() -> None:
     assert len(raw_frames) == 1, "expected exactly one data frame"
     # After Finding #2 fix: data: carries raw HTML directly (no JSON envelope).
     data_lines = [ln for ln in raw_frames[0].splitlines() if ln.startswith("data:")]
-    combined_html = "\n".join(ln[len("data:"):].lstrip(" ") for ln in data_lines)
+    combined_html = "\n".join(ln[len("data:") :].lstrip(" ") for ln in data_lines)
     assert "<" in combined_html, f"expected HTML in data payload, got: {combined_html!r}"
 
 

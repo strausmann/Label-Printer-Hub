@@ -288,7 +288,7 @@ async def test_offline_to_online_publishes_even_when_hr_status_unchanged() -> No
 
     probe_idx = 0
     probes_and_exceptions: list[PreflightStatus | Exception] = [
-        Exception("SNMP timeout"),      # offline
+        Exception("SNMP timeout"),  # offline
         _status(hr="other", tape=None),  # online recovery, same hr
     ]
 

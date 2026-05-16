@@ -219,14 +219,8 @@ async def _sse_stream(
                 # concatenated with a newline by the browser before injection).
                 # CR characters are stripped to avoid CR+LF ambiguity.
                 clean_html = html_fragment.replace("\r", "")
-                data_lines = "\n".join(
-                    f"data: {line}" for line in clean_html.split("\n")
-                )
-                yield (
-                    f"id: {event.event_id}\n"
-                    f"event: {event.event_type}\n"
-                    f"{data_lines}\n\n"
-                )
+                data_lines = "\n".join(f"data: {line}" for line in clean_html.split("\n"))
+                yield (f"id: {event.event_id}\nevent: {event.event_type}\n{data_lines}\n\n")
     finally:
         sse_active_subscribers.dec()
         for ch in channels:
@@ -298,10 +292,7 @@ async def sse_events(
             type="sse-subscriber-limit",
             title="Too many SSE subscribers for this printer",
             status=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=(
-                f"Limit of {max_subs} concurrent subscribers"
-                " per printer reached."
-            ),
+            detail=(f"Limit of {max_subs} concurrent subscribers per printer reached."),
         )
         return JSONResponse(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
