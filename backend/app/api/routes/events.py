@@ -26,6 +26,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from prometheus_client import Counter, Gauge
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
@@ -36,6 +37,33 @@ from app.services.event_bus import BusEvent, EventBus
 _log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["events"])
+
+# ---------------------------------------------------------------------------
+# Prometheus metrics
+# ---------------------------------------------------------------------------
+
+sse_connections_total = Counter(
+    "printer_hub_sse_connections_total",
+    "Total SSE connections opened",
+    ["printer_id"],
+)
+
+sse_events_published_total = Counter(
+    "printer_hub_sse_events_published_total",
+    "Total events published to the SSE stream",
+    ["channel"],
+)
+
+sse_events_dropped_total = Counter(
+    "printer_hub_sse_events_dropped_total",
+    "Total events dropped due to slow subscribers",
+    ["channel", "subscriber_id"],
+)
+
+sse_active_subscribers = Gauge(
+    "printer_hub_sse_active_subscribers",
+    "Current number of active SSE subscribers",
+)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -111,6 +139,8 @@ async def _sse_stream(
         )
 
     queues = [bus.subscribe(ch, subscriber_id) for ch in channels]
+    sse_connections_total.labels(printer_id=str(printer_id)).inc()
+    sse_active_subscribers.inc()
     _log.info(
         "SSE connect: printer=%s subscriber=%s remote=%s",
         printer_id,
@@ -171,6 +201,11 @@ async def _sse_stream(
                     continue
                 html_fragment = await _render_fragment(event)
                 dropped = bus.get_dropped_count(subscriber_id)
+                if dropped:
+                    sse_events_dropped_total.labels(
+                        channel=event.channel, subscriber_id=subscriber_id
+                    ).inc(dropped)
+                sse_events_published_total.labels(channel=event.channel).inc()
                 data_payload = {
                     "html": html_fragment,
                     "event_type": event.event_type,
@@ -184,6 +219,7 @@ async def _sse_stream(
                     f"data: {json.dumps(data_payload)}\n\n"
                 )
     finally:
+        sse_active_subscribers.dec()
         for ch in channels:
             bus.unsubscribe(ch, subscriber_id)
         _log.info("SSE cleanup: printer=%s subscriber=%s", printer_id, subscriber_id)

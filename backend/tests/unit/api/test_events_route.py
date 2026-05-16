@@ -554,3 +554,152 @@ async def test_sse_frame_includes_html_field_from_fragment() -> None:
     # With fragments in place, the html field must be non-empty HTML
     assert "html" in data_frames[0]
     assert "<" in data_frames[0]["html"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 6b Task 8 — Prometheus counters + healthz sse_active_subscribers
+# ---------------------------------------------------------------------------
+
+
+def test_healthz_shows_sse_active_subscribers(client_with_bus: TestClient) -> None:
+    """After subscribing, /healthz.sse_active_subscribers must be > 0."""
+    bus: EventBus = _inner.state.event_bus
+    printer_id = uuid.uuid4()
+    bus.subscribe(f"printer:{printer_id}:queue", "test-sub-healthz")
+
+    resp = client_with_bus.get("/healthz")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["sse_active_subscribers"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_prometheus_sse_connections_counter_increments() -> None:
+    """sse_connections_total increments when _sse_stream subscribes."""
+    import app.api.routes.events as events_module
+    from prometheus_client import REGISTRY
+
+    printer_id = uuid.uuid4()
+    bus = EventBus(queue_size=8)
+
+    channels = [
+        f"printer:{printer_id}:queue",
+        f"printer:{printer_id}:state",
+        f"printer:{printer_id}:tape",
+    ]
+    subscriber_id = "test-sub-counter"
+    disconnect_flag = asyncio.Event()
+
+    async def _is_disconnected() -> bool:
+        return disconnect_flag.is_set()
+
+    mock_request = MagicMock()
+    mock_request.headers = {}
+    mock_request.client = None
+    mock_request.is_disconnected = _is_disconnected
+
+    # Read counter before
+    def _get_connections_value() -> float:
+        try:
+            return (
+                REGISTRY.get_sample_value(
+                    "printer_hub_sse_connections_total",
+                    {"printer_id": str(printer_id)},
+                )
+                or 0.0
+            )
+        except Exception:
+            return 0.0
+
+    before = _get_connections_value()
+
+    gen = events_module._sse_stream(printer_id, bus, mock_request, subscriber_id, channels)
+    frame_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def pump() -> None:
+        async for frame in gen:
+            await frame_queue.put(frame)
+
+    pump_task = asyncio.create_task(pump())
+    # Wait for connected frame — counter must have been incremented
+    _connected = await asyncio.wait_for(frame_queue.get(), timeout=1.0)
+
+    after = _get_connections_value()
+
+    disconnect_flag.set()
+    pump_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await pump_task
+    await gen.aclose()
+
+    assert after > before
+
+
+@pytest.mark.asyncio
+async def test_prometheus_sse_events_published_counter_increments() -> None:
+    """sse_events_published_total increments when an event flows through the stream."""
+    import app.api.routes.events as events_module
+    from prometheus_client import REGISTRY
+
+    printer_id = uuid.uuid4()
+    bus = EventBus(queue_size=8)
+
+    channel = f"printer:{printer_id}:queue"
+    channels = [channel, f"printer:{printer_id}:state", f"printer:{printer_id}:tape"]
+    subscriber_id = "test-sub-pub-counter"
+    disconnect_flag = asyncio.Event()
+
+    async def _is_disconnected() -> bool:
+        return disconnect_flag.is_set()
+
+    mock_request = MagicMock()
+    mock_request.headers = {}
+    mock_request.client = None
+    mock_request.is_disconnected = _is_disconnected
+
+    def _get_published_value() -> float:
+        try:
+            return (
+                REGISTRY.get_sample_value(
+                    "printer_hub_sse_events_published_total",
+                    {"channel": channel},
+                )
+                or 0.0
+            )
+        except Exception:
+            return 0.0
+
+    before = _get_published_value()
+
+    test_event = _make_queue_event(printer_id, channel)
+
+    gen = events_module._sse_stream(printer_id, bus, mock_request, subscriber_id, channels)
+    frame_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def pump() -> None:
+        async for frame in gen:
+            await frame_queue.put(frame)
+
+    pump_task = asyncio.create_task(pump())
+    await asyncio.sleep(0.05)
+    bus.publish(channel, test_event)
+
+    # Collect until data frame arrives
+    deadline = asyncio.get_event_loop().time() + 0.5
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            frame = await asyncio.wait_for(frame_queue.get(), timeout=0.1)
+            if "data:" in frame:
+                break
+        except TimeoutError:
+            continue
+
+    after = _get_published_value()
+
+    disconnect_flag.set()
+    pump_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await pump_task
+    await gen.aclose()
+
+    assert after > before

@@ -60,6 +60,9 @@ from app.services.label_renderer import LabelRenderer
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue
 from app.services.print_service import PrintService
+from app.services.producers.print_queue_producer import PrintQueueProducer
+from app.services.producers.status_probe_producer import StatusProbeProducer
+from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.tape_registry import TapeRegistry
 from app.services.template_loader import TemplateLoader
 
@@ -227,13 +230,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     tape_registry = TapeRegistry()
     printer = driver.make_queue_printer(tape_registry)
-    queue = PrintQueue(printers=[printer])
-    await queue.start()
 
     # --- SSE EventBus ---
     event_bus = EventBus(queue_size=settings.sse_queue_size)
     app.state.event_bus = event_bus
     # ----- end SSE ------
+
+    pq_producer = PrintQueueProducer(bus=event_bus)
+    queue = PrintQueue(
+        printers=[printer],
+        on_state_change=pq_producer.handle_transition,
+    )
+    await queue.start()
+
+    tape_producer = TapeChangeProducer(bus=event_bus, tape_registry=tape_registry)
+    status_producer: StatusProbeProducer | None = None
+    if discovery_host:
+        status_producer = StatusProbeProducer(
+            bus=event_bus,
+            printer_id=str(printer.id),
+            host=discovery_host,
+            interval_s=settings.sse_probe_interval_s,
+            community=settings.printer_snmp_community,
+            tape_change_producer=tape_producer,
+        )
+        await status_producer.start()
 
     app.state.print_queue = queue
     app.state.printer_id = printer.id
@@ -251,6 +272,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        if status_producer is not None:
+            await status_producer.stop()
         await queue.stop(timeout_s=settings.printer_queue_timeout_s)
         await engine.dispose()
 
