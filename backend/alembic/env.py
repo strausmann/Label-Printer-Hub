@@ -12,8 +12,13 @@ from alembic import context
 config = context.config
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
+# Skip when configure_logger=False is set in config.attributes (e.g. in tests
+# or when called programmatically to avoid clobbering pytest's caplog handler).
+if config.config_file_name is not None and not config.attributes.get(
+    "configure_logger", True
+):
+    pass  # caller suppressed logging config
+elif config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
