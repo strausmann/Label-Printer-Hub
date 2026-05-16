@@ -40,6 +40,14 @@ _SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     "/print",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=PrintJobResponse,
+    tags=["print"],
+    summary="Submit a print job",
+    description=(
+        "Submit a label-print job.  The job is queued and dispatched "
+        "asynchronously by the queue worker.  Returns 202 with the new "
+        "job's UUID and state ``queued``.  Returns 4xx/5xx on printer "
+        "errors (tape mismatch, offline, cover open, etc.)."
+    ),
 )
 async def create_print_job(request: PrintRequest, http: Request) -> Any:
     service = http.app.state.print_service
@@ -60,6 +68,14 @@ async def create_print_job(request: PrintRequest, http: Request) -> Any:
 @router.get(
     "/jobs/{job_id}",
     response_model=PrintJobStatusResponse,
+    tags=["print"],
+    summary="Get print job status",
+    description=(
+        "Return the current status and metadata for a print job submitted "
+        "via ``POST /print``.  When the job is actively printing, the "
+        "response includes live SNMP status from the printer.  "
+        "Returns 404 when the job is not found."
+    ),
 )
 async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
     queue = http.app.state.print_queue
@@ -97,6 +113,15 @@ async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
 @router.post(
     "/printer/resume",
     status_code=status.HTTP_200_OK,
+    tags=["print"],
+    summary="Resume the printer queue",
+    description=(
+        "Resume the printer queue after a recoverable error halted it "
+        "(tape empty, cover open, tape mismatch, printer offline).  "
+        "Returns 200 with the printer ID and state ``active``.  "
+        "Returns 404 when no printer is configured.  "
+        "Returns 409 when the printer is already active."
+    ),
 )
 async def resume_printer(http: Request) -> dict[str, str]:
     """Resume the printer queue after a recoverable error halted it.
@@ -128,6 +153,16 @@ async def resume_printer(http: Request) -> dict[str, str]:
     "/jobs/{job_id}/resume",
     status_code=status.HTTP_200_OK,
     response_model=PrintJobStatusResponse,
+    tags=["print"],
+    summary="Resume a paused print job",
+    description=(
+        "Resume a print job that is in ``PAUSED`` state (waiting for a tape "
+        "change after a tape-mismatch error with ``on_tape_mismatch=queue``).  "
+        "Transitions the job from ``PAUSED`` to ``QUEUED`` so the worker picks "
+        "it up again.  Returns 200 with the updated status.  "
+        "Returns 404 when the job is not found.  "
+        "Returns 409 when the job is not in ``PAUSED`` state."
+    ),
 )
 async def resume_job(job_id: str, http: Request) -> PrintJobStatusResponse:
     """Resume a job that is PAUSED waiting for a tape change.
