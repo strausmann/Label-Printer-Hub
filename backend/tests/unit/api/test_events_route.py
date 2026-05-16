@@ -879,3 +879,117 @@ async def test_prometheus_sse_events_published_counter_increments() -> None:
     await gen.aclose()
 
     assert after > before
+
+
+# ---------------------------------------------------------------------------
+# F2 — empty _render_fragment result must NOT produce an SSE frame
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sse_stream_skips_frame_when_fragment_is_empty() -> None:
+    """When _render_fragment returns an empty string the SSE generator must
+    NOT yield a data frame (bot-review Finding F2).
+
+    An empty ``data:`` SSE frame causes HTMX sse-swap to overwrite the target
+    element with empty content, wiping the live status widget.  The correct
+    behaviour is to skip the yield entirely so the client DOM is unchanged.
+
+    Strategy: publish an event whose type is NOT in _FRAGMENT_MAP so
+    _render_fragment returns "".  Then publish a valid event and verify only
+    the valid event produces a data frame.
+    """
+    from datetime import UTC, datetime
+
+    import app.api.routes.events as events_module
+
+    printer_id = uuid.uuid4()
+    bus = EventBus(queue_size=8)
+
+    channel = f"printer:{printer_id}:queue"
+    channels = [channel, f"printer:{printer_id}:state", f"printer:{printer_id}:tape"]
+    subscriber_id = "test-sub-skip-empty"
+
+    # An event type that has no template → _render_fragment returns ""
+    unknown_event = BusEvent(
+        channel=channel,
+        event_id=1,
+        event_type="unknown.no_template",
+        timestamp=datetime.now(UTC),
+        data={},
+    )
+    # A valid event that DOES render a non-empty fragment
+    valid_event = BusEvent(
+        channel=channel,
+        event_id=2,
+        event_type="job.state_changed",
+        timestamp=datetime.now(UTC),
+        data={
+            "job_id": "j1",
+            "from_state": "queued",
+            "to_state": "printing",
+            "queue_depth": 1,
+            "error_code": None,
+        },
+    )
+
+    disconnect_flag = asyncio.Event()
+
+    async def _is_disconnected() -> bool:
+        return disconnect_flag.is_set()
+
+    mock_request = MagicMock()
+    mock_request.headers = {}
+    mock_request.client = None
+    mock_request.is_disconnected = _is_disconnected
+
+    gen = events_module._sse_stream(printer_id, bus, mock_request, subscriber_id, channels)
+    frame_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def pump() -> None:
+        async for frame in gen:
+            await frame_queue.put(frame)
+
+    pump_task = asyncio.create_task(pump())
+    await asyncio.sleep(0.05)  # let generator subscribe
+
+    # Publish the unknown event first — should be swallowed (no frame emitted)
+    bus.publish(channel, unknown_event)
+
+    # Give the generator a full heartbeat cycle to process the unknown event.
+    # If F2 is NOT fixed, it emits an empty "data: \n\n" frame here.
+    await asyncio.sleep(0.05)
+
+    # Now publish the valid event — should produce a data frame
+    bus.publish(channel, valid_event)
+
+    data_frames: list[str] = []
+    deadline = asyncio.get_event_loop().time() + 0.5
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            frame = await asyncio.wait_for(frame_queue.get(), timeout=0.1)
+            if frame.strip() == ": connected":
+                continue  # skip the connect confirmation
+            if "data:" in frame:
+                data_frames.append(frame)
+                if len(data_frames) >= 2:
+                    break  # stop early — we have more than expected
+        except TimeoutError:
+            if data_frames:
+                break  # got what we need
+            continue
+
+    disconnect_flag.set()
+    pump_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await pump_task
+    await gen.aclose()
+
+    # Exactly one data frame (from the valid event). Zero or two would both
+    # indicate a bug: zero means the fix broke valid-event delivery; two means
+    # the empty fragment was emitted as a frame (F2 unfixed).
+    assert len(data_frames) == 1, (
+        f"expected exactly 1 data frame (the valid event); got {len(data_frames)}: {data_frames!r}"
+    )
+    # The single frame must carry the valid event type
+    assert "job.state_changed" in data_frames[0]

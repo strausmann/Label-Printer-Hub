@@ -190,8 +190,8 @@ async def test_heartbeat_arrives_after_silence() -> None:
     pump_task = asyncio.create_task(pump())
     connect_time = time.monotonic()
 
+    keepalive_time: list[float] = []
     try:
-        keepalive_time: list[float] = []
         # Wait up to 1.0 s for the keepalive frame
         deadline = asyncio.get_event_loop().time() + 1.0
         while asyncio.get_event_loop().time() < deadline:
@@ -205,19 +205,14 @@ async def test_heartbeat_arrives_after_silence() -> None:
                     break
             except TimeoutError:
                 continue
-
+    finally:
+        # Single cleanup path — runs on both normal exit and exception/timeout
+        # (bot-review Finding F7: previously duplicated in try and except blocks).
         request._disconnect_flag.set()
         pump_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await pump_task
         await gen.aclose()
-    except Exception:
-        request._disconnect_flag.set()
-        pump_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await pump_task
-        await gen.aclose()
-        raise
 
     assert keepalive_time, "no keepalive frame received within 1 s"
     elapsed = keepalive_time[0] - connect_time

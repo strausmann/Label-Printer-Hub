@@ -210,13 +210,11 @@ class PrintQueue:
         self._jobs[job.id] = job
         await self._queues[printer_id].put(job)
         logger.info("Job %s queued on %s", job.id, printer_id)
-        # Notify after enqueue so the depth count includes the new job (Finding #7).
-        self._notify_state_change(
-            job,
-            JobState.QUEUED,
-            JobState.QUEUED,
-            queue_depth=self._queue_depth(printer_id),
-        )
+        # No _notify_state_change here: submit() sets the initial state to QUEUED
+        # (the default), so there is no real state *transition* to report.
+        # Calling _notify_state_change with from_state==to_state==QUEUED would
+        # emit a fake job.state_changed event on the EventBus and pollute the SSE
+        # stream with spurious HTMX sse-swap updates (bot-review Finding F1).
         return job.id
 
     async def get(self, job_id: str) -> Job:

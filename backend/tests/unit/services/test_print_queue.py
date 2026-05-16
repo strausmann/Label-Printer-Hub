@@ -284,12 +284,18 @@ async def test_worker_records_printer_error_fields() -> None:
 
 
 @pytest.mark.asyncio
-async def test_submit_fires_on_state_change_callback() -> None:
-    """submit() must fire the on_state_change callback for QUEUED transition.
+async def test_submit_does_not_fire_on_state_change_callback() -> None:
+    """submit() must NOT fire the on_state_change callback.
 
-    Bug (Finding #7): the callback was only called from the worker loop
-    (QUEUED→PRINTING, PRINTING→COMPLETED/FAILED).  User-driven transitions
-    like submit() never fired it, so live SSE pages stayed stale.
+    Bug (Finding #1 / bot-review 2026-05-16): submit() called
+    _notify_state_change with from_state==to_state==QUEUED, which is not a
+    real transition (the job's initial state IS QUEUED). This polluted the
+    EventBus with a fake job.state_changed event whose from_state and to_state
+    were identical, causing HTMX sse-swap to render a spurious update.
+
+    Real transitions (QUEUED→PRINTING, PRINTING→COMPLETED/FAILED,
+    QUEUED→CANCELLED, etc.) still fire the callback from the worker loop and
+    from cancel()/pause_job()/resume_job()/clear_queue().
     """
     transitions: list[tuple[str, str]] = []
 
@@ -303,9 +309,10 @@ async def test_submit_fires_on_state_change_callback() -> None:
     img = Image.new("1", (300, 76))
     await queue.submit("pt750w", img, tape_mm=12)
 
-    # submit() must fire the callback with to_state=QUEUED immediately
-    assert any(to == "queued" for _, to in transitions), (
-        f"expected a QUEUED transition callback from submit(), got: {transitions}"
+    # submit() must NOT fire the callback — no real state transition happens
+    assert not transitions, (
+        f"submit() must not fire on_state_change (job starts as QUEUED, no transition), "
+        f"got: {transitions}"
     )
 
 

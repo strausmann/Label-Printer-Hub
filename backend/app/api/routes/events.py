@@ -211,6 +211,17 @@ async def _sse_stream(
                     sse_events_dropped_total.labels(
                         channel=event.channel, subscriber_id=subscriber_id
                     ).inc(dropped)
+                # Skip the frame entirely when the fragment is empty (unknown
+                # event type, missing template, or render error).  Emitting an
+                # SSE frame with an empty data: payload causes HTMX sse-swap to
+                # overwrite the target element with empty content, wiping the
+                # live status widget (bot-review Finding F2).
+                if not html_fragment.strip():
+                    _log.debug(
+                        "_sse_stream: skipping empty fragment for event_type=%s",
+                        event.event_type,
+                    )
+                    continue
                 sse_events_published_total.labels(channel=event.channel).inc()
                 # Emit raw HTML as the SSE data payload so HTMX sse-swap can
                 # inject it directly into the DOM.  The SSE spec forbids bare
