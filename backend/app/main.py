@@ -33,6 +33,7 @@ from pydantic import BaseModel, ConfigDict
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
 from app.api.error_handlers import register_error_handlers
+from app.api.routes import printers as printers_routes
 from app.api.routes.print import router as print_router
 from app.config import Settings, get_settings
 from app.db.engine import async_session, engine
@@ -436,6 +437,7 @@ def create_app() -> _LifespanManager:
 
     register_error_handlers(app)
     app.include_router(print_router)
+    app.include_router(printers_routes.router)
     return _LifespanManager(app)
 
 
