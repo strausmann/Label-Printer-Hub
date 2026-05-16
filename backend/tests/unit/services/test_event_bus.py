@@ -153,3 +153,49 @@ def test_distinct_subscriber_count_after_unsubscribe() -> None:
         bus.unsubscribe(ch, "conn-1")
 
     assert bus.distinct_subscriber_count() == 0
+
+
+# ---------------------------------------------------------------------------
+# F5 — distinct_subscriber_count(channels=...) scoped to a channel subset
+# ---------------------------------------------------------------------------
+
+
+def test_distinct_subscriber_count_with_channels_returns_subset() -> None:
+    """distinct_subscriber_count(channels=[...]) must count only the supplied
+    channels (bot-review Finding F5).
+
+    Two printers share the same bus.  conn-A subscribes to printer-1 only;
+    conn-B subscribes to printer-2 only.  Counting with channels=printer-1-*
+    must return 1 (conn-A), not 2.
+    """
+    bus = EventBus(queue_size=8)
+    p1_channels = ["printer:p1:queue", "printer:p1:state", "printer:p1:tape"]
+    p2_channels = ["printer:p2:queue", "printer:p2:state", "printer:p2:tape"]
+
+    for ch in p1_channels:
+        bus.subscribe(ch, "conn-A")
+    for ch in p2_channels:
+        bus.subscribe(ch, "conn-B")
+
+    # Scoped to printer-1 channels → only conn-A
+    assert bus.distinct_subscriber_count(channels=p1_channels) == 1
+    # Scoped to printer-2 channels → only conn-B
+    assert bus.distinct_subscriber_count(channels=p2_channels) == 1
+    # No filter → both connections
+    assert bus.distinct_subscriber_count() == 2
+
+
+def test_distinct_subscriber_count_channels_empty_list_returns_zero() -> None:
+    """An empty channels list has no subscribers → 0."""
+    bus = EventBus(queue_size=8)
+    bus.subscribe("printer:abc:queue", "conn-1")
+    assert bus.distinct_subscriber_count(channels=[]) == 0
+
+
+def test_distinct_subscriber_count_channels_none_equals_no_arg() -> None:
+    """channels=None is equivalent to calling with no argument (full bus)."""
+    bus = EventBus(queue_size=8)
+    for ch in ("printer:abc:queue", "printer:abc:state", "printer:abc:tape"):
+        bus.subscribe(ch, "conn-1")
+        bus.subscribe(ch, "conn-2")
+    assert bus.distinct_subscriber_count(channels=None) == bus.distinct_subscriber_count()

@@ -118,15 +118,25 @@ class EventBus:
         """
         return sum(len(v) for v in self._subscribers.values())
 
-    def distinct_subscriber_count(self) -> int:
-        """Count of unique subscriber_ids across ALL channels.
+    def distinct_subscriber_count(self, channels: list[str] | None = None) -> int:
+        """Count of unique subscriber_ids, optionally scoped to *channels*.
 
-        Each SSE connection uses a single subscriber_id on all channels it
-        subscribes to, so this returns the true number of active client
-        connections regardless of how many channels each connection uses.
+        When *channels* is ``None`` (default), counts distinct subscriber_ids
+        across ALL channels — i.e. the true number of active client connections
+        regardless of how many channels each connection uses.
+
+        When *channels* is a list, counts distinct subscriber_ids only among
+        those channels.  This lets callers check the per-printer connection cap
+        without iterating private ``_subscribers`` state directly (bot-review
+        Finding F5).  Pass ``channels=[]`` to get 0 without a bus scan.
         """
         seen: set[str] = set()
-        for subs in self._subscribers.values():
+        channel_map = (
+            self._subscribers
+            if channels is None
+            else {ch: self._subscribers.get(ch, []) for ch in channels}
+        )
+        for subs in channel_map.values():
             for sub_id, _ in subs:
                 seen.add(sub_id)
         return len(seen)

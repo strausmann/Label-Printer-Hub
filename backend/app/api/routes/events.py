@@ -280,25 +280,18 @@ async def sse_events(
     # 429: subscriber-cap check before constructing StreamingResponse so the
     # HTTP error response can still be returned cleanly (raising inside a
     # started stream is not catchable by normal exception handlers).
-    # Each SSE connection subscribes to exactly 3 channels; the bus counts
-    # channel subscriptions, so the per-connection cap is multiplied by 3.
+    # Each SSE connection subscribes to exactly 3 channels with the same
+    # subscriber_id.  distinct_subscriber_count(channels=...) counts unique
+    # subscriber_ids only on those channels, giving the true per-printer
+    # connection count without touching EventBus private state (bot-review
+    # Finding F4/F6).
     channels = [
         f"printer:{printer_id}:queue",
         f"printer:{printer_id}:state",
         f"printer:{printer_id}:tape",
     ]
-    # Count distinct subscriber IDs across all three channels.  A single
-    # connection always holds the same subscriber_id on all channels, so
-    # counting distinct IDs gives the true connection count (not 3x inflated).
-    distinct_subs: set[str] = set()
-    for c in channels:
-        # _subscribers is internal but needed here; expose via a new bus method
-        # (added in Commit E).  For now enumerate via subscriber_count per
-        # channel — see Finding #8 for the full distinct-count fix.
-        for sub_id, _ in bus._subscribers.get(c, []):
-            distinct_subs.add(sub_id)
     max_subs = settings.sse_max_subscribers
-    if len(distinct_subs) >= max_subs:
+    if bus.distinct_subscriber_count(channels=channels) >= max_subs:
         problem = ProblemDetail(
             type="sse-subscriber-limit",
             title="Too many SSE subscribers for this printer",

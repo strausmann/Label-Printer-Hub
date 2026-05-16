@@ -15,17 +15,31 @@ The TapeChangeProducer is a collaborator: after each successful probe,
 PreflightStatus so tape-change events are derived from the same probe data
 without a second polling loop.
 
-Critical invariant: ``self._last`` is updated after EVERY probe (success
-or offline), unconditionally and BEFORE the change check.  This prevents
-two bugs:
+Critical invariant — probe iteration order (bot-review Finding F3):
 
-1. Tape-loop (Finding #4): if _last is only updated when status changes,
-   a tape-only change causes _has_changed() → False → _last not updated →
-   next probe sees same 'from' tape → fires tape_changed again (infinite loop).
+1. ``tape_change_producer.on_probe_result(printer_id, old=self._last, new=status)``
+   is called FIRST so the tape producer sees the correct 'from' tape state
+   (self._last still holds the previous value at this point).
 
-2. Online sentinel false-negative (Finding #5): if the previous real status
-   was hr='other' + no errors AND the offline sentinel is also hr='other' +
-   no errors, _has_changed() → False → offline event never published.
+2. ``_has_changed(status, new_online)`` runs NEXT.  It compares the new probe
+   result against the CURRENT ``self._last`` (still the previous value) to
+   detect any meaningful difference.  This is intentional: the change-check
+   REQUIRES the old _last to compute a diff.
+
+3. ``self._last`` and ``self._last_online`` are updated UNCONDITIONALLY AFTER
+   both steps above.  Updating before step 1 or 2 would break tape detection
+   (tape producer would see old==new) or change detection (diff is always zero).
+
+This unconditional update prevents two bugs regardless of whether status
+changed:
+
+- Tape-loop: if _last is only updated when status changes, a tape-only change
+  causes _has_changed() → False → _last not updated → next probe sees same
+  'from' tape → fires tape_changed again (infinite loop).
+
+- Online sentinel false-negative: if the previous real status was
+  hr='other' + no errors AND the offline sentinel is also hr='other' + no
+  errors, _has_changed() → False → offline event never published.
 """
 
 from __future__ import annotations
@@ -105,9 +119,11 @@ class StatusProbeProducer:
 
                 changed = self._has_changed(status, new_online)
 
-                # Always update _last BEFORE any early continue so that:
-                # - tape producer sees the correct 'from' tape on the next probe
-                # - online→offline transitions are not swallowed by stale _last
+                # Update _last AFTER both tape-notification and change-check so
+                # that (a) the tape producer above received the correct 'from'
+                # tape, (b) _has_changed compared against the real previous
+                # value.  Unconditional update prevents stale-_last bugs on
+                # the next iteration (see module docstring invariant).
                 self._last = status
                 self._last_online = new_online
 
@@ -142,7 +158,8 @@ class StatusProbeProducer:
                 new_online = False
                 changed = self._has_changed(offline, new_online)
 
-                # Update _last unconditionally (same reasoning as success branch).
+                # Update _last unconditionally AFTER change-check (same reasoning as
+                # success branch — see module docstring invariant).
                 self._last = offline
                 self._last_online = new_online
 
