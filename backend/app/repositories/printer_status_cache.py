@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +21,7 @@ async def upsert(
     printer_id: UUID,
     *,
     raw_block: bytes,
-    parsed: dict,
+    parsed: dict[str, Any],
     captured_at: datetime,
 ) -> PrinterStatusCache:
     """Insert or replace the status cache row for a printer.

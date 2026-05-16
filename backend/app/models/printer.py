@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON
@@ -16,7 +17,7 @@ class Printer(SQLModel, table=True):
     name: str = Field(index=True, unique=True)
     model: str
     backend: str
-    connection: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    connection: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     enabled: bool = Field(default=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -14,7 +15,7 @@ DATABASE_URL = os.getenv(
 )
 
 
-def _apply_pragmas(dbapi_connection, _connection_record):
+def _apply_pragmas(dbapi_connection: Any, _connection_record: object) -> None:
     cur = dbapi_connection.cursor()
     cur.execute("PRAGMA journal_mode = WAL")
     cur.execute("PRAGMA synchronous = NORMAL")

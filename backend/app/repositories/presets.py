@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 
 from app.models.preset import Preset
 
 
 async def list_all(session: AsyncSession) -> list[Preset]:
-    result = await session.execute(select(Preset).order_by(Preset.created_at))
+    result = await session.execute(
+        select(Preset).order_by(col(Preset.created_at))  # col() gives proper Column typing
+    )
     return list(result.scalars())
 
 
@@ -27,7 +31,7 @@ async def create(session: AsyncSession, preset: Preset) -> Preset:
     return preset
 
 
-async def update(session: AsyncSession, preset_id: UUID, **changes) -> Preset | None:
+async def update(session: AsyncSession, preset_id: UUID, **changes: Any) -> Preset | None:
     preset = await session.get(Preset, preset_id)
     if preset is None:
         return None

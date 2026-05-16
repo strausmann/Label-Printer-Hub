@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.template_loader import TemplateLoader
+
 
 async def run_migrations() -> None:
     """Apply pending Alembic migrations programmatically.
@@ -59,7 +61,7 @@ async def recover_inflight_jobs(session: AsyncSession) -> int:
     return await jobs_repo.mark_inflight_as_failed_restart(session)
 
 
-async def seed_templates(session: AsyncSession, loader: object) -> int:
+async def seed_templates(session: AsyncSession, loader: type[TemplateLoader]) -> int:
     """Idempotent YAML → DB upsert, delegated to ``loader.seed_db(session)``.
 
     The conversion logic lives on ``TemplateLoader.seed_db`` (Task 8) so
@@ -70,7 +72,7 @@ async def seed_templates(session: AsyncSession, loader: object) -> int:
 
     Returns the count of rows touched (inserted or updated).
     """
-    return await loader.seed_db(session)  # type: ignore[union-attr]
+    return await loader.seed_db(session)
 
 
 async def ensure_printer_state(session: AsyncSession) -> int:

@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 
 from app.models.template import Template
 
@@ -16,7 +17,9 @@ async def list_all(session: AsyncSession) -> list[Template]:
 
 
 async def get_by_key(session: AsyncSession, key: str) -> Template | None:
-    result = await session.execute(select(Template).where(Template.key == key))
+    result = await session.execute(
+        select(Template).where(col(Template.key) == key)  # col() gives proper Column typing
+    )
     return result.scalar_one_or_none()
 
 

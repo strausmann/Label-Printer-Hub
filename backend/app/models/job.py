@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, CheckConstraint, Index
@@ -33,8 +34,8 @@ class Job(SQLModel, table=True):
     printer_id: UUID = Field(foreign_key="printers.id")
     template_key: str  # snapshot string — survives template deletion
     state: str = Field(default=JobState.QUEUED.value)
-    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    result: dict | None = Field(default=None, sa_column=Column(JSON))
+    payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    result: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(

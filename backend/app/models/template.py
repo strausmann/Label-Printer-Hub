@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, CheckConstraint
@@ -20,7 +21,7 @@ class Template(SQLModel, table=True):
     printer_model: str
     tape_width_mm: int
     schema_version: int = Field(default=1)
-    definition: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    definition: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     source: str = Field(default="user")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(

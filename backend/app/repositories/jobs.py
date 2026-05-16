@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 
 from app.models.job import Job, JobState
 
@@ -16,7 +18,7 @@ async def create_queued(
     *,
     printer_id: UUID,
     template_key: str,
-    payload: dict,
+    payload: dict[str, Any],
 ) -> Job:
     """Insert a new job in QUEUED state and return it."""
     job = Job(
@@ -53,7 +55,9 @@ async def mark_printing(session: AsyncSession, job_id: UUID) -> Job:
     return job
 
 
-async def mark_done(session: AsyncSession, job_id: UUID, result: dict | None = None) -> Job:
+async def mark_done(
+    session: AsyncSession, job_id: UUID, result: dict[str, Any] | None = None
+) -> Job:
     """Transition PRINTING → DONE. Sets finished_at."""
     job = await _get_or_raise(session, job_id)
     if job.state != JobState.PRINTING.value:
@@ -110,7 +114,7 @@ async def mark_inflight_as_failed_restart(session: AsyncSession) -> int:
     inflight = (JobState.QUEUED.value, JobState.PRINTING.value)
     stmt = (
         update(Job)
-        .where(Job.state.in_(inflight))  # type: ignore[union-attr]
+        .where(col(Job.state).in_(inflight))  # col() gives proper Column typing for .in_()
         .values(
             state=JobState.FAILED_RESTART.value,
             error="restart_during_inflight",
@@ -120,13 +124,15 @@ async def mark_inflight_as_failed_restart(session: AsyncSession) -> int:
     )
     result = await session.execute(stmt)
     await session.commit()
-    return result.rowcount
+    return int(result.rowcount)  # type: ignore[attr-defined]  # rowcount on UPDATE result
 
 
 async def list_active(session: AsyncSession) -> list[Job]:
     """Return all jobs in QUEUED or PRINTING state (covered by ix_jobs_state)."""
     inflight = (JobState.QUEUED.value, JobState.PRINTING.value)
     result = await session.execute(
-        select(Job).where(Job.state.in_(inflight)).order_by(Job.created_at)  # type: ignore[union-attr]
+        select(Job)
+        .where(col(Job.state).in_(inflight))  # col() gives proper Column typing for .in_()
+        .order_by(col(Job.created_at))  # col() gives proper Column typing
     )
     return list(result.scalars())
