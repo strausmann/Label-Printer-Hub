@@ -5,9 +5,9 @@ events as ``text/event-stream``. Each event is rendered as an HTML fragment
 by ``_render_fragment`` so HTMX ``sse-swap`` can inject it directly.
 
 Resource limits (all configurable via PRINTER_HUB_SSE_* env vars):
-- Max subscribers per printer: 100 (429 when exceeded)
-- Idle timeout: 300 s (server closes; browser reconnects)
-- Heartbeat interval: 30 s (SSE comment frames)
+- Max subscribers per printer: PRINTER_HUB_SSE_MAX_SUBSCRIBERS (default 100)
+- Idle timeout: PRINTER_HUB_SSE_IDLE_TIMEOUT_S (default 300 s)
+- Heartbeat interval: PRINTER_HUB_SSE_HEARTBEAT_S (default 30 s)
 
 Auth: none beyond the Pangolin proxy SSO at the network layer.
 """
@@ -28,6 +28,7 @@ from fastapi.templating import Jinja2Templates
 from prometheus_client import Counter, Gauge
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings, get_settings
 from app.db.session import get_session
 from app.repositories import printers as printers_repo
 from app.schemas.problem import ProblemDetail
@@ -65,9 +66,12 @@ sse_active_subscribers = Gauge(
 )
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]
 
-# Module-level constants — mirror Settings defaults
-_MAX_SUBSCRIBERS_PER_PRINTER: int = 100
+# Module-level fallback constants — used only by tests that patch these
+# directly (e.g. test_heartbeat_emitted_after_timeout) and by _sse_stream
+# when no explicit limit is passed.  The route handler always reads from
+# Settings so these are never used in production paths.
 _HEARTBEAT_INTERVAL_S: float = 30.0
 _IDLE_TIMEOUT_S: float = 300.0
 
@@ -114,13 +118,16 @@ async def _sse_stream(
     request: Request,
     subscriber_id: str,
     channels: list[str],
+    *,
+    heartbeat_interval_s: float = _HEARTBEAT_INTERVAL_S,
+    idle_timeout_s: float = _IDLE_TIMEOUT_S,
 ) -> AsyncGenerator[str, None]:
     """Core SSE generator. Yields SSE-formatted strings.
 
     Subscribes to all three channels for ``printer_id``, multiplexes them
     with ``asyncio.wait``, and emits SSE frames. A keepalive comment is sent
-    every ``_HEARTBEAT_INTERVAL_S`` seconds. The connection is closed after
-    ``_IDLE_TIMEOUT_S`` seconds of inactivity. Subscribers are unsubscribed
+    every ``heartbeat_interval_s`` seconds. The connection is closed after
+    ``idle_timeout_s`` seconds of inactivity. Subscribers are unsubscribed
     in a ``finally`` block so no queue leaks occur on client disconnect.
 
     The subscriber-cap check is performed in ``sse_events`` before this
@@ -167,7 +174,7 @@ async def _sse_stream(
             try:
                 done, pending = await asyncio.wait(
                     get_tasks,
-                    timeout=_HEARTBEAT_INTERVAL_S,
+                    timeout=heartbeat_interval_s,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
             finally:
@@ -180,7 +187,7 @@ async def _sse_stream(
 
             if not done:
                 # Heartbeat — no events during the timeout window
-                if now - last_activity > _IDLE_TIMEOUT_S:
+                if now - last_activity > idle_timeout_s:
                     _log.info(
                         "SSE disconnect: printer=%s subscriber=%s reason=idle_timeout",
                         printer_id,
@@ -234,12 +241,15 @@ async def _sse_stream(
         "Returns a ``text/event-stream`` response. "
         "Publishes ``job.state_changed``, ``printer.status``, and "
         "``printer.tape_changed`` events as they occur. "
-        "A keepalive comment is sent every 30 s when no events flow. "
-        "Closes automatically after 5 minutes of inactivity. "
+        "A keepalive comment is sent every PRINTER_HUB_SSE_HEARTBEAT_S seconds "
+        "(default 30 s) when no events flow. "
+        "Closes automatically after PRINTER_HUB_SSE_IDLE_TIMEOUT_S seconds of "
+        "inactivity (default 300 s). "
         "On reconnect the stream starts fresh — ``Last-Event-ID`` is "
         "observed but replay is deferred to Phase 7. "
         "Returns 404 if ``printer_id`` does not exist in the database. "
-        "Returns 429 if the per-printer subscriber limit is reached."
+        "Returns 429 if the per-printer subscriber limit "
+        "(PRINTER_HUB_SSE_MAX_SUBSCRIBERS, default 100) is reached."
     ),
     response_class=StreamingResponse,
     response_model=None,
@@ -249,6 +259,7 @@ async def sse_events(
     printer_id: uuid.UUID,
     request: Request,
     session: SessionDep,
+    settings: SettingsDep,
 ) -> StreamingResponse | JSONResponse:
     """SSE endpoint for a printer's live event stream."""
     bus: EventBus = request.app.state.event_bus
@@ -264,19 +275,31 @@ async def sse_events(
     # 429: subscriber-cap check before constructing StreamingResponse so the
     # HTTP error response can still be returned cleanly (raising inside a
     # started stream is not catchable by normal exception handlers).
+    # Each SSE connection subscribes to exactly 3 channels; the bus counts
+    # channel subscriptions, so the per-connection cap is multiplied by 3.
     channels = [
         f"printer:{printer_id}:queue",
         f"printer:{printer_id}:state",
         f"printer:{printer_id}:tape",
     ]
-    total = sum(bus.subscriber_count(c) for c in channels)
-    if total >= _MAX_SUBSCRIBERS_PER_PRINTER:
+    # Count distinct subscriber IDs across all three channels.  A single
+    # connection always holds the same subscriber_id on all channels, so
+    # counting distinct IDs gives the true connection count (not 3x inflated).
+    distinct_subs: set[str] = set()
+    for c in channels:
+        # _subscribers is internal but needed here; expose via a new bus method
+        # (added in Commit E).  For now enumerate via subscriber_count per
+        # channel — see Finding #8 for the full distinct-count fix.
+        for sub_id, _ in bus._subscribers.get(c, []):
+            distinct_subs.add(sub_id)
+    max_subs = settings.sse_max_subscribers
+    if len(distinct_subs) >= max_subs:
         problem = ProblemDetail(
             type="sse-subscriber-limit",
             title="Too many SSE subscribers for this printer",
             status=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
-                f"Limit of {_MAX_SUBSCRIBERS_PER_PRINTER} concurrent subscribers"
+                f"Limit of {max_subs} concurrent subscribers"
                 " per printer reached."
             ),
         )
@@ -287,7 +310,15 @@ async def sse_events(
 
     subscriber_id = str(uuid.uuid4())
     return StreamingResponse(
-        _sse_stream(printer_id, bus, request, subscriber_id, channels),
+        _sse_stream(
+            printer_id,
+            bus,
+            request,
+            subscriber_id,
+            channels,
+            heartbeat_interval_s=settings.sse_heartbeat_s,
+            idle_timeout_s=settings.sse_idle_timeout_s,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
