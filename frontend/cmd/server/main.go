@@ -163,6 +163,7 @@ func newRouter(ph *handlers.PageHandler, backendURL string) *chi.Mux {
 	// newRouter(nil, "") directly — those tests only hit /healthz and /api/*.
 	if ph != nil {
 		r.Get("/", ph.Dashboard)
+		r.Get("/printers/{id}", ph.PrinterDetail)
 	}
 
 	return r
