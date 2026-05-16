@@ -134,7 +134,7 @@ async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
         "Returns 409 when the printer is already active."
     ),
 )
-async def resume_printer(http: Request) -> Any:
+async def resume_printer(http: Request) -> _PrinterResumeResponse | JSONResponse:
     """Resume the printer queue after a recoverable error halted it.
 
     Recoverable errors (TapeEmpty, CoverOpen, TapeMismatch, PrinterOffline)
@@ -162,7 +162,7 @@ async def resume_printer(http: Request) -> Any:
             status_code=status.HTTP_409_CONFLICT,
             content={"error_code": "already_active", "error_message": "Printer is already active"},
         )
-    return {"printer_id": printer_id, "state": "active"}
+    return _PrinterResumeResponse(printer_id=printer_id, state="active")
 
 
 @router.post(
@@ -180,7 +180,7 @@ async def resume_printer(http: Request) -> Any:
         "Returns 409 when the job is not in ``PAUSED`` state."
     ),
 )
-async def resume_job(job_id: str, http: Request) -> Any:
+async def resume_job(job_id: str, http: Request) -> PrintJobStatusResponse | JSONResponse:
     """Resume a job that is PAUSED waiting for a tape change.
 
     User-driven workflow: client posted /print with on_tape_mismatch=queue,
