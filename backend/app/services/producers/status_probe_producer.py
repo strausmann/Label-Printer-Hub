@@ -1,14 +1,31 @@
 """Polls SNMP every N seconds; publishes printer.status on state change.
 
 Debounce (change-only publish): the producer stores the last published
-PreflightStatus. If the new status is identical (same hr_printer_status and
-same error_flags set), no event is published. On the first probe, always
-publish (initialises the client view).
+PreflightStatus AND the last online flag.  A change is detected when ANY of
+the following differ from the previous probe:
+
+- hr_printer_status
+- error_flags set
+- online flag (True = SNMP success, False = exception)
+
+On the first probe, always publish (initialises the client view).
 
 The TapeChangeProducer is a collaborator: after each successful probe,
 ``tape_change_producer.on_probe_result`` is called with the old and new
 PreflightStatus so tape-change events are derived from the same probe data
 without a second polling loop.
+
+Critical invariant: ``self._last`` is updated after EVERY probe (success
+or offline), unconditionally and BEFORE the change check.  This prevents
+two bugs:
+
+1. Tape-loop (Finding #4): if _last is only updated when status changes,
+   a tape-only change causes _has_changed() → False → _last not updated →
+   next probe sees same 'from' tape → fires tape_changed again (infinite loop).
+
+2. Online sentinel false-negative (Finding #5): if the previous real status
+   was hr='other' + no errors AND the offline sentinel is also hr='other' +
+   no errors, _has_changed() → False → offline event never published.
 """
 
 from __future__ import annotations
@@ -45,6 +62,9 @@ class StatusProbeProducer:
         self._community = community
         self._tape_producer = tape_change_producer
         self._last: PreflightStatus | None = None
+        # Track online state separately so that online→offline transitions
+        # are detected even when hr_printer_status is unchanged (Finding #5).
+        self._last_online: bool | None = None
         self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
@@ -58,11 +78,14 @@ class StatusProbeProducer:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
 
-    def _has_changed(self, new: PreflightStatus) -> bool:
-        if self._last is None:
+    def _has_changed(self, new: PreflightStatus, new_online: bool) -> bool:
+        """Return True if anything meaningful changed since the last probe."""
+        if self._last is None or self._last_online is None:
             return True
-        return new.hr_printer_status != self._last.hr_printer_status or set(new.error_flags) != set(
-            self._last.error_flags
+        return (
+            new.hr_printer_status != self._last.hr_printer_status
+            or set(new.error_flags) != set(self._last.error_flags)
+            or new_online != self._last_online
         )
 
     async def _loop(self) -> None:
@@ -73,12 +96,22 @@ class StatusProbeProducer:
                     community=self._community,
                     timeout_s=5.0,
                 )
-                # Tape-change detection runs before the status change check so
-                # tape events are always emitted even if status is unchanged.
+                new_online = True
+
+                # Notify tape producer BEFORE updating _last so it receives
+                # the correct 'previous' tape state (old=self._last, new=status).
                 if self._tape_producer is not None:
                     self._tape_producer.on_probe_result(self._printer_id, self._last, status)
-                if self._has_changed(status):
-                    self._last = status
+
+                changed = self._has_changed(status, new_online)
+
+                # Always update _last BEFORE any early continue so that:
+                # - tape producer sees the correct 'from' tape on the next probe
+                # - online→offline transitions are not swallowed by stale _last
+                self._last = status
+                self._last_online = new_online
+
+                if changed:
                     channel = f"printer:{self._printer_id}:state"
                     self._bus.publish(
                         channel,
@@ -106,8 +139,14 @@ class StatusProbeProducer:
                     loaded_tape_mm=None,
                     error_flags=[],
                 )
-                if self._has_changed(offline):
-                    self._last = offline
+                new_online = False
+                changed = self._has_changed(offline, new_online)
+
+                # Update _last unconditionally (same reasoning as success branch).
+                self._last = offline
+                self._last_online = new_online
+
+                if changed:
                     channel = f"printer:{self._printer_id}:state"
                     self._bus.publish(
                         channel,
