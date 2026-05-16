@@ -2,15 +2,15 @@
 # Label Printer Hub — frontend container
 #
 # Multi-stage build:
-#   1) builder       — Go toolchain compiles a static binary
-#   2) runtime       — alpine + tini + curl + non-root UID 1000
+#   0) tailwind-builder — downloads Tailwind v4 Standalone CLI, compiles CSS
+#   1) builder          — Go toolchain compiles a static binary
+#   2) runtime          — alpine + tini + curl + non-root UID 1000
 #
 # Build context: the `frontend/` directory.
 #
-# Tailwind, HTMX, PWA assets and the OpenAPI-generated backend client will
-# land in follow-up commits — this skeleton produces a deployable container
-# that serves /healthz so the docker-publish workflow has something real to
-# push at the next release.
+# To vendor the Tailwind binary instead of downloading at build time (air-gapped
+# CI), copy the binary to `frontend/bin/tailwindcss` and replace the download
+# step with: COPY bin/tailwindcss /usr/local/bin/tailwindcss
 #
 # References:
 #   docs/decisions/0001-two-container-architecture.md  (two-container split)
@@ -18,6 +18,36 @@
 #   docs/decisions/0007-docker-image-tag-scheme.md     (multi-arch publish)
 #   CLAUDE.md hard rules                               (non-root UID 1000)
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 0: Tailwind CSS build
+# -----------------------------------------------------------------------------
+FROM alpine:3.20 AS tailwind-builder
+
+ARG TAILWIND_VERSION=v4.1.5
+ARG TARGETARCH
+
+# Download the Tailwind v4 Standalone CLI for the current build architecture.
+# TARGETARCH is set by Docker buildx: "amd64" → x64, "arm64" → arm64.
+# --minify reduces the output by ~30-50% for production images.
+RUN apk add --no-cache curl && \
+    ARCH_SUFFIX=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "x64") && \
+    curl -fsSL \
+      "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${ARCH_SUFFIX}" \
+      -o /usr/local/bin/tailwindcss && \
+    chmod +x /usr/local/bin/tailwindcss
+
+WORKDIR /src
+
+# Copy the CSS source and templates so Tailwind can scan for utility classes.
+COPY web/styles/   ./web/styles/
+COPY web/templates/ ./web/templates/
+
+# Build and minify the CSS into the path the Go embed expects.
+RUN tailwindcss \
+      --input  web/styles/app.css \
+      --output web/static/app.css \
+      --minify
 
 # -----------------------------------------------------------------------------
 # Stage 1: builder
@@ -33,11 +63,24 @@ RUN go mod download
 
 # Stage B: compile. Static binary so we don't need libc in the runtime image.
 COPY . ./
+
+# Copy the Tailwind-compiled CSS into the embed path before go build runs.
+# This file is referenced by //go:embed web/static in cmd/server/main.go.
+COPY --from=tailwind-builder /src/web/static/app.css ./web/static/app.css
+
+# Build-time version metadata — set by the CI workflow.
+ARG VERSION=0.0.0-dev
+ARG REVISION=unknown
+ARG BUILD_DATE=1970-01-01T00:00:00Z
+
 # CGO_ENABLED=0 produces a fully static binary. -ldflags strip debug info
-# and shrink the binary (~30-40% smaller).
+# and shrink the binary (~30-40% smaller). ldflags also bake version info.
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
-    -ldflags="-s -w" \
+    -ldflags="-s -w \
+      -X main.version=${VERSION} \
+      -X main.revision=${REVISION} \
+      -X main.buildDate=${BUILD_DATE}" \
     -o /out/server \
     ./cmd/server
 
