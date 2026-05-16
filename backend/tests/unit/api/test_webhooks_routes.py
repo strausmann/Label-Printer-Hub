@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, patch
-from uuid import uuid4
 
 import app.models  # noqa: F401 — registers all SQLModel tables with metadata
 import pytest

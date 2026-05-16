@@ -22,7 +22,6 @@ from app.services.errors import AppLookupNotFoundError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------

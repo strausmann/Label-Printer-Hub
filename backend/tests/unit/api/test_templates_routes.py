@@ -22,7 +22,6 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
-
 # ---------------------------------------------------------------------------
 # In-memory DB fixtures (same pattern as test_printers_routes.py)
 # ---------------------------------------------------------------------------
