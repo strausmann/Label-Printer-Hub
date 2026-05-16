@@ -174,7 +174,7 @@ func main() {
 
 	// Instantiate the shared PageHandler with the typed backend client.
 	backendURL := envDefault("BACKEND_URL", "http://backend:8000")
-	client := api.NewClient(backendURL)
+	client := api.NewHubClient(backendURL)
 	ph := handlers.NewPageHandler(tmpl, client, buildInfo.Version)
 
 	r := newRouter(ph)

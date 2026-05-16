@@ -26,13 +26,13 @@ type TemplateData struct {
 // Instantiated once at startup and shared across all request goroutines.
 type PageHandler struct {
 	tmpl    *template.Template
-	client  *api.Client
+	client  *api.HubClient
 	version string
 }
 
 // NewPageHandler is called from main.go at startup with the parsed template
 // set and a real backend client.
-func NewPageHandler(tmpl *template.Template, client *api.Client, version string) *PageHandler {
+func NewPageHandler(tmpl *template.Template, client *api.HubClient, version string) *PageHandler {
 	return &PageHandler{tmpl: tmpl, client: client, version: version}
 }
 
@@ -108,7 +108,7 @@ func NewPageHandlerFromURL(t *testing.T, backendURL string) *PageHandler {
 	tmpl := template.Must(template.New("test").Parse(stubTemplates))
 	return &PageHandler{
 		tmpl:    tmpl,
-		client:  api.NewClient(backendURL),
+		client:  api.NewHubClient(backendURL),
 		version: "0.0.0-test",
 	}
 }

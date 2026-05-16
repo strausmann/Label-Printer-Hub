@@ -1,0 +1,1127 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Label Printer Hub — backend",
+    "version": "0.0.0-dev"
+  },
+  "paths": {
+    "/api/printers": {
+      "get": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "List all printers",
+        "description": "Returns every registered printer.  The ``paused`` flag is joined from ``printer_state``; it is ``false`` when no state row exists yet.",
+        "operationId": "list_printers_api_printers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PrinterRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Printers Api Printers Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/printers/{printer_id}/status": {
+      "get": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "Force a fresh printer status probe",
+        "description": "Sends an ESC i S command to the printer over TCP/9100.  The result is written back to ``printer_status_cache`` and returned. Returns 503 when the printer is unreachable.",
+        "operationId": "get_printer_status_api_printers__printer_id__status_get",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrinterStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/printers/{printer_id}/tape": {
+      "get": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "Get the current tape spec",
+        "description": "Returns the tape specification for the tape currently loaded in the printer, derived from the cached status block.  Returns 404 if the printer has no cached status or no tape is loaded.",
+        "operationId": "get_printer_tape_api_printers__printer_id__tape_get",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Printer Tape Api Printers  Printer Id  Tape Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/printers/{printer_id}/queue": {
+      "get": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "Get the active job queue for a printer",
+        "description": "Returns all jobs in ``queued`` or ``printing`` state for this printer, ordered by creation time.",
+        "operationId": "get_printer_queue_api_printers__printer_id__queue_get",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Get Printer Queue Api Printers  Printer Id  Queue Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/printers/{printer_id}/pause": {
+      "post": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "Pause job dispatch for a printer",
+        "description": "Sets ``printer_state.paused = true`` for this printer.  New jobs can still be queued but the worker will not dispatch them until the printer is resumed.  Idempotent — pausing an already-paused printer returns 204 without error.",
+        "operationId": "pause_printer_api_printers__printer_id__pause_post",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/printers/{printer_id}/resume": {
+      "post": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "Resume job dispatch for a printer",
+        "description": "Sets ``printer_state.paused = false``.  Idempotent — resuming an already-active printer returns 204 without error.",
+        "operationId": "resume_printer_api_printers__printer_id__resume_post",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/printers/{printer_id}/queue/clear": {
+      "post": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "Cancel all queued jobs for a printer",
+        "description": "Bulk-cancels every job in ``queued`` state for this printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Returns 204 even when there are no queued jobs.",
+        "operationId": "clear_printer_queue_api_printers__printer_id__queue_clear_post",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/templates": {
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "List all templates",
+        "description": "Returns every registered template (seed + user).  Pass ``?app=<name>`` to filter to a specific integration (e.g. ``snipeit``, ``grocy``, ``spoolman``).  When the query parameter is absent all templates are returned.",
+        "operationId": "list_templates_api_templates_get",
+        "parameters": [
+          {
+            "name": "app",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Filter by integration app (snipeit / grocy / spoolman / …)",
+              "title": "App",
+              "type": "string",
+              "nullable": true
+            },
+            "description": "Filter by integration app (snipeit / grocy / spoolman / …)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateRead"
+                  },
+                  "title": "Response List Templates Api Templates Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "List jobs",
+        "description": "Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).",
+        "operationId": "list_jobs_api_jobs_get",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Filter by job state (queued / printing / done / failed / …)",
+              "title": "State",
+              "type": "string",
+              "nullable": true
+            },
+            "description": "Filter by job state (queued / printing / done / failed / …)"
+          },
+          {
+            "name": "printer_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Filter by printer UUID",
+              "title": "Printer Id",
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            },
+            "description": "Filter by printer UUID"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "Return only jobs created at or after this ISO-8601 datetime",
+              "title": "Since",
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "description": "Return only jobs created at or after this ISO-8601 datetime"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "description": "Maximum number of jobs to return (1-200, default 50)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Maximum number of jobs to return (1-200, default 50)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JobRead"
+                  },
+                  "title": "Response List Jobs Api Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get a single job",
+        "description": "Return the full job record for the given UUID.  Returns 404 if not found.",
+        "operationId": "get_job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Cancel a queued job",
+        "description": "Cancels a job that is in ``queued`` state.  Returns 409 ProblemDetail when the job is in ``printing`` (or any other non-QUEUED) state — mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.",
+        "operationId": "cancel_job_api_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/pause": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Pause a job (not yet implemented)",
+        "description": "Placeholder — returns 501 ProblemDetail.  Mid-job pause will be implemented when the queue worker gains control-plane support for pausing an in-progress raster stream.  This endpoint exists so the Phase 7 UI can wire to a stable URL.",
+        "operationId": "pause_job_api_jobs__job_id__pause_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "501": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/resume": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Resume a paused job (not yet implemented)",
+        "description": "Placeholder — returns 501 ProblemDetail.  Resume will be implemented alongside pause in a later phase.  This endpoint exists so the Phase 7 UI can wire to a stable URL.",
+        "operationId": "resume_job_api_jobs__job_id__resume_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "501": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/retry": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Retry a failed job",
+        "description": "Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``).",
+        "operationId": "retry_job_api_jobs__job_id__retry_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lookup/{app}/{entity_id}": {
+      "get": {
+        "tags": [
+          "lookup"
+        ],
+        "summary": "Resolve an integration entity",
+        "description": "Looks up an entity from the given integration app by its identifier.  ``app`` must be one of ``snipeit``, ``grocy``, or ``spoolman`` — an unsupported value returns 422.  Returns 404 ProblemDetail when the entity does not exist in the integration's backend.  The ``url`` field is the deep-link to the entity in the integration's own web UI, suitable for embedding in a QR code or label.",
+        "operationId": "lookup_api_lookup__app___entity_id__get",
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "snipeit",
+                "grocy",
+                "spoolman"
+              ],
+              "type": "string",
+              "title": "App"
+            }
+          },
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LookupResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events": {
+      "get": {
+        "tags": [
+          "events",
+          "events"
+        ],
+        "summary": "Server-Sent Events stream for a printer",
+        "description": "Returns a ``text/event-stream`` response. Publishes ``job.state_changed``, ``printer.status``, and ``printer.tape_changed`` events as they occur. A keepalive comment is sent every 30 s when no events flow. Closes automatically after 5 minutes of inactivity. On reconnect the stream starts fresh — ``Last-Event-ID`` is observed but replay is deferred to Phase 7. Returns 404 if ``printer_id`` does not exist in the database. Returns 429 if the per-printer subscriber limit is reached.",
+        "operationId": "sse_events_api_events_get",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "JobRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "printer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Printer Id"
+          },
+          "template_key": {
+            "type": "string",
+            "title": "Template Key"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "result": {
+            "title": "Result",
+            "additionalProperties": true,
+            "type": "object",
+            "nullable": true
+          },
+          "error": {
+            "title": "Error",
+            "type": "string",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finished_at": {
+            "title": "Finished At",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "printer_id",
+          "template_key",
+          "state",
+          "payload",
+          "result",
+          "error",
+          "created_at",
+          "updated_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "JobRead",
+        "description": "Serialised view of a Job DB row."
+      },
+      "LookupResult": {
+        "properties": {
+          "app": {
+            "type": "string",
+            "enum": [
+              "snipeit",
+              "grocy",
+              "spoolman"
+            ],
+            "title": "App",
+            "description": "Integration app that resolved this entity"
+          },
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "The entity identifier as supplied by the caller"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Human-readable display name of the entity"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Deep-link URL to the entity in the integration's web UI (e.g. Snipe-IT asset page, Grocy product page, Spoolman spool page)"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra",
+            "description": "Integration-specific extras not covered by the core fields. Contents vary by app — see each integration's plugin docs."
+          }
+        },
+        "type": "object",
+        "required": [
+          "app",
+          "id",
+          "name",
+          "url"
+        ],
+        "title": "LookupResult",
+        "description": "REST view of a resolved integration entity."
+      },
+      "PrinterRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "backend": {
+            "type": "string",
+            "title": "Backend"
+          },
+          "connection": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Connection"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused",
+            "default": false
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "model",
+          "backend",
+          "connection",
+          "enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PrinterRead",
+        "description": "Full representation of a Printer row, augmented with the paused flag.\n\n``paused`` is joined from the ``printer_state`` table; it defaults to\n``False`` for printers whose state row was not yet created (safe — the\nDB lifespan helper creates state rows at startup, so this only matters\nin tests or during the very first boot)."
+      },
+      "PrinterStatus": {
+        "properties": {
+          "printer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Printer Id"
+          },
+          "online": {
+            "type": "boolean",
+            "title": "Online"
+          },
+          "tape_loaded": {
+            "title": "Tape Loaded",
+            "description": "e.g. \"12mm laminated black/clear\"; None when no tape is loaded",
+            "type": "string",
+            "nullable": true
+          },
+          "error_state": {
+            "title": "Error State",
+            "description": "Active error flags as a string; None when printer is ready",
+            "type": "string",
+            "nullable": true
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Captured At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "printer_id",
+          "online",
+          "captured_at"
+        ],
+        "title": "PrinterStatus",
+        "description": "Live status result from a fresh ESC i S probe + cache write-back.\n\n``tape_loaded`` is a human-readable string such as\n``\"12mm laminated black/clear\"`` or ``None`` when no tape is inserted.\n``error_state`` mirrors the active PrinterError flags as a string, or\n``None`` when the printer is ready.\n``captured_at`` is the UTC timestamp of the probe that produced this\nblock."
+      },
+      "ProblemDetail": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "URI reference identifying the problem type",
+            "default": "about:blank"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Short human-readable summary of the problem"
+          },
+          "status": {
+            "type": "integer",
+            "title": "Status",
+            "description": "HTTP status code"
+          },
+          "detail": {
+            "title": "Detail",
+            "description": "Human-readable explanation specific to this occurrence",
+            "type": "string",
+            "nullable": true
+          },
+          "instance": {
+            "title": "Instance",
+            "description": "URI reference identifying this specific occurrence",
+            "type": "string",
+            "nullable": true
+          },
+          "extensions": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extensions",
+            "description": "Additional problem-type-specific fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "status"
+        ],
+        "title": "ProblemDetail",
+        "description": "RFC 7807 Problem Details object.\n\nAll fields are optional except ``type``, ``title``, and ``status``.\nThe ``extensions`` field carries additional problem-type-specific\ncontext (e.g. ``expected_mm`` / ``loaded_mm`` for tape mismatches)."
+      },
+      "TemplateRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "app": {
+            "title": "App",
+            "type": "string",
+            "nullable": true
+          },
+          "printer_model": {
+            "type": "string",
+            "title": "Printer Model"
+          },
+          "tape_width_mm": {
+            "type": "integer",
+            "title": "Tape Width Mm"
+          },
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version"
+          },
+          "definition": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Definition"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "name",
+          "app",
+          "printer_model",
+          "tape_width_mm",
+          "schema_version",
+          "definition",
+          "source",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "TemplateRead",
+        "description": "Serialised view of a Template DB row."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

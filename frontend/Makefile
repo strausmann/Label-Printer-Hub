@@ -13,10 +13,20 @@ tailwind-watch:
 dev-go:
 	BACKEND_URL=$(BACKEND_URL) go run ./cmd/server
 
-## gen-client: regenerate the oapi-codegen typed client from the backend OpenAPI spec
+## gen-client: regenerate the typed client from the committed OpenAPI snapshot.
+## The snapshot (internal/api/openapi.snapshot.json) is the canonical source;
+## refresh it first with: make refresh-snapshot
 gen-client:
 	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
-	  --config oapi-codegen.yaml ../backend/openapi.json
+	  --config oapi-codegen.yaml internal/api/openapi.snapshot.json
+
+## refresh-snapshot: download a fresh OpenAPI spec from the backend and save it.
+## Requires the backend to be running at BACKEND_URL.
+refresh-snapshot:
+	curl -fsSL $(BACKEND_URL)/openapi.json | python3 -c "\
+import sys,json; s=json.load(sys.stdin);\
+[s.get('paths',{}).get(p,{}).get(m,{}) for p in list(s.get('paths',{}).keys()) for m in list(s.get('paths',{}).get(p,{}).keys())]; \
+print(json.dumps(s,indent=2))" > internal/api/openapi.snapshot.json
 
 ## test: run all tests with race detector
 test:
