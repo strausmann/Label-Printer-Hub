@@ -74,3 +74,43 @@ def test_handle_transition_uses_next_event_id() -> None:
     bus.next_event_id.assert_called_once_with(channel)
     event: BusEvent = bus.publish.call_args[0][1]
     assert event.event_id == 42
+
+
+# ---------------------------------------------------------------------------
+# Finding #6 — queue_depth must reflect actual queue size at emit time
+# ---------------------------------------------------------------------------
+
+
+def test_handle_transition_queue_depth_reflects_actual_depth() -> None:
+    """queue_depth in the event data must be the actual queue depth passed by
+    the caller, NOT the hard-coded 0 from the original buggy implementation.
+
+    Bug (Finding #6): PrintQueueProducer.handle_transition always emitted
+    queue_depth=0 with the comment 'enriched by SSE endpoint before emit'
+    (which the SSE endpoint never did). The fix passes the real depth from
+    the worker at transition time.
+    """
+    bus = MagicMock(spec=EventBus)
+    bus.next_event_id.return_value = 1
+    producer = PrintQueueProducer(bus=bus)
+    job = _make_job()
+
+    producer.handle_transition(job, JobState.QUEUED, JobState.PRINTING, queue_depth=3)
+
+    event: BusEvent = bus.publish.call_args[0][1]
+    assert event.data["queue_depth"] == 3, (
+        f"expected queue_depth=3, got {event.data['queue_depth']}"
+    )
+
+
+def test_handle_transition_queue_depth_zero_when_empty() -> None:
+    """queue_depth=0 is correct when the queue is empty."""
+    bus = MagicMock(spec=EventBus)
+    bus.next_event_id.return_value = 1
+    producer = PrintQueueProducer(bus=bus)
+    job = _make_job()
+
+    producer.handle_transition(job, JobState.PRINTING, JobState.COMPLETED, queue_depth=0)
+
+    event: BusEvent = bus.publish.call_args[0][1]
+    assert event.data["queue_depth"] == 0

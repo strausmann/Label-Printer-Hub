@@ -103,3 +103,99 @@ def test_unsubscribe_idempotent() -> None:
     bus.unsubscribe("printer:abc:queue", "sub-1")
     bus.unsubscribe("printer:abc:queue", "sub-1")  # second call must not raise
     assert bus.subscriber_count("printer:abc:queue") == 0
+
+
+# ---------------------------------------------------------------------------
+# Finding #8 — distinct_subscriber_count vs total_subscriber_count
+# ---------------------------------------------------------------------------
+
+
+def test_distinct_subscriber_count_counts_connections_not_channels() -> None:
+    """distinct_subscriber_count() must count unique subscriber_ids, not channel subs.
+
+    Bug (Finding #8): total_subscriber_count() summed all channel subscriptions.
+    A single SSE connection subscribes to 3 channels with the same subscriber_id,
+    so total_subscriber_count() returned 3 for 1 actual connection. The 429 cap
+    check then allowed only 33 connections instead of 100.
+
+    Fix: add distinct_subscriber_count() which counts unique subscriber_ids
+    across all channels. total_subscriber_count() semantics are preserved for
+    Prometheus channel-load metrics.
+    """
+    bus = EventBus(queue_size=8)
+    # Simulate 2 SSE connections, each subscribing to 3 channels
+    for ch in ("printer:abc:queue", "printer:abc:state", "printer:abc:tape"):
+        bus.subscribe(ch, "conn-1")
+        bus.subscribe(ch, "conn-2")
+
+    # total_subscriber_count() counts all channel subscriptions (3 channels x 2 subs = 6)
+    assert bus.total_subscriber_count() == 6
+
+    # distinct_subscriber_count() counts unique subscriber_ids (2 connections)
+    assert bus.distinct_subscriber_count() == 2
+
+
+def test_distinct_subscriber_count_empty_bus_returns_zero() -> None:
+    """distinct_subscriber_count() on an empty bus returns 0."""
+    bus = EventBus(queue_size=8)
+    assert bus.distinct_subscriber_count() == 0
+
+
+def test_distinct_subscriber_count_after_unsubscribe() -> None:
+    """After unsubscribing all channels for a subscriber, count drops."""
+    bus = EventBus(queue_size=8)
+    for ch in ("printer:abc:queue", "printer:abc:state", "printer:abc:tape"):
+        bus.subscribe(ch, "conn-1")
+
+    assert bus.distinct_subscriber_count() == 1
+
+    for ch in ("printer:abc:queue", "printer:abc:state", "printer:abc:tape"):
+        bus.unsubscribe(ch, "conn-1")
+
+    assert bus.distinct_subscriber_count() == 0
+
+
+# ---------------------------------------------------------------------------
+# F5 — distinct_subscriber_count(channels=...) scoped to a channel subset
+# ---------------------------------------------------------------------------
+
+
+def test_distinct_subscriber_count_with_channels_returns_subset() -> None:
+    """distinct_subscriber_count(channels=[...]) must count only the supplied
+    channels (bot-review Finding F5).
+
+    Two printers share the same bus.  conn-A subscribes to printer-1 only;
+    conn-B subscribes to printer-2 only.  Counting with channels=printer-1-*
+    must return 1 (conn-A), not 2.
+    """
+    bus = EventBus(queue_size=8)
+    p1_channels = ["printer:p1:queue", "printer:p1:state", "printer:p1:tape"]
+    p2_channels = ["printer:p2:queue", "printer:p2:state", "printer:p2:tape"]
+
+    for ch in p1_channels:
+        bus.subscribe(ch, "conn-A")
+    for ch in p2_channels:
+        bus.subscribe(ch, "conn-B")
+
+    # Scoped to printer-1 channels → only conn-A
+    assert bus.distinct_subscriber_count(channels=p1_channels) == 1
+    # Scoped to printer-2 channels → only conn-B
+    assert bus.distinct_subscriber_count(channels=p2_channels) == 1
+    # No filter → both connections
+    assert bus.distinct_subscriber_count() == 2
+
+
+def test_distinct_subscriber_count_channels_empty_list_returns_zero() -> None:
+    """An empty channels list has no subscribers → 0."""
+    bus = EventBus(queue_size=8)
+    bus.subscribe("printer:abc:queue", "conn-1")
+    assert bus.distinct_subscriber_count(channels=[]) == 0
+
+
+def test_distinct_subscriber_count_channels_none_equals_no_arg() -> None:
+    """channels=None is equivalent to calling with no argument (full bus)."""
+    bus = EventBus(queue_size=8)
+    for ch in ("printer:abc:queue", "printer:abc:state", "printer:abc:tape"):
+        bus.subscribe(ch, "conn-1")
+        bus.subscribe(ch, "conn-2")
+    assert bus.distinct_subscriber_count(channels=None) == bus.distinct_subscriber_count()

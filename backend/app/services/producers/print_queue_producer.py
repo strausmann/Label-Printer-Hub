@@ -28,8 +28,15 @@ class PrintQueueProducer:
         job: Job,
         from_state: JobState,
         to_state: JobState,
+        queue_depth: int = 0,
     ) -> None:
         """Publish a ``job.state_changed`` event.
+
+        ``queue_depth`` is the number of non-terminal jobs remaining in the
+        printer's queue at the moment of the transition.  Callers (PrintQueue
+        worker, submit, pause_job, etc.) must supply the actual depth; the
+        default of 0 is kept only for backward-compatibility with tests that
+        don't exercise the depth field.
 
         Called synchronously from the PrintQueue worker after each
         ``JobStateMachine.transition`` call. Must not raise — any exception
@@ -47,7 +54,7 @@ class PrintQueueProducer:
                     "job_id": str(job.id),
                     "from_state": from_state.value,
                     "to_state": to_state.value,
-                    "queue_depth": 0,  # enriched by SSE endpoint before emit
+                    "queue_depth": queue_depth,
                     "error_code": getattr(job, "error_code", None),
                 },
             )

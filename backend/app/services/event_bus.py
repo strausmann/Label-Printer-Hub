@@ -108,8 +108,38 @@ class EventBus:
         return len(self._subscribers.get(channel, []))
 
     def total_subscriber_count(self) -> int:
-        """Count of active subscribers across all channels."""
+        """Count of active channel subscriptions across all channels.
+
+        Note: a single SSE connection subscribes to 3 channels with the same
+        subscriber_id, so this returns 3x the number of real connections.
+        Use ``distinct_subscriber_count()`` when you need the number of actual
+        client connections (e.g. for the 429 subscriber-cap check).
+        This method is preserved for Prometheus channel-load metrics.
+        """
         return sum(len(v) for v in self._subscribers.values())
+
+    def distinct_subscriber_count(self, channels: list[str] | None = None) -> int:
+        """Count of unique subscriber_ids, optionally scoped to *channels*.
+
+        When *channels* is ``None`` (default), counts distinct subscriber_ids
+        across ALL channels — i.e. the true number of active client connections
+        regardless of how many channels each connection uses.
+
+        When *channels* is a list, counts distinct subscriber_ids only among
+        those channels.  This lets callers check the per-printer connection cap
+        without iterating private ``_subscribers`` state directly (bot-review
+        Finding F5).  Pass ``channels=[]`` to get 0 without a bus scan.
+        """
+        seen: set[str] = set()
+        channel_map = (
+            self._subscribers
+            if channels is None
+            else {ch: self._subscribers.get(ch, []) for ch in channels}
+        )
+        for subs in channel_map.values():
+            for sub_id, _ in subs:
+                seen.add(sub_id)
+        return len(seen)
 
     def get_dropped_count(self, subscriber_id: str) -> int:
         """Consume and return the accumulated drop count for *subscriber_id*.

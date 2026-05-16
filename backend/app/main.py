@@ -475,7 +475,7 @@ def create_app() -> _LifespanManager:
             revision=HUB_REVISION,
             build_date=HUB_BUILD_DATE,
             repository=HUB_REPO_URL,
-            sse_active_subscribers=bus.total_subscriber_count() if bus else 0,
+            sse_active_subscribers=bus.distinct_subscriber_count() if bus else 0,
         )
 
     register_error_handlers(app)

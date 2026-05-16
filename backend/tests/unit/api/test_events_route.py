@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from app.main import app as _app_wrapper
 from app.services.event_bus import BusEvent, EventBus
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 _inner = _app_wrapper._app
@@ -48,6 +48,69 @@ def _make_queue_event(printer_id: uuid.UUID, channel: str) -> BusEvent:
     )
 
 
+def test_settings_sse_max_subscribers_honoured() -> None:
+    """When PRINTER_HUB_SSE_MAX_SUBSCRIBERS=2, the 3rd connection gets 429.
+
+    This is the regression test for Finding #3 (KRITISCH-3): the route had
+    hard-coded _MAX_SUBSCRIBERS_PER_PRINTER = 100 which ignored the env var.
+    After the fix, the cap is read from Settings (injected via Depends).
+
+    Uses a fresh FastAPI app with dependency overrides to avoid interfering
+    with the shared client_with_bus fixture.
+    """
+    from collections.abc import AsyncIterator
+
+    from app.api.routes.events import router as events_router
+    from app.config import Settings, get_settings
+    from app.db.session import get_session
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    printer_id = uuid.uuid4()
+    fake_printer = MagicMock()
+    fake_printer.id = str(printer_id)
+
+    # Build a dedicated test app with a cap of 2
+    test_app = FastAPI()
+    test_app.include_router(events_router)
+    bus = EventBus(queue_size=8)
+    test_app.state.event_bus = bus
+
+    low_cap_settings = Settings(sse_max_subscribers=2, _env_file=None)  # type: ignore[call-arg]
+    test_app.dependency_overrides[get_settings] = lambda: low_cap_settings
+
+    # Provide a no-op session — printers_repo.get is mocked anyway
+    mock_session = MagicMock(spec=AsyncSession)
+
+    async def _noop_session() -> AsyncIterator[AsyncSession]:
+        yield mock_session
+
+    test_app.dependency_overrides[get_session] = _noop_session
+
+    subscriber_id_1 = "cap-test-sub-1"
+    subscriber_id_2 = "cap-test-sub-2"
+
+    # Simulate 2 distinct connections already active (each holds 3 channels)
+    for ch in (
+        f"printer:{printer_id}:queue",
+        f"printer:{printer_id}:state",
+        f"printer:{printer_id}:tape",
+    ):
+        bus.subscribe(ch, subscriber_id_1)
+        bus.subscribe(ch, subscriber_id_2)
+
+    with (
+        _mock_printer_get(fake_printer),
+        TestClient(test_app, raise_server_exceptions=True) as client,
+    ):
+        resp = client.get(f"/api/events?printer_id={printer_id}")
+
+    assert resp.status_code == 429, (
+        f"expected 429 when cap=2 and 2 subscribers already connected, got {resp.status_code}"
+    )
+    body = resp.json()
+    assert body["type"] == "sse-subscriber-limit"
+
+
 def test_404_when_printer_not_found(client_with_bus: TestClient) -> None:
     with _mock_printer_get(None):
         resp = client_with_bus.get(f"/api/events?printer_id={uuid.uuid4()}")
@@ -55,21 +118,29 @@ def test_404_when_printer_not_found(client_with_bus: TestClient) -> None:
 
 
 def test_429_when_subscriber_limit_exceeded(client_with_bus: TestClient) -> None:
+    """When distinct subscriber count reaches the Settings cap, the next request gets 429.
+
+    Each SSE connection subscribes to 3 channels with the same subscriber_id.
+    The cap check counts DISTINCT subscriber_ids, so cap=N means N connections.
+    This test fills the default cap (sse_max_subscribers=100) with 100 distinct
+    subscriber IDs, each registered on all 3 channels.
+    """
     printer_id = uuid.uuid4()
     fake_printer = MagicMock()
     fake_printer.id = str(printer_id)
 
     bus: EventBus = _inner.state.event_bus
-    # Saturate all three channels to exceed the per-printer cap
-    from app.api.routes.events import _MAX_SUBSCRIBERS_PER_PRINTER
-
-    for ch in (
+    # Register 100 distinct subscriber IDs, each on all 3 channels
+    # (matches how _sse_stream subscribes: same subscriber_id on 3 channels)
+    default_cap = 100
+    channels = (
         f"printer:{printer_id}:queue",
         f"printer:{printer_id}:state",
         f"printer:{printer_id}:tape",
-    ):
-        for i in range(_MAX_SUBSCRIBERS_PER_PRINTER):
-            bus.subscribe(ch, f"fake-sub-{ch}-{i}")
+    )
+    for i in range(default_cap):
+        for ch in channels:
+            bus.subscribe(ch, f"fake-sub-{i}")
 
     with _mock_printer_get(fake_printer):
         resp = client_with_bus.get(f"/api/events?printer_id={printer_id}")
@@ -152,12 +223,18 @@ async def test_event_delivered_to_sse_stream() -> None:
     await gen.aclose()
 
     assert len(received_frames) == 1
-    # Extract the data line from the multi-line SSE frame
-    data_line = next(ln for ln in received_frames[0].splitlines() if ln.startswith("data:"))
-    frame_data = json.loads(data_line[len("data:") :].strip())
-    assert frame_data["event_type"] == "job.state_changed"
-    assert frame_data["from_state"] == "queued"
-    assert frame_data["to_state"] == "printing"
+    # After Finding #2 fix: data: carries raw HTML, not a JSON envelope.
+    # Verify via the "event:" line (always present) that the correct event type
+    # was emitted; verify that the data payload contains HTML.
+    lines = received_frames[0].splitlines()
+    event_line = next((ln for ln in lines if ln.startswith("event:")), None)
+    assert event_line is not None, "no event: line in SSE frame"
+    assert "job.state_changed" in event_line
+    data_lines = [ln for ln in lines if ln.startswith("data:")]
+    assert data_lines, "no data: lines in SSE frame"
+    # data payload is raw HTML — must contain '<'
+    combined_data = "\n".join(ln[len("data:") :].lstrip(" ") for ln in data_lines)
+    assert "<" in combined_data, f"data payload must be HTML, got: {combined_data!r}"
 
 
 @pytest.mark.asyncio
@@ -215,8 +292,6 @@ async def test_multichannel_multiplex_all_arrive() -> None:
     mock_request.client = None
     mock_request.is_disconnected = _is_disconnected
 
-    received_frames: list[dict] = []  # type: ignore[type-arg]
-
     gen = events_module._sse_stream(printer_id, bus, mock_request, subscriber_id, channels)
     frame_queue: asyncio.Queue[str] = asyncio.Queue()
 
@@ -233,14 +308,19 @@ async def test_multichannel_multiplex_all_arrive() -> None:
     bus.publish(tape_channel, tape_event)
 
     # Collect data frames until we have 3 or time out.
-    # SSE data frames are multi-line; check for "data:" line within the frame.
+    # After Finding #2 fix: data: carries raw HTML.  Event type is on event: line.
+    # Collect (event_type, raw_frame) tuples using the "event:" line.
+    received_event_types: list[str] = []
     deadline = asyncio.get_event_loop().time() + 1.5
-    while len(received_frames) < 3 and asyncio.get_event_loop().time() < deadline:
+    while len(received_event_types) < 3 and asyncio.get_event_loop().time() < deadline:
         try:
             frame = await asyncio.wait_for(frame_queue.get(), timeout=0.2)
             if "data:" in frame:
-                data_line = next(ln for ln in frame.splitlines() if ln.startswith("data:"))
-                received_frames.append(json.loads(data_line[len("data:") :].strip()))
+                event_line = next(
+                    (ln for ln in frame.splitlines() if ln.startswith("event:")), None
+                )
+                if event_line:
+                    received_event_types.append(event_line[len("event:") :].strip())
         except TimeoutError:
             continue
 
@@ -250,7 +330,7 @@ async def test_multichannel_multiplex_all_arrive() -> None:
         await pump_task
     await gen.aclose()
 
-    event_types = {e["event_type"] for e in received_frames}
+    event_types = set(received_event_types)
     assert "job.state_changed" in event_types
     assert "printer.status" in event_types
     assert "printer.tape_changed" in event_types
@@ -258,9 +338,10 @@ async def test_multichannel_multiplex_all_arrive() -> None:
 
 @pytest.mark.asyncio
 async def test_heartbeat_emitted_after_timeout() -> None:
-    """With no events, a keepalive comment frame arrives after _HEARTBEAT_INTERVAL_S.
+    """With no events, a keepalive comment frame arrives after the heartbeat interval.
 
-    Overrides ``_HEARTBEAT_INTERVAL_S`` to 0.1 s so the test completes quickly.
+    Passes ``heartbeat_interval_s=0.1`` directly to ``_sse_stream`` so the
+    test completes quickly without needing to patch module-level constants.
     Tests ``_sse_stream`` directly to avoid httpx buffering.
     """
     import app.api.routes.events as events_module
@@ -287,10 +368,15 @@ async def test_heartbeat_emitted_after_timeout() -> None:
 
     heartbeat_frames: list[str] = []
 
-    original = events_module._HEARTBEAT_INTERVAL_S
-    events_module._HEARTBEAT_INTERVAL_S = 0.1
     try:
-        gen = events_module._sse_stream(printer_id, bus, mock_request, subscriber_id, channels)
+        gen = events_module._sse_stream(
+            printer_id,
+            bus,
+            mock_request,
+            subscriber_id,
+            channels,
+            heartbeat_interval_s=0.1,
+        )
         frame_queue: asyncio.Queue[str] = asyncio.Queue()
 
         async def pump() -> None:
@@ -316,7 +402,7 @@ async def test_heartbeat_emitted_after_timeout() -> None:
             await pump_task
         await gen.aclose()
     finally:
-        events_module._HEARTBEAT_INTERVAL_S = original
+        pass  # no module-level patch to restore
 
     assert len(heartbeat_frames) >= 1
     assert all("keepalive" in f for f in heartbeat_frames)
@@ -486,8 +572,98 @@ async def test_render_fragment_unknown_type_returns_empty() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sse_data_line_is_raw_html_not_json() -> None:
+    """SSE data: line must be raw HTML for HTMX sse-swap, not a JSON envelope.
+
+    HTMX sse-swap injects the raw ``data:`` content into the DOM.  When the
+    payload is a JSON string like ``{"html": "<div>...</div>", ...}`` the user
+    sees the JSON literal in the page rather than the rendered fragment.
+
+    This is the regression test for Finding #2 (KRITISCH-2).
+    """
+    import app.api.routes.events as events_module
+
+    printer_id = uuid.uuid4()
+    bus = EventBus(queue_size=8)
+
+    channel = f"printer:{printer_id}:queue"
+    channels = [channel, f"printer:{printer_id}:state", f"printer:{printer_id}:tape"]
+    subscriber_id = "test-sub-raw-html"
+
+    test_event = BusEvent(
+        channel=channel,
+        event_id=1,
+        event_type="job.state_changed",
+        timestamp=datetime.now(UTC),
+        data={
+            "job_id": "j1",
+            "from_state": "queued",
+            "to_state": "printing",
+            "queue_depth": 0,
+            "error_code": None,
+        },
+    )
+
+    disconnect_flag = asyncio.Event()
+
+    async def _is_disconnected() -> bool:
+        return disconnect_flag.is_set()
+
+    mock_request = MagicMock()
+    mock_request.headers = {}
+    mock_request.client = None
+    mock_request.is_disconnected = _is_disconnected
+
+    gen = events_module._sse_stream(printer_id, bus, mock_request, subscriber_id, channels)
+    frame_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def pump() -> None:
+        async for frame in gen:
+            await frame_queue.put(frame)
+
+    pump_task = asyncio.create_task(pump())
+    await asyncio.sleep(0.05)
+    bus.publish(channel, test_event)
+
+    raw_frames: list[str] = []
+    deadline = asyncio.get_event_loop().time() + 0.5
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            frame = await asyncio.wait_for(frame_queue.get(), timeout=0.1)
+            if "data:" in frame:
+                raw_frames.append(frame)
+                break
+        except TimeoutError:
+            continue
+
+    disconnect_flag.set()
+    pump_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await pump_task
+    await gen.aclose()
+
+    assert len(raw_frames) == 1, "expected exactly one data frame"
+    frame = raw_frames[0]
+    # The data: line(s) must be raw HTML, not JSON
+    data_lines = [ln for ln in frame.splitlines() if ln.startswith("data:")]
+    assert data_lines, "no data: lines in SSE frame"
+    # Reconstruct the data payload from potentially multi-line data:
+    data_payload = "\n".join(ln[len("data:") :].lstrip(" ") for ln in data_lines)
+    # Must be HTML (contains '<'), NOT a JSON object
+    assert "<" in data_payload, f"expected HTML in data payload, got: {data_payload!r}"
+    assert not data_payload.strip().startswith("{"), (
+        f"data payload must not be a JSON object, got: {data_payload[:80]!r}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_sse_frame_includes_html_field_from_fragment() -> None:
-    """When fragments exist, SSE data frame includes an html field with rendered content."""
+    """When fragments exist, SSE data frame contains rendered HTML content.
+
+    After Finding #2 fix: data: carries raw HTML directly (not a JSON
+    envelope). We verify that the rendered fragment HTML appears in the
+    concatenated data: lines of the SSE frame.
+    """
     import app.api.routes.events as events_module
 
     printer_id = uuid.uuid4()
@@ -532,14 +708,13 @@ async def test_sse_frame_includes_html_field_from_fragment() -> None:
     await asyncio.sleep(0.05)
     bus.publish(channel, test_event)
 
-    data_frames: list[dict] = []  # type: ignore[type-arg]
+    raw_frames: list[str] = []
     deadline = asyncio.get_event_loop().time() + 0.5
     while asyncio.get_event_loop().time() < deadline:
         try:
             frame = await asyncio.wait_for(frame_queue.get(), timeout=0.1)
             if "data:" in frame:
-                data_line = next(ln for ln in frame.splitlines() if ln.startswith("data:"))
-                data_frames.append(json.loads(data_line[len("data:") :].strip()))
+                raw_frames.append(frame)
                 break
         except TimeoutError:
             continue
@@ -550,10 +725,11 @@ async def test_sse_frame_includes_html_field_from_fragment() -> None:
         await pump_task
     await gen.aclose()
 
-    assert len(data_frames) == 1
-    # With fragments in place, the html field must be non-empty HTML
-    assert "html" in data_frames[0]
-    assert "<" in data_frames[0]["html"]
+    assert len(raw_frames) == 1, "expected exactly one data frame"
+    # After Finding #2 fix: data: carries raw HTML directly (no JSON envelope).
+    data_lines = [ln for ln in raw_frames[0].splitlines() if ln.startswith("data:")]
+    combined_html = "\n".join(ln[len("data:") :].lstrip(" ") for ln in data_lines)
+    assert "<" in combined_html, f"expected HTML in data payload, got: {combined_html!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -703,3 +879,117 @@ async def test_prometheus_sse_events_published_counter_increments() -> None:
     await gen.aclose()
 
     assert after > before
+
+
+# ---------------------------------------------------------------------------
+# F2 — empty _render_fragment result must NOT produce an SSE frame
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sse_stream_skips_frame_when_fragment_is_empty() -> None:
+    """When _render_fragment returns an empty string the SSE generator must
+    NOT yield a data frame (bot-review Finding F2).
+
+    An empty ``data:`` SSE frame causes HTMX sse-swap to overwrite the target
+    element with empty content, wiping the live status widget.  The correct
+    behaviour is to skip the yield entirely so the client DOM is unchanged.
+
+    Strategy: publish an event whose type is NOT in _FRAGMENT_MAP so
+    _render_fragment returns "".  Then publish a valid event and verify only
+    the valid event produces a data frame.
+    """
+    from datetime import UTC, datetime
+
+    import app.api.routes.events as events_module
+
+    printer_id = uuid.uuid4()
+    bus = EventBus(queue_size=8)
+
+    channel = f"printer:{printer_id}:queue"
+    channels = [channel, f"printer:{printer_id}:state", f"printer:{printer_id}:tape"]
+    subscriber_id = "test-sub-skip-empty"
+
+    # An event type that has no template → _render_fragment returns ""
+    unknown_event = BusEvent(
+        channel=channel,
+        event_id=1,
+        event_type="unknown.no_template",
+        timestamp=datetime.now(UTC),
+        data={},
+    )
+    # A valid event that DOES render a non-empty fragment
+    valid_event = BusEvent(
+        channel=channel,
+        event_id=2,
+        event_type="job.state_changed",
+        timestamp=datetime.now(UTC),
+        data={
+            "job_id": "j1",
+            "from_state": "queued",
+            "to_state": "printing",
+            "queue_depth": 1,
+            "error_code": None,
+        },
+    )
+
+    disconnect_flag = asyncio.Event()
+
+    async def _is_disconnected() -> bool:
+        return disconnect_flag.is_set()
+
+    mock_request = MagicMock()
+    mock_request.headers = {}
+    mock_request.client = None
+    mock_request.is_disconnected = _is_disconnected
+
+    gen = events_module._sse_stream(printer_id, bus, mock_request, subscriber_id, channels)
+    frame_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def pump() -> None:
+        async for frame in gen:
+            await frame_queue.put(frame)
+
+    pump_task = asyncio.create_task(pump())
+    await asyncio.sleep(0.05)  # let generator subscribe
+
+    # Publish the unknown event first — should be swallowed (no frame emitted)
+    bus.publish(channel, unknown_event)
+
+    # Give the generator a full heartbeat cycle to process the unknown event.
+    # If F2 is NOT fixed, it emits an empty "data: \n\n" frame here.
+    await asyncio.sleep(0.05)
+
+    # Now publish the valid event — should produce a data frame
+    bus.publish(channel, valid_event)
+
+    data_frames: list[str] = []
+    deadline = asyncio.get_event_loop().time() + 0.5
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            frame = await asyncio.wait_for(frame_queue.get(), timeout=0.1)
+            if frame.strip() == ": connected":
+                continue  # skip the connect confirmation
+            if "data:" in frame:
+                data_frames.append(frame)
+                if len(data_frames) >= 2:
+                    break  # stop early — we have more than expected
+        except TimeoutError:
+            if data_frames:
+                break  # got what we need
+            continue
+
+    disconnect_flag.set()
+    pump_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await pump_task
+    await gen.aclose()
+
+    # Exactly one data frame (from the valid event). Zero or two would both
+    # indicate a bug: zero means the fix broke valid-event delivery; two means
+    # the empty fragment was emitted as a frame (F2 unfixed).
+    assert len(data_frames) == 1, (
+        f"expected exactly 1 data frame (the valid event); got {len(data_frames)}: {data_frames!r}"
+    )
+    # The single frame must carry the valid event type
+    assert "job.state_changed" in data_frames[0]
