@@ -282,6 +282,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             _aclose = getattr(_plugin, "aclose", None)
             if callable(_aclose):
                 await _aclose()
+        # Clear the registry so that subsequent lifespan runs (e.g. during test
+        # suite execution or server hot-reload) discover and instantiate fresh
+        # plugin instances rather than reusing stale ones whose httpx pools have
+        # already been closed.
+        IntegrationRegistry.clear()
 
 
 class _LifespanManager:

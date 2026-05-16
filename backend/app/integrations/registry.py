@@ -62,3 +62,15 @@ class IntegrationRegistry:
     def names(cls) -> list[str]:
         """Return registered plugin names, sorted alphabetically."""
         return sorted(cls._plugins)
+
+    @classmethod
+    def clear(cls) -> None:
+        """Remove all registered plugins.
+
+        Intended for use in lifespan shutdown and test teardown.  After a
+        clear(), plugin names that were previously rejected as duplicates can
+        be re-registered, making sequential lifespan cycles safe: the next
+        startup discovers fresh instances instead of reusing stale ones whose
+        underlying httpx pools have already been closed.
+        """
+        cls._plugins.clear()

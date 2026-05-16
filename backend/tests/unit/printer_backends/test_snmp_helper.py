@@ -231,3 +231,58 @@ async def test_query_preflight_propagates_errors(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
     pf = await query_preflight("192.0.2.10", community="public", timeout_s=1.0)
     assert "doorOpen" in pf.error_flags
+
+
+def test_get_engine_lazy_init_returns_snmp_engine() -> None:
+    """_get_engine() must return a SnmpEngine instance (lazy initialisation)."""
+    import app.printer_backends.snmp_helper as helper
+    from pysnmp.hlapi.v3arch.asyncio import SnmpEngine
+
+    # Reset module-level state so we get a clean lazy-init path
+    helper._SNMP_ENGINE = None
+    engine = helper._get_engine()
+    assert isinstance(engine, SnmpEngine)
+
+
+def test_get_engine_returns_same_instance_when_loop_is_open() -> None:
+    """_get_engine() must be idempotent: same instance returned on repeated calls."""
+    import app.printer_backends.snmp_helper as helper
+
+    helper._SNMP_ENGINE = None
+    engine_a = helper._get_engine()
+    engine_b = helper._get_engine()
+    assert engine_a is engine_b
+
+
+def test_get_engine_reinitialises_after_closed_loop() -> None:
+    """When the cached engine's event loop is closed, _get_engine() creates a fresh one.
+
+    This guards against the test-suite scenario where a fresh asyncio event loop is
+    created between test sessions, leaving the module-level singleton bound to a
+    closed loop.
+    """
+    import asyncio
+
+    import app.printer_backends.snmp_helper as helper
+
+    # Obtain an initial engine (may already exist from earlier tests)
+    helper._SNMP_ENGINE = None
+    engine_a = helper._get_engine()
+    assert engine_a is not None
+
+    # Simulate a closed event loop by temporarily closing the current one
+    loop = asyncio.new_event_loop()
+    loop.close()
+    # Force the helper to detect a closed loop by substituting it as the running loop.
+    # We do this by calling asyncio.set_event_loop with the closed loop, then resetting.
+    asyncio.set_event_loop(loop)
+    try:
+        engine_b = helper._get_engine()
+        # Engine must be a new instance because the loop is closed
+        assert engine_b is not engine_a, (
+            "_get_engine() must create a new SnmpEngine when the event loop is closed"
+        )
+    finally:
+        # Restore a working event loop for subsequent tests
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)

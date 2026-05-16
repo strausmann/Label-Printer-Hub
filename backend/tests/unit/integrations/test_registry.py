@@ -87,3 +87,27 @@ def test_names_returns_sorted() -> None:
 def test_runtime_protocol_check_accepts_fake() -> None:
     """The Protocol is structural — _FakePlugin implements it."""
     assert isinstance(_FakePlugin(), IntegrationPlugin)
+
+
+def test_clear_empties_registry() -> None:
+    """clear() must remove all registered plugins."""
+    IntegrationRegistry.register(_FakePlugin(name="a"))
+    IntegrationRegistry.register(_FakePlugin(name="b"))
+    IntegrationRegistry.clear()
+    assert IntegrationRegistry.names() == []
+
+
+def test_clear_allows_re_registration() -> None:
+    """After clear(), the same plugin name can be registered again."""
+    p1 = _FakePlugin(name="alpha")
+    IntegrationRegistry.register(p1)
+    IntegrationRegistry.clear()
+    p2 = _FakePlugin(name="alpha")
+    IntegrationRegistry.register(p2)
+    assert IntegrationRegistry.get("alpha") is p2
+
+
+def test_clear_on_empty_registry_is_idempotent() -> None:
+    """clear() on an already-empty registry must not raise."""
+    IntegrationRegistry.clear()  # was already cleared by autouse fixture
+    assert IntegrationRegistry.names() == []

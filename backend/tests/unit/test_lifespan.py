@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from app.config import get_settings
+from app.integrations.registry import IntegrationRegistry
 from app.main import create_app
 from app.printer_backends import BackendRegistry
 from app.printer_models.registry import ModelRegistry
@@ -110,3 +111,73 @@ async def test_snmp_discovery_no_fallback_fails(monkeypatch: pytest.MonkeyPatch)
     with pytest.raises(SnmpDiscoveryError):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
             await c.get("/healthz")
+
+
+def test_lifespan_clears_integration_registry_on_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lifespan shutdown must call aclose() on plugins and IntegrationRegistry.clear().
+
+    Uses starlette.testclient.TestClient which sends a proper ASGI lifespan
+    scope (startup + shutdown) so the finally-block in lifespan() actually
+    executes.  httpx.ASGITransport only sends HTTP scopes and would silently
+    skip the shutdown path.
+    """
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
+    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "PT-P750W")
+    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "false")
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "http://snipe.example")
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "k")
+    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "http://grocy.example")
+    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "grocy-k")
+    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "http://spoolman.example")
+    get_settings.cache_clear()
+
+    from app.integrations.grocy.plugin import GrocyPlugin
+    from app.integrations.snipeit.plugin import SnipeITPlugin
+    from app.integrations.spoolman.plugin import SpoolmanPlugin
+
+    captured_snipeit: list[SnipeITPlugin] = []
+
+    def capturing_discover() -> None:
+        """Register all three built-in plugins, tracking SnipeIT for inspection."""
+        snipeit = SnipeITPlugin()
+        captured_snipeit.append(snipeit)
+        IntegrationRegistry.register(snipeit)
+        IntegrationRegistry.register(GrocyPlugin())
+        IntegrationRegistry.register(SpoolmanPlugin())
+
+    # Patch the discovery function that lifespan calls.
+    monkeypatch.setattr("app.integrations._discover_plugins", capturing_discover)
+    monkeypatch.setattr("app.main._integrations_init._discover_plugins", capturing_discover)
+
+    # Clear the real plugins that were registered at import time so the lifespan
+    # sees an empty registry and calls our capturing_discover on startup.
+    IntegrationRegistry.clear()
+
+    # --- First lifespan run ---
+    app1 = create_app()
+    with TestClient(app1) as c:
+        c.get("/healthz")
+    # Proper shutdown ran: aclose() called on plugin, registry cleared.
+    assert len(captured_snipeit) >= 1
+    plugin1 = captured_snipeit[0]
+    assert plugin1._client.is_closed, "plugin's httpx client must be closed on shutdown"
+    assert IntegrationRegistry.names() == [], "registry must be cleared on shutdown"
+
+    # --- Second lifespan run must succeed (no 'already registered' ValueError) ---
+    BackendRegistry._factories.clear()
+    BackendRegistry._discovered = False
+    ModelRegistry._models.clear()
+    ModelRegistry._discovered = False
+    get_settings.cache_clear()
+
+    app2 = create_app()
+    with TestClient(app2) as c:
+        r = c.get("/healthz")
+        assert r.status_code == 200
+    assert len(captured_snipeit) >= 2
+    plugin2 = captured_snipeit[1]
+    assert plugin1 is not plugin2, "second lifespan must create a new plugin instance"
