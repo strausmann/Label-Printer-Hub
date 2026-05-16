@@ -276,6 +276,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await status_producer.stop()
         await queue.stop(timeout_s=settings.printer_queue_timeout_s)
         await engine.dispose()
+        # Close shared HTTP clients held by integration plugins that support it.
+        # Plugins that pre-date connection pooling may not have aclose(); skip them.
+        for _plugin in IntegrationRegistry.all().values():
+            _aclose = getattr(_plugin, "aclose", None)
+            if callable(_aclose):
+                await _aclose()
+        # Clear the registry so that subsequent lifespan runs (e.g. during test
+        # suite execution or server hot-reload) discover and instantiate fresh
+        # plugin instances rather than reusing stale ones whose httpx pools have
+        # already been closed.
+        IntegrationRegistry.clear()
 
 
 class _LifespanManager:

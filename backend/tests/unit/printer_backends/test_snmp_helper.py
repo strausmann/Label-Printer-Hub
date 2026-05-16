@@ -18,6 +18,36 @@ from app.printer_backends.snmp_helper import (
 )
 
 
+async def test_snmp_engine_is_singleton_across_query_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multiple SNMP query calls must use the SAME SnmpEngine instance.
+
+    Creating a new SnmpEngine per call loads MIBs and initialises the
+    async dispatcher on every invocation, adding significant overhead.
+    A module-level singleton eliminates this cost.
+    """
+    from pysnmp.proto import rfc1902
+
+    engines_seen: list[object] = []
+
+    async def capturing_get_cmd(*args: object, **_kwargs: object) -> object:
+        # args[0] is the SnmpEngine passed by the helper function
+        engines_seen.append(args[0])
+        first_oid = args[4]
+        return (None, None, 0, [(first_oid, rfc1902.OctetString('12mm(0.47")'))])
+
+    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", capturing_get_cmd)
+    await query_loaded_tape_mm("192.0.2.1", community="public", timeout_s=1.0)
+    await query_loaded_tape_mm("192.0.2.1", community="public", timeout_s=1.0)
+
+    assert len(engines_seen) == 2, "Expected get_cmd to be called twice"
+    assert engines_seen[0] is engines_seen[1], (
+        "Both calls must pass the SAME SnmpEngine instance (singleton), "
+        f"but got {type(engines_seen[0])} and {type(engines_seen[1])} at different addresses"
+    )
+
+
 def test_oid_constants() -> None:
     assert BROTHER_PJL_OID == "1.3.6.1.4.1.2435.2.3.9.1.1.7.0"
     assert HR_PRINTER_STATUS_OID == "1.3.6.1.2.1.25.3.5.1.1.1"
@@ -201,3 +231,58 @@ async def test_query_preflight_propagates_errors(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
     pf = await query_preflight("192.0.2.10", community="public", timeout_s=1.0)
     assert "doorOpen" in pf.error_flags
+
+
+def test_get_engine_lazy_init_returns_snmp_engine() -> None:
+    """_get_engine() must return a SnmpEngine instance (lazy initialisation)."""
+    import app.printer_backends.snmp_helper as helper
+    from pysnmp.hlapi.v3arch.asyncio import SnmpEngine
+
+    # Reset module-level state so we get a clean lazy-init path
+    helper._SNMP_ENGINE = None
+    engine = helper._get_engine()
+    assert isinstance(engine, SnmpEngine)
+
+
+def test_get_engine_returns_same_instance_when_loop_is_open() -> None:
+    """_get_engine() must be idempotent: same instance returned on repeated calls."""
+    import app.printer_backends.snmp_helper as helper
+
+    helper._SNMP_ENGINE = None
+    engine_a = helper._get_engine()
+    engine_b = helper._get_engine()
+    assert engine_a is engine_b
+
+
+def test_get_engine_reinitialises_after_closed_loop() -> None:
+    """When the cached engine's event loop is closed, _get_engine() creates a fresh one.
+
+    This guards against the test-suite scenario where a fresh asyncio event loop is
+    created between test sessions, leaving the module-level singleton bound to a
+    closed loop.
+    """
+    import asyncio
+
+    import app.printer_backends.snmp_helper as helper
+
+    # Obtain an initial engine (may already exist from earlier tests)
+    helper._SNMP_ENGINE = None
+    engine_a = helper._get_engine()
+    assert engine_a is not None
+
+    # Simulate a closed event loop by temporarily closing the current one
+    loop = asyncio.new_event_loop()
+    loop.close()
+    # Force the helper to detect a closed loop by substituting it as the running loop.
+    # We do this by calling asyncio.set_event_loop with the closed loop, then resetting.
+    asyncio.set_event_loop(loop)
+    try:
+        engine_b = helper._get_engine()
+        # Engine must be a new instance because the loop is closed
+        assert engine_b is not engine_a, (
+            "_get_engine() must create a new SnmpEngine when the event loop is closed"
+        )
+    finally:
+        # Restore a working event loop for subsequent tests
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)

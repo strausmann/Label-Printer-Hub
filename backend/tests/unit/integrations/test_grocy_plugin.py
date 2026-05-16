@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import httpx
 import pytest
 import respx
@@ -131,3 +133,38 @@ async def test_lookup_sends_grocy_api_key_header(monkeypatch: pytest.MonkeyPatch
     assert sent.headers["Accept"] == "application/json"
     # Crucially: NO Authorization header — Grocy doesn't use Bearer.
     assert "Authorization" not in sent.headers
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_reuses_http_client_across_calls() -> None:
+    """The plugin must reuse a single AsyncClient — no new connection per lookup().
+
+    Two consecutive lookups must use the SAME AsyncClient instance so TCP/TLS
+    connections are pooled rather than re-established on every call.
+    """
+    respx.get("https://grocy.example/api/objects/products/10").mock(
+        return_value=httpx.Response(200, json={"id": 10, "name": "Apfel"})
+    )
+    respx.get("https://grocy.example/api/objects/products/11").mock(
+        return_value=httpx.Response(200, json={"id": 11, "name": "Birne"})
+    )
+
+    instances: list[httpx.AsyncClient] = []
+    real_init = httpx.AsyncClient.__init__
+
+    def capturing_init(self: httpx.AsyncClient, *args: object, **kwargs: object) -> None:
+        real_init(self, *args, **kwargs)
+        instances.append(self)
+
+    with patch.object(httpx.AsyncClient, "__init__", capturing_init):
+        plugin = GrocyPlugin()
+        await plugin.lookup("10")
+        await plugin.lookup("11")
+
+    await plugin.aclose()
+
+    assert len(instances) == 1, (
+        f"Expected exactly one AsyncClient to be created (connection pooling), "
+        f"but {len(instances)} were created"
+    )

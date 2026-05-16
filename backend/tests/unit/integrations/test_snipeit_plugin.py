@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import httpx
 import pytest
 import respx
@@ -170,3 +172,38 @@ async def test_lookup_sends_bearer_auth_header(monkeypatch: pytest.MonkeyPatch) 
     sent_request = route.calls.last.request
     assert sent_request.headers["Authorization"] == "Bearer secret-key-42"
     assert sent_request.headers["Accept"] == "application/json"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_reuses_http_client_across_calls() -> None:
+    """The plugin must reuse a single AsyncClient — no new connection per lookup().
+
+    Two consecutive lookups must use the SAME AsyncClient instance so TCP/TLS
+    connections are pooled rather than re-established on every call.
+    """
+    respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
+        return_value=httpx.Response(200, json={"id": 1, "asset_tag": "A-1", "name": "T"})
+    )
+    respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-2").mock(
+        return_value=httpx.Response(200, json={"id": 2, "asset_tag": "A-2", "name": "U"})
+    )
+
+    instances: list[httpx.AsyncClient] = []
+    real_init = httpx.AsyncClient.__init__
+
+    def capturing_init(self: httpx.AsyncClient, *args: object, **kwargs: object) -> None:
+        real_init(self, *args, **kwargs)
+        instances.append(self)
+
+    with patch.object(httpx.AsyncClient, "__init__", capturing_init):
+        plugin = SnipeITPlugin()
+        await plugin.lookup("A-1")
+        await plugin.lookup("A-2")
+
+    await plugin.aclose()
+
+    assert len(instances) == 1, (
+        f"Expected exactly one AsyncClient to be created (connection pooling), "
+        f"but {len(instances)} were created"
+    )

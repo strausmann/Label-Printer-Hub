@@ -29,6 +29,11 @@ class SnipeITPlugin:
     Configuration (base URL, API key, timeout) is injected so the same
     instance can hit the user's live Snipe-IT from production and a
     respx-mocked endpoint from tests, with no hidden global state.
+
+    A single ``httpx.AsyncClient`` is created at construction time and
+    reused for the lifetime of the plugin instance, enabling TCP/TLS
+    connection pooling. Call ``aclose()`` on application shutdown to
+    release the underlying connection pool gracefully.
     """
 
     name = "snipeit"
@@ -41,19 +46,25 @@ class SnipeITPlugin:
         self._base_url = settings.snipeit_url.rstrip("/")
         self._api_key = settings.snipeit_api_key.get_secret_value()
         self._timeout = settings.snipeit_timeout
+        self._client = httpx.AsyncClient(timeout=self._timeout)
+
+    async def aclose(self) -> None:
+        """Close the shared HTTP client and release its connection pool.
+
+        Must be called on application shutdown (e.g. from lifespan finally block).
+        Safe to call more than once.
+        """
+        await self._client.aclose()
 
     async def lookup(self, asset_tag: str) -> LabelData:
         """Return LabelData for `asset_tag`, or raise SnipeITNotFoundError."""
-        # TODO(phase6): inject a shared httpx.AsyncClient for connection pooling
-        #               when this client is consumed by the FastAPI request handler.
         encoded_tag = quote(asset_tag, safe="")
         url = f"{self._base_url}/api/v1/hardware/bytag/{encoded_tag}"
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Accept": "application/json",
         }
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.get(url, headers=headers)
+        response = await self._client.get(url, headers=headers)
 
         if response.status_code == 404:
             raise SnipeITNotFoundError(f"Asset {asset_tag!r} not found")

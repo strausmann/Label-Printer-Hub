@@ -9,6 +9,7 @@ __init__; use ``await UdpTransportTarget.create((host, port), ...)`` instead.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -27,6 +28,41 @@ from pysnmp.hlapi.v3arch.asyncio import (
 from app.printer_backends.exceptions import SnmpDiscoveryError, SnmpQueryError
 
 _logger = logging.getLogger(__name__)
+
+# Lazy SnmpEngine singleton.
+#
+# Rationale: a module-level ``SnmpEngine()`` created at import time binds to
+# whatever asyncio event loop is active at that moment.  In test suites that
+# spin up a fresh event loop for each test session the previously-bound engine
+# raises ``RuntimeError: Event loop is closed`` on the next query.
+#
+# The lazy accessor ``_get_engine()`` detects a closed loop and re-creates the
+# engine, giving each event-loop lifetime a healthy singleton while still
+# avoiding the per-query overhead of constructing a new engine (MIB loading,
+# dispatcher initialisation).
+_SNMP_ENGINE: SnmpEngine | None = None
+
+
+def _get_engine() -> SnmpEngine:
+    """Return the module-level SnmpEngine singleton, creating it on first call.
+
+    If the current asyncio event loop is closed (common in test suites that
+    replace the loop between sessions) the stale engine is discarded and a
+    fresh one is created for the new loop.
+    """
+    global _SNMP_ENGINE
+    if _SNMP_ENGINE is not None:
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                _SNMP_ENGINE = None
+        except RuntimeError:
+            # No running event loop — treat the engine as stale.
+            _SNMP_ENGINE = None
+    if _SNMP_ENGINE is None:
+        _SNMP_ENGINE = SnmpEngine()
+    return _SNMP_ENGINE
+
 
 BROTHER_PJL_OID = "1.3.6.1.4.1.2435.2.3.9.1.1.7.0"
 HR_PRINTER_STATUS_OID = "1.3.6.1.2.1.25.3.5.1.1.1"
@@ -107,7 +143,7 @@ async def query_loaded_tape_mm(
 ) -> int | None:
     """Query prtInputMediaType OID and return the loaded tape width in mm."""
     error_indication, error_status, _, var_binds = await get_cmd(
-        SnmpEngine(),
+        _get_engine(),
         CommunityData(community, mpModel=1),
         await UdpTransportTarget.create((host, 161), timeout=timeout_s, retries=0),
         ContextData(),
@@ -131,7 +167,7 @@ async def query_preflight(
     print job. Raises SnmpQueryError on transport failure.
     """
     error_indication, error_status, _, var_binds = await get_cmd(
-        SnmpEngine(),
+        _get_engine(),
         CommunityData(community, mpModel=1),
         await UdpTransportTarget.create((host, 161), timeout=timeout_s, retries=0),
         ContextData(),
@@ -171,7 +207,7 @@ async def query_model_pjl(host: str, *, community: str = "public", timeout_s: fl
         retries=0,
     )
     error_indication, error_status, _, var_binds = await get_cmd(
-        SnmpEngine(),
+        _get_engine(),
         CommunityData(community, mpModel=1),
         transport,
         ContextData(),
@@ -200,7 +236,7 @@ async def query_live_status(
         retries=0,
     )
     error_indication, error_status, _, var_binds = await get_cmd(
-        SnmpEngine(),
+        _get_engine(),
         CommunityData(community, mpModel=1),
         transport,
         ContextData(),
