@@ -33,6 +33,7 @@ import (
 	frontend "github.com/strausmann/label-printer-hub/frontend"
 	"github.com/strausmann/label-printer-hub/frontend/internal/api"
 	"github.com/strausmann/label-printer-hub/frontend/internal/handlers"
+	"github.com/strausmann/label-printer-hub/frontend/internal/proxy"
 )
 
 // staticFS and templateFS are defined in frontend/assets.go (the module root
@@ -123,7 +124,14 @@ func slogRequestLogger(next http.Handler) http.Handler {
 // ph is the shared PageHandler; it may be nil in the minimal healthz-only test
 // path (the skeleton tests call newRouter() directly before the PageHandler was
 // introduced). Static file serving and page routes are added when ph != nil.
-func newRouter(ph *handlers.PageHandler) *chi.Mux {
+//
+// backendURL is the base URL of the backend container used for the /api/*
+// reverse-proxy; when empty it defaults to "http://backend:8000".
+func newRouter(ph *handlers.PageHandler, backendURL string) *chi.Mux {
+	if backendURL == "" {
+		backendURL = "http://backend:8000"
+	}
+
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -143,10 +151,17 @@ func newRouter(ph *handlers.PageHandler) *chi.Mux {
 
 	r.Get("/healthz", healthzHandler)
 
+	// Reverse proxy: /api/* and SSE stream → backend container.
+	// FlushInterval=-1 (set inside proxy.New) ensures SSE frames are forwarded
+	// immediately without buffering. The chi wildcard captures the full path
+	// so the proxy receives e.g. /api/printers (not just /printers).
+	backendProxy := proxy.New(backendURL)
+	r.Handle("/api/*", backendProxy)
+
 	// Page handlers are wired here as they are implemented in subsequent tasks.
 	// ph is always non-nil in production; nil only happens if tests call
-	// newRouter(nil) directly — those tests only hit /healthz.
-	_ = ph // suppress unused warning until page handlers are added in Tasks 5–11
+	// newRouter(nil, "") directly — those tests only hit /healthz and /api/*.
+	_ = ph // Dashboard and other routes are added in Task 5+.
 
 	return r
 }
@@ -177,7 +192,7 @@ func main() {
 	client := api.NewHubClient(backendURL)
 	ph := handlers.NewPageHandler(tmpl, client, buildInfo.Version)
 
-	r := newRouter(ph)
+	r := newRouter(ph, backendURL)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           r,
