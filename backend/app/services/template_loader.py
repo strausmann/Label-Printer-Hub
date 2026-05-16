@@ -143,7 +143,6 @@ class TemplateLoader:
 
         Returns the count of rows inserted or updated.
         """
-        from sqlalchemy.ext.asyncio import AsyncSession
 
         from app.models.template import Template
         from app.repositories import templates as templates_repo

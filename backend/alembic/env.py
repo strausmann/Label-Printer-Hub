@@ -1,11 +1,10 @@
 import asyncio
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
-from alembic import context
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -14,18 +13,15 @@ config = context.config
 # Interpret the config file for Python logging.
 # Skip when configure_logger=False is set in config.attributes (e.g. in tests
 # or when called programmatically to avoid clobbering pytest's caplog handler).
-if config.config_file_name is not None and not config.attributes.get(
-    "configure_logger", True
-):
+if config.config_file_name is not None and not config.attributes.get("configure_logger", True):
     pass  # caller suppressed logging config
 elif config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from sqlmodel import SQLModel
-
-import app.models  # noqa: F401 — registers models with SQLModel.metadata
+import app.models  # noqa: E402, F401 — must follow alembic-config block; F401 keeps the registration import
+from sqlmodel import SQLModel  # noqa: E402 — same reason as above
 
 target_metadata = SQLModel.metadata
 
