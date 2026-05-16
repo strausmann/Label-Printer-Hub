@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import uuid
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -152,12 +151,18 @@ async def test_event_delivered_to_sse_stream() -> None:
     await gen.aclose()
 
     assert len(received_frames) == 1
-    # Extract the data line from the multi-line SSE frame
-    data_line = next(ln for ln in received_frames[0].splitlines() if ln.startswith("data:"))
-    frame_data = json.loads(data_line[len("data:") :].strip())
-    assert frame_data["event_type"] == "job.state_changed"
-    assert frame_data["from_state"] == "queued"
-    assert frame_data["to_state"] == "printing"
+    # After Finding #2 fix: data: carries raw HTML, not a JSON envelope.
+    # Verify via the "event:" line (always present) that the correct event type
+    # was emitted; verify that the data payload contains HTML.
+    lines = received_frames[0].splitlines()
+    event_line = next((ln for ln in lines if ln.startswith("event:")), None)
+    assert event_line is not None, "no event: line in SSE frame"
+    assert "job.state_changed" in event_line
+    data_lines = [ln for ln in lines if ln.startswith("data:")]
+    assert data_lines, "no data: lines in SSE frame"
+    # data payload is raw HTML — must contain '<'
+    combined_data = "\n".join(ln[len("data:"):].lstrip(" ") for ln in data_lines)
+    assert "<" in combined_data, f"data payload must be HTML, got: {combined_data!r}"
 
 
 @pytest.mark.asyncio
@@ -233,14 +238,19 @@ async def test_multichannel_multiplex_all_arrive() -> None:
     bus.publish(tape_channel, tape_event)
 
     # Collect data frames until we have 3 or time out.
-    # SSE data frames are multi-line; check for "data:" line within the frame.
+    # After Finding #2 fix: data: carries raw HTML.  Event type is on event: line.
+    # Collect (event_type, raw_frame) tuples using the "event:" line.
+    received_event_types: list[str] = []
     deadline = asyncio.get_event_loop().time() + 1.5
-    while len(received_frames) < 3 and asyncio.get_event_loop().time() < deadline:
+    while len(received_event_types) < 3 and asyncio.get_event_loop().time() < deadline:
         try:
             frame = await asyncio.wait_for(frame_queue.get(), timeout=0.2)
             if "data:" in frame:
-                data_line = next(ln for ln in frame.splitlines() if ln.startswith("data:"))
-                received_frames.append(json.loads(data_line[len("data:") :].strip()))
+                event_line = next(
+                    (ln for ln in frame.splitlines() if ln.startswith("event:")), None
+                )
+                if event_line:
+                    received_event_types.append(event_line[len("event:"):].strip())
         except TimeoutError:
             continue
 
@@ -250,7 +260,7 @@ async def test_multichannel_multiplex_all_arrive() -> None:
         await pump_task
     await gen.aclose()
 
-    event_types = {e["event_type"] for e in received_frames}
+    event_types = set(received_event_types)
     assert "job.state_changed" in event_types
     assert "printer.status" in event_types
     assert "printer.tape_changed" in event_types
@@ -486,8 +496,98 @@ async def test_render_fragment_unknown_type_returns_empty() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sse_data_line_is_raw_html_not_json() -> None:
+    """SSE data: line must be raw HTML for HTMX sse-swap, not a JSON envelope.
+
+    HTMX sse-swap injects the raw ``data:`` content into the DOM.  When the
+    payload is a JSON string like ``{"html": "<div>...</div>", ...}`` the user
+    sees the JSON literal in the page rather than the rendered fragment.
+
+    This is the regression test for Finding #2 (KRITISCH-2).
+    """
+    import app.api.routes.events as events_module
+
+    printer_id = uuid.uuid4()
+    bus = EventBus(queue_size=8)
+
+    channel = f"printer:{printer_id}:queue"
+    channels = [channel, f"printer:{printer_id}:state", f"printer:{printer_id}:tape"]
+    subscriber_id = "test-sub-raw-html"
+
+    test_event = BusEvent(
+        channel=channel,
+        event_id=1,
+        event_type="job.state_changed",
+        timestamp=datetime.now(UTC),
+        data={
+            "job_id": "j1",
+            "from_state": "queued",
+            "to_state": "printing",
+            "queue_depth": 0,
+            "error_code": None,
+        },
+    )
+
+    disconnect_flag = asyncio.Event()
+
+    async def _is_disconnected() -> bool:
+        return disconnect_flag.is_set()
+
+    mock_request = MagicMock()
+    mock_request.headers = {}
+    mock_request.client = None
+    mock_request.is_disconnected = _is_disconnected
+
+    gen = events_module._sse_stream(printer_id, bus, mock_request, subscriber_id, channels)
+    frame_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def pump() -> None:
+        async for frame in gen:
+            await frame_queue.put(frame)
+
+    pump_task = asyncio.create_task(pump())
+    await asyncio.sleep(0.05)
+    bus.publish(channel, test_event)
+
+    raw_frames: list[str] = []
+    deadline = asyncio.get_event_loop().time() + 0.5
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            frame = await asyncio.wait_for(frame_queue.get(), timeout=0.1)
+            if "data:" in frame:
+                raw_frames.append(frame)
+                break
+        except TimeoutError:
+            continue
+
+    disconnect_flag.set()
+    pump_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await pump_task
+    await gen.aclose()
+
+    assert len(raw_frames) == 1, "expected exactly one data frame"
+    frame = raw_frames[0]
+    # The data: line(s) must be raw HTML, not JSON
+    data_lines = [ln for ln in frame.splitlines() if ln.startswith("data:")]
+    assert data_lines, "no data: lines in SSE frame"
+    # Reconstruct the data payload from potentially multi-line data:
+    data_payload = "\n".join(ln[len("data:"):].lstrip(" ") for ln in data_lines)
+    # Must be HTML (contains '<'), NOT a JSON object
+    assert "<" in data_payload, f"expected HTML in data payload, got: {data_payload!r}"
+    assert not data_payload.strip().startswith("{"), (
+        f"data payload must not be a JSON object, got: {data_payload[:80]!r}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_sse_frame_includes_html_field_from_fragment() -> None:
-    """When fragments exist, SSE data frame includes an html field with rendered content."""
+    """When fragments exist, SSE data frame contains rendered HTML content.
+
+    After Finding #2 fix: data: carries raw HTML directly (not a JSON
+    envelope). We verify that the rendered fragment HTML appears in the
+    concatenated data: lines of the SSE frame.
+    """
     import app.api.routes.events as events_module
 
     printer_id = uuid.uuid4()
@@ -532,14 +632,13 @@ async def test_sse_frame_includes_html_field_from_fragment() -> None:
     await asyncio.sleep(0.05)
     bus.publish(channel, test_event)
 
-    data_frames: list[dict] = []  # type: ignore[type-arg]
+    raw_frames: list[str] = []
     deadline = asyncio.get_event_loop().time() + 0.5
     while asyncio.get_event_loop().time() < deadline:
         try:
             frame = await asyncio.wait_for(frame_queue.get(), timeout=0.1)
             if "data:" in frame:
-                data_line = next(ln for ln in frame.splitlines() if ln.startswith("data:"))
-                data_frames.append(json.loads(data_line[len("data:") :].strip()))
+                raw_frames.append(frame)
                 break
         except TimeoutError:
             continue
@@ -550,10 +649,11 @@ async def test_sse_frame_includes_html_field_from_fragment() -> None:
         await pump_task
     await gen.aclose()
 
-    assert len(data_frames) == 1
-    # With fragments in place, the html field must be non-empty HTML
-    assert "html" in data_frames[0]
-    assert "<" in data_frames[0]["html"]
+    assert len(raw_frames) == 1, "expected exactly one data frame"
+    # After Finding #2 fix: data: carries raw HTML directly (no JSON envelope).
+    data_lines = [ln for ln in raw_frames[0].splitlines() if ln.startswith("data:")]
+    combined_html = "\n".join(ln[len("data:"):].lstrip(" ") for ln in data_lines)
+    assert "<" in combined_html, f"expected HTML in data payload, got: {combined_html!r}"
 
 
 # ---------------------------------------------------------------------------

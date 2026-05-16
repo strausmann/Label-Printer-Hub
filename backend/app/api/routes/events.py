@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
 import uuid
 from collections.abc import AsyncGenerator
@@ -206,17 +205,20 @@ async def _sse_stream(
                         channel=event.channel, subscriber_id=subscriber_id
                     ).inc(dropped)
                 sse_events_published_total.labels(channel=event.channel).inc()
-                data_payload = {
-                    "html": html_fragment,
-                    "event_type": event.event_type,
-                    "timestamp": event.timestamp.isoformat(),
-                    "dropped": dropped,
-                    **event.data,
-                }
+                # Emit raw HTML as the SSE data payload so HTMX sse-swap can
+                # inject it directly into the DOM.  The SSE spec forbids bare
+                # newline characters inside a single data: field; multi-line
+                # HTML is split across multiple "data: " lines (each line is
+                # concatenated with a newline by the browser before injection).
+                # CR characters are stripped to avoid CR+LF ambiguity.
+                clean_html = html_fragment.replace("\r", "")
+                data_lines = "\n".join(
+                    f"data: {line}" for line in clean_html.split("\n")
+                )
                 yield (
                     f"id: {event.event_id}\n"
                     f"event: {event.event_type}\n"
-                    f"data: {json.dumps(data_payload)}\n\n"
+                    f"{data_lines}\n\n"
                 )
     finally:
         sse_active_subscribers.dec()
