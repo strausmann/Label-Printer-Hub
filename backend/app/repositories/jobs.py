@@ -13,6 +13,35 @@ from sqlmodel import col
 from app.models.job import Job, JobState
 
 
+async def get(session: AsyncSession, job_id: UUID) -> Job | None:
+    """Return the Job row for ``job_id``, or ``None`` if not found."""
+    return await session.get(Job, job_id)
+
+
+async def list_by_filter(
+    session: AsyncSession,
+    *,
+    state: str | None = None,
+    printer_id: UUID | None = None,
+    since: datetime | None = None,
+    limit: int = 50,
+) -> list[Job]:
+    """Return jobs matching the optional filters, ordered by creation time.
+
+    All filters are ANDed. ``limit`` caps the result set (default 50).
+    """
+    stmt = select(Job)
+    if state is not None:
+        stmt = stmt.where(col(Job.state) == state)
+    if printer_id is not None:
+        stmt = stmt.where(col(Job.printer_id) == printer_id)
+    if since is not None:
+        stmt = stmt.where(col(Job.created_at) >= since)
+    stmt = stmt.order_by(col(Job.created_at)).limit(limit)
+    result = await session.execute(stmt)
+    return list(result.scalars())
+
+
 async def create_queued(
     session: AsyncSession,
     *,

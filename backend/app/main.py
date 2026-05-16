@@ -32,6 +32,13 @@ from pydantic import BaseModel, ConfigDict
 
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
+from app.api.error_handlers import register_error_handlers
+from app.api.routes import jobs as jobs_routes
+from app.api.routes import lookup as lookup_routes
+from app.api.routes import printers as printers_routes
+from app.api.routes import qr as qr_routes
+from app.api.routes import templates as templates_routes
+from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.print import router as print_router
 from app.config import Settings, get_settings
 from app.db.engine import async_session, engine
@@ -433,7 +440,14 @@ def create_app() -> _LifespanManager:
             repository=HUB_REPO_URL,
         )
 
+    register_error_handlers(app)
     app.include_router(print_router)
+    app.include_router(printers_routes.router)
+    app.include_router(templates_routes.router)
+    app.include_router(jobs_routes.router)
+    app.include_router(lookup_routes.router)
+    app.include_router(webhooks_routes.router)
+    app.include_router(qr_routes.router)
     return _LifespanManager(app)
 
 

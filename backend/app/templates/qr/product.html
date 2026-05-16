@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} — Label Printer Hub</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2em auto; padding: 0 1em; }
+    h1 { font-size: 1.5rem; color: #333; margin-bottom: 0.25em; }
+    .kind { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 1em; }
+    .badge { display: inline-block; padding: 0.2em 0.6em; background: #eef; border-radius: 0.3em; font-family: monospace; font-size: 1rem; }
+    .name { font-size: 1.1rem; margin: 0.75em 0; }
+    a.external { color: #06c; text-decoration: none; }
+    a.external:hover { text-decoration: underline; }
+    .not-found { color: #c00; }
+  </style>
+</head>
+<body>
+  <p class="kind">Product</p>
+  {% if not_found %}
+  <h1 class="not-found">Product not found</h1>
+  <p>No product with ID <span class="badge">{{ entity_id }}</span> was found in Grocy.</p>
+  {% else %}
+  <h1>{{ name }}</h1>
+  <p><span class="badge">{{ entity_id }}</span></p>
+  {% if external_url %}
+  <p class="name"><a class="external" href="{{ external_url }}" target="_blank" rel="noopener">Open in Grocy</a></p>
+  {% endif %}
+  {% endif %}
+</body>
+</html>
