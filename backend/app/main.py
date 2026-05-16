@@ -26,7 +26,7 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel, ConfigDict
 
@@ -53,6 +53,7 @@ from app.printer_backends import BackendRegistry
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
+from app.services.event_bus import EventBus
 from app.services.label_renderer import LabelRenderer
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue
@@ -97,6 +98,9 @@ class Healthz(BaseModel):
     revision: str
     build_date: str
     repository: str
+    sse_active_subscribers: int = 0
+    """Current live SSE subscriber count. Zero when no clients are connected
+    or when the EventBus has not been initialised (pre-lifespan)."""
 
 
 def _pinned_openapi_schema(app: FastAPI) -> Any:
@@ -223,6 +227,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     printer = driver.make_queue_printer(tape_registry)
     queue = PrintQueue(printers=[printer])
     await queue.start()
+
+    # --- SSE EventBus ---
+    event_bus = EventBus(queue_size=settings.sse_queue_size)
+    app.state.event_bus = event_bus
+    # ----- end SSE ------
 
     app.state.print_queue = queue
     app.state.printer_id = printer.id
@@ -425,19 +434,23 @@ def create_app() -> _LifespanManager:
             "Returns 200 OK with a fixed shape. No authentication required. "
             "Used by Docker, Kubernetes, and reverse proxies to decide whether "
             "the backend is up. Has zero dependencies — does not touch the "
-            "database, the printer queue, SNMP, or any integration."
+            "database, the printer queue, SNMP, or any integration. "
+            "``sse_active_subscribers`` reflects the current EventBus subscriber "
+            "count; zero means no live SSE clients or the bus is uninitialised."
         ),
     )
-    async def healthz() -> Healthz:
+    async def healthz(request: Request) -> Healthz:
         # async def avoids the threadpool roundtrip for this hot, dependency-
         # free endpoint. FastAPI runs sync route handlers in a threadpool
         # by default, which is wasted overhead for trivial responders.
+        bus: EventBus | None = getattr(request.app.state, "event_bus", None)
         return Healthz(
             status="ok",
             version=HUB_VERSION,
             revision=HUB_REVISION,
             build_date=HUB_BUILD_DATE,
             repository=HUB_REPO_URL,
+            sse_active_subscribers=bus.total_subscriber_count() if bus else 0,
         )
 
     register_error_handlers(app)
