@@ -409,3 +409,44 @@ async def test_clear_queue_fires_on_state_change_callback() -> None:
     assert len(cancelled_transitions) == 2, (
         f"expected 2 CANCELLED callbacks from clear_queue(), got: {transitions}"
     )
+
+
+# ---------------------------------------------------------------------------
+# resume_printer raises PrinterAlreadyActiveError (Commit B — Issue #67)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resume_printer_raises_when_already_active() -> None:
+    """resume_printer() on an ACTIVE printer must raise PrinterAlreadyActiveError.
+
+    This enforces the documented 409 contract: the route can only return 409
+    if the underlying queue method actually raises on already-active state.
+    """
+    from app.services.print_queue import PrinterAlreadyActiveError
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    queue = PrintQueue([fake_printer])
+
+    # Printer starts ACTIVE — resume again should raise
+    with pytest.raises(PrinterAlreadyActiveError):
+        await queue.resume_printer("pt750w")
+
+
+@pytest.mark.asyncio
+async def test_resume_printer_succeeds_when_paused() -> None:
+    """resume_printer() on a PAUSED printer succeeds without raising."""
+    from app.services.print_queue import PrinterWorkerState
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    queue = PrintQueue([fake_printer])
+
+    # Pause first
+    await queue.pause_printer("pt750w", reason="test")
+    assert queue._worker_states["pt750w"] == PrinterWorkerState.PAUSED
+
+    # Resume must not raise
+    await queue.resume_printer("pt750w")
+    assert queue._worker_states["pt750w"] == PrinterWorkerState.ACTIVE

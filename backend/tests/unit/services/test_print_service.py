@@ -263,6 +263,7 @@ async def test_preflight_mismatch_queue_creates_paused_job(
     # The job starts PAUSED (submit_paused transitions it before registering).
     job = Job(id="job-1", printer_id="pt@x", image_payload=b"", tape_mm=24, options={})
     from app.services.job_lifecycle import JobStateMachine
+
     JobStateMachine.transition(job, JobState.PAUSED)
     queue.submit_paused = AsyncMock(return_value="job-1")
     queue.get.return_value = job
@@ -295,6 +296,7 @@ async def test_preflight_mismatch_queue_none_tape_loaded(
     )
     job = Job(id="job-1", printer_id="pt@x", image_payload=b"", tape_mm=24, options={})
     from app.services.job_lifecycle import JobStateMachine
+
     JobStateMachine.transition(job, JobState.PAUSED)
     queue.submit_paused = AsyncMock(return_value="job-1")
     queue.get.return_value = job
@@ -380,16 +382,17 @@ async def test_tape_mismatch_queue_job_never_enters_asyncio_queue() -> None:
     (qsize() == 1) which the worker could pick up before the PAUSED transition
     completes.
     """
-    import asyncio as _asyncio
 
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.printer_backends.snmp_helper import PreflightStatus
     from app.services.print_queue import PrintQueue
     from app.services.print_service import PrintService
-    from unittest.mock import AsyncMock, MagicMock
     from PIL import Image as _Image
-    from app.printer_backends.snmp_helper import PreflightStatus
 
     class _NeverPrint:
         """Printer that must never be called in this test."""
+
         id = "pt@race"
 
         async def print_image(self, image, *, tape_mm, **kw):
@@ -442,6 +445,7 @@ async def test_tape_mismatch_queue_job_never_enters_asyncio_queue() -> None:
 
     job = await real_queue.get(job_id)
     from app.services.job_lifecycle import JobState
+
     assert job.state == JobState.PAUSED, f"Expected PAUSED, got {job.state}"
     assert job.error_code == "tape_mismatch"
     assert job.error_detail == {"expected_mm": 24, "loaded_mm": 12}

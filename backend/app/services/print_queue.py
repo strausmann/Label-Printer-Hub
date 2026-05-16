@@ -56,6 +56,20 @@ class _StateChangeCallback(Protocol):
 
 logger = logging.getLogger(__name__)
 
+
+class PrinterAlreadyActiveError(Exception):
+    """Raised by resume_printer() when the printer worker is already ACTIVE.
+
+    The route layer maps this to HTTP 409 with error_code='already_active' so
+    clients can distinguish "was paused, now active" (200) from "already active"
+    (409) without relying on response body inspection.
+    """
+
+    def __init__(self, printer_id: str) -> None:
+        super().__init__(f"Printer {printer_id!r} is already active")
+        self.printer_id = printer_id
+
+
 _RECOVERABLE_PRINTER_ERRORS: tuple[type[PrinterError], ...] = (
     TapeMismatchError,
     TapeEmptyError,
@@ -348,9 +362,18 @@ class PrintQueue:
         logger.info("Printer %s paused: %s", printer_id, reason)
 
     async def resume_printer(self, printer_id: str) -> None:
-        """Resume a paused printer worker."""
+        """Resume a paused printer worker.
+
+        Raises:
+            KeyError: if *printer_id* is not known.
+            PrinterAlreadyActiveError: if the printer is already ACTIVE.
+                The route layer maps this to HTTP 409 with
+                ``error_code='already_active'``.
+        """
         if printer_id not in self._worker_states:
             raise KeyError(f"Unknown printer: {printer_id}")
+        if self._worker_states[printer_id] == PrinterWorkerState.ACTIVE:
+            raise PrinterAlreadyActiveError(printer_id)
         self._worker_states[printer_id] = PrinterWorkerState.ACTIVE
         self._worker_resume_events[printer_id].set()
         logger.info("Printer %s resumed", printer_id)
