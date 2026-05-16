@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax. Each task = one commit.
 
-**Goal:** Implement the 20 REST endpoints from `docs/superpowers/specs/2026-05-16-phase6a-rest-api-design.md` (commit `2e038d3`), wired to the Phase 5 DB layer (PR #63, commit `806076f` on `main`).
+**Goal:** Implement the 21 REST endpoints (printers: 7, templates: 1, jobs: 6, lookup: 1, webhooks: 2, qr-landing: 4) from `docs/superpowers/specs/2026-05-16-phase6a-rest-api-design.md` (commit `2e038d3`), wired to the Phase 5 DB layer (PR #63, commit `806076f` on `main`).
 
 **Architecture:** Six new files under `backend/app/api/routes/` (one per aggregate), Pydantic schemas under `backend/app/schemas/`, FastAPI exception handlers in `backend/app/api/error_handlers.py`, webhook API-key dependency in `backend/app/api/dependencies/webhook_auth.py`. Per-router tests in `backend/tests/unit/api/` plus an OpenAPI completeness gate.
 
@@ -20,7 +20,7 @@
 - **No** `Co-Authored-By: Claude` anywhere.
 - TDD-strict per task: failing test → impl → green → commit.
 - Subagents do NOT push. Orchestrator handles push + PR creation.
-- `git commit` with `-c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com"`.
+- `git commit` runs under the repo's normal git config — the orchestrator handles the override author when needed (subagents inherit the orchestrator's git config). Contributors should NOT hardcode any specific name/email in commit example snippets; use `<your-name>` / `<your-email>` placeholders if a literal example is needed.
 
 ---
 
@@ -37,7 +37,7 @@ backend/
 │   │   └── routes/
 │   │       ├── __init__.py
 │   │       ├── print.py                   # MODIFIED (additive only)
-│   │       ├── printers.py                # NEW (6 endpoints)
+│   │       ├── printers.py                # NEW (7 endpoints)
 │   │       ├── templates.py               # NEW (1 endpoint)
 │   │       ├── jobs.py                    # NEW (6 endpoints)
 │   │       ├── lookup.py                  # NEW (1 endpoint)
@@ -80,7 +80,6 @@ backend/
 
 ```python
 # backend/app/schemas/problem.py
-from typing import Any
 from pydantic import BaseModel, Field
 
 
@@ -91,7 +90,7 @@ class ProblemDetail(BaseModel):
     status: int = Field(description="HTTP status code")
     detail: str | None = Field(default=None, description="Human-readable explanation specific to this occurrence")
     instance: str | None = Field(default=None, description="URI reference identifying this specific occurrence")
-    extensions: dict[str, Any] = Field(default_factory=dict, description="Additional problem-type-specific fields")
+    extensions: dict[str, object] = Field(default_factory=dict, description="Additional problem-type-specific fields")
 ```
 
 - [ ] **Step 2: Error handlers**
@@ -117,6 +116,10 @@ _MAPPING = {
     AppLookupNotFoundError: (404, "app-lookup-not-found"),
 }
 
+# Note: invalid job state transitions raise plain ValueError from the Phase 5
+# jobs repository. ValueError is too broad to catch globally — handle it at
+# the route level in jobs.py with a try/except → HTTPException(409, ...).
+
 
 def register_error_handlers(app: FastAPI) -> None:
     for exc_class, (status, problem_type) in _MAPPING.items():
@@ -140,22 +143,28 @@ def _make_handler(status: int, problem_type: str):
 ```python
 # backend/app/api/dependencies/webhook_auth.py
 import hmac
-import os
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
+
+from app.config import Settings, get_settings
 
 
 async def require_webhook_key(
     x_api_key: str = Header(..., alias="X-API-Key"),
+    settings: Settings = Depends(get_settings),
 ) -> None:
-    expected = os.environ.get("LABEL_HUB_WEBHOOK_API_KEY")
+    expected = settings.webhook_api_key
     if not expected:
+        # config.py already validates length >=32 when the field is set;
+        # this branch only fires when the env var is genuinely unset.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Webhook auth not configured (LABEL_HUB_WEBHOOK_API_KEY missing)",
+            detail="Webhook auth not configured (PRINTER_HUB_WEBHOOK_API_KEY missing)",
         )
     if not hmac.compare_digest(x_api_key, expected):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 ```
+
+`Settings` is a cached pydantic-settings object (see `backend/app/config.py`) — `get_settings()` is `@lru_cache`-decorated so the env var is read once at startup, not on every request.
 
 - [ ] **Step 4: Wire `register_error_handlers(app)` in `main.py`** after the lifespan call
 
@@ -170,11 +179,11 @@ async def test_printer_offline_becomes_503_problem_detail():
 
 # test_webhook_auth.py
 async def test_missing_key_returns_503_when_unconfigured(monkeypatch):
-    monkeypatch.delenv("LABEL_HUB_WEBHOOK_API_KEY", raising=False)
+    monkeypatch.delenv("PRINTER_HUB_WEBHOOK_API_KEY", raising=False)
     ...
 
 async def test_wrong_key_returns_401(monkeypatch):
-    monkeypatch.setenv("LABEL_HUB_WEBHOOK_API_KEY", "correct-key")
+    monkeypatch.setenv("PRINTER_HUB_WEBHOOK_API_KEY", "correct-key")
     ...
 ```
 
@@ -201,7 +210,7 @@ Refs #18
 
 ---
 
-## Task 1: Printer routes (6 endpoints)
+## Task 1: Printer routes (7 endpoints)
 
 **Files:**
 - Create: `backend/app/schemas/printer.py` (`PrinterRead`, `PrinterStatus`)
@@ -261,7 +270,7 @@ Implement each handler using:
 - `app.repositories.printer_status_cache` for the status read
 - `app.repositories.jobs` for the queue read
 
-For the `force fresh probe` endpoint, the actual SNMP probe is in `app.services.status_block` — call it and update the cache.
+For the `force fresh probe` endpoint, the actual SNMP probe is in `app.services.status_block` — it parses the Brother PT-series 32-byte status block per the spec in `docs/research/2026-05-10-brother-pt-raster-extract.md` (ESC i S command; see the PT raster reference under §"Status Information"). The current `status_block` helpers are synchronous (network I/O over UDP/SNMP); wrap any call from the async route handler in `asyncio.to_thread(...)` so the FastAPI event loop is not blocked. After parsing, upsert the result into `printer_status_cache` via the Phase 5 repo.
 
 - [ ] **Step 3: Mount router in main.py**
 
@@ -328,7 +337,7 @@ Endpoints:
 |---|---|---|
 | GET | `/api/jobs?state=&printer_id=&since=&limit=50` | filter + paginate |
 | GET | `/api/jobs/{id}` | single |
-| POST | `/api/jobs/{id}/cancel` | `mark_cancelled` from Phase 5 |
+| POST | `/api/jobs/{id}/cancel` | **only QUEUED jobs** — handler pre-checks state and returns 409 ProblemDetail for PRINTING (mid-print abort is unsafe over TCP/9100). Calls `mark_cancelled` after the check. |
 | POST | `/api/jobs/{id}/pause` | 501 placeholder (returns ProblemDetail, status 501) |
 | POST | `/api/jobs/{id}/resume` | 501 placeholder |
 | POST | `/api/jobs/{id}/retry` | clone the failed job → new queued |
