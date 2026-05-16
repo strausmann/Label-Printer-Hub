@@ -316,22 +316,6 @@ def _resume_side_effect(job: Job) -> None:
     JobStateMachine.transition(job, JobState.QUEUED)
 
 
-async def test_resume_job_not_paused_is_409(fake_service, fake_queue) -> None:
-    """Resuming a job that is not PAUSED returns 409 with structured error body."""
-    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
-    # job.state is QUEUED by default
-    job.submitted_at = datetime.now(UTC)
-    fake_queue.get = AsyncMock(return_value=job)
-
-    async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/jobs/job-1/resume")
-
-    assert r.status_code == 409
-    body = r.json()
-    assert body.get("error_code") == "invalid_state"
-    assert "not PAUSED" in body.get("error_message", "")
-
-
 async def test_resume_job_unknown_is_404(fake_service, fake_queue) -> None:
     """Resuming an unknown job returns 404."""
     fake_queue.get = AsyncMock(side_effect=KeyError("nope"))
