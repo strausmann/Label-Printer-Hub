@@ -92,7 +92,7 @@ async def _make_printer(session: AsyncSession, name: str | None = None) -> Print
         name=name or f"test-printer-{_printer_counter}",
         model="pt-series",
         backend="ptouch",
-        connection={"host": "192.168.1.10", "port": 9100},
+        connection={"host": "198.51.100.10", "port": 9100},
     )
     session.add(p)
     await session.commit()

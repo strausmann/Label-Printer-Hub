@@ -79,7 +79,7 @@ async def _seed_printer(session: AsyncSession) -> Printer:
         name="Default Printer",
         model="PT-P750W",
         backend="ptouch",
-        connection={"host": "192.168.1.100", "port": 9100},
+        connection={"host": "198.51.100.100", "port": 9100},
         enabled=True,
     )
     session.add(printer)

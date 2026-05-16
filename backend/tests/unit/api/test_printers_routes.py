@@ -92,7 +92,7 @@ async def _make_printer(session: AsyncSession, **kwargs: Any) -> Printer:
         "name": "test-printer",
         "model": "pt-series",
         "backend": "ptouch",
-        "connection": {"host": "192.168.1.10", "port": 9100},
+        "connection": {"host": "198.51.100.10", "port": 9100},
     }
     defaults.update(kwargs)
     p = Printer(**defaults)
