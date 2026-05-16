@@ -374,3 +374,183 @@ async def test_cancel_safety_unsubscribes_on_disconnect() -> None:
     # After generator exit, all channel subscriber counts must be back to zero
     total_after = sum(bus.subscriber_count(ch) for ch in channels)
     assert total_after == 0
+
+
+# ---------------------------------------------------------------------------
+# T6: _render_fragment + Jinja2 fragment template tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_render_fragment_job_state_returns_html() -> None:
+    """job.state_changed event renders a non-empty HTML fragment containing to_state."""
+    from app.api.routes.events import _render_fragment
+
+    event = BusEvent(
+        channel="printer:x:queue",
+        event_id=1,
+        event_type="job.state_changed",
+        timestamp=datetime.now(UTC),
+        data={
+            "job_id": "j1",
+            "from_state": "queued",
+            "to_state": "printing",
+            "queue_depth": 2,
+            "error_code": None,
+        },
+    )
+    html = await _render_fragment(event)
+    assert "<" in html  # non-empty HTML fragment
+    assert "printing" in html
+
+
+@pytest.mark.asyncio
+async def test_render_fragment_printer_status_online() -> None:
+    """printer.status online event renders status-online CSS class."""
+    from app.api.routes.events import _render_fragment
+
+    event = BusEvent(
+        channel="printer:x:state",
+        event_id=1,
+        event_type="printer.status",
+        timestamp=datetime.now(UTC),
+        data={"hr_printer_status": "idle", "error_flags": [], "online": True},
+    )
+    html = await _render_fragment(event)
+    assert "Idle" in html or "idle" in html  # Jinja2 | title capitalises first letter
+    assert "status-online" in html
+
+
+@pytest.mark.asyncio
+async def test_render_fragment_printer_status_offline() -> None:
+    """printer.status offline event renders status-offline CSS class."""
+    from app.api.routes.events import _render_fragment
+
+    event = BusEvent(
+        channel="printer:x:state",
+        event_id=1,
+        event_type="printer.status",
+        timestamp=datetime.now(UTC),
+        data={"hr_printer_status": "other", "error_flags": ["doorOpen"], "online": False},
+    )
+    html = await _render_fragment(event)
+    assert "status-offline" in html
+
+
+@pytest.mark.asyncio
+async def test_render_fragment_tape_changed() -> None:
+    """printer.tape_changed event renders tape label in fragment."""
+    from app.api.routes.events import _render_fragment
+
+    event = BusEvent(
+        channel="printer:x:tape",
+        event_id=1,
+        event_type="printer.tape_changed",
+        timestamp=datetime.now(UTC),
+        data={"from_mm": 12, "to_mm": 24, "tape_label": "24mm"},
+    )
+    html = await _render_fragment(event)
+    assert "24mm" in html
+
+
+@pytest.mark.asyncio
+async def test_render_fragment_tape_removed() -> None:
+    """printer.tape_changed with to_mm=None renders 'no tape' message."""
+    from app.api.routes.events import _render_fragment
+
+    event = BusEvent(
+        channel="printer:x:tape",
+        event_id=1,
+        event_type="printer.tape_changed",
+        timestamp=datetime.now(UTC),
+        data={"from_mm": 12, "to_mm": None, "tape_label": None},
+    )
+    html = await _render_fragment(event)
+    assert "No tape" in html or "no tape" in html.lower()
+
+
+@pytest.mark.asyncio
+async def test_render_fragment_unknown_type_returns_empty() -> None:
+    """Unknown event type returns empty string (safe fallback)."""
+    from app.api.routes.events import _render_fragment
+
+    event = BusEvent(
+        channel="printer:x:other",
+        event_id=1,
+        event_type="unknown.type",
+        timestamp=datetime.now(UTC),
+        data={},
+    )
+    html = await _render_fragment(event)
+    assert html == ""
+
+
+@pytest.mark.asyncio
+async def test_sse_frame_includes_html_field_from_fragment() -> None:
+    """When fragments exist, SSE data frame includes an html field with rendered content."""
+    import app.api.routes.events as events_module
+
+    printer_id = uuid.uuid4()
+    bus = EventBus(queue_size=8)
+
+    channel = f"printer:{printer_id}:queue"
+    channels = [channel, f"printer:{printer_id}:state", f"printer:{printer_id}:tape"]
+    subscriber_id = "test-sub-html-field"
+
+    test_event = BusEvent(
+        channel=channel,
+        event_id=1,
+        event_type="job.state_changed",
+        timestamp=datetime.now(UTC),
+        data={
+            "job_id": "j1",
+            "from_state": "queued",
+            "to_state": "printing",
+            "queue_depth": 0,
+            "error_code": None,
+        },
+    )
+
+    disconnect_flag = asyncio.Event()
+
+    async def _is_disconnected() -> bool:
+        return disconnect_flag.is_set()
+
+    mock_request = MagicMock()
+    mock_request.headers = {}
+    mock_request.client = None
+    mock_request.is_disconnected = _is_disconnected
+
+    gen = events_module._sse_stream(printer_id, bus, mock_request, subscriber_id, channels)
+    frame_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def pump() -> None:
+        async for frame in gen:
+            await frame_queue.put(frame)
+
+    pump_task = asyncio.create_task(pump())
+    await asyncio.sleep(0.05)
+    bus.publish(channel, test_event)
+
+    data_frames: list[dict] = []  # type: ignore[type-arg]
+    deadline = asyncio.get_event_loop().time() + 0.5
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            frame = await asyncio.wait_for(frame_queue.get(), timeout=0.1)
+            if "data:" in frame:
+                data_line = next(ln for ln in frame.splitlines() if ln.startswith("data:"))
+                data_frames.append(json.loads(data_line[len("data:") :].strip()))
+                break
+        except TimeoutError:
+            continue
+
+    disconnect_flag.set()
+    pump_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await pump_task
+    await gen.aclose()
+
+    assert len(data_frames) == 1
+    # With fragments in place, the html field must be non-empty HTML
+    assert "html" in data_frames[0]
+    assert "<" in data_frames[0]["html"]

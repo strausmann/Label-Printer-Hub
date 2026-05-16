@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.services.event_bus import BusEvent, EventBus
 from app.services.producers.status_probe_producer import StatusProbeProducer

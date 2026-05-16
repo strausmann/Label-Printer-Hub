@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.services.event_bus import BusEvent, EventBus
 from app.services.producers.tape_change_producer import TapeChangeProducer

@@ -1,0 +1,10 @@
+<div class="job-state-fragment">
+  <span class="state-badge state-{{ to_state }}">{{ to_state | replace('_', ' ') | title }}</span>
+  {% if queue_depth > 0 %}
+  <span class="queue-depth">{{ queue_depth }} job{% if queue_depth != 1 %}s{% endif %} queued</span>
+  {% endif %}
+  {% if error_code %}
+  <span class="error-code">Error: {{ error_code }}</span>
+  {% endif %}
+  <small class="ts">{{ timestamp }}</small>
+</div>

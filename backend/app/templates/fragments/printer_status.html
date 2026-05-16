@@ -1,0 +1,9 @@
+<div class="printer-status-fragment">
+  <span class="status-badge {% if online %}status-online{% else %}status-offline{% endif %}">
+    {{ hr_printer_status | replace('_', ' ') | title }}
+  </span>
+  {% if error_flags %}
+  <span class="error-flags">{{ error_flags | join(', ') }}</span>
+  {% endif %}
+  <small class="ts">{{ timestamp }}</small>
+</div>

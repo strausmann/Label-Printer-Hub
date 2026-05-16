@@ -1,0 +1,10 @@
+<div class="tape-status-fragment">
+  {% if to_mm is not none %}
+  <span class="tape-badge">
+    {{ tape_label if tape_label else (to_mm | string + 'mm') }} loaded
+  </span>
+  {% else %}
+  <span class="tape-badge tape-empty">No tape loaded</span>
+  {% endif %}
+  <small class="ts">{{ timestamp }}</small>
+</div>
