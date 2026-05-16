@@ -1,0 +1,7 @@
+{{define "error-content"}}
+<div class="flex flex-col items-center justify-center py-24 gap-4">
+  <h1 class="text-2xl font-semibold text-content">{{.StatusCode}} &mdash; {{.StatusText}}</h1>
+  <p class="text-content-secondary">{{.Error}}</p>
+  <a href="/" class="text-primary hover:underline">Back to Dashboard</a>
+</div>
+{{end}}
