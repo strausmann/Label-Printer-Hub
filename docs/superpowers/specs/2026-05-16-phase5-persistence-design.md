@@ -97,14 +97,14 @@ Each table below ships in the initial Alembic migration (one revision, named `ph
 |---|---|---|
 | `id` | UUID PK | server-generated |
 | `name` | TEXT NOT NULL UNIQUE | human-readable, unique |
-| `model` | TEXT NOT NULL | matches printer_models entry-point name (`pt-series`, `ql-series`) |
-| `backend` | TEXT NOT NULL | matches printer_backends entry-point (`ptouch`, `qlserver`, `mock`) |
+| `model` | TEXT NOT NULL | matches a `label_hub.printer_models` entry-point — currently only `pt-series` is registered; `ql-series` will be added in Phase 2 follow-up (#11) |
+| `backend` | TEXT NOT NULL | matches a `label_hub.printer_backends` entry-point — currently `mock` and `ptouch`; QL backend lands with #11 |
 | `connection` | JSON NOT NULL | backend-specific config (IP, port, USB-id) |
 | `enabled` | BOOLEAN NOT NULL DEFAULT TRUE | soft-disable |
 | `created_at` | DATETIME NOT NULL | UTC |
 | `updated_at` | DATETIME NOT NULL | UTC, autoupdate |
 
-Why JSON for `connection`: the field is backend-specific (e.g. `{"ip": "192.168.50.42", "port": 9100}` for QL-820NWBc vs `{"interface": "usb", "serial": "..."}` for P750W). Keeping it opaque to the DB layer keeps the schema stable across backend additions.
+Why JSON for `connection`: the field is backend-specific (e.g. `{"ip": "printer.local", "port": 9100}` for QL-820NWBc vs `{"interface": "usb", "serial": "..."}` for P750W). Keeping it opaque to the DB layer keeps the schema stable across backend additions.
 
 #### `templates`
 

@@ -6,7 +6,7 @@
 
 **Architecture:** Six SQLModel tables in `backend/app/models/`, async engine + session in `backend/app/db/`, repository functions per aggregate, Alembic migrations bootstrapped, lifespan-driven seed + recovery.
 
-**Tech Stack:** Python 3.12 + SQLModel + aiosqlite + Alembic + Vitest-equivalent (pytest + pytest-asyncio).
+**Tech Stack:** Python 3.12 + SQLModel + aiosqlite + Alembic + pytest + pytest-asyncio.
 
 **Tracking:** Issue #19 (per `Refs #19` in every commit body).
 
@@ -20,6 +20,10 @@
 - **No** `Co-Authored-By: Claude` anywhere.
 - Subagents do NOT push. Orchestrator handles push + PR.
 - TDD-strict per task: failing test → impl → green → commit.
+
+## Cross-cutting reminder for every model task (Tasks 1–6)
+
+**Every new model class MUST be exported from `backend/app/models/__init__.py`** before running `alembic revision --autogenerate`. The Alembic `env.py` does `import app.models` to register tables with `SQLModel.metadata`; if a class is not re-exported there, autogenerate produces an **empty** migration and the table silently disappears from the schema. Each model task below includes an explicit edit step for the package init file.
 
 ---
 
@@ -371,8 +375,10 @@ from app.repositories import printers
 
 @pytest.mark.asyncio
 async def test_create_and_get_by_name(session):
-    p = Printer(name="ql820-office", model="ql-series", backend="qlserver",
-                connection={"ip": "192.168.50.42", "port": 9100})
+    # Use registered entry-points; pt-series + ptouch are the only ones
+    # available pre-Phase-2-followup (#11 adds ql-series + QL backend).
+    p = Printer(name="pt-office", model="pt-series", backend="ptouch",
+                connection={"interface": "usb", "serial": "0000G0Z123456"})
     created = await printers.create(session, p)
     assert created.id is not None
     found = await printers.get_by_name(session, "ql820-office")
@@ -381,10 +387,12 @@ async def test_create_and_get_by_name(session):
 
 @pytest.mark.asyncio
 async def test_unique_name(session):
-    a = Printer(name="dup", model="ql-series", backend="qlserver", connection={})
+    from sqlalchemy.exc import IntegrityError
+
+    a = Printer(name="dup", model="pt-series", backend="ptouch", connection={})
     b = Printer(name="dup", model="pt-series", backend="ptouch", connection={})
     await printers.create(session, a)
-    with pytest.raises(Exception):  # IntegrityError, SQLAlchemy variant
+    with pytest.raises(IntegrityError):
         await printers.create(session, b)
 ```
 
@@ -646,7 +654,7 @@ class Job(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     printer_id: UUID = Field(foreign_key="printers.id")
     template_key: str  # snapshot — survives template delete
-    state: JobState = Field(default=JobState.QUEUED, index=True)
+    state: JobState = Field(default=JobState.QUEUED)
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
     result: dict | None = Field(default=None, sa_column=Column(JSON))
     error: str | None = None
@@ -734,8 +742,21 @@ Refs #19
 ```python
 # backend/app/db/lifespan.py
 async def run_migrations() -> None:
-    """Apply pending Alembic migrations programmatically."""
-    # Use alembic.command.upgrade(config, "head") with an in-process Config
+    """Apply pending Alembic migrations programmatically.
+
+    Alembic's command module is synchronous and performs blocking I/O.
+    Run it in a worker thread so it does not block the FastAPI event
+    loop during startup.
+    """
+    import asyncio
+    from alembic import command
+    from alembic.config import Config
+
+    def _upgrade() -> None:
+        cfg = Config("backend/alembic.ini")
+        command.upgrade(cfg, "head")
+
+    await asyncio.to_thread(_upgrade)
 
 
 async def recover_inflight_jobs(session) -> int:
@@ -743,7 +764,7 @@ async def recover_inflight_jobs(session) -> int:
 
 
 async def seed_templates(session, loader: TemplateLoader) -> int:
-    rows = [_to_template_model(t) for t in loader.list_all()]
+    rows = [_to_template_model(t) for t in loader.all().values()]
     return await templates_repo.upsert_seed(session, rows)
 
 
