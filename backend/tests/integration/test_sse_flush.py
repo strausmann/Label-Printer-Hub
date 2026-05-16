@@ -172,20 +172,25 @@ async def test_heartbeat_arrives_after_silence() -> None:
 
     heartbeat_override = 0.1  # seconds
 
-    original = events_mod._HEARTBEAT_INTERVAL_S
-    events_mod._HEARTBEAT_INTERVAL_S = heartbeat_override
+    gen = events_mod._sse_stream(
+        printer_id,
+        bus,
+        request,
+        subscriber_id,
+        channels,
+        heartbeat_interval_s=heartbeat_override,
+    )
+
+    frame_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def pump() -> None:
+        async for frame in gen:
+            await frame_queue.put(frame)
+
+    pump_task = asyncio.create_task(pump())
+    connect_time = time.monotonic()
+
     try:
-        gen = events_mod._sse_stream(printer_id, bus, request, subscriber_id, channels)
-
-        frame_queue: asyncio.Queue[str] = asyncio.Queue()
-
-        async def pump() -> None:
-            async for frame in gen:
-                await frame_queue.put(frame)
-
-        pump_task = asyncio.create_task(pump())
-        connect_time = time.monotonic()
-
         keepalive_time: list[float] = []
         # Wait up to 1.0 s for the keepalive frame
         deadline = asyncio.get_event_loop().time() + 1.0
@@ -206,8 +211,13 @@ async def test_heartbeat_arrives_after_silence() -> None:
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await pump_task
         await gen.aclose()
-    finally:
-        events_mod._HEARTBEAT_INTERVAL_S = original
+    except Exception:
+        request._disconnect_flag.set()
+        pump_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await pump_task
+        await gen.aclose()
+        raise
 
     assert keepalive_time, "no keepalive frame received within 1 s"
     elapsed = keepalive_time[0] - connect_time
@@ -245,26 +255,28 @@ async def test_idle_timeout_closes_stream() -> None:
     subscriber_id = "flush-test-idle"
     request = _mock_request()
 
-    orig_heartbeat = events_mod._HEARTBEAT_INTERVAL_S
-    orig_idle = events_mod._IDLE_TIMEOUT_S
-    events_mod._HEARTBEAT_INTERVAL_S = 0.05
-    events_mod._IDLE_TIMEOUT_S = 0.5
+    gen = events_mod._sse_stream(
+        printer_id,
+        bus,
+        request,
+        subscriber_id,
+        channels,
+        heartbeat_interval_s=0.05,
+        idle_timeout_s=0.5,
+    )
+
+    pump_done = asyncio.Event()
+
+    async def pump() -> None:
+        async for _frame in gen:
+            pass  # drain all frames until generator exits
+        pump_done.set()
+
+    pump_task = asyncio.create_task(pump())
     try:
-        gen = events_mod._sse_stream(printer_id, bus, request, subscriber_id, channels)
-
-        pump_done = asyncio.Event()
-
-        async def pump() -> None:
-            async for _frame in gen:
-                pass  # drain all frames until generator exits
-            pump_done.set()
-
-        pump_task = asyncio.create_task(pump())
         # Give the server up to 3 s to close the idle stream
         await asyncio.wait_for(pump_done.wait(), timeout=3.0)
     finally:
-        events_mod._HEARTBEAT_INTERVAL_S = orig_heartbeat
-        events_mod._IDLE_TIMEOUT_S = orig_idle
         # Cancel any lingering pump task
         pump_task.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):

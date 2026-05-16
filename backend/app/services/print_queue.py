@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Callable
 from enum import StrEnum
 from io import BytesIO
 from typing import Any, Protocol, runtime_checkable
@@ -40,6 +39,20 @@ from app.services.job_lifecycle import (
     JobState,
     JobStateMachine,
 )
+
+
+# Callback type: called after each state transition.  The optional queue_depth
+# kwarg carries the number of non-terminal jobs still in the printer queue at
+# the moment of the transition so the event payload reflects the real queue size.
+class _StateChangeCallback(Protocol):
+    def __call__(
+        self,
+        job: Job,
+        from_state: JobState,
+        to_state: JobState,
+        queue_depth: int = ...,
+    ) -> None: ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +118,7 @@ class PrintQueue:
     def __init__(
         self,
         printers: list[_PrinterLike],
-        on_state_change: Callable[[Job, JobState, JobState], None] | None = None,
+        on_state_change: _StateChangeCallback | None = None,
     ) -> None:
         self._on_state_change = on_state_change
         self._printers: dict[str, _PrinterLike] = {p.id: p for p in printers}
@@ -197,6 +210,13 @@ class PrintQueue:
         self._jobs[job.id] = job
         await self._queues[printer_id].put(job)
         logger.info("Job %s queued on %s", job.id, printer_id)
+        # Notify after enqueue so the depth count includes the new job (Finding #7).
+        self._notify_state_change(
+            job,
+            JobState.QUEUED,
+            JobState.QUEUED,
+            queue_depth=self._queue_depth(printer_id),
+        )
         return job.id
 
     async def get(self, job_id: str) -> Job:
@@ -216,10 +236,17 @@ class PrintQueue:
         job = self._jobs[job_id]
         if job.state not in (JobState.QUEUED, JobState.PAUSED):
             return False
+        from_state = job.state
         try:
             JobStateMachine.transition(job, JobState.CANCELLED)
         except InvalidStateTransitionError:
             return False
+        self._notify_state_change(
+            job,
+            from_state,
+            JobState.CANCELLED,
+            queue_depth=self._queue_depth(job.printer_id),
+        )
         return True
 
     async def pause_job(self, job_id: str) -> bool:
@@ -228,6 +255,12 @@ class PrintQueue:
         if job.state != JobState.QUEUED:
             return False
         JobStateMachine.transition(job, JobState.PAUSED)
+        self._notify_state_change(
+            job,
+            JobState.QUEUED,
+            JobState.PAUSED,
+            queue_depth=self._queue_depth(job.printer_id),
+        )
         return True
 
     async def resume_job(self, job_id: str) -> bool:
@@ -245,6 +278,12 @@ class PrintQueue:
             return False
         JobStateMachine.transition(job, JobState.QUEUED)
         await self._queues[job.printer_id].put(job)
+        self._notify_state_change(
+            job,
+            JobState.PAUSED,
+            JobState.QUEUED,
+            queue_depth=self._queue_depth(job.printer_id),
+        )
         return True
 
     async def retry_job(self, job_id: str) -> str | None:
@@ -283,6 +322,17 @@ class PrintQueue:
         self._worker_resume_events[printer_id].set()
         logger.info("Printer %s resumed", printer_id)
 
+    def _queue_depth(self, printer_id: str) -> int:
+        """Count non-terminal jobs for *printer_id* (QUEUED + PAUSED + PRINTING).
+
+        O(N) over all-time jobs — acceptable at MVP scale. Used to populate
+        the queue_depth field in job.state_changed SSE events (Finding #6).
+        """
+        non_terminal = (JobState.QUEUED, JobState.PAUSED, JobState.PRINTING)
+        return sum(
+            1 for j in self._jobs.values() if j.printer_id == printer_id and j.state in non_terminal
+        )
+
     async def list_queue(self, printer_id: str) -> list[Job]:
         """All non-terminal jobs for a printer (queued + paused + printing).
 
@@ -310,14 +360,32 @@ class PrintQueue:
                 JobState.QUEUED,
                 JobState.PAUSED,
             ):
+                from_state = job.state
                 JobStateMachine.transition(job, JobState.CANCELLED)
                 cancelled += 1
+                self._notify_state_change(
+                    job,
+                    from_state,
+                    JobState.CANCELLED,
+                    queue_depth=self._queue_depth(printer_id),
+                )
         return cancelled
 
     # --- worker loop -------------------------------------------------------
 
-    def _notify_state_change(self, job: Job, from_state: JobState, to_state: JobState) -> None:
+    def _notify_state_change(
+        self,
+        job: Job,
+        from_state: JobState,
+        to_state: JobState,
+        queue_depth: int = 0,
+    ) -> None:
         """Call the on_state_change callback if one is registered.
+
+        ``queue_depth`` is the number of non-terminal jobs in the printer queue
+        at the moment of the transition.  It is passed through to the callback
+        (PrintQueueProducer.handle_transition) so the SSE event payload carries
+        the real queue size rather than always 0 (Finding #6).
 
         Guarded with try/except so a bug in the callback never crashes the
         worker. The callback is expected to be PrintQueueProducer.handle_transition
@@ -325,7 +393,7 @@ class PrintQueue:
         """
         if self._on_state_change is not None:
             try:
-                self._on_state_change(job, from_state, to_state)
+                self._on_state_change(job, from_state, to_state, queue_depth=queue_depth)
             except Exception:
                 logger.exception(
                     "on_state_change callback raised for job=%s %s->%s",
@@ -366,7 +434,12 @@ class PrintQueue:
             try:
                 _from = job.state
                 JobStateMachine.transition(job, JobState.PRINTING)
-                self._notify_state_change(job, _from, JobState.PRINTING)
+                self._notify_state_change(
+                    job,
+                    _from,
+                    JobState.PRINTING,
+                    queue_depth=self._queue_depth(printer_id),
+                )
                 if job.tape_mm is None:
                     raise RuntimeError(
                         f"Job {job.id} has no tape_mm — submit() and retry_job() must populate it"
@@ -377,7 +450,12 @@ class PrintQueue:
                 await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
                 _from = job.state
                 JobStateMachine.transition(job, JobState.COMPLETED)
-                self._notify_state_change(job, _from, JobState.COMPLETED)
+                self._notify_state_change(
+                    job,
+                    _from,
+                    JobState.COMPLETED,
+                    queue_depth=self._queue_depth(printer_id),
+                )
                 logger.info("Job %s completed on %s", job.id, printer_id)
             except asyncio.CancelledError:
                 # Forcible cancel after stop() timeout — re-raise so the task exits.
@@ -391,7 +469,12 @@ class PrintQueue:
                 _from = job.state
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
-                    self._notify_state_change(job, _from, JobState.FAILED)
+                    self._notify_state_change(
+                        job,
+                        _from,
+                        JobState.FAILED,
+                        queue_depth=self._queue_depth(printer_id),
+                    )
                 except InvalidStateTransitionError:
                     logger.warning(
                         "Job %s: unexpected state %s after PrinterError; error was: %s",
@@ -410,7 +493,12 @@ class PrintQueue:
                 _from = job.state
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
-                    self._notify_state_change(job, _from, JobState.FAILED)
+                    self._notify_state_change(
+                        job,
+                        _from,
+                        JobState.FAILED,
+                        queue_depth=self._queue_depth(printer_id),
+                    )
                 except InvalidStateTransitionError:
                     # Job was already moved to a terminal state externally.
                     logger.warning(

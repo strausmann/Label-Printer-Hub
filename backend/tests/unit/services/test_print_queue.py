@@ -276,3 +276,129 @@ async def test_worker_records_printer_error_fields() -> None:
         assert job.error_detail == {"expected_mm": 24, "loaded_mm": 12}
     finally:
         await queue.stop(timeout_s=2.0)
+
+
+# ---------------------------------------------------------------------------
+# Finding #7 — on_state_change callback must fire for ALL transitions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_submit_fires_on_state_change_callback() -> None:
+    """submit() must fire the on_state_change callback for QUEUED transition.
+
+    Bug (Finding #7): the callback was only called from the worker loop
+    (QUEUED→PRINTING, PRINTING→COMPLETED/FAILED).  User-driven transitions
+    like submit() never fired it, so live SSE pages stayed stale.
+    """
+    transitions: list[tuple[str, str]] = []
+
+    def _cb(job, from_state, to_state, queue_depth=0):
+        transitions.append((from_state.value, to_state.value))
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    queue = PrintQueue([fake_printer], on_state_change=_cb)
+
+    img = Image.new("1", (300, 76))
+    await queue.submit("pt750w", img, tape_mm=12)
+
+    # submit() must fire the callback with to_state=QUEUED immediately
+    assert any(to == "queued" for _, to in transitions), (
+        f"expected a QUEUED transition callback from submit(), got: {transitions}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_pause_job_fires_on_state_change_callback() -> None:
+    """pause_job() must fire the on_state_change callback for PAUSED transition."""
+    transitions: list[tuple[str, str]] = []
+
+    def _cb(job, from_state, to_state, queue_depth=0):
+        transitions.append((from_state.value, to_state.value))
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    queue = PrintQueue([fake_printer], on_state_change=_cb)
+
+    img = Image.new("1", (300, 76))
+    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    transitions.clear()  # ignore submit() callback
+
+    result = await queue.pause_job(job_id)
+    assert result is True
+    assert any(to == "paused" for _, to in transitions), (
+        f"expected a PAUSED transition callback from pause_job(), got: {transitions}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_resume_job_fires_on_state_change_callback() -> None:
+    """resume_job() must fire the on_state_change callback for QUEUED transition."""
+    transitions: list[tuple[str, str]] = []
+
+    def _cb(job, from_state, to_state, queue_depth=0):
+        transitions.append((from_state.value, to_state.value))
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    queue = PrintQueue([fake_printer], on_state_change=_cb)
+
+    img = Image.new("1", (300, 76))
+    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    await queue.pause_job(job_id)
+    transitions.clear()  # ignore previous callbacks
+
+    result = await queue.resume_job(job_id)
+    assert result is True
+    assert any(to == "queued" for _, to in transitions), (
+        f"expected a QUEUED transition callback from resume_job(), got: {transitions}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cancel_fires_on_state_change_callback() -> None:
+    """cancel() must fire the on_state_change callback for CANCELLED transition."""
+    transitions: list[tuple[str, str]] = []
+
+    def _cb(job, from_state, to_state, queue_depth=0):
+        transitions.append((from_state.value, to_state.value))
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    queue = PrintQueue([fake_printer], on_state_change=_cb)
+
+    img = Image.new("1", (300, 76))
+    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    transitions.clear()
+
+    result = await queue.cancel(job_id)
+    assert result is True
+    assert any(to == "cancelled" for _, to in transitions), (
+        f"expected a CANCELLED transition callback from cancel(), got: {transitions}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_clear_queue_fires_on_state_change_callback() -> None:
+    """clear_queue() must fire the on_state_change callback for each CANCELLED job."""
+    transitions: list[tuple[str, str]] = []
+
+    def _cb(job, from_state, to_state, queue_depth=0):
+        transitions.append((from_state.value, to_state.value))
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    queue = PrintQueue([fake_printer], on_state_change=_cb)
+
+    img = Image.new("1", (300, 76))
+    await queue.submit("pt750w", img, tape_mm=12)
+    await queue.submit("pt750w", img, tape_mm=12)
+    transitions.clear()
+
+    count = await queue.clear_queue("pt750w")
+    assert count == 2
+    cancelled_transitions = [t for t in transitions if t[1] == "cancelled"]
+    assert len(cancelled_transitions) == 2, (
+        f"expected 2 CANCELLED callbacks from clear_queue(), got: {transitions}"
+    )
