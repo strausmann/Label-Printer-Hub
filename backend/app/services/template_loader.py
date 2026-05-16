@@ -119,3 +119,50 @@ class TemplateLoader:
         set.
         """
         cls.load_dir(directory)  # load_dir is now atomic — same semantics
+
+    @classmethod
+    async def seed_db(cls, session: object) -> int:
+        """Idempotent YAML-to-DB upsert: convert every cached TemplateSchema
+        to a ``Template`` row with ``source='seed'`` and call
+        ``templates_repo.upsert_seed``.
+
+        Mapping (TemplateSchema → Template column):
+
+        ============== =====================================================
+        schema.id      Template.key — stable identifier
+        schema.name    Template.name
+        schema.app     Template.app (None for generic templates)
+        schema.tape_mm Template.tape_width_mm
+        schema.schema_version Template.schema_version
+        "pt-series"    Template.printer_model (seed YAMLs are PT-series)
+        schema.model_dump() Template.definition — serialised body
+        ============== =====================================================
+
+        User-created templates (``source='user'``) are never overwritten;
+        the repository guarantees that contract.
+
+        Returns the count of rows inserted or updated.
+        """
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.models.template import Template
+        from app.repositories import templates as templates_repo
+
+        rows: list[Template] = [
+            Template(
+                key=schema.id,
+                name=schema.name,
+                app=schema.app,
+                printer_model="pt-series",
+                tape_width_mm=schema.tape_mm,
+                schema_version=schema.schema_version,
+                definition=schema.model_dump(),
+                source="seed",
+            )
+            for schema in cls._cache.values()
+        ]
+
+        return await templates_repo.upsert_seed(
+            session,  # type: ignore[arg-type]
+            rows,
+        )

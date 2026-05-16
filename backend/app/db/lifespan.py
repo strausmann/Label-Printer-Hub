@@ -59,44 +59,17 @@ async def recover_inflight_jobs(session: AsyncSession) -> int:
 
 
 async def seed_templates(session: AsyncSession, loader: object) -> int:
-    """Idempotent YAML → DB upsert for seed templates.
+    """Idempotent YAML → DB upsert, delegated to ``loader.seed_db(session)``.
 
-    Converts each TemplateSchema from the loader's in-memory cache into a
-    Template model row with source='seed' and calls the templates repository
-    upsert function.
-
-    The mapping from TemplateSchema → Template row:
-      - schema.id        → Template.key
-      - schema.name      → Template.name
-      - schema.app       → Template.app  (None for generic templates)
-      - schema.tape_mm   → Template.tape_width_mm
-      - schema.schema_version → Template.schema_version
-      - "pt-series"      → Template.printer_model (seed templates are PT-series)
-      - schema.model_dump() → Template.definition  (full serialised body)
+    The conversion logic lives on ``TemplateLoader.seed_db`` (Task 8) so
+    there is a single source of truth for the TemplateSchema → Template
+    column mapping.  This function exists only as a named startup step that
+    main.py can call by name, and is the natural seam for unit tests that
+    want to inject a mock loader without touching the real registry.
 
     Returns the count of rows touched (inserted or updated).
     """
-    from app.models.template import Template
-    from app.repositories import templates as templates_repo
-    from app.services.template_loader import TemplateLoader
-
-    the_loader: TemplateLoader = loader  # type: ignore[assignment]
-
-    rows: list[Template] = []
-    for schema in the_loader.all().values():
-        row = Template(
-            key=schema.id,
-            name=schema.name,
-            app=schema.app,
-            printer_model="pt-series",
-            tape_width_mm=schema.tape_mm,
-            schema_version=schema.schema_version,
-            definition=schema.model_dump(),
-            source="seed",
-        )
-        rows.append(row)
-
-    return await templates_repo.upsert_seed(session, rows)
+    return await loader.seed_db(session)  # type: ignore[union-attr]
 
 
 async def ensure_printer_state(session: AsyncSession) -> int:
