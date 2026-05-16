@@ -86,7 +86,11 @@ jobs:
         if: steps.pyproject.outputs.exists == 'true'
         working-directory: ${{ steps.pyproject.outputs.path }}
         run: |
-          # alembic check exits 1 if model state differs from latest migration head
+          # alembic check compares SQLModel.metadata against the latest migration
+          # head, but requires a DB at head first. Upgrade-then-check on a clean
+          # data/ directory keeps CI deterministic.
+          mkdir -p data
+          alembic upgrade head
           alembic check
 
       - name: Upload coverage to Codecov
