@@ -1,10 +1,9 @@
 // Package main is the Label Printer Hub frontend entry point.
 //
 // The frontend container serves the user-facing UI and proxies API + SSE
-// requests to the backend (see ADR 0001). This skeleton boots a chi router
-// with a single /healthz endpoint so the container becomes deployable and
-// release-publishable. Tailwind/HTMX/PWA assets, OpenAPI-generated client,
-// and the actual UI routes land in follow-up PRs.
+// requests to the backend (see ADR 0001). Tailwind-compiled CSS and all
+// html/template sources are embedded into the binary via //go:embed so the
+// container is self-contained with no runtime asset filesystem.
 //
 // Environment variables (all optional, with safe defaults):
 //
@@ -20,6 +19,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"html/template"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -29,7 +30,20 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	frontend "github.com/strausmann/label-printer-hub/frontend"
+	"github.com/strausmann/label-printer-hub/frontend/internal/api"
+	"github.com/strausmann/label-printer-hub/frontend/internal/handlers"
 )
+
+// staticFS and templateFS are defined in frontend/assets.go (the module root
+// package). They embed web/static and web/templates respectively via
+// //go:embed. The declarations live there because go:embed paths are relative
+// to the source file — from cmd/server/ we cannot reach ../../web/.
+//
+// We alias them as package-level vars here so the rest of this file can use
+// short names without the `frontend.` prefix everywhere.
+var staticFS = frontend.StaticFS
+var templateFS = frontend.TemplateFS
 
 const defaultRepoURL = "https://github.com/strausmann/label-printer-hub"
 
@@ -105,14 +119,35 @@ func slogRequestLogger(next http.Handler) http.Handler {
 
 // newRouter builds the chi router. Kept as a separate function so tests can
 // exercise it without spinning up an actual HTTP server.
-func newRouter() *chi.Mux {
+//
+// ph is the shared PageHandler; it may be nil in the minimal healthz-only test
+// path (the skeleton tests call newRouter() directly before the PageHandler was
+// introduced). Static file serving and page routes are added when ph != nil.
+func newRouter(ph *handlers.PageHandler) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(slogRequestLogger)
 
+	// Static assets embedded in the binary (Tailwind CSS, HTMX JS, icons).
+	// Served at /static/*. staticFS has paths rooted at "web/static/", so we
+	// use fs.Sub to strip that prefix before handing off to http.FileServer.
+	// A request for /static/app.css → strips /static/ prefix → looks up app.css
+	// in the sub-FS rooted at web/static/.
+	sub, err := fs.Sub(staticFS, "web/static")
+	if err != nil {
+		panic("static embed misconfigured: " + err.Error())
+	}
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(sub))))
+
 	r.Get("/healthz", healthzHandler)
+
+	// Page handlers are wired here as they are implemented in subsequent tasks.
+	// ph is always non-nil in production; nil only happens if tests call
+	// newRouter(nil) directly — those tests only hit /healthz.
+	_ = ph // suppress unused warning until page handlers are added in Tasks 5–11
+
 	return r
 }
 
@@ -129,7 +164,20 @@ func main() {
 	port := envDefault("PORT", "8080")
 	addr := ":" + port
 
-	r := newRouter()
+	// Parse all page templates at startup — a parse error surfaces here rather
+	// than on the first request, which is the correct fail-fast behaviour.
+	tmpl, err := template.ParseFS(templateFS, "web/templates/*.html")
+	if err != nil {
+		slog.Error("failed to parse templates", "err", err)
+		os.Exit(1)
+	}
+
+	// Instantiate the shared PageHandler with the typed backend client.
+	backendURL := envDefault("BACKEND_URL", "http://backend:8000")
+	client := api.NewClient(backendURL)
+	ph := handlers.NewPageHandler(tmpl, client, buildInfo.Version)
+
+	r := newRouter(ph)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           r,

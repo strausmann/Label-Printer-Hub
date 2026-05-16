@@ -28,7 +28,7 @@ func initBuildInfoForTests(t *testing.T) {
 func TestHealthz_ReturnsOK(t *testing.T) {
 	t.Parallel()
 	initBuildInfoForTests(t)
-	r := newRouter()
+	r := newRouter(nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -41,7 +41,7 @@ func TestHealthz_ReturnsOK(t *testing.T) {
 func TestHealthz_BodyShape(t *testing.T) {
 	t.Parallel()
 	initBuildInfoForTests(t)
-	r := newRouter()
+	r := newRouter(nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -70,7 +70,7 @@ func TestHealthz_BodyShape(t *testing.T) {
 func TestHealthz_ContentTypeJSON(t *testing.T) {
 	t.Parallel()
 	initBuildInfoForTests(t)
-	r := newRouter()
+	r := newRouter(nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -84,7 +84,7 @@ func TestHealthz_ContentTypeJSON(t *testing.T) {
 func TestHealthz_NoAuthRequired(t *testing.T) {
 	t.Parallel()
 	initBuildInfoForTests(t)
-	r := newRouter()
+	r := newRouter(nil)
 	// No Authorization header — container orchestrators probe healthz without credentials.
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
@@ -98,7 +98,7 @@ func TestHealthz_NoAuthRequired(t *testing.T) {
 func TestHealthz_DoesNotLeakSecrets(t *testing.T) {
 	t.Parallel()
 	initBuildInfoForTests(t)
-	r := newRouter()
+	r := newRouter(nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
