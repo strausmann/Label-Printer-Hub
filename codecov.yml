@@ -1,0 +1,93 @@
+# =============================================================================
+# Codecov configuration for Label-Printer-Hub.
+#
+# Reference: https://docs.codecov.com/docs/codecovyml-reference
+# =============================================================================
+
+# Don't fail CI on Codecov upload issues — coverage is informative, not gating.
+# The hard gate is enforced locally by pytest's --cov-fail-under=80 in the
+# CI workflow itself. This keeps a transient Codecov outage from blocking
+# a green PR.
+codecov:
+  require_ci_to_pass: yes
+  notify:
+    wait_for_ci: yes
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"          # red < 70%, yellow 70-99%, green 100%
+
+  status:
+    project:
+      default:
+        # Project-wide coverage must not drop more than 1 percentage point
+        # below `main`. Hard floor at 80% regardless of main.
+        target: auto
+        threshold: 1%
+        base: auto
+        if_ci_failed: error
+    patch:
+      default:
+        # Coverage of the lines this PR adds/changes must be ≥ 80%.
+        # Prevents "I added 200 lines of untested code" from drifting the
+        # project average down silently.
+        target: 80%
+        threshold: 0%
+        if_ci_failed: error
+        only_pulls: true
+
+# Components mirror the on-disk module split so the dashboard tracks
+# coverage per architectural layer. Spec/ADR layout drove these names.
+component_management:
+  individual_components:
+    - component_id: printer_backends
+      name: Printer Backends (transport)
+      paths:
+        - backend/app/printer_backends/**
+
+    - component_id: printer_models
+      name: Printer Models (drivers)
+      paths:
+        - backend/app/printer_models/**
+
+    - component_id: services
+      name: Services
+      paths:
+        - backend/app/services/**
+
+    - component_id: api
+      name: REST API
+      paths:
+        - backend/app/api/**
+
+    - component_id: schemas
+      name: Pydantic Schemas
+      paths:
+        - backend/app/schemas/**
+
+    - component_id: integrations
+      name: Integration Plugins
+      paths:
+        - backend/app/integrations/**
+
+# Paths to exclude from coverage entirely. These are either out-of-scope
+# (tests, scripts, examples) or are exhaustively exercised only against
+# real hardware (the smoke script).
+ignore:
+  - "backend/tests/**"
+  - "backend/scripts/**"
+  - "backend/docs/**"
+  - "examples/**"
+  - "docs/**"
+  - "frontend/**"
+  - "**/__init__.py"
+
+# Layout of the PR comment Codecov posts.
+comment:
+  layout: "header, diff, components, files, flags, footer"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+  show_carryforward_flags: false

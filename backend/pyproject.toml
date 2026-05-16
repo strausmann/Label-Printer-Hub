@@ -51,6 +51,13 @@ snipeit = "app.integrations.snipeit.plugin:SnipeITPlugin"
 spoolman = "app.integrations.spoolman.plugin:SpoolmanPlugin"
 grocy = "app.integrations.grocy.plugin:GrocyPlugin"
 
+[project.entry-points."label_hub.printer_backends"]
+mock = "app.printer_backends.mock_backend:MockPrinterBackend"
+ptouch = "app.printer_backends.ptouch_backend:PTouchBackend"
+
+[project.entry-points."label_hub.printer_models"]
+pt-series = "app.printer_models.pt"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -110,9 +117,17 @@ markers = [
 [tool.coverage.run]
 source = ["app"]
 branch = true
+# Package-metadata files only — `__init__.py` re-exports symbols and holds
+# no measurable logic. Everything else (including app/main.py's lifespan
+# wiring) stays in coverage and is exercised via integration tests.
+omit = [
+    "app/__init__.py",
+]
 
 [tool.coverage.report]
 fail_under = 80
+show_missing = true
+skip_covered = false
 exclude_lines = [
     "pragma: no cover",
     "raise NotImplementedError",

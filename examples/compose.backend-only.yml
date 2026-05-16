@@ -1,0 +1,53 @@
+# ============================================================================
+# Label Printer Hub — backend-only (no frontend, no reverse proxy)
+#
+# Minimal compose for testing the REST API directly via curl/Postman/etc.
+# Builds the backend image from source on the host that runs `docker compose`
+# — no pre-built image required, no GHCR pull. Designed for the early
+# development phase where the frontend container isn't ready yet.
+#
+# Usage on any docker host on the same LAN as the printer:
+#
+#   git clone --branch feat/first-print https://github.com/strausmann/Label-Printer-Hub.git
+#   cd Label-Printer-Hub
+#   cp backend/.env.example .env
+#   $EDITOR .env             # set PRINTER_HUB_PT750W_HOST, etc.
+#   docker compose -f examples/compose.backend-only.yml up -d --build
+#
+# Then:
+#   curl http://localhost:8090/healthz
+#   curl -X POST http://localhost:8090/print -H 'Content-Type: application/json' \
+#     -d '{"template_id":"qr-only-12mm","data":{"title":"T","primary_id":"X","qr_payload":"u"}}'
+# ============================================================================
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: label-printer-hub-backend:dev
+    container_name: label-printer-hub-backend
+    user: "1000:1000"
+    ports:
+      # host:container — host port is what curl talks to.
+      - "${HUB_PORT:-8090}:8000"
+    env_file:
+      - ../.env
+    environment:
+      # Container-internal port. Must match the `EXPOSE` in the Dockerfile.
+      PORT: "8000"
+      # Trust the docker bridge as the client source for /healthz etc.
+      FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      # SQLite + future job-state persistence. Owned by UID 1000 on host.
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    # SNMP needs UDP/161 outbound to reach the printer; ptouch needs TCP/9100.
+    # Default bridge networking handles both — no extra config needed as
+    # long as the printer is reachable from the docker host's network namespace.

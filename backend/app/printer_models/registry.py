@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+import types
+from importlib.metadata import entry_points
 from typing import ClassVar
 
 from app.printer_models.base import PrinterModel
+
+log = logging.getLogger(__name__)
 
 
 class ModelNotFoundError(Exception):
@@ -14,35 +19,51 @@ class ModelNotFoundError(Exception):
 class ModelRegistry:
     """Class-level registry of PrinterModel plugins.
 
-    Plugins register themselves at import time. Production code calls
-    `find_by_pjl()` or `find_by_snmp_oid_value()` to resolve a discovered
-    printer to its driver.
+    Plugins register themselves at import time via :meth:`register`, or are
+    discovered lazily from the ``label_hub.printer_models`` entry-points group
+    by calling :meth:`ensure_discovered`.
+
+    Production code calls :meth:`find_by_pjl`, :meth:`find_by_snmp_oid_value`,
+    or :meth:`find_by_model_id` to resolve a discovered printer to its driver.
     """
 
-    _models: ClassVar[list[PrinterModel]] = []
+    _models: ClassVar[list[PrinterModel | type[PrinterModel]]] = []
+    _discovered: ClassVar[bool] = False
 
     @classmethod
-    def register(cls, model: PrinterModel) -> None:
-        """Append *model* to the registry. Duplicate registrations are not prevented."""
-        if any(not sig for sig in model.pjl_signatures):
+    def register(cls, model: PrinterModel | type[PrinterModel]) -> None:
+        """Append *model* to the registry.
+
+        Accepts either a :class:`PrinterModel` instance (original form) or a
+        class object (as delivered by entry-points). Both carry the required
+        class-level attributes (``model_id``, ``pjl_signatures``,
+        ``snmp_model_oid_value_substr``).
+
+        Duplicate registrations are not prevented.
+        """
+        # Resolve to class for validation — works for both instances and classes.
+        entry_cls: type[PrinterModel] = model if isinstance(model, type) else type(model)
+        model_id = getattr(entry_cls, "model_id", "<unknown>")
+
+        if any(not sig for sig in entry_cls.pjl_signatures):
             raise ValueError(
-                f"PrinterModel {model.model_id!r} has an empty PJL signature; "
+                f"PrinterModel {model_id!r} has an empty PJL signature; "
                 "empty substrings match every input and would shadow other plugins"
             )
-        if not model.snmp_model_oid_value_substr:
+        if not entry_cls.snmp_model_oid_value_substr:
             raise ValueError(
-                f"PrinterModel {model.model_id!r} has an empty SNMP OID substring; "
+                f"PrinterModel {model_id!r} has an empty SNMP OID substring; "
                 "empty substrings match every input and would shadow other plugins"
             )
         cls._models.append(model)
 
     @classmethod
-    def all(cls) -> list[PrinterModel]:
-        """Return a copy of all registered plugins."""
+    def all(cls) -> list[PrinterModel | type[PrinterModel]]:
+        """Return a copy of all registered plugins (instances or classes)."""
         return list(cls._models)
 
     @classmethod
-    def find_by_pjl(cls, pjl_string: str) -> PrinterModel:
+    def find_by_pjl(cls, pjl_string: str) -> PrinterModel | type[PrinterModel]:
         """Match a plugin by PJL MDL substring.
 
         Returns the first registered plugin whose signature matches. Registration
@@ -51,19 +72,103 @@ class ModelRegistry:
         Example pjl_string: 'MFG:Brother;CMD:PJL;MDL:PT-P750W;CLS:PRINTER;'
         """
         for model in cls._models:
-            for sig in model.pjl_signatures:
+            entry_cls: type[PrinterModel] = model if isinstance(model, type) else type(model)
+            for sig in entry_cls.pjl_signatures:
                 if sig in pjl_string:
                     return model
         raise ModelNotFoundError(f"No plugin matched PJL string: {pjl_string!r}")
 
     @classmethod
-    def find_by_snmp_oid_value(cls, oid_value: str) -> PrinterModel:
+    def find_by_snmp_oid_value(cls, oid_value: str) -> PrinterModel | type[PrinterModel]:
         """Match a plugin by SNMP model-OID value substring.
 
         Returns the first registered plugin whose signature matches. Registration
         order determines priority if multiple plugins match.
         """
         for model in cls._models:
-            if model.snmp_model_oid_value_substr in oid_value:
+            entry_cls: type[PrinterModel] = model if isinstance(model, type) else type(model)
+            if entry_cls.snmp_model_oid_value_substr in oid_value:
                 return model
         raise ModelNotFoundError(f"No plugin matched SNMP OID value: {oid_value!r}")
+
+    @classmethod
+    def find_by_model_id(cls, model_id: str) -> type[PrinterModel]:
+        """Return the driver *class* whose ``model_id`` equals *model_id*.
+
+        Accepts both class objects and instances in the internal registry;
+        always returns the class.
+
+        Raises :exc:`ModelNotFoundError` with a helpful listing of available
+        model IDs if no match is found.
+        """
+        for entry in cls._models:
+            entry_cls: type[PrinterModel] = entry if isinstance(entry, type) else type(entry)
+            if getattr(entry_cls, "model_id", None) == model_id:
+                return entry_cls
+        available_ids = sorted(
+            {
+                getattr(
+                    e if isinstance(e, type) else type(e),
+                    "model_id",
+                    "?",
+                )
+                for e in cls._models
+            }
+        )
+        available = ", ".join(available_ids) or "<none registered>"
+        raise ModelNotFoundError(f"Unknown printer_model {model_id!r}. Available: {available}")
+
+    @classmethod
+    def ensure_discovered(cls) -> None:
+        """Walk the ``label_hub.printer_models`` entry-points group exactly once.
+
+        Idempotent: subsequent calls are no-ops. Intended to be called at
+        application startup (e.g. FastAPI lifespan) so that installed plugins
+        are available without explicit import-time registration.
+        """
+        if cls._discovered:
+            return
+        cls._discovered = True
+        for ep in entry_points(group="label_hub.printer_models"):
+            try:
+                driver_cls = ep.load()
+            except Exception:
+                log.exception("Failed to load printer-model entry-point %r", ep.name)
+                continue
+            if isinstance(driver_cls, types.ModuleType):
+                # Entry-point declared as a module (e.g. "app.printer_models.pt").
+                # The module normally registers its driver(s) as a side-effect of
+                # being imported.  That side-effect ran at first import but won't
+                # re-run if the registry was cleared (tests do this).  To remain
+                # idempotent across clear()+ensure_discovered() cycles, we scan the
+                # module for concrete classes that look like PrinterModel plugins
+                # (they expose model_id, pjl_signatures, snmp_model_oid_value_substr)
+                # and register any that are not already present.
+                import inspect as _inspect
+
+                existing_ids = {
+                    getattr(e if isinstance(e, type) else type(e), "model_id", None)
+                    for e in cls._models
+                }
+                for _name, obj in _inspect.getmembers(driver_cls, _inspect.isclass):
+                    if (
+                        obj.__module__ == driver_cls.__name__
+                        and hasattr(obj, "model_id")
+                        and hasattr(obj, "pjl_signatures")
+                        and hasattr(obj, "snmp_model_oid_value_substr")
+                        and getattr(obj, "model_id", None) not in existing_ids
+                    ):
+                        try:
+                            cls.register(obj)
+                            existing_ids.add(obj.model_id)
+                        except (ValueError, TypeError, AttributeError):
+                            log.exception(
+                                "Failed to register printer-model %r from module %r",
+                                _name,
+                                ep.name,
+                            )
+                continue
+            try:
+                cls.register(driver_cls)
+            except (ValueError, TypeError):
+                log.exception("Failed to register printer-model %r", ep.name)

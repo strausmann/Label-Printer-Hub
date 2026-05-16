@@ -1,5 +1,9 @@
 # Label Printer Hub
 
+[![CI](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/ci.yml/badge.svg)](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/codeql.yml/badge.svg)](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/github/strausmann/Label-Printer-Hub/graph/badge.svg?token=JRG4PDU2QX)](https://codecov.io/github/strausmann/Label-Printer-Hub)
+[![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/Label-Printer-Hub)](https://cla-assistant.io/strausmann/Label-Printer-Hub)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
@@ -9,7 +13,7 @@
 
 ## Status
 
-**Early development.** See [project board](https://github.com/strausmann/label-printer-hub/projects) and [open issues](https://github.com/strausmann/label-printer-hub/issues) for progress.
+**Early development.** See [open issues](https://github.com/strausmann/label-printer-hub/issues) for progress and the [master tracking issue #22](https://github.com/strausmann/label-printer-hub/issues/22) for the phase roadmap.
 
 This project is being designed against the [Brother PT-E550W/P750W/P710BT Raster Command Reference v1.02](https://download.brother.com/welcome/docp100064/cv_pte550wp750wp710bt_eng_raster_102.pdf) and [QL-800/810W/820NWB Raster Command Reference](https://download.brother.com/welcome/docp100278/cv_ql800_eng_raster_101.pdf). Hardware tested: Brother PT-P750W (verified). Brother QL-820NWBc (in progress).
 
@@ -52,15 +56,92 @@ Both registries receive identical multi-arch images (`linux/amd64`, `linux/arm64
 
 ## Quick Start
 
-See [`examples/README.md`](examples/README.md) for sample compose files (standalone / Traefik / Pangolin / Caddy).
+See [`examples/README.md`](examples/README.md) for sample compose files (standalone / Traefik / Pangolin / Caddy). For early-development testing of the REST API alone — without the frontend — see [`examples/compose.backend-only.yml`](examples/compose.backend-only.yml):
 
 ```bash
-# Minimal example (no reverse proxy):
-curl -O https://raw.githubusercontent.com/strausmann/label-printer-hub/main/examples/compose.standalone.yml
-curl -O https://raw.githubusercontent.com/strausmann/label-printer-hub/main/examples/.env.example
-cp .env.example .env  # adjust PRINTERS=… to your printer IPs
-docker compose -f compose.standalone.yml up -d
+# Backend-only (builds the image from source — no GHCR pull required):
+git clone --branch main https://github.com/strausmann/label-printer-hub.git
+cd label-printer-hub
+cp backend/.env.example .env
+$EDITOR .env                # set PRINTER_HUB_PT750W_HOST and friends
+docker compose -f examples/compose.backend-only.yml up -d --build
+
+# REST API smoke
+curl http://localhost:8090/healthz
+curl -X POST http://localhost:8090/print -H 'Content-Type: application/json' \
+  -d '{"template_id":"qr-only-12mm","data":{"title":"Smoke","primary_id":"SMOKE-001","qr_payload":"https://example.test"}}'
 ```
+
+## REST API surface
+
+| Method | Path | Purpose | Body |
+|---|---|---|---|
+| `POST` | `/print` | Submit a print job | `PrintRequest` (see below) |
+| `GET` | `/jobs/{job_id}` | Poll job status (includes live SNMP block while printing) | — |
+| `POST` | `/jobs/{job_id}/resume` | Resume a job paused by tape mismatch (after the user changed the tape physically) | — |
+| `POST` | `/printer/resume` | Resume the printer queue after a recoverable error halted it (tape empty / cover open / offline) | — |
+| `GET` | `/healthz` | Liveness probe for orchestrators | — |
+
+### `POST /print` request body
+
+```jsonc
+{
+  "template_id": "qr-only-12mm",         // id from app/seed/templates/<id>.yaml
+  // Exactly one of `lookup` or `data` is required.
+  "lookup":  { "app": "snipeit", "identifier": "123" },
+  "data":    { "title": "Asset 123",
+               "primary_id": "ASSET-123",
+               "qr_payload": "https://snipe.example/assets/123",
+               "secondary": ["optional", "extra lines"] },
+  "options": { "copies": 1,              // 1..10, default 1
+               "auto_cut": true,
+               "high_resolution": false },
+  // Default "fail" → synchronous 409 + error_detail{expected_mm, loaded_mm}.
+  // "queue"        → 202 + job_id; job lands in PAUSED until the user POSTs
+  //                  /jobs/{id}/resume after physically swapping the tape.
+  "on_tape_mismatch": "fail"
+}
+```
+
+### Synchronous error codes (`POST /print`)
+
+| HTTP | `error_code` | When |
+|---|---|---|
+| 404 | `template_not_found` | unknown `template_id` |
+| 409 | `tape_mismatch` | loaded tape ≠ template tape, `on_tape_mismatch="fail"` |
+| 409 | `tape_empty` | preflight detects no media |
+| 409 | `printer_cover_open` | preflight detects cover open |
+| 502 | `integration_lookup_failed` | integration plugin raised |
+| 503 | `printer_offline` | SNMP preflight could not reach the printer |
+
+`tape_mismatch` responses include `error_detail: {expected_mm, loaded_mm}` so the client can build a "swap the tape" dialog.
+
+## Environment variables
+
+Full reference lives in [`backend/.env.example`](backend/.env.example). The most-used variables grouped by purpose:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PRINTER_HUB_DATABASE_URL` | `sqlite:////data/printer-hub.db` | SQLite path (Phase-5 persistence; ignored today) |
+| `PRINTER_HUB_PT750W_HOST` | _empty_ | Brother PT-P750W IP/hostname (required when `printer_backend=ptouch`) |
+| `PRINTER_HUB_PT750W_PORT` | `9100` | TCP print port |
+| `PRINTER_HUB_QL820_HOST` | _empty_ | Brother QL-820NWB IP (when QL backend lands) |
+| `PRINTER_HUB_QL820_PORT` | `9100` | TCP print port |
+| **`PRINTER_HUB_PRINTER_BACKEND`** | `ptouch` | Transport: `ptouch` \| `mock` \| third-party entry-point id |
+| **`PRINTER_HUB_PRINTER_MODEL`** | `PT-P750W` | Fallback model id when SNMP discovery is off / unreachable |
+| **`PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP`** | `true` | SNMP-first model discovery via Brother private OID, fall back to `PRINTER_HUB_PRINTER_MODEL` on failure |
+| **`PRINTER_HUB_PRINTER_SNMP_COMMUNITY`** | `public` | SNMPv2c community (LAN-only — read-only) |
+| **`PRINTER_HUB_PRINTER_QUEUE_TIMEOUT_S`** | `30` | Graceful shutdown timeout for the print queue |
+| `PRINTER_HUB_WEBHOOK_API_KEY` | _empty_ | Bearer for inbound integration webhooks (≥ 32 chars; generate with `openssl rand -hex 32`) |
+| `PRINTER_HUB_SNIPEIT_URL` | _empty_ | Snipe-IT base URL |
+| `PRINTER_HUB_SNIPEIT_API_KEY` | _empty_ | Snipe-IT bearer token |
+| `PRINTER_HUB_GROCY_URL` | _empty_ | Grocy base URL |
+| `PRINTER_HUB_GROCY_API_KEY` | _empty_ | Grocy API key |
+| `PRINTER_HUB_SPOOLMAN_URL` | _empty_ | Spoolman base URL (no auth) |
+| `PRINTER_HUB_SERVER_PORT` | `8090` | Internal port (overridden to `8000` in the container — see Dockerfile) |
+| `PRINTER_HUB_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+
+All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`.
 
 ## Documentation
 

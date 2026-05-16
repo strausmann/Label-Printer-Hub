@@ -116,3 +116,19 @@ def test_terminal_states_absorb_no_outgoing_transitions() -> None:
                 continue
             with pytest.raises(InvalidStateTransitionError):
                 JobStateMachine.transition(job, target)
+
+
+def test_job_has_error_code_default_none() -> None:
+    job = Job(id="j", printer_id="p")
+    assert job.error_code is None
+    assert job.error_message is None
+    assert job.error_detail is None
+
+
+def test_job_error_fields_writable() -> None:
+    job = Job(id="j", printer_id="p")
+    job.error_code = "tape_mismatch"
+    job.error_message = "expected 24mm, loaded 12mm"
+    job.error_detail = {"expected_mm": 24, "loaded_mm": 12}
+    assert job.error_code == "tape_mismatch"
+    assert job.error_detail == {"expected_mm": 24, "loaded_mm": 12}

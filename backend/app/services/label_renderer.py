@@ -17,7 +17,7 @@ from typing import Final
 
 import qrcode
 import qrcode.constants
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from app.schemas.label_data import LabelData
 from app.schemas.template import LayoutElement, TemplateSchema
@@ -38,6 +38,11 @@ TAPE_HEIGHT_PX: Final[dict[int, int]] = {
 # paints on.
 DEFAULT_LABEL_WIDTH_PX: Final[int] = 600
 
+# Margin around the inked content when trimming whitespace on the length
+# axis. 6 px ≈ 1mm at 180 DPI / 0.5mm at 300 DPI — minimal padding so
+# QR scan and the printer cutter both work.
+_TRIM_MARGIN_PX: Final[int] = 6
+
 
 @functools.lru_cache(maxsize=32)
 def _load_font_cached(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -53,9 +58,9 @@ def _load_font_cached(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont
 
 
 class LabelRenderer:
-    """Render a (LabelData, TemplateSchema) pair into a 1-bit PIL Image."""
+    """Render a (TemplateSchema, LabelData) pair into a 1-bit PIL Image."""
 
-    def render(self, data: LabelData, template: TemplateSchema) -> Image.Image:
+    def render(self, template: TemplateSchema, data: LabelData) -> Image.Image:
         """Return a 1-bit image sized for the template's tape width.
 
         Raises:
@@ -76,6 +81,17 @@ class LabelRenderer:
                 self._draw_qr(img, element, data)
             else:  # element.type == "text"
                 self._draw_text(draw, element, data)
+
+        # Crop to the inked area on the length axis only — the height (tape
+        # axis) is pin-locked by the printer geometry and must not change.
+        # `img.getbbox()` would return the bbox of non-zero pixels, but mode "1"
+        # uses 1 for white (the background) and 0 for ink, so we invert first.
+        ink_bbox = ImageChops.invert(img.convert("L")).getbbox()
+        if ink_bbox is not None:
+            left, _, right, _ = ink_bbox
+            new_left = max(0, left - _TRIM_MARGIN_PX)
+            new_right = min(img.width, right + _TRIM_MARGIN_PX)
+            img = img.crop((new_left, 0, new_right, height))
 
         return img
 

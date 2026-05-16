@@ -21,18 +21,34 @@ name: Docker — publish to GHCR + Docker Hub
 # =============================================================================
 
 on:
+  push:
+    branches: ['**']
+    # Only rebuild when something that affects an image actually changes —
+    # avoids tying up runners on docs-only pushes.
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/docker-publish.yml'
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Image tag (without v prefix), e.g. 0.1.0"
-        required: true
+        description: "Image tag (without v prefix), e.g. 0.1.0. Leave empty to build a dev/branch image instead."
+        required: false
 
 permissions:
   contents: read
   packages: write
   id-token: write
+
+# Per-ref grouping: cancel an older in-progress run on the same branch when
+# a new push arrives. Release and manually-dispatched builds are NEVER
+# cancelled — losing a half-published release would leave the registry
+# in an inconsistent state.
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 env:
   REGISTRY_GHCR: ghcr.io
@@ -108,15 +124,39 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Determine tag
+      # Classify what we're building AND derive a version-like value for
+      # labels/build-args. Three flavors:
+      #   release  semver published or manually dispatched with a tag —
+      #            image is tagged {{version}}, {{major.minor}}, {{major}},
+      #            and latest (for stable releases).
+      #   dev      push to the default branch — image is tagged "dev".
+      #   branch   push to any other branch — image is tagged with the
+      #            sanitised branch slug ('/' replaced with '-').
+      - name: Determine flavor and tag
         id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            tag="${{ github.event.release.tag_name }}"
-            tag="${tag#v}"
+          set -eu
+          if [ "$EVENT" = "release" ]; then
+            flavor=release
+            tag="${RELEASE_TAG#v}"
+          elif [ "$EVENT" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
+            flavor=release
+            tag="${INPUT_TAG#v}"
+          elif [ "$REF_NAME" = "$DEFAULT_BRANCH" ]; then
+            flavor=dev
+            tag=dev
           else
-            tag="${{ inputs.tag }}"
+            flavor=branch
+            # Slashes are illegal in OCI tags — mirror metadata-action's slug.
+            tag="${REF_NAME//\//-}"
           fi
+          echo "flavor=$flavor" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       # The build phase only needs labels (per-platform metadata). Tags
@@ -237,15 +277,39 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Determine tag
+      # Classify what we're building AND derive a version-like value for
+      # labels/build-args. Three flavors:
+      #   release  semver published or manually dispatched with a tag —
+      #            image is tagged {{version}}, {{major.minor}}, {{major}},
+      #            and latest (for stable releases).
+      #   dev      push to the default branch — image is tagged "dev".
+      #   branch   push to any other branch — image is tagged with the
+      #            sanitised branch slug ('/' replaced with '-').
+      - name: Determine flavor and tag
         id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            tag="${{ github.event.release.tag_name }}"
-            tag="${tag#v}"
+          set -eu
+          if [ "$EVENT" = "release" ]; then
+            flavor=release
+            tag="${RELEASE_TAG#v}"
+          elif [ "$EVENT" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
+            flavor=release
+            tag="${INPUT_TAG#v}"
+          elif [ "$REF_NAME" = "$DEFAULT_BRANCH" ]; then
+            flavor=dev
+            tag=dev
           else
-            tag="${{ inputs.tag }}"
+            flavor=branch
+            # Slashes are illegal in OCI tags — mirror metadata-action's slug.
+            tag="${REF_NAME//\//-}"
           fi
+          echo "flavor=$flavor" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       # Metadata again — the merge job needs the tag list and the
@@ -255,19 +319,23 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
+          # GHCR is always a target. Docker Hub is only published for release
+          # flavors so branch/dev builds don't pollute the public namespace.
           images: |
             ${{ steps.image.outputs.ref }}
-            ${{ secrets.DOCKERHUB_USERNAME && format('docker.io/{0}/label-printer-hub-{1}', secrets.DOCKERHUB_USERNAME, matrix.service) || '' }}
-          # Same tag scheme as before:
-          #   1.0.0     full semver (always)
-          #   1.0       major.minor (stable only)
-          #   1         major       (stable only)
-          #   latest                (stable only)
+            ${{ (steps.tag.outputs.flavor == 'release' && secrets.DOCKERHUB_USERNAME) && format('docker.io/{0}/label-printer-hub-{1}', secrets.DOCKERHUB_USERNAME, matrix.service) || '' }}
+          # Tag scheme by flavor:
+          #   branch   <branch-slug>                       feature-branch push
+          #   dev      dev                                 main-branch push
+          #   release  {{version}}, {{major.minor}},       semver release
+          #            {{major}}, latest (stable only)
           tags: |
-            type=semver,pattern={{version}},value=${{ steps.tag.outputs.tag }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.tag }}
-            type=semver,pattern={{major}},value=${{ steps.tag.outputs.tag }}
-            type=raw,value=latest,enable=${{ !contains(steps.tag.outputs.tag, '-') }}
+            type=ref,event=branch,enable=${{ steps.tag.outputs.flavor == 'branch' }}
+            type=raw,value=dev,enable=${{ steps.tag.outputs.flavor == 'dev' }}
+            type=semver,pattern={{version}},value=${{ steps.tag.outputs.tag }},enable=${{ steps.tag.outputs.flavor == 'release' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.tag.outputs.tag }},enable=${{ steps.tag.outputs.flavor == 'release' && !contains(steps.tag.outputs.tag, '-') }}
+            type=semver,pattern={{major}},value=${{ steps.tag.outputs.tag }},enable=${{ steps.tag.outputs.flavor == 'release' && !contains(steps.tag.outputs.tag, '-') }}
+            type=raw,value=latest,enable=${{ steps.tag.outputs.flavor == 'release' && !contains(steps.tag.outputs.tag, '-') }}
           # Annotations are emitted at both manifest and index level (see env
           # at workflow root). For a manifest-list-create operation only the
           # index level applies — the merge step filters them.

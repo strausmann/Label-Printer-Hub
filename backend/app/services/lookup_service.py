@@ -4,12 +4,13 @@ The service uses IntegrationRegistry as its source of truth. New apps
 register themselves via entry_points (group 'label_hub.integrations') and
 become available without touching this module.
 
-UnknownAppError signals a configuration mismatch (the caller asked for an
-app that wasn't registered). It deliberately does NOT inherit from
-AppLookupNotFoundError — the two failure modes are operationally distinct:
-
-- UnknownAppError: "you misconfigured the request"
-- AppLookupNotFoundError (from any plugin): "the entity doesn't exist"
+Exception hierarchy
+-------------------
+- LookupFailedError  — umbrella; the REST layer catches this for HTTP 502
+  - UnknownAppError  — config mismatch ("you asked for an unknown app")
+- AppLookupNotFoundError (from any plugin) — entity-not-found; propagates
+  unchanged so callers can handle it separately (e.g., HTTP 404).
+  It is NOT a subclass of LookupFailedError — operationally distinct.
 """
 
 from __future__ import annotations
@@ -24,9 +25,22 @@ from app.integrations.registry import (
     IntegrationRegistry,
 )
 from app.schemas.label_data import LabelData
+from app.services.errors import AppLookupNotFoundError
 
 
-class UnknownAppError(Exception):
+class LookupFailedError(Exception):
+    """Resolving label data via an integration plugin failed.
+
+    This is the umbrella exception for all lookup failures:
+
+    - UnknownAppError: config mismatch (unknown app name)
+    - Any runtime exception from a plugin is wrapped into this type
+
+    The REST layer catches this single type to return HTTP 502.
+    """
+
+
+class UnknownAppError(LookupFailedError):
     """Raised when `source_app` does not match any registered plugin."""
 
 
@@ -36,15 +50,23 @@ class AppLookupService:
     async def lookup(self, source_app: str, identifier: str) -> LabelData:
         """Dispatch to the registered plugin for `source_app`.
 
-        Raises UnknownAppError if no plugin is registered. Any
-        AppLookupNotFoundError raised by the underlying plugin propagates
-        unchanged so callers can catch it uniformly.
+        Raises:
+            UnknownAppError: if no plugin is registered for `source_app`.
+            AppLookupNotFoundError: if the plugin signals entity-not-found
+                (propagates unchanged so callers can handle it separately).
+            LookupFailedError: wraps any unexpected runtime exception from
+                the plugin so the REST layer has one type to catch for 502.
         """
         try:
             plugin = IntegrationRegistry.get(source_app)
         except IntegrationNotFoundError as e:
             raise UnknownAppError(str(e)) from e
-        return await plugin.lookup(identifier)
+        try:
+            return await plugin.lookup(identifier)
+        except (LookupFailedError, AppLookupNotFoundError):
+            raise
+        except Exception as e:
+            raise LookupFailedError(f"{source_app} lookup failed: {e}") from e
 
     @property
     def available_apps(self) -> list[str]:

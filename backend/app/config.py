@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     spoolman_url: str = ""
     spoolman_timeout: float = 5.0
 
+    # --- First-Print ---
+    printer_backend: str = "ptouch"
+    printer_model: str = "PT-P750W"
+    printer_discover_via_snmp: bool = True
+    printer_snmp_community: str = "public"
+    printer_queue_timeout_s: float = 30.0
+
     # Server
     server_port: int = 8090
     log_level: str = "INFO"
