@@ -28,6 +28,12 @@ from app.printer_backends.exceptions import SnmpDiscoveryError, SnmpQueryError
 
 _logger = logging.getLogger(__name__)
 
+# Module-level SnmpEngine singleton — creating one per query loads MIBs and
+# initialises the async dispatcher on every call, adding significant overhead.
+# SnmpEngine is stateless between requests (its internal MIB cache is shared
+# state that benefits from reuse), so a single instance is safe.
+_SNMP_ENGINE = SnmpEngine()
+
 BROTHER_PJL_OID = "1.3.6.1.4.1.2435.2.3.9.1.1.7.0"
 HR_PRINTER_STATUS_OID = "1.3.6.1.2.1.25.3.5.1.1.1"
 HR_PRINTER_DETECTED_ERROR_STATE_OID = "1.3.6.1.2.1.25.3.5.1.2.1"
@@ -107,7 +113,7 @@ async def query_loaded_tape_mm(
 ) -> int | None:
     """Query prtInputMediaType OID and return the loaded tape width in mm."""
     error_indication, error_status, _, var_binds = await get_cmd(
-        SnmpEngine(),
+        _SNMP_ENGINE,
         CommunityData(community, mpModel=1),
         await UdpTransportTarget.create((host, 161), timeout=timeout_s, retries=0),
         ContextData(),
@@ -131,7 +137,7 @@ async def query_preflight(
     print job. Raises SnmpQueryError on transport failure.
     """
     error_indication, error_status, _, var_binds = await get_cmd(
-        SnmpEngine(),
+        _SNMP_ENGINE,
         CommunityData(community, mpModel=1),
         await UdpTransportTarget.create((host, 161), timeout=timeout_s, retries=0),
         ContextData(),
@@ -171,7 +177,7 @@ async def query_model_pjl(host: str, *, community: str = "public", timeout_s: fl
         retries=0,
     )
     error_indication, error_status, _, var_binds = await get_cmd(
-        SnmpEngine(),
+        _SNMP_ENGINE,
         CommunityData(community, mpModel=1),
         transport,
         ContextData(),
@@ -200,7 +206,7 @@ async def query_live_status(
         retries=0,
     )
     error_indication, error_status, _, var_binds = await get_cmd(
-        SnmpEngine(),
+        _SNMP_ENGINE,
         CommunityData(community, mpModel=1),
         transport,
         ContextData(),

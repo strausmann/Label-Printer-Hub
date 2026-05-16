@@ -18,6 +18,36 @@ from app.printer_backends.snmp_helper import (
 )
 
 
+async def test_snmp_engine_is_singleton_across_query_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multiple SNMP query calls must use the SAME SnmpEngine instance.
+
+    Creating a new SnmpEngine per call loads MIBs and initialises the
+    async dispatcher on every invocation, adding significant overhead.
+    A module-level singleton eliminates this cost.
+    """
+    from pysnmp.proto import rfc1902
+
+    engines_seen: list[object] = []
+
+    async def capturing_get_cmd(*args: object, **_kwargs: object) -> object:
+        # args[0] is the SnmpEngine passed by the helper function
+        engines_seen.append(args[0])
+        first_oid = args[4]
+        return (None, None, 0, [(first_oid, rfc1902.OctetString('12mm(0.47")'))])
+
+    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", capturing_get_cmd)
+    await query_loaded_tape_mm("192.0.2.1", community="public", timeout_s=1.0)
+    await query_loaded_tape_mm("192.0.2.1", community="public", timeout_s=1.0)
+
+    assert len(engines_seen) == 2, "Expected get_cmd to be called twice"
+    assert engines_seen[0] is engines_seen[1], (
+        "Both calls must pass the SAME SnmpEngine instance (singleton), "
+        f"but got {type(engines_seen[0])} and {type(engines_seen[1])} at different addresses"
+    )
+
+
 def test_oid_constants() -> None:
     assert BROTHER_PJL_OID == "1.3.6.1.4.1.2435.2.3.9.1.1.7.0"
     assert HR_PRINTER_STATUS_OID == "1.3.6.1.2.1.25.3.5.1.1.1"
