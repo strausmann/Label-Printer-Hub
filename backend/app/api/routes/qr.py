@@ -16,8 +16,13 @@ human-readable when someone manually types it.
 Each handler:
 
 1. Calls ``AppLookupService`` for the integration data.
-2. Renders the appropriate Jinja2 HTML template (``app/templates/qr/``).
-3. Returns ``HTMLResponse`` — not JSON — so the result renders directly on
+2. Looks up the first enabled printer from the DB to obtain its UUID for SSE
+   wiring.  ``app.state.printer_id`` is the queue-printer composite id (e.g.
+   ``PT-P750W@host``) — NOT a UUID.  ``/api/events`` accepts a UUID, so the
+   template must receive the DB UUID or an empty string (which suppresses the
+   SSE block).
+3. Renders the appropriate Jinja2 HTML template (``app/templates/qr/``).
+4. Returns ``HTMLResponse`` — not JSON — so the result renders directly on
    a phone screen without any JavaScript.
 
 404 handling
@@ -42,11 +47,15 @@ References:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.session import get_session
+from app.repositories import printers as printers_repo
 from app.services.errors import AppLookupNotFoundError
 from app.services.lookup_service import AppLookupService
 
@@ -58,6 +67,28 @@ templates = Jinja2Templates(directory=str(_templates_dir))
 
 # Shared service instance — stateless, safe to reuse across requests.
 _lookup_service = AppLookupService()
+
+# Type alias for the session dependency
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+async def _resolve_printer_uuid(session: AsyncSession) -> str:
+    """Return the UUID string of the first enabled printer, or "" if none exists.
+
+    QR pages wire HTMX SSE via ``/api/events?printer_id=<UUID>``.  The UUID
+    must come from the DB — ``app.state.printer_id`` is the queue-printer
+    composite id (e.g. ``PT-P750W@host``) which the events endpoint does not
+    accept (it expects a DB UUID and returns 404 otherwise).
+
+    Returns an empty string when no enabled printer exists so the Jinja2
+    ``{% if printer_id %}`` guard suppresses the SSE block, keeping the page
+    usable even when no printer is registered.
+    """
+    printers = await printers_repo.list_all(session)
+    enabled = [p for p in printers if p.enabled]
+    if not enabled:
+        return ""
+    return str(enabled[0].id)
 
 
 # ---------------------------------------------------------------------------
@@ -76,8 +107,11 @@ _lookup_service = AppLookupService()
         "found (rather than JSON, so it renders cleanly on a phone browser)."
     ),
 )
-async def loc_landing(request: Request, entity_id: str) -> HTMLResponse:
+async def loc_landing(
+    request: Request, entity_id: str, session: SessionDep
+) -> HTMLResponse:
     """Render the location detail page for ``entity_id``."""
+    printer_id = await _resolve_printer_uuid(session)
     try:
         data = await _lookup_service.lookup("snipeit", entity_id)
         return templates.TemplateResponse(
@@ -89,7 +123,7 @@ async def loc_landing(request: Request, entity_id: str) -> HTMLResponse:
                 "name": data.title,
                 "external_url": data.qr_payload,
                 "not_found": False,
-                "printer_id": str(getattr(request.app.state, "printer_id", "")),
+                "printer_id": printer_id,
             },
         )
     except AppLookupNotFoundError:
@@ -122,8 +156,11 @@ async def loc_landing(request: Request, entity_id: str) -> HTMLResponse:
         "printed asset labels.  Returns 404 HTML when the asset is not found."
     ),
 )
-async def asset_landing(request: Request, entity_id: str) -> HTMLResponse:
+async def asset_landing(
+    request: Request, entity_id: str, session: SessionDep
+) -> HTMLResponse:
     """Render the asset detail page for ``entity_id``."""
+    printer_id = await _resolve_printer_uuid(session)
     try:
         data = await _lookup_service.lookup("snipeit", entity_id)
         return templates.TemplateResponse(
@@ -135,7 +172,7 @@ async def asset_landing(request: Request, entity_id: str) -> HTMLResponse:
                 "name": data.title,
                 "external_url": data.qr_payload,
                 "not_found": False,
-                "printer_id": str(getattr(request.app.state, "printer_id", "")),
+                "printer_id": printer_id,
             },
         )
     except AppLookupNotFoundError:
@@ -168,8 +205,11 @@ async def asset_landing(request: Request, entity_id: str) -> HTMLResponse:
         "printed spool labels.  Returns 404 HTML when the spool is not found."
     ),
 )
-async def spool_landing(request: Request, entity_id: str) -> HTMLResponse:
+async def spool_landing(
+    request: Request, entity_id: str, session: SessionDep
+) -> HTMLResponse:
     """Render the spool detail page for ``entity_id``."""
+    printer_id = await _resolve_printer_uuid(session)
     try:
         data = await _lookup_service.lookup("spoolman", entity_id)
         return templates.TemplateResponse(
@@ -181,7 +221,7 @@ async def spool_landing(request: Request, entity_id: str) -> HTMLResponse:
                 "name": data.title,
                 "external_url": data.qr_payload,
                 "not_found": False,
-                "printer_id": str(getattr(request.app.state, "printer_id", "")),
+                "printer_id": printer_id,
             },
         )
     except AppLookupNotFoundError:
@@ -214,8 +254,11 @@ async def spool_landing(request: Request, entity_id: str) -> HTMLResponse:
         "labels.  Returns 404 HTML when the product is not found."
     ),
 )
-async def product_landing(request: Request, entity_id: str) -> HTMLResponse:
+async def product_landing(
+    request: Request, entity_id: str, session: SessionDep
+) -> HTMLResponse:
     """Render the product detail page for ``entity_id``."""
+    printer_id = await _resolve_printer_uuid(session)
     try:
         data = await _lookup_service.lookup("grocy", entity_id)
         return templates.TemplateResponse(
@@ -227,7 +270,7 @@ async def product_landing(request: Request, entity_id: str) -> HTMLResponse:
                 "name": data.title,
                 "external_url": data.qr_payload,
                 "not_found": False,
-                "printer_id": str(getattr(request.app.state, "printer_id", "")),
+                "printer_id": printer_id,
             },
         )
     except AppLookupNotFoundError:
