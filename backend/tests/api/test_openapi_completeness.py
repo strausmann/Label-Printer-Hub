@@ -137,7 +137,7 @@ def test_json_responses_have_schemas(openapi_schema: dict[str, Any]) -> None:
 
 
 def test_endpoint_count_in_range(openapi_schema: dict[str, Any]) -> None:
-    """Operation count must be between 22 and 30.
+    """Operation count must be between 23 and 31.
 
     Expected breakdown:
       printers (7) + templates (1) + jobs (6) + lookup (1) + webhooks (2)
@@ -145,17 +145,18 @@ def test_endpoint_count_in_range(openapi_schema: dict[str, Any]) -> None:
       + existing /print (1) + /jobs/{id} (1) + /printer/resume (1)
         + /jobs/{id}/resume (1) = 4 legacy print.py endpoints
       + /healthz (1) = 1 meta endpoint
-      Total = 26
+      + /api/events (1) = 1 Phase-6b SSE endpoint
+      Total = 27
 
-    The range 22-30 is intentionally wide to tolerate minor additions
+    The range 23-31 is intentionally wide to tolerate minor additions
     (e.g. a future ``/healthz/db`` probe) without requiring this test to be
     updated.  It will still catch the case where an entire router is
-    accidentally unregistered (count drops below 22) or a rogue batch of
-    undocumented endpoints lands (count exceeds 30).
+    accidentally unregistered (count drops below 23) or a rogue batch of
+    undocumented endpoints lands (count exceeds 31).
     """
     count = sum(1 for _ in _iter_operations(openapi_schema))
-    assert 22 <= count <= 30, (
-        f"Operation count {count} is outside the expected 22-30 range.  "
+    assert 23 <= count <= 31, (
+        f"Operation count {count} is outside the expected 23-31 range.  "
         "If you intentionally added or removed endpoints, update this test."
     )
 
