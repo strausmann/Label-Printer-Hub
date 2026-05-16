@@ -82,6 +82,13 @@ jobs:
         working-directory: ${{ steps.pyproject.outputs.path }}
         run: pytest --cov=app --cov-report=xml --cov-fail-under=80 --junitxml=junit.xml -o junit_family=legacy -v
 
+      - name: Alembic — no pending migrations
+        if: steps.pyproject.outputs.exists == 'true'
+        working-directory: ${{ steps.pyproject.outputs.path }}
+        run: |
+          # alembic check exits 1 if model state differs from latest migration head
+          alembic check
+
       - name: Upload coverage to Codecov
         if: always() && hashFiles('backend/coverage.xml', 'coverage.xml') != ''
         uses: codecov/codecov-action@v6
