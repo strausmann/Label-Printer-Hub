@@ -11,7 +11,6 @@ from app.printer_backends.snmp_helper import PreflightStatus
 from app.schemas.label_data import LabelData
 from app.schemas.print_request import PrintRequest
 from app.schemas.template import TemplateSchema
-from app.services.job_lifecycle import JobState, JobStateMachine
 from app.services.print_queue import PrintQueue
 
 
@@ -81,11 +80,12 @@ class PrintService:
             if request.on_tape_mismatch == "fail":
                 raise mismatch
 
-            # "queue" path: create the job, immediately pause it with the
-            # tape-mismatch metadata so the user can change tape and resume.
+            # "queue" path: create the job already in PAUSED state so the worker
+            # can never dequeue it between submit and pause (submit_paused() does
+            # NOT place the job in the asyncio.Queue — atomic, no race window).
             label_data = await self._resolve_label_data(request)
             image = self._renderer.render(template, label_data)
-            job_id = await self._queue.submit(
+            job_id = await self._queue.submit_paused(
                 self._printer_id,
                 image,
                 tape_mm=template.tape_mm,
@@ -99,7 +99,6 @@ class PrintService:
                 "expected_mm": template.tape_mm,
                 "loaded_mm": preflight.loaded_tape_mm,
             }
-            JobStateMachine.transition(job, JobState.PAUSED)
             return job_id
 
         # 4. Happy path: resolve label data, render, submit.

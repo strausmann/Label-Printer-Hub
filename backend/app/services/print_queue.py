@@ -217,6 +217,41 @@ class PrintQueue:
         # stream with spurious HTMX sse-swap updates (bot-review Finding F1).
         return job.id
 
+    async def submit_paused(
+        self,
+        printer_id: str,
+        image: Image.Image,
+        tape_mm: int,
+        **options: Any,
+    ) -> str:
+        """Create a job in PAUSED state without enqueuing it.
+
+        Use this instead of ``submit()`` + ``JobStateMachine.transition(PAUSED)``
+        whenever the caller wants the job to start life paused — typically the
+        on_tape_mismatch='queue' path in PrintService.
+
+        The job is registered in ``_jobs`` and immediately transitioned to PAUSED
+        via JobStateMachine so all side-effects (timestamp, _done_event) are
+        consistent. Crucially, it is **not** placed in the asyncio.Queue, so the
+        worker can never dequeue it before the caller has a chance to attach
+        error metadata.  Only ``resume_job()`` can promote the job to QUEUED and
+        enqueue it later.
+        """
+        if printer_id not in self._queues:
+            raise KeyError(f"Unknown printer: {printer_id}")
+        payload = await asyncio.to_thread(_serialize_image_to_png, image)
+        job = Job(
+            id=str(uuid.uuid4()),
+            printer_id=printer_id,
+            image_payload=payload,
+            tape_mm=tape_mm,
+            options=dict(options),
+        )
+        JobStateMachine.transition(job, JobState.PAUSED)
+        self._jobs[job.id] = job
+        logger.info("Job %s created paused on %s", job.id, printer_id)
+        return job.id
+
     async def get(self, job_id: str) -> Job:
         return self._jobs[job_id]
 
