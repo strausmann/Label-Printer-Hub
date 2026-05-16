@@ -5,16 +5,15 @@ The pragma hook from engine.py is applied so FK + busy_timeout pragmas
 are enforced. Note: WAL journal_mode is not supported on in-memory SQLite
 (returns "memory") — tests that assert WAL use a temp file-based engine.
 """
+
 from __future__ import annotations
 
+import app.models  # noqa: F401 — registers all models with SQLModel.metadata
 import pytest_asyncio
+from app.db.engine import _apply_pragmas
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
-
-import app.models  # noqa: F401 — registers all models with SQLModel.metadata
-
-from app.db.engine import _apply_pragmas
 
 
 @pytest_asyncio.fixture

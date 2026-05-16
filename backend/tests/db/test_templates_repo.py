@@ -1,14 +1,18 @@
 """Tests for the templates repository — seed/user split contract."""
-import pytest
 
+import pytest
 from app.models.template import Template
 from app.repositories import templates
 
 
 def _seed(key: str, name: str = "x", w: int = 12) -> Template:
     return Template(
-        key=key, name=name, printer_model="pt-series", tape_width_mm=w,
-        definition={"elements": []}, source="seed",
+        key=key,
+        name=name,
+        printer_model="pt-series",
+        tape_width_mm=w,
+        definition={"elements": []},
+        source="seed",
     )
 
 
@@ -22,8 +26,14 @@ async def test_seed_idempotent(session):
 
 @pytest.mark.asyncio
 async def test_seed_does_not_overwrite_user(session):
-    user = Template(key="custom", name="user-edited", printer_model="pt-series",
-                    tape_width_mm=12, definition={"v": 1}, source="user")
+    user = Template(
+        key="custom",
+        name="user-edited",
+        printer_model="pt-series",
+        tape_width_mm=12,
+        definition={"v": 1},
+        source="user",
+    )
     await templates.create_user_template(session, user)
 
     # Try to upsert a seed with the same key

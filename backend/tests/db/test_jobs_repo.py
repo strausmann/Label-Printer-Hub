@@ -1,18 +1,18 @@
 """Tests for the jobs repository — state machine + sweep."""
+
 from __future__ import annotations
 
 from uuid import UUID
 
 import pytest
-
 from app.models.job import Job, JobState
 from app.models.printer import Printer
 from app.repositories import jobs, printers
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _make_printer(session) -> Printer:
     p = Printer(

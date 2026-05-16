@@ -1,4 +1,5 @@
 """Repository functions for the Printer aggregate."""
+
 from __future__ import annotations
 
 from uuid import UUID

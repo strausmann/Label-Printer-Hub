@@ -1,18 +1,18 @@
 """Tests for the printer_state repository — get, get_or_create, set_paused."""
+
 from __future__ import annotations
 
 from uuid import uuid4
 
 import pytest
-
 from app.models.printer import Printer
 from app.repositories import printer_state as ps_repo
 from app.repositories import printers
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _make_printer(session) -> Printer:
     p = Printer(
@@ -27,6 +27,7 @@ async def _make_printer(session) -> Printer:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_get_returns_none_when_missing(session):

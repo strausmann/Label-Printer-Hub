@@ -1,9 +1,9 @@
 """Tests for the presets repository — FK enforcement + nullable printer_id."""
+
 from uuid import uuid4
 
 import pytest
 import sqlalchemy.exc
-
 from app.models.preset import Preset
 from app.models.printer import Printer
 from app.models.template import Template

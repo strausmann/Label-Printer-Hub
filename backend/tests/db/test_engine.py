@@ -4,16 +4,15 @@ WAL journal_mode requires a file-based database (not supported on :memory:),
 so these tests spin up a temporary file-based engine with the same hook.
 FK and busy_timeout work on both :memory: and file-based engines.
 """
+
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
+from app.db.engine import _apply_pragmas
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-from app.db.engine import _apply_pragmas
 
 
 @pytest.fixture

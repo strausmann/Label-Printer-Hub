@@ -1,11 +1,11 @@
 """Tests for the printer_status_cache repository — upsert + get."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-
 from app.models.printer import Printer
 from app.repositories import printer_status_cache as psc_repo
 from app.repositories import printers
@@ -14,8 +14,8 @@ from app.repositories import printers
 # Helpers
 # ---------------------------------------------------------------------------
 
-_SAMPLE_BLOCK_A = bytes(range(32))          # 32-byte ascending sequence
-_SAMPLE_BLOCK_B = bytes(range(32, 64))      # different 32-byte block
+_SAMPLE_BLOCK_A = bytes(range(32))  # 32-byte ascending sequence
+_SAMPLE_BLOCK_B = bytes(range(32, 64))  # different 32-byte block
 _CAPTURED_AT = datetime(2026, 5, 16, 10, 0, 0, tzinfo=UTC)
 
 
@@ -33,6 +33,7 @@ async def _make_printer(session, name: str = "ql820-cache-test") -> Printer:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_upsert_inserts_new(session):
     """upsert() on a new printer_id inserts a row with correct data."""
@@ -48,9 +49,9 @@ async def test_upsert_inserts_new(session):
     )
 
     assert row.printer_id == printer.id
-    assert row.raw_block == _SAMPLE_BLOCK_A   # bytes round-trip
-    assert row.parsed == parsed                # JSON round-trip
-    assert row.captured_at == _CAPTURED_AT    # datetime preserved
+    assert row.raw_block == _SAMPLE_BLOCK_A  # bytes round-trip
+    assert row.parsed == parsed  # JSON round-trip
+    assert row.captured_at == _CAPTURED_AT  # datetime preserved
 
 
 @pytest.mark.asyncio

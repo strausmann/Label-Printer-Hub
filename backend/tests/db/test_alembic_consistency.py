@@ -4,6 +4,7 @@ If a SQLModel class is added/changed without a corresponding Alembic
 migration, alembic check would catch it in CI — this test catches
 the same case at PR-author time before push.
 """
+
 import subprocess
 import sys
 from pathlib import Path

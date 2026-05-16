@@ -1,4 +1,5 @@
 """SQLModel table definition for the per-printer ESC i S status block cache."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

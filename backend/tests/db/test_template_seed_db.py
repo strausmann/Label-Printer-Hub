@@ -4,16 +4,13 @@ These tests exercise the public classmethod directly, using a controlled set
 of YAML-parsed TemplateSchema objects loaded into the class cache so there is
 no dependency on the real seed-template directory or IntegrationRegistry.
 """
+
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-
 from app.models.template import Template
 from app.repositories import templates as templates_repo
 from app.services.template_loader import TemplateLoader
-
 
 # ---------------------------------------------------------------------------
 # Helpers

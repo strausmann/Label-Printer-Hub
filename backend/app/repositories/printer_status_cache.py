@@ -1,4 +1,5 @@
 """Repository for PrinterStatusCache aggregate — last known ESC i S block."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -42,5 +43,5 @@ async def upsert(
         session.add(existing)
     await session.commit()
     result = await session.get(PrinterStatusCache, printer_id)
-    assert result is not None  # noqa: S101 — just created/updated above
+    assert result is not None
     return result

@@ -11,6 +11,7 @@ Call order in main.py lifespan:
     3. seed_templates()          — upsert YAML seed templates into DB
     4. ensure_printer_state()    — create missing printer_state rows
 """
+
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession

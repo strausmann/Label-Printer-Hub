@@ -1,6 +1,6 @@
 """Tests for the printers repository."""
-import pytest
 
+import pytest
 from app.models.printer import Printer
 from app.repositories import printers
 

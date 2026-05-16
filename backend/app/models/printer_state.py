@@ -1,4 +1,5 @@
 """SQLModel table definition for per-printer pause/resume state."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

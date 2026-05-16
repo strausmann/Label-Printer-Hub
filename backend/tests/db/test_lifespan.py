@@ -10,10 +10,10 @@ existing Alembic CLI tests and by the full app startup in CI.  We
 skip a dedicated unit test here and cover only the three helpers that
 operate on the in-memory session fixture.
 """
+
 from __future__ import annotations
 
 import pytest
-
 from app.db.lifespan import ensure_printer_state, recover_inflight_jobs, seed_templates
 from app.models.job import Job, JobState
 from app.models.printer import Printer
@@ -22,7 +22,6 @@ from app.models.template import Template
 from app.repositories import jobs as jobs_repo
 from app.repositories import printers as printers_repo
 from app.repositories import templates as templates_repo
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,8 +48,7 @@ class _MockLoader:
     def __init__(self, count: int = 3) -> None:
         self._count = count
         self._templates = {
-            f"tpl-{i}": _schema_stub(f"tpl-{i}", f"Template {i}")
-            for i in range(count)
+            f"tpl-{i}": _schema_stub(f"tpl-{i}", f"Template {i}") for i in range(count)
         }
 
     def all(self) -> dict:
@@ -80,6 +78,7 @@ class _MockLoader:
 def _schema_stub(id_: str, name: str):
     """Build a minimal TemplateSchema-like object for testing."""
     from app.schemas.template import TemplateSchema
+
     return TemplateSchema(
         id=id_,
         name=name,

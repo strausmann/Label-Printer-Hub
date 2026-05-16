@@ -1,4 +1,5 @@
 """Async SQLAlchemy engine with SQLite pragma enforcement."""
+
 from __future__ import annotations
 
 import os

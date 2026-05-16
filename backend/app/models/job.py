@@ -1,11 +1,12 @@
 """SQLModel table definition for Job entities and JobState enum."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Index, JSON
+from sqlalchemy import JSON, CheckConstraint, Index
 from sqlmodel import Column, Field, SQLModel
 
 

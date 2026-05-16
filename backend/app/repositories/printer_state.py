@@ -1,4 +1,5 @@
 """Repository for PrinterState aggregate — operator pause/resume."""
+
 from __future__ import annotations
 
 from uuid import UUID
@@ -25,9 +26,7 @@ async def get_or_create(session: AsyncSession, printer_id: UUID) -> PrinterState
     return state
 
 
-async def set_paused(
-    session: AsyncSession, printer_id: UUID, paused: bool
-) -> PrinterState:
+async def set_paused(session: AsyncSession, printer_id: UUID, paused: bool) -> PrinterState:
     """Upsert the paused flag for a printer. Returns the updated row."""
     existing = await session.get(PrinterState, printer_id)
     if existing is None:
@@ -38,5 +37,5 @@ async def set_paused(
         session.add(existing)
     await session.commit()
     result = await session.get(PrinterState, printer_id)
-    assert result is not None  # noqa: S101 — just created/updated above
+    assert result is not None
     return result

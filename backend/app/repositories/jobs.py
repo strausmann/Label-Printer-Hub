@@ -1,4 +1,5 @@
 """Repository for Job aggregate — state-machine transitions + queries."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -52,9 +53,7 @@ async def mark_printing(session: AsyncSession, job_id: UUID) -> Job:
     return job
 
 
-async def mark_done(
-    session: AsyncSession, job_id: UUID, result: dict | None = None
-) -> Job:
+async def mark_done(session: AsyncSession, job_id: UUID, result: dict | None = None) -> Job:
     """Transition PRINTING → DONE. Sets finished_at."""
     job = await _get_or_raise(session, job_id)
     if job.state != JobState.PRINTING.value:
