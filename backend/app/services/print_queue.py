@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Callable
 from enum import StrEnum
 from io import BytesIO
 from typing import Any, Protocol, runtime_checkable
@@ -101,7 +102,12 @@ class _PrinterLike(Protocol):
 class PrintQueue:
     """Per-printer async work queue with submit/pause/resume/cancel/retry."""
 
-    def __init__(self, printers: list[_PrinterLike]) -> None:
+    def __init__(
+        self,
+        printers: list[_PrinterLike],
+        on_state_change: Callable[[Job, JobState, JobState], None] | None = None,
+    ) -> None:
+        self._on_state_change = on_state_change
         self._printers: dict[str, _PrinterLike] = {p.id: p for p in printers}
         # Queue type is Job | None — None is the sentinel used by stop() to wake
         # workers that are blocked at queue.get().
@@ -310,6 +316,24 @@ class PrintQueue:
 
     # --- worker loop -------------------------------------------------------
 
+    def _notify_state_change(self, job: Job, from_state: JobState, to_state: JobState) -> None:
+        """Call the on_state_change callback if one is registered.
+
+        Guarded with try/except so a bug in the callback never crashes the
+        worker. The callback is expected to be PrintQueueProducer.handle_transition
+        which already has its own internal guard, but defence in depth applies.
+        """
+        if self._on_state_change is not None:
+            try:
+                self._on_state_change(job, from_state, to_state)
+            except Exception:
+                logger.exception(
+                    "on_state_change callback raised for job=%s %s->%s",
+                    job.id,
+                    from_state.value,
+                    to_state.value,
+                )
+
     async def _worker(self, printer_id: str) -> None:
         """Consume the queue for one printer, one job at a time.
 
@@ -340,7 +364,9 @@ class PrintQueue:
                 continue
 
             try:
+                _from = job.state
                 JobStateMachine.transition(job, JobState.PRINTING)
+                self._notify_state_change(job, _from, JobState.PRINTING)
                 if job.tape_mm is None:
                     raise RuntimeError(
                         f"Job {job.id} has no tape_mm — submit() and retry_job() must populate it"
@@ -349,7 +375,9 @@ class PrintQueue:
                     raise RuntimeError(f"Job {job.id} has no image payload")
                 image = await asyncio.to_thread(Image.open, BytesIO(job.image_payload))
                 await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
+                _from = job.state
                 JobStateMachine.transition(job, JobState.COMPLETED)
+                self._notify_state_change(job, _from, JobState.COMPLETED)
                 logger.info("Job %s completed on %s", job.id, printer_id)
             except asyncio.CancelledError:
                 # Forcible cancel after stop() timeout — re-raise so the task exits.
@@ -360,8 +388,10 @@ class PrintQueue:
                 job.error_message = msg
                 job.error_detail = detail
                 job.error_msg = msg  # legacy field kept in sync
+                _from = job.state
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
+                    self._notify_state_change(job, _from, JobState.FAILED)
                 except InvalidStateTransitionError:
                     logger.warning(
                         "Job %s: unexpected state %s after PrinterError; error was: %s",
@@ -377,8 +407,10 @@ class PrintQueue:
                     await self.pause_printer(printer_id, reason=code)
             except Exception as exc:
                 job.error_msg = str(exc)
+                _from = job.state
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
+                    self._notify_state_change(job, _from, JobState.FAILED)
                 except InvalidStateTransitionError:
                     # Job was already moved to a terminal state externally.
                     logger.warning(

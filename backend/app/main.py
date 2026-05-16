@@ -26,13 +26,15 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
 from app.api.error_handlers import register_error_handlers
+from app.api.routes import events as events_routes
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
 from app.api.routes import printers as printers_routes
@@ -53,10 +55,14 @@ from app.printer_backends import BackendRegistry
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
+from app.services.event_bus import EventBus
 from app.services.label_renderer import LabelRenderer
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue
 from app.services.print_service import PrintService
+from app.services.producers.print_queue_producer import PrintQueueProducer
+from app.services.producers.status_probe_producer import StatusProbeProducer
+from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.tape_registry import TapeRegistry
 from app.services.template_loader import TemplateLoader
 
@@ -97,6 +103,9 @@ class Healthz(BaseModel):
     revision: str
     build_date: str
     repository: str
+    sse_active_subscribers: int = 0
+    """Current live SSE subscriber count. Zero when no clients are connected
+    or when the EventBus has not been initialised (pre-lifespan)."""
 
 
 def _pinned_openapi_schema(app: FastAPI) -> Any:
@@ -221,8 +230,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     tape_registry = TapeRegistry()
     printer = driver.make_queue_printer(tape_registry)
-    queue = PrintQueue(printers=[printer])
+
+    # --- SSE EventBus ---
+    event_bus = EventBus(queue_size=settings.sse_queue_size)
+    app.state.event_bus = event_bus
+    # ----- end SSE ------
+
+    pq_producer = PrintQueueProducer(bus=event_bus)
+    queue = PrintQueue(
+        printers=[printer],
+        on_state_change=pq_producer.handle_transition,
+    )
     await queue.start()
+
+    tape_producer = TapeChangeProducer(bus=event_bus, tape_registry=tape_registry)
+    status_producer: StatusProbeProducer | None = None
+    if discovery_host:
+        status_producer = StatusProbeProducer(
+            bus=event_bus,
+            printer_id=str(printer.id),
+            host=discovery_host,
+            interval_s=settings.sse_probe_interval_s,
+            community=settings.printer_snmp_community,
+            tape_change_producer=tape_producer,
+        )
+        await status_producer.start()
 
     app.state.print_queue = queue
     app.state.printer_id = printer.id
@@ -240,6 +272,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        if status_producer is not None:
+            await status_producer.stop()
         await queue.stop(timeout_s=settings.printer_queue_timeout_s)
         await engine.dispose()
 
@@ -425,29 +459,39 @@ def create_app() -> _LifespanManager:
             "Returns 200 OK with a fixed shape. No authentication required. "
             "Used by Docker, Kubernetes, and reverse proxies to decide whether "
             "the backend is up. Has zero dependencies — does not touch the "
-            "database, the printer queue, SNMP, or any integration."
+            "database, the printer queue, SNMP, or any integration. "
+            "``sse_active_subscribers`` reflects the current EventBus subscriber "
+            "count; zero means no live SSE clients or the bus is uninitialised."
         ),
     )
-    async def healthz() -> Healthz:
+    async def healthz(request: Request) -> Healthz:
         # async def avoids the threadpool roundtrip for this hot, dependency-
         # free endpoint. FastAPI runs sync route handlers in a threadpool
         # by default, which is wasted overhead for trivial responders.
+        bus: EventBus | None = getattr(request.app.state, "event_bus", None)
         return Healthz(
             status="ok",
             version=HUB_VERSION,
             revision=HUB_REVISION,
             build_date=HUB_BUILD_DATE,
             repository=HUB_REPO_URL,
+            sse_active_subscribers=bus.total_subscriber_count() if bus else 0,
         )
 
     register_error_handlers(app)
     app.include_router(print_router)
+    app.include_router(events_routes.router)
     app.include_router(printers_routes.router)
     app.include_router(templates_routes.router)
     app.include_router(jobs_routes.router)
     app.include_router(lookup_routes.router)
     app.include_router(webhooks_routes.router)
     app.include_router(qr_routes.router)
+
+    _static_dir = Path(__file__).parent / "static"
+    if _static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
     return _LifespanManager(app)
 
 

@@ -137,9 +137,27 @@ The Go frontend's typed client is generated from `backend/openapi.json` via `oap
 - Tag scheme ([ADR 0007](decisions/0007-docker-image-tag-scheme.md)): every stable release publishes `1.0.0`, `1.0`, `1`, and `latest` — pre-releases get only the full version
 - Multi-arch: `linux/amd64` + `linux/arm64`
 
+## SSE EventBus (Phase 6b)
+
+The backend exposes `GET /api/events?printer_id=<uuid>` as a Server-Sent Events
+stream. Each printer has three channels (`queue`, `state`, `tape`). The
+`EventBus` singleton (on `app.state.event_bus`) fans out `BusEvent` instances
+from three producers to all connected SSE subscribers:
+
+| Producer | Channel | Event type |
+|---|---|---|
+| `PrintQueueProducer` | `printer:{id}:queue` | `job.state_changed` |
+| `StatusProbeProducer` | `printer:{id}:state` | `printer.status` |
+| `TapeChangeProducer` | `printer:{id}:tape` | `printer.tape_changed` |
+
+HTMX on the QR landing pages connects to the stream and applies each event as
+an HTML fragment via `sse-swap`. For reverse-proxy flush configuration required
+to make SSE work through Traefik, Caddy, Nginx, and Pangolin, see
+[`architecture/sse.md`](architecture/sse.md).
+
 ## Reverse-proxy expectations
 
-The frontend container exposes port `8080`. SSE requires response buffering disabled at the reverse proxy (see [`../examples/`](../examples/) for Traefik/Caddy/Pangolin samples).
+The frontend container exposes port `8080`. SSE requires response buffering disabled at the reverse proxy (see [`architecture/sse.md`](architecture/sse.md) for Traefik/Caddy/Nginx/Pangolin configuration, and [`../examples/`](../examples/) for full compose examples).
 
 For Pangolin specifically, the **Two-Resources pattern** is used:
 

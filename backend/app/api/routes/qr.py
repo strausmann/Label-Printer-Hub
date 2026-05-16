@@ -89,6 +89,7 @@ async def loc_landing(request: Request, entity_id: str) -> HTMLResponse:
                 "name": data.title,
                 "external_url": data.qr_payload,
                 "not_found": False,
+                "printer_id": str(getattr(request.app.state, "printer_id", "")),
             },
         )
     except AppLookupNotFoundError:
@@ -134,6 +135,7 @@ async def asset_landing(request: Request, entity_id: str) -> HTMLResponse:
                 "name": data.title,
                 "external_url": data.qr_payload,
                 "not_found": False,
+                "printer_id": str(getattr(request.app.state, "printer_id", "")),
             },
         )
     except AppLookupNotFoundError:
@@ -179,6 +181,7 @@ async def spool_landing(request: Request, entity_id: str) -> HTMLResponse:
                 "name": data.title,
                 "external_url": data.qr_payload,
                 "not_found": False,
+                "printer_id": str(getattr(request.app.state, "printer_id", "")),
             },
         )
     except AppLookupNotFoundError:
@@ -224,6 +227,7 @@ async def product_landing(request: Request, entity_id: str) -> HTMLResponse:
                 "name": data.title,
                 "external_url": data.qr_payload,
                 "not_found": False,
+                "printer_id": str(getattr(request.app.state, "printer_id", "")),
             },
         )
     except AppLookupNotFoundError:

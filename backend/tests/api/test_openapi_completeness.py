@@ -1,4 +1,4 @@
-"""OpenAPI completeness gate for Phase 6a REST API surface.
+"""OpenAPI completeness gate for Phase 6a + 6b REST API surface.
 
 Walks ``app.openapi()`` and asserts the API surface is complete and
 consistent.  This is a regression guard -- future routes that skip
@@ -10,13 +10,16 @@ Assertions
 1. Every non-deprecated route has at least one OpenAPI tag.
 2. Every JSON response (non-204, non-HTML) has a schema reference or
    inline type in the OpenAPI document.
-3. Total operation count is in the expected 22-30 range.
+3. Total operation count is in the expected 23-31 range.
 4. Webhook routes expose ``X-API-Key`` as a header parameter (proves
    the ``require_webhook_key`` dependency is wired into the schema, not
    just enforced at runtime).
 5. All path segments are lowercase kebab/snake (no upper-case, no
    special chars outside ``[a-z0-9_-]``).
 6. ``ProblemDetail`` is registered as a named component schema.
+7. ``GET /api/events`` exposes ``printer_id`` as a required query
+   parameter, declares no JSON ``response_model`` (it streams
+   ``text/event-stream``), and is tagged ``events``.
 
 References:
     docs/superpowers/plans/2026-05-16-phase6a-rest-api.md -- Task 7
@@ -137,7 +140,7 @@ def test_json_responses_have_schemas(openapi_schema: dict[str, Any]) -> None:
 
 
 def test_endpoint_count_in_range(openapi_schema: dict[str, Any]) -> None:
-    """Operation count must be between 22 and 30.
+    """Operation count must be between 23 and 31.
 
     Expected breakdown:
       printers (7) + templates (1) + jobs (6) + lookup (1) + webhooks (2)
@@ -145,17 +148,18 @@ def test_endpoint_count_in_range(openapi_schema: dict[str, Any]) -> None:
       + existing /print (1) + /jobs/{id} (1) + /printer/resume (1)
         + /jobs/{id}/resume (1) = 4 legacy print.py endpoints
       + /healthz (1) = 1 meta endpoint
-      Total = 26
+      + /api/events (1) = 1 Phase-6b SSE endpoint
+      Total = 27
 
-    The range 22-30 is intentionally wide to tolerate minor additions
+    The range 23-31 is intentionally wide to tolerate minor additions
     (e.g. a future ``/healthz/db`` probe) without requiring this test to be
     updated.  It will still catch the case where an entire router is
-    accidentally unregistered (count drops below 22) or a rogue batch of
-    undocumented endpoints lands (count exceeds 30).
+    accidentally unregistered (count drops below 23) or a rogue batch of
+    undocumented endpoints lands (count exceeds 31).
     """
     count = sum(1 for _ in _iter_operations(openapi_schema))
-    assert 22 <= count <= 30, (
-        f"Operation count {count} is outside the expected 22-30 range.  "
+    assert 23 <= count <= 31, (
+        f"Operation count {count} is outside the expected 23-31 range.  "
         "If you intentionally added or removed endpoints, update this test."
     )
 
@@ -233,4 +237,57 @@ def test_problem_detail_schema_in_components(openapi_schema: dict[str, Any]) -> 
         "ProblemDetail is not registered in components.schemas.  "
         "Ensure at least one route declares ``response_model=ProblemDetail`` "
         "so FastAPI includes it in the schema."
+    )
+
+
+def test_sse_endpoint_schema(openapi_schema: dict[str, Any]) -> None:
+    """Phase 6b: ``GET /api/events`` must satisfy SSE-specific schema requirements.
+
+    Three assertions:
+    1. ``printer_id`` is a required query parameter (UUID string format).
+    2. No JSON ``response_model`` is declared — the route returns
+       ``text/event-stream``, not a JSON body, so oapi-codegen must not
+       emit a typed struct for the 200 response.
+    3. The endpoint is tagged ``events`` so it groups correctly in Swagger UI
+       and the Go client codegen.
+
+    If assertion 2 fails, check that ``sse_events`` uses
+    ``response_class=StreamingResponse, response_model=None`` and that
+    the 200 response in the schema has no ``content`` block with
+    ``application/json``.
+    """
+    path = "/api/events"
+    assert path in openapi_schema["paths"], (
+        f"{path} not found in OpenAPI schema — is the events router mounted?"
+    )
+
+    get_op = openapi_schema["paths"][path].get("get") or {}
+
+    # 1. printer_id is a required query parameter with UUID string format
+    params = {p["name"]: p for p in (get_op.get("parameters") or [])}
+    assert "printer_id" in params, (
+        f"{path} GET is missing the 'printer_id' query parameter in the schema."
+    )
+    pid_param = params["printer_id"]
+    assert pid_param.get("in") == "query", (
+        f"'printer_id' must be a query parameter, got in={pid_param.get('in')!r}"
+    )
+    assert pid_param.get("required") is True, (
+        "'printer_id' must be marked required=true in the OpenAPI schema."
+    )
+
+    # 2. No JSON response_model — 200 response must not declare application/json
+    responses = get_op.get("responses") or {}
+    ok_response = responses.get("200") or {}
+    ok_content = ok_response.get("content") or {}
+    assert "application/json" not in ok_content, (
+        f"{path} GET declares an 'application/json' 200 response schema, but "
+        "SSE endpoints must not — they stream 'text/event-stream'. "
+        "Ensure the route uses response_model=None and response_class=StreamingResponse."
+    )
+
+    # 3. Tagged 'events'
+    tags = get_op.get("tags") or []
+    assert "events" in tags, (
+        f"{path} GET is missing the 'events' tag — add tags=['events'] to the decorator."
     )

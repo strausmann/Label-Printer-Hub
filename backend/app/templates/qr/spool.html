@@ -27,5 +27,31 @@
   <p class="name"><a class="external" href="{{ external_url }}" target="_blank" rel="noopener">Open in Spoolman</a></p>
   {% endif %}
   {% endif %}
+
+  <!-- Phase 6b: SSE live updates — loaded from self-hosted static/ -->
+  <script src="/static/htmx.min.js"></script>
+  <script src="/static/sse.js"></script>
+
+  {% if not not_found and printer_id %}
+  <div id="sse-root"
+       hx-ext="sse"
+       sse-connect="/api/events?printer_id={{ printer_id }}">
+
+    <div id="printer-status"
+         sse-swap="printer.status"
+         hx-swap="innerHTML">
+    </div>
+
+    <div id="job-queue"
+         sse-swap="job.state_changed"
+         hx-swap="innerHTML">
+    </div>
+
+    <div id="tape-status"
+         sse-swap="printer.tape_changed"
+         hx-swap="innerHTML">
+    </div>
+  </div>
+  {% endif %}
 </body>
 </html>

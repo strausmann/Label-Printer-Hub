@@ -81,6 +81,22 @@ class Settings(BaseSettings):
     server_port: int = 8090
     log_level: str = "INFO"
 
+    # SSE EventBus — configurable resource limits
+    sse_queue_size: int = 32
+    """Per-subscriber asyncio.Queue depth. Drop-oldest when full."""
+
+    sse_idle_timeout_s: float = 300.0
+    """Seconds of inactivity before the server closes an SSE connection."""
+
+    sse_max_subscribers: int = 100
+    """Max concurrent SSE subscribers per printer. Returns 429 when exceeded."""
+
+    sse_heartbeat_s: float = 30.0
+    """Interval between SSE keepalive comment frames when no events flow."""
+
+    sse_probe_interval_s: float = 30.0
+    """SNMP probe interval for StatusProbeProducer (seconds)."""
+
     @field_validator("webhook_api_key")
     @classmethod
     def validate_api_key_length(cls, v: SecretStr) -> SecretStr:
