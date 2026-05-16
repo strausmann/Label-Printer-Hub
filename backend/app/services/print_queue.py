@@ -56,6 +56,20 @@ class _StateChangeCallback(Protocol):
 
 logger = logging.getLogger(__name__)
 
+
+class PrinterAlreadyActiveError(Exception):
+    """Raised by resume_printer() when the printer worker is already ACTIVE.
+
+    The route layer maps this to HTTP 409 with error_code='already_active' so
+    clients can distinguish "was paused, now active" (200) from "already active"
+    (409) without relying on response body inspection.
+    """
+
+    def __init__(self, printer_id: str) -> None:
+        super().__init__(f"Printer {printer_id!r} is already active")
+        self.printer_id = printer_id
+
+
 _RECOVERABLE_PRINTER_ERRORS: tuple[type[PrinterError], ...] = (
     TapeMismatchError,
     TapeEmptyError,
@@ -163,6 +177,12 @@ class PrintQueue:
         cancelled forcibly — that leaves the printer in an undefined state for
         that one job. Callers should pass enough timeout to cover a normal
         print.
+
+        After all workers have stopped (gracefully or via cancellation), any
+        job still in PRINTING state is transitioned to FAILED with
+        error_code='shutdown' and its _done_event is set. This releases any
+        caller blocked in wait_for_job() so they receive a FAILED result
+        immediately instead of hanging until their own timeout fires.
         """
         self._stopping = True
         # Wake up any worker waiting on a paused resume event so it sees the
@@ -187,6 +207,25 @@ class PrintQueue:
         self._workers.clear()
         self._running = False
         self._stopping = False
+
+        # Release any wait_for_job() callers that are still waiting on a
+        # PRINTING job whose worker was cancelled before completion.
+        # Transition those jobs to FAILED so their _done_event is set.
+        for job in self._jobs.values():
+            if job.state == JobState.PRINTING:
+                job.error_code = "shutdown"
+                job.error_message = "Print queue stopped during job execution"
+                job.error_msg = job.error_message  # keep legacy field in sync (see line 466)
+                try:
+                    JobStateMachine.transition(job, JobState.FAILED)
+                except InvalidStateTransitionError:
+                    # Defensive: job already moved to a terminal state by the
+                    # worker — just ensure _done_event is set.
+                    job._done_event.set()
+                logger.warning(
+                    "Job %s left in PRINTING state after stop(); marked FAILED(shutdown)",
+                    job.id,
+                )
 
     # --- job CRUD -----------------------------------------------------------
 
@@ -215,6 +254,41 @@ class PrintQueue:
         # Calling _notify_state_change with from_state==to_state==QUEUED would
         # emit a fake job.state_changed event on the EventBus and pollute the SSE
         # stream with spurious HTMX sse-swap updates (bot-review Finding F1).
+        return job.id
+
+    async def submit_paused(
+        self,
+        printer_id: str,
+        image: Image.Image,
+        tape_mm: int,
+        **options: Any,
+    ) -> str:
+        """Create a job in PAUSED state without enqueuing it.
+
+        Use this instead of ``submit()`` + ``JobStateMachine.transition(PAUSED)``
+        whenever the caller wants the job to start life paused — typically the
+        on_tape_mismatch='queue' path in PrintService.
+
+        The job is registered in ``_jobs`` and immediately transitioned to PAUSED
+        via JobStateMachine so all side-effects (timestamp, _done_event) are
+        consistent. Crucially, it is **not** placed in the asyncio.Queue, so the
+        worker can never dequeue it before the caller has a chance to attach
+        error metadata.  Only ``resume_job()`` can promote the job to QUEUED and
+        enqueue it later.
+        """
+        if printer_id not in self._queues:
+            raise KeyError(f"Unknown printer: {printer_id}")
+        payload = await asyncio.to_thread(_serialize_image_to_png, image)
+        job = Job(
+            id=str(uuid.uuid4()),
+            printer_id=printer_id,
+            image_payload=payload,
+            tape_mm=tape_mm,
+            options=dict(options),
+        )
+        JobStateMachine.transition(job, JobState.PAUSED)
+        self._jobs[job.id] = job
+        logger.info("Job %s created paused on %s", job.id, printer_id)
         return job.id
 
     async def get(self, job_id: str) -> Job:
@@ -313,9 +387,18 @@ class PrintQueue:
         logger.info("Printer %s paused: %s", printer_id, reason)
 
     async def resume_printer(self, printer_id: str) -> None:
-        """Resume a paused printer worker."""
+        """Resume a paused printer worker.
+
+        Raises:
+            KeyError: if *printer_id* is not known.
+            PrinterAlreadyActiveError: if the printer is already ACTIVE.
+                The route layer maps this to HTTP 409 with
+                ``error_code='already_active'``.
+        """
         if printer_id not in self._worker_states:
             raise KeyError(f"Unknown printer: {printer_id}")
+        if self._worker_states[printer_id] == PrinterWorkerState.ACTIVE:
+            raise PrinterAlreadyActiveError(printer_id)
         self._worker_states[printer_id] = PrinterWorkerState.ACTIVE
         self._worker_resume_events[printer_id].set()
         logger.info("Printer %s resumed", printer_id)

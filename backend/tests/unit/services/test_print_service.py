@@ -253,14 +253,19 @@ async def test_preflight_mismatch_default_is_fail(
 async def test_preflight_mismatch_queue_creates_paused_job(
     loader, renderer, queue, lookup_service, backend
 ) -> None:
-    """on_tape_mismatch=queue → job created, immediately transitioned to PAUSED."""
+    """on_tape_mismatch=queue → job created via submit_paused() with PAUSED metadata."""
     backend.preflight_check.return_value = PreflightStatus(
         hr_printer_status="idle",
         loaded_tape_mm=12,
         error_flags=[],
     )
-    # queue.get must return a Job we can mutate
+    # submit_paused() returns the job_id; queue.get returns the job object.
+    # The job starts PAUSED (submit_paused transitions it before registering).
     job = Job(id="job-1", printer_id="pt@x", image_payload=b"", tape_mm=24, options={})
+    from app.services.job_lifecycle import JobStateMachine
+
+    JobStateMachine.transition(job, JobState.PAUSED)
+    queue.submit_paused = AsyncMock(return_value="job-1")
     queue.get.return_value = job
     svc = _service(loader, renderer, queue, lookup_service, backend)
     req = PrintRequest(
@@ -270,9 +275,10 @@ async def test_preflight_mismatch_queue_creates_paused_job(
     )
     job_id = await svc.submit_print_job(req)
     assert job_id == "job-1"
-    # Job was submitted to the queue
-    queue.submit.assert_awaited_once()
-    # Job is now PAUSED with tape-mismatch metadata
+    # submit_paused() was called (not submit())
+    queue.submit_paused.assert_awaited_once()
+    queue.submit.assert_not_awaited()
+    # tape-mismatch metadata attached after submit_paused
     assert job.state == JobState.PAUSED
     assert job.error_code == "tape_mismatch"
     assert job.error_message is not None
@@ -289,6 +295,10 @@ async def test_preflight_mismatch_queue_none_tape_loaded(
         error_flags=[],
     )
     job = Job(id="job-1", printer_id="pt@x", image_payload=b"", tape_mm=24, options={})
+    from app.services.job_lifecycle import JobStateMachine
+
+    JobStateMachine.transition(job, JobState.PAUSED)
+    queue.submit_paused = AsyncMock(return_value="job-1")
     queue.get.return_value = job
     svc = _service(loader, renderer, queue, lookup_service, backend)
     req = PrintRequest(
@@ -298,6 +308,7 @@ async def test_preflight_mismatch_queue_none_tape_loaded(
     )
     job_id = await svc.submit_print_job(req)
     assert job_id == "job-1"
+    queue.submit_paused.assert_awaited_once()
     assert job.state == JobState.PAUSED
     assert job.error_code == "tape_mismatch"
     assert job.error_detail == {"expected_mm": 24, "loaded_mm": None}
@@ -352,3 +363,89 @@ async def test_preflight_cover_open_raises_synchronously(
     with pytest.raises(PrinterCoverOpenError):
         await svc.submit_print_job(req)
     queue.submit.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Race-condition fix: submit_paused() atomic path (Commit A — Issue #67)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_tape_mismatch_queue_job_never_enters_asyncio_queue() -> None:
+    """Prove the atomic path: submit_paused() MUST NOT place the job in the
+    asyncio.Queue — the job must be stored only in the paused-jobs registry.
+
+    We verify this by inspecting the real PrintQueue's asyncio.Queue size
+    immediately after submit_print_job returns. If the fix uses submit_paused()
+    correctly, the queue is empty (qsize() == 0). If the old race-prone code
+    path is used (submit() then transition PAUSED), the queue has one item
+    (qsize() == 1) which the worker could pick up before the PAUSED transition
+    completes.
+    """
+
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.printer_backends.snmp_helper import PreflightStatus
+    from app.services.print_queue import PrintQueue
+    from app.services.print_service import PrintService
+    from PIL import Image as _Image
+
+    class _NeverPrint:
+        """Printer that must never be called in this test."""
+
+        id = "pt@race"
+
+        async def print_image(self, image, *, tape_mm, **kw):
+            raise AssertionError("Worker dequeued the paused job — race is present!")
+
+    real_queue = PrintQueue([_NeverPrint()])
+    # Do NOT start the worker — we're testing the submit side only.
+    # The asyncio.Queue size directly reveals whether the job was enqueued.
+
+    tpl = MagicMock()
+    tpl.tape_mm = 24
+    tpl.id = "race-tpl"
+    loader = MagicMock()
+    loader.get.return_value = tpl
+
+    renderer = MagicMock()
+    renderer.render.return_value = _Image.new("1", (200, 128))
+
+    backend = AsyncMock()
+    backend.preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle",
+        loaded_tape_mm=12,  # mismatch: template wants 24mm
+        error_flags=[],
+    )
+
+    svc = PrintService(
+        template_loader=loader,
+        renderer=renderer,
+        print_queue=real_queue,
+        lookup_service=AsyncMock(),
+        printer_id="pt@race",
+        backend=backend,
+    )
+
+    req = PrintRequest(
+        template_id="race-tpl",
+        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
+        on_tape_mismatch="queue",
+    )
+
+    job_id = await svc.submit_print_job(req)
+
+    # The asyncio.Queue MUST be empty — job was submitted in PAUSED state,
+    # not enqueued. If this fails, the race-prone code path is still active.
+    queue_size = real_queue._queues["pt@race"].qsize()
+    assert queue_size == 0, (
+        f"Job was placed in asyncio.Queue (qsize={queue_size}) — "
+        "race-prone submit+pause path still active, fix not applied!"
+    )
+
+    job = await real_queue.get(job_id)
+    from app.services.job_lifecycle import JobState
+
+    assert job.state == JobState.PAUSED, f"Expected PAUSED, got {job.state}"
+    assert job.error_code == "tape_mismatch"
+    assert job.error_detail == {"expected_mm": 24, "loaded_mm": 12}

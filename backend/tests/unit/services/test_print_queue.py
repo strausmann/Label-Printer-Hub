@@ -409,3 +409,136 @@ async def test_clear_queue_fires_on_state_change_callback() -> None:
     assert len(cancelled_transitions) == 2, (
         f"expected 2 CANCELLED callbacks from clear_queue(), got: {transitions}"
     )
+
+
+# ---------------------------------------------------------------------------
+# resume_printer raises PrinterAlreadyActiveError (Commit B — Issue #67)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resume_printer_raises_when_already_active() -> None:
+    """resume_printer() on an ACTIVE printer must raise PrinterAlreadyActiveError.
+
+    This enforces the documented 409 contract: the route can only return 409
+    if the underlying queue method actually raises on already-active state.
+    """
+    from app.services.print_queue import PrinterAlreadyActiveError
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    queue = PrintQueue([fake_printer])
+
+    # Printer starts ACTIVE — resume again should raise
+    with pytest.raises(PrinterAlreadyActiveError):
+        await queue.resume_printer("pt750w")
+
+
+@pytest.mark.asyncio
+async def test_resume_printer_succeeds_when_paused() -> None:
+    """resume_printer() on a PAUSED printer succeeds without raising."""
+    from app.services.print_queue import PrinterWorkerState
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    queue = PrintQueue([fake_printer])
+
+    # Pause first
+    await queue.pause_printer("pt750w", reason="test")
+    assert queue._worker_states["pt750w"] == PrinterWorkerState.PAUSED
+
+    # Resume must not raise
+    await queue.resume_printer("pt750w")
+    assert queue._worker_states["pt750w"] == PrinterWorkerState.ACTIVE
+
+
+# ---------------------------------------------------------------------------
+# stop() releases wait_for_job callers for in-flight jobs (Commit C — Issue #67)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stop_sets_done_event_for_in_flight_jobs() -> None:
+    """stop() must transition in-flight PRINTING jobs to FAILED(shutdown) and
+    set their _done_event so wait_for_job() callers return promptly instead
+    of hanging until their own timeout fires.
+
+    Scenario:
+    1. Start a slow printer that blocks indefinitely.
+    2. Submit a job and wait until it enters PRINTING state.
+    3. Call stop() with a short timeout so the worker is cancelled before
+       the slow print finishes.
+    4. Assert wait_for_job() returns the job in FAILED state with
+       error_code='shutdown' (not TimeoutError from its own deadline).
+    """
+    printing_started = asyncio.Event()
+    stop_print = asyncio.Event()
+
+    async def _blocking_print(image, *, tape_mm, **kw):
+        printing_started.set()
+        await stop_print.wait()  # blocks until we signal or task is cancelled
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    fake_printer.print_image = AsyncMock(side_effect=_blocking_print)
+
+    queue = PrintQueue([fake_printer])
+    await queue.start()
+
+    img = Image.new("1", (300, 76))
+    job_id = await queue.submit("pt750w", img, tape_mm=12)
+
+    # Wait until the worker has actually entered print_image (PRINTING state).
+    await printing_started.wait()
+    assert (await queue.get(job_id)).state == JobState.PRINTING
+
+    # stop() with a very short timeout — worker will be cancelled forcibly.
+    await queue.stop(timeout_s=0.05)
+
+    # wait_for_job must return immediately (done_event set by stop).
+    # Use a tight timeout — if it hangs longer than 1s, the fix is absent.
+    job = await asyncio.wait_for(queue.wait_for_job(job_id, timeout_s=5.0), timeout=1.0)
+
+    assert job.state == JobState.FAILED, f"Expected FAILED after shutdown, got {job.state}"
+    assert job.error_code == "shutdown", f"Expected error_code='shutdown', got {job.error_code!r}"
+
+
+@pytest.mark.asyncio
+async def test_stop_syncs_legacy_error_msg_for_in_flight_jobs() -> None:
+    """stop() must keep the legacy error_msg field in sync with error_message.
+
+    Downstream consumers that still read the legacy ``error_msg`` field (e.g.
+    pre-Phase-5 code paths) would see stale data if stop() sets error_message
+    but omits error_msg.  This mirrors the pattern used in the worker's
+    PrinterError handler (print_queue.py line 466).
+    """
+    printing_started = asyncio.Event()
+
+    async def _blocking_print(image, *, tape_mm, **kw):
+        printing_started.set()
+        # Block until cancelled by stop().
+        await asyncio.get_event_loop().create_future()
+
+    fake_printer = MagicMock()
+    fake_printer.id = "pt750w"
+    fake_printer.print_image = AsyncMock(side_effect=_blocking_print)
+
+    queue = PrintQueue([fake_printer])
+    await queue.start()
+
+    img = Image.new("1", (300, 76))
+    job_id = await queue.submit("pt750w", img, tape_mm=12)
+
+    await printing_started.wait()
+    assert (await queue.get(job_id)).state == JobState.PRINTING
+
+    await queue.stop(timeout_s=0.05)
+
+    job = await asyncio.wait_for(queue.wait_for_job(job_id, timeout_s=5.0), timeout=1.0)
+
+    assert job.state == JobState.FAILED
+    # Legacy field must match the canonical field — no stale value.
+    assert job.error_msg == job.error_message, (
+        f"error_msg {job.error_msg!r} != error_message {job.error_message!r}"
+    )
+    assert job.error_msg == "Print queue stopped during job execution"

@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
@@ -20,11 +21,20 @@ from app.schemas.print_request import PrintRequest
 from app.schemas.print_response import PrintJobResponse, PrintJobStatusResponse
 from app.services.job_lifecycle import JobState
 from app.services.lookup_service import LookupFailedError
+from app.services.print_queue import PrinterAlreadyActiveError
 from app.services.template_loader import TemplateNotFoundError
 
 _log = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class _PrinterResumeResponse(BaseModel):
+    """200 response body for POST /printer/resume."""
+
+    printer_id: str
+    state: str
+
 
 _SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     TemplateNotFoundError: (404, "template_not_found"),
@@ -113,6 +123,7 @@ async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
 @router.post(
     "/printer/resume",
     status_code=status.HTTP_200_OK,
+    response_model=_PrinterResumeResponse,
     tags=["print"],
     summary="Resume the printer queue",
     description=(
@@ -123,7 +134,7 @@ async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
         "Returns 409 when the printer is already active."
     ),
 )
-async def resume_printer(http: Request) -> dict[str, str]:
+async def resume_printer(http: Request) -> _PrinterResumeResponse | JSONResponse:
     """Resume the printer queue after a recoverable error halted it.
 
     Recoverable errors (TapeEmpty, CoverOpen, TapeMismatch, PrinterOffline)
@@ -146,7 +157,12 @@ async def resume_printer(http: Request) -> dict[str, str]:
             status_code=404,
             detail=f"unknown printer_id: {printer_id}",
         ) from exc
-    return {"printer_id": printer_id, "state": "active"}
+    except PrinterAlreadyActiveError:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error_code": "already_active", "error_message": "Printer is already active"},
+        )
+    return _PrinterResumeResponse(printer_id=printer_id, state="active")
 
 
 @router.post(
@@ -164,7 +180,7 @@ async def resume_printer(http: Request) -> dict[str, str]:
         "Returns 409 when the job is not in ``PAUSED`` state."
     ),
 )
-async def resume_job(job_id: str, http: Request) -> PrintJobStatusResponse:
+async def resume_job(job_id: str, http: Request) -> PrintJobStatusResponse | JSONResponse:
     """Resume a job that is PAUSED waiting for a tape change.
 
     User-driven workflow: client posted /print with on_tape_mismatch=queue,
@@ -183,9 +199,12 @@ async def resume_job(job_id: str, http: Request) -> PrintJobStatusResponse:
         raise HTTPException(status_code=404, detail=f"job not found: {job_id}") from exc
 
     if job.state != JobState.PAUSED:
-        raise HTTPException(
-            status_code=409,
-            detail=f"job {job_id} is in state {job.state.value!r}, not PAUSED",
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "error_code": "invalid_state",
+                "error_message": (f"job {job_id} is in state {job.state.value!r}, not PAUSED"),
+            },
         )
 
     # resume_job() transitions PAUSED → QUEUED and re-enqueues the job.

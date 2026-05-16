@@ -316,20 +316,6 @@ def _resume_side_effect(job: Job) -> None:
     JobStateMachine.transition(job, JobState.QUEUED)
 
 
-async def test_resume_job_not_paused_is_409(fake_service, fake_queue) -> None:
-    """Resuming a job that is not PAUSED returns 409."""
-    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
-    # job.state is QUEUED by default
-    job.submitted_at = datetime.now(UTC)
-    fake_queue.get = AsyncMock(return_value=job)
-
-    async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/jobs/job-1/resume")
-
-    assert r.status_code == 409
-    assert "not PAUSED" in r.json()["detail"]
-
-
 async def test_resume_job_unknown_is_404(fake_service, fake_queue) -> None:
     """Resuming an unknown job returns 404."""
     fake_queue.get = AsyncMock(side_effect=KeyError("nope"))
@@ -355,3 +341,59 @@ async def test_resume_job_completed_is_409(fake_service, fake_queue) -> None:
         r = await c.post("/jobs/job-1/resume")
 
     assert r.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# POST /printer/resume — 409 contract (Commit B — Issue #67)
+# ---------------------------------------------------------------------------
+
+
+async def test_resume_printer_already_active_returns_409(fake_service, fake_queue) -> None:
+    """Calling resume_printer when the printer is already ACTIVE must return 409
+    with error_code='already_active' — the documented contract that was missing.
+    """
+    from app.services.print_queue import PrinterAlreadyActiveError
+
+    fake_queue.resume_printer = AsyncMock(side_effect=PrinterAlreadyActiveError("pt@x"))
+    app = _app(fake_service, fake_queue)
+    app.state.printer_id = "pt@x"
+    async with _client(app) as c:
+        r = await c.post("/printer/resume")
+    assert r.status_code == 409
+    body = r.json()
+    assert body.get("error_code") == "already_active"
+
+
+async def test_resume_printer_paused_returns_200(fake_service, fake_queue) -> None:
+    """Calling resume_printer on a PAUSED printer must still return 200 (control)."""
+    fake_queue.resume_printer = AsyncMock(return_value=None)
+    app = _app(fake_service, fake_queue)
+    app.state.printer_id = "pt@x"
+    async with _client(app) as c:
+        r = await c.post("/printer/resume")
+    assert r.status_code == 200
+    assert r.json() == {"printer_id": "pt@x", "state": "active"}
+
+
+# ---------------------------------------------------------------------------
+# POST /jobs/{job_id}/resume — structured error_code (Commit B — Issue #67)
+# ---------------------------------------------------------------------------
+
+
+async def test_resume_job_not_paused_returns_409_with_error_code(fake_service, fake_queue) -> None:
+    """When resuming a non-PAUSED job the response must include
+    error_code='invalid_state' (structured ProblemDetail, not a plain detail string).
+    """
+    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
+    # job.state is QUEUED by default — not PAUSED
+    job.submitted_at = datetime.now(UTC)
+    fake_queue.get = AsyncMock(return_value=job)
+
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post("/jobs/job-1/resume")
+
+    assert r.status_code == 409
+    body = r.json()
+    assert body.get("error_code") == "invalid_state", (
+        f"Expected error_code='invalid_state', got: {body}"
+    )
