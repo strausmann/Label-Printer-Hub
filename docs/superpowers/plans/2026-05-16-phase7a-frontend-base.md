@@ -2,22 +2,22 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the read-only web UI for the frontend container: Dashboard, Printer Detail (live SSE), Jobs list/detail (with retry), Templates list/detail, and Lookup display — server-side rendered in Go with Tailwind v4 and HTMX.
+**Goal:** Build the read-only web UI for the frontend container: Dashboard, Printer Detail (live SSE), Jobs list/detail (with retry PRG), Templates list/detail (YAML + base64 preview), and Lookup display — server-side rendered in Go with Tailwind v4 and HTMX.
 
-**Architecture:** A single Go binary embeds Tailwind-compiled CSS and `html/template` files via `//go:embed`. A `PageHandler` wraps an `oapi-codegen`-generated typed client to the backend. A `httputil.ReverseProxy` with `FlushInterval: -1` proxies `/api/*` (REST + SSE at `/api/events`) and QR landing paths to the backend. Page handlers detect `HX-Request` to return full-page or fragment from the same URL. Generated `client.gen.go` is committed so `go build` works without a live backend.
+**Architecture:** A single Go binary embeds Tailwind-compiled CSS and `html/template` files via `//go:embed`. `PageHandler` wraps an `oapi-codegen`-generated typed client. `httputil.ReverseProxy` with `FlushInterval: -1` proxies `/api/*` (REST + SSE) and QR landing paths to the backend. Page handlers detect `HX-Request` to return full-page or fragment from the same URL. Generated `client.gen.go` is committed so `go build` works without a live backend.
 
-**Tech Stack:** Go 1.23, chi v5, `html/template` (stdlib), `oapi-codegen v2`, Tailwind v4.1.5 Standalone CLI (multi-stage Dockerfile), HTMX 2.0.4 + htmx-ext-sse 2.2.3 (vendored), `golang.org/x/sync/errgroup`.
+**Tech Stack:** Go 1.23, chi v5, `html/template` (stdlib), `oapi-codegen v2`, Tailwind v4.1.5 Standalone CLI, HTMX 2.0.4 + htmx-ext-sse 2.2.3 (vendored), `golang.org/x/sync/errgroup`.
 
-**Tracking:** Issue #22 (every commit body ends with `Refs #22`).
+**Tracking:** Issue #22 (every commit ends with `Refs #22`).
 
 ---
 
 ## Conventions
 
-- Conventional Commits — valid scopes from `commitlint.config.cjs`: `ui`, `ci`, `docs`, `docker`, `deps`, `api`, `integration`.
-- Header max length 120 characters. No `Co-Authored-By: Claude` anywhere.
-- TDD-strict: failing test → run RED → implement → run GREEN → commit.
-- All `go test` runs use `-race`. Coverage target ≥ 70% on `frontend/internal/`.
+- Conventional Commits — valid scopes: `ui`, `ci`, `docs`, `docker`, `deps`, `api`, `integration` (from `commitlint.config.cjs`).
+- Header max 120 chars. No `Co-Authored-By: Claude` anywhere.
+- TDD-strict: failing test → RED → implement → GREEN → commit.
+- All `go test` runs use `-race`. Coverage ≥ 70% on `frontend/internal/`.
 - Subagents do NOT push. Orchestrator handles push + PR.
 - Run commands from `frontend/` unless stated otherwise.
 - Every commit: `git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit`
@@ -30,17 +30,17 @@
 frontend/
 ├── cmd/server/
 │   ├── main.go          MODIFY — embed vars, newRouter with all routes
-│   └── main_test.go     MODIFY — integration test for routing
+│   └── main_test.go     MODIFY — routing integration test
 ├── internal/
 │   ├── api/
 │   │   ├── client.gen.go   CREATE — oapi-codegen output (committed)
-│   │   └── client.go       CREATE — NewClient wrapper + typed helpers + sentinel errors
+│   │   └── client.go       CREATE — NewClient wrapper + typed helpers + ErrNotFound/ErrUnsupportedApp
 │   ├── handlers/
-│   │   ├── base.go         CREATE — TemplateData, PageHandler{tmpl,client,version}, renderPage, renderError
+│   │   ├── base.go         CREATE — TemplateData, PageHandler{tmpl,client,version}, renderPage, renderError, test helpers
 │   │   ├── dashboard.go    CREATE — GET /
-│   │   ├── printer.go      CREATE — GET /printers/{id} (errgroup parallel fetch)
+│   │   ├── printer.go      CREATE — GET /printers/{id} (errgroup parallel)
 │   │   ├── jobs.go         CREATE — GET /jobs (filter + cursor pagination)
-│   │   ├── job.go          CREATE — GET /jobs/{id}, POST /jobs/{id}/retry (PRG 303)
+│   │   ├── job.go          CREATE — GET /jobs/{id}, POST /jobs/{id}/retry (303 See Other)
 │   │   ├── templates.go    CREATE — GET /templates
 │   │   ├── template.go     CREATE — GET /templates/{id} (base64 preview, 2s timeout)
 │   │   ├── lookup.go       CREATE — GET /lookup/{app}/{id}
@@ -49,25 +49,23 @@ frontend/
 │       └── proxy.go        CREATE — FlushInterval=-1 reverse proxy
 ├── web/
 │   ├── styles/app.css      CREATE — @import tailwindcss + @theme tokens
-│   ├── static/             CREATE — htmx.min.js, htmx-ext-sse.min.js, app.css (built),
+│   ├── static/             CREATE — htmx.min.js, htmx-ext-sse.min.js, app.css (docker-built),
 │   │                                preview-placeholder.svg, favicon.ico, VERSIONS.txt
 │   └── templates/          CREATE — layout.html, error.html, dashboard.html, printer.html,
 │                                    jobs.html, job.html, templates.html, template.html, lookup.html
 ├── oapi-codegen.yaml       CREATE
+├── tools.go                CREATE — //go:build tools; pin oapi-codegen version in go.mod
 ├── Makefile                CREATE — gen-client, dev-css, dev-go, test targets
-└── Dockerfile              MODIFY — add Stage 0 (Tailwind CLI), keep runtime stage unchanged
+└── Dockerfile              MODIFY — add Stage 0 (Tailwind), update Stage 1 (copy CSS + ldflags)
 ```
 
 ---
 
 ## Task 0: Dockerfile multi-stage + Tailwind input CSS + Makefile
 
-**Files:**
-- Modify: `frontend/Dockerfile`
-- Create: `frontend/web/styles/app.css`
-- Create: `frontend/Makefile`
+**Files:** Modify `Dockerfile`; create `web/styles/app.css`, `Makefile`
 
-- [ ] **Step 1: Create `web/styles/app.css`** (Tailwind input — full token block)
+- [ ] **Step 1: Create `web/styles/app.css`** (full @theme token block)
 
 ```css
 @import "tailwindcss";
@@ -106,10 +104,9 @@ frontend/
 }
 ```
 
-- [ ] **Step 2: Update `Dockerfile` — add Stage 0 before the existing `builder` stage**
+- [ ] **Step 2: Prepend Stage 0 to `Dockerfile`** (before the existing `builder` stage)
 
 ```dockerfile
-# Stage 0: Tailwind CSS
 FROM alpine:3.20 AS tailwind-builder
 ARG TAILWIND_VERSION=v4.1.5
 ARG TARGETARCH
@@ -124,68 +121,56 @@ COPY web/templates/ ./web/templates/
 RUN tailwindcss --input web/styles/app.css --output web/static/app.css --minify
 ```
 
-In the existing `builder` stage, add after `COPY . ./`:
+In the existing `builder` stage, after `COPY . ./`:
 
 ```dockerfile
 COPY --from=tailwind-builder /src/web/static/app.css ./web/static/app.css
-```
-
-Also add `ldflags` variables to the `go build` command in the builder stage:
-
-```dockerfile
 ARG VERSION=0.0.0-dev
 ARG REVISION=unknown
 ARG BUILD_DATE=1970-01-01T00:00:00Z
-RUN CGO_ENABLED=0 GOOS=linux go build \
-      -trimpath \
+```
+
+Update the `go build` command to pass `ldflags`:
+
+```dockerfile
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
       -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION} -X main.buildDate=${BUILD_DATE}" \
       -o /out/server ./cmd/server
 ```
-
-The runtime stage is unchanged.
 
 - [ ] **Step 3: Create `Makefile`**
 
 ```makefile
 .PHONY: dev-css dev-go gen-client test lint
-
 TAILWIND_BIN ?= ./tailwindcss
 BACKEND_URL  ?= http://localhost:8000
-
 dev-css:
 	$(TAILWIND_BIN) -i web/styles/app.css -o web/static/app.css --watch
-
 dev-go:
 	BACKEND_URL=$(BACKEND_URL) go run ./cmd/server
-
 gen-client:
 	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
 	  --config oapi-codegen.yaml ../backend/openapi.json
-
 test:
 	go test -race ./...
-
 lint:
 	go vet ./...
 ```
 
-- [ ] **Step 4: Create `web/static/` placeholder so the Tailwind COPY target exists**
+- [ ] **Step 4: Create `web/static/` and `web/templates/` directories; add local CSS stub**
 
 ```bash
 mkdir -p web/static web/templates
-echo "/* built by docker */" > web/static/app.css   # local stub; overwritten in docker build
+echo "/* local stub — overwritten by docker build */" > web/static/app.css
 ```
 
-- [ ] **Step 5: Verify Docker build**
+- [ ] **Step 5: Verify Docker build with a stub layout template**
 
 ```bash
-# From repo root — templates dir must contain at least layout.html for Tailwind to scan.
-# Add a temporary stub if Task 1 is not yet done:
-echo '<!-- stub -->' > frontend/web/templates/layout.html
-docker build --platform linux/amd64 frontend/ -t lph:t0
+echo '<!-- stub -->' > web/templates/layout.html
+docker build --platform linux/amd64 . -t lph:t0
+# Expected: exit 0, image created
 ```
-
-Expected: build exits 0. `lph:t0` image exists.
 
 - [ ] **Step 6: Commit**
 
@@ -200,30 +185,24 @@ Refs #22"
 
 ## Task 1: Vendor static assets + base layout + error templates
 
-**Files:**
-- Create: `frontend/web/static/htmx.min.js`, `htmx-ext-sse.min.js`, `preview-placeholder.svg`, `favicon.ico`, `VERSIONS.txt`
-- Create: `frontend/web/templates/layout.html`, `error.html`
+**Files:** `web/static/{htmx.min.js,htmx-ext-sse.min.js,preview-placeholder.svg,favicon.ico,VERSIONS.txt}`, `web/templates/{layout.html,error.html}`
 
-- [ ] **Step 1: Download vendored assets**
+- [ ] **Step 1: Download vendored JS assets**
 
 ```bash
 curl -fsSL https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js  -o web/static/htmx.min.js
 curl -fsSL https://unpkg.com/htmx-ext-sse@2.2.3/sse.js         -o web/static/htmx-ext-sse.min.js
-
 cat > web/static/VERSIONS.txt <<'EOF'
 htmx          2.0.4   https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js
 htmx-ext-sse  2.2.3   https://unpkg.com/htmx-ext-sse@2.2.3/sse.js
 tailwindcss   v4.1.5  https://github.com/tailwindlabs/tailwindcss/releases/tag/v4.1.5
 EOF
-
 cat > web/static/preview-placeholder.svg <<'EOF'
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
   <rect width="200" height="100" fill="#f0f0f0" rx="4"/>
   <text x="100" y="54" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#888">Preview unavailable</text>
 </svg>
 EOF
-
-# Minimal 1×1 transparent ICO
 printf 'AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==' \
   | base64 -d > web/static/favicon.ico
 ```
@@ -280,22 +259,22 @@ printf 'AAABAAEAEBAAAAEAIABoBAAAFgAAACgAAAAQAAAAIAAAAAEAIAAAAAAAAAAAAAAAAAAAAAAA
 ```bash
 go run -mod=mod - <<'EOF'
 package main
-import ( "fmt"; "html/template"; "os" )
+import ("fmt";"html/template";"os")
 func main() {
-  _, err := template.ParseGlob("web/templates/*.html")
-  if err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
+  if _, err := template.ParseGlob("web/templates/*.html"); err != nil {
+    fmt.Fprintln(os.Stderr, err); os.Exit(1)
+  }
   fmt.Println("OK")
 }
 EOF
+# Expected: OK
 ```
-
-Expected: `OK`
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
-  commit -m "feat(ui): vendor HTMX assets and add base layout + error template
+  commit -m "feat(ui): vendor HTMX 2.0.4+SSE 2.2.3, add base layout and error templates
 
 Refs #22"
 ```
@@ -304,10 +283,7 @@ Refs #22"
 
 ## Task 2: `internal/handlers/base.go` — shared types + `//go:embed`
 
-**Files:**
-- Create: `frontend/internal/handlers/base.go`
-- Create: `frontend/internal/handlers/base_test.go`
-- Modify: `frontend/cmd/server/main.go` — add `//go:embed` directives
+**Files:** Create `internal/handlers/base.go`, `base_test.go`; modify `cmd/server/main.go`
 
 - [ ] **Step 1: Write failing test**
 
@@ -316,11 +292,7 @@ Refs #22"
 package handlers_test
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
-
+	"net/http"; "net/http/httptest"; "strings"; "testing"
 	"github.com/strausmann/label-printer-hub/frontend/internal/handlers"
 )
 
@@ -330,12 +302,8 @@ func TestRenderPageFullLayout(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w   := httptest.NewRecorder()
 	ph.RenderTestPage(w, req, "dashboard", handlers.TemplateData{Version: "0.0.0-test", ActiveNav: "dashboard"})
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
-	}
-	if !strings.Contains(w.Body.String(), "<!DOCTYPE html>") {
-		t.Error("full page must contain DOCTYPE")
-	}
+	if w.Code != http.StatusOK { t.Fatalf("status %d", w.Code) }
+	if !strings.Contains(w.Body.String(), "<!DOCTYPE html>") { t.Error("full page must have DOCTYPE") }
 }
 
 func TestRenderPageHTMXFragment(t *testing.T) {
@@ -345,17 +313,14 @@ func TestRenderPageHTMXFragment(t *testing.T) {
 	req.Header.Set("HX-Request", "true")
 	w := httptest.NewRecorder()
 	ph.RenderTestPage(w, req, "dashboard", handlers.TemplateData{Version: "0.0.0-test"})
-	if strings.Contains(w.Body.String(), "<!DOCTYPE html>") {
-		t.Error("HTMX fragment must NOT contain DOCTYPE")
-	}
+	if strings.Contains(w.Body.String(), "<!DOCTYPE html>") { t.Error("fragment must NOT have DOCTYPE") }
 }
 ```
 
-- [ ] **Step 2: Run — expect RED**
+- [ ] **Step 2: Run — expect RED (package undefined)**
 
 ```bash
 go test -race ./internal/handlers/... 2>&1 | head -5
-# Expected: build error — handlers package undefined
 ```
 
 - [ ] **Step 3: Create `internal/handlers/base.go`**
@@ -364,66 +329,50 @@ go test -race ./internal/handlers/... 2>&1 | head -5
 package handlers
 
 import (
-	"html/template"
-	"net/http"
-	"testing"
-
+	"html/template"; "net/http"; "testing"
 	"github.com/strausmann/label-printer-hub/frontend/internal/api"
 )
 
-// TemplateData is the base type embedded by all page-specific data structs.
 type TemplateData struct {
 	Version   string
-	ActiveNav string // "dashboard" | "jobs" | "templates" | ""
+	ActiveNav string
 	Error     string
 }
 
-// PageHandler holds shared state for all page handlers.
 type PageHandler struct {
 	tmpl    *template.Template
 	client  *api.Client
 	version string
 }
 
-// NewPageHandler is called from main.go at startup.
 func NewPageHandler(tmpl *template.Template, client *api.Client, version string) *PageHandler {
 	return &PageHandler{tmpl: tmpl, client: client, version: version}
 }
 
-// renderPage writes a full-page (via "layout") or fragment (via "<name>-content") response.
 func (h *PageHandler) renderPage(w http.ResponseWriter, r *http.Request, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	tplName := "layout"
-	if r.Header.Get("HX-Request") == "true" {
-		tplName = name + "-content"
-	}
-	if err := h.tmpl.ExecuteTemplate(w, tplName, data); err != nil {
+	tpl := "layout"
+	if r.Header.Get("HX-Request") == "true" { tpl = name + "-content" }
+	if err := h.tmpl.ExecuteTemplate(w, tpl, data); err != nil {
 		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
 	}
 }
 
-// renderError renders the error page with the given HTTP status.
 func (h *PageHandler) renderError(w http.ResponseWriter, r *http.Request, code int, text, detail string) {
-	type errData struct {
-		TemplateData
-		StatusCode int
-		StatusText string
-	}
+	type errData struct { TemplateData; StatusCode int; StatusText string }
 	w.WriteHeader(code)
 	_ = h.tmpl.ExecuteTemplate(w, "error-content", errData{
 		TemplateData: TemplateData{Version: h.version, Error: detail},
-		StatusCode:   code,
-		StatusText:   text,
+		StatusCode: code, StatusText: text,
 	})
 }
 
-// --- test helpers ---
-
+// stubTemplates is used by both test helpers below; keep definitions in sync with all page handlers.
 const stubTemplates = `
 {{define "layout"}}<!DOCTYPE html><html><body>{{block "content" .}}{{end}}</body></html>{{end}}
 {{define "error-content"}}<div class="error">{{.StatusCode}} {{.Error}}</div>{{end}}
-{{define "dashboard-content"}}<div id="printer-grid">dashboard</div>{{end}}
-{{define "printer-content"}}<div id="printer-detail">printer</div>{{end}}
+{{define "dashboard-content"}}<div id="printer-grid">{{range .Printers}}<span>{{.Name}}</span>{{end}}</div>{{end}}
+{{define "printer-content"}}<div id="printer-detail"></div>{{end}}
 {{define "jobs-content"}}<div id="jobs-table-container">{{range .Jobs}}<span class="badge-{{.State}}">{{.State}}</span>{{end}}</div>{{end}}
 {{define "job-content"}}<div id="job-detail">{{if .Job}}state:{{.Job.State}}{{end}}</div>{{end}}
 {{define "templates-content"}}<div id="templates-grid">{{range .Templates}}<span>{{.Name}}</span>{{end}}</div>{{end}}
@@ -431,18 +380,20 @@ const stubTemplates = `
 {{define "lookup-content"}}<div id="lookup-result">{{if .Result}}{{.Result.Name}}{{end}}</div>{{end}}
 `
 
-// NewPageHandlerForTest returns a PageHandler with minimal stub templates; no real API client.
+// NewPageHandlerForTest returns a handler with stub templates and no API client (for base tests).
 func NewPageHandlerForTest(t *testing.T) *PageHandler {
 	t.Helper()
-	tmpl := template.Must(template.New("test").Parse(stubTemplates))
-	return &PageHandler{tmpl: tmpl, version: "0.0.0-test"}
+	return &PageHandler{tmpl: template.Must(template.New("test").Parse(stubTemplates)), version: "0.0.0-test"}
 }
 
-// NewPageHandlerFromURL returns a PageHandler with stub templates and a real API client.
+// NewPageHandlerFromURL returns a handler with stub templates and a real API client (for handler integration tests).
 func NewPageHandlerFromURL(t *testing.T, backendURL string) *PageHandler {
 	t.Helper()
-	tmpl := template.Must(template.New("test").Parse(stubTemplates))
-	return &PageHandler{tmpl: tmpl, client: api.NewClient(backendURL), version: "0.0.0-test"}
+	return &PageHandler{
+		tmpl:    template.Must(template.New("test").Parse(stubTemplates)),
+		client:  api.NewClient(backendURL),
+		version: "0.0.0-test",
+	}
 }
 
 // RenderTestPage exposes renderPage for tests.
@@ -452,8 +403,6 @@ func (h *PageHandler) RenderTestPage(w http.ResponseWriter, r *http.Request, nam
 ```
 
 - [ ] **Step 4: Add `//go:embed` to `cmd/server/main.go`**
-
-Add at the top of `main.go` (after package declaration, before other imports):
 
 ```go
 import "embed"
@@ -465,47 +414,39 @@ var staticFS embed.FS
 var templateFS embed.FS
 ```
 
-- [ ] **Step 5: Run — expect GREEN**
+- [ ] **Step 5: Run — GREEN**
 
 ```bash
 go test -race ./internal/handlers/... -run TestRenderPage -v 2>&1 | tail -5
-# Expected: PASS
 ```
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
-  commit -m "feat(ui): add handlers base (TemplateData, PageHandler, renderPage) and go:embed
+  commit -m "feat(ui): handlers base (TemplateData, PageHandler, renderPage) + go:embed
 
 Refs #22"
 ```
 
 ---
 
-## Task 3: `oapi-codegen` — typed backend client
+## Task 3: `oapi-codegen` typed backend client
 
-**Files:**
-- Create: `frontend/oapi-codegen.yaml`
-- Create: `frontend/tools.go`
-- Create: `frontend/internal/api/client.go`
-- Create: `frontend/internal/api/client.gen.go` (generated + committed)
-- Create: `frontend/internal/api/client_test.go`
+**Files:** `oapi-codegen.yaml`, `tools.go`, `internal/api/client.go`, `internal/api/client.gen.go`, `internal/api/client_test.go`
 
-- [ ] **Step 1: Create `oapi-codegen.yaml`**
+- [ ] **Step 1: Create config and tool pin**
 
-```yaml
+```bash
+cat > oapi-codegen.yaml <<'EOF'
 package: api
 generate:
   models: true
   client: true
   strict-server: false
 output: internal/api/client.gen.go
-```
+EOF
 
-- [ ] **Step 2: Add tool dependency and generate**
-
-```bash
 cat > tools.go <<'EOF'
 //go:build tools
 package tools
@@ -515,33 +456,32 @@ EOF
 go get github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 go get github.com/oapi-codegen/runtime
 go mod tidy
+```
 
-# Export the OpenAPI spec from the running backend (or from FastAPI app directly):
-# cd ../backend && python -c "from app.main import app; import json; print(json.dumps(app.openapi()))" > /tmp/openapi.json
-# Or if backend is running:
+- [ ] **Step 2: Export OpenAPI spec and generate client**
+
+```bash
+# If backend is running:
 curl -s http://localhost:8000/openapi.json > /tmp/openapi.json
+# Or from the FastAPI app directly:
+# cd ../backend && python -c "from app.main import app; import json; print(json.dumps(app.openapi()))" > /tmp/openapi.json
 
+cd frontend
 go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
   --config oapi-codegen.yaml /tmp/openapi.json
 
-head -3 internal/api/client.gen.go   # must start with "// Code generated by oapi-codegen"
-go build ./internal/api/...          # must succeed
+head -3 internal/api/client.gen.go  # must start with "// Code generated by oapi-codegen"
+go build ./internal/api/...         # must succeed
 ```
 
-- [ ] **Step 3: Write failing client test**
+- [ ] **Step 3: Write failing test**
 
 ```go
 // frontend/internal/api/client_test.go
 package api_test
 
 import (
-	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-	"time"
-
+	"context"; "encoding/json"; "net/http"; "net/http/httptest"; "testing"; "time"
 	"github.com/strausmann/label-printer-hub/frontend/internal/api"
 )
 
@@ -557,76 +497,56 @@ func TestListPrintersHitsCorrectPath(t *testing.T) {
 				{"id": "aaaaaaaa-0000-0000-0000-000000000001", "name": "PT-P750W",
 				 "model": "pt_series", "backend": "tcp",
 				 "connection": map[string]any{"host": "198.51.100.10", "port": 9100},
-				 "enabled": true, "paused": false,
-				 "created_at": now, "updated_at": now},
+				 "enabled": true, "paused": false, "created_at": now, "updated_at": now},
 			})
-		} else {
-			http.NotFound(w, r)
-		}
+		} else { http.NotFound(w, r) }
 	}))
 	defer backend.Close()
 
-	c := api.NewClient(backend.URL)
-	printers, err := c.ListPrinters(context.Background())
-	if err != nil {
-		t.Fatalf("ListPrinters: %v", err)
-	}
-	if !called {
-		t.Error("GET /api/printers was not called")
-	}
-	if len(printers) != 1 || printers[0].Name != "PT-P750W" {
-		t.Errorf("unexpected printers: %+v", printers)
-	}
+	printers, err := api.NewClient(backend.URL).ListPrinters(context.Background())
+	if err != nil { t.Fatalf("ListPrinters: %v", err) }
+	if !called { t.Error("GET /api/printers not called") }
+	if len(printers) != 1 || printers[0].Name != "PT-P750W" { t.Errorf("unexpected result: %+v", printers) }
 }
 
-func TestGetJobNotFound(t *testing.T) {
+func TestGetJobReturnsErrNotFound(t *testing.T) {
 	t.Parallel()
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
-	}))
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
 	defer backend.Close()
-
-	_, err := api.NewClient(backend.URL).GetJob(context.Background(), "does-not-exist")
-	if err != api.ErrNotFound {
-		t.Errorf("err = %v, want ErrNotFound", err)
-	}
+	_, err := api.NewClient(backend.URL).GetJob(context.Background(), "no-such-job")
+	if err != api.ErrNotFound { t.Errorf("err = %v, want ErrNotFound", err) }
 }
 ```
 
-- [ ] **Step 4: Run — expect RED**
+- [ ] **Step 4: Run — RED**
 
 ```bash
 go test -race ./internal/api/... 2>&1 | head -5
-# Expected: undefined: api.NewClient (client.go not written yet)
+# Expected: build error — api.NewClient undefined
 ```
 
 - [ ] **Step 5: Create `internal/api/client.go`**
 
+Implement all methods shown below. The generated method names depend on the actual spec; after generation verify them in `client.gen.go` and adjust. Pattern: `<HTTPVerb><PathCamelCase>WithResponse`.
+
 ```go
-// frontend/internal/api/client.go
 package api
 
 import (
-	"context"
-	"fmt"
-	"log/slog"
-	"net/http"
-	"time"
+	"context"; "fmt"; "log/slog"; "net/http"; "time"
 )
 
-// Client wraps the oapi-codegen generated client with structured logging.
-type Client struct {
-	gen     *ClientWithResponses
-	baseURL string
-}
+type Client struct { gen *ClientWithResponses; baseURL string }
 
-// NewClient returns a Client pointing at backendURL.
+var (
+	ErrNotFound       = fmt.Errorf("not found")
+	ErrUnsupportedApp = fmt.Errorf("unsupported app")
+)
+
 func NewClient(baseURL string) *Client {
 	hc := &http.Client{Timeout: 10 * time.Second}
 	gen, err := NewClientWithResponses(baseURL, WithHTTPClient(hc))
-	if err != nil {
-		panic("api.NewClient: " + err.Error())
-	}
+	if err != nil { panic("api.NewClient: " + err.Error()) }
 	return &Client{gen: gen, baseURL: baseURL}
 }
 
@@ -634,12 +554,6 @@ func logCall(op string, start time.Time, err error) {
 	slog.Debug("backend call", "op", op, "ms", time.Since(start).Milliseconds(), "err", err)
 }
 
-var (
-	ErrNotFound       = fmt.Errorf("not found")
-	ErrUnsupportedApp = fmt.Errorf("unsupported app")
-)
-
-// ListPrinters calls GET /api/printers.
 func (c *Client) ListPrinters(ctx context.Context) ([]PrinterRead, error) {
 	start := time.Now()
 	resp, err := c.gen.GetApiPrintersWithResponse(ctx)
@@ -649,7 +563,6 @@ func (c *Client) ListPrinters(ctx context.Context) ([]PrinterRead, error) {
 	return *resp.JSON200, nil
 }
 
-// GetPrinterStatus calls GET /api/printers/{id}/status.
 func (c *Client) GetPrinterStatus(ctx context.Context, id string) (*PrinterStatus, error) {
 	start := time.Now()
 	resp, err := c.gen.GetApiPrintersPrinterIdStatusWithResponse(ctx, id)
@@ -660,7 +573,6 @@ func (c *Client) GetPrinterStatus(ctx context.Context, id string) (*PrinterStatu
 	return resp.JSON200, nil
 }
 
-// GetPrinterTape calls GET /api/printers/{id}/tape. Returns ErrNotFound when no tape is loaded.
 func (c *Client) GetPrinterTape(ctx context.Context, id string) (map[string]any, error) {
 	start := time.Now()
 	resp, err := c.gen.GetApiPrintersPrinterIdTapeWithResponse(ctx, id)
@@ -671,7 +583,6 @@ func (c *Client) GetPrinterTape(ctx context.Context, id string) (map[string]any,
 	return *resp.JSON200, nil
 }
 
-// GetPrinterQueue calls GET /api/printers/{id}/queue.
 func (c *Client) GetPrinterQueue(ctx context.Context, id string) ([]map[string]any, error) {
 	start := time.Now()
 	resp, err := c.gen.GetApiPrintersPrinterIdQueueWithResponse(ctx, id)
@@ -681,7 +592,6 @@ func (c *Client) GetPrinterQueue(ctx context.Context, id string) ([]map[string]a
 	return *resp.JSON200, nil
 }
 
-// ListJobs calls GET /api/jobs.
 func (c *Client) ListJobs(ctx context.Context, params *GetApiJobsParams) ([]JobRead, error) {
 	start := time.Now()
 	resp, err := c.gen.GetApiJobsWithResponse(ctx, params)
@@ -691,7 +601,6 @@ func (c *Client) ListJobs(ctx context.Context, params *GetApiJobsParams) ([]JobR
 	return *resp.JSON200, nil
 }
 
-// GetJob calls GET /api/jobs/{id}.
 func (c *Client) GetJob(ctx context.Context, id string) (*JobRead, error) {
 	start := time.Now()
 	resp, err := c.gen.GetApiJobsJobIdWithResponse(ctx, id)
@@ -702,7 +611,6 @@ func (c *Client) GetJob(ctx context.Context, id string) (*JobRead, error) {
 	return resp.JSON200, nil
 }
 
-// RetryJob calls POST /api/jobs/{id}/retry and returns the new job's UUID string.
 func (c *Client) RetryJob(ctx context.Context, id string) (string, error) {
 	start := time.Now()
 	resp, err := c.gen.PostApiJobsJobIdRetryWithResponse(ctx, id)
@@ -713,7 +621,6 @@ func (c *Client) RetryJob(ctx context.Context, id string) (string, error) {
 	return resp.JSON201.Id.String(), nil
 }
 
-// ListTemplates calls GET /api/templates (app filter is optional — pass "" to omit).
 func (c *Client) ListTemplates(ctx context.Context, app string) ([]TemplateRead, error) {
 	start := time.Now()
 	var params *GetApiTemplatesParams
@@ -725,11 +632,9 @@ func (c *Client) ListTemplates(ctx context.Context, app string) ([]TemplateRead,
 	return *resp.JSON200, nil
 }
 
-// RenderPreview calls POST /api/render/preview and returns raw PNG bytes.
-func (c *Client) RenderPreview(ctx context.Context, templateKey string) ([]byte, error) {
+func (c *Client) RenderPreview(ctx context.Context, key string) ([]byte, error) {
 	start := time.Now()
-	body := PostApiRenderPreviewJSONRequestBody{TemplateKey: templateKey}
-	resp, err := c.gen.PostApiRenderPreviewWithResponse(ctx, body)
+	resp, err := c.gen.PostApiRenderPreviewWithResponse(ctx, PostApiRenderPreviewJSONRequestBody{TemplateKey: key})
 	logCall("RenderPreview", start, err)
 	if err != nil { return nil, err }
 	if resp.StatusCode() == http.StatusNotFound { return nil, ErrNotFound }
@@ -737,7 +642,6 @@ func (c *Client) RenderPreview(ctx context.Context, templateKey string) ([]byte,
 	return resp.Body, nil
 }
 
-// LookupEntity calls GET /api/lookup/{app}/{id}.
 func (c *Client) LookupEntity(ctx context.Context, app, id string) (*LookupResult, error) {
 	start := time.Now()
 	resp, err := c.gen.GetApiLookupAppEntityIdWithResponse(ctx, app, id)
@@ -749,7 +653,6 @@ func (c *Client) LookupEntity(ctx context.Context, app, id string) (*LookupResul
 	return resp.JSON200, nil
 }
 
-// CheckHealth probes GET /healthz on the backend with the given context (caller sets timeout).
 func (c *Client) CheckHealth(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/healthz", nil)
 	if err != nil { return err }
@@ -761,20 +664,17 @@ func (c *Client) CheckHealth(ctx context.Context) error {
 }
 ```
 
-**Important:** The generated method names (`GetApiPrintersWithResponse`, `GetApiJobsJobIdWithResponse`, etc.) are derived by oapi-codegen from the OpenAPI paths. After running `make gen-client`, verify each method name in `client.gen.go` and adjust `client.go` if the generated names differ. The pattern is `<HTTPVerb><PathSegmentsCamelCase>WithResponse`.
-
-- [ ] **Step 6: Run — expect GREEN**
+- [ ] **Step 6: Run — GREEN**
 
 ```bash
-go test -race ./internal/api/... -v 2>&1 | tail -10
-# Expected: PASS
+go test -race ./internal/api/... -v 2>&1 | tail -5
 ```
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
-  commit -m "feat(api): add oapi-codegen config, generated typed client, wrapper with logging
+  commit -m "feat(api): add oapi-codegen config, generate typed client, add wrapper with logging
 
 Refs #22"
 ```
@@ -783,9 +683,7 @@ Refs #22"
 
 ## Task 4: Reverse proxy (`internal/proxy/proxy.go`)
 
-**Files:**
-- Create: `frontend/internal/proxy/proxy.go`
-- Create: `frontend/internal/proxy/proxy_test.go`
+**Files:** `internal/proxy/proxy.go`, `proxy_test.go`
 
 - [ ] **Step 1: Write failing tests**
 
@@ -794,28 +692,19 @@ Refs #22"
 package proxy_test
 
 import (
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
-
+	"io"; "net/http"; "net/http/httptest"; "strings"; "testing"
 	"github.com/strausmann/label-printer-hub/frontend/internal/proxy"
 )
 
-func TestProxyForwardsToBackend(t *testing.T) {
+func TestProxyForwards(t *testing.T) {
 	t.Parallel()
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"ok":true}`)
 	}))
 	defer backend.Close()
-
-	h := proxy.New(backend.URL)
-	req := httptest.NewRequest(http.MethodGet, "/api/printers", nil)
-	w   := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK { t.Fatalf("status = %d, want 200", w.Code) }
+	w := httptest.NewRecorder()
+	proxy.New(backend.URL).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/printers", nil))
+	if w.Code != http.StatusOK { t.Fatalf("status %d", w.Code) }
 	if !strings.Contains(w.Body.String(), `"ok":true`) { t.Error("body not forwarded") }
 }
 
@@ -823,33 +712,22 @@ func TestProxyPassesSSEContentType(t *testing.T) {
 	t.Parallel()
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("X-Accel-Buffering", "no")
-		flusher := w.(http.Flusher)
 		io.WriteString(w, "data: hello\n\n")
-		flusher.Flush()
+		w.(http.Flusher).Flush()
 	}))
 	defer backend.Close()
-
-	h := proxy.New(backend.URL)
-	req := httptest.NewRequest(http.MethodGet, "/api/events?printer_id=test", nil)
-	w   := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-
+	w := httptest.NewRecorder()
+	proxy.New(backend.URL).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/events", nil))
 	if !strings.HasPrefix(w.Header().Get("Content-Type"), "text/event-stream") {
-		t.Errorf("Content-Type = %q, want text/event-stream", w.Header().Get("Content-Type"))
-	}
-	if !strings.Contains(w.Body.String(), "data: hello") {
-		t.Error("SSE data not forwarded")
+		t.Errorf("Content-Type = %q", w.Header().Get("Content-Type"))
 	}
 }
 
-func TestProxyReturns502WhenBackendUnreachable(t *testing.T) {
+func TestProxyReturns502WhenDown(t *testing.T) {
 	t.Parallel()
-	h := proxy.New("http://198.51.100.1:19999") // unreachable
-	req := httptest.NewRequest(http.MethodGet, "/api/printers", nil)
-	w   := httptest.NewRecorder()
-	h.ServeHTTP(w, req)
-	if w.Code != http.StatusBadGateway { t.Errorf("status = %d, want 502", w.Code) }
+	w := httptest.NewRecorder()
+	proxy.New("http://198.51.100.1:19999").ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusBadGateway { t.Errorf("status %d, want 502", w.Code) }
 }
 ```
 
@@ -859,27 +737,19 @@ func TestProxyReturns502WhenBackendUnreachable(t *testing.T) {
 go test -race ./internal/proxy/... 2>&1 | head -5
 ```
 
-- [ ] **Step 3: Implement `proxy.go`**
+- [ ] **Step 3: Create `internal/proxy/proxy.go`**
 
 ```go
-// frontend/internal/proxy/proxy.go
 package proxy
 
 import (
-	"log/slog"
-	"net/http"
-	"net/http/httputil"
-	"net/url"
+	"log/slog"; "net/http"; "net/http/httputil"; "net/url"
 )
 
-// New returns an http.Handler that proxies all requests to backendURL.
-// FlushInterval -1 means flush immediately after every write — required for SSE
-// so individual events are not held in the proxy's write buffer.
+// New returns a reverse proxy to backendURL with FlushInterval=-1 (required for SSE).
 func New(backendURL string) http.Handler {
 	target, err := url.Parse(backendURL)
-	if err != nil {
-		panic("proxy.New: invalid backendURL: " + err.Error())
-	}
+	if err != nil { panic("proxy.New: " + err.Error()) }
 	return &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Scheme = target.Scheme
@@ -896,16 +766,10 @@ func New(backendURL string) http.Handler {
 }
 ```
 
-- [ ] **Step 4: Run — GREEN**
+- [ ] **Step 4: Run — GREEN + commit**
 
 ```bash
 go test -race ./internal/proxy/... -v 2>&1 | tail -5
-# Expected: PASS (3 tests)
-```
-
-- [ ] **Step 5: Commit**
-
-```bash
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
   commit -m "feat(ui): add reverse proxy with FlushInterval=-1 for SSE pass-through
 
@@ -916,10 +780,7 @@ Refs #22"
 
 ## Task 5: Dashboard handler + template
 
-**Files:**
-- Create: `frontend/internal/handlers/dashboard.go`
-- Create: `frontend/internal/handlers/dashboard_test.go`
-- Create: `frontend/web/templates/dashboard.html`
+**Files:** `handlers/dashboard.go`, `dashboard_test.go`, `web/templates/dashboard.html`
 
 - [ ] **Step 1: Write failing test**
 
@@ -928,17 +789,11 @@ Refs #22"
 package handlers_test
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
-	"time"
-
+	"encoding/json"; "net/http"; "net/http/httptest"; "strings"; "testing"; "time"
 	"github.com/strausmann/label-printer-hub/frontend/internal/handlers"
 )
 
-func twoPrintersBackend(t *testing.T) *httptest.Server {
+func printersBackend(t *testing.T) *httptest.Server {
 	t.Helper()
 	now := time.Now().Format(time.RFC3339)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -957,35 +812,31 @@ func twoPrintersBackend(t *testing.T) *httptest.Server {
 	}))
 }
 
-func TestDashboardRendersPrinters(t *testing.T) {
+func TestDashboardOK(t *testing.T) {
 	t.Parallel()
-	backend := twoPrintersBackend(t)
+	backend := printersBackend(t)
 	defer backend.Close()
-
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w   := httptest.NewRecorder()
 	ph.Dashboard(w, req)
-
-	if w.Code != http.StatusOK { t.Fatalf("status = %d, want 200", w.Code) }
-	body := w.Body.String()
+	if w.Code != http.StatusOK { t.Fatalf("status %d", w.Code) }
 	for _, want := range []string{"PT-P750W", "QL-800", "printer-grid"} {
-		if !strings.Contains(body, want) { t.Errorf("body missing %q", want) }
+		if !strings.Contains(w.Body.String(), want) { t.Errorf("body missing %q", want) }
 	}
 }
 
-func TestDashboardBackendError(t *testing.T) {
+func TestDashboard503WhenBackendDown(t *testing.T) {
 	t.Parallel()
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gone", http.StatusServiceUnavailable)
 	}))
 	defer backend.Close()
-
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w   := httptest.NewRecorder()
 	ph.Dashboard(w, req)
-	if w.Code != http.StatusServiceUnavailable { t.Errorf("status = %d, want 503", w.Code) }
+	if w.Code != http.StatusServiceUnavailable { t.Errorf("status %d, want 503", w.Code) }
 }
 ```
 
@@ -995,14 +846,13 @@ func TestDashboardBackendError(t *testing.T) {
 go test -race ./internal/handlers/... -run TestDashboard 2>&1 | head -5
 ```
 
-- [ ] **Step 3: Create `internal/handlers/dashboard.go`**
+- [ ] **Step 3: Create `handlers/dashboard.go`**
 
 ```go
 package handlers
 
 import (
 	"net/http"
-
 	"github.com/strausmann/label-printer-hub/frontend/internal/api"
 )
 
@@ -1014,13 +864,12 @@ type DashboardData struct {
 func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	printers, err := h.client.ListPrinters(r.Context())
 	if err != nil {
-		h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable",
-			"Could not reach backend: "+err.Error())
+		h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", "Could not reach backend: "+err.Error())
 		return
 	}
 	h.renderPage(w, r, "dashboard", DashboardData{
 		TemplateData: TemplateData{Version: h.version, ActiveNav: "dashboard"},
-		Printers:     printers,
+		Printers: printers,
 	})
 }
 ```
@@ -1035,10 +884,8 @@ func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 {{define "dashboard-content"}}
 <div class="space-y-4">
   <h1 class="text-xl font-semibold text-content">Printers</h1>
-  <div id="printer-grid"
-       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-       hx-get="/" hx-trigger="every 30s"
-       hx-select="#printer-grid" hx-target="this" hx-swap="outerHTML">
+  <div id="printer-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+       hx-get="/" hx-trigger="every 30s" hx-select="#printer-grid" hx-target="this" hx-swap="outerHTML">
     {{range .Printers}}
     <div class="rounded-lg border border-surface-border bg-surface-raised p-4 flex flex-col gap-2">
       <div class="flex items-center justify-between">
@@ -1049,9 +896,7 @@ func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
       </div>
       <p class="text-sm text-content-secondary">{{.Model}} &middot; {{index .Connection "host"}}:{{index .Connection "port"}}</p>
     </div>
-    {{else}}
-    <p class="text-content-secondary col-span-full">No printers configured.</p>
-    {{end}}
+    {{else}}<p class="text-content-secondary col-span-full">No printers configured.</p>{{end}}
   </div>
 </div>
 {{end}}
@@ -1061,7 +906,6 @@ func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 ```bash
 go test -race ./internal/handlers/... -run TestDashboard -v 2>&1 | tail -5
-
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
   commit -m "feat(ui): dashboard handler and template with 30s HTMX polling
 
@@ -1072,48 +916,33 @@ Refs #22"
 
 ## Task 6: Printer detail handler + template + SSE hookup
 
-**Files:**
-- Create: `frontend/internal/handlers/printer.go`
-- Create: `frontend/internal/handlers/printer_test.go`
-- Create: `frontend/web/templates/printer.html`
+**Files:** `handlers/printer.go`, `printer_test.go`, `web/templates/printer.html`
 
-- [ ] **Step 1: Add `golang.org/x/sync` dependency**
+- [ ] **Step 1: Add `golang.org/x/sync` + write failing test**
 
 ```bash
-go get golang.org/x/sync
-go mod tidy
+go get golang.org/x/sync && go mod tidy
 ```
-
-- [ ] **Step 2: Write failing test**
 
 ```go
 // frontend/internal/handlers/printer_test.go
 package handlers_test
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
-	"time"
-
+	"encoding/json"; "net/http"; "net/http/httptest"; "strings"; "testing"; "time"
 	"github.com/strausmann/label-printer-hub/frontend/internal/handlers"
 )
 
 const testPrinterID = "cccccccc-0000-0000-0000-000000000003"
 
-func printerBackend(t *testing.T, id string) *httptest.Server {
+func printerDetailBackend(t *testing.T, id string) *httptest.Server {
 	t.Helper()
 	now := time.Now().Format(time.RFC3339)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/printers/" + id + "/status":
-			json.NewEncoder(w).Encode(map[string]any{
-				"printer_id": id, "online": true, "tape_loaded": "12mm black/clear",
-				"error_state": nil, "captured_at": now,
-			})
+			json.NewEncoder(w).Encode(map[string]any{"printer_id": id, "online": true, "tape_loaded": "12mm black/clear", "error_state": nil, "captured_at": now})
 		case "/api/printers/" + id + "/tape":
 			json.NewEncoder(w).Encode(map[string]any{"width_mm": 12})
 		case "/api/printers/" + id + "/queue":
@@ -1126,47 +955,41 @@ func printerBackend(t *testing.T, id string) *httptest.Server {
 
 func TestPrinterDetailOK(t *testing.T) {
 	t.Parallel()
-	backend := printerBackend(t, testPrinterID)
+	backend := printerDetailBackend(t, testPrinterID)
 	defer backend.Close()
-
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
 	req := httptest.NewRequest(http.MethodGet, "/printers/"+testPrinterID, nil)
 	w   := httptest.NewRecorder()
 	ph.PrinterDetailWithID(w, req, testPrinterID)
-
-	if w.Code != http.StatusOK { t.Fatalf("status = %d, want 200", w.Code) }
-	if !strings.Contains(w.Body.String(), "printer-detail") { t.Error("body missing printer-detail") }
+	if w.Code != http.StatusOK { t.Fatalf("status %d", w.Code) }
+	if !strings.Contains(w.Body.String(), "printer-detail") { t.Error("missing printer-detail") }
 }
 
 func TestPrinterDetailNotFound(t *testing.T) {
 	t.Parallel()
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
-	}))
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }))
 	defer backend.Close()
-
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
 	req := httptest.NewRequest(http.MethodGet, "/printers/no-such", nil)
 	w   := httptest.NewRecorder()
 	ph.PrinterDetailWithID(w, req, "no-such")
-	if w.Code != http.StatusNotFound { t.Errorf("status = %d, want 404", w.Code) }
+	if w.Code != http.StatusNotFound { t.Errorf("status %d, want 404", w.Code) }
 }
 ```
 
-- [ ] **Step 3: Run — RED**
+- [ ] **Step 2: Run — RED**
 
 ```bash
 go test -race ./internal/handlers/... -run TestPrinterDetail 2>&1 | head -5
 ```
 
-- [ ] **Step 4: Create `internal/handlers/printer.go`**
+- [ ] **Step 3: Create `handlers/printer.go`**
 
 ```go
 package handlers
 
 import (
 	"net/http"
-
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/errgroup"
 	"github.com/strausmann/label-printer-hub/frontend/internal/api"
@@ -1188,16 +1011,14 @@ func (h *PageHandler) PrinterDetailWithID(w http.ResponseWriter, r *http.Request
 	var status *api.PrinterStatus
 	var tape   map[string]any
 	var queue  []map[string]any
-
 	g, ctx := errgroup.WithContext(r.Context())
 	g.Go(func() (err error) { status, err = h.client.GetPrinterStatus(ctx, id); return })
 	g.Go(func() (err error) {
 		tape, err = h.client.GetPrinterTape(ctx, id)
-		if err == api.ErrNotFound { err = nil } // no tape is not an error
+		if err == api.ErrNotFound { tape = nil; err = nil }
 		return
 	})
 	g.Go(func() (err error) { queue, err = h.client.GetPrinterQueue(ctx, id); return })
-
 	if err := g.Wait(); err != nil {
 		code := http.StatusServiceUnavailable
 		if err == api.ErrNotFound { code = http.StatusNotFound }
@@ -1206,12 +1027,12 @@ func (h *PageHandler) PrinterDetailWithID(w http.ResponseWriter, r *http.Request
 	}
 	h.renderPage(w, r, "printer", PrinterDetailData{
 		TemplateData: TemplateData{Version: h.version},
-		PrinterID:    id, Status: status, Tape: tape, Queue: queue,
+		PrinterID: id, Status: status, Tape: tape, Queue: queue,
 	})
 }
 ```
 
-- [ ] **Step 5: Create `web/templates/printer.html`**
+- [ ] **Step 4: Create `web/templates/printer.html`**
 
 ```html
 {{template "layout" .}}
@@ -1233,18 +1054,15 @@ func (h *PageHandler) PrinterDetailWithID(w http.ResponseWriter, r *http.Request
       {{if .Status.ErrorState}}<p class="mt-1 text-sm text-state-failed">Error: {{.Status.ErrorState}}</p>{{end}}
       {{else}}<p class="text-content-secondary">Status unavailable.</p>{{end}}
     </div>
-
     <div id="job-queue-panel" sse-swap="job.state_changed" hx-swap="innerHTML"
          class="rounded-lg border border-surface-border bg-surface-raised p-4">
       <h2 class="font-medium text-content mb-3">Active Jobs</h2>
       {{if .Queue}}
-      <ul class="space-y-1">
-        {{range .Queue}}
+      <ul class="space-y-1">{{range .Queue}}
         <li class="flex items-center gap-2 text-sm">
           <span class="badge badge-{{index . "state"}}">{{index . "state"}}</span>
           <a href="/jobs/{{index . "id"}}" class="text-primary hover:underline">{{index . "template_key"}}</a>
-        </li>
-        {{end}}
+        </li>{{end}}
       </ul>
       {{else}}<p class="text-sm text-content-secondary">No active jobs.</p>{{end}}
     </div>
@@ -1254,11 +1072,10 @@ func (h *PageHandler) PrinterDetailWithID(w http.ResponseWriter, r *http.Request
 {{end}}
 ```
 
-- [ ] **Step 6: Run — GREEN + commit**
+- [ ] **Step 5: Run — GREEN + commit**
 
 ```bash
 go test -race ./internal/handlers/... -run TestPrinterDetail -v 2>&1 | tail -5
-
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
   commit -m "feat(ui): printer detail handler with errgroup parallel fetch and SSE wiring
 
@@ -1267,12 +1084,13 @@ Refs #22"
 
 ---
 
-## Task 7: Jobs list handler + template
+## Task 7: Jobs list + Task 8: Job detail/retry — implement together
 
-**Files:**
-- Create: `frontend/internal/handlers/jobs.go`
-- Create: `frontend/internal/handlers/jobs_test.go`
-- Create: `frontend/web/templates/jobs.html`
+These two tasks share the same mock-backend pattern. Implement them sequentially in one sitting.
+
+### Task 7 — Jobs list
+
+**Files:** `handlers/jobs.go`, `jobs_test.go`, `web/templates/jobs.html`
 
 - [ ] **Step 1: Write failing test**
 
@@ -1281,51 +1099,39 @@ Refs #22"
 package handlers_test
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
-	"time"
-
+	"encoding/json"; "net/http"; "net/http/httptest"; "strings"; "testing"; "time"
 	"github.com/strausmann/label-printer-hub/frontend/internal/handlers"
 )
 
-func jobsListBackend(t *testing.T) *httptest.Server {
+func jobsBackend(t *testing.T) *httptest.Server {
 	t.Helper()
 	now := time.Now().Format(time.RFC3339)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/jobs" { http.NotFound(w, r); return }
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]map[string]any{
-			{"id": "11111111-0000-0000-0000-000000000001",
-			 "printer_id": "aaaaaaaa-0000-0000-0000-000000000001",
-			 "template_key": "snipeit-asset", "state": "done",
-			 "payload": map[string]any{}, "result": nil, "error": nil,
-			 "created_at": now, "updated_at": now, "started_at": now, "finished_at": now},
+			{"id": "11111111-0000-0000-0000-000000000001", "printer_id": "aaaaaaaa-0000-0000-0000-000000000001",
+			 "template_key": "snipeit-asset", "state": "done", "payload": map[string]any{},
+			 "result": nil, "error": nil, "created_at": now, "updated_at": now, "started_at": now, "finished_at": now},
 		})
 	}))
 }
 
 func TestJobsListOK(t *testing.T) {
 	t.Parallel()
-	backend := jobsListBackend(t)
+	backend := jobsBackend(t)
 	defer backend.Close()
-
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
-	req := httptest.NewRequest(http.MethodGet, "/jobs", nil)
-	w   := httptest.NewRecorder()
-	ph.JobsList(w, req)
-
-	if w.Code != http.StatusOK { t.Fatalf("status = %d, want 200", w.Code) }
-	body := w.Body.String()
+	w  := httptest.NewRecorder()
+	ph.JobsList(w, httptest.NewRequest(http.MethodGet, "/jobs", nil))
+	if w.Code != http.StatusOK { t.Fatalf("status %d", w.Code) }
 	for _, want := range []string{"jobs-table-container", "done"} {
-		if !strings.Contains(body, want) { t.Errorf("body missing %q", want) }
+		if !strings.Contains(w.Body.String(), want) { t.Errorf("body missing %q", want) }
 	}
 }
 ```
 
-- [ ] **Step 2: Run — RED → implement `handlers/jobs.go`**
+- [ ] **Step 2: Run RED → implement `handlers/jobs.go`**
 
 ```go
 package handlers
@@ -1337,36 +1143,25 @@ import (
 
 type JobsListData struct {
 	TemplateData
-	Jobs          []api.JobRead
-	StateFilter   string
-	PrinterFilter string
-	NextCursor    string
+	Jobs []api.JobRead
+	StateFilter, PrinterFilter, NextCursor string
 }
 
 func (h *PageHandler) JobsList(w http.ResponseWriter, r *http.Request) {
-	q             := r.URL.Query()
-	stateFilter   := q.Get("state")
-	printerFilter := q.Get("printer_id")
-	since         := q.Get("since")
-	limit         := 50
-
+	q := r.URL.Query()
+	sf, pf, since := q.Get("state"), q.Get("printer_id"), q.Get("since")
+	limit := 50
 	params := &api.GetApiJobsParams{Limit: &limit}
-	if stateFilter != ""   { params.State     = &stateFilter }
-	if printerFilter != "" { params.PrinterId = &printerFilter }
-	if since != ""         { params.Since     = &since }
-
+	if sf != ""    { params.State     = &sf }
+	if pf != ""    { params.PrinterId = &pf }
+	if since != "" { params.Since     = &since }
 	jobs, err := h.client.ListJobs(r.Context(), params)
-	if err != nil {
-		h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error())
-		return
-	}
-	var nextCursor string
-	if len(jobs) == limit {
-		nextCursor = jobs[len(jobs)-1].CreatedAt.Format("2006-01-02T15:04:05Z07:00")
-	}
+	if err != nil { h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error()); return }
+	var next string
+	if len(jobs) == limit { next = jobs[len(jobs)-1].CreatedAt.Format("2006-01-02T15:04:05Z07:00") }
 	h.renderPage(w, r, "jobs", JobsListData{
-		TemplateData:  TemplateData{Version: h.version, ActiveNav: "jobs"},
-		Jobs: jobs, StateFilter: stateFilter, PrinterFilter: printerFilter, NextCursor: nextCursor,
+		TemplateData: TemplateData{Version: h.version, ActiveNav: "jobs"},
+		Jobs: jobs, StateFilter: sf, PrinterFilter: pf, NextCursor: next,
 	})
 }
 ```
@@ -1385,9 +1180,11 @@ func (h *PageHandler) JobsList(w http.ResponseWriter, r *http.Request) {
     <form hx-get="/jobs" hx-push-url="true" hx-target="#jobs-table-container" class="flex gap-2">
       <select name="state" class="rounded border border-surface-border px-2 py-1 text-sm">
         <option value="">All states</option>
-        {{range $s := list "queued" "printing" "done" "failed" "cancelled"}}
-        <option value="{{$s}}" {{if eq $.StateFilter $s}}selected{{end}}>{{$s}}</option>
-        {{end}}
+        <option value="queued"    {{if eq .StateFilter "queued"}}selected{{end}}>Queued</option>
+        <option value="printing"  {{if eq .StateFilter "printing"}}selected{{end}}>Printing</option>
+        <option value="done"      {{if eq .StateFilter "done"}}selected{{end}}>Done</option>
+        <option value="failed"    {{if eq .StateFilter "failed"}}selected{{end}}>Failed</option>
+        <option value="cancelled" {{if eq .StateFilter "cancelled"}}selected{{end}}>Cancelled</option>
       </select>
       <button type="submit" class="rounded bg-primary px-3 py-1 text-sm text-primary-fg">Filter</button>
     </form>
@@ -1408,9 +1205,7 @@ func (h *PageHandler) JobsList(w http.ResponseWriter, r *http.Request) {
           <td class="py-2 pr-4 text-content-secondary font-mono text-xs">{{.PrinterId}}</td>
           <td class="py-2 text-content-secondary">{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
         </tr>
-        {{else}}
-        <tr><td colspan="4" class="py-6 text-center text-content-secondary">No jobs found.</td></tr>
-        {{end}}
+        {{else}}<tr><td colspan="4" class="py-6 text-center text-content-secondary">No jobs found.</td></tr>{{end}}
       </tbody>
     </table>
     {{if .NextCursor}}
@@ -1424,41 +1219,28 @@ func (h *PageHandler) JobsList(w http.ResponseWriter, r *http.Request) {
 {{end}}
 ```
 
-**Note:** `{{range $s := list ...}}` uses a custom template function or replace with literal `<option>` blocks if `list` is not registered. Register with `template.FuncMap{"list": func(a ...string) []string { return a }}` in `NewPageHandler`.
-
-- [ ] **Step 4: Run — GREEN + commit**
+- [ ] **Step 4: Run GREEN + commit**
 
 ```bash
 go test -race ./internal/handlers/... -run TestJobsList -v 2>&1 | tail -5
-
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
   commit -m "feat(ui): jobs list handler with filter form and cursor-based pagination
 
 Refs #22"
 ```
 
----
+### Task 8 — Job detail + retry PRG
 
-## Task 8: Job detail + retry PRG
+**Files:** `handlers/job.go`, `job_test.go`, `web/templates/job.html`
 
-**Files:**
-- Create: `frontend/internal/handlers/job.go`, `job_test.go`
-- Create: `frontend/web/templates/job.html`
-
-- [ ] **Step 1: Write failing test**
+- [ ] **Step 5: Write failing test**
 
 ```go
 // frontend/internal/handlers/job_test.go
 package handlers_test
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"testing"
-	"time"
-
+	"encoding/json"; "net/http"; "net/http/httptest"; "strings"; "testing"; "time"
 	"github.com/strausmann/label-printer-hub/frontend/internal/handlers"
 )
 
@@ -1467,7 +1249,7 @@ const (
 	newJobID = "33333333-0000-0000-0000-000000000003"
 )
 
-func jobBackend(t *testing.T) *httptest.Server {
+func jobDetailBackend(t *testing.T) *httptest.Server {
 	t.Helper()
 	now := time.Now().Format(time.RFC3339)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1496,36 +1278,30 @@ func jobBackend(t *testing.T) *httptest.Server {
 
 func TestJobDetailOK(t *testing.T) {
 	t.Parallel()
-	backend := jobBackend(t)
+	backend := jobDetailBackend(t)
 	defer backend.Close()
-
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
-	req := httptest.NewRequest(http.MethodGet, "/jobs/"+jobID, nil)
-	w   := httptest.NewRecorder()
-	ph.JobDetailWithID(w, req, jobID)
-
-	if w.Code != http.StatusOK { t.Fatalf("status = %d, want 200", w.Code) }
+	w  := httptest.NewRecorder()
+	ph.JobDetailWithID(w, httptest.NewRequest(http.MethodGet, "/jobs/"+jobID, nil), jobID)
+	if w.Code != http.StatusOK { t.Fatalf("status %d", w.Code) }
 	if !strings.Contains(w.Body.String(), "job-detail") { t.Error("missing job-detail") }
 }
 
 func TestJobRetry303(t *testing.T) {
 	t.Parallel()
-	backend := jobBackend(t)
+	backend := jobDetailBackend(t)
 	defer backend.Close()
-
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
-	req := httptest.NewRequest(http.MethodPost, "/jobs/"+jobID+"/retry", nil)
-	w   := httptest.NewRecorder()
-	ph.JobRetryWithID(w, req, jobID)
-
-	if w.Code != http.StatusSeeOther { t.Errorf("status = %d, want 303", w.Code) }
+	w  := httptest.NewRecorder()
+	ph.JobRetryWithID(w, httptest.NewRequest(http.MethodPost, "/jobs/"+jobID+"/retry", nil), jobID)
+	if w.Code != http.StatusSeeOther { t.Errorf("status %d, want 303", w.Code) }
 	if !strings.Contains(w.Header().Get("Location"), newJobID) {
-		t.Errorf("Location = %q, must contain new job ID", w.Header().Get("Location"))
+		t.Errorf("Location %q must contain new job ID", w.Header().Get("Location"))
 	}
 }
 ```
 
-- [ ] **Step 2: Run — RED → implement `handlers/job.go`**
+- [ ] **Step 6: Run RED → implement `handlers/job.go`**
 
 ```go
 package handlers
@@ -1550,10 +1326,10 @@ func (h *PageHandler) JobDetailWithID(w http.ResponseWriter, r *http.Request, id
 	job, err := h.client.GetJob(r.Context(), id)
 	if err == api.ErrNotFound { h.renderError(w, r, http.StatusNotFound, "Not Found", "Job not found: "+id); return }
 	if err != nil { h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error()); return }
-	terminal := job.State == "done" || job.State == "failed" || job.State == "cancelled"
 	h.renderPage(w, r, "job", JobDetailData{
 		TemplateData: TemplateData{Version: h.version, ActiveNav: "jobs"},
-		Job: job, IsTerminal: terminal,
+		Job: job,
+		IsTerminal: job.State == "done" || job.State == "failed" || job.State == "cancelled",
 	})
 }
 
@@ -1569,7 +1345,7 @@ func (h *PageHandler) JobRetryWithID(w http.ResponseWriter, r *http.Request, id 
 }
 ```
 
-- [ ] **Step 3: Create `web/templates/job.html`**
+- [ ] **Step 7: Create `web/templates/job.html`**
 
 ```html
 {{template "layout" .}}
@@ -1583,7 +1359,6 @@ func (h *PageHandler) JobRetryWithID(w http.ResponseWriter, r *http.Request, id 
     <h1 class="text-xl font-semibold text-content">Job {{.Job.Id}}</h1>
     <span class="badge badge-{{.Job.State}}">{{.Job.State}}</span>
   </div>
-
   {{if not .IsTerminal}}
   <div id="job-status-row"
        hx-get="/jobs/{{.Job.Id}}" hx-trigger="every 10s"
@@ -1591,7 +1366,6 @@ func (h *PageHandler) JobRetryWithID(w http.ResponseWriter, r *http.Request, id 
     <p class="text-sm text-content-secondary">Auto-refreshing&hellip;</p>
   </div>
   {{end}}
-
   <dl class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
     <dt class="text-content-secondary">Template</dt>
     <dd><a href="/templates/{{.Job.TemplateKey}}" class="text-primary hover:underline">{{.Job.TemplateKey}}</a></dd>
@@ -1602,7 +1376,6 @@ func (h *PageHandler) JobRetryWithID(w http.ResponseWriter, r *http.Request, id 
     {{if .Job.Error}}<dt class="text-content-secondary">Error</dt>
     <dd class="text-state-failed">{{.Job.Error}}</dd>{{end}}
   </dl>
-
   {{if or (eq .Job.State "failed") (eq .Job.State "cancelled")}}
   <form method="post" action="/jobs/{{.Job.Id}}/retry">
     <button type="submit" class="rounded bg-primary px-4 py-2 text-sm text-primary-fg hover:bg-primary-hover">
@@ -1615,13 +1388,12 @@ func (h *PageHandler) JobRetryWithID(w http.ResponseWriter, r *http.Request, id 
 {{end}}
 ```
 
-- [ ] **Step 4: Run — GREEN + commit**
+- [ ] **Step 8: Run GREEN + commit both tasks**
 
 ```bash
-go test -race ./internal/handlers/... -run TestJob -v 2>&1 | tail -5
-
+go test -race ./internal/handlers/... -run "TestJobsList|TestJobDetail|TestJobRetry" -v 2>&1 | tail -5
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
-  commit -m "feat(ui): job detail handler with retry PRG (303 See Other)
+  commit -m "feat(ui): job detail handler with retry PRG (303 See Other to new job)
 
 Refs #22"
 ```
@@ -1652,9 +1424,8 @@ func templatesBackend(t *testing.T) *httptest.Server {
 		json.NewEncoder(w).Encode([]map[string]any{
 			{"id": "dddddddd-0000-0000-0000-000000000004", "key": "snipeit-asset",
 			 "name": "Snipe-IT Asset Label", "app": "snipeit", "printer_model": "pt_series",
-			 "tape_width_mm": 12, "schema_version": 1,
-			 "definition": map[string]any{}, "source": "key: snipeit-asset\n",
-			 "created_at": now, "updated_at": now},
+			 "tape_width_mm": 12, "schema_version": 1, "definition": map[string]any{},
+			 "source": "key: snipeit-asset\n", "created_at": now, "updated_at": now},
 		})
 	}))
 }
@@ -1664,10 +1435,9 @@ func TestTemplatesListOK(t *testing.T) {
 	backend := templatesBackend(t)
 	defer backend.Close()
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
-	req := httptest.NewRequest(http.MethodGet, "/templates", nil)
-	w   := httptest.NewRecorder()
-	ph.TemplatesList(w, req)
-	if w.Code != http.StatusOK { t.Fatalf("status = %d, want 200", w.Code) }
+	w  := httptest.NewRecorder()
+	ph.TemplatesList(w, httptest.NewRequest(http.MethodGet, "/templates", nil))
+	if w.Code != http.StatusOK { t.Fatalf("status %d", w.Code) }
 	for _, want := range []string{"templates-grid", "Snipe-IT Asset Label"} {
 		if !strings.Contains(w.Body.String(), want) { t.Errorf("body missing %q", want) }
 	}
@@ -1693,10 +1463,7 @@ type TemplatesListData struct {
 func (h *PageHandler) TemplatesList(w http.ResponseWriter, r *http.Request) {
 	app := r.URL.Query().Get("app")
 	templates, err := h.client.ListTemplates(r.Context(), app)
-	if err != nil {
-		h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error())
-		return
-	}
+	if err != nil { h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error()); return }
 	h.renderPage(w, r, "templates", TemplatesListData{
 		TemplateData: TemplateData{Version: h.version, ActiveNav: "templates"},
 		Templates: templates, AppFilter: app,
@@ -1725,8 +1492,7 @@ func (h *PageHandler) TemplatesList(w http.ResponseWriter, r *http.Request) {
       <button type="submit" class="rounded bg-primary px-3 py-1 text-sm text-primary-fg">Filter</button>
     </form>
   </div>
-  <div id="templates-grid"
-       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+  <div id="templates-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
        hx-get="/templates" hx-trigger="every 60s"
        hx-select="#templates-grid" hx-target="this" hx-swap="outerHTML">
     {{range .Templates}}
@@ -1738,19 +1504,16 @@ func (h *PageHandler) TemplatesList(w http.ResponseWriter, r *http.Request) {
       </div>
       <p class="text-sm text-content-secondary">{{.TapeWidthMm}} mm &middot; {{.PrinterModel}}</p>
     </a>
-    {{else}}
-    <p class="text-content-secondary col-span-full">No templates found.</p>
-    {{end}}
+    {{else}}<p class="text-content-secondary col-span-full">No templates found.</p>{{end}}
   </div>
 </div>
 {{end}}
 ```
 
-- [ ] **Step 4: Run — GREEN + commit**
+- [ ] **Step 4: Run GREEN + commit**
 
 ```bash
 go test -race ./internal/handlers/... -run TestTemplatesList -v 2>&1 | tail -5
-
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
   commit -m "feat(ui): templates list handler with 60s polling and tile grid
 
@@ -1759,7 +1522,7 @@ Refs #22"
 
 ---
 
-## Task 10: Template detail handler + template (YAML + preview)
+## Task 10: Template detail handler + template (YAML + base64 preview)
 
 **Files:** `handlers/template.go`, `template_test.go`, `web/templates/template.html`
 
@@ -1790,12 +1553,7 @@ func templateDetailBackend(t *testing.T, previewOK bool) *httptest.Server {
 				 "source": "key: snipeit-asset\napp: snipeit\n", "created_at": now, "updated_at": now},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/render/preview":
-			if previewOK {
-				w.Header().Set("Content-Type", "image/png")
-				w.Write([]byte("\x89PNG\r\n\x1a\n")) // minimal PNG header
-			} else {
-				http.Error(w, "render error", http.StatusInternalServerError)
-			}
+			if previewOK { w.Header().Set("Content-Type", "image/png"); w.Write([]byte("\x89PNG\r\n\x1a\n")) } else { http.Error(w, "err", 500) }
 		default:
 			http.NotFound(w, r)
 		}
@@ -1807,10 +1565,9 @@ func TestTemplateDetailOK(t *testing.T) {
 	backend := templateDetailBackend(t, true)
 	defer backend.Close()
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
-	req := httptest.NewRequest(http.MethodGet, "/templates/"+testTplKey, nil)
-	w   := httptest.NewRecorder()
-	ph.TemplateDetailWithKey(w, req, testTplKey)
-	if w.Code != http.StatusOK { t.Fatalf("status = %d, want 200", w.Code) }
+	w  := httptest.NewRecorder()
+	ph.TemplateDetailWithKey(w, httptest.NewRequest(http.MethodGet, "/templates/"+testTplKey, nil), testTplKey)
+	if w.Code != http.StatusOK { t.Fatalf("status %d", w.Code) }
 	if !strings.Contains(w.Body.String(), "template-detail") { t.Error("missing template-detail") }
 }
 
@@ -1819,10 +1576,9 @@ func TestTemplateDetailPreviewFallback(t *testing.T) {
 	backend := templateDetailBackend(t, false)
 	defer backend.Close()
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
-	req := httptest.NewRequest(http.MethodGet, "/templates/"+testTplKey, nil)
-	w   := httptest.NewRecorder()
-	ph.TemplateDetailWithKey(w, req, testTplKey)
-	if w.Code != http.StatusOK { t.Fatalf("status = %d, want 200 even with failed preview", w.Code) }
+	w  := httptest.NewRecorder()
+	ph.TemplateDetailWithKey(w, httptest.NewRequest(http.MethodGet, "/templates/"+testTplKey, nil), testTplKey)
+	if w.Code != http.StatusOK { t.Fatalf("status %d, want 200 even with failed preview", w.Code) }
 }
 ```
 
@@ -1832,11 +1588,7 @@ func TestTemplateDetailPreviewFallback(t *testing.T) {
 package handlers
 
 import (
-	"context"
-	"encoding/base64"
-	"net/http"
-	"time"
-
+	"context"; "encoding/base64"; "net/http"; "time"
 	"github.com/go-chi/chi/v5"
 	"github.com/strausmann/label-printer-hub/frontend/internal/api"
 )
@@ -1853,18 +1605,12 @@ func (h *PageHandler) TemplateDetail(w http.ResponseWriter, r *http.Request) {
 
 func (h *PageHandler) TemplateDetailWithKey(w http.ResponseWriter, r *http.Request, key string) {
 	templates, err := h.client.ListTemplates(r.Context(), "")
-	if err != nil {
-		h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error())
-		return
-	}
+	if err != nil { h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error()); return }
 	var tmpl *api.TemplateRead
 	for i := range templates {
 		if templates[i].Key == key { tmpl = &templates[i]; break }
 	}
-	if tmpl == nil {
-		h.renderError(w, r, http.StatusNotFound, "Not Found", "Template not found: "+key)
-		return
-	}
+	if tmpl == nil { h.renderError(w, r, http.StatusNotFound, "Not Found", "Template not found: "+key); return }
 
 	previewURI := "/static/preview-placeholder.svg"
 	pCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -1874,8 +1620,8 @@ func (h *PageHandler) TemplateDetailWithKey(w http.ResponseWriter, r *http.Reque
 	}
 
 	h.renderPage(w, r, "template", TemplateDetailData{
-		TemplateData:   TemplateData{Version: h.version, ActiveNav: "templates"},
-		Template:       tmpl, PreviewDataURI: previewURI,
+		TemplateData: TemplateData{Version: h.version, ActiveNav: "templates"},
+		Template: tmpl, PreviewDataURI: previewURI,
 	})
 }
 ```
@@ -1915,13 +1661,12 @@ func (h *PageHandler) TemplateDetailWithKey(w http.ResponseWriter, r *http.Reque
 {{end}}
 ```
 
-- [ ] **Step 4: Run — GREEN + commit**
+- [ ] **Step 4: Run GREEN + commit**
 
 ```bash
 go test -race ./internal/handlers/... -run TestTemplateDetail -v 2>&1 | tail -5
-
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
-  commit -m "feat(ui): template detail with YAML source preview and base64 PNG embed (2s timeout)
+  commit -m "feat(ui): template detail with YAML source and base64 PNG preview (2s timeout)
 
 Refs #22"
 ```
@@ -1946,15 +1691,12 @@ import (
 func lookupBackend(t *testing.T, app, id string, code int) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/api/lookup/"+app+"/"+id { http.NotFound(w, r); return }
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(code)
 		if code == http.StatusOK {
-			json.NewEncoder(w).Encode(map[string]any{
-				"app": app, "id": id, "name": "Test Asset",
-				"url": "https://snipeit.example.invalid/hardware/42",
-				"extra": map[string]any{},
-			})
+			json.NewEncoder(w).Encode(map[string]any{"app": app, "id": id, "name": "Test Asset",
+				"url": "https://snipeit.example.invalid/hardware/42", "extra": map[string]any{}})
 		} else {
 			json.NewEncoder(w).Encode(map[string]any{"detail": "not found"})
 		}
@@ -1966,10 +1708,9 @@ func TestLookupOK(t *testing.T) {
 	backend := lookupBackend(t, "snipeit", "42", http.StatusOK)
 	defer backend.Close()
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
-	req := httptest.NewRequest(http.MethodGet, "/lookup/snipeit/42", nil)
-	w   := httptest.NewRecorder()
-	ph.LookupDisplayWithParams(w, req, "snipeit", "42")
-	if w.Code != http.StatusOK { t.Fatalf("status = %d, want 200", w.Code) }
+	w  := httptest.NewRecorder()
+	ph.LookupDisplayWithParams(w, httptest.NewRequest(http.MethodGet, "/lookup/snipeit/42", nil), "snipeit", "42")
+	if w.Code != http.StatusOK { t.Fatalf("status %d", w.Code) }
 	if !strings.Contains(w.Body.String(), "lookup-result") { t.Error("missing lookup-result") }
 }
 
@@ -1978,12 +1719,10 @@ func TestLookupNotFound(t *testing.T) {
 	backend := lookupBackend(t, "snipeit", "999", http.StatusNotFound)
 	defer backend.Close()
 	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
-	req := httptest.NewRequest(http.MethodGet, "/lookup/snipeit/999", nil)
-	w   := httptest.NewRecorder()
-	ph.LookupDisplayWithParams(w, req, "snipeit", "999")
-	if w.Code != http.StatusNotFound { t.Errorf("status = %d, want 404", w.Code) }
-	// Must not render raw JSON
-	if strings.Contains(w.Body.String(), `"detail"`) { t.Error("must not expose raw JSON detail field") }
+	w  := httptest.NewRecorder()
+	ph.LookupDisplayWithParams(w, httptest.NewRequest(http.MethodGet, "/lookup/snipeit/999", nil), "snipeit", "999")
+	if w.Code != http.StatusNotFound { t.Errorf("status %d, want 404", w.Code) }
+	if strings.Contains(w.Body.String(), `"detail"`) { t.Error("must not expose raw JSON") }
 }
 ```
 
@@ -2045,16 +1784,13 @@ func (h *PageHandler) LookupDisplayWithParams(w http.ResponseWriter, r *http.Req
     <a href="{{.Result.Url}}" target="_blank" rel="noopener noreferrer"
        class="text-primary hover:underline text-sm">Open in {{.Result.App}} &nearr;</a>
     {{if .Result.Extra}}
-    <table class="w-full text-sm border-collapse mt-2">
-      <tbody>
-        {{range $k, $v := .Result.Extra}}
-        <tr class="border-b border-surface-border">
-          <td class="py-1 pr-4 text-content-secondary">{{$k}}</td>
-          <td class="py-1 font-mono text-xs">{{$v}}</td>
-        </tr>
-        {{end}}
-      </tbody>
-    </table>
+    <table class="w-full text-sm border-collapse mt-2"><tbody>
+      {{range $k, $v := .Result.Extra}}
+      <tr class="border-b border-surface-border">
+        <td class="py-1 pr-4 text-content-secondary">{{$k}}</td>
+        <td class="py-1 font-mono text-xs">{{$v}}</td>
+      </tr>{{end}}
+    </tbody></table>
     {{end}}
   </div>
   {{end}}
@@ -2062,13 +1798,12 @@ func (h *PageHandler) LookupDisplayWithParams(w http.ResponseWriter, r *http.Req
 {{end}}
 ```
 
-- [ ] **Step 4: Run — GREEN + commit**
+- [ ] **Step 4: Run GREEN + commit**
 
 ```bash
 go test -race ./internal/handlers/... -run TestLookup -v 2>&1 | tail -5
-
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
-  commit -m "feat(ui): lookup display handler with styled 404 page (no raw JSON)
+  commit -m "feat(ui): lookup display handler with styled 404 (no raw JSON)
 
 Refs #22"
 ```
@@ -2077,10 +1812,7 @@ Refs #22"
 
 ## Task 12: Extended healthz + wire all routes in `main.go`
 
-**Files:**
-- Create: `frontend/internal/handlers/healthz.go`
-- Modify: `frontend/cmd/server/main.go`
-- Modify: `frontend/cmd/server/main_test.go`
+**Files:** `handlers/healthz.go`; modify `cmd/server/main.go`, `cmd/server/main_test.go`
 
 - [ ] **Step 1: Create `handlers/healthz.go`**
 
@@ -2088,10 +1820,7 @@ Refs #22"
 package handlers
 
 import (
-	"context"
-	"encoding/json"
-	"net/http"
-	"time"
+	"context"; "encoding/json"; "net/http"; "time"
 )
 
 type HealthzResponse struct {
@@ -2103,14 +1832,8 @@ type HealthzResponse struct {
 	BackendError     string `json:"backend_error,omitempty"`
 }
 
-// Healthz handles GET /healthz. Always returns HTTP 200 — backend unreachability
-// is reported in the JSON body, not as an HTTP error, so liveness probes stay green.
 func (h *PageHandler) Healthz(w http.ResponseWriter, r *http.Request) {
-	resp := HealthzResponse{
-		Status:     "ok",
-		Version:    h.version,
-		Repository: "https://github.com/strausmann/label-printer-hub",
-	}
+	resp := HealthzResponse{Status: "ok", Version: h.version, Repository: "https://github.com/strausmann/label-printer-hub"}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 	start := time.Now()
@@ -2125,103 +1848,83 @@ func (h *PageHandler) Healthz(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-- [ ] **Step 2: Update `cmd/server/main.go` — replace `newRouter` and `main`**
+- [ ] **Step 2: Replace `newRouter` and update `main()` in `cmd/server/main.go`**
 
-Full `newRouter` replacement:
+Replace the existing `newRouter` with:
 
 ```go
 func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS) *chi.Mux {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Recoverer)
-	r.Use(slogRequestLogger)
+	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer, slogRequestLogger)
 
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticSubFS))))
+	r.Get("/",                  ph.Dashboard)
+	r.Get("/printers/{id}",     ph.PrinterDetail)
+	r.Get("/jobs",              ph.JobsList)
+	r.Get("/jobs/{id}",         ph.JobDetail)
+	r.Post("/jobs/{id}/retry",  ph.JobRetry)
+	r.Get("/templates",         ph.TemplatesList)
+	r.Get("/templates/{id}",    ph.TemplateDetail)
+	r.Get("/lookup/{app}/{id}", ph.LookupDisplay)
+	r.Get("/healthz",           ph.Healthz)
 
-	r.Get("/",                   ph.Dashboard)
-	r.Get("/printers/{id}",      ph.PrinterDetail)
-	r.Get("/jobs",               ph.JobsList)
-	r.Get("/jobs/{id}",          ph.JobDetail)
-	r.Post("/jobs/{id}/retry",   ph.JobRetry)
-	r.Get("/templates",          ph.TemplatesList)
-	r.Get("/templates/{id}",     ph.TemplateDetail)
-	r.Get("/lookup/{app}/{id}",  ph.LookupDisplay)
-	r.Get("/healthz",            ph.Healthz)
-
-	// Proxy: REST API, SSE, and QR landing pages (served by the backend).
 	r.Mount("/api",     http.StripPrefix("/api", prx))
 	r.Mount("/loc",     prx)
 	r.Mount("/asset",   prx)
 	r.Mount("/spool",   prx)
 	r.Mount("/product", prx)
-
 	return r
 }
 ```
 
-Update `main()` to instantiate the new types:
+Update `main()` startup:
 
 ```go
 func main() {
 	buildInfo = loadBuildInfo()
 	backendURL := envDefault("BACKEND_URL", "http://backend:8000")
-	port       := envDefault("PORT", "8080")
 
 	tmpl, err := template.ParseFS(templateFS, "web/templates/*.html")
-	if err != nil {
-		slog.Error("failed to parse templates", "err", err)
-		os.Exit(1)
-	}
+	if err != nil { slog.Error("templates", "err", err); os.Exit(1) }
 
-	client       := api.NewClient(backendURL)
-	ph           := handlers.NewPageHandler(tmpl, client, buildInfo.Version)
-	prx          := proxy.New(backendURL)
+	client         := api.NewClient(backendURL)
+	ph             := handlers.NewPageHandler(tmpl, client, buildInfo.Version)
+	prx            := proxy.New(backendURL)
 	staticSubFS, _ := fs.Sub(staticFS, "web/static")
-
 	r := newRouter(ph, prx, staticSubFS)
-	// ... unchanged: srv setup, signal handling, ListenAndServe
+	// ... rest of main unchanged (srv, signals, ListenAndServe)
 }
 ```
 
-Add imports: `"html/template"`, `"io/fs"`, `api "github.com/strausmann/label-printer-hub/frontend/internal/api"`, `"github.com/strausmann/label-printer-hub/frontend/internal/handlers"`, `"github.com/strausmann/label-printer-hub/frontend/internal/proxy"`.
+Add imports: `"html/template"`, `"io/fs"`, and packages for `api`, `handlers`, `proxy`.
+Remove the old standalone `healthzHandler` function.
 
-Remove the standalone `healthzHandler` function (now on `PageHandler`).
-
-- [ ] **Step 3: Add integration test to `cmd/server/main_test.go`**
+- [ ] **Step 3: Add routing integration test to `main_test.go`**
 
 ```go
-func TestRoutesDashboardIntegration(t *testing.T) {
-	// Mock backend: respond to /api/printers and /healthz
+func TestRoutesDashboard(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/printers":
-			fmt.Fprint(w, `[]`)
-		case "/healthz":
-			fmt.Fprint(w, `{"status":"ok"}`)
-		default:
-			http.NotFound(w, r)
+		case "/api/printers": fmt.Fprint(w, `[]`)
+		case "/healthz":      fmt.Fprint(w, `{"status":"ok"}`)
+		default:              http.NotFound(w, r)
 		}
 	}))
 	defer backend.Close()
 
 	buildInfo = loadBuildInfo()
 	tmpl, _ := template.ParseFS(templateFS, "web/templates/*.html")
-	client   := api.NewClient(backend.URL)
-	ph       := handlers.NewPageHandler(tmpl, client, "0.0.0-test")
+	ph       := handlers.NewPageHandler(tmpl, api.NewClient(backend.URL), "0.0.0-test")
 	prx      := proxy.New(backend.URL)
-	staticSubFS, _ := fs.Sub(staticFS, "web/static")
-
-	r := newRouter(ph, prx, staticSubFS)
+	sub, _   := fs.Sub(staticFS, "web/static")
+	r        := newRouter(ph, prx, sub)
 
 	for _, path := range []string{"/", "/healthz"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		w   := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Errorf("GET %s = %d, want 200", path, w.Code)
-		}
+		if w.Code != http.StatusOK { t.Errorf("GET %s = %d, want 200", path, w.Code) }
 	}
 }
 ```
@@ -2229,15 +1932,15 @@ func TestRoutesDashboardIntegration(t *testing.T) {
 - [ ] **Step 4: Run full test suite**
 
 ```bash
-go test -race ./... 2>&1 | tail -20
-# Expected: all packages PASS
+go test -race ./... 2>&1 | tail -10
+# Expected: all PASS
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
-  commit -m "feat(ui): wire all routes in main.go and extend /healthz with backend_reachable
+  commit -m "feat(ui): wire all routes in main.go + extended /healthz with backend_reachable
 
 Refs #22"
 ```
@@ -2246,28 +1949,23 @@ Refs #22"
 
 ## Task 13: Final verify + CI drift check + PR prep
 
-**Files:**
-- Modify: `.github/workflows/ci.yml` — add oapi-codegen drift check
-- Modify: `frontend/README.md` — local dev section
+**Files:** Modify `.github/workflows/ci.yml`, `frontend/README.md`
 
-- [ ] **Step 1: Docker builds for both architectures**
+- [ ] **Step 1: Docker builds both architectures**
 
 ```bash
-docker build --platform linux/amd64 frontend/ -t lph-frontend:phase7a-amd64
-docker build --platform linux/arm64 frontend/ -t lph-frontend:phase7a-arm64
-# Both must exit 0
-
+docker build --platform linux/amd64 . -t lph-frontend:phase7a-amd64
+docker build --platform linux/arm64 . -t lph-frontend:phase7a-arm64
 docker run --rm -d -p 18080:8080 --name lph-test lph-frontend:phase7a-amd64
 sleep 2
 curl -sf http://localhost:18080/healthz
-# Expected: JSON with "status":"ok","backend_reachable":false
+# Expected: {"status":"ok","backend_reachable":false,...}
 docker stop lph-test
 ```
 
 - [ ] **Step 2: Coverage check**
 
 ```bash
-cd frontend
 go test -race -coverprofile=coverage.out ./...
 go tool cover -func coverage.out | grep "total:"
 # Expected: ≥ 70%
@@ -2280,9 +1978,7 @@ go vet ./...
 # Expected: no output
 ```
 
-- [ ] **Step 4: Add oapi-codegen drift check to CI**
-
-In `.github/workflows/ci.yml`, add a new job:
+- [ ] **Step 4: Add `oapi-codegen-drift` CI job to `.github/workflows/ci.yml`**
 
 ```yaml
   oapi-codegen-drift:
@@ -2300,60 +1996,19 @@ In `.github/workflows/ci.yml`, add a new job:
         run: git diff --exit-code frontend/internal/api/client.gen.go
 ```
 
-- [ ] **Step 5: Update `frontend/README.md`** — add after quickstart:
-
-```markdown
-## Local Development
-
-**Prerequisites:** Go 1.23+, Tailwind CSS v4.1.5 standalone CLI (download from
-https://github.com/tailwindlabs/tailwindcss/releases/tag/v4.1.5, save as `frontend/tailwindcss`).
-
-```bash
-# Terminal 1 — CSS watch
-cd frontend && ./tailwindcss -i web/styles/app.css -o web/static/app.css --watch
-
-# Terminal 2 — Go server
-cd frontend && BACKEND_URL=http://localhost:8000 go run ./cmd/server
-```
-
-To regenerate the API client after backend spec changes:
-
-```bash
-cd frontend && make gen-client
-git diff internal/api/client.gen.go   # review, then commit
-```
-```
-
-- [ ] **Step 6: Placeholder and spec-coverage check**
+- [ ] **Step 5: Placeholder scan**
 
 ```bash
 git diff main..HEAD -- '*.go' '*.html' '*.css' '*.yaml' '*.yml' \
   | grep -iE "TBD|similar to|implement later|implement appropriately" \
-  && echo "FOUND PLACEHOLDERS — fix before PR" || echo "clean"
-
-# Spec section coverage (verify all mapped):
-# Spec §3.1 pages (7 routes)  → Tasks 5-11 ✓
-# Spec §4.1 layout.html       → Task 1 ✓
-# Spec §4.2 @theme tokens     → Task 0 ✓
-# Spec §5.1 base.go           → Task 2 ✓
-# Spec §5.2 proxy.go          → Task 4 ✓
-# Spec §5.3 route registration → Task 12 ✓
-# Spec §6 Tailwind setup      → Task 0 ✓
-# Spec §6.5 vendored assets   → Task 1 ✓
-# Spec §7 HTMX wiring         → Tasks 5-11 templates ✓
-# Spec §8 proxy semantics     → Task 4 ✓
-# Spec §9.2 go:embed          → Task 2 ✓
-# Spec §9.4 oapi-codegen CI   → Task 13 ✓
-# Spec §10 tests              → Tasks 2-12 ✓
-# Spec §11.1 extended healthz → Task 12 ✓
-# Spec §11.2 structured log   → Task 3 (logCall) ✓
+  && echo "FOUND — fix before PR" || echo "clean"
 ```
 
-- [ ] **Step 7: Final commit**
+- [ ] **Step 6: Final commit**
 
 ```bash
 git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
-  commit -m "ci: add oapi-codegen drift check; docs: local dev guide in frontend README
+  commit -m "ci: add oapi-codegen drift check; docs: add local dev guide to frontend README
 
 Refs #22"
 ```
@@ -2362,18 +2017,33 @@ Refs #22"
 
 ## Self-Review
 
-**Spec coverage:** All spec sections map to tasks (see Task 13 Step 6 checklist).
+**Spec coverage:**
 
-**Placeholder scan:** No "TBD", "similar to", "implement later", or "handle appropriately" appears in this plan.
+| Spec section | Task |
+|---|---|
+| §3.1 pages (7 routes) | T5–T11 |
+| §4.1 layout.html | T1 |
+| §4.2 @theme tokens | T0 |
+| §5.1 base.go | T2 |
+| §5.2 proxy.go | T4 |
+| §5.3 route registration | T12 |
+| §6 Tailwind Dockerfile | T0 |
+| §6.5 vendored JS assets | T1 |
+| §7 HTMX wiring (polling + SSE) | T5–T11 templates |
+| §8 SSE proxy semantics | T4 |
+| §9.2 `//go:embed` | T2 |
+| §9.4 `oapi-codegen` CI drift | T13 |
+| §10 tests | T2–T12 |
+| §11.1 extended /healthz | T12 |
+| §11.2 structured logging | T3 (`logCall`) |
+
+**Placeholder scan:** No "TBD", "similar to", "implement later", or "implement appropriately" in this plan.
 
 **Type consistency:**
-- `TemplateData` defined in T2, embedded in all page data structs T5–T12 ✓
-- `PageHandler{tmpl, client, version}` defined T2, extended with `client` field when `NewPageHandlerFromURL` is introduced in T5 ✓
-- `api.ErrNotFound` / `api.ErrUnsupportedApp` defined T3, used in T6, T8, T11 ✓
-- `WithID`/`WithKey`/`WithParams` testable variants defined in each handler, chi entry points delegate to them ✓
-- `renderPage(w, r, "<name>", data)` pattern identical across all handlers ✓
-- `stubTemplates` in `base.go` includes all `<name>-content` defines needed by T5–T11 ✓
+- `TemplateData` defined T2, embedded in all data structs T5–T12.
+- `PageHandler{tmpl, client, version}` established in T2; `client` field available from the start.
+- `api.ErrNotFound` / `api.ErrUnsupportedApp` defined T3, used in T6, T8, T11.
+- `*WithID` / `*WithKey` / `*WithParams` testable variants defined per handler, chi methods delegate to them.
+- `stubTemplates` in `base.go` includes all `<name>-content` defines for T5–T11.
 
-**Generated client note:** Method names in `client.go` (`GetApiPrintersWithResponse`, etc.) are derived from the OpenAPI spec. After running `make gen-client`, verify method names in `client.gen.go` and adjust `client.go` accordingly before committing T3.
-
-**`list` template function:** Task 7's jobs template uses `{{range $s := list ...}}`. Register this via `template.FuncMap{"list": func(v ...string) []string { return v }}` in `NewPageHandler` and `NewPageHandlerForTest`, or replace with explicit `<option>` elements.
+**Generated client note:** Method names in `client.go` (e.g. `GetApiPrintersWithResponse`) are derived from the OpenAPI spec at generation time. After `make gen-client`, verify each name in `client.gen.go` and adjust `client.go` if they differ.
