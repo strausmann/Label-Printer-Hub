@@ -19,7 +19,7 @@ import contextlib
 import json
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Annotated
 
@@ -87,7 +87,7 @@ async def _sse_stream(
     request: Request,
     subscriber_id: str,
     channels: list[str],
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str, None]:
     """Core SSE generator. Yields SSE-formatted strings.
 
     Subscribes to all three channels for ``printer_id``, multiplexes them
