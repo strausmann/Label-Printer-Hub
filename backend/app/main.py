@@ -36,6 +36,7 @@ from app.api.error_handlers import register_error_handlers
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
 from app.api.routes import printers as printers_routes
+from app.api.routes import qr as qr_routes
 from app.api.routes import templates as templates_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.print import router as print_router
@@ -446,6 +447,7 @@ def create_app() -> _LifespanManager:
     app.include_router(jobs_routes.router)
     app.include_router(lookup_routes.router)
     app.include_router(webhooks_routes.router)
+    app.include_router(qr_routes.router)
     return _LifespanManager(app)
 
 
