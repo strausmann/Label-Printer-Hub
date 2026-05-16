@@ -363,3 +363,206 @@ async def test_retry_clones_failed_job(session) -> None:
     original_refreshed = await jobs_repo.get(session, original.id)
     assert original_refreshed is not None
     assert original_refreshed.state == JobState.FAILED.value
+
+
+# ---------------------------------------------------------------------------
+# Test 10: POST /api/jobs/{id}/retry — QUEUED job returns 409 ProblemDetail
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retry_queued_job_returns_409(session) -> None:
+    """retry_job returns 409 ProblemDetail when job is in QUEUED state.
+
+    Exercises lines 279-288 of jobs.py — retry is forbidden for active jobs
+    (QUEUED and PRINTING) because they are not yet in a terminal state.
+    """
+    printer = await _make_printer(session)
+    job = await _make_job(session, printer.id, state=JobState.QUEUED.value)
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post(f"/api/jobs/{job.id}/retry")
+
+    assert r.status_code == 409
+    body = r.json()
+    detail = body.get("detail", body)
+    assert detail["type"] == "invalid-job-state"
+    assert detail["status"] == 409
+    assert "queued" in detail["detail"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Test 11: POST /api/jobs/{id}/retry — PRINTING job returns 409 ProblemDetail
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retry_printing_job_returns_409(session) -> None:
+    """retry_job returns 409 ProblemDetail when job is in PRINTING state.
+
+    Exercises lines 279-288 of jobs.py — PRINTING is also an active state
+    that blocks retry.
+    """
+    printer = await _make_printer(session)
+    job = await _make_job(session, printer.id, state=JobState.PRINTING.value)
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post(f"/api/jobs/{job.id}/retry")
+
+    assert r.status_code == 409
+    detail = r.json().get("detail", r.json())
+    assert detail["type"] == "invalid-job-state"
+
+
+# ---------------------------------------------------------------------------
+# Test 12: POST /api/jobs/{id}/retry — CANCELLED job creates new QUEUED clone
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retry_cancelled_job_creates_queued_clone(session) -> None:
+    """retry_job clones a CANCELLED job into a new QUEUED job (terminal state).
+
+    Exercises line 298 (the success return) via a cancelled job, confirming
+    that retry works for all terminal states, not just FAILED.
+    """
+    printer = await _make_printer(session)
+    original = await _make_job(session, printer.id, state=JobState.CANCELLED.value)
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post(f"/api/jobs/{original.id}/retry")
+
+    assert r.status_code == 201
+    body = r.json()
+    assert body["id"] != str(original.id)
+    assert body["state"] == JobState.QUEUED.value
+
+
+# ---------------------------------------------------------------------------
+# Test 13: POST /api/jobs/{id}/retry — unknown UUID returns 404
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retry_unknown_job_returns_404(session) -> None:
+    """retry_job returns 404 for an unknown UUID.
+
+    Exercises the _get_job_or_404 raise path (line 80) via the retry handler.
+    """
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post(f"/api/jobs/{uuid4()}/retry")
+
+    assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Test 14: GET /api/jobs?since= — filter by since datetime
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Direct async tests — bypass TestClient to capture coverage in pytest loop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_direct_returns_all(session) -> None:
+    """list_jobs called directly returns all jobs (exercises line 119).
+
+    Directly calls the async route function to ensure coverage tracks
+    the return statement (line 119) in the pytest event loop.
+    """
+    from app.api.routes.jobs import list_jobs
+
+    printer = await _make_printer(session)
+    j1 = await _make_job(session, printer.id, state=JobState.QUEUED.value)
+    j2 = await _make_job(session, printer.id, state=JobState.DONE.value)
+
+    result = await list_jobs(session=session, state=None, printer_id=None, since=None, limit=50)
+
+    assert len(result) == 2
+    ids = {str(r.id) for r in result}
+    assert str(j1.id) in ids
+    assert str(j2.id) in ids
+
+
+@pytest.mark.asyncio
+async def test_get_job_or_404_raises_for_unknown_id(session) -> None:
+    """_get_job_or_404 raises HTTPException 404 for unknown UUID (exercises line 80).
+
+    Directly calls the helper in the pytest event loop.
+    """
+    from app.api.routes.jobs import _get_job_or_404
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _get_job_or_404(session, uuid4())
+
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_cancel_job_direct_returns_job_read(session) -> None:
+    """cancel_job called directly returns a JobRead (exercises line 180).
+
+    Directly exercises the return statement after mark_cancelled.
+    """
+    from app.api.routes.jobs import cancel_job
+
+    printer = await _make_printer(session)
+    job = await _make_job(session, printer.id, state=JobState.QUEUED.value)
+
+    result = await cancel_job(job_id=job.id, session=session)
+
+    assert str(result.id) == str(job.id)
+    assert result.state == JobState.CANCELLED.value
+    assert result.finished_at is not None
+
+
+@pytest.mark.asyncio
+async def test_retry_job_direct_returns_new_queued_job(session) -> None:
+    """retry_job called directly returns a new QUEUED JobRead (exercises line 298).
+
+    Directly exercises the return statement after create_queued.
+    """
+    from app.api.routes.jobs import retry_job
+
+    printer = await _make_printer(session)
+    original = await _make_job(session, printer.id, state=JobState.FAILED.value)
+
+    result = await retry_job(job_id=original.id, session=session)
+
+    assert str(result.id) != str(original.id)
+    assert result.state == JobState.QUEUED.value
+    assert str(result.printer_id) == str(printer.id)
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_filter_by_since(session) -> None:
+    """list_jobs with ?since= returns only jobs at or after that instant.
+
+    Exercises the ``since`` filter path in list_by_filter.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    printer = await _make_printer(session)
+    j1 = await _make_job(session, printer.id, state=JobState.QUEUED.value)
+    j2 = await _make_job(session, printer.id, state=JobState.DONE.value)
+
+    # Use a since value clearly before both jobs; use naive UTC to avoid
+    # FastAPI 422 from timezone-aware ISO-8601 with +00:00 offset.
+    since_ts = (datetime.now(UTC) - timedelta(seconds=60)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.get(f"/api/jobs?since={since_ts}")
+
+    assert r.status_code == 200
+    body = r.json()
+    ids = {item["id"] for item in body}
+    assert str(j1.id) in ids
+    assert str(j2.id) in ids

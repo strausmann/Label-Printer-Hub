@@ -149,3 +149,61 @@ async def test_list_templates_filtered_by_app_returns_only_matching(session) -> 
         assert item["app"] == "snipeit"
     keys = {item["key"] for item in body}
     assert keys == {"snipeit/asset", "snipeit/location"}
+
+
+# ---------------------------------------------------------------------------
+# Direct async tests — bypass TestClient thread to capture coverage correctly
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_templates_direct_no_filter(session) -> None:
+    """list_templates called directly (no ?app=) returns all templates.
+
+    Directly exercises lines 51-54 of templates.py in the pytest async loop
+    where coverage.py instruments correctly (bypasses TestClient threading).
+    """
+    from app.api.routes.templates import list_templates
+
+    await _make_template(session, "snipeit/asset", "Asset Label", app_name="snipeit")
+    await _make_template(session, "grocy/product", "Product Label", app_name="grocy")
+
+    result = await list_templates(session=session, app=None)
+
+    assert len(result) == 2
+    keys = {r.key for r in result}
+    assert keys == {"snipeit/asset", "grocy/product"}
+
+
+@pytest.mark.asyncio
+async def test_list_templates_direct_with_app_filter(session) -> None:
+    """list_templates called directly with app='snipeit' returns filtered list.
+
+    Exercises lines 52-53 (the ``if app is not None:`` True branch) of
+    templates.py in the pytest async loop.
+    """
+    from app.api.routes.templates import list_templates
+
+    await _make_template(session, "snipeit/asset", "Asset Label", app_name="snipeit")
+    await _make_template(session, "grocy/product", "Product Label", app_name="grocy")
+
+    result = await list_templates(session=session, app="snipeit")
+
+    assert len(result) == 1
+    assert result[0].key == "snipeit/asset"
+    assert result[0].app == "snipeit"
+
+
+@pytest.mark.asyncio
+async def test_list_templates_direct_filter_no_match_returns_empty(session) -> None:
+    """list_templates with ?app= that matches nothing returns an empty list.
+
+    Exercises line 53 (filter comprehension with no matches) in the async loop.
+    """
+    from app.api.routes.templates import list_templates
+
+    await _make_template(session, "snipeit/asset", "Asset Label", app_name="snipeit")
+
+    result = await list_templates(session=session, app="spoolman")
+
+    assert result == []
