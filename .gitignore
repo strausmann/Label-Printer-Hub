@@ -53,6 +53,10 @@ data/
 *.db-journal
 *.log
 
+# Phase 5 persistence
+backend/data/
+backend/data/hub.db*
+
 # Docker
 .dockerignore.local
 
