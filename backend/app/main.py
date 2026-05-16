@@ -28,6 +28,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
 import app.integrations as _integrations_init  # triggers integration plugin discovery
@@ -463,6 +464,11 @@ def create_app() -> _LifespanManager:
     app.include_router(lookup_routes.router)
     app.include_router(webhooks_routes.router)
     app.include_router(qr_routes.router)
+
+    _static_dir = Path(__file__).parent / "static"
+    if _static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
     return _LifespanManager(app)
 
 

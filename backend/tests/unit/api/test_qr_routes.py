@@ -9,10 +9,18 @@ Test mapping:
     6.  GET /spool/{entity_id}   — entity not found              → 404 HTML (not-found page)
     7.  GET /product/{entity_id} — happy path                    → 200 HTML with name
     8.  GET /product/{entity_id} — entity not found              → 404 HTML (not-found page)
+
+Phase 6b additions (Task 7):
+    9.  GET /spool/{entity_id}   — SSE connect attribute present  → hx-ext="sse" + sse-connect
+   10.  GET /loc/{entity_id}     — SSE connect attribute present  → hx-ext="sse" + sse-connect
+   11.  GET /asset/{entity_id}   — SSE connect attribute present  → hx-ext="sse" + sse-connect
+   12.  GET /product/{entity_id} — SSE connect attribute present  → hx-ext="sse" + sse-connect
+   13.  GET /spool/{entity_id}   — not_found → no SSE block (no printer_id in context)
 """
 
 from __future__ import annotations
 
+import uuid as _uuid_mod
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -31,6 +39,14 @@ def _build_app() -> FastAPI:
     """Return a minimal FastAPI app with the QR router mounted."""
     test_app = FastAPI()
     test_app.include_router(router)
+    return test_app
+
+
+def _build_app_with_printer_id(printer_id: str = "") -> FastAPI:
+    """Return a minimal FastAPI app with the QR router and printer_id in app.state."""
+    test_app = FastAPI()
+    test_app.include_router(router)
+    test_app.state.printer_id = printer_id
     return test_app
 
 
@@ -69,6 +85,8 @@ _GROCY_PRODUCT_LABEL = LabelData(
     source_app="grocy",
     secondary=(),
 )
+
+_FAKE_PRINTER_ID = str(_uuid_mod.UUID("11111111-1111-1111-1111-111111111111"))
 
 
 # ===========================================================================
@@ -217,3 +235,98 @@ async def test_product_landing_not_found_returns_404_html() -> None:
     assert r.status_code == 404
     assert "text/html" in r.headers["content-type"]
     assert "not found" in r.text.lower()
+
+
+# ===========================================================================
+# Phase 6b Task 7 — HTMX SSE wiring assertions
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_spool_page_has_sse_connect_attribute() -> None:
+    """Spool landing page must include the HTMX SSE connect block when printer_id set."""
+    with patch(
+        "app.api.routes.qr._lookup_service.lookup",
+        new=AsyncMock(return_value=_SPOOLMAN_SPOOL_LABEL),
+    ):
+        client = TestClient(
+            _build_app_with_printer_id(_FAKE_PRINTER_ID),
+            raise_server_exceptions=True,
+        )
+        r = client.get("/spool/88")
+
+    assert r.status_code == 200
+    assert 'sse-connect="/api/events?printer_id=' in r.text
+    assert 'hx-ext="sse"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_loc_page_has_sse_connect_attribute() -> None:
+    """Location landing page must include the HTMX SSE connect block when printer_id set."""
+    with patch(
+        "app.api.routes.qr._lookup_service.lookup",
+        new=AsyncMock(return_value=_SNIPEIT_LOCATION_LABEL),
+    ):
+        client = TestClient(
+            _build_app_with_printer_id(_FAKE_PRINTER_ID),
+            raise_server_exceptions=True,
+        )
+        r = client.get("/loc/LOC-001")
+
+    assert r.status_code == 200
+    assert 'sse-connect="/api/events?printer_id=' in r.text
+    assert 'hx-ext="sse"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_asset_page_has_sse_connect_attribute() -> None:
+    """Asset landing page must include the HTMX SSE connect block when printer_id set."""
+    with patch(
+        "app.api.routes.qr._lookup_service.lookup",
+        new=AsyncMock(return_value=_SNIPEIT_ASSET_LABEL),
+    ):
+        client = TestClient(
+            _build_app_with_printer_id(_FAKE_PRINTER_ID),
+            raise_server_exceptions=True,
+        )
+        r = client.get("/asset/SRV-042")
+
+    assert r.status_code == 200
+    assert 'sse-connect="/api/events?printer_id=' in r.text
+    assert 'hx-ext="sse"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_product_page_has_sse_connect_attribute() -> None:
+    """Product landing page must include the HTMX SSE connect block when printer_id set."""
+    with patch(
+        "app.api.routes.qr._lookup_service.lookup",
+        new=AsyncMock(return_value=_GROCY_PRODUCT_LABEL),
+    ):
+        client = TestClient(
+            _build_app_with_printer_id(_FAKE_PRINTER_ID),
+            raise_server_exceptions=True,
+        )
+        r = client.get("/product/17")
+
+    assert r.status_code == 200
+    assert 'sse-connect="/api/events?printer_id=' in r.text
+    assert 'hx-ext="sse"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_spool_not_found_has_no_sse_block() -> None:
+    """Not-found QR page must NOT include the SSE block (not_found=True suppresses it)."""
+    with patch(
+        "app.api.routes.qr._lookup_service.lookup",
+        new=AsyncMock(side_effect=AppLookupNotFoundError("not found")),
+    ):
+        client = TestClient(
+            _build_app_with_printer_id(_FAKE_PRINTER_ID),
+            raise_server_exceptions=False,
+        )
+        r = client.get("/spool/9999")
+
+    assert r.status_code == 404
+    # not_found=True → no SSE div rendered
+    assert 'hx-ext="sse"' not in r.text
