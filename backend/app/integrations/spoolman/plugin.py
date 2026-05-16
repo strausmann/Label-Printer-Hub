@@ -40,15 +40,21 @@ class SpoolmanPlugin:
         settings = get_settings()
         self._base_url = settings.spoolman_url.rstrip("/")
         self._timeout = settings.spoolman_timeout
+        self._client = httpx.AsyncClient(timeout=self._timeout)
+
+    async def aclose(self) -> None:
+        """Close the shared HTTP client and release its connection pool.
+
+        Must be called on application shutdown (e.g. from lifespan finally block).
+        Safe to call more than once.
+        """
+        await self._client.aclose()
 
     async def lookup(self, spool_id: str) -> LabelData:
         """Return LabelData for `spool_id`, or raise SpoolmanNotFoundError."""
-        # TODO(phase6): inject a shared httpx.AsyncClient for connection pooling
-        #               when consumed by the FastAPI request handler.
         encoded_id = quote(spool_id, safe="")
         url = f"{self._base_url}/api/v1/spool/{encoded_id}"
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.get(url, headers={"Accept": "application/json"})
+        response = await self._client.get(url, headers={"Accept": "application/json"})
 
         if response.status_code == 404:
             raise SpoolmanNotFoundError(f"Spool {spool_id!r} not found")

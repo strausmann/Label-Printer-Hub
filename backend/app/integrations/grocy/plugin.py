@@ -39,19 +39,25 @@ class GrocyPlugin:
         self._base_url = settings.grocy_url.rstrip("/")
         self._api_key = settings.grocy_api_key.get_secret_value()
         self._timeout = settings.grocy_timeout
+        self._client = httpx.AsyncClient(timeout=self._timeout)
+
+    async def aclose(self) -> None:
+        """Close the shared HTTP client and release its connection pool.
+
+        Must be called on application shutdown (e.g. from lifespan finally block).
+        Safe to call more than once.
+        """
+        await self._client.aclose()
 
     async def lookup(self, product_id: str) -> LabelData:
         """Return LabelData for `product_id`, or raise GrocyNotFoundError."""
-        # TODO(phase6): inject a shared httpx.AsyncClient for connection pooling
-        #               when consumed by the FastAPI request handler.
         encoded_id = quote(product_id, safe="")
         url = f"{self._base_url}/api/objects/products/{encoded_id}"
         headers = {
             "GROCY-API-KEY": self._api_key,
             "Accept": "application/json",
         }
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.get(url, headers=headers)
+        response = await self._client.get(url, headers=headers)
 
         # Grocy returns 400 with error_message for missing products, not 404.
         if response.status_code in (400, 404):
