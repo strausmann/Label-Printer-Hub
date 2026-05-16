@@ -114,6 +114,7 @@ addopts = [
 ]
 markers = [
     "hardware: requires real Brother printer hardware (skipped by default; opt in with --hardware)",
+    "slow: flush-timing integration tests; excluded from fast CI run (opt in with -m slow)",
 ]
 
 [tool.coverage.run]
