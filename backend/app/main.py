@@ -34,6 +34,13 @@ import app.integrations as _integrations_init  # triggers integration plugin dis
 from app import __version__
 from app.api.routes.print import router as print_router
 from app.config import Settings, get_settings
+from app.db.engine import async_session, engine
+from app.db.lifespan import (
+    ensure_printer_state,
+    recover_inflight_jobs,
+    run_migrations,
+    seed_templates,
+)
 from app.integrations.registry import IntegrationRegistry
 from app.printer_backends import BackendRegistry
 from app.printer_backends.exceptions import SnmpDiscoveryError
@@ -170,6 +177,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
 
+    # --- DB startup: migrations + recovery + seed + printer state --------
+    await run_migrations()
+    async with async_session() as s:
+        await recover_inflight_jobs(s)
+        await seed_templates(s, TemplateLoader)
+        await ensure_printer_state(s)
+    # ---------------------------------------------------------------------
+
     # Re-run integration plugin discovery if the registry was cleared (e.g. by
     # test fixtures that call IntegrationRegistry._plugins.clear()). This is
     # idempotent: _discover_plugins skips names that are already registered.
@@ -219,6 +234,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
     finally:
         await queue.stop(timeout_s=settings.printer_queue_timeout_s)
+        await engine.dispose()
 
 
 class _LifespanManager:

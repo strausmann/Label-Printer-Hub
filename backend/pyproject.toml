@@ -18,6 +18,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "alembic>=1.14",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
