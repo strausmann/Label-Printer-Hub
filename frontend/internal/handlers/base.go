@@ -84,7 +84,7 @@ const stubTemplates = `
 {{define "error-content"}}<div class="error">{{.StatusCode}} {{.Error}}</div>{{end}}
 {{define "dashboard-content"}}<div id="printer-grid">{{range .Printers}}<span>{{.Name}}</span>{{end}}</div>{{end}}
 {{define "printer-content"}}<div id="printer-detail">printer</div>{{end}}
-{{define "jobs-content"}}<div id="jobs-table-container">jobs</div>{{end}}
+{{define "jobs-content"}}<div id="jobs-table-container">{{range .Jobs}}<span class="badge-{{.State}}">{{.State}}</span>{{end}}</div>{{end}}
 {{define "job-content"}}<div id="job-detail">job</div>{{end}}
 {{define "templates-content"}}<div id="templates-grid">templates</div>{{end}}
 {{define "template-content"}}<div id="template-detail">template</div>{{end}}
