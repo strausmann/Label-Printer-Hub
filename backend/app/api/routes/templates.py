@@ -74,6 +74,43 @@ def _build_label_data(
         ) from exc
 
 
+# LabelData fields that preview_sample values map to (via _build_label_data).
+# Elements reference these by name via `field` / `data_field` on LayoutElement.
+_LABEL_DATA_FIELDS: frozenset[str] = frozenset({"primary_id", "title", "qr_payload", "secondary"})
+
+
+def _validate_preview_sample_fields(
+    template_key: str,
+    elements: tuple[Any, ...],
+    preview_sample: dict[str, Any],
+) -> None:
+    """Raise HTTP 422 if preview_sample is missing any field required by elements.
+
+    Each LayoutElement of type ``text`` references a ``field`` on LabelData;
+    type ``qr`` references a ``data_field``. Both must be present in
+    ``preview_sample`` so the renderer does not silently produce empty output.
+    """
+    element_fields = set()
+    for el in elements:
+        if el.type == "text" and el.field:
+            element_fields.add(el.field)
+        elif el.type == "qr" and el.data_field:
+            element_fields.add(el.data_field)
+
+    # Restrict check to known LabelData fields — unknown names will resolve to
+    # empty strings via _resolve_field (getattr fallback) which is acceptable.
+    missing = (element_fields & _LABEL_DATA_FIELDS) - set(preview_sample.keys())
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Template {template_key!r} preview_sample is missing fields "
+                f"required by its elements: {sorted(missing)}. "
+                "Add these keys to the template's 'preview_sample' block."
+            ),
+        )
+
+
 @render_router.post(
     "/preview",
     response_class=Response,
@@ -131,9 +168,7 @@ async def render_preview(
     # the TemplateSchema field values. Supplement missing fields from the row's
     # top-level columns (id→key, tape_mm→tape_width_mm, etc.) so that rows
     # created before the definition was normalised can still render.
-    # ``preview_sample`` is not a TemplateSchema field — strip it before
-    # passing to the schema constructor.
-    schema_dict = {k: v for k, v in definition.items() if k != "preview_sample"}
+    schema_dict = dict(definition)
     schema_dict.setdefault("id", template_row.key)
     schema_dict.setdefault("name", template_row.name)
     schema_dict.setdefault("app", template_row.app)
@@ -148,6 +183,9 @@ async def render_preview(
         # parameter, to prevent log injection via crafted key values.
         _log.warning("render_preview: invalid definition for key=%r: %s", template_row.key, exc)
         raise HTTPException(status_code=422, detail=f"invalid template definition: {exc}") from exc
+
+    # Validate that preview_sample provides all fields referenced by elements.
+    _validate_preview_sample_fields(template_row.key, template_schema.elements, preview_sample)
 
     sample_data = _build_label_data(template_row.key, template_row.app, preview_sample)
 

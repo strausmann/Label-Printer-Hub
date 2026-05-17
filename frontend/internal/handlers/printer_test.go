@@ -41,6 +41,9 @@ func TestPrinterDetailShowsMetadata(t *testing.T) {
 	// Regression for Bug 2 — the printer detail page had no metadata block.
 	// Verify the handler populates Printer in PrinterDetailData so the template
 	// can render model/host/enabled/paused/created/updated fields.
+	//
+	// Strengthened assertions (Round 2): verify specific metadata fields are
+	// surfaced in the rendered output, not just the container div.
 	t.Parallel()
 	backend := printerDetailBackend(t, testPrinterID)
 	defer backend.Close()
@@ -54,9 +57,27 @@ func TestPrinterDetailShowsMetadata(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d, body: %s", w.Code, w.Body.String())
 	}
-	// Verify page renders without error — metadata fields verified at template level.
-	if !strings.Contains(w.Body.String(), "printer-detail") {
-		t.Errorf("body missing 'printer-detail', got: %s", w.Body.String())
+	body := w.Body.String()
+
+	// Container div must be present.
+	if !strings.Contains(body, "printer-detail") {
+		t.Errorf("body missing 'printer-detail', got: %s", body)
+	}
+
+	// The stub template now renders data-model so we can verify the model field
+	// round-trips correctly from the backend JSON to the template.
+	if !strings.Contains(body, "pt_series") {
+		t.Errorf("body missing model 'pt_series', got: %s", body)
+	}
+
+	// Host:port must be rendered for a TCP-connected printer.
+	if !strings.Contains(body, "198.51.100.10:9100") {
+		t.Errorf("body missing host:port '198.51.100.10:9100', got: %s", body)
+	}
+
+	// The enabled flag must be surfaced as data-enabled attribute.
+	if !strings.Contains(body, "data-enabled=\"true\"") {
+		t.Errorf("body missing data-enabled=true, got: %s", body)
 	}
 }
 

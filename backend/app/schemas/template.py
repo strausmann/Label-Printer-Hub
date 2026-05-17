@@ -6,6 +6,11 @@ printable area of a Brother tape. The renderer consumes a template plus a
 
 Templates are frozen at construction so they can be safely seeded as
 module-level constants (see app/seed/templates.py in PR D2).
+
+Immutability note: Pydantic `frozen=True` prevents attribute re-assignment
+but does NOT deep-freeze container values. The ``preview_sample`` field
+therefore uses ``tuple[str, ...]`` for its sequence type (instead of
+``list[str]``) so the entire schema is truly immutable after construction.
 """
 
 from __future__ import annotations
@@ -79,4 +84,7 @@ class TemplateSchema(BaseModel):
     app: str | None
     tape_mm: int
     elements: tuple[LayoutElement, ...]
-    preview_sample: dict[str, str | int | float | bool | list[str] | tuple[str, ...]] | None = None
+    # Values use tuple (not list) so the entire schema is deeply immutable —
+    # Pydantic frozen=True only prevents attribute re-assignment, not mutation
+    # of mutable containers stored in those attributes.
+    preview_sample: dict[str, str | int | float | bool | tuple[str, ...]] | None = None
