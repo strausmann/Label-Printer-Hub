@@ -18,7 +18,6 @@ package main
 import (
 	"context"
 	"errors"
-	"html/template"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -160,9 +159,12 @@ func main() {
 	port := envDefault("PORT", "8080")
 	addr := ":" + port
 
-	// Parse all page templates at startup — a parse error surfaces here rather
-	// than on the first request, which is the correct fail-fast behaviour.
-	tmpl, err := template.ParseFS(templateFS, "web/templates/*.html")
+	// Parse per-page template sets at startup. Each page gets its own
+	// *template.Template containing only layout.html + its own page file,
+	// which ensures {{block "content" .}} in the layout resolves to the
+	// correct page's content. Parsing all files into one set would cause
+	// the last {{define "content"}} to win for every page.
+	pages, errTmpl, err := handlers.ParsePageTemplates(templateFS)
 	if err != nil {
 		slog.Error("failed to parse templates", "err", err)
 		os.Exit(1)
@@ -171,7 +173,7 @@ func main() {
 	// Instantiate the shared PageHandler with the typed backend client.
 	backendURL := envDefault("BACKEND_URL", "http://backend:8000")
 	client := api.NewHubClient(backendURL)
-	ph := handlers.NewPageHandler(tmpl, client, buildInfo.Version)
+	ph := handlers.NewPageHandler(pages, errTmpl, client, buildInfo.Version)
 
 	prx := proxy.New(backendURL)
 	staticSubFS, err := fs.Sub(staticFS, "web/static")

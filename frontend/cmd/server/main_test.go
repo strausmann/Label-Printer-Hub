@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -53,26 +52,12 @@ func minimalBackend(t *testing.T) *httptest.Server {
 }
 
 // testRouterWithBackend builds a minimal router for unit tests that need to
-// hit route handlers. It uses stub templates to avoid parsing the full
-// web/templates glob in each test.
+// hit route handlers. It uses the handlers package stub templates to avoid
+// parsing the full web/templates set in each test.
 func testRouterWithBackend(t *testing.T, backendURL string) http.Handler {
 	t.Helper()
 	initBuildInfoForTests(t)
-	// Use a stub template set that defines all required named blocks so the
-	// handlers can render without the full Tailwind HTML.
-	const stubTmpl = `
-{{define "layout"}}<!DOCTYPE html><html><body>{{block "content" .}}{{end}}</body></html>{{end}}
-{{define "error-content"}}<div class="error">{{.StatusCode}} {{.Error}}</div>{{end}}
-{{define "dashboard-content"}}<div id="printer-grid"></div>{{end}}
-{{define "printer-content"}}<div id="printer-detail"></div>{{end}}
-{{define "jobs-content"}}<div id="jobs-table-container"></div>{{end}}
-{{define "job-content"}}<div id="job-detail"></div>{{end}}
-{{define "templates-content"}}<div id="templates-grid"></div>{{end}}
-{{define "template-content"}}<div id="template-detail"></div>{{end}}
-{{define "lookup-content"}}<div id="lookup-result"></div>{{end}}
-`
-	tmpl := template.Must(template.New("stub").Parse(stubTmpl))
-	ph := handlers.NewPageHandler(tmpl, api.NewHubClient(backendURL), buildInfo.Version)
+	ph := handlers.NewPageHandlerFromURL(t, backendURL)
 	prx := proxy.New(backendURL)
 	sub, err := fs.Sub(staticFS, "web/static")
 	if err != nil {
@@ -290,12 +275,13 @@ func TestRoutesDashboard(t *testing.T) {
 	defer backend.Close()
 
 	initBuildInfoForTests(t)
-	// Use the real embedded templates so this test exercises the full render path.
-	tmpl, err := template.ParseFS(templateFS, "web/templates/*.html")
+	// Use the real embedded templates (ParsePageTemplates) so this test
+	// exercises the full per-page template render path.
+	pages, errTmpl, err := handlers.ParsePageTemplates(templateFS)
 	if err != nil {
-		t.Fatalf("template.ParseFS: %v", err)
+		t.Fatalf("ParsePageTemplates: %v", err)
 	}
-	ph := handlers.NewPageHandler(tmpl, api.NewHubClient(backend.URL), "0.0.0-test")
+	ph := handlers.NewPageHandler(pages, errTmpl, api.NewHubClient(backend.URL), "0.0.0-test")
 	prx := proxy.New(backend.URL)
 	sub, err := fs.Sub(staticFS, "web/static")
 	if err != nil {
@@ -328,4 +314,120 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// TestRealTemplatesPerPageContent verifies that each page renders its own
+// content when using the real embedded templates — not the content of whatever
+// page file happens to be parsed last.
+//
+// When all template files are parsed into a single *template.Template set with
+// template.ParseFS, multiple files define {{define "content"}} (one per page).
+// Go's html/template resolves the last definition, so every call to
+// ExecuteTemplate(w, "layout", data) produces the content of the last-parsed
+// page. This test catches that regression: it expects the dashboard to produce
+// "printer-grid" and the templates list to produce "templates-grid".
+func TestRealTemplatesPerPageContent(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/printers":
+			fmt.Fprint(w, `[]`)
+		case "/api/templates":
+			fmt.Fprint(w, `[]`)
+		case "/healthz":
+			fmt.Fprint(w, `{"status":"ok"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+
+	initBuildInfoForTests(t)
+	pages, errTmpl, err := handlers.ParsePageTemplates(templateFS)
+	if err != nil {
+		t.Fatalf("ParsePageTemplates: %v", err)
+	}
+	ph := handlers.NewPageHandler(pages, errTmpl, api.NewHubClient(backend.URL), "0.0.0-test")
+	prx := proxy.New(backend.URL)
+	sub, err := fs.Sub(staticFS, "web/static")
+	if err != nil {
+		t.Fatalf("fs.Sub: %v", err)
+	}
+	r := newRouter(ph, prx, sub)
+
+	t.Run("dashboard_renders_printer_grid", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status %d, body: %s", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "printer-grid") {
+			t.Errorf("dashboard full-page response must contain 'printer-grid'; got content starting with: %q",
+				w.Body.String()[:min(400, w.Body.Len())])
+		}
+		if strings.Contains(w.Body.String(), "templates-grid") {
+			t.Error("dashboard must NOT render templates-grid (template block clash: last 'content' definition wins)")
+		}
+	})
+
+	t.Run("templates_page_renders_templates_grid", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/templates", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status %d, body: %s", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "templates-grid") {
+			t.Errorf("templates page must contain 'templates-grid'; got: %q",
+				w.Body.String()[:min(400, w.Body.Len())])
+		}
+	})
+}
+
+// TestQRLandingPrefixPreserved verifies that the QR-landing proxy routes
+// (/loc, /asset, /spool, /product) forward the FULL path to the backend,
+// including the prefix.
+//
+// chi.Mount strips the mount prefix before calling the handler, so
+// r.Mount("/loc", proxy) causes the backend to see "/" instead of "/loc/abc".
+// The correct pattern is r.Handle("/loc/*", proxy) which preserves the prefix.
+func TestQRLandingPrefixPreserved(t *testing.T) {
+	t.Parallel()
+	// Record the path the backend actually receives.
+	var receivedPath string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		// Return 200 so the proxy does not emit a 502.
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer backend.Close()
+
+	r := testRouterWithBackend(t, backend.URL)
+
+	cases := []struct {
+		path string
+	}{
+		{"/loc/abc123"},
+		{"/asset/def456"},
+		{"/spool/ghi789"},
+		{"/product/jkl012"},
+	}
+
+	for _, tc := range cases {
+		receivedPath = ""
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s: status %d, want 200", tc.path, w.Code)
+			continue
+		}
+		if receivedPath != tc.path {
+			t.Errorf("GET %s: backend received path %q, want %q (chi.Mount strips prefix; use r.Handle instead)",
+				tc.path, receivedPath, tc.path)
+		}
+	}
 }
