@@ -1111,3 +1111,159 @@ async def test_sse_stream_emits_initial_snapshot_on_connect() -> None:
     assert "printer.status" in event_types, (
         f"Expected printer.status snapshot; got event types: {event_types!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# F4 — tape snapshot must be skipped when loaded_tape_mm is None (Finding F4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_snapshot_skips_tape_frame_when_loaded_tape_mm_is_none() -> None:
+    """_build_initial_snapshot must NOT emit printer.tape_changed when
+    loaded_tape_mm is absent from the cache (Finding F4).
+
+    Emitting a tape event with to_mm=None renders "No tape loaded" on the
+    frontend and overwrites the correct UI state with a misleading message
+    when the printer actually has tape loaded (the cache just hasn't reported
+    it yet).  The fix: skip the tape frame entirely when loaded_tape_mm is
+    missing so the client DOM is unchanged.
+    """
+    import app.api.routes.events as events_module
+
+    printer_id = uuid.uuid4()
+    mock_session = MagicMock()
+
+    # Status cache has NO loaded_tape_mm key (simulates missing/unknown tape data)
+    status_cache = MagicMock()
+    status_cache.parsed = {
+        "hr_printer_status": "idle",
+        "error_flags": [],
+        "online": True,
+        # loaded_tape_mm intentionally absent — dict.get() returns None
+    }
+    status_cache.captured_at = datetime(2024, 1, 1, tzinfo=UTC)
+    mock_session.get = AsyncMock(return_value=status_cache)
+
+    # No active jobs
+    _empty_result = MagicMock()
+    _empty_result.scalar_one = MagicMock(return_value=0)
+    _empty_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+    mock_session.execute = AsyncMock(return_value=_empty_result)
+
+    snapshot = await events_module._build_initial_snapshot(printer_id, mock_session)
+
+    event_types = [e.event_type for e in snapshot]
+    assert "printer.tape_changed" not in event_types, (
+        f"tape_changed must NOT appear when loaded_tape_mm is None; got: {event_types!r}"
+    )
+    # printer.status snapshot is still emitted
+    assert "printer.status" in event_types
+
+
+@pytest.mark.asyncio
+async def test_snapshot_emits_tape_frame_when_loaded_tape_mm_is_set() -> None:
+    """_build_initial_snapshot MUST emit printer.tape_changed when loaded_tape_mm
+    is present (regression guard: ensure the None-guard doesn't suppress valid data).
+    """
+    import app.api.routes.events as events_module
+
+    printer_id = uuid.uuid4()
+    mock_session = MagicMock()
+
+    status_cache = MagicMock()
+    status_cache.parsed = {
+        "hr_printer_status": "idle",
+        "error_flags": [],
+        "online": True,
+        "loaded_tape_mm": 12,
+    }
+    status_cache.captured_at = datetime(2024, 1, 1, tzinfo=UTC)
+    mock_session.get = AsyncMock(return_value=status_cache)
+
+    _empty_result = MagicMock()
+    _empty_result.scalar_one = MagicMock(return_value=0)
+    _empty_result.scalars = MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
+    mock_session.execute = AsyncMock(return_value=_empty_result)
+
+    snapshot = await events_module._build_initial_snapshot(printer_id, mock_session)
+
+    tape_events = [e for e in snapshot if e.event_type == "printer.tape_changed"]
+    assert len(tape_events) == 1
+    assert tape_events[0].data["to_mm"] == 12
+
+
+# ---------------------------------------------------------------------------
+# F5 — queue_depth uses COUNT query, not len(limited_list) (Finding F5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_snapshot_queue_depth_uses_count_not_list_length() -> None:
+    """queue_depth in the initial snapshot must reflect the true count of
+    non-terminal jobs, not len() of a capped list query (Finding F5).
+
+    When there are more than 10 QUEUED jobs the old code reported at most 10
+    (the list query limit) — the badge under-reported the real queue depth.
+    The fix uses a COUNT query so even 100+ jobs are counted correctly.
+
+    This test stubs session.execute so the COUNT returns 42 while
+    list_by_filter returns only 5 rows — the snapshot events must carry 42.
+    """
+    import app.api.routes.events as events_module
+    from app.models.job import Job, JobState
+
+    printer_id = uuid.uuid4()
+    mock_session = MagicMock()
+
+    # Printer status cache is absent — skip printer.status frame to keep
+    # the test focused on the job queue section
+    mock_session.get = AsyncMock(return_value=None)
+
+    # Build 5 fake job rows (simulating a capped list result)
+    def _make_job(state: str) -> MagicMock:
+        j = MagicMock(spec=Job)
+        j.id = uuid.uuid4()
+        j.state = state
+        j.created_at = datetime(2024, 1, 1, tzinfo=UTC)
+        return j
+
+    fake_jobs = [_make_job(JobState.QUEUED.value) for _ in range(5)]
+
+    # The COUNT query returns 42; the list queries return 5 rows total
+    call_count = 0
+
+    async def _execute_side_effect(stmt: object) -> MagicMock:
+        nonlocal call_count
+        call_count += 1
+        result = MagicMock()
+        if call_count == 1:
+            # First call: COUNT query
+            result.scalar_one = MagicMock(return_value=42)
+        else:
+            # Subsequent calls: list_by_filter results
+            result.scalars = MagicMock(
+                return_value=MagicMock(return_value=fake_jobs if call_count == 2 else [])
+            )
+        return result
+
+    mock_session.execute = AsyncMock(side_effect=_execute_side_effect)
+
+    # Also mock list_by_filter to return controlled data via the repo layer
+    with (
+        patch(
+            "app.api.routes.events.jobs_repo.list_by_filter",
+            new_callable=AsyncMock,
+            side_effect=[fake_jobs, []],  # QUEUED → 5 rows, PRINTING → 0 rows
+        ),
+    ):
+        snapshot = await events_module._build_initial_snapshot(printer_id, mock_session)
+
+    job_events = [e for e in snapshot if e.event_type == "job.state_changed"]
+    # Must have emitted frames (up to 5 jobs)
+    assert len(job_events) <= 5
+    # Every job frame must carry the COUNT-derived queue_depth, not len(list)
+    for event in job_events:
+        assert event.data["queue_depth"] == 42, (
+            f"queue_depth must be 42 (from COUNT), got {event.data['queue_depth']!r}"
+        )

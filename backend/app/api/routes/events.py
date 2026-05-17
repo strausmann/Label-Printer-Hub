@@ -19,6 +19,7 @@ import contextlib
 import logging
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
@@ -26,11 +27,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from prometheus_client import Counter, Gauge
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 
 from app.config import Settings, get_settings
 from app.db.session import get_session
-from app.models.job import JobState
+from app.models.job import Job, JobState
 from app.repositories import jobs as jobs_repo
 from app.repositories import printer_status_cache as status_cache_repo
 from app.repositories import printers as printers_repo
@@ -134,7 +137,7 @@ async def _build_initial_snapshot(
         return []
 
     snapshot: list[BusEvent] = []
-    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    now = datetime.now(UTC)
     pid = str(printer_id)
 
     # --- printer.status from PrinterStatusCache ---
@@ -157,38 +160,53 @@ async def _build_initial_snapshot(
                 )
             )
             # --- printer.tape_changed from same cache row ---
+            # F4: only emit when loaded_tape_mm is present — a None value would
+            # render "No tape loaded" and overwrite the correct client DOM state.
             loaded_tape_mm = parsed.get("loaded_tape_mm")
-            snapshot.append(
-                BusEvent(
-                    channel=f"printer:{pid}:tape",
-                    event_id=0,
-                    event_type="printer.tape_changed",
-                    timestamp=ts,
-                    data={
-                        "from_mm": None,
-                        "to_mm": loaded_tape_mm,
-                        "tape_label": f"{loaded_tape_mm}mm" if loaded_tape_mm else None,
-                    },
+            if loaded_tape_mm is not None:
+                snapshot.append(
+                    BusEvent(
+                        channel=f"printer:{pid}:tape",
+                        event_id=0,
+                        event_type="printer.tape_changed",
+                        timestamp=ts,
+                        data={
+                            "from_mm": None,
+                            "to_mm": loaded_tape_mm,
+                            "tape_label": f"{loaded_tape_mm}mm",
+                        },
+                    )
                 )
-            )
     except Exception:
         _log.debug("_build_initial_snapshot: status cache read failed for %s", pid)
 
     # --- job.state_changed for each active (QUEUED|PRINTING) job ---
     try:
+        # F5: Use a COUNT query over all non-terminal states so queue_depth is
+        # accurate even when the result set exceeds any list-query limit.
+        _non_terminal = (JobState.QUEUED.value, JobState.PRINTING.value)
+        count_stmt = (
+            select(func.count())
+            .select_from(Job)
+            .where(col(Job.printer_id) == printer_id)
+            .where(col(Job.state).in_(_non_terminal))
+        )
+        queue_depth_result = await session.execute(count_stmt)
+        queue_depth: int = queue_depth_result.scalar_one()
+
+        # Fetch up to 5 representative jobs for the snapshot frames
         active_jobs = await jobs_repo.list_by_filter(
             session,
             printer_id=printer_id,
             state=JobState.QUEUED.value,
-            limit=10,
+            limit=5,
         )
         active_jobs += await jobs_repo.list_by_filter(
             session,
             printer_id=printer_id,
             state=JobState.PRINTING.value,
-            limit=10,
+            limit=5,
         )
-        queue_depth = len(active_jobs)
         for job in active_jobs[:5]:  # cap snapshot at 5 jobs
             snapshot.append(
                 BusEvent(

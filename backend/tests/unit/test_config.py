@@ -82,7 +82,7 @@ def test_sse_settings_reject_non_positive(field: str, value: float | int) -> Non
 
 
 def test_sse_settings_accept_positive_one() -> None:
-    """Boundary: value=1 must be accepted for all five SSE integer settings."""
+    """Boundary: value=1 must be accepted for all five SSE settings."""
     s = Settings(
         sse_queue_size=1,
         sse_heartbeat_s=1.0,
