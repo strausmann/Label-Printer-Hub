@@ -19,6 +19,13 @@ def _alembic_config(db_path: Path) -> Config:
     cfg = Config(str(_ALEMBIC_INI))
     # env.py uses async_engine_from_config, so the aiosqlite async driver is required.
     cfg.set_main_option("sqlalchemy.url", f"sqlite+aiosqlite:///{db_path}")
+    # Prevent alembic from calling logging.config.fileConfig() which invokes
+    # disable_existing_loggers=True and marks loggers such as `app.integrations`
+    # as disabled.  When those loggers are disabled their records are silently
+    # dropped, breaking pytest caplog assertions in tests that run AFTER these
+    # migration tests.  The same guard is already present in app/db/lifespan.py
+    # for the same reason.
+    cfg.attributes["configure_logger"] = False
     return cfg
 
 
