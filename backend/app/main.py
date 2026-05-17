@@ -21,10 +21,44 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# F3 — Early settings validation with a friendly error message.
+#
+# app.config.get_settings() is called at module load by engine.py (imported
+# below) and by integration plugins (imported via app.integrations).  If an
+# env var fails Pydantic validation (e.g. PRINTER_HUB_WEBHOOK_API_KEY is
+# shorter than 32 chars) we catch the ValidationError here — BEFORE any
+# integration imports that would produce multiple interleaved tracebacks —
+# and print a human-readable summary, then exit with EX_CONFIG (78).
+#
+# The raw traceback is preserved when LOG_LEVEL=DEBUG so developers still see
+# it during local iteration.
+# ---------------------------------------------------------------------------
+from pydantic import ValidationError
+
+from app.config import get_settings as _get_settings
+
+try:
+    _get_settings()
+except ValidationError as _cfg_exc:
+    _debug = os.environ.get("LOG_LEVEL", "").upper() == "DEBUG"
+    if _debug:
+        raise
+    _lines = ["❌  Configuration error — fix the following before starting:\n"]
+    for _err in _cfg_exc.errors():
+        _field = ".".join(str(_p) for _p in _err["loc"])
+        _msg = _err["msg"]
+        _lines.append(f"   • PRINTER_HUB_{_field.upper()}: {_msg}\n")
+    _lines.append("\n")
+    _lines.append("Hint: see backend/.env.example for all supported variables.\n")
+    sys.stderr.writelines(_lines)
+    sys.exit(78)  # sysexits.h EX_CONFIG
 
 from fastapi import FastAPI, Request
 from fastapi.openapi.utils import get_openapi
