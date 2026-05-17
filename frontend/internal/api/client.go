@@ -12,6 +12,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -208,24 +209,36 @@ func (c *HubClient) ListTemplates(ctx context.Context, app string) ([]TemplateRe
 }
 
 // LookupEntity resolves an integration entity via GET /api/lookup/{app}/{id}.
+//
+// Uses the raw (non-WithResponse) generated client to avoid a JSON parse
+// error on 422 responses. The backend may return a non-standard 422 body
+// ({"detail": "unknown app"} with detail as a string), which would fail
+// parsing into HTTPValidationError.Detail (*[]ValidationError). By using
+// the raw client we read the status code directly and return sentinel errors.
 func (c *HubClient) LookupEntity(ctx context.Context, app, id string) (*LookupResult, error) {
 	start := time.Now()
 	appParam := LookupApiLookupAppEntityIdGetParamsApp(app)
-	resp, err := c.gen.LookupApiLookupAppEntityIdGetWithResponse(ctx, appParam, id)
+	rawResp, err := c.gen.LookupApiLookupAppEntityIdGet(ctx, appParam, id)
 	logCall("LookupEntity", start, err)
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode() == http.StatusNotFound {
+	defer rawResp.Body.Close()
+	switch rawResp.StatusCode {
+	case http.StatusNotFound:
 		return nil, ErrNotFound
-	}
-	if resp.StatusCode() == http.StatusUnprocessableEntity {
+	case http.StatusUnprocessableEntity:
 		return nil, ErrUnsupportedApp
+	case http.StatusOK:
+		// fall through to parse the body
+	default:
+		return nil, fmt.Errorf("LookupEntity: status %d", rawResp.StatusCode)
 	}
-	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("LookupEntity: status %d", resp.StatusCode())
+	var result LookupResult
+	if err := json.NewDecoder(rawResp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("LookupEntity: decode: %w", err)
 	}
-	return resp.JSON200, nil
+	return &result, nil
 }
 
 // RenderPreview requests a PNG preview for a template from POST /api/render/preview.
