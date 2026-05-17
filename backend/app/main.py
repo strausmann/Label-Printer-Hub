@@ -80,6 +80,7 @@ from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
+from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes import templates as templates_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.print import router as print_router
@@ -596,6 +597,7 @@ def create_app() -> _LifespanManager:
     app.include_router(lookup_routes.router)
     app.include_router(webhooks_routes.router)
     app.include_router(qr_routes.router)
+    app.include_router(admin_api_keys_router)
 
     _static_dir = Path(__file__).parent / "static"
     if _static_dir.exists():
