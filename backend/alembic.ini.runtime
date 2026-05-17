@@ -1,0 +1,73 @@
+# Docker runtime Alembic configuration.
+#
+# This file is COPYed into the container at the path that lifespan.py resolves
+# for alembic.ini at runtime:
+#
+#   /opt/venv/lib/python3.12/site-packages/alembic.ini
+#
+# WHY a separate file:
+#   Inside the container the app is installed as a Python package into
+#   /opt/venv. Path(__file__).parents[2] for app/db/lifespan.py therefore
+#   resolves to /opt/venv/lib/python3.12/site-packages — NOT to the backend
+#   source root. The dev alembic.ini uses script_location = %(here)s/alembic
+#   (relative to the ini's own directory, i.e. backend/), which works fine
+#   during local development but points into site-packages inside the container
+#   where there is no alembic/ subdirectory.
+#
+# The migration scripts are COPYed to /opt/migrations/alembic/ by the
+# Dockerfile runtime stage; that absolute path is used here.
+#
+# The dev alembic.ini (backend/alembic.ini) is left untouched and continues
+# to work for local `alembic upgrade head`, `alembic revision`, etc.
+
+[alembic]
+script_location = /opt/migrations/alembic
+
+# Template used to generate migration file names.
+file_template = %%(year)d_%%(month).2d_%%(day).2d_%%(hour).2d%%(minute).2d-%%(rev)s_%%(slug)s
+
+# Timezone for revision timestamps.
+timezone = UTC
+
+# Path separator for version_locations / prepend_sys_path.
+path_separator = os
+
+# Database URL — used only by the alembic CLI (offline mode). The application
+# always overrides this at runtime via Settings.database_url / env.py.
+sqlalchemy.url = sqlite+aiosqlite:////data/printer-hub.db
+
+[post_write_hooks]
+
+[loggers]
+keys = root,sqlalchemy,alembic
+
+[handlers]
+keys = console
+
+[formatters]
+keys = generic
+
+[logger_root]
+level = WARN
+handlers = console
+qualname =
+
+[logger_sqlalchemy]
+level = WARN
+handlers =
+qualname = sqlalchemy.engine
+
+[logger_alembic]
+level = INFO
+handlers =
+qualname = alembic
+
+[handler_console]
+class = StreamHandler
+args = (sys.stderr,)
+level = NOTSET
+formatter = generic
+
+[formatter_generic]
+format = %(levelname)-5.5s [%(name)s] %(message)s
+datefmt = %H:%M:%S

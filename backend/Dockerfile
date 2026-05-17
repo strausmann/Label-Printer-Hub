@@ -135,6 +135,17 @@ RUN groupadd --system --gid 1000 hub \
 # package is importable via the venv's site-packages.
 COPY --from=builder --chown=hub:hub /opt/venv /opt/venv
 
+# Alembic runtime configuration and migration scripts.
+#
+# lifespan.py resolves alembic.ini as:
+#   Path(__file__).parents[2] / "alembic.ini"
+# Inside the container __file__ is the installed site-package path, so
+# parents[2] = /opt/venv/lib/python3.12/site-packages — we place alembic.ini
+# there. alembic.ini.runtime uses absolute script_location = /opt/migrations/alembic
+# so the migration scripts are found regardless of the working directory.
+COPY --chown=hub:hub alembic.ini.runtime /opt/venv/lib/python3.12/site-packages/alembic.ini
+COPY --chown=hub:hub alembic/ /opt/migrations/alembic/
+
 WORKDIR /home/hub
 
 USER hub
