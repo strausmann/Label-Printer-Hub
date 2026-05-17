@@ -83,6 +83,8 @@ from app.api.routes import qr as qr_routes
 from app.api.routes import templates as templates_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.print import router as print_router
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_read
 from app.config import Settings, get_settings
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
@@ -572,6 +574,7 @@ def create_app() -> _LifespanManager:
     async def readiness(
         response: Response,
         session: Annotated[AsyncSession, Depends(get_session)],
+        _auth: Annotated[AuthContext, Depends(require_read)] = None,  # type: ignore[assignment]
     ) -> ReadinessResponse:
         body = await build_readiness_response(
             session,

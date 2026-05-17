@@ -11,7 +11,10 @@ from app.printer_backends.snmp_helper import LiveStatus
 from app.services.job_lifecycle import Job, JobState
 from app.services.lookup_service import LookupFailedError
 from app.services.template_loader import TemplateNotFoundError
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_print, require_read
 from fastapi import FastAPI
+from uuid import uuid4 as _uuid4
 from httpx import ASGITransport, AsyncClient
 
 _PRINTER_ID = UUID("dddddddd-0000-0000-0000-000000000001")
@@ -35,6 +38,9 @@ def _app(service, queue):
     app.state.print_service = service
     app.state.print_queue = queue
     app.include_router(router)
+    _fake_ctx = AuthContext(source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1")
+    for _dep in (require_read, require_print):
+        app.dependency_overrides[_dep] = lambda _c=_fake_ctx: _c
     return app
 
 

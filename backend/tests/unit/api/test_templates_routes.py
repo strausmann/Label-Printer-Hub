@@ -14,7 +14,10 @@ import pytest
 import pytest_asyncio
 from app.api.routes.templates import router
 from app.db.engine import _apply_pragmas
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_read
 from app.db.session import get_session
+from uuid import uuid4 as _uuid4
 from app.models.template import Template
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -62,6 +65,8 @@ def _build_app(session_override: AsyncSession) -> FastAPI:
     async def _override_session() -> AsyncIterator[AsyncSession]:
         yield session_override
 
+    _fake_auth_ctx = AuthContext(source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1")
+    app.dependency_overrides[require_read] = lambda _c=_fake_auth_ctx: _c
     app.dependency_overrides[get_session] = _override_session
     return app
 
@@ -168,7 +173,7 @@ async def test_list_templates_direct_no_filter(session) -> None:
     await _make_template(session, "snipeit/asset", "Asset Label", app_name="snipeit")
     await _make_template(session, "grocy/product", "Product Label", app_name="grocy")
 
-    result = await list_templates(session=session, app=None)
+    result = await list_templates(session=session, app=None, _auth=None)
 
     assert len(result) == 2
     keys = {r.key for r in result}
@@ -187,7 +192,7 @@ async def test_list_templates_direct_with_app_filter(session) -> None:
     await _make_template(session, "snipeit/asset", "Asset Label", app_name="snipeit")
     await _make_template(session, "grocy/product", "Product Label", app_name="grocy")
 
-    result = await list_templates(session=session, app="snipeit")
+    result = await list_templates(session=session, app="snipeit", _auth=None)
 
     assert len(result) == 1
     assert result[0].key == "snipeit/asset"
@@ -204,6 +209,6 @@ async def test_list_templates_direct_filter_no_match_returns_empty(session) -> N
 
     await _make_template(session, "snipeit/asset", "Asset Label", app_name="snipeit")
 
-    result = await list_templates(session=session, app="spoolman")
+    result = await list_templates(session=session, app="spoolman", _auth=None)
 
     assert result == []

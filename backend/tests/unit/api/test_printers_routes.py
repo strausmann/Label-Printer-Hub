@@ -78,6 +78,14 @@ def _build_app(session_override: AsyncSession) -> FastAPI:
     async def _override_session() -> AsyncIterator[AsyncSession]:
         yield session_override
 
+    
+    # Phase 7c: bypass auth in unit tests
+    from app.auth.dependencies import AuthContext
+    from app.auth.scope_deps import require_read, require_print, require_admin
+    from uuid import uuid4
+    _fake_ctx = AuthContext(source="api-key", scope="admin", api_key_id=uuid4(), ip="127.0.0.1")
+    for dep in (require_read, require_print, require_admin):
+        app.dependency_overrides[dep] = lambda _c=_fake_ctx: _c
     app.dependency_overrides[get_session] = _override_session
     return app
 
@@ -696,7 +704,7 @@ async def test_list_printers_returns_printer_with_state(session) -> None:
     await session.commit()
 
     # Simulate the session dependency by passing the session directly.
-    result = await list_printers(session=session)
+    result = await list_printers(session=session, _auth=None)
 
     assert len(result) == 1
     assert result[0].id == printer.id
@@ -731,7 +739,7 @@ async def test_get_printer_status_direct_reads_cache(session) -> None:
     session.add(cache)
     await session.commit()
 
-    result = await get_printer_status(printer_id=printer.id, session=session)
+    result = await get_printer_status(printer_id=printer.id, session=session, _auth=None)
 
     assert result.printer_id == printer.id
     assert result.online is True
@@ -768,7 +776,7 @@ async def test_get_printer_tape_direct_with_cache(session) -> None:
     session.add(cache)
     await session.commit()
 
-    result = await get_printer_tape(printer_id=printer.id, session=session)
+    result = await get_printer_tape(printer_id=printer.id, session=session, _auth=None)
 
     assert isinstance(result, dict)
     assert result["width_mm"] == 12
@@ -786,7 +794,7 @@ async def test_clear_printer_queue_direct_cancels_queued(session) -> None:
     job_q = await _make_job(session, printer.id, state=JobState.QUEUED.value)
     job_p = await _make_job(session, printer.id, state=JobState.PRINTING.value)
 
-    await clear_printer_queue(printer_id=printer.id, session=session)
+    await clear_printer_queue(printer_id=printer.id, session=session, _auth=None)
 
     queued = await session.get(Job, job_q.id)
     assert queued is not None
@@ -809,7 +817,7 @@ async def test_get_printer_tape_direct_no_cache_raises_404(session) -> None:
     printer = await _make_printer(session)
 
     with pytest.raises(HTTPException) as exc_info:
-        await get_printer_tape(printer_id=printer.id, session=session)
+        await get_printer_tape(printer_id=printer.id, session=session, _auth=None)
 
     assert exc_info.value.status_code == 404
     assert "no cached status" in exc_info.value.detail
@@ -849,7 +857,7 @@ async def test_get_printer_tape_direct_invalid_media_type_falls_back(session) ->
     from fastapi import HTTPException
 
     try:
-        result = await get_printer_tape(printer_id=printer.id, session=session)
+        result = await get_printer_tape(printer_id=printer.id, session=session, _auth=None)
         assert isinstance(result, dict)
     except HTTPException as exc:
         assert exc.status_code == 404
@@ -887,7 +895,7 @@ async def test_get_printer_tape_direct_unknown_tape_size_raises_404(session) -> 
     await session.commit()
 
     with pytest.raises(HTTPException) as exc_info:
-        await get_printer_tape(printer_id=printer.id, session=session)
+        await get_printer_tape(printer_id=printer.id, session=session, _auth=None)
 
     assert exc_info.value.status_code == 404
 
@@ -906,7 +914,7 @@ async def test_get_printer_queue_direct_returns_active_jobs(session) -> None:
     # DONE job must NOT appear
     await _make_job(session, printer.id, state=JobState.DONE.value)
 
-    result = await get_printer_queue(printer_id=printer.id, session=session)
+    result = await get_printer_queue(printer_id=printer.id, session=session, _auth=None)
 
     assert isinstance(result, list)
     ids = {item["id"] for item in result}

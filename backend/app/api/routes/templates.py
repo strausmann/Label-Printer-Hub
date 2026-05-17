@@ -19,6 +19,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_read
 from app.db.session import get_session
 from app.repositories import templates as templates_repo
 from app.schemas.template_read import TemplateRead
@@ -27,6 +29,7 @@ router = APIRouter(prefix="/api/templates", tags=["templates"])
 
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
 
 
 @router.get(
@@ -42,6 +45,7 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 )
 async def list_templates(
     session: SessionDep,
+    _auth: ReadAuthDep,
     app: str | None = Query(
         default=None,
         description="Filter by integration app (snipeit / grocy / spoolman / …)",

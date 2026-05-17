@@ -38,6 +38,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
 from app.models.job import Job, JobState
 from app.repositories import jobs as jobs_repo
@@ -48,6 +50,8 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
+PrintAuthDep = Annotated[AuthContext, Depends(require_print)]
 
 # Query parameter type aliases (Annotated avoids B008 on Query() in arg defaults)
 StateQuery = Annotated[
@@ -103,6 +107,7 @@ async def _get_job_or_404(session: AsyncSession, job_id: UUID) -> Job:
 )
 async def list_jobs(
     session: SessionDep,
+    _auth: ReadAuthDep,
     state: StateQuery = None,
     printer_id: PrinterIdQuery = None,
     since: SinceQuery = None,
@@ -133,6 +138,7 @@ async def list_jobs(
 async def get_job(
     job_id: UUID,
     session: SessionDep,
+    _auth: ReadAuthDep,
 ) -> JobRead:
     """Return a single job by ID."""
     job = await _get_job_or_404(session, job_id)
@@ -158,6 +164,7 @@ async def get_job(
 async def cancel_job(
     job_id: UUID,
     session: SessionDep,
+    _auth: PrintAuthDep,
 ) -> JobRead:
     """Cancel a QUEUED job; reject with 409 for any other state."""
     job = await _get_job_or_404(session, job_id)
