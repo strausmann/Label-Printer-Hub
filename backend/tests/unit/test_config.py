@@ -46,3 +46,53 @@ def test_sse_settings_defaults() -> None:
     assert s.sse_max_subscribers == 100
     assert s.sse_heartbeat_s == 30.0
     assert s.sse_probe_interval_s == 30.0
+
+
+# ---------------------------------------------------------------------------
+# F3 — SSE Settings must reject zero/negative values (Finding F3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("sse_queue_size", 0),
+        ("sse_queue_size", -1),
+        ("sse_heartbeat_s", 0),
+        ("sse_heartbeat_s", -0.5),
+        ("sse_idle_timeout_s", 0),
+        ("sse_idle_timeout_s", -10),
+        ("sse_max_subscribers", 0),
+        ("sse_max_subscribers", -1),
+        ("sse_probe_interval_s", 0),
+        ("sse_probe_interval_s", -5.0),
+    ],
+)
+def test_sse_settings_reject_non_positive(field: str, value: float | int) -> None:
+    """All five SSE settings must reject 0 and negative values (Finding F3).
+
+    asyncio.Queue(maxsize=0) is unbounded; heartbeat_s=0 creates a tight
+    loop; all other zero/negative values are nonsensical resource limits.
+    Field(gt=0) on each setting provides the guard.
+    """
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(**{field: value}, _env_file=None)  # type: ignore[arg-type]
+
+
+def test_sse_settings_accept_positive_one() -> None:
+    """Boundary: value=1 must be accepted for all five SSE integer settings."""
+    s = Settings(
+        sse_queue_size=1,
+        sse_heartbeat_s=1.0,
+        sse_idle_timeout_s=1.0,
+        sse_max_subscribers=1,
+        sse_probe_interval_s=1.0,
+        _env_file=None,  # type: ignore[call-arg]
+    )
+    assert s.sse_queue_size == 1
+    assert s.sse_heartbeat_s == 1.0
+    assert s.sse_idle_timeout_s == 1.0
+    assert s.sse_max_subscribers == 1
+    assert s.sse_probe_interval_s == 1.0
