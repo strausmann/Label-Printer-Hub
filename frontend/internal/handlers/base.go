@@ -65,6 +65,9 @@ type PageHandler struct {
 // pageNames is the canonical list of page template names. Each entry must
 // have a corresponding {name}.html file in web/templates/.
 var pageNames = []string{
+	"admin_api_keys",
+	"admin_api_keys_create",
+	"admin_api_keys_detail",
 	"dashboard",
 	"printer",
 	"jobs",
@@ -194,6 +197,12 @@ var stubPageContent = map[string]string{
 {{define "template-content"}}<div id="template-detail">template</div>{{end}}`,
 	"lookup": `{{define "content"}}<div id="lookup-result">lookup</div>{{end}}
 {{define "lookup-content"}}<div id="lookup-result">lookup</div>{{end}}`,
+	"admin_api_keys": `{{define "content"}}<div id="api-keys-list"></div>{{end}}
+{{define "admin_api_keys-content"}}<div id="api-keys-list">{{range .Keys}}<span>{{.Name}}</span>{{end}}</div>{{end}}`,
+	"admin_api_keys_create": `{{define "content"}}<div id="api-key-create"></div>{{end}}
+{{define "admin_api_keys_create-content"}}<div id="api-key-create">{{.Plaintext}}</div>{{end}}`,
+	"admin_api_keys_detail": `{{define "content"}}<div id="api-key-detail"></div>{{end}}
+{{define "admin_api_keys_detail-content"}}<div id="api-key-detail">{{.Key.Name}}</div>{{end}}`,
 }
 
 // newStubPageHandler builds a PageHandler backed by minimal stub templates for
