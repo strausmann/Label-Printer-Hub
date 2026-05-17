@@ -65,6 +65,7 @@ class AuthContext(BaseModel):
     scope: Literal["read", "print", "admin"]
     api_key_id: UUID | None
     ip: str
+    allowed_printer_ids: list[str] = []
 
 
 def _scope_satisfies(key_scope: str, required_scope: str) -> bool:
@@ -214,6 +215,7 @@ async def _validate_api_key(
         scope=effective_scope,  # type: ignore[arg-type]
         api_key_id=key_row.id,
         ip=client_ip,
+        allowed_printer_ids=key_row.allowed_printer_ids or [],
     )
 
 
@@ -284,3 +286,30 @@ def require_scope(required: str, *, settings: Settings | None = None):
         )
 
     return _check
+
+
+def check_printer_access(auth_context: "AuthContext", printer_id: "UUID") -> None:
+    """Verify the AuthContext allows access to the given printer.
+
+    For api-key auth: checks allowed_printer_ids.
+    Empty list = all printers allowed. Non-empty = must contain printer_id.
+
+    For pangolin-sso / pangolin-bypass: unrestricted (single-user HomeLab).
+
+    Raises:
+        HTTPException 403 if the key has a restricted list that excludes printer_id.
+    """
+    if auth_context.source != "api-key":
+        return  # SSO and bypass have unrestricted printer access
+
+    if auth_context.allowed_printer_ids:
+        if str(printer_id) not in auth_context.allowed_printer_ids:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error_code": "printer_not_allowed",
+                    "error_message": (
+                        f"This API key is not authorised for printer {printer_id}."
+                    ),
+                },
+            )
