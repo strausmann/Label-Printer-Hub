@@ -143,6 +143,13 @@ func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS) *c
 	r.Mount("/spool", prx)
 	r.Mount("/product", prx)
 
+	// FastAPI auto-doc endpoints (Phase 7b Cluster 3).
+	// r.Handle is used (not r.Mount) so the full path is preserved when
+	// forwarded to the backend — chi.Mount strips the mount prefix.
+	r.Handle("/docs", prx)
+	r.Handle("/openapi.json", prx)
+	r.Handle("/redoc", prx)
+
 	return r
 }
 

@@ -316,6 +316,65 @@ func min(a, b int) int {
 	return b
 }
 
+// TestProxyMountsBackendDocRoutes verifies that /docs, /openapi.json and /redoc
+// are forwarded to the backend (Phase 7b Cluster 3).
+// Without the three r.Handle lines in newRouter, the chi router returns 404 for
+// each of these paths.
+func TestProxyMountsBackendDocRoutes(t *testing.T) {
+	// Not parallel at the outer level: we need initBuildInfoForTests to run
+	// (sync.Once write) before the parallel subtests read the global.
+	initBuildInfoForTests(t)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/docs":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, "<html>Swagger UI</html>")
+		case "/openapi.json":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"openapi":"3.1.0"}`)
+		case "/redoc":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprint(w, "ReDoc")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	// t.Cleanup (not defer) ensures the server stays up until all parallel
+	// subtests have finished — defer fires when the outer function returns,
+	// which is before t.Parallel subtests execute.
+	t.Cleanup(backend.Close)
+
+	// Build the router directly against our mock backend so all three doc
+	// paths are proxied to the server that actually answers them.
+	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
+	prx := proxy.New(backend.URL)
+	sub, err := fs.Sub(staticFS, "web/static")
+	if err != nil {
+		t.Fatalf("fs.Sub: %v", err)
+	}
+	r := newRouter(ph, prx, sub)
+
+	for path, want := range map[string]string{
+		"/docs":         "Swagger UI",
+		"/openapi.json": `"openapi":"3.1.0"`,
+		"/redoc":        "ReDoc",
+	} {
+		path, want := path, want // capture loop variables
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("GET %s: got status %d, want 200 (body: %q)", path, rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), want) {
+				t.Errorf("GET %s: body = %q, want substring %q", path, rec.Body.String(), want)
+			}
+		})
+	}
+}
+
 // TestRealTemplatesPerPageContent verifies that each page renders its own
 // content when using the real embedded templates — not the content of whatever
 // page file happens to be parsed last.
