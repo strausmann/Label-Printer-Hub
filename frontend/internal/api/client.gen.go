@@ -114,7 +114,7 @@ type PrinterRead struct {
 	Id         openapi_types.UUID     `json:"id"`
 	Model      string                 `json:"model"`
 	Name       string                 `json:"name"`
-	Paused     *bool                  `json:"paused,omitempty"`
+	Paused     bool                   `json:"paused"`
 	UpdatedAt  time.Time              `json:"updated_at"`
 }
 
