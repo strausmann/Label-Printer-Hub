@@ -22,15 +22,18 @@
 # -----------------------------------------------------------------------------
 # Stage 0: Tailwind CSS build
 # -----------------------------------------------------------------------------
-FROM alpine:3.20 AS tailwind-builder
+FROM debian:bookworm-slim AS tailwind-builder
 
 ARG TAILWIND_VERSION=v4.1.5
 ARG TARGETARCH
 
 # Download the Tailwind v4 Standalone CLI for the current build architecture.
+# The Tailwind standalone binary is a glibc ELF — debian:bookworm-slim
+# provides glibc; alpine (musl) cannot execute the binary.
 # TARGETARCH is set by Docker buildx: "amd64" → x64, "arm64" → arm64.
 # --minify reduces the output by ~30-50% for production images.
-RUN apk add --no-cache curl && \
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
     ARCH_SUFFIX=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "x64") && \
     curl -fsSL \
       "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${ARCH_SUFFIX}" \
@@ -52,7 +55,7 @@ RUN tailwindcss \
 # -----------------------------------------------------------------------------
 # Stage 1: builder
 # -----------------------------------------------------------------------------
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /build
 
