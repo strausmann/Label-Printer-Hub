@@ -22,7 +22,7 @@ func jobsBackend(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode([]map[string]any{
 			{"id": "11111111-0000-0000-0000-000000000001",
-				"printer_id": "aaaaaaaa-0000-0000-0000-000000000001",
+				"printer_id":   "aaaaaaaa-0000-0000-0000-000000000001",
 				"template_key": "snipeit-asset", "state": "done",
 				"payload": map[string]any{}, "result": nil, "error": nil,
 				"created_at": now, "updated_at": now,

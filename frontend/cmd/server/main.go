@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"html/template"
 	"io/fs"
@@ -82,19 +81,6 @@ func loadBuildInfo() BuildInfo {
 	}
 }
 
-// healthzHandler returns 200 with the cached BuildInfo struct. It performs
-// no authentication, has no external dependencies, and never blocks —
-// matching the contract of the backend's /healthz so the same orchestrator
-// probe configuration works against both containers.
-func healthzHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(buildInfo); err != nil {
-		// Encoding a fixed-shape struct should never fail; if it does the
-		// connection is dead anyway. Log and return — no further writes.
-		slog.Error("failed to encode healthz response", "err", err)
-	}
-}
-
 // slogRequestLogger returns a chi middleware that emits one structured log
 // line per request using the global slog logger. chi's bundled
 // middleware.Logger writes to the legacy stdlib `log` package which bypasses
@@ -121,17 +107,10 @@ func slogRequestLogger(next http.Handler) http.Handler {
 // newRouter builds the chi router. Kept as a separate function so tests can
 // exercise it without spinning up an actual HTTP server.
 //
-// ph is the shared PageHandler; it may be nil in the minimal healthz-only test
-// path (the skeleton tests call newRouter() directly before the PageHandler was
-// introduced). Static file serving and page routes are added when ph != nil.
-//
-// backendURL is the base URL of the backend container used for the /api/*
-// reverse-proxy; when empty it defaults to "http://backend:8000".
-func newRouter(ph *handlers.PageHandler, backendURL string) *chi.Mux {
-	if backendURL == "" {
-		backendURL = "http://backend:8000"
-	}
-
+// ph is the shared PageHandler that handles all UI routes including /healthz.
+// prx is the pre-built reverse proxy to the backend (FlushInterval=-1 for SSE).
+// staticSubFS is an fs.FS rooted at web/static — pass fs.Sub(staticFS, "web/static").
+func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -139,38 +118,31 @@ func newRouter(ph *handlers.PageHandler, backendURL string) *chi.Mux {
 	r.Use(slogRequestLogger)
 
 	// Static assets embedded in the binary (Tailwind CSS, HTMX JS, icons).
-	// Served at /static/*. staticFS has paths rooted at "web/static/", so we
-	// use fs.Sub to strip that prefix before handing off to http.FileServer.
-	// A request for /static/app.css → strips /static/ prefix → looks up app.css
-	// in the sub-FS rooted at web/static/.
-	sub, err := fs.Sub(staticFS, "web/static")
-	if err != nil {
-		panic("static embed misconfigured: " + err.Error())
-	}
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(sub))))
+	// Served at /static/*. staticSubFS is already rooted at web/static so a
+	// request for /static/app.css → strips /static/ prefix → looks up app.css
+	// directly in the sub-FS.
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticSubFS))))
 
-	r.Get("/healthz", healthzHandler)
+	// All page routes and /healthz are handled by the shared PageHandler.
+	r.Get("/healthz", ph.Healthz)
 
-	// Reverse proxy: /api/* and SSE stream → backend container.
+	r.Get("/", ph.Dashboard)
+	r.Get("/printers/{id}", ph.PrinterDetail)
+	r.Get("/jobs", ph.JobsList)
+	r.Get("/jobs/{id}", ph.JobDetail)
+	r.Post("/jobs/{id}/retry", ph.JobRetry)
+	r.Get("/templates", ph.TemplatesList)
+	r.Get("/templates/{id}", ph.TemplateDetail)
+	r.Get("/lookup/{app}/{id}", ph.LookupDisplay)
+
+	// Reverse proxy: /api/* and QR-landing paths → backend container.
 	// FlushInterval=-1 (set inside proxy.New) ensures SSE frames are forwarded
-	// immediately without buffering. The chi wildcard captures the full path
-	// so the proxy receives e.g. /api/printers (not just /printers).
-	backendProxy := proxy.New(backendURL)
-	r.Handle("/api/*", backendProxy)
-
-	// Page handlers: dashboard (Task 5) and further routes (Tasks 6–11).
-	// ph is always non-nil in production; nil only happens if tests call
-	// newRouter(nil, "") directly — those tests only hit /healthz and /api/*.
-	if ph != nil {
-		r.Get("/", ph.Dashboard)
-		r.Get("/printers/{id}", ph.PrinterDetail)
-		r.Get("/jobs", ph.JobsList)
-		r.Get("/jobs/{id}", ph.JobDetail)
-		r.Post("/jobs/{id}/retry", ph.JobRetry)
-		r.Get("/templates", ph.TemplatesList)
-		r.Get("/templates/{id}", ph.TemplateDetail)
-		r.Get("/lookup/{app}/{id}", ph.LookupDisplay)
-	}
+	// immediately without buffering.
+	r.Handle("/api/*", prx)
+	r.Mount("/loc", prx)
+	r.Mount("/asset", prx)
+	r.Mount("/spool", prx)
+	r.Mount("/product", prx)
 
 	return r
 }
@@ -201,7 +173,13 @@ func main() {
 	client := api.NewHubClient(backendURL)
 	ph := handlers.NewPageHandler(tmpl, client, buildInfo.Version)
 
-	r := newRouter(ph, backendURL)
+	prx := proxy.New(backendURL)
+	staticSubFS, err := fs.Sub(staticFS, "web/static")
+	if err != nil {
+		slog.Error("static embed misconfigured", "err", err)
+		os.Exit(1)
+	}
+	r := newRouter(ph, prx, staticSubFS)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           r,

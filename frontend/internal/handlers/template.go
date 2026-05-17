@@ -12,9 +12,9 @@ import (
 // TemplateDetailData holds the template variables for the template detail page.
 type TemplateDetailData struct {
 	TemplateData
-	Template     *api.TemplateRead
-	PreviewURI   string // base64 data URI or /static/preview-placeholder.svg
-	YAMLSource   string // raw YAML source for display in <pre>
+	Template   *api.TemplateRead
+	PreviewURI string // base64 data URI or /static/preview-placeholder.svg
+	YAMLSource string // raw YAML source for display in <pre>
 }
 
 // TemplateDetail handles GET /templates/{id}. It reads the template key from

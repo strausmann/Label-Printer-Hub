@@ -23,7 +23,7 @@ func templateDetailBackend(t *testing.T, servePreview bool) *httptest.Server {
 			"id": "aaaaaaaa-0000-0000-0000-000000000001", "key": templateKey,
 			"name": "Snipe-IT Asset", "app": "snipeit", "printer_model": "pt_series",
 			"tape_width_mm": 12, "schema_version": 1,
-			"source": "name: Snipe-IT Asset\nwidth: 12\n",
+			"source":     "name: Snipe-IT Asset\nwidth: 12\n",
 			"definition": map[string]any{}, "created_at": now, "updated_at": now,
 		},
 	}

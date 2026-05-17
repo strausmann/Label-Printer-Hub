@@ -23,7 +23,7 @@ func TestListPrintersHitsCorrectPath(t *testing.T) {
 				{"id": "aaaaaaaa-0000-0000-0000-000000000001", "name": "PT-P750W",
 					"model": "pt_series", "backend": "tcp",
 					"connection": map[string]any{"host": "198.51.100.10", "port": 9100},
-					"enabled": true, "paused": false, "created_at": now, "updated_at": now},
+					"enabled":    true, "paused": false, "created_at": now, "updated_at": now},
 			})
 		} else {
 			http.NotFound(w, r)
