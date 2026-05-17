@@ -9,13 +9,19 @@ Call order in main.py lifespan:
     1. run_migrations()          — apply pending Alembic revisions
     2. recover_inflight_jobs()   — mark stale QUEUED/PRINTING jobs as failed_restart
     3. seed_templates()          — upsert YAML seed templates into DB
-    4. ensure_printer_state()    — create missing printer_state rows
+    4. upsert_runtime_printer()  — materialise ONE Printer row from env config
+    5. ensure_printer_state()    — create missing printer_state rows
 """
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
+from app.models.printer import Printer
+from app.services.printer_identity import derive_printer_id
 from app.services.template_loader import TemplateLoader
 
 
@@ -102,3 +108,56 @@ async def ensure_printer_state(session: AsyncSession) -> int:
         await session.commit()
 
     return created
+
+
+async def upsert_runtime_printer(
+    session: AsyncSession,
+    settings: Settings,
+) -> UUID | None:
+    """Materialise one Printer row from env config; return its deterministic id.
+
+    Returns ``None`` when the environment does NOT declare a printer host
+    (e.g. mock backend in CI).  The lifespan calls this between
+    ``seed_templates`` and ``ensure_printer_state`` so every restart
+    keeps the single runtime printer row consistent with the current env.
+
+    The Printer row is keyed by the deterministic UUIDv5 produced by
+    ``derive_printer_id(model, host, port)`` — the same id that the
+    print-queue driver uses, so the DB row and the in-memory printer share
+    one stable identity across restarts.
+    """
+    model: str = settings.printer_model
+    # Resolve host: pt750w takes precedence, ql820 is the fallback.
+    host: str = settings.pt750w_host or settings.ql820_host or ""
+    port: int = settings.pt750w_port if settings.pt750w_host else settings.ql820_port
+
+    if not (model and host and port):
+        return None
+
+    printer_id: UUID = derive_printer_id(model, host, port)
+    connection: dict[str, object] = {
+        "host": host,
+        "port": port,
+        "snmp": settings.printer_discover_via_snmp,
+        "snmp_community": settings.printer_snmp_community,
+    }
+    name: str = f"{model} ({host})"
+
+    existing = await session.get(Printer, printer_id)
+    if existing is not None:
+        existing.name = name
+        existing.connection = connection
+        existing.enabled = True
+    else:
+        session.add(
+            Printer(
+                id=printer_id,
+                name=name,
+                model=model.lower(),
+                backend=settings.printer_backend,
+                connection=connection,
+                enabled=True,
+            )
+        )
+    await session.flush()
+    return printer_id
