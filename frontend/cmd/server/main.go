@@ -165,6 +165,8 @@ func newRouter(ph *handlers.PageHandler, backendURL string) *chi.Mux {
 		r.Get("/", ph.Dashboard)
 		r.Get("/printers/{id}", ph.PrinterDetail)
 		r.Get("/jobs", ph.JobsList)
+		r.Get("/jobs/{id}", ph.JobDetail)
+		r.Post("/jobs/{id}/retry", ph.JobRetry)
 	}
 
 	return r
