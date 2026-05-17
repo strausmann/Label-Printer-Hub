@@ -51,6 +51,7 @@ class ApiKeyCreate(BaseModel):
 
 class ApiKeyCreateResponse(BaseModel):
     """Returned ONCE on creation — includes plaintext. Never return again."""
+
     key_id: UUID
     plaintext: str
     prefix: str
@@ -60,6 +61,7 @@ class ApiKeyCreateResponse(BaseModel):
 
 class ApiKeyRead(BaseModel):
     """Metadata-only view — no key_hash, no plaintext."""
+
     id: UUID
     name: str
     key_prefix: str
@@ -110,11 +112,7 @@ def _key_to_read(key: ApiKey) -> ApiKeyRead:
     description="Returns metadata for all API keys. key_hash and plaintext are never included.",
 )
 async def list_api_keys(session: SessionDep, _auth: AdminAuthDep) -> list[ApiKeyRead]:
-    from sqlalchemy import select
-    from sqlmodel import SQLModel
-    result = await session.execute(
-        __import__("sqlalchemy", fromlist=["select"]).select(ApiKey)
-    )
+    result = await session.execute(__import__("sqlalchemy", fromlist=["select"]).select(ApiKey))
     keys = list(result.scalars())
     return [_key_to_read(k) for k in keys]
 
@@ -148,6 +146,7 @@ async def create_api_key(
     )
     if body.expires_at:
         from datetime import datetime
+
         key.expires_at = datetime.fromisoformat(body.expires_at)
 
     created = await api_keys_repo.create(session, key)

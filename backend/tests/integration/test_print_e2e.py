@@ -9,7 +9,12 @@ from app.config import get_settings
 from app.main import create_app
 from app.printer_backends import BackendRegistry
 from app.printer_models.registry import ModelRegistry
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_print, require_read
 from httpx import ASGITransport, AsyncClient
+from uuid import uuid4
+
+_FAKE_AUTH = AuthContext(source="api-key", scope="admin", api_key_id=uuid4(), ip="127.0.0.1")
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +52,9 @@ async def _poll_until(c: AsyncClient, job_id: str, *, target: str, timeout_s: fl
 async def test_happy_path_raw_data() -> None:
     """POST /print → 202 + job_id → poll → completed."""
     app = create_app()
+    _inner = app._app
+    for _dep in (require_read, require_print):
+        _inner.dependency_overrides[_dep] = lambda _c=_FAKE_AUTH: _c
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
             "/print",
@@ -66,6 +74,9 @@ async def test_happy_path_raw_data() -> None:
 async def test_template_not_found_synchronous_404() -> None:
     """Unknown template_id → synchronous 404, no job record."""
     app = create_app()
+    _inner = app._app
+    for _dep in (require_read, require_print):
+        _inner.dependency_overrides[_dep] = lambda _c=_FAKE_AUTH: _c
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
             "/print",
@@ -106,6 +117,9 @@ def mismatched_mock_backend():
 async def test_tape_mismatch_synchronous_409(mismatched_mock_backend) -> None:
     """Tape mismatch now triggers synchronous 409 via preflight (no job created)."""
     app = create_app()
+    _inner = app._app
+    for _dep in (require_read, require_print):
+        _inner.dependency_overrides[_dep] = lambda _c=_FAKE_AUTH: _c
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
             "/print",
@@ -131,6 +145,9 @@ def offline_mock_backend():
 async def test_offline_synchronous_503(offline_mock_backend) -> None:
     """Printer offline now triggers synchronous 503 via preflight (no job created)."""
     app = create_app()
+    _inner = app._app
+    for _dep in (require_read, require_print):
+        _inner.dependency_overrides[_dep] = lambda _c=_FAKE_AUTH: _c
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
             "/print",

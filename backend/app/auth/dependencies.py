@@ -36,10 +36,10 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.verifier import verify_api_key
 from app.config import Settings, get_settings
 from app.db.session import get_session
 from app.repositories import api_keys as api_keys_repo
-from app.auth.verifier import verify_api_key
 from app.services.rate_limiter import _rate_limiter
 
 _log = logging.getLogger(__name__)
@@ -148,6 +148,7 @@ async def _validate_api_key(
         )
 
     from datetime import UTC, datetime
+
     if key_row.expires_at is not None:
         expires = key_row.expires_at
         if expires.tzinfo is None:
@@ -190,7 +191,6 @@ async def _validate_api_key(
         key_row.id, limit_per_minute=key_row.rate_limit_per_minute
     )
     if not allowed:
-        from fastapi import Response
         raise HTTPException(
             status_code=429,
             detail={
@@ -207,7 +207,7 @@ async def _validate_api_key(
     # Best-effort last-used update (don't fail auth if this errors)
     try:
         await api_keys_repo.update_last_used(session, key_row.id, ip=client_ip)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _log.warning("Failed to update last_used for key %s: %s", key_row.id, exc)
 
     return AuthContext(
@@ -238,9 +238,9 @@ def require_scope(required: str, *, settings: Settings | None = None):
     async def _check(
         request: Request,
         key_header: str | None = Security(_api_key_header),
-        session: AsyncSession = Depends(get_session),
+        session: AsyncSession = Depends(get_session),  # noqa: B008
     ) -> AuthContext:
-        client_ip = (request.client.host if request.client else "unknown")
+        client_ip = request.client.host if request.client else "unknown"
 
         # Path 1: API-Key header takes priority over SSO/bypass
         if key_header:
@@ -288,7 +288,7 @@ def require_scope(required: str, *, settings: Settings | None = None):
     return _check
 
 
-def check_printer_access(auth_context: "AuthContext", printer_id: "UUID") -> None:
+def check_printer_access(auth_context: AuthContext, printer_id: UUID) -> None:
     """Verify the AuthContext allows access to the given printer.
 
     For api-key auth: checks allowed_printer_ids.
@@ -302,14 +302,11 @@ def check_printer_access(auth_context: "AuthContext", printer_id: "UUID") -> Non
     if auth_context.source != "api-key":
         return  # SSO and bypass have unrestricted printer access
 
-    if auth_context.allowed_printer_ids:
-        if str(printer_id) not in auth_context.allowed_printer_ids:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "error_code": "printer_not_allowed",
-                    "error_message": (
-                        f"This API key is not authorised for printer {printer_id}."
-                    ),
-                },
-            )
+    if auth_context.allowed_printer_ids and str(printer_id) not in auth_context.allowed_printer_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "printer_not_allowed",
+                "error_message": (f"This API key is not authorised for printer {printer_id}."),
+            },
+        )

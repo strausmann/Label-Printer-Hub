@@ -38,9 +38,7 @@ async def list_active(session: AsyncSession) -> list[ApiKey]:
     stmt = (
         select(ApiKey)
         .where(col(ApiKey.enabled).is_(True))
-        .where(
-            (col(ApiKey.expires_at).is_(None)) | (col(ApiKey.expires_at) > now)
-        )
+        .where((col(ApiKey.expires_at).is_(None)) | (col(ApiKey.expires_at) > now))
         .order_by(col(ApiKey.created_at))
     )
     result = await session.execute(stmt)

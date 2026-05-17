@@ -35,6 +35,9 @@ dependencies = [
     "ptouch>=1.1.0",
     "pysnmp>=6.2",
     "prometheus-client>=0.21",
+    # Phase 7c — API key authentication
+    "bcrypt>=4.0",
+    "cachetools>=5.0",
 ]
 
 [project.optional-dependencies]
