@@ -6,6 +6,11 @@ printable area of a Brother tape. The renderer consumes a template plus a
 
 Templates are frozen at construction so they can be safely seeded as
 module-level constants (see app/seed/templates.py in PR D2).
+
+Immutability note: Pydantic `frozen=True` prevents attribute re-assignment
+but does NOT deep-freeze container values. The ``preview_sample`` field
+therefore uses ``tuple[str, ...]`` for its sequence type (instead of
+``list[str]``) so the entire schema is truly immutable after construction.
 """
 
 from __future__ import annotations
@@ -61,6 +66,14 @@ class TemplateSchema(BaseModel):
     validated at load time against ``IntegrationRegistry``; the schema
     itself accepts any string so plugins can be added without a schema
     migration.
+
+    ``preview_sample`` is an optional mapping of field name → sample value
+    used by the preview-render endpoint (``POST /api/render/preview``).
+    Each template declares its own preview values so the route never has
+    to fabricate sample data per-app. Keys must match the ``field`` /
+    ``data_field`` names referenced by ``elements``; supported keys are
+    ``primary_id``, ``title``, ``qr_payload``, and optionally ``secondary``
+    (list/tuple of additional lines).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -71,3 +84,7 @@ class TemplateSchema(BaseModel):
     app: str | None
     tape_mm: int
     elements: tuple[LayoutElement, ...]
+    # Values use tuple (not list) so the entire schema is deeply immutable —
+    # Pydantic frozen=True only prevents attribute re-assignment, not mutation
+    # of mutable containers stored in those attributes.
+    preview_sample: dict[str, str | int | float | bool | tuple[str, ...]] | None = None

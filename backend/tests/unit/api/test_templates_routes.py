@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 import app.models  # noqa: F401 — registers all SQLModel tables with metadata
 import pytest
 import pytest_asyncio
-from app.api.routes.templates import router
+from app.api.routes.templates import render_router, router
 from app.db.engine import _apply_pragmas
 from app.db.session import get_session
 from app.models.template import Template
@@ -58,6 +58,7 @@ def _build_app(session_override: AsyncSession) -> FastAPI:
     """Return a FastAPI app with the templates router and the DB overridden."""
     app = FastAPI()
     app.include_router(router)
+    app.include_router(render_router)
 
     async def _override_session() -> AsyncIterator[AsyncSession]:
         yield session_override
@@ -77,7 +78,11 @@ async def _make_template(
     name: str,
     app_name: str | None = None,
     source: str = "seed",
+    preview_sample: dict[str, object] | None = None,
 ) -> Template:
+    definition: dict[str, object] = {"elements": []}
+    if preview_sample is not None:
+        definition["preview_sample"] = preview_sample
     tpl = Template(
         key=key,
         name=name,
@@ -85,7 +90,7 @@ async def _make_template(
         printer_model="PT-P750W",
         tape_width_mm=12,
         source=source,
-        definition={"elements": []},
+        definition=definition,
     )
     session.add(tpl)
     await session.commit()
@@ -192,6 +197,136 @@ async def test_list_templates_direct_with_app_filter(session) -> None:
     assert len(result) == 1
     assert result[0].key == "snipeit/asset"
     assert result[0].app == "snipeit"
+
+
+@pytest.mark.asyncio
+async def test_template_preview_returns_png(session) -> None:
+    """POST /api/render/preview?key=<key> renders a sample label as PNG bytes.
+
+    Regression for Bug 3 — the backend had no preview endpoint.
+    The frontend template detail page fell back to preview-placeholder.svg
+    because POST /api/render/preview always returned 404.
+    """
+    await _make_template(
+        session,
+        "snipeit/asset",
+        "Asset Label",
+        app_name="snipeit",
+        preview_sample={
+            "primary_id": "ASSET-2024-001",
+            "title": "Dell Latitude 7430",
+            "qr_payload": "https://snipeit.example.com/hardware/123",
+        },
+    )
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post("/api/render/preview?key=snipeit%2Fasset")
+
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n"  # PNG magic number
+
+
+@pytest.mark.asyncio
+async def test_template_preview_unknown_key_returns_404(session) -> None:
+    """POST /api/render/preview?key=<unknown> returns 404 for a missing template."""
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post("/api/render/preview?key=no-such-key")
+
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_template_preview_uses_preview_sample_from_definition(session) -> None:
+    """The preview endpoint reads sample values from template.definition.preview_sample.
+
+    Regression for Commit 4 refactor — sample data must live in the template
+    definition, not be hardcoded per-app in the route. A template without
+    preview_sample must return 422; a template WITH preview_sample renders.
+    """
+    await _make_template(
+        session,
+        "custom/key",
+        "Custom Template",
+        app_name=None,  # no integration app — only works because preview_sample is on the template
+        preview_sample={
+            "primary_id": "CUSTOM-1",
+            "title": "User-defined preview",
+            "qr_payload": "https://example.com/custom/1",
+        },
+    )
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post("/api/render/preview?key=custom%2Fkey")
+
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+@pytest.mark.asyncio
+async def test_template_preview_renders_seed_template_via_loader_pipeline(session) -> None:
+    """End-to-end: a real seed YAML survives the TemplateLoader → seed_db pipeline
+    with its preview_sample intact, and the preview endpoint renders it.
+
+    This guards against silent loss of preview_sample if a future refactor
+    breaks the schema_dump → DB → schema_construct round-trip.
+    """
+    from pathlib import Path
+
+    from app.integrations import _discover_plugins
+    from app.integrations.registry import IntegrationRegistry
+    from app.services.template_loader import TemplateLoader
+
+    # IntegrationRegistry is a class-level singleton that other tests may have
+    # cleared. The seed-template loader validates `app` against the registry,
+    # so re-discover plugins here to make the test hermetic regardless of
+    # test ordering in the full suite.
+    if not IntegrationRegistry.names():
+        _discover_plugins()
+
+    seed_dir = Path(__file__).resolve().parents[3] / "app" / "seed" / "templates"
+    # The loader caches at the class level — clear first so the test is hermetic.
+    TemplateLoader._cache.clear()
+    TemplateLoader.load_dir(seed_dir)
+    await TemplateLoader.seed_db(session)
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post("/api/render/preview?key=snipeit-12mm")
+
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "image/png"
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+@pytest.mark.asyncio
+async def test_template_preview_fails_when_template_lacks_preview_sample(session) -> None:
+    """Templates without preview_sample return 422 with a clear error message.
+
+    The previous implementation guessed sample data per-app — wrong responsibility
+    locality. Templates must declare their own preview values; the route no
+    longer fabricates fallbacks.
+    """
+    await _make_template(
+        session,
+        "incomplete/template",
+        "No Preview Sample",
+        app_name="snipeit",
+        preview_sample=None,  # explicit: definition has no preview_sample block
+    )
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post("/api/render/preview?key=incomplete%2Ftemplate")
+
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "preview_sample" in detail
+    assert "incomplete/template" in detail
 
 
 @pytest.mark.asyncio

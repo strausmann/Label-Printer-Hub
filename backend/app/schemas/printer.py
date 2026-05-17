@@ -32,7 +32,7 @@ class PrinterRead(BaseModel):
     backend: str
     connection: dict[str, object]
     enabled: bool
-    paused: bool = False  # joined from printer_state
+    paused: bool  # joined from printer_state — always set explicitly by callers
     created_at: datetime
     updated_at: datetime
 

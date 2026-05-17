@@ -6,6 +6,26 @@
 <div id="printer-detail" hx-ext="sse" sse-connect="/api/events?printer_id={{.PrinterID}}">
   <div class="space-y-6">
 
+    {{if .Printer}}
+    <div class="rounded-lg border border-surface-border bg-surface-raised p-4">
+      <h2 class="font-medium text-content mb-2">Metadata</h2>
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+        <dt class="text-content-secondary">Name</dt>           <dd>{{.Printer.Name}}</dd>
+        <dt class="text-content-secondary">Model</dt>          <dd>{{.Printer.Model}}</dd>
+        <dt class="text-content-secondary">Backend</dt>        <dd>{{.Printer.Backend}}</dd>
+        {{if and (index .Printer.Connection "host") (index .Printer.Connection "port")}}
+        <dt class="text-content-secondary">Host</dt>           <dd>{{index .Printer.Connection "host"}}:{{index .Printer.Connection "port"}}</dd>
+        {{else if index .Printer.Connection "interface"}}
+        <dt class="text-content-secondary">Interface</dt>      <dd>{{index .Printer.Connection "interface"}}</dd>
+        {{end}}
+        <dt class="text-content-secondary">Enabled</dt>        <dd>{{if .Printer.Enabled}}yes{{else}}no{{end}}</dd>
+        <dt class="text-content-secondary">Paused</dt>         <dd>{{if .Printer.Paused}}yes{{else}}no{{end}}</dd>
+        <dt class="text-content-secondary">Created</dt>        <dd>{{.Printer.CreatedAt}}</dd>
+        <dt class="text-content-secondary">Updated</dt>        <dd>{{.Printer.UpdatedAt}}</dd>
+      </dl>
+    </div>
+    {{end}}
+
     <div id="printer-status-panel"
          sse-swap="printer.status"
          hx-swap="innerHTML"
