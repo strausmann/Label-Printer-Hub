@@ -379,14 +379,20 @@ func TestProxyMountsBackendDocRoutes(t *testing.T) {
 	}
 }
 
-// TestProxyMountsLegacyFirstPrintRoutes verifies that POST /print and
-// GET /jobs/{id} are forwarded to the backend (Phase 7 legacy smoke path).
+// TestProxyMountsLegacyFirstPrintRoutes verifies that POST /print is
+// forwarded to the backend (Phase 7 legacy smoke path).
 //
 // Before Phase 7 the smoke test called hhdocker02:8000/print directly
-// (container port was public). Phase 7 placed a Go frontend proxy in front
-// and closed the public port, but missed wiring /print and /jobs/{id} to the
+// (container port was public). Phase 7 placed a Go frontend proxy in
+// front and closed the public port, but missed wiring /print to the
 // backend. This test locks in the fix so the ad-hoc curl workflow
-// (POST /print → job_id → GET /jobs/{job_id}) works through Pangolin.
+// (POST /print) works through Pangolin with the claude-automation
+// Basic-Auth header.
+//
+// /jobs/{id} is intentionally NOT proxied — that path is served by the
+// r.Get("/jobs/{id}", ph.JobDetail) page handler which renders the HTML
+// job-detail page for browser users. Scripts that need JSON for a
+// specific job id should use the typed /api/* routes instead.
 func TestProxyMountsLegacyFirstPrintRoutes(t *testing.T) {
 	// Not parallel at the outer level: initBuildInfoForTests must run (sync.Once
 	// write) before any parallel subtest reads the global.
@@ -398,10 +404,6 @@ func TestProxyMountsLegacyFirstPrintRoutes(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
 			fmt.Fprint(w, `{"job_id":"abc-123","status":"queued"}`)
-		case strings.HasPrefix(r.URL.Path, "/jobs/") && r.Method == http.MethodGet:
-			// Backend echoes the full path so the test can verify path preservation.
-			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"path":%q,"status":"completed"}`, r.URL.Path)
 		default:
 			http.NotFound(w, r)
 		}
@@ -428,19 +430,6 @@ func TestProxyMountsLegacyFirstPrintRoutes(t *testing.T) {
 		}
 		if !strings.Contains(rec.Body.String(), `"job_id":"abc-123"`) {
 			t.Errorf("body = %q, expected job_id field", rec.Body.String())
-		}
-	})
-
-	t.Run("GET /jobs/{id} preserves full path to backend", func(t *testing.T) {
-		t.Parallel()
-		rec := httptest.NewRecorder()
-		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/jobs/abc-123-def", nil))
-		if rec.Code != http.StatusOK {
-			t.Fatalf("got %d, want 200 (body: %q)", rec.Code, rec.Body.String())
-		}
-		// Critical: the path must reach the backend INTACT — not stripped.
-		if !strings.Contains(rec.Body.String(), `"path":"/jobs/abc-123-def"`) {
-			t.Errorf("path not preserved: body = %q", rec.Body.String())
 		}
 	})
 }

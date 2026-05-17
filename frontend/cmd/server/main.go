@@ -151,21 +151,17 @@ func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS) *c
 	r.Handle("/redoc", prx)
 	r.Handle("/readiness", prx)
 
-	// Legacy Phase-4 First-Print endpoints — still used by ad-hoc curl smoke
+	// Legacy Phase-4 First-Print endpoint — still used by ad-hoc curl smoke
 	// tests from inside the Tailscale network. Before Phase 7 the backend port
 	// 8000 was public; Phase 7 closed it behind this proxy but missed wiring
-	// these two paths. The Pangolin Basic-Auth gate (claude-automation header)
-	// keeps them reachable without SSO.
+	// /print. The Pangolin Basic-Auth gate (claude-automation header) keeps it
+	// reachable without SSO.
 	//
-	// /print — fixed path, POST only in practice; r.Handle registers all methods.
+	// Note: /jobs/{id} is intentionally NOT proxied here — that path is served
+	// by the r.Get("/jobs/{id}", ph.JobDetail) page handler above which renders
+	// the HTML job-detail page for browser users. Scripts that need JSON for a
+	// job id should use the typed /api/* routes instead.
 	r.Handle("/print", prx)
-	// /jobs/{rest:.*} — regex wildcard preserves the full path (including the
-	// job-id segment) when forwarding to the backend. chi treats a regex
-	// parameter as higher-priority than a plain {id} parameter, so this route
-	// takes precedence over the r.Get("/jobs/{id}", ph.JobDetail) page handler
-	// registered above, making GET /jobs/{job_id} return the backend JSON
-	// response rather than the HTML page — intentional for the API/curl path.
-	r.Handle("/jobs/{rest:.*}", prx)
 
 	return r
 }
