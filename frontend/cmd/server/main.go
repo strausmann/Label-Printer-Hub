@@ -167,6 +167,9 @@ func newRouter(ph *handlers.PageHandler, backendURL string) *chi.Mux {
 		r.Get("/jobs", ph.JobsList)
 		r.Get("/jobs/{id}", ph.JobDetail)
 		r.Post("/jobs/{id}/retry", ph.JobRetry)
+		r.Get("/templates", ph.TemplatesList)
+		r.Get("/templates/{id}", ph.TemplateDetail)
+		r.Get("/lookup/{app}/{id}", ph.LookupDisplay)
 	}
 
 	return r

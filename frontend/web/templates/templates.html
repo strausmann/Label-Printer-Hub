@@ -1,0 +1,46 @@
+{{template "layout" .}}
+{{define "title"}}Templates — Label Printer Hub{{end}}
+{{define "content"}}{{template "templates-content" .}}{{end}}
+
+{{define "templates-content"}}
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-content">Templates</h1>
+    <form hx-get="/templates" hx-push-url="true" hx-target="#templates-grid" class="flex gap-2">
+      <select name="app"
+              class="rounded border border-surface-border px-2 py-1 text-sm"
+              hx-get="/templates" hx-trigger="change" hx-target="#templates-grid" hx-push-url="true">
+        <option value="">All apps</option>
+        <option value="snipeit"  {{if eq .AppFilter "snipeit"}}selected{{end}}>Snipe-IT</option>
+        <option value="grocy"    {{if eq .AppFilter "grocy"}}selected{{end}}>Grocy</option>
+        <option value="spoolman" {{if eq .AppFilter "spoolman"}}selected{{end}}>Spoolman</option>
+      </select>
+      <button type="submit" class="rounded bg-primary px-3 py-1 text-sm text-primary-fg hover:bg-primary-hover">
+        Filter
+      </button>
+    </form>
+  </div>
+
+  <div id="templates-grid"
+       hx-get="/templates{{if .AppFilter}}?app={{.AppFilter}}{{end}}"
+       hx-trigger="every 60s"
+       hx-select="#templates-grid"
+       hx-target="this"
+       hx-swap="outerHTML"
+       class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {{range .Templates}}
+    <a href="/templates/{{.Key}}"
+       class="rounded-lg border border-surface-border bg-surface-raised p-4 flex flex-col gap-2 hover:border-primary transition-colors">
+      <div class="flex items-center justify-between">
+        <span class="font-semibold text-content">{{.Name}}</span>
+        {{if .App}}<span class="badge badge-printing">{{.App}}</span>{{end}}
+      </div>
+      <p class="text-sm text-content-secondary font-mono">{{.Key}}</p>
+      <p class="text-xs text-content-secondary">{{.TapeWidthMm}} mm · {{.PrinterModel}}</p>
+    </a>
+    {{else}}
+    <p class="col-span-full py-8 text-center text-content-secondary">No templates found.</p>
+    {{end}}
+  </div>
+</div>
+{{end}}

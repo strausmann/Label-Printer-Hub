@@ -13,6 +13,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
@@ -225,6 +226,33 @@ func (c *HubClient) LookupEntity(ctx context.Context, app, id string) (*LookupRe
 		return nil, fmt.Errorf("LookupEntity: status %d", resp.StatusCode())
 	}
 	return resp.JSON200, nil
+}
+
+// RenderPreview requests a PNG preview for a template from POST /api/render/preview.
+// Returns the raw PNG bytes on success, or an error when the endpoint is unavailable
+// or the render fails. Callers should treat any error as "show placeholder" — the
+// endpoint is optional and may not yet be implemented by all backend versions.
+func (c *HubClient) RenderPreview(ctx context.Context, templateKey string) ([]byte, error) {
+	start := time.Now()
+	url := c.baseURL + "/api/render/preview?key=" + templateKey
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	logCall("RenderPreview", start, err)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RenderPreview: status %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 // CheckHealth performs a GET /healthz against the backend and returns an error if unavailable.
