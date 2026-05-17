@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import app.db.engine as _engine_module
+import app.db.lifespan as _lifespan_module
 import app.main as _main_module
 import app.models  # noqa: F401 — registers all models with SQLModel.metadata
 import pytest
@@ -17,6 +18,16 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
 
+async def _noop_migrations() -> None:
+    """Drop-in for run_migrations() in unit lifespan tests.
+
+    The clean_registries fixture already creates the full schema via
+    SQLModel.metadata.create_all().  Alembic's run_migrations() would try to
+    open alembic.ini's sqlalchemy.url (a ./data/hub.db relative path) which
+    does not exist in CI, causing OperationalError.
+    """
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: ignore[misc]
     """Reset registries and swap the module-level engine for a temp DB.
@@ -26,6 +37,11 @@ async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: 
     Swapping engine + async_session in BOTH the engine module AND main.py
     (which imports them by name at module level) keeps lifespan tests
     isolated and prevents OperationalError when the path doesn't exist.
+
+    run_migrations() is also patched to a no-op: it calls Alembic directly
+    using alembic.ini's sqlalchemy.url (sqlite+aiosqlite:///./data/hub.db),
+    a relative path that does not exist in CI.  The schema is already present
+    via create_all() above, so skipping migrations is correct here.
     """
     db_path = tmp_path / "lifespan_test.db"
     url = f"sqlite+aiosqlite:///{db_path}"
@@ -41,6 +57,7 @@ async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: 
     monkeypatch.setattr(_engine_module, "async_session", sess)
     monkeypatch.setattr(_main_module, "engine", eng)
     monkeypatch.setattr(_main_module, "async_session", sess)
+    monkeypatch.setattr(_lifespan_module, "run_migrations", _noop_migrations)
 
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False

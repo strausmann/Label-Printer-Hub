@@ -46,5 +46,5 @@ docker compose -f dev/docker-compose.smoke.yml down -v
 
 ## Next step: deploy to a node
 
-For a real hardware test (e.g. on `hhdocker02` with a PT-P750W on the LAN), use
+For a real hardware test (e.g. on `<your-docker-node>` with a PT-P750W on the LAN), use
 the production compose files under `examples/` and the proper GHCR image tags.
