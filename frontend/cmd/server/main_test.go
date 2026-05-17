@@ -382,8 +382,8 @@ func TestProxyMountsBackendDocRoutes(t *testing.T) {
 // TestProxyMountsLegacyFirstPrintRoutes verifies that POST /print is
 // forwarded to the backend (Phase 7 legacy smoke path).
 //
-// Before Phase 7 the smoke test called hhdocker02:8000/print directly
-// (container port was public). Phase 7 placed a Go frontend proxy in
+// Before Phase 7 the smoke test called the backend container:8000/print
+// directly (container port was public). Phase 7 placed a Go frontend proxy in
 // front and closed the public port, but missed wiring /print to the
 // backend. This test locks in the fix so the ad-hoc curl workflow
 // (POST /print) works through Pangolin with the claude-automation
@@ -410,13 +410,7 @@ func TestProxyMountsLegacyFirstPrintRoutes(t *testing.T) {
 	}))
 	t.Cleanup(backend.Close)
 
-	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
-	prx := proxy.New(backend.URL)
-	sub, err := fs.Sub(staticFS, "web/static")
-	if err != nil {
-		t.Fatalf("fs.Sub: %v", err)
-	}
-	r := newRouter(ph, prx, sub)
+	r := testRouterWithBackend(t, backend.URL)
 
 	t.Run("POST /print returns 202 with job_id", func(t *testing.T) {
 		t.Parallel()
