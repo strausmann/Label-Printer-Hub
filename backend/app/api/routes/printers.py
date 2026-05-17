@@ -22,7 +22,6 @@ References:
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import logging
 from datetime import UTC, datetime
@@ -166,65 +165,43 @@ def _error_label(block: Any) -> str | None:
 @router.get(
     "/{printer_id}/status",
     response_model=PrinterStatus,
-    summary="Force a fresh printer status probe",
+    summary="Return the latest cached printer status",
     description=(
-        "Sends an ESC i S command to the printer over TCP/9100.  "
-        "The result is written back to ``printer_status_cache`` and returned. "
-        "Returns 503 when the printer is unreachable."
+        "Returns the most recent status written by the background SNMP probe worker. "
+        "The response is served from ``printer_status_cache`` — no synchronous SNMP "
+        "probe is performed, so the response always returns in <10 ms. "
+        "When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. "
+        "Returns 404 when the printer is not registered."
     ),
 )
 async def get_printer_status(
     printer_id: UUID,
     session: SessionDep,
 ) -> PrinterStatus:
-    """Probe the printer and update the cache."""
-    printer = await _get_printer_or_404(session, printer_id)
+    """Return the latest cached status for a printer; no sync SNMP probe."""
+    await _get_printer_or_404(session, printer_id)
 
-    host: str | None = printer.connection.get("host") if printer.connection else None
-    if not host:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"printer {printer_id} has no 'host' in connection config",
+    row = await cache_repo.get(session, printer_id)
+    if row is None or row.captured_at is None:
+        return PrinterStatus(
+            printer_id=printer_id,
+            online=None,
+            captured_at=None,
+            note="No probe yet — wait up to 30s for first probe cycle",
         )
 
-    port: int = int(printer.connection.get("port", 9100))
-
-    try:
-        result = await asyncio.to_thread(_probe_status_sync, host, port)
-    except OSError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"printer {printer_id} unreachable: {exc}",
-        ) from exc
-
-    block = result["block"]
-    raw: bytes = result["raw"]
-    now = datetime.now(UTC)
-
-    parsed: dict[str, Any] = {
-        "media_width_mm": block.media_width_mm,
-        "media_type": block.media_type.name,
-        "status_type": block.status_type.name,
-        "phase_type": block.phase_type.name,
-        "errors": int(block.errors),
-        "tape_color": block.tape_color.name,
-        "text_color": block.text_color.name,
-    }
-
-    await cache_repo.upsert(
-        session,
-        printer_id,
-        raw_block=raw,
-        parsed=parsed,
-        captured_at=now,
-    )
+    parsed = row.parsed or {}
+    captured = row.captured_at
+    if captured.tzinfo is None:
+        captured = captured.replace(tzinfo=UTC)
+    age_s = int((datetime.now(UTC) - captured).total_seconds())
 
     return PrinterStatus(
         printer_id=printer_id,
-        online=True,
-        tape_loaded=_tape_label(block),
-        error_state=_error_label(block),
-        captured_at=now,
+        online=parsed.get("online"),
+        captured_at=row.captured_at,
+        last_probe_age_s=age_s,
+        last_error=parsed.get("last_error"),
     )
 
 

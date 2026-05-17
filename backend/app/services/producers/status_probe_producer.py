@@ -112,9 +112,13 @@ class StatusProbeProducer:
         from app.db.engine import async_session
         from app.models.printer_status_cache import PrinterStatusCache
 
-        printer_uuid = (
-            UUID(self._printer_id) if isinstance(self._printer_id, str) else self._printer_id
-        )
+        try:
+            printer_uuid = (
+                UUID(self._printer_id) if isinstance(self._printer_id, str) else self._printer_id
+            )
+        except (ValueError, AttributeError):
+            _log.debug("_upsert_cache: printer_id %r is not a valid UUID — skip", self._printer_id)
+            return
         parsed = {
             "online": True,
             "loaded_tape_mm": snmp_result.loaded_tape_mm,
@@ -144,15 +148,17 @@ class StatusProbeProducer:
         from app.db.engine import async_session
         from app.models.printer_status_cache import PrinterStatusCache
 
-        printer_uuid = (
-            UUID(self._printer_id) if isinstance(self._printer_id, str) else self._printer_id
-        )
+        try:
+            printer_uuid = (
+                UUID(self._printer_id) if isinstance(self._printer_id, str) else self._printer_id
+            )
+        except (ValueError, AttributeError):
+            _log.debug("_mark_offline: printer_id %r is not a valid UUID — skip", self._printer_id)
+            return
         now = datetime.now(UTC)
         async with async_session() as s:
             row = await s.get(PrinterStatusCache, printer_uuid)
-            parsed: dict[str, object] = (
-                dict(row.parsed) if (row is not None and row.parsed) else {}
-            )
+            parsed: dict[str, object] = dict(row.parsed) if (row is not None and row.parsed) else {}
             parsed["online"] = False
             parsed["last_error"] = str(exc)
             if row is not None:

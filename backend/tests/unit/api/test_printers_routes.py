@@ -163,47 +163,26 @@ async def test_list_printers_returns_printers_with_paused_flag(session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_printer_status_calls_probe_and_upserts_cache(session, monkeypatch) -> None:
-    """get_printer_status wraps the probe in asyncio.to_thread and upserts cache."""
-    from app.services.status_block import (
-        MediaType,
-        NotificationCode,
-        PhaseType,
-        PrinterError,
-        StatusBlock,
-        StatusType,
-        TapeColor,
-        TextColor,
-    )
+async def test_get_printer_status_reads_cache_and_returns_online(session) -> None:
+    """get_printer_status reads from printer_status_cache; returns online=True."""
+    # Phase 7b: the endpoint no longer probes inline — it reads the cache.
+    from datetime import UTC, datetime
 
     printer = await _make_printer(session)
 
-    # Build a fake parsed StatusBlock (12mm laminated tape, no errors)
-    fake_block = StatusBlock(
-        raw=b"\x80" + b"\x00" * 31,
-        print_head_mark=0x80,
-        size=32,
-        brother_code=ord("B"),
-        series_code=0x30,
-        model_code=0x00,
-        country_code=0xFF,
-        media_width_mm=12,
-        media_type=MediaType.LAMINATED,
-        media_length_mm=0,
-        mode=0,
-        status_type=StatusType.REPLY,
-        phase_type=PhaseType.EDITING,
-        phase_number=0,
-        notification=NotificationCode.NOT_AVAILABLE,
-        tape_color=TapeColor.BLACK,
-        text_color=TextColor.WHITE,
-        errors=PrinterError.NONE,
+    # Pre-populate the cache as the background probe worker would.
+    cache = PrinterStatusCache(
+        printer_id=printer.id,
+        parsed={
+            "online": True,
+            "loaded_tape_mm": 12,
+            "hr_printer_status": "idle",
+            "error_flags": [],
+        },
+        captured_at=datetime.now(UTC),
     )
-
-    def fake_probe(host: str, port: int = 9100) -> dict[str, Any]:
-        return {"raw": b"\x80" + b"\x00" * 31, "block": fake_block}
-
-    monkeypatch.setattr("app.api.routes.printers._probe_status_sync", fake_probe)
+    session.add(cache)
+    await session.commit()
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
@@ -213,9 +192,8 @@ async def test_get_printer_status_calls_probe_and_upserts_cache(session, monkeyp
     body = r.json()
     assert body["printer_id"] == str(printer.id)
     assert body["online"] is True
-    assert "12mm" in (body["tape_loaded"] or "")
-    assert body["error_state"] is None
     assert "captured_at" in body
+    assert body["last_probe_age_s"] is not None
 
 
 # ---------------------------------------------------------------------------
@@ -382,30 +360,30 @@ async def test_get_printer_status_unknown_id_returns_404(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 9: GET /api/printers/{id}/status — probe raises OSError → 503
+# Test 9: GET /api/printers/{id}/status — no cache row → 200 + pending
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_get_printer_status_probe_oserror_returns_503(session, monkeypatch) -> None:
-    """GET /api/printers/{id}/status returns 503 when TCP probe raises OSError.
+async def test_get_printer_status_no_cache_returns_pending(session) -> None:
+    """GET /api/printers/{id}/status returns online=None when no cache row exists.
 
-    Exercises the ``except OSError`` branch in get_printer_status
-    (lines 194-198 of printers.py).
+    Phase 7b: the endpoint reads printer_status_cache instead of probing
+    inline.  A missing cache row means the probe worker has not run yet;
+    the endpoint returns HTTP 200 with online=null and a descriptive note.
     """
     printer = await _make_printer(session)
-
-    def _failing_probe(host: str, port: int = 9100) -> dict[str, Any]:
-        raise OSError("Connection refused")
-
-    monkeypatch.setattr("app.api.routes.printers._probe_status_sync", _failing_probe)
+    # Deliberately omit any PrinterStatusCache row.
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
     r = client.get(f"/api/printers/{printer.id}/status")
 
-    assert r.status_code == 503
-    assert "unreachable" in r.json()["detail"]
+    assert r.status_code == 200
+    body = r.json()
+    assert body["online"] is None
+    assert body["note"] is not None
+    assert "no probe yet" in body["note"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -492,15 +470,17 @@ async def test_get_printer_tape_zero_width_returns_404(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 13: GET /api/printers/{id}/status — no host in connection → 422
+# Test 13: GET /api/printers/{id}/status — no connection config → still works
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_get_printer_status_no_host_returns_422(session) -> None:
-    """GET /api/printers/{id}/status returns 422 when printer has no host.
+async def test_get_printer_status_no_host_returns_pending(session) -> None:
+    """GET /api/printers/{id}/status returns 200+pending for printer without host.
 
-    Exercises lines 184-188 of printers.py (missing host guard).
+    Phase 7b: the endpoint reads the cache; it no longer inspects
+    ``connection.host``.  A printer with no connection config and no cache
+    row still yields HTTP 200 with online=null.
     """
     printer = await _make_printer(session, connection={})  # no 'host' key
 
@@ -508,8 +488,9 @@ async def test_get_printer_status_no_host_returns_422(session) -> None:
     client = TestClient(app, raise_server_exceptions=True)
     r = client.get(f"/api/printers/{printer.id}/status")
 
-    assert r.status_code == 422
-    assert "no 'host'" in r.json()["detail"]
+    assert r.status_code == 200
+    body = r.json()
+    assert body["online"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -724,57 +705,38 @@ async def test_list_printers_returns_printer_with_state(session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_printer_status_direct_probe_success(session, monkeypatch) -> None:
-    """get_printer_status called directly returns PrinterStatus on probe success.
+async def test_get_printer_status_direct_reads_cache(session) -> None:
+    """get_printer_status called directly reads from printer_status_cache.
 
-    Exercises lines 177-228 (get_printer_status body) in the pytest loop.
+    Phase 7b: the endpoint reads the cache written by StatusProbeProducer
+    instead of probing inline.  Pre-populate the cache and verify the result.
     """
+    from datetime import UTC, datetime
+
     from app.api.routes.printers import get_printer_status
-    from app.services.status_block import (
-        MediaType,
-        NotificationCode,
-        PhaseType,
-        PrinterError,
-        StatusBlock,
-        StatusType,
-        TapeColor,
-        TextColor,
-    )
 
     printer = await _make_printer(session)
 
-    fake_block = StatusBlock(
-        raw=b"\x80" + b"\x00" * 31,
-        print_head_mark=0x80,
-        size=32,
-        brother_code=ord("B"),
-        series_code=0x30,
-        model_code=0x00,
-        country_code=0xFF,
-        media_width_mm=12,
-        media_type=MediaType.LAMINATED,
-        media_length_mm=0,
-        mode=0,
-        status_type=StatusType.REPLY,
-        phase_type=PhaseType.EDITING,
-        phase_number=0,
-        notification=NotificationCode.NOT_AVAILABLE,
-        tape_color=TapeColor.BLACK,
-        text_color=TextColor.WHITE,
-        errors=PrinterError.NONE,
+    # Pre-populate cache as the probe worker would.
+    cache = PrinterStatusCache(
+        printer_id=printer.id,
+        parsed={
+            "online": True,
+            "loaded_tape_mm": 12,
+            "hr_printer_status": "idle",
+            "error_flags": [],
+        },
+        captured_at=datetime.now(UTC),
     )
-
-    def _fake_probe(host: str, port: int = 9100) -> dict[str, Any]:
-        return {"raw": b"\x80" + b"\x00" * 31, "block": fake_block}
-
-    monkeypatch.setattr("app.api.routes.printers._probe_status_sync", _fake_probe)
+    session.add(cache)
+    await session.commit()
 
     result = await get_printer_status(printer_id=printer.id, session=session)
 
     assert result.printer_id == printer.id
     assert result.online is True
-    assert result.tape_loaded is not None
-    assert "12mm" in result.tape_loaded
+    assert result.captured_at is not None
+    assert result.last_probe_age_s is not None
 
 
 @pytest.mark.asyncio
