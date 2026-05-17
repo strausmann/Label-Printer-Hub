@@ -57,6 +57,11 @@ async def _temp_db_engine(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  #
     # bypassing the patched engine above.  Skip it — create_all() above is
     # the authoritative schema source for integration tests.
     monkeypatch.setattr(_lifespan_module, "run_migrations", _noop_migrations)
+    # main.py does `from app.db.lifespan import run_migrations`, which creates a
+    # local name binding in the main module that is NOT updated when the attribute
+    # on _lifespan_module is patched.  The lifespan() function in main.py calls
+    # its locally-bound `run_migrations` directly, so we must patch that name too.
+    monkeypatch.setattr(_main_module, "run_migrations", _noop_migrations)
     yield
     await eng.dispose()
 

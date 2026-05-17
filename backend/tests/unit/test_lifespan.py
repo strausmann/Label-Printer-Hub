@@ -58,6 +58,10 @@ async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: 
     monkeypatch.setattr(_main_module, "engine", eng)
     monkeypatch.setattr(_main_module, "async_session", sess)
     monkeypatch.setattr(_lifespan_module, "run_migrations", _noop_migrations)
+    # main.py binds `run_migrations` locally via `from app.db.lifespan import
+    # run_migrations`.  Patching _lifespan_module alone does not update that
+    # local binding; we must also patch the name on _main_module.
+    monkeypatch.setattr(_main_module, "run_migrations", _noop_migrations)
 
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False
