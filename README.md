@@ -72,6 +72,17 @@ curl -X POST http://localhost:8090/print -H 'Content-Type: application/json' \
   -d '{"template_id":"qr-only-12mm","data":{"title":"Smoke","primary_id":"SMOKE-001","qr_payload":"https://example.test"}}'
 ```
 
+To build and run the **full stack** (backend + frontend) from source without any real printer hardware, use the smoke-test compose file:
+
+```bash
+# Full-stack local smoke test (mock printer, no hardware required):
+docker compose -f dev/docker-compose.smoke.yml up --build
+
+# UI is served at http://localhost:8080
+# Verify both services are healthy:
+curl http://localhost:8080/healthz   # frontend → backend_reachable: true
+```
+
 ## REST API surface
 
 | Method | Path | Purpose | Body |

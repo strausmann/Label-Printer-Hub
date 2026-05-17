@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "sqlite:////data/printer-hub.db"
+    database_url: str = "sqlite+aiosqlite:////data/printer-hub.db"
 
     # Brother QL-820NWB — address label printer
     ql820_host: str = ""

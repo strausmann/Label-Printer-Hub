@@ -1,0 +1,5 @@
+# Go build artefacts
+server
+coverage.out
+coverage_*.out
+*.test

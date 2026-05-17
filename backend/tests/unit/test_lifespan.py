@@ -1,16 +1,68 @@
 from __future__ import annotations
 
+import app.db.engine as _engine_module
+import app.db.lifespan as _lifespan_module
+import app.main as _main_module
+import app.models  # noqa: F401 — registers all models with SQLModel.metadata
 import pytest
+import pytest_asyncio
 from app.config import get_settings
+from app.db.engine import _apply_pragmas
 from app.integrations.registry import IntegrationRegistry
 from app.main import create_app
 from app.printer_backends import BackendRegistry
 from app.printer_models.registry import ModelRegistry
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlmodel import SQLModel
 
 
-@pytest.fixture(autouse=True)
-def clean_registries():
+async def _noop_migrations() -> None:
+    """Drop-in for run_migrations() in unit lifespan tests.
+
+    The clean_registries fixture already creates the full schema via
+    SQLModel.metadata.create_all().  Alembic's run_migrations() would try to
+    open alembic.ini's sqlalchemy.url (a ./data/hub.db relative path) which
+    does not exist in CI, causing OperationalError.
+    """
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: ignore[misc]
+    """Reset registries and swap the module-level engine for a temp DB.
+
+    Finding F2: engine.py now reads Settings.database_url at module load,
+    which defaults to the absolute container path /data/printer-hub.db.
+    Swapping engine + async_session in BOTH the engine module AND main.py
+    (which imports them by name at module level) keeps lifespan tests
+    isolated and prevents OperationalError when the path doesn't exist.
+
+    run_migrations() is also patched to a no-op: it calls Alembic directly
+    using alembic.ini's sqlalchemy.url (sqlite+aiosqlite:///./data/hub.db),
+    a relative path that does not exist in CI.  The schema is already present
+    via create_all() above, so skipping migrations is correct here.
+    """
+    db_path = tmp_path / "lifespan_test.db"
+    url = f"sqlite+aiosqlite:///{db_path}"
+    eng = create_async_engine(url, echo=False, connect_args={"check_same_thread": False})
+    event.listen(eng.sync_engine, "connect", _apply_pragmas)
+    async with eng.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    sess = async_sessionmaker(bind=eng, expire_on_commit=False)
+    # Patch both the origin module and the names imported into main.py.
+    # `from X import y` creates a local binding; patching X.y alone would not
+    # affect the already-resolved main.y reference.
+    monkeypatch.setattr(_engine_module, "engine", eng)
+    monkeypatch.setattr(_engine_module, "async_session", sess)
+    monkeypatch.setattr(_main_module, "engine", eng)
+    monkeypatch.setattr(_main_module, "async_session", sess)
+    monkeypatch.setattr(_lifespan_module, "run_migrations", _noop_migrations)
+    # main.py binds `run_migrations` locally via `from app.db.lifespan import
+    # run_migrations`.  Patching _lifespan_module alone does not update that
+    # local binding; we must also patch the name on _main_module.
+    monkeypatch.setattr(_main_module, "run_migrations", _noop_migrations)
+
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False
     ModelRegistry._models.clear()
@@ -22,6 +74,7 @@ def clean_registries():
     ModelRegistry._models.clear()
     ModelRegistry._discovered = False
     get_settings.cache_clear()
+    await eng.dispose()
 
 
 async def test_lifespan_starts_with_mock_backend(monkeypatch: pytest.MonkeyPatch) -> None:
