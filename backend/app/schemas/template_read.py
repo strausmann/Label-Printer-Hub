@@ -12,7 +12,9 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
+
+from app.schemas._datetime import serialize_datetime_utc
 
 
 class TemplateRead(BaseModel):
@@ -31,3 +33,7 @@ class TemplateRead(BaseModel):
     source: str
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("created_at", "updated_at")
+    def _serialise_datetimes(self, dt: datetime, _info: object) -> str:
+        return serialize_datetime_utc(dt, _info)
