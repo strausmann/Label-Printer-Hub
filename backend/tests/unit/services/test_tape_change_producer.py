@@ -172,3 +172,40 @@ def test_pt_model_describe_tape_all_standard_widths(width_mm: int) -> None:
 
     desc = driver.describe_tape(width_mm)
     assert str(width_mm) in desc.label
+
+
+# ---------------------------------------------------------------------------
+# F7 — TapeChangeProducer must be wired with the registered model (Finding F7)
+# ---------------------------------------------------------------------------
+
+
+def test_tape_change_producer_wired_with_pt_model_uses_describe_tape() -> None:
+    """TapeChangeProducer constructed with a real PTP750WDriver must call
+    describe_tape() and produce a model-specific tape label — NOT the legacy
+    tape_registry.lookup_pt path (Finding F7).
+
+    This is the integration guard for main.py's lifespan change: it verifies
+    that once `model=driver` is passed, the correct code path is taken and
+    the event carries the model's label string rather than a bare width-mm.
+    """
+    from app.printer_models.pt import PTP750WDriver
+
+    bus = MagicMock(spec=EventBus)
+    bus.next_event_id.return_value = 1
+    registry = MagicMock()
+
+    backend = MagicMock()
+    backend.host = "192.0.2.100"
+    driver = PTP750WDriver(backend=backend)
+
+    # Construct producer WITH the real driver as model
+    producer = TapeChangeProducer(bus=bus, tape_registry=registry, model=driver)
+    producer.on_probe_result("printer-uuid", _status(12), _status(24))
+
+    # The legacy lookup_pt must NOT be called — the model owns tape lookup
+    registry.lookup_pt.assert_not_called()
+
+    event: BusEvent = bus.publish.call_args[0][1]
+    # The PT driver returns "24mm TZe" for a 24mm TZe laminated tape
+    assert "24" in event.data["tape_label"]
+    assert "TZe" in event.data["tape_label"]
