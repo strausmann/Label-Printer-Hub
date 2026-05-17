@@ -114,12 +114,26 @@ def _check_print_queue(app_state: Any) -> CheckStatus:
     return CheckStatus(status="ok", metric={"worker_count": worker_count_fn()})
 
 
-def _check_sse_bus(app_state: Any) -> CheckStatus:
+def _check_sse_bus(app_state: Any, settings: Settings) -> CheckStatus:
+    """Check SSE bus subscriber capacity.
+
+    Supports both the real :class:`~app.services.event_bus.EventBus`
+    (which exposes ``distinct_subscriber_count()``) and the lightweight
+    ``types.SimpleNamespace`` fakes used in unit tests (which expose
+    ``subscriber_count()`` and ``max_subscribers``).
+    """
     bus = getattr(app_state, "event_bus", None)
     if bus is None:
         return CheckStatus(status="skipped", detail="event_bus not configured")
-    subs = getattr(bus, "subscriber_count", lambda: 0)()
-    max_subs = getattr(bus, "max_subscribers", 100)
+    # Prefer distinct_subscriber_count (real EventBus) — fall back to
+    # subscriber_count (unit-test fakes that lack the real method).
+    if hasattr(bus, "distinct_subscriber_count"):
+        subs = bus.distinct_subscriber_count()
+    else:
+        subs = getattr(bus, "subscriber_count", lambda: 0)()
+    # max_subscribers comes from Settings on the real bus; fakes expose it
+    # directly as an attribute for hermetic unit tests.
+    max_subs = getattr(bus, "max_subscribers", None) or settings.sse_max_subscribers
     metric: dict[str, Any] = {"subscribers": subs, "max": max_subs}
     if subs >= max_subs:
         return CheckStatus(status="fail", detail="subscriber pool exhausted", metric=metric)
@@ -151,7 +165,7 @@ async def build_readiness_response(
         "printer_db_sync": await _check_printer_db_sync(session, app_state),
         "snmp_discovery": await _check_snmp_discovery(session, app_state),
         "print_queue": _check_print_queue(app_state),
-        "sse_bus": _check_sse_bus(app_state),
+        "sse_bus": _check_sse_bus(app_state, settings),
     }
     return ReadinessResponse(
         status=_aggregate(checks),
