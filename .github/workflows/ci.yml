@@ -77,10 +77,15 @@ jobs:
       # again on the command line makes the failure surface in the test step
       # itself (with the exact `TOTAL` line) instead of in a separate
       # `coverage report` step that pytest-cov would silently swallow.
+      #
+      # -m "not slow" excludes wall-clock SSE timing tests (marked @pytest.mark.slow
+      # in tests/integration/test_sse_flush.py).  These tests use real asyncio
+      # sleep timers and are too slow for every-commit CI.  Run them separately
+      # via: pytest -m slow tests/integration/test_sse_flush.py
       - name: Tests
         if: steps.pyproject.outputs.exists == 'true'
         working-directory: ${{ steps.pyproject.outputs.path }}
-        run: pytest --cov=app --cov-report=xml --cov-fail-under=80 --junitxml=junit.xml -o junit_family=legacy -v
+        run: pytest -m "not slow" --cov=app --cov-report=xml --cov-fail-under=80 --junitxml=junit.xml -o junit_family=legacy -v
 
       - name: Alembic — no pending migrations
         if: steps.pyproject.outputs.exists == 'true'
