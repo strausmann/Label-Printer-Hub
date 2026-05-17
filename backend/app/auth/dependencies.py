@@ -40,6 +40,7 @@ from app.config import Settings, get_settings
 from app.db.session import get_session
 from app.repositories import api_keys as api_keys_repo
 from app.auth.verifier import verify_api_key
+from app.services.rate_limiter import _rate_limiter
 
 _log = logging.getLogger(__name__)
 
@@ -181,6 +182,25 @@ async def _validate_api_key(
                     f"Key has scope '{effective_scope}' but '{required_scope}' is required"
                 ),
             },
+        )
+
+    # Rate limit check — after bcrypt verify to avoid info leak on exhaustion
+    allowed, retry_after = _rate_limiter.check_and_consume_with_retry_after(
+        key_row.id, limit_per_minute=key_row.rate_limit_per_minute
+    )
+    if not allowed:
+        from fastapi import Response
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_code": "rate_limit_exceeded",
+                "error_message": (
+                    f"Key '{key_row.name}' exceeded {key_row.rate_limit_per_minute}"
+                    " prints/minute. Retry after {retry_after} seconds."
+                ),
+                "retry_after_seconds": retry_after,
+            },
+            headers={"Retry-After": str(retry_after)},
         )
 
     # Best-effort last-used update (don't fail auth if this errors)
