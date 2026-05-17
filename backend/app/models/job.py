@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Index
+from sqlalchemy import JSON, CheckConstraint, DateTime, Index, String
 from sqlmodel import Column, Field, SQLModel
 
 
@@ -24,6 +24,7 @@ class Job(SQLModel, table=True):
     __tablename__ = "jobs"
     __table_args__ = (
         Index("ix_jobs_state", "state"),
+        Index("ix_jobs_api_key_id", "api_key_id"),
         CheckConstraint(
             f"state IN ({','.join(repr(s.value) for s in JobState)})",
             name="ck_jobs_state",
@@ -56,4 +57,11 @@ class Job(SQLModel, table=True):
     finished_at: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    # Phase 7c: audit trail — which API key submitted this job and from where.
+    # Both nullable so historical pre-7c jobs retain integrity (no backfill).
+    api_key_id: UUID | None = Field(default=None, nullable=True)
+    source_ip: str | None = Field(
+        default=None,
+        sa_column=Column(String, nullable=True),
     )
