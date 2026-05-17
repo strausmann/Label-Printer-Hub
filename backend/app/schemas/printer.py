@@ -10,7 +10,9 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
+from app.schemas._datetime import serialize_datetime_utc
 
 
 class PrinterRead(BaseModel):
@@ -33,6 +35,10 @@ class PrinterRead(BaseModel):
     paused: bool = False  # joined from printer_state
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("created_at", "updated_at")
+    def _serialise_datetimes(self, dt: datetime, _info: object) -> str:
+        return serialize_datetime_utc(dt, _info)
 
 
 class PrinterStatus(BaseModel):

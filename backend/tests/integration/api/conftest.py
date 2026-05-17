@@ -31,6 +31,18 @@ async def api_client_with_seed():
 
     _session_module.async_session = _engine_module.async_session
 
+    # Re-run integration plugin discovery when the lifespan from a previous
+    # test has cleared IntegrationRegistry (see main.py lifespan shutdown).
+    # TemplateLoader.load_dir validates template.app against IntegrationRegistry,
+    # so we must ensure the registry is populated before calling load_dir.
+    from app.integrations import (  # type: ignore[attr-defined]
+        IntegrationRegistry,
+        _discover_plugins,
+    )
+
+    if not IntegrationRegistry.names():
+        _discover_plugins()
+
     original_cache = dict(TemplateLoader._cache)
     TemplateLoader.load_dir(_SEED_DIR)
     try:
