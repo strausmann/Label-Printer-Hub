@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint
+from sqlalchemy import JSON, CheckConstraint, DateTime
 from sqlmodel import Column, Field, SQLModel
 
 
@@ -23,8 +23,15 @@ class Template(SQLModel, table=True):
     schema_version: int = Field(default=1)
     definition: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     source: str = Field(default="user")
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
-        sa_column_kwargs={"onupdate": lambda: datetime.now(UTC)},
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            onupdate=lambda: datetime.now(UTC),
+        ),
     )
