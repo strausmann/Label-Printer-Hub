@@ -137,7 +137,9 @@ async def render_preview(
     try:
         template_schema = TemplateSchema(**schema_dict)
     except Exception as exc:
-        _log.warning("render_preview: invalid definition for key=%r: %s", key, exc)
+        # Log the sanitised key from the DB row (trusted), NOT the raw query
+        # parameter, to prevent log injection via crafted key values.
+        _log.warning("render_preview: invalid definition for key=%r: %s", template_row.key, exc)
         raise HTTPException(status_code=422, detail=f"invalid template definition: {exc}") from exc
 
     sample_data = _build_label_data(template_row.key, template_row.app, preview_sample)
@@ -146,7 +148,9 @@ async def render_preview(
     try:
         img = renderer.render(template_schema, sample_data)
     except ValueError as exc:
-        _log.warning("render_preview: render failed for key=%r: %s", key, exc)
+        # Log the sanitised key from the DB row (trusted), NOT the raw query
+        # parameter, to prevent log injection via crafted key values.
+        _log.warning("render_preview: render failed for key=%r: %s", template_row.key, exc)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # Convert PIL image to PNG bytes
