@@ -1,0 +1,30 @@
+{{template "layout" .}}
+{{define "title"}}Dashboard — Label Printer Hub{{end}}
+{{define "content"}}{{template "dashboard-content" .}}{{end}}
+
+{{define "dashboard-content"}}
+<div class="space-y-4">
+  <h1 class="text-xl font-semibold text-content">Printers</h1>
+  <div id="printer-grid"
+       class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+       hx-get="/"
+       hx-trigger="every 30s"
+       hx-select="#printer-grid"
+       hx-target="this"
+       hx-swap="outerHTML">
+    {{range .Printers}}
+    <div class="rounded-lg border border-surface-border bg-surface-raised p-4 flex flex-col gap-2">
+      <div class="flex items-center justify-between">
+        <a href="/printers/{{.Id}}" class="font-semibold text-content hover:text-primary">{{.Name}}</a>
+        {{if .Paused}}<span class="badge badge-paused">Paused</span>
+        {{else if .Enabled}}<span class="badge badge-online">Online</span>
+        {{else}}<span class="badge badge-offline">Disabled</span>{{end}}
+      </div>
+      <p class="text-sm text-content-secondary">{{.Model}} &middot; {{index .Connection "host"}}:{{index .Connection "port"}}</p>
+    </div>
+    {{else}}
+    <p class="text-content-secondary col-span-full">No printers configured.</p>
+    {{end}}
+  </div>
+</div>
+{{end}}

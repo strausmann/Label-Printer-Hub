@@ -1,0 +1,48 @@
+{{template "layout" .}}
+{{define "title"}}{{if .Template}}{{.Template.Name}} — {{end}}Template — Label Printer Hub{{end}}
+{{define "content"}}{{template "template-content" .}}{{end}}
+
+{{define "template-content"}}
+{{if .Template}}
+<div id="template-detail" class="space-y-6">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-content">{{.Template.Name}}</h1>
+      <p class="mt-1 text-sm text-content-secondary font-mono">{{.Template.Key}}</p>
+    </div>
+    {{if .Template.App}}<span class="badge badge-printing">{{.Template.App}}</span>{{end}}
+  </div>
+
+  <dl class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+    <dt class="text-content-secondary">Printer model</dt>
+    <dd>{{.Template.PrinterModel}}</dd>
+    <dt class="text-content-secondary">Tape width</dt>
+    <dd>{{.Template.TapeWidthMm}} mm</dd>
+    <dt class="text-content-secondary">Schema version</dt>
+    <dd>{{.Template.SchemaVersion}}</dd>
+    <dt class="text-content-secondary">Created</dt>
+    <dd>{{.Template.CreatedAt.Format "2006-01-02 15:04:05 UTC"}}</dd>
+    <dt class="text-content-secondary">Updated</dt>
+    <dd>{{.Template.UpdatedAt.Format "2006-01-02 15:04:05 UTC"}}</dd>
+  </dl>
+
+  <div class="grid gap-6 lg:grid-cols-2">
+    <div>
+      <h2 class="mb-2 text-sm font-medium text-content-secondary uppercase tracking-wide">YAML Source</h2>
+      <pre class="rounded-lg border border-surface-border bg-surface p-4 text-sm overflow-x-auto whitespace-pre-wrap font-mono text-content">{{.YAMLSource}}</pre>
+    </div>
+    <div>
+      <h2 class="mb-2 text-sm font-medium text-content-secondary uppercase tracking-wide">Preview</h2>
+      <div class="rounded-lg border border-surface-border bg-surface p-4 flex items-center justify-center min-h-32">
+        <img src="{{.PreviewURI}}"
+             alt="Template preview for {{.Template.Name}}"
+             class="max-w-full h-auto"
+             onerror="this.src='/static/preview-placeholder.svg'">
+      </div>
+    </div>
+  </div>
+</div>
+{{else}}
+<div class="py-12 text-center text-content-secondary">Template not found.</div>
+{{end}}
+{{end}}

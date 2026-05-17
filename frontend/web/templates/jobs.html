@@ -1,0 +1,67 @@
+{{template "layout" .}}
+{{define "title"}}Jobs — Label Printer Hub{{end}}
+{{define "content"}}{{template "jobs-content" .}}{{end}}
+
+{{define "jobs-content"}}
+<div class="space-y-4">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-content">Jobs</h1>
+    <form hx-get="/jobs" hx-push-url="true" hx-target="#jobs-table-container" class="flex gap-2">
+      <select name="state"
+              class="rounded border border-surface-border px-2 py-1 text-sm"
+              hx-get="/jobs" hx-trigger="change" hx-target="#jobs-table-container" hx-push-url="true">
+        <option value="">All states</option>
+        <option value="queued"    {{if eq .StateFilter "queued"}}selected{{end}}>Queued</option>
+        <option value="printing"  {{if eq .StateFilter "printing"}}selected{{end}}>Printing</option>
+        <option value="done"      {{if eq .StateFilter "done"}}selected{{end}}>Done</option>
+        <option value="failed"    {{if eq .StateFilter "failed"}}selected{{end}}>Failed</option>
+        <option value="cancelled" {{if eq .StateFilter "cancelled"}}selected{{end}}>Cancelled</option>
+      </select>
+      <button type="submit" class="rounded bg-primary px-3 py-1 text-sm text-primary-fg hover:bg-primary-hover">
+        Filter
+      </button>
+    </form>
+  </div>
+
+  <div id="jobs-table-container"
+       hx-get="/jobs"
+       hx-trigger="every 30s"
+       hx-include="[name='state']"
+       hx-select="#jobs-table-container"
+       hx-target="this"
+       hx-swap="outerHTML">
+    <table class="w-full text-sm border-collapse">
+      <thead>
+        <tr class="border-b border-surface-border text-left text-content-secondary">
+          <th class="py-2 pr-4">State</th>
+          <th class="py-2 pr-4">Template</th>
+          <th class="py-2 pr-4">Printer</th>
+          <th class="py-2">Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Jobs}}
+        <tr class="border-b border-surface-border hover:bg-surface">
+          <td class="py-2 pr-4"><span class="badge badge-{{.State}}">{{.State}}</span></td>
+          <td class="py-2 pr-4">
+            <a href="/jobs/{{.Id}}" class="text-primary hover:underline">{{.TemplateKey}}</a>
+          </td>
+          <td class="py-2 pr-4 text-content-secondary font-mono text-xs">{{.PrinterId}}</td>
+          <td class="py-2 text-content-secondary">{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+        </tr>
+        {{else}}
+        <tr>
+          <td colspan="4" class="py-6 text-center text-content-secondary">No jobs found.</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{if .NextCursor}}
+    <div class="mt-4">
+      <a href="/jobs?since={{.NextCursor}}{{if .StateFilter}}&amp;state={{.StateFilter}}{{end}}"
+         class="text-primary hover:underline text-sm">Next page &rarr;</a>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{end}}

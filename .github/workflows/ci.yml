@@ -145,6 +145,41 @@ jobs:
         working-directory: frontend
         run: go test -race -coverprofile=coverage.out ./...
 
+  oapi-codegen-drift:
+    name: Check oapi-codegen output is up to date
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check for Go module
+        id: go-check
+        run: |
+          if [ -f frontend/go.mod ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Go
+        if: steps.go-check.outputs.exists == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache-dependency-path: frontend/go.sum
+
+      - name: Regenerate client
+        if: steps.go-check.outputs.exists == 'true'
+        working-directory: frontend
+        run: make gen-client
+
+      - name: Fail if generated file differs
+        if: steps.go-check.outputs.exists == 'true'
+        run: git diff --exit-code frontend/internal/api/client.gen.go
+
+      - name: No-op (no Go module yet)
+        if: steps.go-check.outputs.exists != 'true'
+        run: echo "No frontend/go.mod found — skipping oapi-codegen drift check"
+
   docker-build:
     name: Docker — build smoke test
     runs-on: ubuntu-24.04

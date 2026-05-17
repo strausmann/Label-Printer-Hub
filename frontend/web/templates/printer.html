@@ -1,0 +1,45 @@
+{{template "layout" .}}
+{{define "title"}}Printer — Label Printer Hub{{end}}
+{{define "content"}}{{template "printer-content" .}}{{end}}
+
+{{define "printer-content"}}
+<div id="printer-detail" hx-ext="sse" sse-connect="/api/events?printer_id={{.PrinterID}}">
+  <div class="space-y-6">
+
+    <div id="printer-status-panel"
+         sse-swap="printer.status"
+         hx-swap="innerHTML"
+         class="rounded-lg border border-surface-border bg-surface-raised p-4">
+      {{if .Status}}
+      <div class="flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-content">Printer {{.PrinterID}}</h1>
+        {{if .Status.Online}}<span class="badge badge-online">Online</span>
+        {{else}}<span class="badge badge-offline">Offline</span>{{end}}
+      </div>
+      {{if .Status.TapeLoaded}}<p class="mt-2 text-sm text-content-secondary">Tape: {{.Status.TapeLoaded}}</p>{{end}}
+      {{if .Status.ErrorState}}<p class="mt-1 text-sm text-state-failed">Error: {{.Status.ErrorState}}</p>{{end}}
+      {{else}}<p class="text-content-secondary">Status unavailable.</p>{{end}}
+    </div>
+
+    <div id="job-queue-panel"
+         sse-swap="job.state_changed"
+         hx-swap="innerHTML"
+         class="rounded-lg border border-surface-border bg-surface-raised p-4">
+      <h2 class="font-medium text-content mb-3">Active Jobs</h2>
+      {{if .Queue}}
+      <ul class="space-y-1">
+        {{range .Queue}}
+        <li class="flex items-center gap-2 text-sm">
+          <span class="badge badge-{{index . "state"}}">{{index . "state"}}</span>
+          <a href="/jobs/{{index . "id"}}" class="text-primary hover:underline">{{index . "template_key"}}</a>
+        </li>
+        {{end}}
+      </ul>
+      {{else}}<p class="text-sm text-content-secondary">No active jobs.</p>{{end}}
+    </div>
+
+    <div id="tape-panel" sse-swap="printer.tape_changed" hx-swap="innerHTML"></div>
+
+  </div>
+</div>
+{{end}}

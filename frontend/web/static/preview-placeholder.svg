@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 200 100">
+  <rect width="200" height="100" fill="#f0f0f0" rx="4"/>
+  <text x="100" y="54" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#888">Preview unavailable</text>
+</svg>

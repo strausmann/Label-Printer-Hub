@@ -1,0 +1,51 @@
+{{template "layout" .}}
+{{define "title"}}Job — Label Printer Hub{{end}}
+{{define "content"}}{{template "job-content" .}}{{end}}
+
+{{define "job-content"}}
+{{if .Job}}
+<div id="job-detail" class="space-y-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-content">Job {{.Job.Id}}</h1>
+    <span class="badge badge-{{.Job.State}}">{{.Job.State}}</span>
+  </div>
+
+  {{if not .IsTerminal}}
+  <div id="job-status-row"
+       hx-get="/jobs/{{.Job.Id}}"
+       hx-trigger="every 10s"
+       hx-select="#job-status-row"
+       hx-target="this"
+       hx-swap="outerHTML">
+    <p class="text-sm text-content-secondary">Auto-refreshing&hellip;</p>
+  </div>
+  {{end}}
+
+  <dl class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+    <dt class="text-content-secondary">Template</dt>
+    <dd>
+      <a href="/templates/{{.Job.TemplateKey}}" class="text-primary hover:underline">{{.Job.TemplateKey}}</a>
+    </dd>
+    <dt class="text-content-secondary">Printer</dt>
+    <dd>
+      <a href="/printers/{{.Job.PrinterId}}" class="text-primary hover:underline">{{.Job.PrinterId}}</a>
+    </dd>
+    <dt class="text-content-secondary">Created</dt>
+    <dd>{{.Job.CreatedAt.Format "2006-01-02 15:04:05 UTC"}}</dd>
+    {{if .Job.Error}}
+    <dt class="text-content-secondary">Error</dt>
+    <dd class="text-state-failed">{{.Job.Error}}</dd>
+    {{end}}
+  </dl>
+
+  {{if or (eq .Job.State "failed") (eq .Job.State "cancelled")}}
+  <form method="post" action="/jobs/{{.Job.Id}}/retry">
+    <button type="submit"
+            class="rounded bg-primary px-4 py-2 text-sm text-primary-fg hover:bg-primary-hover">
+      Retry Job
+    </button>
+  </form>
+  {{end}}
+</div>
+{{end}}
+{{end}}

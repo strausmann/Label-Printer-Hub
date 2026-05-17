@@ -1,0 +1,6 @@
+package: api
+generate:
+  models: true
+  client: true
+  strict-server: false
+output: internal/api/client.gen.go

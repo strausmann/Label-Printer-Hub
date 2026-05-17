@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary:           oklch(55% 0.20 250);
+  --color-primary-hover:     oklch(48% 0.20 250);
+  --color-primary-fg:        oklch(98% 0.00 0);
+  --color-surface:           oklch(98% 0.00 0);
+  --color-surface-raised:    oklch(100% 0.00 0);
+  --color-surface-border:    oklch(88% 0.00 0);
+  --color-content:           oklch(20% 0.00 0);
+  --color-content-secondary: oklch(50% 0.00 0);
+  --color-status-online:     oklch(55% 0.18 145);
+  --color-status-offline:    oklch(50% 0.15 25);
+  --color-status-paused:     oklch(65% 0.16 80);
+  --color-state-queued:      oklch(65% 0.16 80);
+  --color-state-printing:    oklch(55% 0.18 250);
+  --color-state-done:        oklch(55% 0.18 145);
+  --color-state-failed:      oklch(50% 0.15 25);
+  --color-state-cancelled:   oklch(50% 0.00 0);
+}
+
+@layer components {
+  .nav-link        { @apply text-sm text-content-secondary hover:text-content transition-colors; }
+  .nav-link-active { @apply text-content font-medium; }
+  .badge           { @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium; }
+  .badge-online    { @apply bg-status-online/15 text-status-online; }
+  .badge-offline   { @apply bg-status-offline/15 text-status-offline; }
+  .badge-paused    { @apply bg-status-paused/15 text-status-paused; }
+  .badge-printing  { @apply bg-state-printing/15 text-state-printing; }
+  .badge-queued    { @apply bg-state-queued/15 text-state-queued; }
+  .badge-done      { @apply bg-state-done/15 text-state-done; }
+  .badge-failed    { @apply bg-state-failed/15 text-state-failed; }
+  .badge-cancelled { @apply bg-state-cancelled/15 text-state-cancelled; }
+}

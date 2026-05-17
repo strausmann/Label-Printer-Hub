@@ -2,11 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/strausmann/label-printer-hub/frontend/internal/api"
+	"github.com/strausmann/label-printer-hub/frontend/internal/handlers"
+	"github.com/strausmann/label-printer-hub/frontend/internal/proxy"
 )
 
 // initBuildInfoForTests loads the package-level buildInfo from the current
@@ -25,10 +31,45 @@ func initBuildInfoForTests(t *testing.T) {
 	})
 }
 
+// minimalBackend starts an httptest.Server that answers /healthz and
+// /api/printers with minimal valid JSON, and 404 for everything else.
+func minimalBackend(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"status":"ok"}`)
+		case "/api/printers":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `[]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// testRouterWithBackend builds a minimal router for unit tests that need to
+// hit route handlers. It uses the handlers package stub templates to avoid
+// parsing the full web/templates set in each test.
+func testRouterWithBackend(t *testing.T, backendURL string) http.Handler {
+	t.Helper()
+	initBuildInfoForTests(t)
+	ph := handlers.NewPageHandlerFromURL(t, backendURL)
+	prx := proxy.New(backendURL)
+	sub, err := fs.Sub(staticFS, "web/static")
+	if err != nil {
+		t.Fatalf("fs.Sub: %v", err)
+	}
+	return newRouter(ph, prx, sub)
+}
+
 func TestHealthz_ReturnsOK(t *testing.T) {
 	t.Parallel()
-	initBuildInfoForTests(t)
-	r := newRouter()
+	backend := minimalBackend(t)
+	r := testRouterWithBackend(t, backend.URL)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -40,13 +81,13 @@ func TestHealthz_ReturnsOK(t *testing.T) {
 
 func TestHealthz_BodyShape(t *testing.T) {
 	t.Parallel()
-	initBuildInfoForTests(t)
-	r := newRouter()
+	backend := minimalBackend(t)
+	r := testRouterWithBackend(t, backend.URL)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	var body BuildInfo
+	var body handlers.HealthzResponse
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -56,21 +97,55 @@ func TestHealthz_BodyShape(t *testing.T) {
 	if body.Version == "" {
 		t.Error("version must not be empty")
 	}
-	if body.Revision == "" {
-		t.Error("revision must not be empty")
-	}
-	if body.BuildDate == "" {
-		t.Error("build_date must not be empty")
-	}
 	if !strings.Contains(body.Repository, "github.com/strausmann/label-printer-hub") {
 		t.Errorf("repository = %q, must point at the project repo", body.Repository)
 	}
 }
 
+func TestHealthz_BackendReachable(t *testing.T) {
+	t.Parallel()
+	backend := minimalBackend(t)
+	r := testRouterWithBackend(t, backend.URL)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var body handlers.HealthzResponse
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !body.BackendReachable {
+		t.Errorf("backend_reachable = false with a live mock backend; backend_error = %q", body.BackendError)
+	}
+}
+
+func TestHealthz_BackendUnreachable(t *testing.T) {
+	t.Parallel()
+	// Point at a port that is definitely not listening.
+	r := testRouterWithBackend(t, "http://127.0.0.1:19998")
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 even when backend unreachable", w.Code)
+	}
+	var body handlers.HealthzResponse
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.BackendReachable {
+		t.Error("backend_reachable must be false when backend is down")
+	}
+	if body.BackendError == "" {
+		t.Error("backend_error must be non-empty when backend is unreachable")
+	}
+}
+
 func TestHealthz_ContentTypeJSON(t *testing.T) {
 	t.Parallel()
-	initBuildInfoForTests(t)
-	r := newRouter()
+	backend := minimalBackend(t)
+	r := testRouterWithBackend(t, backend.URL)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -83,8 +158,8 @@ func TestHealthz_ContentTypeJSON(t *testing.T) {
 
 func TestHealthz_NoAuthRequired(t *testing.T) {
 	t.Parallel()
-	initBuildInfoForTests(t)
-	r := newRouter()
+	backend := minimalBackend(t)
+	r := testRouterWithBackend(t, backend.URL)
 	// No Authorization header — container orchestrators probe healthz without credentials.
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
@@ -97,8 +172,8 @@ func TestHealthz_NoAuthRequired(t *testing.T) {
 
 func TestHealthz_DoesNotLeakSecrets(t *testing.T) {
 	t.Parallel()
-	initBuildInfoForTests(t)
-	r := newRouter()
+	backend := minimalBackend(t)
+	r := testRouterWithBackend(t, backend.URL)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -176,5 +251,183 @@ func TestLoadBuildInfo_UsesDefaultsWhenUnset(t *testing.T) {
 	}
 	if got.Repository != defaultRepoURL {
 		t.Errorf("Repository = %q, want default %q", got.Repository, defaultRepoURL)
+	}
+}
+
+// TestRoutesDashboard is the routing integration test.
+// It spins up a full router backed by a mock backend and hits every wired
+// route, asserting the expected HTTP status codes.
+func TestRoutesDashboard(t *testing.T) {
+	// Note: not parallel — uses initBuildInfoForTests which has a sync.Once.
+	// Multiple non-parallel tests that call initBuildInfoForTests are safe
+	// because sync.Once ensures only one write to the global.
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/printers":
+			fmt.Fprint(w, `[]`)
+		case "/healthz":
+			fmt.Fprint(w, `{"status":"ok"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+
+	initBuildInfoForTests(t)
+	// Use the real embedded templates (ParsePageTemplates) so this test
+	// exercises the full per-page template render path.
+	pages, errTmpl, err := handlers.ParsePageTemplates(templateFS)
+	if err != nil {
+		t.Fatalf("ParsePageTemplates: %v", err)
+	}
+	ph := handlers.NewPageHandler(pages, errTmpl, api.NewHubClient(backend.URL), "0.0.0-test")
+	prx := proxy.New(backend.URL)
+	sub, err := fs.Sub(staticFS, "web/static")
+	if err != nil {
+		t.Fatalf("fs.Sub: %v", err)
+	}
+	r := newRouter(ph, prx, sub)
+
+	tests := []struct {
+		method string
+		path   string
+		want   int
+	}{
+		{http.MethodGet, "/", http.StatusOK},
+		{http.MethodGet, "/healthz", http.StatusOK},
+		{http.MethodGet, "/static/app.css", http.StatusOK},
+	}
+
+	for _, tc := range tests {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != tc.want {
+			t.Errorf("%s %s = %d, want %d (body: %s)", tc.method, tc.path, w.Code, tc.want, w.Body.String()[:min(200, w.Body.Len())])
+		}
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// TestRealTemplatesPerPageContent verifies that each page renders its own
+// content when using the real embedded templates — not the content of whatever
+// page file happens to be parsed last.
+//
+// When all template files are parsed into a single *template.Template set with
+// template.ParseFS, multiple files define {{define "content"}} (one per page).
+// Go's html/template resolves the last definition, so every call to
+// ExecuteTemplate(w, "layout", data) produces the content of the last-parsed
+// page. This test catches that regression: it expects the dashboard to produce
+// "printer-grid" and the templates list to produce "templates-grid".
+func TestRealTemplatesPerPageContent(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/printers":
+			fmt.Fprint(w, `[]`)
+		case "/api/templates":
+			fmt.Fprint(w, `[]`)
+		case "/healthz":
+			fmt.Fprint(w, `{"status":"ok"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+
+	initBuildInfoForTests(t)
+	pages, errTmpl, err := handlers.ParsePageTemplates(templateFS)
+	if err != nil {
+		t.Fatalf("ParsePageTemplates: %v", err)
+	}
+	ph := handlers.NewPageHandler(pages, errTmpl, api.NewHubClient(backend.URL), "0.0.0-test")
+	prx := proxy.New(backend.URL)
+	sub, err := fs.Sub(staticFS, "web/static")
+	if err != nil {
+		t.Fatalf("fs.Sub: %v", err)
+	}
+	r := newRouter(ph, prx, sub)
+
+	t.Run("dashboard_renders_printer_grid", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status %d, body: %s", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "printer-grid") {
+			t.Errorf("dashboard full-page response must contain 'printer-grid'; got content starting with: %q",
+				w.Body.String()[:min(400, w.Body.Len())])
+		}
+		if strings.Contains(w.Body.String(), "templates-grid") {
+			t.Error("dashboard must NOT render templates-grid (template block clash: last 'content' definition wins)")
+		}
+	})
+
+	t.Run("templates_page_renders_templates_grid", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/templates", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("status %d, body: %s", w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "templates-grid") {
+			t.Errorf("templates page must contain 'templates-grid'; got: %q",
+				w.Body.String()[:min(400, w.Body.Len())])
+		}
+	})
+}
+
+// TestQRLandingPrefixPreserved verifies that the QR-landing proxy routes
+// (/loc, /asset, /spool, /product) forward the FULL path to the backend,
+// including the prefix.
+//
+// chi.Mount strips the mount prefix before calling the handler, so
+// r.Mount("/loc", proxy) causes the backend to see "/" instead of "/loc/abc".
+// The correct pattern is r.Handle("/loc/*", proxy) which preserves the prefix.
+func TestQRLandingPrefixPreserved(t *testing.T) {
+	t.Parallel()
+	// Record the path the backend actually receives.
+	var receivedPath string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		// Return 200 so the proxy does not emit a 502.
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer backend.Close()
+
+	r := testRouterWithBackend(t, backend.URL)
+
+	cases := []struct {
+		path string
+	}{
+		{"/loc/abc123"},
+		{"/asset/def456"},
+		{"/spool/ghi789"},
+		{"/product/jkl012"},
+	}
+
+	for _, tc := range cases {
+		receivedPath = ""
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s: status %d, want 200", tc.path, w.Code)
+			continue
+		}
+		if receivedPath != tc.path {
+			t.Errorf("GET %s: backend received path %q, want %q (chi.Mount strips prefix; use r.Handle instead)",
+				tc.path, receivedPath, tc.path)
+		}
 	}
 }
