@@ -7,10 +7,17 @@ reorder or disable in CI.
 
 Call order in main.py lifespan:
     1. run_migrations()          — apply pending Alembic revisions
-    2. recover_inflight_jobs()   — mark stale QUEUED/PRINTING jobs as failed_restart
-    3. seed_templates()          — upsert YAML seed templates into DB
-    4. upsert_runtime_printer()  — materialise ONE Printer row from env config
-    5. ensure_printer_state()    — create missing printer_state rows
+    2. _discover_plugins()       — register integration + model plugins (idempotent)
+    3. TemplateLoader.load_dir() — populate in-memory template cache (Cluster 1a)
+    4. recover_inflight_jobs()   — mark stale QUEUED/PRINTING jobs as failed_restart
+    5. seed_templates()          — YAML → DB upsert (defensive check on cache)
+    6. upsert_runtime_printer()  — env → DB Printer row (Cluster 1b)
+    7. ensure_printer_state()    — create missing printer_state rows per Printer
+
+Note: steps 2 and 3 must precede step 5 — TemplateLoader.load_dir() validates
+templates against IntegrationRegistry (populated in step 2), and seed_templates()
+reads from the cache that load_dir() populates in step 3.
+(verify_alembic_at_head will be inserted at step 1b by Task E1.)
 """
 
 from __future__ import annotations

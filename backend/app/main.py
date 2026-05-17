@@ -89,6 +89,7 @@ from app.db.lifespan import (
     recover_inflight_jobs,
     run_migrations,
     seed_templates,
+    upsert_runtime_printer,
 )
 from app.integrations.registry import IntegrationRegistry
 from app.printer_backends import BackendRegistry
@@ -233,24 +234,38 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
 
-    # --- DB startup: migrations + recovery + seed + printer state --------
+    # --- DB startup: migrations first, then in-memory state, then DB writes ---
     await run_migrations()
-    async with async_session() as s:
-        await recover_inflight_jobs(s)
-        await seed_templates(s, TemplateLoader)
-        await ensure_printer_state(s)
-    # ---------------------------------------------------------------------
 
-    # Re-run integration plugin discovery if the registry was cleared (e.g. by
-    # test fixtures that call IntegrationRegistry._plugins.clear()). This is
-    # idempotent: _discover_plugins skips names that are already registered.
+    # 2. Plugin registries (idempotent — skips already-registered names).
+    # Must run BEFORE TemplateLoader.load_dir() because load_dir validates
+    # each template's `app` field against IntegrationRegistry.  Re-run if the
+    # registry was cleared (e.g. by test fixtures that call
+    # IntegrationRegistry._plugins.clear()).
     if not IntegrationRegistry.names():
         _integrations_init._discover_plugins()
 
+    ModelRegistry.ensure_discovered()
+
+    # 3. Populate in-memory template cache BEFORE any DB writes that depend on it.
+    # load_dir must come after plugin discovery (above) and before seed_templates
+    # (below) — the seed step reads from the cache that load_dir populates.
     if _SEED_TEMPLATES_DIR.exists():
         TemplateLoader.load_dir(_SEED_TEMPLATES_DIR)
+    else:
+        raise RuntimeError(
+            f"Seed templates directory not found: {_SEED_TEMPLATES_DIR}. "
+            "The application package is incomplete — reinstall or rebuild the image."
+        )
 
-    ModelRegistry.ensure_discovered()
+    # 4. DB-bound init — plugin registry and template cache are populated.
+    async with async_session() as s:
+        await recover_inflight_jobs(s)
+        await seed_templates(s, TemplateLoader)
+        db_printer_id = await upsert_runtime_printer(s, settings)
+        await ensure_printer_state(s)
+        await s.commit()
+    # -------------------------------------------------------------------------
 
     discovery_host = settings.pt750w_host or ""
     if discovery_host and settings.printer_discover_via_snmp:
@@ -269,7 +284,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     driver: Any = driver_cls(backend=backend)
 
     tape_registry = TapeRegistry()
-    printer = driver.make_queue_printer(tape_registry)
+    printer = driver.make_queue_printer(tape_registry, printer_id=db_printer_id)
 
     # --- SSE EventBus ---
     event_bus = EventBus(queue_size=settings.sse_queue_size)

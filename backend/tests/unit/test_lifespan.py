@@ -73,12 +73,6 @@ async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: 
     # run_migrations`.  Patching _lifespan_module alone does not update that
     # local binding; we must also patch the name on _main_module.
     monkeypatch.setattr(_main_module, "run_migrations", _noop_migrations)
-    # seed_templates now raises on empty TemplateLoader cache (D1 defensive check).
-    # Unit lifespan tests exercise printer backend / SNMP paths and do not need
-    # templates seeded.  Patching only the name bound in main.py avoids the
-    # spurious failure until D2 reorders load_dir before seed_templates in
-    # main.py lifespan.
-    monkeypatch.setattr(_main_module, "seed_templates", _noop_seed_templates)
 
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False
