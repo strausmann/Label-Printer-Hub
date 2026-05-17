@@ -48,3 +48,19 @@ class PrinterModel(Protocol):
         high_resolution: bool = False,
     ) -> bytes:
         """Encode an image into the Brother raster byte-stream for this model."""
+
+    def describe_tape(self, width_mm: int) -> TapeDescription:
+        """Return a human-readable description for a tape of *width_mm* mm.
+
+        Must never raise — return a safe fallback label (e.g. ``"<N>mm"``)
+        when the width is unknown or unsupported by this model family.
+
+        Model-specific tape-class logic (PT-Series TZe laminated, QL-Series
+        DK continuous, …) belongs here rather than in the generic
+        ``TapeChangeProducer`` (Finding F6).
+        """
+
+
+# TapeDescription lives in a standalone module to avoid circular imports.
+# We import it here so the Protocol annotation is resolvable by type-checkers.
+from app.services.producers.tape_description import TapeDescription as TapeDescription  # noqa: E402

@@ -92,10 +92,16 @@ class EventBus:
         return q
 
     def unsubscribe(self, channel: str, subscriber_id: str) -> None:
-        """Remove *subscriber_id* from *channel*. Idempotent."""
+        """Remove *subscriber_id* from *channel*. Idempotent.
+
+        Also clears any accumulated drop count for the subscriber so that
+        reconnecting clients don't carry over stale counters and UUID keys
+        don't accumulate in ``_dropped`` over many reconnects (Finding F2).
+        """
         self._subscribers[channel] = [
             (sid, q) for sid, q in self._subscribers.get(channel, []) if sid != subscriber_id
         ]
+        self._dropped.pop(subscriber_id, None)
 
     def next_event_id(self, channel: str) -> int:
         """Return the next monotonic event ID for *channel* (1-based)."""

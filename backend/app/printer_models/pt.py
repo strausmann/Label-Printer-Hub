@@ -15,6 +15,7 @@ from app.models.tape import TapeSpec
 from app.printer_backends.base import PrinterBackend
 from app.printer_models.base import PrinterModel
 from app.printer_models.registry import ModelRegistry
+from app.services.producers.tape_description import TapeDescription
 from app.services.status_block import MediaType, StatusBlock
 
 if TYPE_CHECKING:
@@ -199,6 +200,22 @@ class PTP750WDriver:
             "build_print_job() will be implemented when a real caller "
             "(raw-export, debugging, non-library backend) appears."
         )
+
+    def describe_tape(self, width_mm: int) -> TapeDescription:
+        """Return a human-readable description for a PT-Series tape of *width_mm* mm.
+
+        Checks PT_TZE_TAPES (laminated TZe) first, then PT_HS_2_1_TAPES
+        (heat-shrink 2:1).  Falls back to ``"<N>mm"`` for unknown widths so
+        the method never raises (Finding F6).
+        """
+        for spec in PT_TZE_TAPES:
+            if spec.width_mm == width_mm:
+                return TapeDescription(label=f"{width_mm}mm TZe")
+        for spec in PT_HS_2_1_TAPES:
+            if spec.width_mm == width_mm:
+                return TapeDescription(label=f"{width_mm}mm HS")
+        # Unknown width — safe fallback
+        return TapeDescription(label=f"{width_mm}mm")
 
     def make_queue_printer(
         self,

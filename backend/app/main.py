@@ -243,7 +243,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     await queue.start()
 
-    tape_producer = TapeChangeProducer(bus=event_bus, tape_registry=tape_registry)
+    # F7: Pass the resolved driver as `model` so TapeChangeProducer delegates
+    # tape-class lookup to driver.describe_tape() instead of the legacy
+    # tape_registry.lookup_pt() path.  The driver implements the DescribesTape
+    # protocol — any ModelRegistry-registered driver must supply describe_tape().
+    tape_producer = TapeChangeProducer(bus=event_bus, tape_registry=tape_registry, model=driver)
     status_producer: StatusProbeProducer | None = None
     if discovery_host:
         status_producer = StatusProbeProducer(

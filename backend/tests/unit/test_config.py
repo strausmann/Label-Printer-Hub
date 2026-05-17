@@ -46,3 +46,83 @@ def test_sse_settings_defaults() -> None:
     assert s.sse_max_subscribers == 100
     assert s.sse_heartbeat_s == 30.0
     assert s.sse_probe_interval_s == 30.0
+
+
+# ---------------------------------------------------------------------------
+# F3 — SSE Settings must reject zero/negative values (Finding F3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("sse_queue_size", 0),
+        ("sse_queue_size", -1),
+        ("sse_heartbeat_s", 0),
+        ("sse_heartbeat_s", -0.5),
+        ("sse_idle_timeout_s", 0),
+        ("sse_idle_timeout_s", -10),
+        ("sse_max_subscribers", 0),
+        ("sse_max_subscribers", -1),
+        ("sse_probe_interval_s", 0),
+        ("sse_probe_interval_s", -5.0),
+    ],
+)
+def test_sse_settings_reject_non_positive(field: str, value: float | int) -> None:
+    """All five SSE settings must reject 0 and negative values (Finding F3).
+
+    asyncio.Queue(maxsize=0) is unbounded; heartbeat_s=0 creates a tight
+    loop; all other zero/negative values are nonsensical resource limits.
+    Field(gt=0) on each setting provides the guard.
+    """
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(**{field: value}, _env_file=None)  # type: ignore[arg-type]
+
+
+def test_sse_settings_accept_positive_one() -> None:
+    """Boundary: value=1 must be accepted for all five SSE settings."""
+    s = Settings(
+        sse_queue_size=1,
+        sse_heartbeat_s=1.0,
+        sse_idle_timeout_s=1.0,
+        sse_max_subscribers=1,
+        sse_probe_interval_s=1.0,
+        _env_file=None,  # type: ignore[call-arg]
+    )
+    assert s.sse_queue_size == 1
+    assert s.sse_heartbeat_s == 1.0
+    assert s.sse_idle_timeout_s == 1.0
+    assert s.sse_max_subscribers == 1
+    assert s.sse_probe_interval_s == 1.0
+
+
+# ---------------------------------------------------------------------------
+# F5 — .env.example must document all SSE env vars (Finding F5)
+# ---------------------------------------------------------------------------
+
+_SSE_ENV_VARS = [
+    "PRINTER_HUB_SSE_QUEUE_SIZE",
+    "PRINTER_HUB_SSE_HEARTBEAT_S",
+    "PRINTER_HUB_SSE_IDLE_TIMEOUT_S",
+    "PRINTER_HUB_SSE_MAX_SUBSCRIBERS",
+    "PRINTER_HUB_SSE_PROBE_INTERVAL_S",
+]
+
+
+def test_env_example_contains_all_sse_vars() -> None:
+    """backend/.env.example must document every PRINTER_HUB_SSE_* variable.
+
+    Finding F5: the five SSE settings added in Phase 6b were missing from
+    .env.example which claimed to list all supported variables.  Operators
+    who use .env.example as a reference would be unaware of these knobs.
+    """
+    env_example = Path(__file__).parent.parent.parent / ".env.example"
+    assert env_example.exists(), ".env.example not found at expected path"
+    content = env_example.read_text()
+    missing = [var for var in _SSE_ENV_VARS if var not in content]
+    assert not missing, (
+        f"Missing SSE env vars in .env.example: {missing!r}. "
+        "Add them so operators know these settings exist."
+    )

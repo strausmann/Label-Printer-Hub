@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -82,20 +82,24 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # SSE EventBus — configurable resource limits
-    sse_queue_size: int = 32
-    """Per-subscriber asyncio.Queue depth. Drop-oldest when full."""
+    sse_queue_size: int = Field(default=32, gt=0)
+    """Per-subscriber asyncio.Queue depth. Drop-oldest when full.
+    Must be > 0; asyncio.Queue(maxsize=0) is unbounded."""
 
-    sse_idle_timeout_s: float = 300.0
-    """Seconds of inactivity before the server closes an SSE connection."""
+    sse_idle_timeout_s: float = Field(default=300.0, gt=0)
+    """Seconds of inactivity before the server closes an SSE connection.
+    Must be > 0."""
 
-    sse_max_subscribers: int = 100
-    """Max concurrent SSE subscribers per printer. Returns 429 when exceeded."""
+    sse_max_subscribers: int = Field(default=100, gt=0)
+    """Max concurrent SSE subscribers per printer. Returns 429 when exceeded.
+    Must be > 0."""
 
-    sse_heartbeat_s: float = 30.0
-    """Interval between SSE keepalive comment frames when no events flow."""
+    sse_heartbeat_s: float = Field(default=30.0, gt=0)
+    """Interval between SSE keepalive comment frames when no events flow.
+    Must be > 0; heartbeat_s=0 creates a tight busy-loop."""
 
-    sse_probe_interval_s: float = 30.0
-    """SNMP probe interval for StatusProbeProducer (seconds)."""
+    sse_probe_interval_s: float = Field(default=30.0, gt=0)
+    """SNMP probe interval for StatusProbeProducer (seconds). Must be > 0."""
 
     @field_validator("webhook_api_key")
     @classmethod

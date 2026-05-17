@@ -199,3 +199,43 @@ def test_distinct_subscriber_count_channels_none_equals_no_arg() -> None:
         bus.subscribe(ch, "conn-1")
         bus.subscribe(ch, "conn-2")
     assert bus.distinct_subscriber_count(channels=None) == bus.distinct_subscriber_count()
+
+
+# ---------------------------------------------------------------------------
+# F2 — _dropped entries must be removed on unsubscribe (no UUID leak)
+# ---------------------------------------------------------------------------
+
+
+def test_unsubscribe_clears_dropped_entry() -> None:
+    """After unsubscribe, the subscriber's _dropped counter must be gone.
+
+    Finding F2: unsubscribe() removed the subscriber's queues from
+    _subscribers but left the UUID key in _dropped.  Over many reconnects
+    this causes unbounded growth of the _dropped dict.
+
+    Fix: unsubscribe() calls self._dropped.pop(subscriber_id, None).
+    """
+    bus = EventBus(queue_size=1)  # tiny queue — fills after 1 event
+    bus.subscribe("printer:abc:queue", "sub-leak")
+
+    # Fill the queue so the next publish triggers a drop
+    e1 = _make_event(eid=1)
+    e2 = _make_event(eid=2)
+    bus.publish("printer:abc:queue", e1)  # queue full
+    bus.publish("printer:abc:queue", e2)  # drop-oldest: e1 evicted, drop count → 1
+
+    assert bus.get_dropped_count("sub-leak") == 1  # consumed but sub still active
+
+    # Simulate a drop that is NOT consumed before disconnect
+    bus.publish("printer:abc:queue", e1)  # fill again
+    bus.publish("printer:abc:queue", e2)  # another drop, count → 1 (freshly accumulated)
+
+    # Unsubscribe without consuming the drop counter
+    bus.unsubscribe("printer:abc:queue", "sub-leak")
+
+    # The _dropped entry must be gone — no UUID leak
+    # We verify via get_dropped_count which pops; if the entry was already
+    # removed by unsubscribe, it returns 0.
+    assert bus.get_dropped_count("sub-leak") == 0, (
+        "unsubscribe() must clear the _dropped entry to prevent UUID accumulation"
+    )
