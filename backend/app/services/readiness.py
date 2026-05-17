@@ -1,18 +1,30 @@
-"""Phase 7b Cluster 1e — readiness aggregator (first 4 checks).
+"""Phase 7b Cluster 1e — readiness aggregator (all 8 checks).
 
-F3 adds the remaining 4 checks (printer_db_sync, snmp_discovery,
-print_queue, sse_bus). F4 wires the FastAPI route + HTTP status mapping.
+Checks implemented:
+  database         — SELECT 1 latency (critical)
+  alembic          — alembic_version at head (critical)
+  template_seed    — templates table non-empty (critical)
+  printer_runtime  — app.state.printer_id set (non-critical)
+  printer_db_sync  — runtime printer_id has a DB row (non-critical)
+  snmp_discovery   — PrinterStatusCache recency (non-critical)
+  print_queue      — print_queue in app.state (non-critical)
+  sse_bus          — subscriber capacity (non-critical)
+
+F4 wires the FastAPI route + HTTP status mapping.
 """
 
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.models.printer import Printer
+from app.models.printer_status_cache import PrinterStatusCache
 from app.models.template import Template
 from app.schemas.readiness import CheckStatus, ReadinessResponse
 
@@ -58,6 +70,62 @@ def _check_printer_runtime(app_state: Any) -> CheckStatus:
     return CheckStatus(status="ok", metric={"printer_id": str(pid)})
 
 
+async def _check_printer_db_sync(session: AsyncSession, app_state: Any) -> CheckStatus:
+    pid = getattr(app_state, "printer_id", None)
+    if pid is None:
+        return CheckStatus(status="skipped", detail="No runtime printer")
+    row = await session.get(Printer, pid)
+    if row is None:
+        return CheckStatus(
+            status="fail",
+            detail=f"app.state.printer_id={pid} has no matching DB row",
+        )
+    return CheckStatus(status="ok")
+
+
+async def _check_snmp_discovery(session: AsyncSession, app_state: Any) -> CheckStatus:
+    pid = getattr(app_state, "printer_id", None)
+    if pid is None:
+        return CheckStatus(status="skipped", detail="No runtime printer")
+    row = await session.get(PrinterStatusCache, pid)
+    if row is None or row.captured_at is None:
+        return CheckStatus(status="fail", detail="No SNMP probe recorded yet")
+    captured = row.captured_at
+    if captured.tzinfo is None:
+        captured = captured.replace(tzinfo=UTC)
+    age_s = int((datetime.now(UTC) - captured).total_seconds())
+    metric: dict[str, Any] = {"last_probe_age_s": age_s}
+    if age_s < 90:
+        return CheckStatus(status="ok", metric=metric)
+    if age_s < 600:
+        return CheckStatus(status="stale", detail=f"{age_s}s ago (>90s)", metric=metric)
+    return CheckStatus(
+        status="fail",
+        detail=f"{age_s}s ago (>600s) — printer offline?",
+        metric=metric,
+    )
+
+
+def _check_print_queue(app_state: Any) -> CheckStatus:
+    queue = getattr(app_state, "print_queue", None)
+    if queue is None:
+        return CheckStatus(status="fail", detail="print_queue not in app.state")
+    worker_count_fn = getattr(queue, "worker_count", lambda: 1)
+    return CheckStatus(status="ok", metric={"worker_count": worker_count_fn()})
+
+
+def _check_sse_bus(app_state: Any) -> CheckStatus:
+    bus = getattr(app_state, "event_bus", None)
+    if bus is None:
+        return CheckStatus(status="skipped", detail="event_bus not configured")
+    subs = getattr(bus, "subscriber_count", lambda: 0)()
+    max_subs = getattr(bus, "max_subscribers", 100)
+    metric: dict[str, Any] = {"subscribers": subs, "max": max_subs}
+    if subs >= max_subs:
+        return CheckStatus(status="fail", detail="subscriber pool exhausted", metric=metric)
+    return CheckStatus(status="ok", metric=metric)
+
+
 def _aggregate(checks: dict[str, CheckStatus]) -> Literal["ready", "degraded", "not-ready"]:
     if any(checks[name].status == "fail" for name in _CRITICAL_CHECKS if name in checks):
         return "not-ready"
@@ -74,18 +142,16 @@ async def build_readiness_response(
     version: str,
     revision: str,
 ) -> ReadinessResponse:
-    """Run all readiness checks and aggregate the result.
-
-    F2 covers the first four checks. F3 will extend ``checks`` with
-    printer_db_sync, snmp_discovery, print_queue, sse_bus. The aggregate
-    helper already handles the additional check names — extending the
-    dict is purely additive.
-    """
+    """Run all 8 readiness checks and aggregate the result."""
     checks: dict[str, CheckStatus] = {
         "database": await _check_database(session),
         "alembic": await _check_alembic(settings),
         "template_seed": await _check_template_seed(session),
         "printer_runtime": _check_printer_runtime(app_state),
+        "printer_db_sync": await _check_printer_db_sync(session, app_state),
+        "snmp_discovery": await _check_snmp_discovery(session, app_state),
+        "print_queue": _check_print_queue(app_state),
+        "sse_bus": _check_sse_bus(app_state),
     }
     return ReadinessResponse(
         status=_aggregate(checks),
