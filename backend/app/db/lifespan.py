@@ -76,8 +76,16 @@ async def seed_templates(session: AsyncSession, loader: type[TemplateLoader]) ->
     main.py can call by name, and is the natural seam for unit tests that
     want to inject a mock loader without touching the real registry.
 
+    Raises RuntimeError if the loader cache is empty — calling seed_templates
+    without first running TemplateLoader.load_dir() is a lifespan-ordering bug.
+
     Returns the count of rows touched (inserted or updated).
     """
+    if not loader._cache:
+        raise RuntimeError(
+            "seed_templates called with empty TemplateLoader cache — "
+            "TemplateLoader.load_dir() must run before seed_templates()."
+        )
     return await loader.seed_db(session)
 
 

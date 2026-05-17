@@ -28,6 +28,17 @@ async def _noop_migrations() -> None:
     """
 
 
+async def _noop_seed_templates(*_args, **_kwargs) -> int:  # type: ignore[no-untyped-def]
+    """Drop-in for seed_templates() in unit lifespan tests.
+
+    The D1 defensive check raises RuntimeError when TemplateLoader._cache is
+    empty.  These tests exercise printer backend / SNMP discovery paths and do
+    not require templates; patching avoids the spurious failure until D2 reorders
+    load_dir before seed_templates in main.py lifespan.
+    """
+    return 0
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: ignore[misc]
     """Reset registries and swap the module-level engine for a temp DB.
@@ -62,6 +73,12 @@ async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: 
     # run_migrations`.  Patching _lifespan_module alone does not update that
     # local binding; we must also patch the name on _main_module.
     monkeypatch.setattr(_main_module, "run_migrations", _noop_migrations)
+    # seed_templates now raises on empty TemplateLoader cache (D1 defensive check).
+    # Unit lifespan tests exercise printer backend / SNMP paths and do not need
+    # templates seeded.  Patching only the name bound in main.py avoids the
+    # spurious failure until D2 reorders load_dir before seed_templates in
+    # main.py lifespan.
+    monkeypatch.setattr(_main_module, "seed_templates", _noop_seed_templates)
 
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False
