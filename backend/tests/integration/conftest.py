@@ -62,6 +62,11 @@ async def _temp_db_engine(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  #
     # on _lifespan_module is patched.  The lifespan() function in main.py calls
     # its locally-bound `run_migrations` directly, so we must patch that name too.
     monkeypatch.setattr(_main_module, "run_migrations", _noop_migrations)
+    # verify_alembic_at_head checks the alembic_version table which does not
+    # exist in the create_all() schema (only Alembic populates it).  Patch it
+    # to a no-op for the same reason run_migrations is patched above.
+    monkeypatch.setattr(_lifespan_module, "verify_alembic_at_head", _noop_verify)
+    monkeypatch.setattr(_main_module, "verify_alembic_at_head", _noop_verify)
     yield
     await eng.dispose()
 
@@ -73,6 +78,16 @@ async def _noop_migrations() -> None:
     SQLModel.metadata.create_all().  Alembic's run_migrations() would try to
     open alembic.ini's sqlalchemy.url (a ./data/hub.db relative path) which
     does not exist in CI, causing OperationalError.
+    """
+
+
+async def _noop_verify(*_args, **_kwargs) -> None:
+    """Drop-in replacement for verify_alembic_at_head() in integration fixtures.
+
+    The _temp_db_engine fixture builds the schema via SQLModel.metadata.create_all()
+    which does not populate the alembic_version table.  Patching out the verify
+    step avoids a spurious RuntimeError ("drift detected") — the same rationale
+    as patching run_migrations to a no-op.
     """
 
 

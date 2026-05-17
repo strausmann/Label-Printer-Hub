@@ -28,6 +28,15 @@ async def _noop_migrations() -> None:
     """
 
 
+async def _noop_verify(*_args, **_kwargs) -> None:
+    """Drop-in for verify_alembic_at_head() in unit lifespan tests.
+
+    The clean_registries fixture builds the schema via create_all() which does
+    not populate alembic_version.  Patching out verify avoids a spurious
+    RuntimeError — same rationale as patching run_migrations to a no-op.
+    """
+
+
 async def _noop_seed_templates(*_args, **_kwargs) -> int:  # type: ignore[no-untyped-def]
     """Drop-in for seed_templates() in unit lifespan tests.
 
@@ -73,6 +82,10 @@ async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: 
     # run_migrations`.  Patching _lifespan_module alone does not update that
     # local binding; we must also patch the name on _main_module.
     monkeypatch.setattr(_main_module, "run_migrations", _noop_migrations)
+    # verify_alembic_at_head checks alembic_version which is not created by
+    # create_all() — patch it for the same reason run_migrations is patched.
+    monkeypatch.setattr(_lifespan_module, "verify_alembic_at_head", _noop_verify)
+    monkeypatch.setattr(_main_module, "verify_alembic_at_head", _noop_verify)
 
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False

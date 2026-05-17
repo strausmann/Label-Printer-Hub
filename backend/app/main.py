@@ -90,6 +90,7 @@ from app.db.lifespan import (
     run_migrations,
     seed_templates,
     upsert_runtime_printer,
+    verify_alembic_at_head,
 )
 from app.integrations.registry import IntegrationRegistry
 from app.printer_backends import BackendRegistry
@@ -236,6 +237,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # --- DB startup: migrations first, then in-memory state, then DB writes ---
     await run_migrations()
+    await verify_alembic_at_head(settings)
 
     # 2. Plugin registries (idempotent — skips already-registered names).
     # Must run BEFORE TemplateLoader.load_dir() because load_dir validates
