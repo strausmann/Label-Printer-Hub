@@ -379,6 +379,55 @@ func TestProxyMountsBackendDocRoutes(t *testing.T) {
 	}
 }
 
+// TestProxyMountsLegacyFirstPrintRoutes verifies that POST /print is
+// forwarded to the backend (Phase 7 legacy smoke path).
+//
+// Before Phase 7 the smoke test called the backend container:8000/print
+// directly (container port was public). Phase 7 placed a Go frontend proxy in
+// front and closed the public port, but missed wiring /print to the
+// backend. This test locks in the fix so the ad-hoc curl workflow
+// (POST /print) works through Pangolin with the claude-automation
+// Basic-Auth header.
+//
+// /jobs/{id} is intentionally NOT proxied — that path is served by the
+// r.Get("/jobs/{id}", ph.JobDetail) page handler which renders the HTML
+// job-detail page for browser users. Scripts that need JSON for a
+// specific job id should use the typed /api/* routes instead.
+func TestProxyMountsLegacyFirstPrintRoutes(t *testing.T) {
+	// Not parallel at the outer level: initBuildInfoForTests must run (sync.Once
+	// write) before any parallel subtest reads the global.
+	initBuildInfoForTests(t)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/print" && r.Method == http.MethodPost:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			fmt.Fprint(w, `{"job_id":"abc-123","status":"queued"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(backend.Close)
+
+	r := testRouterWithBackend(t, backend.URL)
+
+	t.Run("POST /print returns 202 with job_id", func(t *testing.T) {
+		t.Parallel()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/print",
+			strings.NewReader(`{"template_id":"qr-only-12mm","data":{"title":"T","primary_id":"P","qr_payload":"https://example.com"}}`))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("got %d, want 202 (body: %q)", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"job_id":"abc-123"`) {
+			t.Errorf("body = %q, expected job_id field", rec.Body.String())
+		}
+	})
+}
+
 // TestRealTemplatesPerPageContent verifies that each page renders its own
 // content when using the real embedded templates — not the content of whatever
 // page file happens to be parsed last.

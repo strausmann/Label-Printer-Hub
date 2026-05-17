@@ -151,6 +151,18 @@ func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS) *c
 	r.Handle("/redoc", prx)
 	r.Handle("/readiness", prx)
 
+	// Legacy Phase-4 First-Print endpoint — still used by ad-hoc curl smoke
+	// tests from inside the Tailscale network. Before Phase 7 the backend port
+	// 8000 was public; Phase 7 closed it behind this proxy but missed wiring
+	// /print. The Pangolin Basic-Auth gate (claude-automation header) keeps it
+	// reachable without SSO.
+	//
+	// Note: /jobs/{id} is intentionally NOT proxied here — that path is served
+	// by the r.Get("/jobs/{id}", ph.JobDetail) page handler above which renders
+	// the HTML job-detail page for browser users. Scripts that need JSON for a
+	// job id should use the typed /api/* routes instead.
+	r.Handle("/print", prx)
+
 	return r
 }
 
