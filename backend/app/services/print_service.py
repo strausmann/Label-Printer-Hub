@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+from uuid import UUID
 
 from PIL import Image
 
@@ -40,7 +41,7 @@ class PrintService:
         renderer: _RendererProto,
         print_queue: PrintQueue,
         lookup_service: _LookupServiceProto,
-        printer_id: str,
+        printer_id: UUID,
         backend: _BackendProto,
     ) -> None:
         self._loader = template_loader

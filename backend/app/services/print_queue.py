@@ -21,6 +21,7 @@ import uuid
 from enum import StrEnum
 from io import BytesIO
 from typing import Any, Protocol, runtime_checkable
+from uuid import UUID
 
 from PIL import Image
 
@@ -65,7 +66,7 @@ class PrinterAlreadyActiveError(Exception):
     (409) without relying on response body inspection.
     """
 
-    def __init__(self, printer_id: str) -> None:
+    def __init__(self, printer_id: UUID) -> None:
         super().__init__(f"Printer {printer_id!r} is already active")
         self.printer_id = printer_id
 
@@ -121,7 +122,7 @@ class _PrinterLike(Protocol):
     `**options` carries driver-specific extras that vary per plugin.
     """
 
-    id: str
+    id: UUID
 
     async def print_image(self, image: Image.Image, *, tape_mm: int, **options: Any) -> None: ...
 
@@ -135,16 +136,16 @@ class PrintQueue:
         on_state_change: _StateChangeCallback | None = None,
     ) -> None:
         self._on_state_change = on_state_change
-        self._printers: dict[str, _PrinterLike] = {p.id: p for p in printers}
+        self._printers: dict[UUID, _PrinterLike] = {p.id: p for p in printers}
         # Queue type is Job | None — None is the sentinel used by stop() to wake
         # workers that are blocked at queue.get().
-        self._queues: dict[str, asyncio.Queue[Job | None]] = {
+        self._queues: dict[UUID, asyncio.Queue[Job | None]] = {
             p.id: asyncio.Queue() for p in printers
         }
-        self._worker_states: dict[str, PrinterWorkerState] = {
+        self._worker_states: dict[UUID, PrinterWorkerState] = {
             p.id: PrinterWorkerState.ACTIVE for p in printers
         }
-        self._worker_resume_events: dict[str, asyncio.Event] = {
+        self._worker_resume_events: dict[UUID, asyncio.Event] = {
             p.id: asyncio.Event() for p in printers
         }
         # All resume events start "set" so a never-paused worker doesn't block.
@@ -154,7 +155,7 @@ class PrintQueue:
         #               terminal jobs older than a configurable window once
         #               persistence lands.
         self._jobs: dict[str, Job] = {}
-        self._workers: dict[str, asyncio.Task[None]] = {}
+        self._workers: dict[UUID, asyncio.Task[None]] = {}
         self._running: bool = False
         self._stopping: bool = False
 
@@ -231,7 +232,7 @@ class PrintQueue:
 
     async def submit(
         self,
-        printer_id: str,
+        printer_id: UUID,
         image: Image.Image,
         tape_mm: int,
         **options: Any,
@@ -258,7 +259,7 @@ class PrintQueue:
 
     async def submit_paused(
         self,
-        printer_id: str,
+        printer_id: UUID,
         image: Image.Image,
         tape_mm: int,
         **options: Any,
@@ -378,7 +379,7 @@ class PrintQueue:
 
     # --- per-printer control -----------------------------------------------
 
-    async def pause_printer(self, printer_id: str, reason: str = "") -> None:
+    async def pause_printer(self, printer_id: UUID, reason: str = "") -> None:
         """Pause the worker for a printer. Any in-flight job completes first."""
         if printer_id not in self._worker_states:
             raise KeyError(f"Unknown printer: {printer_id}")
@@ -386,7 +387,7 @@ class PrintQueue:
         self._worker_resume_events[printer_id].clear()
         logger.info("Printer %s paused: %s", printer_id, reason)
 
-    async def resume_printer(self, printer_id: str) -> None:
+    async def resume_printer(self, printer_id: UUID) -> None:
         """Resume a paused printer worker.
 
         Raises:
@@ -403,7 +404,7 @@ class PrintQueue:
         self._worker_resume_events[printer_id].set()
         logger.info("Printer %s resumed", printer_id)
 
-    def _queue_depth(self, printer_id: str) -> int:
+    def _queue_depth(self, printer_id: UUID) -> int:
         """Count non-terminal jobs for *printer_id* (QUEUED + PAUSED + PRINTING).
 
         O(N) over all-time jobs — acceptable at MVP scale. Used to populate
@@ -414,7 +415,7 @@ class PrintQueue:
             1 for j in self._jobs.values() if j.printer_id == printer_id and j.state in non_terminal
         )
 
-    async def list_queue(self, printer_id: str) -> list[Job]:
+    async def list_queue(self, printer_id: UUID) -> list[Job]:
         """All non-terminal jobs for a printer (queued + paused + printing).
 
         O(N) over all-time jobs — acceptable at MVP scale; see TODO(phase5)
@@ -427,7 +428,7 @@ class PrintQueue:
             j for j in self._jobs.values() if j.printer_id == printer_id and j.state in non_terminal
         ]
 
-    async def clear_queue(self, printer_id: str) -> int:
+    async def clear_queue(self, printer_id: UUID) -> int:
         """Cancel all queued + paused jobs for a printer. Returns the count.
 
         O(N) over all-time jobs — acceptable at MVP scale; see TODO(phase5)
@@ -483,7 +484,7 @@ class PrintQueue:
                     to_state.value,
                 )
 
-    async def _worker(self, printer_id: str) -> None:
+    async def _worker(self, printer_id: UUID) -> None:
         """Consume the queue for one printer, one job at a time.
 
         After popping a job the worker checks the pause state — this handles

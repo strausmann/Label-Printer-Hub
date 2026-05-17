@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
+from uuid import UUID
 
 
 class JobState(StrEnum):
@@ -74,7 +75,7 @@ class Job:
     """A single print job. In-memory MVP; persistence comes in Phase 5."""
 
     id: str
-    printer_id: str
+    printer_id: UUID
     state: JobState = JobState.QUEUED
     submitted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None

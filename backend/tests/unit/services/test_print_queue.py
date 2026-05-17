@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
 
 import pytest
 from app.services.job_lifecycle import (
@@ -10,15 +11,19 @@ from app.services.job_lifecycle import (
 from app.services.print_queue import PrintQueue
 from PIL import Image
 
+# Stable UUIDs for fake printers used throughout this test module.
+_PT750W_ID = UUID("aaaaaaaa-0000-0000-0000-000000000001")
+_P1_ID = UUID("aaaaaaaa-0000-0000-0000-000000000002")
+
 
 @pytest.mark.asyncio
 async def test_queue_submit_returns_job_id() -> None:
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     queue = PrintQueue([fake_printer])
 
     img = Image.new("1", (300, 76))
-    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
     assert isinstance(job_id, str)
     uuid.UUID(job_id)  # raises ValueError if not a valid UUID
 
@@ -27,15 +32,15 @@ async def test_queue_submit_returns_job_id() -> None:
 async def test_queue_serial_per_printer() -> None:
     """Two jobs on the same printer execute serially, not in parallel."""
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     fake_printer.print_image = AsyncMock(return_value=None)
 
     queue = PrintQueue([fake_printer])
     await queue.start()
     try:
         img = Image.new("1", (300, 76))
-        job_id_1 = await queue.submit("pt750w", img, tape_mm=12)
-        job_id_2 = await queue.submit("pt750w", img, tape_mm=12)
+        job_id_1 = await queue.submit(_PT750W_ID, img, tape_mm=12)
+        job_id_2 = await queue.submit(_PT750W_ID, img, tape_mm=12)
 
         await queue.wait_for_job(job_id_1, timeout_s=5)
         await queue.wait_for_job(job_id_2, timeout_s=5)
@@ -48,12 +53,12 @@ async def test_queue_serial_per_printer() -> None:
 @pytest.mark.asyncio
 async def test_queue_pause_and_resume_job() -> None:
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     fake_printer.print_image = AsyncMock()
     queue = PrintQueue([fake_printer])
 
     img = Image.new("1", (300, 76))
-    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
     assert (await queue.pause_job(job_id)) is True
     assert (await queue.get(job_id)).state == JobState.PAUSED
     assert (await queue.resume_job(job_id)) is True
@@ -63,13 +68,13 @@ async def test_queue_pause_and_resume_job() -> None:
 @pytest.mark.asyncio
 async def test_queue_clear_cancels_all_pending() -> None:
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     queue = PrintQueue([fake_printer])
 
     img = Image.new("1", (300, 76))
-    j1 = await queue.submit("pt750w", img, tape_mm=12)
-    j2 = await queue.submit("pt750w", img, tape_mm=12)
-    cancelled = await queue.clear_queue("pt750w")
+    j1 = await queue.submit(_PT750W_ID, img, tape_mm=12)
+    j2 = await queue.submit(_PT750W_ID, img, tape_mm=12)
+    cancelled = await queue.clear_queue(_PT750W_ID)
     assert cancelled == 2
     assert (await queue.get(j1)).state == JobState.CANCELLED
     assert (await queue.get(j2)).state == JobState.CANCELLED
@@ -79,25 +84,25 @@ async def test_queue_clear_cancels_all_pending() -> None:
 async def test_queue_pause_printer_blocks_worker() -> None:
     """When a printer is paused, the worker must not pick further jobs."""
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     fake_printer.print_image = AsyncMock()
     queue = PrintQueue([fake_printer])
     await queue.start()
     try:
-        await queue.pause_printer("pt750w", reason="manual pause")
+        await queue.pause_printer(_PT750W_ID, reason="manual pause")
 
         img = Image.new("1", (300, 76))
-        job_id = await queue.submit("pt750w", img, tape_mm=12)
+        job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
 
         # Deterministic check: worker is paused and must not start printing.
         # With the post-get pause loop, the worker pops the job and then blocks —
         # qsize() drops to 0 but the job state remains QUEUED (not PRINTING).
         await asyncio.sleep(0)  # yield to event loop; worker should not proceed
-        assert queue._worker_states["pt750w"].value == "paused"
+        assert queue._worker_states[_PT750W_ID].value == "paused"
         assert (await queue.get(job_id)).state == JobState.QUEUED
         assert fake_printer.print_image.await_count == 0
 
-        await queue.resume_printer("pt750w")
+        await queue.resume_printer(_PT750W_ID)
         await queue.wait_for_job(job_id, timeout_s=5)
         assert (await queue.get(job_id)).state == JobState.COMPLETED
     finally:
@@ -108,7 +113,7 @@ async def test_queue_pause_printer_blocks_worker() -> None:
 async def test_queue_pause_after_idle_worker_is_respected() -> None:
     """Pausing while the worker is idle at queue.get() must still block the next pop."""
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     fake_printer.print_image = AsyncMock()
     queue = PrintQueue([fake_printer])
     await queue.start()
@@ -118,11 +123,11 @@ async def test_queue_pause_after_idle_worker_is_respected() -> None:
         await asyncio.sleep(0)
 
         # Pause AFTER the worker has entered queue.get().
-        await queue.pause_printer("pt750w", reason="race test")
+        await queue.pause_printer(_PT750W_ID, reason="race test")
 
         # Submit a job. The pause must hold.
         img = Image.new("1", (300, 76))
-        job_id = await queue.submit("pt750w", img, tape_mm=12)
+        job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
 
         # Yield a few times — worker would print here if pause was ignored.
         for _ in range(5):
@@ -131,7 +136,7 @@ async def test_queue_pause_after_idle_worker_is_respected() -> None:
         assert fake_printer.print_image.await_count == 0
 
         # Resume — job should complete now.
-        await queue.resume_printer("pt750w")
+        await queue.resume_printer(_PT750W_ID)
         await queue.wait_for_job(job_id, timeout_s=5)
         assert (await queue.get(job_id)).state == JobState.COMPLETED
     finally:
@@ -150,13 +155,13 @@ async def test_queue_stop_drains_in_flight_job() -> None:
         finished.set()
 
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     fake_printer.print_image = AsyncMock(side_effect=slow_print)
     queue = PrintQueue([fake_printer])
     await queue.start()
 
     img = Image.new("1", (300, 76))
-    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
     await started.wait()  # printer is in the middle of printing
 
     await queue.stop(timeout_s=5.0)
@@ -168,11 +173,11 @@ async def test_queue_stop_drains_in_flight_job() -> None:
 @pytest.mark.asyncio
 async def test_queue_retry_failed_creates_new_job() -> None:
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     queue = PrintQueue([fake_printer])
 
     img = Image.new("1", (300, 76))
-    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
     # Drive job to FAILED manually (no worker running)
     job = await queue.get(job_id)
     JobStateMachine.transition(job, JobState.PRINTING)
@@ -201,7 +206,7 @@ async def test_worker_pauses_printer_on_recoverable_error() -> None:
     from app.services.print_queue import PrinterWorkerState
 
     class _EmptyPrinter:
-        id = "p1"
+        id = _P1_ID
 
         async def print_image(self, image, *, tape_mm, **_options):
             raise TapeEmptyError()
@@ -210,12 +215,12 @@ async def test_worker_pauses_printer_on_recoverable_error() -> None:
     await queue.start()
     try:
         image = Image.new("1", (200, 128))
-        job_id = await queue.submit("p1", image, tape_mm=24)
+        job_id = await queue.submit(_P1_ID, image, tape_mm=24)
         job = await queue.wait_for_job(job_id, timeout_s=2.0)
         assert job.state == JobState.FAILED
         assert job.error_code == "tape_empty"
         # The printer is now PAUSED
-        assert queue._worker_states["p1"] == PrinterWorkerState.PAUSED
+        assert queue._worker_states[_P1_ID] == PrinterWorkerState.PAUSED
     finally:
         await queue.stop(timeout_s=2.0)
 
@@ -229,7 +234,7 @@ async def test_worker_does_not_pause_on_fatal_error() -> None:
     from app.services.print_queue import PrinterWorkerState
 
     class _FailPrinter:
-        id = "p1"
+        id = _P1_ID
 
         async def print_image(self, image, *, tape_mm, **_options):
             raise PrintFailedError("bad raster")
@@ -238,12 +243,12 @@ async def test_worker_does_not_pause_on_fatal_error() -> None:
     await queue.start()
     try:
         image = Image.new("1", (200, 128))
-        job_id = await queue.submit("p1", image, tape_mm=24)
+        job_id = await queue.submit(_P1_ID, image, tape_mm=24)
         job = await queue.wait_for_job(job_id, timeout_s=2.0)
         assert job.state == JobState.FAILED
         assert job.error_code == "print_failed"
         # Printer NOT paused — fatal error doesn't halt the queue
-        assert queue._worker_states["p1"] == PrinterWorkerState.ACTIVE
+        assert queue._worker_states[_P1_ID] == PrinterWorkerState.ACTIVE
     finally:
         await queue.stop(timeout_s=2.0)
 
@@ -254,7 +259,7 @@ async def test_worker_does_not_pause_on_fatal_error() -> None:
 
 
 class _MismatchPrinter:
-    id = "p1"
+    id = _P1_ID
 
     async def print_image(self, image: Image.Image, *, tape_mm: int, **_options: object) -> None:
         from app.printer_backends.exceptions import TapeMismatchError
@@ -268,7 +273,7 @@ async def test_worker_records_printer_error_fields() -> None:
     await queue.start()
     try:
         image = Image.new("1", (200, 128))
-        job_id = await queue.submit("p1", image, tape_mm=24)
+        job_id = await queue.submit(_P1_ID, image, tape_mm=24)
         job = await queue.wait_for_job(job_id, timeout_s=2.0)
         assert job.state == JobState.FAILED
         assert job.error_code == "tape_mismatch"
@@ -303,11 +308,11 @@ async def test_submit_does_not_fire_on_state_change_callback() -> None:
         transitions.append((from_state.value, to_state.value))
 
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     queue = PrintQueue([fake_printer], on_state_change=_cb)
 
     img = Image.new("1", (300, 76))
-    await queue.submit("pt750w", img, tape_mm=12)
+    await queue.submit(_PT750W_ID, img, tape_mm=12)
 
     # submit() must NOT fire the callback — no real state transition happens
     assert not transitions, (
@@ -325,11 +330,11 @@ async def test_pause_job_fires_on_state_change_callback() -> None:
         transitions.append((from_state.value, to_state.value))
 
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     queue = PrintQueue([fake_printer], on_state_change=_cb)
 
     img = Image.new("1", (300, 76))
-    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
     transitions.clear()  # ignore submit() callback
 
     result = await queue.pause_job(job_id)
@@ -348,11 +353,11 @@ async def test_resume_job_fires_on_state_change_callback() -> None:
         transitions.append((from_state.value, to_state.value))
 
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     queue = PrintQueue([fake_printer], on_state_change=_cb)
 
     img = Image.new("1", (300, 76))
-    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
     await queue.pause_job(job_id)
     transitions.clear()  # ignore previous callbacks
 
@@ -372,11 +377,11 @@ async def test_cancel_fires_on_state_change_callback() -> None:
         transitions.append((from_state.value, to_state.value))
 
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     queue = PrintQueue([fake_printer], on_state_change=_cb)
 
     img = Image.new("1", (300, 76))
-    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
     transitions.clear()
 
     result = await queue.cancel(job_id)
@@ -395,15 +400,15 @@ async def test_clear_queue_fires_on_state_change_callback() -> None:
         transitions.append((from_state.value, to_state.value))
 
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     queue = PrintQueue([fake_printer], on_state_change=_cb)
 
     img = Image.new("1", (300, 76))
-    await queue.submit("pt750w", img, tape_mm=12)
-    await queue.submit("pt750w", img, tape_mm=12)
+    await queue.submit(_PT750W_ID, img, tape_mm=12)
+    await queue.submit(_PT750W_ID, img, tape_mm=12)
     transitions.clear()
 
-    count = await queue.clear_queue("pt750w")
+    count = await queue.clear_queue(_PT750W_ID)
     assert count == 2
     cancelled_transitions = [t for t in transitions if t[1] == "cancelled"]
     assert len(cancelled_transitions) == 2, (
@@ -426,12 +431,12 @@ async def test_resume_printer_raises_when_already_active() -> None:
     from app.services.print_queue import PrinterAlreadyActiveError
 
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     queue = PrintQueue([fake_printer])
 
     # Printer starts ACTIVE — resume again should raise
     with pytest.raises(PrinterAlreadyActiveError):
-        await queue.resume_printer("pt750w")
+        await queue.resume_printer(_PT750W_ID)
 
 
 @pytest.mark.asyncio
@@ -440,16 +445,16 @@ async def test_resume_printer_succeeds_when_paused() -> None:
     from app.services.print_queue import PrinterWorkerState
 
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     queue = PrintQueue([fake_printer])
 
     # Pause first
-    await queue.pause_printer("pt750w", reason="test")
-    assert queue._worker_states["pt750w"] == PrinterWorkerState.PAUSED
+    await queue.pause_printer(_PT750W_ID, reason="test")
+    assert queue._worker_states[_PT750W_ID] == PrinterWorkerState.PAUSED
 
     # Resume must not raise
-    await queue.resume_printer("pt750w")
-    assert queue._worker_states["pt750w"] == PrinterWorkerState.ACTIVE
+    await queue.resume_printer(_PT750W_ID)
+    assert queue._worker_states[_PT750W_ID] == PrinterWorkerState.ACTIVE
 
 
 # ---------------------------------------------------------------------------
@@ -479,14 +484,14 @@ async def test_stop_sets_done_event_for_in_flight_jobs() -> None:
         await stop_print.wait()  # blocks until we signal or task is cancelled
 
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     fake_printer.print_image = AsyncMock(side_effect=_blocking_print)
 
     queue = PrintQueue([fake_printer])
     await queue.start()
 
     img = Image.new("1", (300, 76))
-    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
 
     # Wait until the worker has actually entered print_image (PRINTING state).
     await printing_started.wait()
@@ -520,14 +525,14 @@ async def test_stop_syncs_legacy_error_msg_for_in_flight_jobs() -> None:
         await asyncio.get_event_loop().create_future()
 
     fake_printer = MagicMock()
-    fake_printer.id = "pt750w"
+    fake_printer.id = _PT750W_ID
     fake_printer.print_image = AsyncMock(side_effect=_blocking_print)
 
     queue = PrintQueue([fake_printer])
     await queue.start()
 
     img = Image.new("1", (300, 76))
-    job_id = await queue.submit("pt750w", img, tape_mm=12)
+    job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
 
     await printing_started.wait()
     assert (await queue.get(job_id)).state == JobState.PRINTING

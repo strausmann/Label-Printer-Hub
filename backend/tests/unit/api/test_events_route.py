@@ -67,7 +67,7 @@ def test_settings_sse_max_subscribers_honoured() -> None:
 
     printer_id = uuid.uuid4()
     fake_printer = MagicMock()
-    fake_printer.id = str(printer_id)
+    fake_printer.id = printer_id
 
     # Build a dedicated test app with a cap of 2
     test_app = FastAPI()
@@ -127,7 +127,7 @@ def test_429_when_subscriber_limit_exceeded(client_with_bus: TestClient) -> None
     """
     printer_id = uuid.uuid4()
     fake_printer = MagicMock()
-    fake_printer.id = str(printer_id)
+    fake_printer.id = printer_id
 
     bus: EventBus = _inner.state.event_bus
     # Register 100 distinct subscriber IDs, each on all 3 channels
