@@ -18,11 +18,12 @@ References:
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -91,6 +92,7 @@ def _build_label_data(
     ),
 )
 async def render_preview(
+    request: Request,
     session: SessionDep,
     key: str = Query(description="Template key, e.g. 'snipeit-12mm'"),
 ) -> Response:
@@ -100,6 +102,11 @@ async def render_preview(
     (in ``template.definition``). Templates that do not declare one return
     HTTP 422 with a clear error message — the route does NOT fabricate
     fallback sample data.
+
+    The LabelRenderer is reused from ``app.state.label_renderer`` (wired by
+    the lifespan) to avoid per-request font-loading overhead. The CPU-bound
+    render + PNG encode is offloaded to ``asyncio.to_thread`` so it does not
+    block the event loop.
     """
     template_row = await templates_repo.get_by_key(session, key)
     if template_row is None:
@@ -144,19 +151,30 @@ async def render_preview(
 
     sample_data = _build_label_data(template_row.key, template_row.app, preview_sample)
 
-    renderer = LabelRenderer()
+    # Reuse the shared renderer from app.state (avoids per-request font-loading).
+    # Fall back to a fresh instance when running outside a full lifespan
+    # (e.g. unit tests that don't wire app.state).
+    renderer: LabelRenderer = getattr(request.app.state, "label_renderer", None) or LabelRenderer()
+
+    def _render_and_encode() -> bytes:
+        """CPU-bound render + PNG encode — runs in a thread pool."""
+        try:
+            img = renderer.render(template_schema, sample_data)
+        except ValueError as exc:
+            # Log the sanitised key from the DB row (trusted), NOT the raw query
+            # parameter, to prevent log injection via crafted key values.
+            _log.warning("render_preview: render failed for key=%r: %s", template_row.key, exc)
+            raise
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
     try:
-        img = renderer.render(template_schema, sample_data)
+        png_bytes = await asyncio.to_thread(_render_and_encode)
     except ValueError as exc:
-        # Log the sanitised key from the DB row (trusted), NOT the raw query
-        # parameter, to prevent log injection via crafted key values.
-        _log.warning("render_preview: render failed for key=%r: %s", template_row.key, exc)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # Convert PIL image to PNG bytes
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return Response(content=buf.getvalue(), media_type="image/png")
+    return Response(content=png_bytes, media_type="image/png")
 
 
 @router.get(

@@ -325,9 +325,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.printer_id = printer.id
     app.state.printer_host = discovery_host
     app.state.printer_snmp_community = settings.printer_snmp_community
+    # Shared LabelRenderer reused by both PrintService and the preview endpoint.
+    # Constructing it once avoids repeated font-loading overhead on every
+    # POST /api/render/preview request.
+    shared_renderer = LabelRenderer()
+    app.state.label_renderer = shared_renderer
     app.state.print_service = PrintService(
         template_loader=TemplateLoader,
-        renderer=LabelRenderer(),
+        renderer=shared_renderer,
         print_queue=queue,
         lookup_service=AppLookupService(),
         printer_id=printer.id,
