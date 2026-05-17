@@ -336,6 +336,9 @@ func TestProxyMountsBackendDocRoutes(t *testing.T) {
 		case "/redoc":
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, "ReDoc")
+		case "/readiness":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"status":"ready","checks":{}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -359,6 +362,7 @@ func TestProxyMountsBackendDocRoutes(t *testing.T) {
 		"/docs":         "Swagger UI",
 		"/openapi.json": `"openapi":"3.1.0"`,
 		"/redoc":        "ReDoc",
+		"/readiness":    `"status":"ready"`,
 	} {
 		path, want := path, want // capture loop variables
 		t.Run(path, func(t *testing.T) {

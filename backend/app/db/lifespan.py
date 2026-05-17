@@ -208,6 +208,61 @@ async def upsert_runtime_printer(
     name: str = f"{model} ({host})"
 
     existing = await session.get(Printer, printer_id)
+    if existing is None:
+        # Phase 7b.1: handle upgrade path — an old Printer row (e.g. from
+        # Phase 7a with a random uuid4 id) may share the same name that the
+        # new deterministic UUIDv5 wants.  Migrate its id in-place via raw
+        # SQL UPDATEs so historical FK references (jobs, printer_state,
+        # printer_status_cache) are rewritten rather than cascade-deleted.
+        import json
+
+        from sqlalchemy import text
+
+        from app.repositories.printers import get_by_name
+
+        existing_by_name = await get_by_name(session, name)
+        if existing_by_name is not None:
+            old_id = existing_by_name.id
+            # SQLite stores UUIDs as 32-char hex strings (no dashes); raw SQL
+            # bind params must match that format for WHERE/SET to match rows.
+            new_hex = str(printer_id).replace("-", "")
+            old_hex = str(old_id).replace("-", "")
+            # Rewrite FK columns in dependent tables first
+            await session.execute(
+                text("UPDATE printer_status_cache SET printer_id = :new WHERE printer_id = :old"),
+                {"new": new_hex, "old": old_hex},
+            )
+            await session.execute(
+                text("UPDATE printer_state SET printer_id = :new WHERE printer_id = :old"),
+                {"new": new_hex, "old": old_hex},
+            )
+            await session.execute(
+                text("UPDATE jobs SET printer_id = :new WHERE printer_id = :old"),
+                {"new": new_hex, "old": old_hex},
+            )
+            # Migrate the printer row's PK in-place (SQLite allows UPDATE on PK)
+            await session.execute(
+                text(
+                    "UPDATE printers"
+                    " SET id = :new, name = :name, connection = :conn,"
+                    " enabled = 1 WHERE id = :old"
+                ),
+                {
+                    "new": new_hex,
+                    "old": old_hex,
+                    "name": name,
+                    "conn": json.dumps(connection),
+                },
+            )
+            await session.flush()
+            # Expunge the stale ORM object and expire the identity map so
+            # raw SQL UPDATEs are visible on the next ORM read.
+            session.expunge(existing_by_name)
+            session.expire_all()
+            # The row now exists with the new id — treat as existing so the
+            # INSERT branch below is skipped.
+            existing = await session.get(Printer, printer_id)
+
     if existing is not None:
         existing.name = name
         existing.connection = connection
