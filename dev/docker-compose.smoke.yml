@@ -6,9 +6,9 @@
 #   UI:          http://localhost:8080
 #   Backend API: http://localhost:8000  (internal; proxied by the frontend)
 #
-# Nothing is pulled from Docker Hub — both images are built from the local
-# source tree.  The backend uses the mock printer backend so no real hardware
-# is required.
+# No pre-built hub images are pulled; both images are built from the local
+# source tree (base images are still fetched as usual).  The backend uses the
+# mock printer backend so no real hardware is required.
 #
 # The compose file is kept in sync with the CI docker-build job
 # (.github/workflows/ci.yml) but adds a runtime healthcheck sequence so you
@@ -26,7 +26,7 @@ services:
       - "8000"
     environment:
       PORT: "8000"
-      FORWARDED_ALLOW_IPS: "*"
+      FORWARDED_ALLOW_IPS: "127.0.0.1"
       LOG_LEVEL: "INFO"
       PRINTER_HUB_DATABASE_URL: "sqlite+aiosqlite:////data/printer-hub.db"
       PRINTER_HUB_PRINTER_BACKEND: "mock"
@@ -67,7 +67,7 @@ services:
         condition: service_healthy
     restart: "no"
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
       interval: 10s
       timeout: 5s
       retries: 3

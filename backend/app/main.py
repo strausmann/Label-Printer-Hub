@@ -47,7 +47,13 @@ from app.config import get_settings as _get_settings
 try:
     _get_settings()
 except ValidationError as _cfg_exc:
-    _debug = os.environ.get("LOG_LEVEL", "").upper() == "DEBUG"
+    # Honour both the app-prefixed var (PRINTER_HUB_LOG_LEVEL, consistent with
+    # all other Settings fields) and the short alias (LOG_LEVEL) that uvicorn
+    # and other tools conventionally set.
+    _debug = (
+        os.environ.get("PRINTER_HUB_LOG_LEVEL", "").upper() == "DEBUG"
+        or os.environ.get("LOG_LEVEL", "").upper() == "DEBUG"
+    )
     if _debug:
         raise
     _lines = ["❌  Configuration error — fix the following before starting:\n"]
