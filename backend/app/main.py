@@ -25,7 +25,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 # ---------------------------------------------------------------------------
 # F3 — Early settings validation with a friendly error message.
@@ -66,10 +66,11 @@ except ValidationError as _cfg_exc:
     sys.stderr.writelines(_lines)
     sys.exit(78)  # sysexits.h EX_CONFIG
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
@@ -92,11 +93,13 @@ from app.db.lifespan import (
     upsert_runtime_printer,
     verify_alembic_at_head,
 )
+from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
 from app.printer_backends import BackendRegistry
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
+from app.schemas.readiness import ReadinessResponse
 from app.services.event_bus import EventBus
 from app.services.label_renderer import LabelRenderer
 from app.services.lookup_service import AppLookupService
@@ -105,6 +108,7 @@ from app.services.print_service import PrintService
 from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.status_probe_producer import StatusProbeProducer
 from app.services.producers.tape_change_producer import TapeChangeProducer
+from app.services.readiness import build_readiness_response
 from app.services.tape_registry import TapeRegistry
 from app.services.template_loader import TemplateLoader
 
@@ -549,6 +553,36 @@ def create_app() -> _LifespanManager:
             repository=HUB_REPO_URL,
             sse_active_subscribers=bus.distinct_subscriber_count() if bus else 0,
         )
+
+    @app.get(
+        "/readiness",
+        response_model=ReadinessResponse,
+        tags=["meta"],
+        summary="Readiness probe",
+        description=(
+            "Deep readiness check: database connectivity, alembic migration "
+            "state, template seed, printer wiring, SNMP probe recency, "
+            "print-queue liveness, and SSE subscriber capacity. "
+            "Returns 200 with status in {ready, degraded} when all critical "
+            "checks pass; 503 with status=not-ready when any critical check "
+            "(database / alembic / template_seed) fails."
+        ),
+        responses={503: {"model": ReadinessResponse}},
+    )
+    async def readiness(
+        response: Response,
+        session: Annotated[AsyncSession, Depends(get_session)],
+    ) -> ReadinessResponse:
+        body = await build_readiness_response(
+            session,
+            app.state,
+            get_settings(),
+            version=HUB_VERSION,
+            revision=HUB_REVISION,
+        )
+        if body.status == "not-ready":
+            response.status_code = 503
+        return body
 
     register_error_handlers(app)
     app.include_router(print_router)

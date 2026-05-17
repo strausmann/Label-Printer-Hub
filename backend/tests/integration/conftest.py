@@ -103,6 +103,68 @@ async def _noop_seed_templates(*_args, **_kwargs) -> int:  # type: ignore[no-unt
     return 0
 
 
+@pytest_asyncio.fixture
+async def api_client_with_broken_db(tmp_path):
+    """AsyncClient whose DB has never been alembic-upgraded.
+
+    The alembic_version table is absent, so _check_alembic() returns fail
+    which makes build_readiness_response() return status=not-ready.
+    /readiness should therefore respond 503.
+
+    /healthz MUST still respond 200 — it never touches the DB.
+    """
+
+    import app.db.engine as _eng
+    import app.db.session as _sess
+    from app.main import create_app
+    from httpx import ASGITransport, AsyncClient
+
+    # Point at an empty SQLite file — create_all() gives it the schema
+    # tables but NOT the alembic_version row, so verify_alembic_at_head fails.
+    db_path = tmp_path / "broken.db"
+    url = f"sqlite+aiosqlite:///{db_path}"
+    eng = create_async_engine(url, echo=False, connect_args={"check_same_thread": False})
+    event.listen(eng.sync_engine, "connect", _apply_pragmas)
+    async with eng.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    sess = async_sessionmaker(bind=eng, expire_on_commit=False)
+
+    # Patch the session but do NOT patch verify_alembic_at_head — we want
+    # that check to fail so the readiness probe returns not-ready.
+    _sess.async_session = sess
+
+    # Patch engine references so create_app() finds the right session.
+    from unittest.mock import patch
+
+    with (
+        patch.object(_eng, "engine", eng),
+        patch.object(_eng, "async_session", sess),
+        patch.object(_main_module, "engine", eng),
+        patch.object(_main_module, "async_session", sess),
+        # run_migrations uses alembic.ini URL — patch to no-op so lifespan
+        # doesn't crash before the readiness endpoint is called.
+        patch.object(_lifespan_module, "run_migrations", _noop_migrations),
+        patch.object(_main_module, "run_migrations", _noop_migrations),
+        # seed_templates needs at least one cached template; patch to no-op
+        # since we only test /readiness and /healthz here.
+        patch.object(_lifespan_module, "seed_templates", _noop_seed_templates),
+        patch.object(_main_module, "seed_templates", _noop_seed_templates),
+    ):
+        from app.integrations import (  # type: ignore[attr-defined]
+            IntegrationRegistry,
+            _discover_plugins,
+        )
+
+        if not IntegrationRegistry.names():
+            _discover_plugins()
+
+        app = create_app()
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            yield c
+
+    await eng.dispose()
+
+
 @pytest.fixture(autouse=True)
 def _mock_backend_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure integration tests use the mock backend and a known model.
