@@ -379,6 +379,72 @@ func TestProxyMountsBackendDocRoutes(t *testing.T) {
 	}
 }
 
+// TestProxyMountsLegacyFirstPrintRoutes verifies that POST /print and
+// GET /jobs/{id} are forwarded to the backend (Phase 7 legacy smoke path).
+//
+// Before Phase 7 the smoke test called hhdocker02:8000/print directly
+// (container port was public). Phase 7 placed a Go frontend proxy in front
+// and closed the public port, but missed wiring /print and /jobs/{id} to the
+// backend. This test locks in the fix so the ad-hoc curl workflow
+// (POST /print → job_id → GET /jobs/{job_id}) works through Pangolin.
+func TestProxyMountsLegacyFirstPrintRoutes(t *testing.T) {
+	// Not parallel at the outer level: initBuildInfoForTests must run (sync.Once
+	// write) before any parallel subtest reads the global.
+	initBuildInfoForTests(t)
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/print" && r.Method == http.MethodPost:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			fmt.Fprint(w, `{"job_id":"abc-123","status":"queued"}`)
+		case strings.HasPrefix(r.URL.Path, "/jobs/") && r.Method == http.MethodGet:
+			// Backend echoes the full path so the test can verify path preservation.
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"path":%q,"status":"completed"}`, r.URL.Path)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(backend.Close)
+
+	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
+	prx := proxy.New(backend.URL)
+	sub, err := fs.Sub(staticFS, "web/static")
+	if err != nil {
+		t.Fatalf("fs.Sub: %v", err)
+	}
+	r := newRouter(ph, prx, sub)
+
+	t.Run("POST /print returns 202 with job_id", func(t *testing.T) {
+		t.Parallel()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/print",
+			strings.NewReader(`{"template_id":"qr-only-12mm","data":{"title":"T","primary_id":"P","qr_payload":"https://example.com"}}`))
+		req.Header.Set("Content-Type", "application/json")
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("got %d, want 202 (body: %q)", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), `"job_id":"abc-123"`) {
+			t.Errorf("body = %q, expected job_id field", rec.Body.String())
+		}
+	})
+
+	t.Run("GET /jobs/{id} preserves full path to backend", func(t *testing.T) {
+		t.Parallel()
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/jobs/abc-123-def", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("got %d, want 200 (body: %q)", rec.Code, rec.Body.String())
+		}
+		// Critical: the path must reach the backend INTACT — not stripped.
+		if !strings.Contains(rec.Body.String(), `"path":"/jobs/abc-123-def"`) {
+			t.Errorf("path not preserved: body = %q", rec.Body.String())
+		}
+	})
+}
+
 // TestRealTemplatesPerPageContent verifies that each page renders its own
 // content when using the real embedded templates — not the content of whatever
 // page file happens to be parsed last.
