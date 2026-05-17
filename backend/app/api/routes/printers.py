@@ -103,6 +103,41 @@ async def list_printers(session: SessionDep) -> list[PrinterRead]:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/printers/{id}
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/{printer_id}",
+    response_model=PrinterRead,
+    summary="Get printer detail",
+    description=(
+        "Returns full metadata for a single printer, including the ``paused`` "
+        "flag joined from ``printer_state``. Returns 404 when the printer is "
+        "not registered."
+    ),
+)
+async def get_printer(
+    printer_id: UUID,
+    session: SessionDep,
+) -> PrinterRead:
+    """Return full printer metadata for a single printer."""
+    printer = await _get_printer_or_404(session, printer_id)
+    state = await printer_state_repo.get(session, printer_id)
+    return PrinterRead(
+        id=printer.id,
+        name=printer.name,
+        model=printer.model,
+        backend=printer.backend,
+        connection=dict(printer.connection),
+        enabled=printer.enabled,
+        paused=state.paused if state is not None else False,
+        created_at=printer.created_at,
+        updated_at=printer.updated_at,
+    )
+
+
+# ---------------------------------------------------------------------------
 # GET /api/printers/{id}/status
 # ---------------------------------------------------------------------------
 

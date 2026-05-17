@@ -735,6 +735,50 @@
           }
         }
       }
+    },
+    "/api/printers/{printer_id}": {
+      "get": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "Get printer detail",
+        "description": "Returns full metadata for a single printer, including the ``paused`` flag joined from ``printer_state``. Returns 404 when the printer is not registered.",
+        "operationId": "get_printer_api_printers__printer_id__get",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrinterRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
