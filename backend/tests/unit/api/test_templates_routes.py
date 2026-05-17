@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 import app.models  # noqa: F401 — registers all SQLModel tables with metadata
 import pytest
 import pytest_asyncio
-from app.api.routes.templates import router
+from app.api.routes.templates import render_router, router
 from app.db.engine import _apply_pragmas
 from app.db.session import get_session
 from app.models.template import Template
@@ -58,6 +58,7 @@ def _build_app(session_override: AsyncSession) -> FastAPI:
     """Return a FastAPI app with the templates router and the DB overridden."""
     app = FastAPI()
     app.include_router(router)
+    app.include_router(render_router)
 
     async def _override_session() -> AsyncIterator[AsyncSession]:
         yield session_override
@@ -192,6 +193,35 @@ async def test_list_templates_direct_with_app_filter(session) -> None:
     assert len(result) == 1
     assert result[0].key == "snipeit/asset"
     assert result[0].app == "snipeit"
+
+
+@pytest.mark.asyncio
+async def test_template_preview_returns_png(session) -> None:
+    """POST /api/render/preview?key=<key> renders a sample label as PNG bytes.
+
+    Regression for Bug 3 — the backend had no preview endpoint.
+    The frontend template detail page fell back to preview-placeholder.svg
+    because POST /api/render/preview always returned 404.
+    """
+    await _make_template(session, "snipeit/asset", "Asset Label", app_name="snipeit")
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post("/api/render/preview?key=snipeit%2Fasset")
+
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n"  # PNG magic number
+
+
+@pytest.mark.asyncio
+async def test_template_preview_unknown_key_returns_404(session) -> None:
+    """POST /api/render/preview?key=<unknown> returns 404 for a missing template."""
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.post("/api/render/preview?key=no-such-key")
+
+    assert r.status_code == 404
 
 
 @pytest.mark.asyncio

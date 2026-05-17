@@ -589,6 +589,7 @@ def create_app() -> _LifespanManager:
     app.include_router(events_routes.router)
     app.include_router(printers_routes.router)
     app.include_router(templates_routes.router)
+    app.include_router(templates_routes.render_router)
     app.include_router(jobs_routes.router)
     app.include_router(lookup_routes.router)
     app.include_router(webhooks_routes.router)
