@@ -61,6 +61,14 @@ class TemplateSchema(BaseModel):
     validated at load time against ``IntegrationRegistry``; the schema
     itself accepts any string so plugins can be added without a schema
     migration.
+
+    ``preview_sample`` is an optional mapping of field name → sample value
+    used by the preview-render endpoint (``POST /api/render/preview``).
+    Each template declares its own preview values so the route never has
+    to fabricate sample data per-app. Keys must match the ``field`` /
+    ``data_field`` names referenced by ``elements``; supported keys are
+    ``primary_id``, ``title``, ``qr_payload``, and optionally ``secondary``
+    (list/tuple of additional lines).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -71,3 +79,4 @@ class TemplateSchema(BaseModel):
     app: str | None
     tape_mm: int
     elements: tuple[LayoutElement, ...]
+    preview_sample: dict[str, str | int | float | bool | list[str] | tuple[str, ...]] | None = None

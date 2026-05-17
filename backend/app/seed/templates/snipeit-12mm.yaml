@@ -9,3 +9,7 @@ elements:
   - { type: qr,   x: 8,   y: 13, size: 80, data_field: qr_payload }
   - { type: text, x: 100, y: 18, field: primary_id, font_size: 22 }
   - { type: text, x: 100, y: 60, field: title,      font_size: 14 }
+preview_sample:
+  primary_id: "ASSET-2024-001"
+  title: "Dell Latitude 7430"
+  qr_payload: "https://snipeit.example.com/hardware/123"
