@@ -1,0 +1,81 @@
+# Local smoke test — build and start backend + frontend with mock printer.
+#
+#   docker compose -f docker-compose.smoke.yml up --build
+#
+# After startup:
+#   UI:          http://localhost:8080
+#   Backend API: http://localhost:8000  (internal; proxied by the frontend)
+#
+# Nothing is pulled from Docker Hub — both images are built from the local
+# source tree.  The backend uses the mock printer backend so no real hardware
+# is required.
+#
+# The compose file is kept in sync with the CI docker-build job
+# (.github/workflows/ci.yml) but adds a runtime healthcheck sequence so you
+# can confirm the full stack is healthy before hitting the UI.
+
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: label-printer-hub-smoke-backend
+    user: "1000:1000"
+    networks:
+      - hub-internal
+    expose:
+      - "8000"
+    environment:
+      PORT: "8000"
+      FORWARDED_ALLOW_IPS: "*"
+      LOG_LEVEL: "INFO"
+      PRINTER_HUB_DATABASE_URL: "sqlite+aiosqlite:////data/printer-hub.db"
+      PRINTER_HUB_PRINTER_BACKEND: "mock"
+      PRINTER_HUB_PRINTER_MODEL: "PT-P750W"
+      PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP: "false"
+      PRINTER_HUB_WEBHOOK_API_KEY: "smoke-test-key-must-be-at-least-32-chars-long"
+      PRINTER_HUB_PT750W_HOST: ""
+      PRINTER_HUB_SSE_QUEUE_SIZE: "32"
+      PRINTER_HUB_SSE_HEARTBEAT_S: "30"
+      PRINTER_HUB_SSE_IDLE_TIMEOUT_S: "300"
+      PRINTER_HUB_SSE_MAX_SUBSCRIBERS: "100"
+      PRINTER_HUB_SSE_PROBE_INTERVAL_S: "30"
+    volumes:
+      - smoke-data:/data
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: label-printer-hub-smoke-frontend
+    user: "1000:1000"
+    networks:
+      - hub-internal
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      BACKEND_URL: "http://backend:8000"
+      LOG_LEVEL: "INFO"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  hub-internal:
+    driver: bridge
+
+volumes:
+  smoke-data:
