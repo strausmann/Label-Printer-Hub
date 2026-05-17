@@ -135,3 +135,88 @@ async def test_upsert_handles_existing_row_with_same_name_different_id(
     assert len(rows) == 1
     assert rows[0].id == expected_id
     assert rows[0].id != old_id
+
+
+async def test_upsert_preserves_dependent_rows_during_id_migration(
+    async_session_empty,
+):
+    """Phase 7b.1 round 2: when a name-collision triggers id-migration, ALL
+    dependent rows (jobs, printer_state, printer_status_cache) must have
+    their FK references rewritten to the new deterministic UUIDv5 — not
+    cascade-deleted (which would lose historical print jobs)."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from app.models.job import Job, JobState
+    from app.models.printer import Printer
+    from app.models.printer_state import PrinterState
+    from app.models.printer_status_cache import PrinterStatusCache
+
+    settings = _settings_with_pt750w()
+    expected_id = derive_printer_id(_PT750W_MODEL, _PT750W_HOST, _PT750W_PORT)
+
+    # Seed: old Printer row with random uuid4 + dependent rows
+    old_id = uuid4()
+    assert old_id != expected_id
+    async_session_empty.add(
+        Printer(
+            id=old_id,
+            name=f"{_PT750W_MODEL} ({_PT750W_HOST})",
+            model="pt-p750w",
+            backend="ptouch",
+            connection={"host": _PT750W_HOST, "port": _PT750W_PORT},
+            enabled=True,
+        )
+    )
+    await async_session_empty.flush()
+
+    # Dependent rows that would trigger FOREIGN KEY constraint failure on DELETE
+    async_session_empty.add(
+        PrinterState(
+            printer_id=old_id,
+            paused=False,
+            updated_at=datetime.now(UTC),
+        )
+    )
+    async_session_empty.add(
+        PrinterStatusCache(
+            printer_id=old_id,
+            captured_at=datetime.now(UTC),
+            parsed={"online": False, "last_error": "stale data"},
+        )
+    )
+    async_session_empty.add(
+        Job(
+            id=uuid4(),
+            printer_id=old_id,
+            template_key="label/address",
+            state=JobState.DONE.value,
+        )
+    )
+    await async_session_empty.flush()
+
+    # NOW call upsert — must NOT raise IntegrityError, and must preserve dependent rows
+    returned_id = await upsert_runtime_printer(async_session_empty, settings)
+    assert returned_id == expected_id
+
+    # The Printer row migrated id (old row gone, new row exists with new id)
+    result = await async_session_empty.execute(select(Printer))
+    rows = list(result.scalars())
+    assert len(rows) == 1
+    assert rows[0].id == expected_id
+
+    # Dependent rows have FK rewritten to new id (not deleted)
+    result = await async_session_empty.execute(select(PrinterState))
+    states = list(result.scalars())
+    assert len(states) == 1
+    assert states[0].printer_id == expected_id
+
+    result = await async_session_empty.execute(select(PrinterStatusCache))
+    caches = list(result.scalars())
+    assert len(caches) == 1
+    assert caches[0].printer_id == expected_id
+
+    result = await async_session_empty.execute(select(Job))
+    jobs = list(result.scalars())
+    assert len(jobs) == 1
+    assert jobs[0].printer_id == expected_id
