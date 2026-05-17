@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar, cast
+from uuid import UUID, uuid4
 
 from PIL import Image
 
@@ -222,12 +223,15 @@ class PTP750WDriver:
         tape_registry: TapeRegistry,
         *,
         default_media_type: MediaType = MediaType.LAMINATED,
+        printer_id: UUID | None = None,
     ) -> _PTPQueuePrinter:
+        pid = printer_id if printer_id is not None else uuid4()
         return _PTPQueuePrinter(
             driver=self,
             backend=self._backend,
             tape_registry=tape_registry,
             default_media_type=default_media_type,
+            printer_id=pid,
         )
 
 
@@ -241,12 +245,13 @@ class _PTPQueuePrinter:
         backend: PrinterBackend,
         tape_registry: TapeRegistry,
         default_media_type: MediaType,
+        printer_id: UUID,
     ) -> None:
         self._driver = driver
         self._backend = backend
         self._tape_registry = tape_registry
         self._default_media_type = default_media_type
-        self.id: str = f"{driver.model_id}@{backend.host}"
+        self.id: UUID = printer_id
 
     async def print_image(self, image: Image.Image, *, tape_mm: int, **options: Any) -> None:
         media_type = options.pop("media_type", self._default_media_type)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
 
 import pytest
 from app.printer_backends.exceptions import (
@@ -85,13 +86,16 @@ def backend():
     return m
 
 
+_PRINTER_ID = UUID("bbbbbbbb-0000-0000-0000-000000000001")
+
+
 def _service(loader, renderer, queue, lookup_service, backend):
     return PrintService(
         template_loader=loader,
         renderer=renderer,
         print_queue=queue,
         lookup_service=lookup_service,
-        printer_id="pt@x",
+        printer_id=_PRINTER_ID,
         backend=backend,
     )
 
@@ -261,7 +265,7 @@ async def test_preflight_mismatch_queue_creates_paused_job(
     )
     # submit_paused() returns the job_id; queue.get returns the job object.
     # The job starts PAUSED (submit_paused transitions it before registering).
-    job = Job(id="job-1", printer_id="pt@x", image_payload=b"", tape_mm=24, options={})
+    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
     from app.services.job_lifecycle import JobStateMachine
 
     JobStateMachine.transition(job, JobState.PAUSED)
@@ -294,7 +298,7 @@ async def test_preflight_mismatch_queue_none_tape_loaded(
         loaded_tape_mm=None,
         error_flags=[],
     )
-    job = Job(id="job-1", printer_id="pt@x", image_payload=b"", tape_mm=24, options={})
+    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
     from app.services.job_lifecycle import JobStateMachine
 
     JobStateMachine.transition(job, JobState.PAUSED)

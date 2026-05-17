@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -32,7 +33,7 @@ router = APIRouter()
 class _PrinterResumeResponse(BaseModel):
     """200 response body for POST /printer/resume."""
 
-    printer_id: str
+    printer_id: UUID | str
     state: str
 
 

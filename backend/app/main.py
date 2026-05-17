@@ -25,7 +25,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 # ---------------------------------------------------------------------------
 # F3 — Early settings validation with a friendly error message.
@@ -66,10 +66,11 @@ except ValidationError as _cfg_exc:
     sys.stderr.writelines(_lines)
     sys.exit(78)  # sysexits.h EX_CONFIG
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
@@ -89,12 +90,16 @@ from app.db.lifespan import (
     recover_inflight_jobs,
     run_migrations,
     seed_templates,
+    upsert_runtime_printer,
+    verify_alembic_at_head,
 )
+from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
 from app.printer_backends import BackendRegistry
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
+from app.schemas.readiness import ReadinessResponse
 from app.services.event_bus import EventBus
 from app.services.label_renderer import LabelRenderer
 from app.services.lookup_service import AppLookupService
@@ -103,6 +108,7 @@ from app.services.print_service import PrintService
 from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.status_probe_producer import StatusProbeProducer
 from app.services.producers.tape_change_producer import TapeChangeProducer
+from app.services.readiness import build_readiness_response
 from app.services.tape_registry import TapeRegistry
 from app.services.template_loader import TemplateLoader
 
@@ -233,24 +239,39 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
 
-    # --- DB startup: migrations + recovery + seed + printer state --------
+    # --- DB startup: migrations first, then in-memory state, then DB writes ---
     await run_migrations()
-    async with async_session() as s:
-        await recover_inflight_jobs(s)
-        await seed_templates(s, TemplateLoader)
-        await ensure_printer_state(s)
-    # ---------------------------------------------------------------------
+    await verify_alembic_at_head(settings)
 
-    # Re-run integration plugin discovery if the registry was cleared (e.g. by
-    # test fixtures that call IntegrationRegistry._plugins.clear()). This is
-    # idempotent: _discover_plugins skips names that are already registered.
+    # 2. Plugin registries (idempotent — skips already-registered names).
+    # Must run BEFORE TemplateLoader.load_dir() because load_dir validates
+    # each template's `app` field against IntegrationRegistry.  Re-run if the
+    # registry was cleared (e.g. by test fixtures that call
+    # IntegrationRegistry._plugins.clear()).
     if not IntegrationRegistry.names():
         _integrations_init._discover_plugins()
 
+    ModelRegistry.ensure_discovered()
+
+    # 3. Populate in-memory template cache BEFORE any DB writes that depend on it.
+    # load_dir must come after plugin discovery (above) and before seed_templates
+    # (below) — the seed step reads from the cache that load_dir populates.
     if _SEED_TEMPLATES_DIR.exists():
         TemplateLoader.load_dir(_SEED_TEMPLATES_DIR)
+    else:
+        raise RuntimeError(
+            f"Seed templates directory not found: {_SEED_TEMPLATES_DIR}. "
+            "The application package is incomplete — reinstall or rebuild the image."
+        )
 
-    ModelRegistry.ensure_discovered()
+    # 4. DB-bound init — plugin registry and template cache are populated.
+    async with async_session() as s:
+        await recover_inflight_jobs(s)
+        await seed_templates(s, TemplateLoader)
+        db_printer_id = await upsert_runtime_printer(s, settings)
+        await ensure_printer_state(s)
+        await s.commit()
+    # -------------------------------------------------------------------------
 
     discovery_host = settings.pt750w_host or ""
     if discovery_host and settings.printer_discover_via_snmp:
@@ -269,7 +290,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     driver: Any = driver_cls(backend=backend)
 
     tape_registry = TapeRegistry()
-    printer = driver.make_queue_printer(tape_registry)
+    printer = driver.make_queue_printer(tape_registry, printer_id=db_printer_id)
 
     # --- SSE EventBus ---
     event_bus = EventBus(queue_size=settings.sse_queue_size)
@@ -532,6 +553,36 @@ def create_app() -> _LifespanManager:
             repository=HUB_REPO_URL,
             sse_active_subscribers=bus.distinct_subscriber_count() if bus else 0,
         )
+
+    @app.get(
+        "/readiness",
+        response_model=ReadinessResponse,
+        tags=["meta"],
+        summary="Readiness probe",
+        description=(
+            "Deep readiness check: database connectivity, alembic migration "
+            "state, template seed, printer wiring, SNMP probe recency, "
+            "print-queue liveness, and SSE subscriber capacity. "
+            "Returns 200 with status in {ready, degraded} when all critical "
+            "checks pass; 503 with status=not-ready when any critical check "
+            "(database / alembic / template_seed) fails."
+        ),
+        responses={503: {"model": ReadinessResponse}},
+    )
+    async def readiness(
+        response: Response,
+        session: Annotated[AsyncSession, Depends(get_session)],
+    ) -> ReadinessResponse:
+        body = await build_readiness_response(
+            session,
+            app.state,
+            get_settings(),
+            version=HUB_VERSION,
+            revision=HUB_REVISION,
+        )
+        if body.status == "not-ready":
+            response.status_code = 503
+        return body
 
     register_error_handlers(app)
     app.include_router(print_router)

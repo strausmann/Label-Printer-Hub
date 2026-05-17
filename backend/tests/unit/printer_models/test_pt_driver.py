@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 import pytest
 from app.models.tape import TapeSpec
 from app.printer_backends.mock_backend import MockPrinterBackend
@@ -85,7 +87,7 @@ def test_make_queue_printer_returns_printer_like(
     driver = PTP750WDriver(backend=backend)
     qp = driver.make_queue_printer(tape_registry)
     assert isinstance(qp, _PrinterLike)
-    assert qp.id == "PT-P750W@192.0.2.10"
+    assert isinstance(qp.id, UUID)
 
 
 async def test_queue_printer_print_calls_backend(

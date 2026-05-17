@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, Index
+from sqlalchemy import JSON, CheckConstraint, DateTime, Index
 from sqlmodel import Column, Field, SQLModel
 
 
@@ -37,10 +37,23 @@ class Job(SQLModel, table=True):
     payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     result: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     error: str | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
-        sa_column_kwargs={"onupdate": lambda: datetime.now(UTC)},
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            onupdate=lambda: datetime.now(UTC),
+        ),
     )
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
+    started_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    finished_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )

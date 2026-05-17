@@ -43,6 +43,9 @@ class _MockLoader:
 
     Avoids loading real YAML files (which would require IntegrationRegistry
     to have plugins registered) and keeps the test self-contained.
+
+    ``_cache`` is populated on construction to satisfy the D1 defensive check
+    in seed_templates (which raises RuntimeError when the cache is empty).
     """
 
     def __init__(self, count: int = 3) -> None:
@@ -50,6 +53,9 @@ class _MockLoader:
         self._templates = {
             f"tpl-{i}": _schema_stub(f"tpl-{i}", f"Template {i}") for i in range(count)
         }
+        # Mirror _templates in _cache so the D1 check passes — this mock
+        # represents a loader that has already called load_dir().
+        self._cache = dict(self._templates)
 
     def all(self) -> dict:
         return dict(self._templates)
@@ -100,6 +106,20 @@ def _schema_stub(id_: str, name: str):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_seed_templates_raises_on_empty_loader_cache():
+    """Cluster 1a defensive check: empty TemplateLoader cache → RuntimeError, no silent no-op."""
+    from app.services.template_loader import TemplateLoader
+
+    original_cache = dict(TemplateLoader._cache)
+    TemplateLoader._cache.clear()
+    try:
+        with pytest.raises(RuntimeError, match="empty"):
+            await seed_templates(None, TemplateLoader)  # type: ignore[arg-type]
+    finally:
+        TemplateLoader._cache = original_cache
 
 
 @pytest.mark.asyncio

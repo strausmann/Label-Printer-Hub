@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
 
 import pytest
 from app.api.routes.print import router
@@ -12,6 +13,9 @@ from app.services.lookup_service import LookupFailedError
 from app.services.template_loader import TemplateNotFoundError
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+
+_PRINTER_ID = UUID("dddddddd-0000-0000-0000-000000000001")
+_PRINTER_ID_STR = str(_PRINTER_ID)
 
 
 @pytest.fixture
@@ -101,7 +105,7 @@ async def test_post_print_lookup_failed_is_502(fake_service, fake_queue) -> None
 async def test_get_jobs_returns_status_with_live_block(
     fake_service, fake_queue, monkeypatch
 ) -> None:
-    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
+    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
     job.state = JobState.PRINTING
     job.submitted_at = datetime.now(UTC)
     fake_queue.get = AsyncMock(return_value=job)
@@ -124,7 +128,7 @@ async def test_get_jobs_returns_status_with_live_block(
 
 
 async def test_get_jobs_no_live_block_when_not_printing(fake_service, fake_queue) -> None:
-    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
+    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
     job.state = JobState.COMPLETED
     job.submitted_at = datetime.now(UTC)
     fake_queue.get = AsyncMock(return_value=job)
@@ -137,7 +141,7 @@ async def test_get_jobs_no_live_block_when_not_printing(fake_service, fake_queue
 async def test_get_jobs_live_snmp_failure_is_non_fatal(
     fake_service, fake_queue, monkeypatch
 ) -> None:
-    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
+    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
     job.state = JobState.PRINTING
     job.submitted_at = datetime.now(UTC)
     fake_queue.get = AsyncMock(return_value=job)
@@ -260,13 +264,13 @@ async def test_post_print_cover_open_is_409(fake_service, fake_queue) -> None:
 async def test_resume_printer_endpoint(fake_service, fake_queue) -> None:
     fake_queue.resume_printer = AsyncMock(return_value=None)
     app = _app(fake_service, fake_queue)
-    app.state.printer_id = "pt@x"
+    app.state.printer_id = _PRINTER_ID
     async with _client(app) as c:
         r = await c.post("/printer/resume")
     assert r.status_code == 200
     body = r.json()
-    assert body == {"printer_id": "pt@x", "state": "active"}
-    fake_queue.resume_printer.assert_awaited_once_with("pt@x")
+    assert body == {"printer_id": _PRINTER_ID_STR, "state": "active"}
+    fake_queue.resume_printer.assert_awaited_once_with(_PRINTER_ID)
 
 
 async def test_resume_printer_404_when_no_printer_configured(fake_service, fake_queue) -> None:
@@ -284,7 +288,7 @@ async def test_resume_printer_404_when_no_printer_configured(fake_service, fake_
 
 async def test_resume_job_transitions_paused_to_queued(fake_service, fake_queue) -> None:
     """Resume a PAUSED job → 200 with state=queued and cleared error metadata."""
-    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
+    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
     # Manually set PAUSED state (as PrintService would after tape mismatch+queue)
     from app.services.job_lifecycle import JobStateMachine
 
@@ -330,7 +334,7 @@ async def test_resume_job_completed_is_409(fake_service, fake_queue) -> None:
     """Resuming a COMPLETED job returns 409."""
     from app.services.job_lifecycle import JobStateMachine
 
-    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
+    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
     # Transition to COMPLETED via PRINTING
     JobStateMachine.transition(job, JobState.PRINTING)
     JobStateMachine.transition(job, JobState.COMPLETED)
@@ -354,9 +358,9 @@ async def test_resume_printer_already_active_returns_409(fake_service, fake_queu
     """
     from app.services.print_queue import PrinterAlreadyActiveError
 
-    fake_queue.resume_printer = AsyncMock(side_effect=PrinterAlreadyActiveError("pt@x"))
+    fake_queue.resume_printer = AsyncMock(side_effect=PrinterAlreadyActiveError(_PRINTER_ID))
     app = _app(fake_service, fake_queue)
-    app.state.printer_id = "pt@x"
+    app.state.printer_id = _PRINTER_ID
     async with _client(app) as c:
         r = await c.post("/printer/resume")
     assert r.status_code == 409
@@ -368,11 +372,11 @@ async def test_resume_printer_paused_returns_200(fake_service, fake_queue) -> No
     """Calling resume_printer on a PAUSED printer must still return 200 (control)."""
     fake_queue.resume_printer = AsyncMock(return_value=None)
     app = _app(fake_service, fake_queue)
-    app.state.printer_id = "pt@x"
+    app.state.printer_id = _PRINTER_ID
     async with _client(app) as c:
         r = await c.post("/printer/resume")
     assert r.status_code == 200
-    assert r.json() == {"printer_id": "pt@x", "state": "active"}
+    assert r.json() == {"printer_id": _PRINTER_ID_STR, "state": "active"}
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +388,7 @@ async def test_resume_job_not_paused_returns_409_with_error_code(fake_service, f
     """When resuming a non-PAUSED job the response must include
     error_code='invalid_state' (structured ProblemDetail, not a plain detail string).
     """
-    job = Job(id="job-1", printer_id="p", image_payload=b"", tape_mm=24, options={})
+    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
     # job.state is QUEUED by default — not PAUSED
     job.submitted_at = datetime.now(UTC)
     fake_queue.get = AsyncMock(return_value=job)

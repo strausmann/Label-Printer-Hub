@@ -92,6 +92,22 @@ curl http://localhost:8080/healthz   # frontend → backend_reachable: true
 | `POST` | `/jobs/{job_id}/resume` | Resume a job paused by tape mismatch (after the user changed the tape physically) | — |
 | `POST` | `/printer/resume` | Resume the printer queue after a recoverable error halted it (tape empty / cover open / offline) | — |
 | `GET` | `/healthz` | Liveness probe for orchestrators | — |
+| `GET` | `/readiness` | Readiness probe — deep check for reverse-proxy routing | — |
+
+### Health Probes
+
+The backend exposes two HTTP probes with different semantics:
+
+| Endpoint | Purpose | What it answers |
+|----------|---------|-----------------|
+| `GET /healthz` | Liveness — Docker / Kubernetes container restart signal | "the process and the event loop are alive" |
+| `GET /readiness` | Readiness — reverse-proxy routing signal | "the process can serve traffic right now": database connectable, alembic at head, templates seeded, runtime printer matches DB, SNMP probe fresh, queue worker alive, SSE bus capacity ok |
+
+`/readiness` returns HTTP 200 with `status` of `ready` (all checks ok) or `degraded` (non-critical checks failing — still routable), and HTTP 503 with `not-ready` when a critical check (database, alembic, template_seed) fails.
+
+Pangolin's `targets[0].healthcheck.path` can use `/readiness` for deep checks instead of `/healthz`; Docker container healthchecks should stay on `/healthz` to avoid restart loops on transient DB failures.
+
+See `docs/superpowers/specs/2026-05-17-phase-7b-foundation-design.md` for the full check list and rationale.
 
 ### `POST /print` request body
 
