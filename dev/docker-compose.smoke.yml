@@ -1,6 +1,6 @@
 # Local smoke test — build and start backend + frontend with mock printer.
 #
-#   docker compose -f docker-compose.smoke.yml up --build
+#   docker compose -f dev/docker-compose.smoke.yml up --build
 #
 # After startup:
 #   UI:          http://localhost:8080
@@ -17,7 +17,7 @@
 services:
   backend:
     build:
-      context: ./backend
+      context: ../backend
     container_name: label-printer-hub-smoke-backend
     user: "1000:1000"
     networks:
@@ -51,7 +51,7 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ../frontend
     container_name: label-printer-hub-smoke-frontend
     user: "1000:1000"
     networks:

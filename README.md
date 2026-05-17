@@ -76,7 +76,7 @@ To build and run the **full stack** (backend + frontend) from source without any
 
 ```bash
 # Full-stack local smoke test (mock printer, no hardware required):
-docker compose -f docker-compose.smoke.yml up --build
+docker compose -f dev/docker-compose.smoke.yml up --build
 
 # UI is served at http://localhost:8080
 # Verify both services are healthy:
