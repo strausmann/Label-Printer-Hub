@@ -208,6 +208,20 @@ async def upsert_runtime_printer(
     name: str = f"{model} ({host})"
 
     existing = await session.get(Printer, printer_id)
+    if existing is None:
+        # Phase 7b.1: handle upgrade path — an old Printer row (e.g. from
+        # Phase 7a with a random uuid4 id) may share the same name that the
+        # new deterministic UUIDv5 wants.  Look it up by name; if found,
+        # delete it so the INSERT below doesn't violate UNIQUE(name).
+        from sqlalchemy import select as _select
+        from sqlmodel import col
+
+        result = await session.execute(_select(Printer).where(col(Printer.name) == name))
+        existing_by_name = result.scalar_one_or_none()
+        if existing_by_name is not None:
+            await session.delete(existing_by_name)
+            await session.flush()
+
     if existing is not None:
         existing.name = name
         existing.connection = connection
