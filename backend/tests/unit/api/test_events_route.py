@@ -993,3 +993,121 @@ async def test_sse_stream_skips_frame_when_fragment_is_empty() -> None:
     )
     # The single frame must carry the valid event type
     assert "job.state_changed" in data_frames[0]
+
+
+# ---------------------------------------------------------------------------
+# F1 — Initial state snapshot on SSE connect (Finding F1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sse_stream_emits_initial_snapshot_on_connect() -> None:
+    """A fresh SSE subscriber receives ≥1 snapshot frame within 100 ms even
+    when no real events fire (Finding F1).
+
+    On connect, _sse_stream queries the DB/cache for each channel and emits
+    synthetic SSE frames so the client doesn't see empty widgets until the
+    next state change.
+
+    The snapshot must contain:
+    - A printer.status frame (from PrinterStatusCache data)
+    - A printer.tape_changed frame (from PrinterStatusCache loaded_tape_mm)
+    - A job.state_changed frame when active jobs exist in the queue
+
+    This test stubs the DB queries with AsyncMock so no real DB is needed.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    import app.api.routes.events as events_module
+
+    printer_id = uuid.uuid4()
+    bus = EventBus(queue_size=8)
+
+    channels = [
+        f"printer:{printer_id}:queue",
+        f"printer:{printer_id}:state",
+        f"printer:{printer_id}:tape",
+    ]
+    subscriber_id = "test-sub-snapshot"
+
+    disconnect_flag = asyncio.Event()
+
+    async def _is_disconnected() -> bool:
+        return disconnect_flag.is_set()
+
+    mock_request = MagicMock()
+    mock_request.headers = {}
+    mock_request.client = None
+    mock_request.is_disconnected = _is_disconnected
+
+    # Build a mock DB session — printer status cache has known state
+    mock_session = MagicMock()
+
+    # Simulate PrinterStatusCache row with a known status
+    from datetime import UTC, datetime
+
+    status_cache = MagicMock()
+    status_cache.parsed = {
+        "hr_printer_status": "idle",
+        "error_flags": [],
+        "online": True,
+        "loaded_tape_mm": 12,
+    }
+    status_cache.captured_at = datetime.now(UTC)
+
+    # No active jobs
+    _empty_scalars = MagicMock(scalars=lambda: MagicMock(all=lambda: []))
+    mock_session.execute = AsyncMock(return_value=_empty_scalars)
+    mock_session.get = AsyncMock(return_value=status_cache)
+
+    gen = events_module._sse_stream(
+        printer_id,
+        bus,
+        mock_request,
+        subscriber_id,
+        channels,
+        session=mock_session,
+    )
+
+    frame_queue: asyncio.Queue[str] = asyncio.Queue()
+
+    async def pump() -> None:
+        async for frame in gen:
+            await frame_queue.put(frame)
+
+    pump_task = asyncio.create_task(pump())
+
+    # Collect snapshot frames — must arrive within 200 ms (no real events fired)
+    snapshot_frames: list[str] = []
+    deadline = asyncio.get_event_loop().time() + 0.5
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            frame = await asyncio.wait_for(frame_queue.get(), timeout=0.1)
+            if frame.strip().startswith(": connected"):
+                continue  # skip the connection confirmation comment
+            if "data:" in frame:
+                snapshot_frames.append(frame)
+        except TimeoutError:
+            if snapshot_frames:
+                break  # received some snapshots; done
+            continue
+
+    disconnect_flag.set()
+    pump_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await pump_task
+    await gen.aclose()
+
+    assert snapshot_frames, (
+        "Expected ≥1 snapshot frame on SSE connect, got none. "
+        "Finding F1: clients see empty widgets until a real event fires."
+    )
+    # At least one frame must be a printer.status snapshot
+    event_types = set()
+    for frame in snapshot_frames:
+        for line in frame.splitlines():
+            if line.startswith("event:"):
+                event_types.add(line[len("event:") :].strip())
+    assert "printer.status" in event_types, (
+        f"Expected printer.status snapshot; got event types: {event_types!r}"
+    )

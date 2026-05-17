@@ -30,6 +30,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
 from app.db.session import get_session
+from app.models.job import JobState
+from app.repositories import jobs as jobs_repo
+from app.repositories import printer_status_cache as status_cache_repo
 from app.repositories import printers as printers_repo
 from app.schemas.problem import ProblemDetail
 from app.services.event_bus import BusEvent, EventBus
@@ -112,6 +115,102 @@ async def _render_fragment(event: BusEvent) -> str:
         return ""
 
 
+async def _build_initial_snapshot(
+    printer_id: uuid.UUID,
+    session: AsyncSession | None,
+) -> list[BusEvent]:
+    """Query DB/cache for current printer state and return synthetic BusEvents.
+
+    Emitted once on connect so the client immediately sees the current
+    status without waiting for the next state-change event (Finding F1).
+
+    Returns an empty list when ``session`` is ``None`` (test/compat path) or
+    when no cached data is available yet.
+
+    Event IDs use the sentinel value 0 to distinguish snapshot events from
+    live events (id: 0 means "initial snapshot, not a live transition").
+    """
+    if session is None:
+        return []
+
+    snapshot: list[BusEvent] = []
+    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+    pid = str(printer_id)
+
+    # --- printer.status from PrinterStatusCache ---
+    try:
+        cache = await status_cache_repo.get(session, printer_id)
+        if cache is not None and cache.parsed:
+            parsed = cache.parsed
+            ts = cache.captured_at or now
+            snapshot.append(
+                BusEvent(
+                    channel=f"printer:{pid}:state",
+                    event_id=0,
+                    event_type="printer.status",
+                    timestamp=ts,
+                    data={
+                        "hr_printer_status": parsed.get("hr_printer_status", "unknown"),
+                        "error_flags": parsed.get("error_flags", []),
+                        "online": parsed.get("online", False),
+                    },
+                )
+            )
+            # --- printer.tape_changed from same cache row ---
+            loaded_tape_mm = parsed.get("loaded_tape_mm")
+            snapshot.append(
+                BusEvent(
+                    channel=f"printer:{pid}:tape",
+                    event_id=0,
+                    event_type="printer.tape_changed",
+                    timestamp=ts,
+                    data={
+                        "from_mm": None,
+                        "to_mm": loaded_tape_mm,
+                        "tape_label": f"{loaded_tape_mm}mm" if loaded_tape_mm else None,
+                    },
+                )
+            )
+    except Exception:
+        _log.debug("_build_initial_snapshot: status cache read failed for %s", pid)
+
+    # --- job.state_changed for each active (QUEUED|PRINTING) job ---
+    try:
+        active_jobs = await jobs_repo.list_by_filter(
+            session,
+            printer_id=printer_id,
+            state=JobState.QUEUED.value,
+            limit=10,
+        )
+        active_jobs += await jobs_repo.list_by_filter(
+            session,
+            printer_id=printer_id,
+            state=JobState.PRINTING.value,
+            limit=10,
+        )
+        queue_depth = len(active_jobs)
+        for job in active_jobs[:5]:  # cap snapshot at 5 jobs
+            snapshot.append(
+                BusEvent(
+                    channel=f"printer:{pid}:queue",
+                    event_id=0,
+                    event_type="job.state_changed",
+                    timestamp=job.created_at,
+                    data={
+                        "job_id": str(job.id),
+                        "from_state": job.state,
+                        "to_state": job.state,
+                        "queue_depth": queue_depth,
+                        "error_code": None,
+                    },
+                )
+            )
+    except Exception:
+        _log.debug("_build_initial_snapshot: job query failed for %s", pid)
+
+    return snapshot
+
+
 async def _sse_stream(
     printer_id: uuid.UUID,
     bus: EventBus,
@@ -121,6 +220,7 @@ async def _sse_stream(
     *,
     heartbeat_interval_s: float = _HEARTBEAT_INTERVAL_S,
     idle_timeout_s: float = _IDLE_TIMEOUT_S,
+    session: AsyncSession | None = None,
 ) -> AsyncGenerator[str, None]:
     """Core SSE generator. Yields SSE-formatted strings.
 
@@ -134,6 +234,11 @@ async def _sse_stream(
     generator is created so the 429 response can be returned before the
     ``StreamingResponse`` is constructed (raising inside a started stream
     is not catchable by normal exception handlers).
+
+    ``session`` is used for the initial state snapshot (Finding F1): on
+    connect, current DB/cache state is queried and emitted as synthetic
+    SSE frames so the client immediately sees the current status without
+    waiting for the next real event.
     """
     # Log Last-Event-ID for observability (replay deferred to Phase 7)
     last_event_id = request.headers.get("last-event-id")
@@ -156,6 +261,17 @@ async def _sse_stream(
 
     # Connection-confirmation comment frame so the client knows the stream is live
     yield ": connected\n\n"
+
+    # Initial state snapshot — emit current state so clients don't see empty
+    # widgets until the next real event (Finding F1).
+    snapshot_events = await _build_initial_snapshot(printer_id, session)
+    for snap_event in snapshot_events:
+        html_fragment = await _render_fragment(snap_event)
+        if not html_fragment.strip():
+            continue
+        clean_html = html_fragment.replace("\r", "")
+        data_lines = "\n".join(f"data: {line}" for line in clean_html.split("\n"))
+        yield f"id: {snap_event.event_id}\nevent: {snap_event.event_type}\n{data_lines}\n\n"
 
     try:
         last_activity = asyncio.get_event_loop().time()
@@ -313,6 +429,7 @@ async def sse_events(
             channels,
             heartbeat_interval_s=settings.sse_heartbeat_s,
             idle_timeout_s=settings.sse_idle_timeout_s,
+            session=session,
         ),
         media_type="text/event-stream",
         headers={
