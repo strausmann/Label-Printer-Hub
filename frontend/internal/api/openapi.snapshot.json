@@ -779,6 +779,55 @@
           }
         }
       }
+    },
+    "/api/render/preview": {
+      "post": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "Render a template preview as PNG",
+        "description": "Renders the named template with the sample values declared in the template's own ``preview_sample`` block and returns a PNG image. Returns 404 if the template key is not registered. Returns 422 if the template has no ``preview_sample`` block.",
+        "operationId": "render_preview_api_render_preview_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "description": "Template key, e.g. 'snipeit-12mm'",
+              "title": "Key",
+              "type": "string"
+            },
+            "description": "Template key, e.g. 'snipeit-12mm'"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PNG image of the rendered sample label",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Template not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
