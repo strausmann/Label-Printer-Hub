@@ -680,14 +680,17 @@ No `tailwind.config.js` exists in Tailwind v4 — configuration lives entirely i
 # ===========================================================================
 # Stage 0: Tailwind CSS build
 # ===========================================================================
-FROM alpine:3.20 AS tailwind-builder
+# Note: debian:bookworm-slim is required (NOT alpine). The Tailwind v4
+# standalone binary is a glibc ELF; alpine (musl libc) cannot execute it.
+FROM debian:bookworm-slim AS tailwind-builder
 
 ARG TAILWIND_VERSION=v4.1.5
 ARG TARGETARCH
 
-# Download the correct binary for the current build architecture.
-# TARGETARCH is set by Docker buildx: "amd64" or "arm64".
-RUN apk add --no-cache curl && \
+# Download the Tailwind v4 Standalone CLI for the current build architecture.
+# TARGETARCH is set by Docker buildx: "amd64" → x64, "arm64" → arm64.
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
     ARCH_SUFFIX=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "x64") && \
     curl -fsSL \
       "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${ARCH_SUFFIX}" \

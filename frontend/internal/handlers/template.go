@@ -1,9 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"encoding/base64"
-	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/strausmann/label-printer-hub/frontend/internal/api"
@@ -55,9 +56,11 @@ func (h *PageHandler) TemplateDetailWithKey(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Request a preview PNG from the backend's render endpoint.
-	// Use a 2-second sub-context timeout so a slow render does not hold the page.
+	// A 2-second sub-context timeout prevents a slow render from blocking the page.
 	previewURI := "/static/preview-placeholder.svg"
-	previewBytes, previewErr := h.client.RenderPreview(r.Context(), key)
+	previewCtx, previewCancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer previewCancel()
+	previewBytes, previewErr := h.client.RenderPreview(previewCtx, key)
 	if previewErr == nil && len(previewBytes) > 0 {
 		previewURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(previewBytes)
 	}
@@ -69,6 +72,3 @@ func (h *PageHandler) TemplateDetailWithKey(w http.ResponseWriter, r *http.Reque
 		YAMLSource:   found.Source,
 	})
 }
-
-// ErrPreviewUnavailable is a sentinel returned when the preview render fails.
-var ErrPreviewUnavailable = errors.New("preview unavailable")

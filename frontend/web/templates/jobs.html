@@ -26,6 +26,7 @@
   <div id="jobs-table-container"
        hx-get="/jobs"
        hx-trigger="every 30s"
+       hx-include="[name='state']"
        hx-select="#jobs-table-container"
        hx-target="this"
        hx-swap="outerHTML">

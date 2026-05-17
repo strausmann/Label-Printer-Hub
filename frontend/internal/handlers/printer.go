@@ -64,7 +64,7 @@ func (h *PageHandler) PrinterDetailWithID(w http.ResponseWriter, r *http.Request
 	}
 
 	h.renderPage(w, r, "printer", PrinterDetailData{
-		TemplateData: TemplateData{Version: h.version},
+		TemplateData: TemplateData{Version: h.version, ActiveNav: "dashboard"},
 		PrinterID:    id,
 		Status:       status,
 		Tape:         tape,

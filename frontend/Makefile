@@ -24,15 +24,13 @@ gen-client:
 ## Requires the backend to be running at BACKEND_URL.
 refresh-snapshot:
 	curl -fsSL $(BACKEND_URL)/openapi.json | python3 -c "\
-import sys,json; s=json.load(sys.stdin);\
-[s.get('paths',{}).get(p,{}).get(m,{}) for p in list(s.get('paths',{}).keys()) for m in list(s.get('paths',{}).get(p,{}).keys())]; \
-print(json.dumps(s,indent=2))" > internal/api/openapi.snapshot.json
+import sys,json; s=json.load(sys.stdin); print(json.dumps(s,indent=2))" > internal/api/openapi.snapshot.json
 
 ## test: run all tests with race detector
 test:
 	go test -race ./...
 
-## lint: run go vet and staticcheck
+## lint: run go vet (add staticcheck to PATH for extended linting: staticcheck ./...)
 lint:
 	go vet ./...
 

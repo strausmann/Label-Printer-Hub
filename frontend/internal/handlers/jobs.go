@@ -21,6 +21,10 @@ type JobsListData struct {
 func (h *PageHandler) JobsList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	stateFilter := q.Get("state")
+	// printer_id is accepted as a URL query parameter (?printer_id=<uuid>) for
+	// programmatic / bookmarked use. The jobs UI only exposes the state filter;
+	// a printer-id dropdown is deferred to a later phase because it requires
+	// fetching the printer list on the jobs page — adding an extra backend call.
 	printerFilter := q.Get("printer_id")
 	sinceRaw := q.Get("since")
 

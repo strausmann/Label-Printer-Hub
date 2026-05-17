@@ -107,10 +107,13 @@ frontend/
 - [ ] **Step 2: Prepend Stage 0 to `Dockerfile`** (before the existing `builder` stage)
 
 ```dockerfile
-FROM alpine:3.20 AS tailwind-builder
+# Note: use debian:bookworm-slim, NOT alpine. The Tailwind v4 standalone
+# binary is a glibc ELF; alpine (musl libc) cannot execute it.
+FROM debian:bookworm-slim AS tailwind-builder
 ARG TAILWIND_VERSION=v4.1.5
 ARG TARGETARCH
-RUN apk add --no-cache curl && \
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
     ARCH_SUFFIX=$([ "$TARGETARCH" = "arm64" ] && echo "arm64" || echo "x64") && \
     curl -fsSL \
       "https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-${ARCH_SUFFIX}" \
