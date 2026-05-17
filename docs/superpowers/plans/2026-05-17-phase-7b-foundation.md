@@ -2344,7 +2344,7 @@ feat(frontend): proxy /docs, /openapi.json, /redoc to the backend
 
 Swagger UI and the raw OpenAPI document are now reachable under the
 public domain (behind Pangolin SSO + the Basic-Auth bypass). Closes
-the 404 reported in the hhdocker02 smoke test.
+the 404 reported in the production smoke test.
 
 Refs #22
 EOF
@@ -2530,7 +2530,7 @@ gh pr create --base main --head feat/phase-7b-foundation \
 ## Summary
 
 Implements the merged Phase 7b spec across nine clusters. Closes the
-foundation gaps surfaced by the first hhdocker02 production deploy.
+foundation gaps surfaced by the first production deploy.
 
 Highlights:
 - Lifespan re-ordered (load_dir before seed_templates) + defensive check

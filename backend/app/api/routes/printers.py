@@ -196,9 +196,17 @@ async def get_printer_status(
         captured = captured.replace(tzinfo=UTC)
     age_s = int((datetime.now(UTC) - captured).total_seconds())
 
+    loaded_tape_mm = parsed.get("loaded_tape_mm")
+    tape_loaded = f"{loaded_tape_mm}mm" if loaded_tape_mm else None
+
+    error_flags = parsed.get("error_flags") or []
+    error_state = ", ".join(error_flags) if error_flags else None
+
     return PrinterStatus(
         printer_id=printer_id,
         online=parsed.get("online"),
+        tape_loaded=tape_loaded,
+        error_state=error_state,
         captured_at=row.captured_at,
         last_probe_age_s=age_s,
         last_error=parsed.get("last_error"),

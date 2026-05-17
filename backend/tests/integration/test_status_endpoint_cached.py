@@ -160,7 +160,8 @@ async def test_status_endpoint_returns_404_for_unknown_printer(
 
 
 async def test_status_endpoint_returns_cached_tape_data(api_client_with_warm_cache):
-    """Cached loaded_tape_mm is reflected in the response (via note or field)."""
+    """Cached loaded_tape_mm + error_flags surface as PrinterStatus.tape_loaded
+    and PrinterStatus.error_state respectively (bot-review finding on PR #75)."""
     client, pid = api_client_with_warm_cache
     resp = await client.get(f"/api/printers/{pid}/status")
     assert resp.status_code == 200
@@ -169,3 +170,8 @@ async def test_status_endpoint_returns_cached_tape_data(api_client_with_warm_cac
     # last_probe_age_s should be present and non-negative
     assert body.get("last_probe_age_s") is not None
     assert body["last_probe_age_s"] >= 0
+    # Cached parsed JSON is rendered into the documented schema fields,
+    # not silently dropped: loaded_tape_mm=12 → tape_loaded="12mm",
+    # error_flags=[] → error_state=None.
+    assert body["tape_loaded"] == "12mm"
+    assert body["error_state"] is None
