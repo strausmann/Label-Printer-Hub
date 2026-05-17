@@ -149,6 +149,7 @@ func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS) *c
 	r.Handle("/docs", prx)
 	r.Handle("/openapi.json", prx)
 	r.Handle("/redoc", prx)
+	r.Handle("/readiness", prx)
 
 	return r
 }
