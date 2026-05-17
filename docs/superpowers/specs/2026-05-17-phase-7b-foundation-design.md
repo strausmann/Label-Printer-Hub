@@ -9,7 +9,7 @@
 
 ## Zusammenfassung
 
-Phase 7b behebt Foundation-Luecken, die im ersten Produktions-Deploy auf hhdocker02 (labels.strausmann.cloud) entdeckt wurden. Es ist keine Feature-Phase — Stabilisierung der Phase-5/6/7a-Basis, sodass Phase 7c (Webhook-Multi-Tenancy) auf einem korrekt initialisierten Backend aufsetzen kann.
+Phase 7b behebt Foundation-Luecken, die im ersten Produktions-Deploy auf docker-host (labels.example.com) entdeckt wurden. Es ist keine Feature-Phase — Stabilisierung der Phase-5/6/7a-Basis, sodass Phase 7c (Webhook-Multi-Tenancy) auf einem korrekt initialisierten Backend aufsetzen kann.
 
 Neun Cluster werden zusammen umgesetzt:
 
@@ -37,7 +37,7 @@ Eine HomeLab-Ops-Person soll nach Phase-7b einen frischen Deploy starten koennen
 **Loesung:** Re-Order in `app/main.py` lifespan:
 
 1. `await run_migrations()`
-2. `await verify_alembic_at_head()` (NEU, siehe Cluster 1d)
+2. `await verify_alembic_at_head(settings)` (NEU, siehe Cluster 1d)
 3. `TemplateLoader.load_dir(_SEED_TEMPLATES_DIR)` — VOR DB-Operationen
 4. `async with async_session()` → `recover_inflight_jobs`, `seed_templates`, `upsert_runtime_printer`, `ensure_printer_state`
 5. Plugin Discovery + Runtime printer + Producers (bestehend)
@@ -89,7 +89,7 @@ async def upsert_runtime_printer(session: AsyncSession, settings: Settings) -> U
 
 **Driver-Signatur-Erweiterung:** `driver.make_queue_printer()` akzeptiert optional `printer_id` als Parameter statt immer `uuid4()` zu generieren. Lifespan ruft `make_queue_printer(tape_registry, printer_id=db_printer_id)` damit Runtime und DB konsistent sind.
 
-**Migration:** Existing rows mit nicht-deterministischen UUIDs werden in einer Alembic-Migration optional eliminiert (heute: 1 manuell eingefuegte Row auf hhdocker02). Empfehlung: Migration mappt rows mit gleichem `name+host` auf die neue deterministische ID; falls keine Match, wird die Row geloescht.
+**Migration:** Existing rows mit nicht-deterministischen UUIDs werden in einer Alembic-Migration optional eliminiert (heute: 1 manuell eingefuegte Row auf docker-host). Empfehlung: Migration mappt rows mit gleichem `name+host` auf die neue deterministische ID; falls keine Match, wird die Row geloescht.
 
 Multi-Drucker bleibt Phase 7c (mehrere env-Vars oder Config-File mit mehreren Printer-Sektionen).
 
@@ -131,7 +131,10 @@ In allen Read-Schemas (TemplateRead, PrinterRead, JobRead, PresetRead): `@field_
 def upgrade():
     op.execute("UPDATE templates SET created_at = created_at || '+00:00' WHERE created_at NOT LIKE '%+%' AND created_at NOT LIKE '%Z'")
     op.execute("UPDATE templates SET updated_at = updated_at || '+00:00' WHERE ...")
-    # ... fuer printers, jobs, presets, printer_state, printer_status_cache
+    # ... fuer printers, jobs, presets, printer_state
+    # printer_status_cache: nur captured_at und updated_at (kein created_at)
+    op.execute("UPDATE printer_status_cache SET captured_at = captured_at || '+00:00' WHERE captured_at IS NOT NULL AND captured_at NOT LIKE '%+%' AND captured_at NOT LIKE '%Z'")
+    op.execute("UPDATE printer_status_cache SET updated_at = updated_at || '+00:00' WHERE ...")
 ```
 
 Migration ist idempotent (`WHERE NOT LIKE`).
@@ -143,8 +146,12 @@ Migration ist idempotent (`WHERE NOT LIKE`).
 **Loesung:** Neue Funktion `verify_alembic_at_head()` in `app/db/lifespan.py`:
 
 ```python
-async def verify_alembic_at_head() -> None:
-    """Pruefe dass DB.alembic_version == script head_revision."""
+async def verify_alembic_at_head(settings: Settings) -> None:
+    """Pruefe dass DB.alembic_version == script head_revision.
+
+    Takes Settings explicitly so the function is unit-testable without
+    depending on the lru_cache'd get_settings() singleton.
+    """
     ini_path = Path(__file__).resolve().parents[2] / "alembic.ini"
     def _check():
         cfg = Config(str(ini_path))
@@ -195,7 +202,7 @@ class ReadinessResponse(BaseModel):
 | `template_seed` | `SELECT count(*) FROM templates` >= 1 |
 | `printer_runtime` | `app.state.printer_id` ist gesetzt |
 | `printer_db_sync` | `app.state.printer_id` existiert in DB |
-| `snmp_discovery` | `printer_status_cache.last_probe_at` <90s → ok, <600s → stale, >600s → fail |
+| `snmp_discovery` | `printer_status_cache.captured_at` <90s → ok, <600s → stale, >600s → fail |
 | `print_queue` | Print-Queue worker alive (`app.state.print_queue.is_alive()`) |
 | `sse_bus` | SSE subscriber count < max |
 
@@ -234,34 +241,84 @@ async def _probe_once(self):
         await self._publish_event_offline(exc)
 ```
 
+`PrinterStatusCache` has the existing columns `raw_block: bytes | None` (raw SNMP response), `parsed: dict[str, Any] | None` (structured fields as JSON), `captured_at: datetime | None`, `updated_at: datetime`. Status-Felder wie `online`, `tape_width_mm`, `last_error` werden in `parsed` als JSON gespeichert (Phase 5 Schema, keine ALTER TABLE in Phase 7b).
+
+```python
+async def _upsert_cache(self, snmp_result):
+    parsed = {
+        "online": True,
+        "tape_width_mm": snmp_result.tape_width_mm,
+        "tape_color": snmp_result.tape_color,
+        "text_color": snmp_result.text_color,
+        "model_id": snmp_result.model_id,
+    }
+    async with async_session() as s:
+        row = await s.get(PrinterStatusCache, self._printer_id)
+        if row:
+            row.raw_block = snmp_result.raw_block
+            row.parsed = parsed
+            row.captured_at = datetime.now(timezone.utc)
+        else:
+            s.add(PrinterStatusCache(
+                printer_id=self._printer_id,
+                raw_block=snmp_result.raw_block,
+                parsed=parsed,
+                captured_at=datetime.now(timezone.utc),
+            ))
+        await s.commit()
+
+async def _mark_offline(self, exc):
+    async with async_session() as s:
+        row = await s.get(PrinterStatusCache, self._printer_id)
+        parsed = dict(row.parsed) if (row and row.parsed) else {}
+        parsed["online"] = False
+        parsed["last_error"] = str(exc)
+        if row:
+            row.parsed = parsed
+            row.captured_at = datetime.now(timezone.utc)
+        else:
+            s.add(PrinterStatusCache(
+                printer_id=self._printer_id,
+                parsed=parsed,
+                captured_at=datetime.now(timezone.utc),
+            ))
+        await s.commit()
+```
+
 **Reader:** `GET /api/printers/{id}/status` antwortet aus Cache:
 
 ```python
-@router.get("/api/printers/{printer_id}/status")
+@router.get("/api/printers/{printer_id}/status", response_model=PrinterStatus)
 async def get_printer_status(printer_id: UUID, session: AsyncSession = Depends(get_session)):
     cache_row = await session.get(PrinterStatusCache, printer_id)
-    if not cache_row:
-        return PrinterStatusRead(printer_id=printer_id, online=None, last_probe_at=None,
-                                  note="No probe yet — wait up to 30s for first probe cycle")
-    age_s = (datetime.now(timezone.utc) - cache_row.last_probe_at).total_seconds()
-    return PrinterStatusRead(
-        printer_id=printer_id, online=cache_row.online,
-        tape_width_mm=cache_row.tape_width_mm,
-        last_probe_at=cache_row.last_probe_at,
+    if not cache_row or not cache_row.captured_at:
+        return PrinterStatus(
+            printer_id=printer_id,
+            online=None,
+            captured_at=None,
+            note="No probe yet — wait up to 30s for first probe cycle",
+        )
+    parsed = cache_row.parsed or {}
+    age_s = (datetime.now(timezone.utc) - cache_row.captured_at).total_seconds()
+    return PrinterStatus(
+        printer_id=printer_id,
+        online=parsed.get("online"),
+        tape_width_mm=parsed.get("tape_width_mm"),
+        captured_at=cache_row.captured_at,
         last_probe_age_s=int(age_s),
-        last_error=cache_row.last_error,
+        last_error=parsed.get("last_error"),
     )
 ```
 
 Antwortzeit nach Fix: <10ms (DB-Read). Frische Daten via SSE-Stream oder beim naechsten Probe-Cycle (max 30s).
 
-**Schema-Erweiterung:** Spalte `printer_status_cache.last_error` (TEXT NULL) wird ergaenzt fuer SNMP-Timeout-Details.
+**Kein Schema-Change** auf `printer_status_cache` noetig — alle neuen Felder gehen in das existing `parsed` JSON-Feld, kompatibel mit Phase 5.
 
 ### Cluster 2 — Pangolin Header-Auth (bereits live, Dokumentation)
 
-**Stand 2026-05-17:** Resource 123 (`labels.strausmann.cloud`) hat `auth.basic-auth.user=claude-automation` und `auth.basic-auth.password=<32-byte hex>` als hartcoded Blueprint Labels im Compose. Password ist in Vault persistiert (Item-ID `f6329e97-5bf5-49e9-b5bf-ad5d7838cc9b`). User-Naming-Konvention `claude-automation` ist konsistent mit anderen HomeLab-Resources (Patchmon, Traefik, Crowdsec Manager).
+**Stand 2026-05-17:** Resource 123 (`labels.example.com`) hat `auth.basic-auth.user=claude-automation` und `auth.basic-auth.password=<32-byte hex>` als hartcoded Blueprint Labels im Compose. Password ist in Vault persistiert (Item-ID `<vault-item-id>`). User-Naming-Konvention `claude-automation` ist konsistent mit anderen HomeLab-Resources (Patchmon, Traefik, Crowdsec Manager).
 
-**Anti-Pattern:** Hartcoded Passwort im Compose. Begruendung: Dockhand Stack-Env-Variablen werden nicht in `.env`-File neben `compose.yaml` geschrieben (verifiziert auf hhdocker02: `.env` ist 1 byte), daher schlaegt `${VAR}` Interpolation in Compose-Labels fehl mit `Too small: expected string to have >=1 characters at "public-resources.*.auth.basic-auth.user"`. Phase 7c soll ein Dockhand-Upstream-Issue eroeffnen.
+**Anti-Pattern:** Hartcoded Passwort im Compose. Begruendung: Dockhand Stack-Env-Variablen werden nicht in `.env`-File neben `compose.yaml` geschrieben (verifiziert auf docker-host: `.env` ist 1 byte), daher schlaegt `${VAR}` Interpolation in Compose-Labels fehl mit `Too small: expected string to have >=1 characters at "public-resources.*.auth.basic-auth.user"`. Phase 7c soll ein Dockhand-Upstream-Issue eroeffnen.
 
 **Bekannter Pangolin-Bug:** [fosrl/pangolin#3099](https://github.com/fosrl/pangolin/issues/3099) (Regression). Pangolin sendet `WWW-Authenticate: Basic` auf No-Auth-Requests obwohl `auth.sso-enabled=true` ebenfalls gesetzt ist. Erwartet: SSO-priority + Basic-Auth nur als Bypass.
 
@@ -269,11 +326,11 @@ Antwortzeit nach Fix: <10ms (DB-Read). Frische Daten via SSE-Stream oder beim na
 
 1. Pangolin Skill `references/troubleshooting.md` mit `auth.basic-auth` Workaround-Pattern erweitern (hartcoded, Vault als SoT, Variable-Interpolation funktioniert NICHT).
 2. HomeLab-Rule `.claude/rules/pangolin-resource-standard.md` (NEU) — definiert dass jede neue Pangolin-Resource Header-Auth + Vault-Item mit `claude-automation`-User bekommt.
-3. Tracking-Issue strausmann/homelab-pangolin-client#245 ist verlinkt mit fosrl/pangolin#3099 und wird beim Upstream-Fix aktualisiert.
+3. Tracking-Issue <private-deployment-repo>#245 ist verlinkt mit fosrl/pangolin#3099 und wird beim Upstream-Fix aktualisiert.
 
 ### Cluster 3 — Frontend Proxy Erweiterung
 
-**Problem:** `https://labels.strausmann.cloud/docs` und `/openapi.json` antworten mit 404. Frontend Go-Server (chi router in `frontend/cmd/server/main.go`) mounted Proxy nur unter `/api/*`, `/loc`, `/asset`, `/spool`, `/product` — FastAPI-eigene Routes wie `/docs` werden nicht durchgereicht.
+**Problem:** `https://labels.example.com/docs` und `/openapi.json` antworten mit 404. Frontend Go-Server (chi router in `frontend/cmd/server/main.go`) mounted Proxy nur unter `/api/*`, `/loc`, `/asset`, `/spool`, `/product` — FastAPI-eigene Routes wie `/docs` werden nicht durchgereicht.
 
 **Loesung:** 3-Zeilen-Aenderung in `newRouter()`:
 
@@ -301,7 +358,7 @@ Nach Fix: Swagger UI via Browser (SSO) und via curl (Basic-Auth-Bypass) erreichb
 2. Stack-Restart erhaelt Daten + Header-Auth + Pangolin-Resource Status.
 3. `GET /api/printers/{id}/status` antwortet in <100ms (auch wenn PT-P750W offline ist).
 4. `GET /readiness` Response zeigt mindestens 8 Checks und deckt heute beobachtete Failure-Modes auf (leere DB, kaputtes Datetime-Format, SNMP-Drucker offline).
-5. Browser-User mit Pangolin SSO **UND** Agent mit Pangolin Basic-Auth koennen beide via `labels.strausmann.cloud` arbeiten.
+5. Browser-User mit Pangolin SSO **UND** Agent mit Pangolin Basic-Auth koennen beide via `labels.example.com` arbeiten.
 6. CI-Tests fangen Datetime-TZ-Drift und Drucker-DB-Drift kuenftig.
 
 ## Architektur-Übersicht
@@ -311,19 +368,19 @@ graph TB
     subgraph "Pangolin (HomeLab edge)"
         SSO[SSO Login]
         BasicAuth[Basic-Auth Bypass<br/>claude-automation:&lt;pw&gt;]
-        Resource[Resource 123<br/>labels.strausmann.cloud]
+        Resource[Resource 123<br/>labels.example.com]
         SSO -.->|browsers| Resource
         BasicAuth -.->|tooling/curl| Resource
     end
     
-    subgraph "label-printer-hub Stack (hhdocker02)"
+    subgraph "label-printer-hub Stack (docker-host)"
         Newt[Pangolin Newt]
         Frontend[Frontend Go-Server<br/>chi router]
-        Backend[Backend FastAPI<br/>lifespan: load_dir→migrate→verify→seed→upsert]
+        Backend[Backend FastAPI<br/>lifespan: migrate→verify→load_dir→seed→upsert]
         DB[(SQLite<br/>DateTime tz=True)]
         Cache[(printer_status_cache)]
         Probe[StatusProbeProducer<br/>30s interval]
-        SNMP[PT-P750W<br/>172.16.50.212]
+        SNMP[PT-P750W<br/>192.0.2.50]
     end
     
     Resource -->|tunnel| Newt
@@ -362,7 +419,7 @@ graph TB
 
 ### CI-Anpassungen
 
-- `pytest --cov=app --cov-fail-under=80` (vorher 75).
+- `pytest --cov=app --cov-fail-under=80` (already set in `backend/pyproject.toml` — Phase 7b keeps the existing threshold, neue Tests müssen darunter bleiben).
 - `pytest --slow` optional; ohne `--slow` werden langsame Tests uebersprungen.
 - `tests/integration/test_oapi_codegen_contract.py` braucht Go-Toolchain in CI-Container.
 
@@ -401,12 +458,12 @@ graph TB
 
 ### Production-Smoke
 
-Nach Merge + Image-Build + Stack-Update auf hhdocker02:
+Nach Merge + Image-Build + Stack-Update auf docker-host:
 
-- [ ] `curl -u claude-automation:<pw> https://labels.strausmann.cloud/healthz` → 200 `{"status":"ok"}`.
-- [ ] `curl -u claude-automation:<pw> https://labels.strausmann.cloud/readiness` → 200 mit `status=ready` (Drucker online) oder `degraded` (offline).
+- [ ] `curl -u claude-automation:<pw> https://labels.example.com/healthz` → 200 `{"status":"ok"}`.
+- [ ] `curl -u claude-automation:<pw> https://labels.example.com/readiness` → 200 mit `status=ready` (Drucker online) oder `degraded` (offline).
 - [ ] Browser-User loggt sich SSO ein, sieht 12 Templates + 1 Drucker mit Live-Status.
-- [ ] `curl -u claude-automation:<pw> https://labels.strausmann.cloud/openapi.json` → JSON Schema.
+- [ ] `curl -u claude-automation:<pw> https://labels.example.com/openapi.json` → JSON Schema.
 - [ ] Test-Druck-Job via Webhook → erfolgreicher Print auf PT-P750W (sofern Drucker online).
 
 ## Risiko-Übersicht
@@ -428,9 +485,9 @@ Nach Merge + Image-Build + Stack-Update auf hhdocker02:
 |---|---|
 | Master-Tracking | strausmann/label-printer-hub#22 |
 | Pangolin Upstream Issue | https://github.com/fosrl/pangolin/issues/3099 |
-| Pangolin Internal Tracking | strausmann/homelab-pangolin-client#245 |
+| Pangolin Internal Tracking | <private-deployment-repo>#245 |
 | Phase 7a Frontend Base Design | `docs/superpowers/specs/2026-05-16-phase7a-frontend-base-design.md` |
 | Phase 6b SSE EventBus Design | `docs/superpowers/specs/2026-05-16-phase6b-sse-eventbus-design.md` |
 | Phase 6a REST API Design | `docs/superpowers/specs/2026-05-16-phase6a-rest-api-design.md` |
 | Phase 5 Persistence Design | `docs/superpowers/specs/2026-05-16-phase5-persistence-design.md` |
-| Vault-Item Header-Auth | Vaultwarden Item-ID `f6329e97-5bf5-49e9-b5bf-ad5d7838cc9b` |
+| Vault-Item Header-Auth | Vaultwarden Item-ID `<vault-item-id>` |
