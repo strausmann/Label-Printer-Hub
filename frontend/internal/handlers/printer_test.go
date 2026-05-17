@@ -107,3 +107,59 @@ func TestPrinterDetailNotFound(t *testing.T) {
 		t.Errorf("status %d, want 404", w.Code)
 	}
 }
+
+// usbPrinterBackend serves printer metadata for a USB-connected printer
+// (connection map has only "interface", no "host"/"port").
+func usbPrinterBackend(t *testing.T, id string) *httptest.Server {
+	t.Helper()
+	now := time.Now().Format(time.RFC3339)
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/printers/" + id:
+			json.NewEncoder(w).Encode(map[string]any{
+				"id": id, "name": "QL-820NWB", "model": "ql_series", "backend": "usb",
+				"connection": map[string]any{"interface": "usb"},
+				"enabled":    true, "paused": false, "created_at": now, "updated_at": now,
+			})
+		case "/api/printers/" + id + "/status":
+			json.NewEncoder(w).Encode(map[string]any{"printer_id": id, "online": false, "tape_loaded": nil, "error_state": nil, "captured_at": now})
+		case "/api/printers/" + id + "/tape":
+			json.NewEncoder(w).Encode(map[string]any{"width_mm": 62})
+		case "/api/printers/" + id + "/queue":
+			json.NewEncoder(w).Encode([]any{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+// TestPrinterDetailUSBConnection verifies that the printer detail page renders
+// correctly for USB-connected printers (connection has "interface" but no
+// "host"/"port"). The template must not crash and must surface the interface
+// value instead of an empty host:port pair.
+func TestPrinterDetailUSBConnection(t *testing.T) {
+	t.Parallel()
+	const usbID = "dddddddd-0000-0000-0000-000000000004"
+	backend := usbPrinterBackend(t, usbID)
+	defer backend.Close()
+	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
+
+	req := httptest.NewRequest(http.MethodGet, "/printers/"+usbID, nil)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	ph.PrinterDetailWithID(w, req, usbID)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("USB printer status %d, body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	// The stub template renders the interface value inside a usb-badge span.
+	if !strings.Contains(body, "usb-badge") {
+		t.Errorf("USB printer body missing usb-badge span, got: %s", body)
+	}
+	// Must NOT render an empty host:port pair (bug guard).
+	if strings.Contains(body, "host-port") {
+		t.Errorf("USB printer body must not contain host-port span, got: %s", body)
+	}
+}

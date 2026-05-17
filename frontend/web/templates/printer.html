@@ -13,7 +13,11 @@
         <dt class="text-content-secondary">Name</dt>           <dd>{{.Printer.Name}}</dd>
         <dt class="text-content-secondary">Model</dt>          <dd>{{.Printer.Model}}</dd>
         <dt class="text-content-secondary">Backend</dt>        <dd>{{.Printer.Backend}}</dd>
+        {{if and (index .Printer.Connection "host") (index .Printer.Connection "port")}}
         <dt class="text-content-secondary">Host</dt>           <dd>{{index .Printer.Connection "host"}}:{{index .Printer.Connection "port"}}</dd>
+        {{else if index .Printer.Connection "interface"}}
+        <dt class="text-content-secondary">Interface</dt>      <dd>{{index .Printer.Connection "interface"}}</dd>
+        {{end}}
         <dt class="text-content-secondary">Enabled</dt>        <dd>{{if .Printer.Enabled}}yes{{else}}no{{end}}</dd>
         <dt class="text-content-secondary">Paused</dt>         <dd>{{if .Printer.Paused}}yes{{else}}no{{end}}</dd>
         <dt class="text-content-secondary">Created</dt>        <dd>{{.Printer.CreatedAt}}</dd>
