@@ -72,8 +72,14 @@ def _scope_satisfies(key_scope: str, required_scope: str) -> bool:
     """Return True if ``key_scope`` satisfies ``required_scope``.
 
     admin satisfies everything; print satisfies read and print; read only read.
+
+    Raises:
+        ValueError: if ``key_scope`` is not a known scope value.  Fail-closed:
+            unknown scopes must never grant implicit access.
     """
-    return required_scope in _SCOPE_HIERARCHY.get(key_scope, [required_scope])
+    if key_scope not in _SCOPE_HIERARCHY:
+        raise ValueError(f"Unknown scope: {key_scope!r}")
+    return required_scope in _SCOPE_HIERARCHY[key_scope]
 
 
 def _has_pangolin_sso_session(request: Request) -> bool:
@@ -166,16 +172,40 @@ async def _validate_api_key(
             detail={"error_code": "invalid_key", "error_message": "Invalid or unknown API key"},
         )
 
-    # Determine the effective scope from the key's scopes list
-    # admin > print > read
+    # Determine the effective scope from the key's scopes list.
+    # admin > print > read; a key with no recognised scopes has no access.
     key_scopes = key_row.scopes or []
-    effective_scope: str = "read"
+    effective_scope: str | None = None
     for s in ["admin", "print", "read"]:
         if s in key_scopes:
             effective_scope = s
             break
 
-    if not _scope_satisfies(effective_scope, required_scope):
+    if effective_scope is None:
+        # Key exists and bcrypt matched, but it has no valid scopes assigned.
+        # Fail with 401 (not 403) — the key is structurally invalid, not just
+        # insufficient for this endpoint.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error_code": "key_no_scopes",
+                "error_message": "API key has no scopes assigned.",
+            },
+        )
+
+    try:
+        scope_ok = _scope_satisfies(effective_scope, required_scope)
+    except ValueError:
+        # Scope value from DB is not in the known hierarchy — treat as 401.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "error_code": "key_invalid_scope",
+                "error_message": "API key has an unrecognised scope value.",
+            },
+        )
+
+    if not scope_ok:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
