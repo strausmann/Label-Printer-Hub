@@ -19,7 +19,7 @@ Phase 7c delivers:
 
 1. **Multi-key management** through a new HTMX UI at `/admin/api-keys`
 2. **3-level scope model:** `read`, `print`, `admin` per key (no finer granularity needed for HomeLab scope)
-3. **bcrypt-hashed key storage** with prefix preserved for UI display (`lh_ab12cd34...`)
+3. **bcrypt-hashed key storage** with prefix preserved for UI display (`lh_pat_ab12cd34...`)
 4. **60 prints/min default rate-limit** per key, configurable per-key in the UI (in-memory token-bucket sufficient for single-instance HomeLab)
 5. **Audit trail** in the Jobs table — `api_key_id`, `source_ip` on every print
 6. **Pangolin-Basic-Auth-Bypass downgrade** — after Phase 7c lands, `claude-automation` is scoped to `read`-only as recovery path, all writes require app-key
@@ -38,21 +38,18 @@ class ApiKey(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(index=True)              # User-facing display name, e.g. "Plex Print"
     key_hash: str                              # bcrypt hash of the full plaintext key
-    key_prefix: str = Field(index=True)        # First 12 chars for display, e.g. "lh_ab12cd34X"
+    key_prefix: str = Field(index=True)        # First 16 chars for display, e.g. "lh_pat_ab12cd34"
     scopes: list[str] = Field(sa_column=Column(JSON, nullable=False))   # ["read"] / ["read", "print"] / ["admin"]
     allowed_printer_ids: list[UUID] = Field(   # Empty list = all printers; non-empty = restricted
         default_factory=list,
         sa_column=Column(JSON, nullable=False),
     )
-    rate_limit_per_minute: int = Field(default=60, ge=1, le=10000)  # Applies to ALL requests (read + print + admin); name kept generic
+    rate_limit_per_minute: int = Field(default=60, ge=1, le=10000)
     enabled: bool = True
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(UTC),
-        sa_column=Column(DateTime(timezone=True)),
-    )
-    last_used_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    last_used_at: datetime | None = None
     last_used_ip: str | None = None
-    expires_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))  # NULL = no expiry
+    expires_at: datetime | None = None         # NULL = no expiry; future date = auto-disable after
     notes: str | None = None                   # User-facing free text
 ```
 
@@ -68,8 +65,6 @@ source_ip: str | None = None
 
 Both nullable so historical jobs from before Phase 7c retain integrity. Backfill is unnecessary — old jobs predate the auth concept.
 
-**`source_ip` propagation note:** The frontend Go reverse-proxy strips `X-Forwarded-For` before forwarding to the backend (`frontend/internal/proxy/proxy.go`), so `request.client.host` will normally resolve to the frontend container IP rather than the real caller. To capture the actual client IP for audit purposes, the frontend must inject a trusted internal header (e.g. `X-Real-IP`) from its own `r.RemoteAddr` before proxying. The backend reads `X-Real-IP` if present and falls back to `request.client.host` otherwise. This header is only trusted when it originates from the frontend proxy (not from an external caller), so the backend must not accept it from requests that bypass the frontend (direct API calls using the `X-Label-Hub-Key` header are expected to be forwarded through the proxy too in the standard HomeLab topology).
-
 ### Alembic migration
 
 Single migration `20260517_phase7c_api_keys` that:
@@ -77,7 +72,7 @@ Single migration `20260517_phase7c_api_keys` that:
 1. Creates `api_keys` table with all columns above
 2. Adds `api_key_id` + `source_ip` to `jobs` table (nullable, no default)
 3. Indices on `api_keys.key_prefix` (lookup hot path) and `jobs.api_key_id` (audit queries)
-4. Seeds ONE initial admin key on first migration (only if `api_keys` is empty): name `"bootstrap-admin"`, scope `["admin"]`. The **full plaintext key is printed once to the Alembic migration stdout** (not to the application logger or any persistent log aggregator) so the operator can copy it immediately. The hash is stored in the DB; the plaintext is never written to disk. After first deploy, the operator rotates this key via the UI or `/api/admin/api-keys`.
+4. Seeds ONE initial admin key on first migration (only if `api_keys` is empty): name `"bootstrap-admin"`, scope `["admin"]`, prefix shown in startup log so operator can copy it. After first deploy, operator rotates it.
 
 The seed prevents a chicken-and-egg lockout — without a first key, no one can create more keys via the API.
 
@@ -103,36 +98,21 @@ def require_scope(required: str):
         request: Request,
         key_header: str | None = Security(_api_key_header),
         session: AsyncSession = Depends(get_session),
-        settings: Settings = Depends(get_settings),
     ) -> AuthContext:
-        # Path 1: API-Key header present — validate key + scope
+        # Path 1: API-Key header
         if key_header:
-            # _validate_api_key raises HTTPException(401) for missing/invalid key,
-            # HTTPException(403) for valid key with insufficient scope.
             context = await _validate_api_key(session, key_header, required, request.client.host)
             return context
 
-        # Path 2: Pangolin-SSO browser session
-        # SSO is treated as "admin" for the /admin/* UI routes (single-user HomeLab assumption).
-        # For all other routes the effective scope is "read" when required == "read" only.
-        if _has_pangolin_sso_session(request):
-            effective_scope = "admin" if required == "admin" else "read"
-            if required in ("read", "admin"):
-                return AuthContext(source="pangolin-sso", scope=effective_scope, api_key_id=None, ip=request.client.host)
-            # SSO cannot satisfy "print" scope without an API key
-            raise HTTPException(403, "Print operations require an API key")
+        # Path 2: Pangolin-SSO browser session (read scope only)
+        if _has_pangolin_sso_session(request) and required == "read":
+            return AuthContext(source="pangolin-sso", scope="read", api_key_id=None, ip=request.client.host)
 
-        # Path 3: Pangolin-Bypass with claude-automation
-        # Scope is capped at "read" when settings.pangolin_bypass_scope_downgrade is True
-        # (feature flag, defaults False; set True after all consumers have app-keys).
-        if _is_pangolin_bypass(request):
-            if settings.pangolin_bypass_scope_downgrade and required != "read":
-                raise HTTPException(403, "Pangolin-bypass is read-only after scope downgrade")
-            if required == "read":
-                return AuthContext(source="pangolin-bypass", scope="read", api_key_id=None, ip=request.client.host)
+        # Path 3: Pangolin-Bypass with claude-automation (read scope only after 7c)
+        if _is_pangolin_bypass(request) and required == "read":
+            return AuthContext(source="pangolin-bypass", scope="read", api_key_id=None, ip=request.client.host)
 
-        # No credential presented at all → 401 (not authenticated)
-        raise HTTPException(401, "Missing credentials")
+        raise HTTPException(401, "Missing or insufficient credentials")
 
     return _check
 ```
@@ -166,24 +146,11 @@ The `admin` scope subsumes `print` and `read`. `print` subsumes `read`. `read` i
 
 ### Performance: bcrypt verify on every request
 
-bcrypt verify is ~100ms per call (intentionally slow). Two optimisations keep request latency low:
+bcrypt verify is ~100ms per call (intentionally slow). To keep request latency low, the middleware caches the `(key_hash → AuthContext)` mapping in an in-memory LRU with 5-minute TTL. Cache invalidation on:
+- Key delete: explicit cache flush by key_id
+- Key rotation (recreate): old hash naturally expires after TTL
 
-1. **Thread-pool offload:** bcrypt `hashpw`/`checkpw` calls are CPU-bound and block the event loop.
-   Both must be wrapped with `asyncio.to_thread(bcrypt.checkpw, ...)` (or `run_in_executor`) to avoid
-   stalling other coroutines during verification.
-
-2. **LRU caching after first verify:** The cache is keyed by **`api_key_id`** (UUID from the DB row
-   found via the `key_prefix` index lookup), not by the raw header value or the hash.
-   Flow per request:
-   - Lookup `key_prefix` in DB → get row → check `key_id` in LRU
-   - Cache hit: return cached `AuthContext` (no bcrypt, ~0 ms)
-   - Cache miss: `asyncio.to_thread(bcrypt.checkpw)` → store `{key_id → AuthContext}` in LRU (TTL 5 min)
-
-   Cache invalidation:
-   - Key delete: explicit `lru.pop(key_id)`
-   - Key rotation (key deleted + new key created): old `key_id` naturally expires after TTL
-
-For a HomeLab with a handful of keys, this reduces per-request auth latency to a single DB prefix-scan (indexed) after warm-up.
+For a HomeLab with a handful of keys, this keeps per-request auth latency under 1ms after warm-up.
 
 ## 4. Key Generation + Format
 
@@ -198,15 +165,27 @@ def generate_api_key() -> tuple[str, str, str]:
     The plaintext is shown to the user ONCE on creation, never persisted.
     """
     body = secrets.token_urlsafe(32)            # 256 bits of entropy
-    plaintext = f"lh_{body}"
-    prefix = plaintext[:12]                     # "lh_ab12cd34X" — enough to identify in UI
+    plaintext = f"lh_pat_{body}"
+    prefix = plaintext[:16]                     # "lh_pat_ab12cd34X" — includes full PAT infix + 9 body discriminator chars
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=12)).decode()
     return plaintext, prefix, hashed
 ```
 
-- `lh_` prefix to distinguish from other token formats (GitHub PAT, etc.)
+- `lh_pat_` PAT-style infix to unambiguously distinguish from other token formats (GitHub PAT `ghp_`, GitLab `glpat-`, etc.) and enable secret-scanning tool detection via the `pat_` discriminator
 - 256-bit entropy from `secrets.token_urlsafe` — URL-safe charset, no padding issues in headers
 - bcrypt rounds=12 (industry default 2024-2026, ~100-200ms verify)
+
+### Custom Detector Configs
+
+Both `.gitleaks.toml` and `.gitguardian.yaml` are included in the repo root with a custom rule matching `lh_pat_[A-Za-z0-9_-]{43}`. This ensures CI-side secret scanning catches any accidental commits of real tokens.
+
+```toml
+# .gitleaks.toml
+[[rules]]
+id = "labelhub-pat"
+regex = '''lh_pat_[A-Za-z0-9_-]{43}'''
+keywords = ["lh_pat_"]
+```
 
 ### Display in UI
 
@@ -222,39 +201,19 @@ Implemented as a global dict in `app.services.rate_limiter`:
 class RateLimiter:
     def __init__(self) -> None:
         self._buckets: dict[UUID, _TokenBucket] = {}
-        self._lock = asyncio.Lock()  # Single lock guards bucket dict + per-bucket state
 
     async def check_and_consume(self, key_id: UUID, limit_per_minute: int) -> bool:
         """Returns True if the call is allowed; False if rate-limit exceeded.
 
-        Uses one token = one request (all scopes, not only print), refill at
-        `limit_per_minute / 60` tokens/second, capacity = limit_per_minute.
-        The field is named `rate_limit_per_minute` (not `prints_per_minute`) because
-        it caps the total request rate for the key, regardless of endpoint type.
-
-        Locking: a single `asyncio.Lock` serialises refill + consume so concurrent
-        async requests cannot race past the configured limit. Under HomeLab load
-        (tens of requests/day) lock contention is negligible.
-
-        Bucket invalidation: if `limit_per_minute` changes (via PATCH /api/admin/api-keys/{id}),
-        the bucket capacity is checked on every call and rebuilt if it drifts, so stale
-        in-memory limits are self-correcting without a separate invalidation call.
+        Uses one token = one request, refill at `limit_per_minute / 60` tokens/second,
+        capacity = limit_per_minute.
         """
-        async with self._lock:
-            bucket = self._buckets.get(key_id)
-            if bucket is None or bucket.capacity != limit_per_minute:
-                # New key or rate_limit_per_minute changed → fresh bucket
-                bucket = _TokenBucket(limit_per_minute)
-                self._buckets[key_id] = bucket
-            bucket.refill_to_now(limit_per_minute / 60)
-            if bucket.tokens >= 1:
-                bucket.tokens -= 1
-                return True
-            return False
-
-    def invalidate(self, key_id: UUID) -> None:
-        """Remove a bucket entry (call on key DELETE to free memory immediately)."""
-        self._buckets.pop(key_id, None)
+        bucket = self._buckets.setdefault(key_id, _TokenBucket(limit_per_minute))
+        bucket.refill_to_now(limit_per_minute / 60)
+        if bucket.tokens >= 1:
+            bucket.tokens -= 1
+            return True
+        return False
 ```
 
 ### Why in-memory + not Redis
@@ -270,7 +229,7 @@ class RateLimiter:
 HTTP 429 Too Many Requests
 {
   "error_code": "rate_limit_exceeded",
-  "error_message": "Key 'Plex Print' exceeded 60 requests/minute. Retry after 12 seconds.",
+  "error_message": "Key 'Plex Print' exceeded 60 prints/minute. Retry after 12 seconds.",
   "retry_after_seconds": 12
 }
 ```
@@ -289,10 +248,10 @@ Page sections:
 +-- Top bar -----------------------------------------------------+
 | API Keys                                  [+ Neuer Key]        |
 +-- Key list ----------------------------------------------------+
-| Name              Prefix         Scopes       Last used  ⚙ ❌ |
-| Plex Print        lh_ab12cd34X   [print]      5 min ago      |
-| Snipe-IT Asset    lh_xyz98qwer   [print]      2 days ago     |
-| Bootstrap Admin   lh_seed00deadb [admin]      never          |
+| Name              Prefix           Scopes       Last used  ⚙ ❌ |
+| Plex Print        lh_pat_ab12cd34X [print]      5 min ago      |
+| Snipe-IT Asset    lh_pat_xyz98qwer [print]      2 days ago     |
+| Bootstrap Admin   lh_pat_seed00dea [admin]      never          |
 +----------------------------------------------------------------+
 ```
 
@@ -348,7 +307,7 @@ The downgrade is implemented as a feature flag `settings.pangolin_bypass_scope_d
 
 | Layer | Test type | What it covers |
 |---|---|---|
-| Key creation | Unit | `generate_api_key()` produces `lh_` prefix + 256-bit entropy + valid bcrypt hash |
+| Key creation | Unit | `generate_api_key()` produces `lh_pat_` infix + 256-bit entropy + valid bcrypt hash |
 | bcrypt verify | Unit | Correct plaintext verifies; wrong plaintext rejects |
 | LRU cache | Unit | After verify, subsequent calls return cached AuthContext within TTL; expires after TTL |
 | Auth dependency | Integration | Valid key → AuthContext; invalid key → 401; missing key + no Pangolin → 401; missing key + Pangolin-bypass + read scope → AuthContext source=pangolin-bypass |

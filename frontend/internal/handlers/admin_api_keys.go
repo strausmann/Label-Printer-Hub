@@ -1,0 +1,255 @@
+package handlers
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+)
+
+// AdminAPIKeyListData holds variables for the /admin/api-keys list page.
+type AdminAPIKeyListData struct {
+	TemplateData
+	Keys []APIKeyMeta
+}
+
+// AdminAPIKeyCreateData holds variables for the /admin/api-keys/new page.
+type AdminAPIKeyCreateData struct {
+	TemplateData
+	Plaintext string
+	Prefix    string
+	Error     string
+}
+
+// AdminAPIKeyDetailData holds variables for the /admin/api-keys/{id} page.
+type AdminAPIKeyDetailData struct {
+	TemplateData
+	Key APIKeyMeta
+}
+
+// APIKeyMeta is the front-end representation of an API key (no hash/plaintext).
+type APIKeyMeta struct {
+	Id                 string
+	Name               string
+	KeyPrefix          string
+	Scopes             []string
+	AllowedPrinterIds  []string
+	RateLimitPerMinute int
+	Enabled            bool
+	CreatedAt          string
+	LastUsedAt         *string
+	LastUsedIp         *string
+	ExpiresAt          *string
+	Notes              *string
+}
+
+// AdminAPIKeysList handles GET /admin/api-keys — list all keys.
+func (h *PageHandler) AdminAPIKeysList(w http.ResponseWriter, r *http.Request) {
+	keys, err := h.listAPIKeys(r)
+	if err != nil {
+		h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error())
+		return
+	}
+	h.renderPage(w, r, "admin_api_keys", AdminAPIKeyListData{
+		TemplateData: TemplateData{Version: h.version, ActiveNav: "admin"},
+		Keys:         keys,
+	})
+}
+
+// AdminAPIKeysNew handles GET /admin/api-keys/new — show create form.
+func (h *PageHandler) AdminAPIKeysNew(w http.ResponseWriter, r *http.Request) {
+	h.renderPage(w, r, "admin_api_keys_create", AdminAPIKeyCreateData{
+		TemplateData: TemplateData{Version: h.version, ActiveNav: "admin"},
+	})
+}
+
+// AdminAPIKeysCreate handles POST /admin/api-keys/new — create a new key.
+func (h *PageHandler) AdminAPIKeysCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderError(w, r, http.StatusBadRequest, "Bad Request", err.Error())
+		return
+	}
+
+	name := r.FormValue("name")
+	scopes := r.Form["scopes"]
+	rateLimitStr := r.FormValue("rate_limit_per_minute")
+	notes := r.FormValue("notes")
+
+	if len(scopes) == 0 {
+		scopes = []string{"read"}
+	}
+	rateLimit := 60
+	if _, err := fmt.Sscanf(rateLimitStr, "%d", &rateLimit); err != nil || rateLimit < 1 {
+		rateLimit = 60
+	}
+
+	payload := map[string]interface{}{
+		"name":                 name,
+		"scopes":               scopes,
+		"allowed_printer_ids":  []string{},
+		"rate_limit_per_minute": rateLimit,
+	}
+	if notes != "" {
+		payload["notes"] = notes
+	}
+
+	plaintext, prefix, apiErr := h.createAPIKey(r, payload)
+	if apiErr != nil {
+		h.renderPage(w, r, "admin_api_keys_create", AdminAPIKeyCreateData{
+			TemplateData: TemplateData{Version: h.version, ActiveNav: "admin"},
+			Error:        apiErr.Error(),
+		})
+		return
+	}
+
+	h.renderPage(w, r, "admin_api_keys_create", AdminAPIKeyCreateData{
+		TemplateData: TemplateData{Version: h.version, ActiveNav: "admin"},
+		Plaintext:    plaintext,
+		Prefix:       prefix,
+	})
+}
+
+// AdminAPIKeyDetail handles GET /admin/api-keys/{id} — show key detail.
+func (h *PageHandler) AdminAPIKeyDetail(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	key, err := h.getAPIKey(r, id)
+	if err != nil {
+		h.renderError(w, r, http.StatusNotFound, "Not Found", err.Error())
+		return
+	}
+	h.renderPage(w, r, "admin_api_keys_detail", AdminAPIKeyDetailData{
+		TemplateData: TemplateData{Version: h.version, ActiveNav: "admin"},
+		Key:          *key,
+	})
+}
+
+// AdminAPIKeyRevoke handles POST /admin/api-keys/{id}/revoke — revoke a key.
+func (h *PageHandler) AdminAPIKeyRevoke(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.revokeAPIKey(r, id); err != nil {
+		h.renderError(w, r, http.StatusInternalServerError, "Error", err.Error())
+		return
+	}
+	http.Redirect(w, r, "/admin/api-keys", http.StatusSeeOther)
+}
+
+// --------------------------------------------------------------------------
+// Backend API helpers — raw HTTP calls to /api/admin/api-keys/*
+// --------------------------------------------------------------------------
+
+func (h *PageHandler) listAPIKeys(r *http.Request) ([]APIKeyMeta, error) {
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet,
+		h.backendURL()+"/api/admin/api-keys", nil)
+	if err != nil {
+		return nil, err
+	}
+	h.forwardAuth(r, req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("backend returned %d: %s", resp.StatusCode, string(body))
+	}
+	var keys []APIKeyMeta
+	if err := json.Unmarshal(body, &keys); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	return keys, nil
+}
+
+func (h *PageHandler) createAPIKey(r *http.Request, payload map[string]interface{}) (string, string, error) {
+	data, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost,
+		h.backendURL()+"/api/admin/api-keys", bytes.NewReader(data))
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	h.forwardAuth(r, req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusCreated {
+		return "", "", fmt.Errorf("backend returned %d: %s", resp.StatusCode, string(body))
+	}
+	var result struct {
+		Plaintext string `json:"plaintext"`
+		Prefix    string `json:"prefix"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", "", fmt.Errorf("parse response: %w", err)
+	}
+	return result.Plaintext, result.Prefix, nil
+}
+
+func (h *PageHandler) getAPIKey(r *http.Request, id string) (*APIKeyMeta, error) {
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet,
+		h.backendURL()+"/api/admin/api-keys/"+id, nil)
+	if err != nil {
+		return nil, err
+	}
+	h.forwardAuth(r, req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("backend returned %d", resp.StatusCode)
+	}
+	var key APIKeyMeta
+	if err := json.Unmarshal(body, &key); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+	return &key, nil
+}
+
+func (h *PageHandler) revokeAPIKey(r *http.Request, id string) error {
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodDelete,
+		h.backendURL()+"/api/admin/api-keys/"+id, nil)
+	if err != nil {
+		return err
+	}
+	h.forwardAuth(r, req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("backend returned %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+// forwardAuth copies auth-related headers from the incoming request to the
+// outgoing backend request. This ensures Pangolin SSO tokens and API keys
+// are forwarded to the backend for authentication.
+func (h *PageHandler) forwardAuth(from *http.Request, to *http.Request) {
+	for _, hdr := range []string{"X-Label-Hub-Key", "X-Pangolin-User", "Authorization"} {
+		if v := from.Header.Get(hdr); v != "" {
+			to.Header.Set(hdr, v)
+		}
+	}
+}
+
+// backendURL returns the backend base URL from the handler.
+// Uses the client's base URL field.
+func (h *PageHandler) backendURL() string {
+	// The client stores the base URL; extract it via the gen field
+	// For simplicity, use the env var directly (same as proxy.go)
+	u := strings.TrimSuffix(h.client.BaseURL(), "/")
+	return u
+}

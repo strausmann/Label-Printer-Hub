@@ -134,6 +134,13 @@ func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS) *c
 	r.Get("/templates/{id}", ph.TemplateDetail)
 	r.Get("/lookup/{app}/{id}", ph.LookupDisplay)
 
+	// Admin: API key management
+	r.Get("/admin/api-keys", ph.AdminAPIKeysList)
+	r.Get("/admin/api-keys/new", ph.AdminAPIKeysNew)
+	r.Post("/admin/api-keys/new", ph.AdminAPIKeysCreate)
+	r.Get("/admin/api-keys/{id}", ph.AdminAPIKeyDetail)
+	r.Post("/admin/api-keys/{id}/revoke", ph.AdminAPIKeyRevoke)
+
 	// Reverse proxy: /api/* and QR-landing paths → backend container.
 	// FlushInterval=-1 (set inside proxy.New) ensures SSE frames are forwarded
 	// immediately without buffering.

@@ -31,6 +31,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import AuthContext, check_printer_access
+from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
 from app.models.job import JobState
 from app.repositories import jobs as jobs_repo
@@ -47,6 +49,8 @@ router = APIRouter(prefix="/api/printers", tags=["printers"])
 
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
+PrintAuthDep = Annotated[AuthContext, Depends(require_print)]
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +83,7 @@ async def _get_printer_or_404(session: AsyncSession, printer_id: UUID) -> Any:
         "from ``printer_state``; it is ``false`` when no state row exists yet."
     ),
 )
-async def list_printers(session: SessionDep) -> list[PrinterRead]:
+async def list_printers(session: SessionDep, _auth: ReadAuthDep) -> list[PrinterRead]:
     """List all printers with their pause state."""
     printers = await printers_repo.list_all(session)
     result: list[PrinterRead] = []
@@ -212,9 +216,12 @@ def _error_label(block: Any) -> str | None:
 async def get_printer_status(
     printer_id: UUID,
     session: SessionDep,
+    _auth: ReadAuthDep,
 ) -> PrinterStatus:
     """Return the latest cached status for a printer; no sync SNMP probe."""
     await _get_printer_or_404(session, printer_id)
+    if _auth is not None:
+        check_printer_access(_auth, printer_id)
 
     row = await cache_repo.get(session, printer_id)
     if row is None or row.captured_at is None:
@@ -265,6 +272,7 @@ async def get_printer_status(
 async def get_printer_tape(
     printer_id: UUID,
     session: SessionDep,
+    _auth: ReadAuthDep,
 ) -> dict[str, object]:
     """Return the current tape spec for a printer."""
     await _get_printer_or_404(session, printer_id)
@@ -317,6 +325,7 @@ async def get_printer_tape(
 async def get_printer_queue(
     printer_id: UUID,
     session: SessionDep,
+    _auth: ReadAuthDep,
 ) -> list[dict[str, object]]:
     """Return queued and printing jobs for a printer."""
     await _get_printer_or_404(session, printer_id)
@@ -356,9 +365,12 @@ async def get_printer_queue(
 async def pause_printer(
     printer_id: UUID,
     session: SessionDep,
+    _auth: PrintAuthDep,
 ) -> None:
     """Pause a printer."""
     await _get_printer_or_404(session, printer_id)
+    if _auth is not None:
+        check_printer_access(_auth, printer_id)
     await printer_state_repo.set_paused(session, printer_id, True)
 
 
@@ -379,9 +391,12 @@ async def pause_printer(
 async def resume_printer(
     printer_id: UUID,
     session: SessionDep,
+    _auth: PrintAuthDep,
 ) -> None:
     """Resume a printer."""
     await _get_printer_or_404(session, printer_id)
+    if _auth is not None:
+        check_printer_access(_auth, printer_id)
     await printer_state_repo.set_paused(session, printer_id, False)
 
 
@@ -404,9 +419,12 @@ async def resume_printer(
 async def clear_printer_queue(
     printer_id: UUID,
     session: SessionDep,
+    _auth: PrintAuthDep,
 ) -> None:
     """Cancel all QUEUED (not PRINTING) jobs for a printer."""
     await _get_printer_or_404(session, printer_id)
+    if _auth is not None:
+        check_printer_access(_auth, printer_id)
 
     active_jobs = await jobs_repo.list_active(session)
     queued_jobs = [

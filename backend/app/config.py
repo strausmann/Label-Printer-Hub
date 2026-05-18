@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     sse_probe_interval_s: float = Field(default=30.0, gt=0)
     """SNMP probe interval for StatusProbeProducer (seconds). Must be > 0."""
 
+    # Phase 7c: Pangolin-bypass scope downgrade feature flag.
+    # When True, the claude-automation Basic-Auth bypass is limited to read-only.
+    # Set to False during transition to avoid surprising existing automation.
+    pangolin_bypass_scope_downgrade: bool = False
+
     @field_validator("webhook_api_key")
     @classmethod
     def validate_api_key_length(cls, v: SecretStr) -> SecretStr:

@@ -48,6 +48,8 @@ async def create_queued(
     printer_id: UUID,
     template_key: str,
     payload: dict[str, Any],
+    api_key_id: UUID | None = None,
+    source_ip: str | None = None,
 ) -> Job:
     """Insert a new job in QUEUED state and return it."""
     job = Job(
@@ -55,6 +57,8 @@ async def create_queued(
         template_key=template_key,
         payload=payload,
         state=JobState.QUEUED.value,
+        api_key_id=api_key_id,
+        source_ip=source_ip,
     )
     session.add(job)
     await session.commit()

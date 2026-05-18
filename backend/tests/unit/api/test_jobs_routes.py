@@ -17,11 +17,14 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
+from uuid import uuid4 as _uuid4
 
 import app.models  # noqa: F401 — registers all SQLModel tables with metadata
 import pytest
 import pytest_asyncio
 from app.api.routes.jobs import router
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_print, require_read
 from app.db.engine import _apply_pragmas
 from app.db.session import get_session
 from app.models.job import Job, JobState
@@ -72,6 +75,9 @@ def _build_app(session_override: AsyncSession) -> FastAPI:
     async def _override_session() -> AsyncIterator[AsyncSession]:
         yield session_override
 
+    _fake_auth = AuthContext(source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1")
+    for _dep in (require_read, require_print):
+        app.dependency_overrides[_dep] = lambda _c=_fake_auth: _c
     app.dependency_overrides[get_session] = _override_session
     return app
 
@@ -482,7 +488,9 @@ async def test_list_jobs_direct_returns_all(session) -> None:
     j1 = await _make_job(session, printer.id, state=JobState.QUEUED.value)
     j2 = await _make_job(session, printer.id, state=JobState.DONE.value)
 
-    result = await list_jobs(session=session, state=None, printer_id=None, since=None, limit=50)
+    result = await list_jobs(
+        session=session, _auth=None, state=None, printer_id=None, since=None, limit=50
+    )
 
     assert len(result) == 2
     ids = {str(r.id) for r in result}
@@ -516,7 +524,7 @@ async def test_cancel_job_direct_returns_job_read(session) -> None:
     printer = await _make_printer(session)
     job = await _make_job(session, printer.id, state=JobState.QUEUED.value)
 
-    result = await cancel_job(job_id=job.id, session=session)
+    result = await cancel_job(job_id=job.id, session=session, _auth=None)
 
     assert str(result.id) == str(job.id)
     assert result.state == JobState.CANCELLED.value
