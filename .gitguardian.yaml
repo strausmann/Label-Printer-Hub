@@ -4,5 +4,12 @@ detectors:
     pattern: 'lh_pat_[A-Za-z0-9_-]{43}'
     severity: high
 paths-ignore:
+  # Tests use pseudo-random literals like "lh_testkey_correct_12345" that
+  # match Shannon-entropy heuristics in GitGuardian's Generic High-Entropy
+  # detector. They are NOT real secrets — they are intentionally readable
+  # fixtures so test failures are diagnosable. Excluding the test trees
+  # rather than tagging every literal with an ignore-comment.
+  - "backend/tests/**"
+  - "frontend/internal/**/*_test.go"
   - "tests/fixtures/**"
   - "docs/**"
