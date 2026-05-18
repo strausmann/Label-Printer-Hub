@@ -13,11 +13,13 @@ DELETE /api/admin/api-keys/{id}     — revoke key (sets enabled=False)
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import AuthContext
@@ -43,10 +45,10 @@ AdminAuthDep = Annotated[AuthContext, Depends(require_admin)]
 class ApiKeyCreate(BaseModel):
     name: str
     scopes: list[str]
-    allowed_printer_ids: list[str] = []
-    rate_limit_per_minute: int = 60
+    allowed_printer_ids: list[str] = Field(default_factory=list)
+    rate_limit_per_minute: int = Field(default=60, ge=1, le=10000)
     notes: str | None = None
-    expires_at: str | None = None  # ISO-8601 string or null
+    expires_at: datetime | None = None  # parsed by Pydantic; returns 422 on invalid input
 
 
 class ApiKeyCreateResponse(BaseModel):
@@ -112,7 +114,7 @@ def _key_to_read(key: ApiKey) -> ApiKeyRead:
     description="Returns metadata for all API keys. key_hash and plaintext are never included.",
 )
 async def list_api_keys(session: SessionDep, _auth: AdminAuthDep) -> list[ApiKeyRead]:
-    result = await session.execute(__import__("sqlalchemy", fromlist=["select"]).select(ApiKey))
+    result = await session.execute(select(ApiKey))
     keys = list(result.scalars())
     return [_key_to_read(k) for k in keys]
 
@@ -142,13 +144,9 @@ async def create_api_key(
         allowed_printer_ids=body.allowed_printer_ids,
         rate_limit_per_minute=body.rate_limit_per_minute,
         notes=body.notes,
+        expires_at=body.expires_at,  # already a datetime | None — parsed by Pydantic
         enabled=True,
     )
-    if body.expires_at:
-        from datetime import datetime
-
-        key.expires_at = datetime.fromisoformat(body.expires_at)
-
     created = await api_keys_repo.create(session, key)
     return ApiKeyCreateResponse(
         key_id=created.id,
@@ -174,7 +172,7 @@ async def get_api_key(
     if key is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API key {key_id} not found",
+            detail={"error_code": "not_found", "error_message": f"API key {key_id} not found"},
         )
     return _key_to_read(key)
 
@@ -199,7 +197,7 @@ async def update_api_key(
     if key is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API key {key_id} not found",
+            detail={"error_code": "not_found", "error_message": f"API key {key_id} not found"},
         )
     if body.enabled is not None:
         key.enabled = body.enabled
@@ -235,7 +233,7 @@ async def revoke_api_key(
     if key is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"API key {key_id} not found",
+            detail={"error_code": "not_found", "error_message": f"API key {key_id} not found"},
         )
     # Invalidate bcrypt cache so the key is rejected immediately
     invalidate_cache(key.key_hash)

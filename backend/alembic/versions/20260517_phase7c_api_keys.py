@@ -8,7 +8,6 @@ Create Date: 2026-05-17
 from __future__ import annotations
 
 import json
-import logging
 import secrets
 
 import bcrypt
@@ -20,7 +19,6 @@ down_revision = "20260517_phase7b_datetime_tz"
 branch_labels = None
 depends_on = None
 
-_log = logging.getLogger(__name__)
 _BOOTSTRAP_KEY_NAME = "bootstrap-admin"
 
 
@@ -79,7 +77,12 @@ def upgrade() -> None:
                 "printers": json.dumps([]), "rate": 60, "enabled": 1, "now": now,
             },
         )
-        _log.warning("BOOTSTRAP API KEY: %s (prefix: %s) — rotate via /admin/api-keys", plaintext, prefix)
+        # Print to stdout (Alembic migration stdout only — NOT the application logger).
+        # This is the only time the plaintext key is visible; copy it before rotating.
+        print(  # noqa: T201
+            f"[label-printer-hub] BOOTSTRAP API KEY: {plaintext} (prefix: {prefix})"
+            " — rotate via /api/admin/api-keys after first login"
+        )
 
 
 def downgrade() -> None:
