@@ -69,8 +69,8 @@ async def test_key_with_empty_scopes_returns_401():
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlmodel import SQLModel
 
-    plaintext = "lh_empty_scopes_test_c_001aa"
-    prefix = plaintext[:12]
+    plaintext = "lh_pat_empty_scopes_test_c_001aa"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")

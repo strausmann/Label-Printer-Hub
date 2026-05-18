@@ -19,8 +19,8 @@ _SEED_DIR = Path(__file__).parents[3] / "app" / "seed" / "templates"
 
 async def _make_print_key(factory):
     """Insert an api-key with print scope and return (plaintext, ApiKey)."""
-    plaintext = "lh_print_integ_wiring_test_step4_001"
-    prefix = plaintext[:12]
+    plaintext = "lh_pat_print_integ_wiring_test_step4_001"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(
@@ -37,8 +37,8 @@ async def _make_print_key(factory):
 
 
 async def _make_read_key(factory):
-    plaintext = "lh_read_integ_wiring_test_step4_002"
-    prefix = plaintext[:12]
+    plaintext = "lh_pat_read_integ_wiring_test_step4_002"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(
@@ -55,8 +55,8 @@ async def _make_read_key(factory):
 
 
 async def _make_admin_key(factory):
-    plaintext = "lh_admin_integ_wiring_test_step4_003"
-    prefix = plaintext[:12]
+    plaintext = "lh_pat_admin_integ_wiring_test_step4_003"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(

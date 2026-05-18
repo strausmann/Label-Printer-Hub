@@ -122,7 +122,7 @@ async def _validate_api_key(
 ) -> AuthContext:
     """Validate the X-Label-Hub-Key header.
 
-    1. Extract prefix (first 12 chars) to look up the key row.
+    1. Extract prefix (first 16 chars) to look up the key row.
     2. bcrypt-verify the full plaintext against the stored hash.
     3. Check the key is enabled and not expired.
     4. Check the key's scopes satisfy ``required_scope``.
@@ -132,13 +132,13 @@ async def _validate_api_key(
         HTTPException 401: key not found / bcrypt mismatch / disabled
         HTTPException 403: key valid but insufficient scope
     """
-    if len(key_header) < 12:
+    if len(key_header) < 16:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error_code": "invalid_key_format", "error_message": "Invalid key format"},
         )
 
-    prefix = key_header[:12]
+    prefix = key_header[:16]
     key_row = await api_keys_repo.get_by_prefix(session, prefix)
 
     if key_row is None:

@@ -24,8 +24,8 @@ _BOOTSTRAP_KEY_NAME = "bootstrap-admin"
 
 def _generate_bootstrap_key() -> tuple[str, str, str]:
     body = secrets.token_urlsafe(32)
-    plaintext = f"lh_{body}"
-    prefix = plaintext[:12]
+    plaintext = f"lh_pat_{body}"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=12)).decode()
     return plaintext, prefix, hashed
 

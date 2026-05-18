@@ -15,8 +15,8 @@ _SEED_DIR = Path(__file__).parents[3] / "app" / "seed" / "templates"
 
 async def _insert_restricted_key(factory, *, allowed_printer_ids: list[str], scopes=None):
     """Insert a key restricted to specific printer IDs."""
-    plaintext = f"lh_acl_test_{uuid4().hex[:20]}"
-    prefix = plaintext[:12]
+    plaintext = f"lh_pat_acl_t_{uuid4().hex[:16]}"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(

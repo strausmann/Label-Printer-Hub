@@ -19,8 +19,8 @@ _SEED_DIR = Path(__file__).parents[3] / "app" / "seed" / "templates"
 
 async def _insert_key(factory, *, rate_limit: int = 3, scopes=None):
     """Insert an API key with the given rate limit and return plaintext."""
-    plaintext = f"lh_ratelimit_test_{uuid4().hex[:20]}"
-    prefix = plaintext[:12]
+    plaintext = f"lh_pat_rlt_{uuid4().hex[:16]}"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(

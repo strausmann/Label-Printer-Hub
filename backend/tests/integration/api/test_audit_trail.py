@@ -17,8 +17,8 @@ _SEED_DIR = Path(__file__).parents[3] / "app" / "seed" / "templates"
 
 
 async def _insert_print_key(factory):
-    plaintext = f"lh_audit_trail_test_{uuid4().hex[:16]}"
-    prefix = plaintext[:12]
+    plaintext = f"lh_pat_audit_trail_{uuid4().hex[:16]}"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     key_id = uuid4()
     async with factory() as s:

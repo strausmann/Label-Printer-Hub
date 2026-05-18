@@ -14,7 +14,7 @@ def _make_key(
     *,
     name="test-key",
     key_hash=r"\$2b\$12\$fake",
-    key_prefix="lh_ab12cd34",
+    key_prefix="lh_pat_ab12cd34",
     scopes=None,
     allowed_printer_ids=None,
     rate_limit_per_minute=60,
@@ -45,18 +45,18 @@ async def test_create_inserts_and_returns_key(session):
 
 @pytest.mark.asyncio
 async def test_create_multiple_keys(session):
-    k1 = await repo.create(session, _make_key(name="key1", key_prefix="lh_aaaaaaaaaa"))
-    k2 = await repo.create(session, _make_key(name="key2", key_prefix="lh_bbbbbbbbbb"))
+    k1 = await repo.create(session, _make_key(name="key1", key_prefix="lh_pat_aaaaaaa"))
+    k2 = await repo.create(session, _make_key(name="key2", key_prefix="lh_pat_bbbbbbb"))
     assert k1.id != k2.id
 
 
 @pytest.mark.asyncio
 async def test_get_by_prefix_returns_matching_key(session):
-    key = _make_key(key_prefix="lh_ab12cd34XX")
+    key = _make_key(key_prefix="lh_pat_ab12cd3X")
     await repo.create(session, key)
-    found = await repo.get_by_prefix(session, "lh_ab12cd34XX")
+    found = await repo.get_by_prefix(session, "lh_pat_ab12cd3X")
     assert found is not None
-    assert found.key_prefix == "lh_ab12cd34XX"
+    assert found.key_prefix == "lh_pat_ab12cd3X"
 
 
 @pytest.mark.asyncio
@@ -67,17 +67,17 @@ async def test_get_by_prefix_returns_none_for_unknown(session):
 
 @pytest.mark.asyncio
 async def test_list_active_returns_only_enabled_non_expired(session):
-    enabled = _make_key(name="enabled", key_prefix="lh_aaaaaaaaaa", enabled=True)
-    disabled = _make_key(name="disabled", key_prefix="lh_bbbbbbbbbb", enabled=False)
+    enabled = _make_key(name="enabled", key_prefix="lh_pat_aaaaaaa", enabled=True)
+    disabled = _make_key(name="disabled", key_prefix="lh_pat_bbbbbbb", enabled=False)
     expired = _make_key(
         name="expired",
-        key_prefix="lh_cccccccccc",
+        key_prefix="lh_pat_ccccccc",
         enabled=True,
         expires_at=datetime.now(UTC) - timedelta(hours=1),
     )
     future = _make_key(
         name="future-expiry",
-        key_prefix="lh_dddddddddd",
+        key_prefix="lh_pat_ddddddd",
         enabled=True,
         expires_at=datetime.now(UTC) + timedelta(days=30),
     )

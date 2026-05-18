@@ -122,8 +122,8 @@ async def test_valid_api_key_returns_auth_context():
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlmodel import SQLModel
 
-    plaintext = "lh_validkey_test_step3_a1b2c3d4e5f6g7"
-    prefix = plaintext[:12]
+    plaintext = "lh_pat_validkey_test_step3_a1b2c3d4e5f6g7"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     key_id = uuid4()
 
@@ -191,8 +191,8 @@ async def test_invalid_api_key_returns_401():
 
     factory = async_sessionmaker(eng, expire_on_commit=False)
     # Insert a key but we'll use a wrong plaintext
-    real_plaintext = "lh_realkey_test_invalid_a1b2c3d4e5f6"
-    prefix = real_plaintext[:12]
+    real_plaintext = "lh_pat_realkey_test_invalid_a1b2c3d4e5f6"
+    prefix = real_plaintext[:16]
     hashed = bcrypt.hashpw(real_plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(
@@ -366,8 +366,8 @@ async def test_admin_key_allowed_on_read_endpoint():
     from app.models.api_key import ApiKey
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    plaintext = "lh_adminkey_scope_hierarchy_test_001"
-    prefix = plaintext[:12]
+    plaintext = "lh_pat_adminkey_scope_hierarchy_test_001"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -422,8 +422,8 @@ async def test_read_key_blocked_on_print_endpoint():
     from app.models.api_key import ApiKey
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-    plaintext = "lh_readonly_scope_test_blocked_001"
-    prefix = plaintext[:12]
+    plaintext = "lh_pat_readonly_scope_test_blocked_001"
+    prefix = plaintext[:16]
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")

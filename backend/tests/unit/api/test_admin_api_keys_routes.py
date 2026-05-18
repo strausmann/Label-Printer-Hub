@@ -66,7 +66,7 @@ async def test_list_api_keys_returns_existing_keys(session):
     key = ApiKey(
         name="existing-key",
         key_hash="fakehash",
-        key_prefix="lh_existing",
+        key_prefix="lh_pat_existg",
         scopes=["read"],
         allowed_printer_ids=[],
         enabled=True,
@@ -102,7 +102,7 @@ async def test_create_api_key_returns_plaintext_once(session):
     assert resp.status_code == 201
     body = resp.json()
     assert "plaintext" in body, "plaintext must be returned ONCE on creation"
-    assert body["plaintext"].startswith("lh_")
+    assert body["plaintext"].startswith("lh_pat_")
     assert "prefix" in body
     assert "key_id" in body
 
@@ -139,7 +139,7 @@ async def test_get_api_key_detail_returns_metadata(session):
     key = ApiKey(
         name="detail-key",
         key_hash="fakehash",
-        key_prefix="lh_detail",
+        key_prefix="lh_pat_detail",
         scopes=["print"],
         allowed_printer_ids=[],
         enabled=True,
@@ -170,7 +170,7 @@ async def test_patch_api_key_updates_fields(session):
     key = ApiKey(
         name="to-patch",
         key_hash="fakehash",
-        key_prefix="lh_topatch",
+        key_prefix="lh_pat_topatch",
         scopes=["read"],
         allowed_printer_ids=[],
         enabled=True,
@@ -201,7 +201,7 @@ async def test_delete_api_key_revokes_it(session):
     key = ApiKey(
         name="to-delete",
         key_hash="fakehash",
-        key_prefix="lh_todelete",
+        key_prefix="lh_pat_tdel",
         scopes=["read"],
         allowed_printer_ids=[],
         enabled=True,

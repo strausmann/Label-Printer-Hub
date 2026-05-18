@@ -22,25 +22,25 @@ def test_generate_api_key_returns_three_tuple():
     assert len(result) == 3
 
 
-def test_plaintext_starts_with_lh_prefix():
+def test_plaintext_starts_with_lh_pat_prefix():
     from app.auth.key_generator import generate_api_key
 
     plaintext, _, _ = generate_api_key()
-    assert plaintext.startswith("lh_"), f"Expected lh_ prefix, got: {plaintext[:5]}"
+    assert plaintext.startswith("lh_pat_"), f"Expected lh_pat_ prefix, got: {plaintext[:10]}"
 
 
-def test_prefix_is_first_12_chars_of_plaintext():
+def test_prefix_is_first_16_chars_of_plaintext():
     from app.auth.key_generator import generate_api_key
 
     plaintext, prefix, _ = generate_api_key()
-    assert prefix == plaintext[:12], f"prefix={prefix!r}, plaintext[:12]={plaintext[:12]!r}"
+    assert prefix == plaintext[:16], f"prefix={prefix!r}, plaintext[:16]={plaintext[:16]!r}"
 
 
-def test_prefix_is_exactly_12_chars():
+def test_prefix_is_exactly_16_chars():
     from app.auth.key_generator import generate_api_key
 
     _, prefix, _ = generate_api_key()
-    assert len(prefix) == 12, f"Expected 12 chars, got {len(prefix)}"
+    assert len(prefix) == 16, f"Expected 16 chars, got {len(prefix)}"
 
 
 def test_bcrypt_hash_verifies_against_plaintext():
@@ -68,12 +68,12 @@ def test_generate_produces_unique_keys():
 
 
 def test_plaintext_body_is_urlsafe():
-    """Characters after lh_ prefix should be URL-safe (no +, /, =)."""
+    """Characters after lh_pat_ prefix should be URL-safe (no +, /, =)."""
     from app.auth.key_generator import generate_api_key
 
     for _ in range(5):
         plaintext, _, _ = generate_api_key()
-        body = plaintext[3:]  # strip "lh_"
+        body = plaintext[7:]  # strip "lh_pat_"
         assert "+" not in body and "/" not in body and "=" not in body, (
             f"Non-URL-safe chars in plaintext body: {body}"
         )
@@ -84,5 +84,5 @@ def test_plaintext_has_sufficient_entropy():
     from app.auth.key_generator import generate_api_key
 
     plaintext, _, _ = generate_api_key()
-    body = plaintext[3:]
+    body = plaintext[7:]  # strip "lh_pat_"
     assert len(body) >= 43, f"Body too short for 256-bit entropy: {len(body)} chars"

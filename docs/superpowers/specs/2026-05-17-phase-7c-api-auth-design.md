@@ -19,7 +19,7 @@ Phase 7c delivers:
 
 1. **Multi-key management** through a new HTMX UI at `/admin/api-keys`
 2. **3-level scope model:** `read`, `print`, `admin` per key (no finer granularity needed for HomeLab scope)
-3. **bcrypt-hashed key storage** with prefix preserved for UI display (`lh_ab12cd34...`)
+3. **bcrypt-hashed key storage** with prefix preserved for UI display (`lh_pat_ab12cd34...`)
 4. **60 prints/min default rate-limit** per key, configurable per-key in the UI (in-memory token-bucket sufficient for single-instance HomeLab)
 5. **Audit trail** in the Jobs table — `api_key_id`, `source_ip` on every print
 6. **Pangolin-Basic-Auth-Bypass downgrade** — after Phase 7c lands, `claude-automation` is scoped to `read`-only as recovery path, all writes require app-key
@@ -38,7 +38,7 @@ class ApiKey(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(index=True)              # User-facing display name, e.g. "Plex Print"
     key_hash: str                              # bcrypt hash of the full plaintext key
-    key_prefix: str = Field(index=True)        # First 12 chars for display, e.g. "lh_ab12cd34"
+    key_prefix: str = Field(index=True)        # First 16 chars for display, e.g. "lh_pat_ab12cd34"
     scopes: list[str] = Field(sa_column=Column(JSON, nullable=False))   # ["read"] / ["read", "print"] / ["admin"]
     allowed_printer_ids: list[UUID] = Field(   # Empty list = all printers; non-empty = restricted
         default_factory=list,
@@ -165,15 +165,27 @@ def generate_api_key() -> tuple[str, str, str]:
     The plaintext is shown to the user ONCE on creation, never persisted.
     """
     body = secrets.token_urlsafe(32)            # 256 bits of entropy
-    plaintext = f"lh_{body}"
-    prefix = plaintext[:12]                     # "lh_ab12cd34X" — enough to identify in UI
+    plaintext = f"lh_pat_{body}"
+    prefix = plaintext[:16]                     # "lh_pat_ab12cd34X" — includes full PAT infix + 9 body discriminator chars
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=12)).decode()
     return plaintext, prefix, hashed
 ```
 
-- `lh_` prefix to distinguish from other token formats (GitHub PAT, etc.)
+- `lh_pat_` PAT-style infix to unambiguously distinguish from other token formats (GitHub PAT `ghp_`, GitLab `glpat-`, etc.) and enable secret-scanning tool detection via the `pat_` discriminator
 - 256-bit entropy from `secrets.token_urlsafe` — URL-safe charset, no padding issues in headers
 - bcrypt rounds=12 (industry default 2024-2026, ~100-200ms verify)
+
+### Custom Detector Configs
+
+Both `.gitleaks.toml` and `.gitguardian.yaml` are included in the repo root with a custom rule matching `lh_pat_[A-Za-z0-9_-]{43}`. This ensures CI-side secret scanning catches any accidental commits of real tokens.
+
+```toml
+# .gitleaks.toml
+[[rules]]
+id = "labelhub-pat"
+regex = '''lh_pat_[A-Za-z0-9_-]{43}'''
+keywords = ["lh_pat_"]
+```
 
 ### Display in UI
 
@@ -236,10 +248,10 @@ Page sections:
 +-- Top bar -----------------------------------------------------+
 | API Keys                                  [+ Neuer Key]        |
 +-- Key list ----------------------------------------------------+
-| Name              Prefix         Scopes       Last used  ⚙ ❌ |
-| Plex Print        lh_ab12cd34X   [print]      5 min ago      |
-| Snipe-IT Asset    lh_xyz98qwer   [print]      2 days ago     |
-| Bootstrap Admin   lh_seed00deadb [admin]      never          |
+| Name              Prefix           Scopes       Last used  ⚙ ❌ |
+| Plex Print        lh_pat_ab12cd34X [print]      5 min ago      |
+| Snipe-IT Asset    lh_pat_xyz98qwer [print]      2 days ago     |
+| Bootstrap Admin   lh_pat_seed00dea [admin]      never          |
 +----------------------------------------------------------------+
 ```
 
@@ -295,7 +307,7 @@ The downgrade is implemented as a feature flag `settings.pangolin_bypass_scope_d
 
 | Layer | Test type | What it covers |
 |---|---|---|
-| Key creation | Unit | `generate_api_key()` produces `lh_` prefix + 256-bit entropy + valid bcrypt hash |
+| Key creation | Unit | `generate_api_key()` produces `lh_pat_` infix + 256-bit entropy + valid bcrypt hash |
 | bcrypt verify | Unit | Correct plaintext verifies; wrong plaintext rejects |
 | LRU cache | Unit | After verify, subsequent calls return cached AuthContext within TTL; expires after TTL |
 | Auth dependency | Integration | Valid key → AuthContext; invalid key → 401; missing key + no Pangolin → 401; missing key + Pangolin-bypass + read scope → AuthContext source=pangolin-bypass |

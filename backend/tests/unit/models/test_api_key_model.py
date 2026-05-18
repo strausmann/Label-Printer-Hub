@@ -126,7 +126,7 @@ def test_api_key_default_values():
     key = ApiKey(
         name="test-key",
         key_hash=r"\$2b\$12\$fakehash",
-        key_prefix="lh_ab12cd34",
+        key_prefix="lh_pat_ab12cd",
         scopes=["read"],
     )
     assert key.enabled is True
