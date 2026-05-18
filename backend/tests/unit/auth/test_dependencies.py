@@ -8,12 +8,9 @@ Tests all three auth paths:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 # --------------------------------------------------------------------------
@@ -23,11 +20,13 @@ from httpx import ASGITransport, AsyncClient
 
 def test_auth_context_importable():
     from app.auth.dependencies import AuthContext
+
     assert AuthContext is not None
 
 
 def test_auth_context_source_field_accepts_valid_values():
     from app.auth.dependencies import AuthContext
+
     for source in ("api-key", "pangolin-sso", "pangolin-bypass"):
         ctx = AuthContext(source=source, scope="read", api_key_id=None, ip="192.0.2.1")
         assert ctx.source == source
@@ -35,6 +34,7 @@ def test_auth_context_source_field_accepts_valid_values():
 
 def test_auth_context_scope_field_accepts_valid_values():
     from app.auth.dependencies import AuthContext
+
     for scope in ("read", "print", "admin"):
         ctx = AuthContext(source="api-key", scope=scope, api_key_id=None, ip="192.0.2.1")
         assert ctx.scope == scope
@@ -42,12 +42,14 @@ def test_auth_context_scope_field_accepts_valid_values():
 
 def test_auth_context_api_key_id_can_be_none():
     from app.auth.dependencies import AuthContext
+
     ctx = AuthContext(source="pangolin-sso", scope="read", api_key_id=None, ip="192.0.2.1")
     assert ctx.api_key_id is None
 
 
 def test_auth_context_api_key_id_can_be_uuid():
     from app.auth.dependencies import AuthContext
+
     key_id = uuid4()
     ctx = AuthContext(source="api-key", scope="print", api_key_id=key_id, ip="192.0.2.1")
     assert ctx.api_key_id == key_id
@@ -57,23 +59,27 @@ def test_auth_context_api_key_id_can_be_uuid():
 # Helper: build a FastAPI test app with the dependency wired in
 # --------------------------------------------------------------------------
 
+
 def _make_test_app(required_scope: str, *, bypass_downgrade: bool = False):
     """Build a minimal FastAPI app to test the dependency."""
-    from fastapi import Depends, FastAPI
+    import app.models
     from app.auth.dependencies import require_scope
     from app.config import Settings
-    import app.db.engine as _engine_module
     from app.db.session import get_session
-    import app.models  # noqa: F401 — register all models
+    from fastapi import Depends, FastAPI
     from sqlalchemy import event
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlmodel import SQLModel
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
-    event.listen(eng.sync_engine, "connect", lambda dbapi_conn, _: (
-        dbapi_conn.execute("PRAGMA journal_mode=WAL"),
-        dbapi_conn.execute("PRAGMA foreign_keys=ON"),
-    ))
+    event.listen(
+        eng.sync_engine,
+        "connect",
+        lambda dbapi_conn, _: (
+            dbapi_conn.execute("PRAGMA journal_mode=WAL"),
+            dbapi_conn.execute("PRAGMA foreign_keys=ON"),
+        ),
+    )
 
     settings = Settings(
         _env_file=None,
@@ -84,8 +90,11 @@ def _make_test_app(required_scope: str, *, bypass_downgrade: bool = False):
 
     @app.get("/test-endpoint")
     async def test_endpoint(ctx=Depends(require_scope(required_scope, settings=settings))):
-        return {"source": ctx.source, "scope": ctx.scope,
-                "api_key_id": str(ctx.api_key_id) if ctx.api_key_id else None}
+        return {
+            "source": ctx.source,
+            "scope": ctx.scope,
+            "api_key_id": str(ctx.api_key_id) if ctx.api_key_id else None,
+        }
 
     async def override_session():
         factory = async_sessionmaker(eng, expire_on_commit=False)
@@ -102,17 +111,16 @@ def _make_test_app(required_scope: str, *, bypass_downgrade: bool = False):
 # Path 1: API-Key header tests
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_valid_api_key_returns_auth_context():
     """Valid X-Label-Hub-Key with sufficient scope → 200 with AuthContext."""
     import bcrypt
     from app.models.api_key import ApiKey
-    from sqlmodel import Session, SQLModel
-    from sqlalchemy import create_engine
 
     # Create in-memory DB and insert a test key
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-    from sqlalchemy import event
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlmodel import SQLModel
 
     plaintext = "lh_validkey_test_step3_a1b2c3d4e5f6g7"
     prefix = plaintext[:12]
@@ -120,25 +128,31 @@ async def test_valid_api_key_returns_auth_context():
     key_id = uuid4()
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
-    import app.models  # noqa: F401
+    import app.models
 
     async with eng.begin() as conn:
         from sqlmodel import SQLModel
+
         await conn.run_sync(SQLModel.metadata.create_all)
 
     factory = async_sessionmaker(eng, expire_on_commit=False)
     async with factory() as s:
         key = ApiKey(
-            id=key_id, name="test-key", key_hash=hashed, key_prefix=prefix,
-            scopes=["read", "print"], allowed_printer_ids=[], enabled=True,
+            id=key_id,
+            name="test-key",
+            key_hash=hashed,
+            key_prefix=prefix,
+            scopes=["read", "print"],
+            allowed_printer_ids=[],
+            enabled=True,
         )
         s.add(key)
         await s.commit()
 
-    from fastapi import Depends, FastAPI
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
+    from fastapi import Depends, FastAPI
 
     settings = Settings(_env_file=None)
     app = FastAPI()
@@ -164,14 +178,15 @@ async def test_valid_api_key_returns_auth_context():
 @pytest.mark.asyncio
 async def test_invalid_api_key_returns_401():
     """Wrong API key → 401."""
+    import app.models
     import bcrypt
     from app.models.api_key import ApiKey
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-    import app.models  # noqa: F401
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with eng.begin() as conn:
         from sqlmodel import SQLModel
+
         await conn.run_sync(SQLModel.metadata.create_all)
 
     factory = async_sessionmaker(eng, expire_on_commit=False)
@@ -181,16 +196,20 @@ async def test_invalid_api_key_returns_401():
     hashed = bcrypt.hashpw(real_plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(
-            name="key1", key_hash=hashed, key_prefix=prefix,
-            scopes=["read"], allowed_printer_ids=[], enabled=True,
+            name="key1",
+            key_hash=hashed,
+            key_prefix=prefix,
+            scopes=["read"],
+            allowed_printer_ids=[],
+            enabled=True,
         )
         s.add(key)
         await s.commit()
 
-    from fastapi import Depends, FastAPI
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
+    from fastapi import Depends, FastAPI
 
     settings = Settings(_env_file=None)
     app = FastAPI()
@@ -217,19 +236,20 @@ async def test_invalid_api_key_returns_401():
 @pytest.mark.asyncio
 async def test_missing_key_no_pangolin_returns_401():
     """No auth header at all → 401."""
-    import app.models  # noqa: F401
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    import app.models
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with eng.begin() as conn:
         from sqlmodel import SQLModel
+
         await conn.run_sync(SQLModel.metadata.create_all)
     factory = async_sessionmaker(eng, expire_on_commit=False)
 
-    from fastapi import Depends, FastAPI
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
+    from fastapi import Depends, FastAPI
 
     settings = Settings(_env_file=None)
     app = FastAPI()
@@ -255,22 +275,24 @@ async def test_missing_key_no_pangolin_returns_401():
 # Path 2: Pangolin-SSO
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_pangolin_sso_allows_read_scope():
     """Pangolin-SSO header on read endpoint → 200."""
-    import app.models  # noqa: F401
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    import app.models
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with eng.begin() as conn:
         from sqlmodel import SQLModel
+
         await conn.run_sync(SQLModel.metadata.create_all)
     factory = async_sessionmaker(eng, expire_on_commit=False)
 
-    from fastapi import Depends, FastAPI
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
+    from fastapi import Depends, FastAPI
 
     settings = Settings(_env_file=None)
     app = FastAPI()
@@ -296,19 +318,20 @@ async def test_pangolin_sso_allows_read_scope():
 @pytest.mark.asyncio
 async def test_pangolin_sso_blocked_on_print_scope():
     """Pangolin-SSO on print scope endpoint → 401 (SSO only grants read)."""
-    import app.models  # noqa: F401
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    import app.models
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with eng.begin() as conn:
         from sqlmodel import SQLModel
+
         await conn.run_sync(SQLModel.metadata.create_all)
     factory = async_sessionmaker(eng, expire_on_commit=False)
 
-    from fastapi import Depends, FastAPI
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
+    from fastapi import Depends, FastAPI
 
     settings = Settings(_env_file=None)
     app = FastAPI()
@@ -334,13 +357,14 @@ async def test_pangolin_sso_blocked_on_print_scope():
 # Scope hierarchy tests
 # --------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_admin_key_allowed_on_read_endpoint():
     """admin-scoped key satisfies read requirement."""
+    import app.models
     import bcrypt
     from app.models.api_key import ApiKey
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-    import app.models  # noqa: F401
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     plaintext = "lh_adminkey_scope_hierarchy_test_001"
     prefix = plaintext[:12]
@@ -349,21 +373,26 @@ async def test_admin_key_allowed_on_read_endpoint():
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with eng.begin() as conn:
         from sqlmodel import SQLModel
+
         await conn.run_sync(SQLModel.metadata.create_all)
     factory = async_sessionmaker(eng, expire_on_commit=False)
 
     async with factory() as s:
         key = ApiKey(
-            name="admin-key", key_hash=hashed, key_prefix=prefix,
-            scopes=["admin"], allowed_printer_ids=[], enabled=True,
+            name="admin-key",
+            key_hash=hashed,
+            key_prefix=prefix,
+            scopes=["admin"],
+            allowed_printer_ids=[],
+            enabled=True,
         )
         s.add(key)
         await s.commit()
 
-    from fastapi import Depends, FastAPI
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
+    from fastapi import Depends, FastAPI
 
     settings = Settings(_env_file=None)
     app = FastAPI()
@@ -375,6 +404,7 @@ async def test_admin_key_allowed_on_read_endpoint():
     async def _session():
         async with factory() as s:
             yield s
+
     app.dependency_overrides[get_session] = _session
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
@@ -387,10 +417,10 @@ async def test_admin_key_allowed_on_read_endpoint():
 @pytest.mark.asyncio
 async def test_read_key_blocked_on_print_endpoint():
     """read-only key → 403 on print endpoint."""
+    import app.models
     import bcrypt
     from app.models.api_key import ApiKey
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-    import app.models  # noqa: F401
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     plaintext = "lh_readonly_scope_test_blocked_001"
     prefix = plaintext[:12]
@@ -399,21 +429,26 @@ async def test_read_key_blocked_on_print_endpoint():
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with eng.begin() as conn:
         from sqlmodel import SQLModel
+
         await conn.run_sync(SQLModel.metadata.create_all)
     factory = async_sessionmaker(eng, expire_on_commit=False)
 
     async with factory() as s:
         key = ApiKey(
-            name="read-only", key_hash=hashed, key_prefix=prefix,
-            scopes=["read"], allowed_printer_ids=[], enabled=True,
+            name="read-only",
+            key_hash=hashed,
+            key_prefix=prefix,
+            scopes=["read"],
+            allowed_printer_ids=[],
+            enabled=True,
         )
         s.add(key)
         await s.commit()
 
-    from fastapi import Depends, FastAPI
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
+    from fastapi import Depends, FastAPI
 
     settings = Settings(_env_file=None)
     app = FastAPI()
@@ -425,6 +460,7 @@ async def test_read_key_blocked_on_print_endpoint():
     async def _session():
         async with factory() as s:
             yield s
+
     app.dependency_overrides[get_session] = _session
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:

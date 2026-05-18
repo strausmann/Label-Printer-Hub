@@ -15,11 +15,13 @@ def _make_hash(plaintext: str) -> str:
 
 def test_verify_api_key_importable():
     from app.auth.verifier import verify_api_key
+
     assert verify_api_key is not None
 
 
 def test_verify_returns_true_for_correct_key():
     from app.auth.verifier import verify_api_key
+
     plaintext = "lh_testkey_correct_12345"
     hashed = _make_hash(plaintext)
     assert verify_api_key(plaintext, hashed) is True
@@ -27,6 +29,7 @@ def test_verify_returns_true_for_correct_key():
 
 def test_verify_returns_false_for_wrong_key():
     from app.auth.verifier import verify_api_key
+
     hashed = _make_hash("lh_correct_key_abc123")
     assert verify_api_key("lh_wrong_key_xyz999", hashed) is False
 
@@ -34,6 +37,7 @@ def test_verify_returns_false_for_wrong_key():
 def test_verify_caches_result_on_second_call():
     """After the first verify, subsequent calls with same inputs skip bcrypt."""
     from app.auth import verifier as verifier_module
+
     verifier_module._cache.clear()
 
     plaintext = "lh_cache_test_key_001"
@@ -62,6 +66,7 @@ def test_verify_caches_result_on_second_call():
 def test_verify_different_keys_call_bcrypt_each():
     """Different plaintext/hash pairs are each verified separately."""
     from app.auth import verifier as verifier_module
+
     verifier_module._cache.clear()
 
     p1, h1 = "lh_key_alpha_001", _make_hash("lh_key_alpha_001")
@@ -84,6 +89,7 @@ def test_verify_different_keys_call_bcrypt_each():
 def test_invalidate_cache_removes_entry():
     """invalidate_cache removes a cached entry by hash."""
     from app.auth import verifier as verifier_module
+
     verifier_module._cache.clear()
 
     plaintext = "lh_invalidate_test_001"
@@ -130,6 +136,7 @@ async def test_verify_api_key_does_not_block_event_loop():
 async def test_verify_api_key_async_returns_true_for_correct_key():
     """Async wrapper returns True for a matching key."""
     from app.auth.verifier import verify_api_key_async
+
     plaintext = "lh_async_correct_001"
     hashed = _make_hash(plaintext)
     assert await verify_api_key_async(plaintext, hashed) is True
@@ -139,5 +146,6 @@ async def test_verify_api_key_async_returns_true_for_correct_key():
 async def test_verify_api_key_async_returns_false_for_wrong_key():
     """Async wrapper returns False for a non-matching key."""
     from app.auth.verifier import verify_api_key_async
+
     hashed = _make_hash("lh_async_other_001")
     assert await verify_api_key_async("lh_async_wrong_001", hashed) is False

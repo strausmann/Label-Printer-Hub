@@ -8,16 +8,16 @@ Test mapping:
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from uuid import uuid4 as _uuid4
 
 import app.models  # noqa: F401 — registers all SQLModel tables with metadata
 import pytest
 import pytest_asyncio
 from app.api.routes.templates import router
-from app.db.engine import _apply_pragmas
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
+from app.db.engine import _apply_pragmas
 from app.db.session import get_session
-from uuid import uuid4 as _uuid4
 from app.models.template import Template
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -65,7 +65,9 @@ def _build_app(session_override: AsyncSession) -> FastAPI:
     async def _override_session() -> AsyncIterator[AsyncSession]:
         yield session_override
 
-    _fake_auth_ctx = AuthContext(source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1")
+    _fake_auth_ctx = AuthContext(
+        source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1"
+    )
     app.dependency_overrides[require_read] = lambda _c=_fake_auth_ctx: _c
     app.dependency_overrides[get_session] = _override_session
     return app

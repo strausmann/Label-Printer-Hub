@@ -93,7 +93,13 @@ select = [
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["ARG"]   # pytest fixtures
+"tests/**/*.py" = [
+    "ARG",   # pytest fixtures use unused args for dependency injection
+    "B008",  # Depends(require_scope(...)) in test route definitions is the FastAPI test pattern
+]
+"alembic/versions/*.py" = [
+    "T201",  # print() in migrations is intentional — bootstrap key must go to stdout
+]
 
 [tool.mypy]
 python_version = "3.12"

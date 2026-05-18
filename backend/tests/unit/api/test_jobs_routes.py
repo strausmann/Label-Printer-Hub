@@ -17,16 +17,16 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
+from uuid import uuid4 as _uuid4
 
 import app.models  # noqa: F401 — registers all SQLModel tables with metadata
 import pytest
 import pytest_asyncio
 from app.api.routes.jobs import router
-from app.db.engine import _apply_pragmas
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
+from app.db.engine import _apply_pragmas
 from app.db.session import get_session
-from uuid import uuid4 as _uuid4
 from app.models.job import Job, JobState
 from app.models.printer import Printer
 from fastapi import FastAPI
@@ -488,7 +488,9 @@ async def test_list_jobs_direct_returns_all(session) -> None:
     j1 = await _make_job(session, printer.id, state=JobState.QUEUED.value)
     j2 = await _make_job(session, printer.id, state=JobState.DONE.value)
 
-    result = await list_jobs(session=session, _auth=None, state=None, printer_id=None, since=None, limit=50)
+    result = await list_jobs(
+        session=session, _auth=None, state=None, printer_id=None, since=None, limit=50
+    )
 
     assert len(result) == 2
     ids = {str(r.id) for r in result}

@@ -5,14 +5,13 @@ Tests that POST /api/print with a key sets api_key_id and source_ip on the Job r
 
 from __future__ import annotations
 
-import bcrypt
+from pathlib import Path
 from uuid import uuid4
 
 import app.models  # noqa: F401
+import bcrypt
 import pytest
 from app.models.api_key import ApiKey
-from httpx import ASGITransport, AsyncClient
-from pathlib import Path
 
 _SEED_DIR = Path(__file__).parents[3] / "app" / "seed" / "templates"
 
@@ -24,8 +23,13 @@ async def _insert_print_key(factory):
     key_id = uuid4()
     async with factory() as s:
         key = ApiKey(
-            id=key_id, name="audit-test", key_hash=hashed, key_prefix=prefix,
-            scopes=["print"], allowed_printer_ids=[], enabled=True,
+            id=key_id,
+            name="audit-test",
+            key_hash=hashed,
+            key_prefix=prefix,
+            scopes=["print"],
+            allowed_printer_ids=[],
+            enabled=True,
             rate_limit_per_minute=60,
         )
         s.add(key)
@@ -52,6 +56,4 @@ async def test_legacy_print_endpoint_requires_auth(api_client_with_seed):
             endpoint,
             json={"template_id": "t", "data": {"title": "X", "primary_id": "1", "qr_payload": "u"}},
         )
-        assert resp.status_code == 401, (
-            f"Expected 401 on {endpoint}, got {resp.status_code}"
-        )
+        assert resp.status_code == 401, f"Expected 401 on {endpoint}, got {resp.status_code}"

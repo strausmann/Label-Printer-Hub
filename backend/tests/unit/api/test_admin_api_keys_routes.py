@@ -64,8 +64,12 @@ async def test_list_api_keys_empty_returns_empty_list(session):
 @pytest.mark.asyncio
 async def test_list_api_keys_returns_existing_keys(session):
     key = ApiKey(
-        name="existing-key", key_hash="fakehash", key_prefix="lh_existing",
-        scopes=["read"], allowed_printer_ids=[], enabled=True,
+        name="existing-key",
+        key_hash="fakehash",
+        key_prefix="lh_existing",
+        scopes=["read"],
+        allowed_printer_ids=[],
+        enabled=True,
     )
     session.add(key)
     await session.commit()
@@ -86,12 +90,15 @@ async def test_create_api_key_returns_plaintext_once(session):
     """POST /api/admin/api-keys creates a key and returns plaintext in the response."""
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        resp = await c.post("/api/admin/api-keys", json={
-            "name": "new-key",
-            "scopes": ["read", "print"],
-            "allowed_printer_ids": [],
-            "rate_limit_per_minute": 60,
-        })
+        resp = await c.post(
+            "/api/admin/api-keys",
+            json={
+                "name": "new-key",
+                "scopes": ["read", "print"],
+                "allowed_printer_ids": [],
+                "rate_limit_per_minute": 60,
+            },
+        )
     assert resp.status_code == 201
     body = resp.json()
     assert "plaintext" in body, "plaintext must be returned ONCE on creation"
@@ -105,18 +112,22 @@ async def test_create_api_key_does_not_store_plaintext(session):
     """The DB stores only the hash, not the plaintext."""
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        resp = await c.post("/api/admin/api-keys", json={
-            "name": "hash-test",
-            "scopes": ["read"],
-            "allowed_printer_ids": [],
-            "rate_limit_per_minute": 60,
-        })
+        resp = await c.post(
+            "/api/admin/api-keys",
+            json={
+                "name": "hash-test",
+                "scopes": ["read"],
+                "allowed_printer_ids": [],
+                "rate_limit_per_minute": 60,
+            },
+        )
     assert resp.status_code == 201
     plaintext = resp.json()["plaintext"]
 
     # Fetch the key directly from DB and verify hash
-    from sqlalchemy import select
     from app.models.api_key import ApiKey as ApiKeyModel
+    from sqlalchemy import select
+
     result = await session.execute(select(ApiKeyModel).where(ApiKeyModel.name == "hash-test"))
     db_key = result.scalar_one_or_none()
     assert db_key is not None
@@ -126,8 +137,12 @@ async def test_create_api_key_does_not_store_plaintext(session):
 @pytest.mark.asyncio
 async def test_get_api_key_detail_returns_metadata(session):
     key = ApiKey(
-        name="detail-key", key_hash="fakehash", key_prefix="lh_detail",
-        scopes=["print"], allowed_printer_ids=[], enabled=True,
+        name="detail-key",
+        key_hash="fakehash",
+        key_prefix="lh_detail",
+        scopes=["print"],
+        allowed_printer_ids=[],
+        enabled=True,
     )
     session.add(key)
     await session.commit()
@@ -153,8 +168,12 @@ async def test_get_api_key_not_found_returns_404(session):
 @pytest.mark.asyncio
 async def test_patch_api_key_updates_fields(session):
     key = ApiKey(
-        name="to-patch", key_hash="fakehash", key_prefix="lh_topatch",
-        scopes=["read"], allowed_printer_ids=[], enabled=True,
+        name="to-patch",
+        key_hash="fakehash",
+        key_prefix="lh_topatch",
+        scopes=["read"],
+        allowed_printer_ids=[],
+        enabled=True,
         rate_limit_per_minute=60,
     )
     session.add(key)
@@ -162,11 +181,14 @@ async def test_patch_api_key_updates_fields(session):
 
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        resp = await c.patch(f"/api/admin/api-keys/{key.id}", json={
-            "enabled": False,
-            "rate_limit_per_minute": 120,
-            "notes": "Patched!",
-        })
+        resp = await c.patch(
+            f"/api/admin/api-keys/{key.id}",
+            json={
+                "enabled": False,
+                "rate_limit_per_minute": 120,
+                "notes": "Patched!",
+            },
+        )
     assert resp.status_code == 200
     body = resp.json()
     assert body["enabled"] is False
@@ -177,8 +199,12 @@ async def test_patch_api_key_updates_fields(session):
 @pytest.mark.asyncio
 async def test_delete_api_key_revokes_it(session):
     key = ApiKey(
-        name="to-delete", key_hash="fakehash", key_prefix="lh_todelete",
-        scopes=["read"], allowed_printer_ids=[], enabled=True,
+        name="to-delete",
+        key_hash="fakehash",
+        key_prefix="lh_todelete",
+        scopes=["read"],
+        allowed_printer_ids=[],
+        enabled=True,
     )
     session.add(key)
     await session.commit()

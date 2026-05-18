@@ -80,9 +80,9 @@ from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
-from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes import templates as templates_routes
 from app.api.routes import webhooks as webhooks_routes
+from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.print import router as print_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read

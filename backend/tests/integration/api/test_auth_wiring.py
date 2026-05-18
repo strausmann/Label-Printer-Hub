@@ -7,14 +7,12 @@ Tests that each category of endpoint:
 
 from __future__ import annotations
 
-import bcrypt
 from pathlib import Path
-from uuid import uuid4
 
 import app.models  # noqa: F401
+import bcrypt
 import pytest
 from app.models.api_key import ApiKey
-from httpx import ASGITransport, AsyncClient
 
 _SEED_DIR = Path(__file__).parents[3] / "app" / "seed" / "templates"
 
@@ -26,8 +24,12 @@ async def _make_print_key(factory):
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(
-            name="wiring-test-print", key_hash=hashed, key_prefix=prefix,
-            scopes=["print"], allowed_printer_ids=[], enabled=True,
+            name="wiring-test-print",
+            key_hash=hashed,
+            key_prefix=prefix,
+            scopes=["print"],
+            allowed_printer_ids=[],
+            enabled=True,
         )
         s.add(key)
         await s.commit()
@@ -40,8 +42,12 @@ async def _make_read_key(factory):
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(
-            name="wiring-test-read", key_hash=hashed, key_prefix=prefix,
-            scopes=["read"], allowed_printer_ids=[], enabled=True,
+            name="wiring-test-read",
+            key_hash=hashed,
+            key_prefix=prefix,
+            scopes=["read"],
+            allowed_printer_ids=[],
+            enabled=True,
         )
         s.add(key)
         await s.commit()
@@ -54,8 +60,12 @@ async def _make_admin_key(factory):
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(
-            name="wiring-test-admin", key_hash=hashed, key_prefix=prefix,
-            scopes=["admin"], allowed_printer_ids=[], enabled=True,
+            name="wiring-test-admin",
+            key_hash=hashed,
+            key_prefix=prefix,
+            scopes=["admin"],
+            allowed_printer_ids=[],
+            enabled=True,
         )
         s.add(key)
         await s.commit()
@@ -66,20 +76,23 @@ async def _make_admin_key(factory):
 # Helper: build app client with DB patched
 # --------------------------------------------------------------------------
 
+
 def _make_client_ctx(factory):
-    import app.db.engine as _engine_module
     import app.db.session as _session_module
     from app.main import create_app
 
     _session_module.async_session = factory
 
     from app.integrations import (  # type: ignore[attr-defined]
-        IntegrationRegistry, _discover_plugins,
+        IntegrationRegistry,
+        _discover_plugins,
     )
+
     if not IntegrationRegistry.names():
         _discover_plugins()
 
     from app.services.template_loader import TemplateLoader
+
     original_cache = dict(TemplateLoader._cache)
     TemplateLoader.load_dir(_SEED_DIR)
 
@@ -96,7 +109,7 @@ async def test_get_printers_without_auth_returns_401(api_client_with_seed):
 @pytest.mark.asyncio
 async def test_get_printers_with_read_key_returns_200(api_client_with_seed):
     import app.db.engine as _engine_module
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+
     factory = _engine_module.async_session
     read_key = await _make_read_key(factory)
 
@@ -116,6 +129,7 @@ async def test_get_templates_without_auth_returns_401(api_client_with_seed):
 @pytest.mark.asyncio
 async def test_get_templates_with_read_key_returns_200(api_client_with_seed):
     import app.db.engine as _engine_module
+
     factory = _engine_module.async_session
     read_key = await _make_read_key(factory)
 

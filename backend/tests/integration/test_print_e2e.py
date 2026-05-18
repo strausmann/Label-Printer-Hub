@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+from uuid import uuid4
 
 import pytest
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_print, require_read
 from app.config import get_settings
 from app.main import create_app
 from app.printer_backends import BackendRegistry
 from app.printer_models.registry import ModelRegistry
-from app.auth.dependencies import AuthContext
-from app.auth.scope_deps import require_print, require_read
 from httpx import ASGITransport, AsyncClient
-from uuid import uuid4
 
 _FAKE_AUTH = AuthContext(source="api-key", scope="admin", api_key_id=uuid4(), ip="127.0.0.1")
 

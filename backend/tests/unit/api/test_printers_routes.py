@@ -78,11 +78,12 @@ def _build_app(session_override: AsyncSession) -> FastAPI:
     async def _override_session() -> AsyncIterator[AsyncSession]:
         yield session_override
 
-    
     # Phase 7c: bypass auth in unit tests
-    from app.auth.dependencies import AuthContext
-    from app.auth.scope_deps import require_read, require_print, require_admin
     from uuid import uuid4
+
+    from app.auth.dependencies import AuthContext
+    from app.auth.scope_deps import require_admin, require_print, require_read
+
     _fake_ctx = AuthContext(source="api-key", scope="admin", api_key_id=uuid4(), ip="127.0.0.1")
     for dep in (require_read, require_print, require_admin):
         app.dependency_overrides[dep] = lambda _c=_fake_ctx: _c

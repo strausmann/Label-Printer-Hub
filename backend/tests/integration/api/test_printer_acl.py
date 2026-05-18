@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import bcrypt
-from uuid import UUID, uuid4
+from pathlib import Path
+from uuid import uuid4
 
 import app.models  # noqa: F401
+import bcrypt
 import pytest
 from app.models.api_key import ApiKey
-from httpx import ASGITransport, AsyncClient
-from pathlib import Path
 
 _SEED_DIR = Path(__file__).parents[3] / "app" / "seed" / "templates"
 
@@ -21,9 +20,13 @@ async def _insert_restricted_key(factory, *, allowed_printer_ids: list[str], sco
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
     async with factory() as s:
         key = ApiKey(
-            name="acl-test-key", key_hash=hashed, key_prefix=prefix,
-            scopes=scopes or ["print"], allowed_printer_ids=allowed_printer_ids,
-            enabled=True, rate_limit_per_minute=60,
+            name="acl-test-key",
+            key_hash=hashed,
+            key_prefix=prefix,
+            scopes=scopes or ["print"],
+            allowed_printer_ids=allowed_printer_ids,
+            enabled=True,
+            rate_limit_per_minute=60,
         )
         s.add(key)
         await s.commit()
@@ -34,6 +37,7 @@ async def _insert_restricted_key(factory, *, allowed_printer_ids: list[str], sco
 async def test_key_with_no_restriction_allows_all_printers(api_client_with_seed):
     """Empty allowed_printer_ids means all printers are allowed."""
     import app.db.engine as _engine_module
+
     factory = _engine_module.async_session
 
     # Key with empty allowed_printer_ids
@@ -50,10 +54,12 @@ async def test_key_with_no_restriction_allows_all_printers(api_client_with_seed)
 async def test_key_restricted_to_printer_a_blocked_on_printer_b(api_client_with_seed):
     """Key with allowed_printer_ids=[A] cannot access printer B."""
     import app.db.engine as _engine_module
+
     factory = _engine_module.async_session
 
     # Get a real printer ID from the DB
     from app.repositories import printers as printers_repo
+
     async with factory() as s:
         all_printers = await printers_repo.list_all(s)
 
@@ -85,9 +91,11 @@ async def test_key_restricted_to_printer_a_blocked_on_printer_b(api_client_with_
 async def test_key_restricted_to_printer_a_allowed_on_printer_a(api_client_with_seed):
     """Key with allowed_printer_ids=[A] can access printer A."""
     import app.db.engine as _engine_module
+
     factory = _engine_module.async_session
 
     from app.repositories import printers as printers_repo
+
     async with factory() as s:
         all_printers = await printers_repo.list_all(s)
 

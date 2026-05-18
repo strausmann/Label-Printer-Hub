@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Literal
+from collections.abc import Callable, Coroutine
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, Security, status
@@ -195,7 +196,7 @@ async def _validate_api_key(
 
     try:
         scope_ok = _scope_satisfies(effective_scope, required_scope)
-    except ValueError:
+    except ValueError as exc:
         # Scope value from DB is not in the known hierarchy — treat as 401.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -203,7 +204,7 @@ async def _validate_api_key(
                 "error_code": "key_invalid_scope",
                 "error_message": "API key has an unrecognised scope value.",
             },
-        )
+        ) from exc
 
     if not scope_ok:
         raise HTTPException(
@@ -249,7 +250,9 @@ async def _validate_api_key(
     )
 
 
-def require_scope(required: str, *, settings: Settings | None = None):
+def require_scope(
+    required: str, *, settings: Settings | None = None
+) -> Callable[..., Coroutine[Any, Any, AuthContext]]:
     """Return a FastAPI dependency that enforces the required scope.
 
     Args:

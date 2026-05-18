@@ -12,7 +12,6 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-
 # --------------------------------------------------------------------------
 # Fix B: _scope_satisfies must be fail-closed for unknown scopes
 # --------------------------------------------------------------------------
@@ -66,11 +65,9 @@ async def test_key_with_empty_scopes_returns_401():
     read access to keys that have no scopes assigned. Now it must 401.
     """
     import bcrypt
+    from app.models.api_key import ApiKey
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlmodel import SQLModel
-
-    import app.models  # registers all models for SQLModel.metadata
-    from app.models.api_key import ApiKey
 
     plaintext = "lh_empty_scopes_test_c_001aa"
     prefix = plaintext[:12]
@@ -93,16 +90,16 @@ async def test_key_with_empty_scopes_returns_401():
         s.add(key)
         await s.commit()
 
-    from fastapi import Depends, FastAPI
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
+    from fastapi import Depends, FastAPI
 
     settings = Settings(_env_file=None)
     app_t = FastAPI()
 
     @app_t.get("/test")
-    async def ep(ctx=Depends(require_scope("read", settings=settings))):  # noqa: B008
+    async def ep(ctx=Depends(require_scope("read", settings=settings))):
         return {"scope": ctx.scope}
 
     async def _session():

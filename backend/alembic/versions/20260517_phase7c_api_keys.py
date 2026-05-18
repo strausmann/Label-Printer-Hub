@@ -11,8 +11,8 @@ import json
 import secrets
 
 import bcrypt
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = "20260517_phase7c_api_keys"
 down_revision = "20260517_phase7b_datetime_tz"
@@ -60,6 +60,7 @@ def upgrade() -> None:
     if count == 0:
         from datetime import UTC, datetime
         from uuid import uuid4
+
         plaintext, prefix, hashed = _generate_bootstrap_key()
         key_id = str(uuid4())
         now = datetime.now(UTC).isoformat()
@@ -72,14 +73,20 @@ def upgrade() -> None:
                 "        :rate, :enabled, :now)"
             ),
             {
-                "id": key_id, "name": _BOOTSTRAP_KEY_NAME, "hash": hashed,
-                "prefix": prefix, "scopes": json.dumps(["admin"]),
-                "printers": json.dumps([]), "rate": 60, "enabled": 1, "now": now,
+                "id": key_id,
+                "name": _BOOTSTRAP_KEY_NAME,
+                "hash": hashed,
+                "prefix": prefix,
+                "scopes": json.dumps(["admin"]),
+                "printers": json.dumps([]),
+                "rate": 60,
+                "enabled": 1,
+                "now": now,
             },
         )
         # Print to stdout (Alembic migration stdout only — NOT the application logger).
         # This is the only time the plaintext key is visible; copy it before rotating.
-        print(  # noqa: T201
+        print(
             f"[label-printer-hub] BOOTSTRAP API KEY: {plaintext} (prefix: {prefix})"
             " — rotate via /api/admin/api-keys after first login"
         )

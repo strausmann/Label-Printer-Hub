@@ -11,7 +11,6 @@ from uuid import uuid4
 
 from app.auth.dependencies import AuthContext, require_scope
 
-
 _DEFAULT_AUTH_CONTEXT = AuthContext(
     source="api-key",
     scope="admin",  # admin satisfies everything
@@ -38,7 +37,7 @@ def bypass_auth(app, *, scope: str = "admin", source: str = "api-key") -> None:
     """
     ctx = AuthContext(
         source=source,  # type: ignore[arg-type]
-        scope=scope,    # type: ignore[arg-type]
+        scope=scope,  # type: ignore[arg-type]
         api_key_id=uuid4() if source == "api-key" else None,
         ip="192.0.2.1",
     )
