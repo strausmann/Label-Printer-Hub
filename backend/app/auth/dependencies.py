@@ -36,7 +36,7 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.verifier import verify_api_key
+from app.auth.verifier import verify_api_key_async
 from app.config import Settings, get_settings
 from app.db.session import get_session
 from app.repositories import api_keys as api_keys_repo
@@ -159,7 +159,7 @@ async def _validate_api_key(
                 detail={"error_code": "key_expired", "error_message": "API key has expired"},
             )
 
-    if not verify_api_key(key_header, key_row.key_hash):
+    if not await verify_api_key_async(key_header, key_row.key_hash):
         _log.debug("bcrypt mismatch for prefix %s", prefix)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

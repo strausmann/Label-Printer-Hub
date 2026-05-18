@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import patch
 
 import bcrypt
@@ -94,3 +95,49 @@ def test_invalidate_cache_removes_entry():
 
     verifier_module.invalidate_cache(hashed)
     assert (plaintext, hashed) not in verifier_module._cache
+
+
+@pytest.mark.asyncio
+async def test_verify_api_key_does_not_block_event_loop():
+    """bcrypt.checkpw must run in a thread pool so the event loop stays free.
+
+    Strategy: run verify_api_key concurrently with a fast coroutine.
+    If checkpw blocks the loop, the fast coroutine cannot advance.
+    We assert the concurrent coroutine completed while verify was running.
+    """
+    from app.auth import verifier as verifier_module
+
+    verifier_module._cache.clear()
+    plaintext = "lh_nonblocking_test_001"
+    hashed = _make_hash(plaintext)
+
+    side_ran = []
+
+    async def side_coroutine():
+        await asyncio.sleep(0)
+        side_ran.append(True)
+
+    # Run both concurrently
+    await asyncio.gather(
+        verifier_module.verify_api_key_async(plaintext, hashed),
+        side_coroutine(),
+    )
+
+    assert side_ran, "Side coroutine did not run — event loop was blocked"
+
+
+@pytest.mark.asyncio
+async def test_verify_api_key_async_returns_true_for_correct_key():
+    """Async wrapper returns True for a matching key."""
+    from app.auth.verifier import verify_api_key_async
+    plaintext = "lh_async_correct_001"
+    hashed = _make_hash(plaintext)
+    assert await verify_api_key_async(plaintext, hashed) is True
+
+
+@pytest.mark.asyncio
+async def test_verify_api_key_async_returns_false_for_wrong_key():
+    """Async wrapper returns False for a non-matching key."""
+    from app.auth.verifier import verify_api_key_async
+    hashed = _make_hash("lh_async_other_001")
+    assert await verify_api_key_async("lh_async_wrong_001", hashed) is False

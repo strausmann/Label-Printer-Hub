@@ -20,9 +20,18 @@ Thread-safety: cachetools.TTLCache is NOT thread-safe, so we use an explicit
 asyncio-compatible pattern (single event loop = single thread for FastAPI).
 For multi-process deployments an external cache would be needed (out of scope
 for HomeLab single-instance design per spec Section 5).
+
+Async design: bcrypt.checkpw is CPU-intensive (~100-200ms).  Calling it
+directly inside an ``async def`` blocks the event loop and prevents other
+coroutines from running.  ``verify_api_key_async`` offloads the work to a
+thread pool via ``asyncio.to_thread``, keeping the loop free.  The cache
+check/write still happens on the event-loop thread (single-threaded, no lock
+needed for in-process use).
 """
 
 from __future__ import annotations
+
+import asyncio
 
 import bcrypt
 from cachetools import TTLCache
@@ -43,12 +52,43 @@ def verify_api_key(plaintext: str, hashed: str) -> bool:
 
     Returns:
         True if the key is valid, False otherwise.
+
+    Note:
+        This is a synchronous helper.  In async contexts prefer
+        ``verify_api_key_async`` to avoid blocking the event loop.
     """
     cache_key = (plaintext, hashed)
     if cache_key in _cache:
         return _cache[cache_key]
 
     result = bcrypt.checkpw(plaintext.encode(), hashed.encode())
+    _cache[cache_key] = result
+    return result
+
+
+async def verify_api_key_async(plaintext: str, hashed: str) -> bool:
+    """Async wrapper around ``verify_api_key`` that offloads bcrypt to a thread.
+
+    bcrypt.checkpw is CPU-intensive (~100-200ms).  Running it on the event-loop
+    thread would block all other coroutines for that duration.  This wrapper:
+
+    1. Checks the TTL cache first (fast, on the loop thread).
+    2. If a cache miss, runs bcrypt.checkpw in a thread pool via
+       ``asyncio.to_thread``, freeing the loop for other work.
+    3. Writes the result back to the cache (on the loop thread after await).
+
+    Args:
+        plaintext: The full API key as provided in the ``X-Label-Hub-Key`` header.
+        hashed:    The bcrypt hash stored in the DB.
+
+    Returns:
+        True if the key is valid, False otherwise.
+    """
+    cache_key = (plaintext, hashed)
+    if cache_key in _cache:
+        return _cache[cache_key]
+
+    result = await asyncio.to_thread(bcrypt.checkpw, plaintext.encode(), hashed.encode())
     _cache[cache_key] = result
     return result
 
