@@ -9,3 +9,8 @@ elements:
   - { type: text, x: 260, y: 20,  field: primary_id, font_size: 48 }
   - { type: text, x: 260, y: 85,  field: title,      font_size: 28 }
   - { type: text, x: 260, y: 130, field: secondary,  font_size: 18 }
+preview_sample:
+  primary_id: "PLA-Black-1kg"
+  title: "Spool #7"
+  qr_payload: "https://spoolman.example.com/spool/7"
+  secondary: ["780g left", "Prusament"]

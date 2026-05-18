@@ -9,3 +9,8 @@ elements:
   - { type: text, x: 260, y: 20,  field: primary_id, font_size: 48 }
   - { type: text, x: 260, y: 85,  field: title,      font_size: 28 }
   - { type: text, x: 260, y: 130, field: secondary,  font_size: 18 }
+preview_sample:
+  primary_id: "Erdbeermarmelade"
+  title: "Lager > Vorrat"
+  qr_payload: "https://grocy.example.com/stock/products/47"
+  secondary: ["MHD 2027-04-30", "3 Glaeser"]

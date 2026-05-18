@@ -114,7 +114,7 @@ type PrinterRead struct {
 	Id         openapi_types.UUID     `json:"id"`
 	Model      string                 `json:"model"`
 	Name       string                 `json:"name"`
-	Paused     *bool                  `json:"paused,omitempty"`
+	Paused     bool                   `json:"paused"`
 	UpdatedAt  time.Time              `json:"updated_at"`
 }
 
@@ -220,6 +220,12 @@ type ListJobsApiJobsGetParams struct {
 
 // LookupApiLookupAppEntityIdGetParamsApp defines parameters for LookupApiLookupAppEntityIdGet.
 type LookupApiLookupAppEntityIdGetParamsApp string
+
+// RenderPreviewApiRenderPreviewPostParams defines parameters for RenderPreviewApiRenderPreviewPost.
+type RenderPreviewApiRenderPreviewPostParams struct {
+	// Key Template key, e.g. 'snipeit-12mm'
+	Key string `form:"key" json:"key"`
+}
 
 // ListTemplatesApiTemplatesGetParams defines parameters for ListTemplatesApiTemplatesGet.
 type ListTemplatesApiTemplatesGetParams struct {
@@ -389,6 +395,9 @@ type ClientInterface interface {
 	// ListPrintersApiPrintersGet request
 	ListPrintersApiPrintersGet(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetPrinterApiPrintersPrinterIdGet request
+	GetPrinterApiPrintersPrinterIdGet(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PausePrinterApiPrintersPrinterIdPausePost request
 	PausePrinterApiPrintersPrinterIdPausePost(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -406,6 +415,9 @@ type ClientInterface interface {
 
 	// GetPrinterTapeApiPrintersPrinterIdTapeGet request
 	GetPrinterTapeApiPrintersPrinterIdTapeGet(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RenderPreviewApiRenderPreviewPost request
+	RenderPreviewApiRenderPreviewPost(ctx context.Context, params *RenderPreviewApiRenderPreviewPostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListTemplatesApiTemplatesGet request
 	ListTemplatesApiTemplatesGet(ctx context.Context, params *ListTemplatesApiTemplatesGetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -519,6 +531,18 @@ func (c *Client) ListPrintersApiPrintersGet(ctx context.Context, reqEditors ...R
 	return c.Client.Do(req)
 }
 
+func (c *Client) GetPrinterApiPrintersPrinterIdGet(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPrinterApiPrintersPrinterIdGetRequest(c.Server, printerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) PausePrinterApiPrintersPrinterIdPausePost(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPausePrinterApiPrintersPrinterIdPausePostRequest(c.Server, printerId)
 	if err != nil {
@@ -581,6 +605,18 @@ func (c *Client) GetPrinterStatusApiPrintersPrinterIdStatusGet(ctx context.Conte
 
 func (c *Client) GetPrinterTapeApiPrintersPrinterIdTapeGet(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPrinterTapeApiPrintersPrinterIdTapeGetRequest(c.Server, printerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RenderPreviewApiRenderPreviewPost(ctx context.Context, params *RenderPreviewApiRenderPreviewPostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenderPreviewApiRenderPreviewPostRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -981,6 +1017,40 @@ func NewListPrintersApiPrintersGetRequest(server string) (*http.Request, error) 
 	return req, nil
 }
 
+// NewGetPrinterApiPrintersPrinterIdGetRequest generates requests for GetPrinterApiPrintersPrinterIdGet
+func NewGetPrinterApiPrintersPrinterIdGetRequest(server string, printerId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "printer_id", printerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/printers/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewPausePrinterApiPrintersPrinterIdPausePostRequest generates requests for PausePrinterApiPrintersPrinterIdPausePost
 func NewPausePrinterApiPrintersPrinterIdPausePostRequest(server string, printerId openapi_types.UUID) (*http.Request, error) {
 	var err error
@@ -1185,6 +1255,56 @@ func NewGetPrinterTapeApiPrintersPrinterIdTapeGetRequest(server string, printerI
 	return req, nil
 }
 
+// NewRenderPreviewApiRenderPreviewPostRequest generates requests for RenderPreviewApiRenderPreviewPost
+func NewRenderPreviewApiRenderPreviewPostRequest(server string, params *RenderPreviewApiRenderPreviewPostParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/render/preview")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "key", params.Key, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListTemplatesApiTemplatesGetRequest generates requests for ListTemplatesApiTemplatesGet
 func NewListTemplatesApiTemplatesGetRequest(server string, params *ListTemplatesApiTemplatesGetParams) (*http.Request, error) {
 	var err error
@@ -1309,6 +1429,9 @@ type ClientWithResponsesInterface interface {
 	// ListPrintersApiPrintersGetWithResponse request
 	ListPrintersApiPrintersGetWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPrintersApiPrintersGetResponse, error)
 
+	// GetPrinterApiPrintersPrinterIdGetWithResponse request
+	GetPrinterApiPrintersPrinterIdGetWithResponse(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetPrinterApiPrintersPrinterIdGetResponse, error)
+
 	// PausePrinterApiPrintersPrinterIdPausePostWithResponse request
 	PausePrinterApiPrintersPrinterIdPausePostWithResponse(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*PausePrinterApiPrintersPrinterIdPausePostResponse, error)
 
@@ -1326,6 +1449,9 @@ type ClientWithResponsesInterface interface {
 
 	// GetPrinterTapeApiPrintersPrinterIdTapeGetWithResponse request
 	GetPrinterTapeApiPrintersPrinterIdTapeGetWithResponse(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetPrinterTapeApiPrintersPrinterIdTapeGetResponse, error)
+
+	// RenderPreviewApiRenderPreviewPostWithResponse request
+	RenderPreviewApiRenderPreviewPostWithResponse(ctx context.Context, params *RenderPreviewApiRenderPreviewPostParams, reqEditors ...RequestEditorFn) (*RenderPreviewApiRenderPreviewPostResponse, error)
 
 	// ListTemplatesApiTemplatesGetWithResponse request
 	ListTemplatesApiTemplatesGetWithResponse(ctx context.Context, params *ListTemplatesApiTemplatesGetParams, reqEditors ...RequestEditorFn) (*ListTemplatesApiTemplatesGetResponse, error)
@@ -1608,6 +1734,37 @@ func (r ListPrintersApiPrintersGetResponse) ContentType() string {
 	return ""
 }
 
+type GetPrinterApiPrintersPrinterIdGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PrinterRead
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPrinterApiPrintersPrinterIdGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPrinterApiPrintersPrinterIdGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPrinterApiPrintersPrinterIdGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type PausePrinterApiPrintersPrinterIdPausePostResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -1791,6 +1948,36 @@ func (r GetPrinterTapeApiPrintersPrinterIdTapeGetResponse) ContentType() string 
 	return ""
 }
 
+type RenderPreviewApiRenderPreviewPostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r RenderPreviewApiRenderPreviewPostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RenderPreviewApiRenderPreviewPostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RenderPreviewApiRenderPreviewPostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListTemplatesApiTemplatesGetResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -1903,6 +2090,15 @@ func (c *ClientWithResponses) ListPrintersApiPrintersGetWithResponse(ctx context
 	return ParseListPrintersApiPrintersGetResponse(rsp)
 }
 
+// GetPrinterApiPrintersPrinterIdGetWithResponse request returning *GetPrinterApiPrintersPrinterIdGetResponse
+func (c *ClientWithResponses) GetPrinterApiPrintersPrinterIdGetWithResponse(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetPrinterApiPrintersPrinterIdGetResponse, error) {
+	rsp, err := c.GetPrinterApiPrintersPrinterIdGet(ctx, printerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPrinterApiPrintersPrinterIdGetResponse(rsp)
+}
+
 // PausePrinterApiPrintersPrinterIdPausePostWithResponse request returning *PausePrinterApiPrintersPrinterIdPausePostResponse
 func (c *ClientWithResponses) PausePrinterApiPrintersPrinterIdPausePostWithResponse(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*PausePrinterApiPrintersPrinterIdPausePostResponse, error) {
 	rsp, err := c.PausePrinterApiPrintersPrinterIdPausePost(ctx, printerId, reqEditors...)
@@ -1955,6 +2151,15 @@ func (c *ClientWithResponses) GetPrinterTapeApiPrintersPrinterIdTapeGetWithRespo
 		return nil, err
 	}
 	return ParseGetPrinterTapeApiPrintersPrinterIdTapeGetResponse(rsp)
+}
+
+// RenderPreviewApiRenderPreviewPostWithResponse request returning *RenderPreviewApiRenderPreviewPostResponse
+func (c *ClientWithResponses) RenderPreviewApiRenderPreviewPostWithResponse(ctx context.Context, params *RenderPreviewApiRenderPreviewPostParams, reqEditors ...RequestEditorFn) (*RenderPreviewApiRenderPreviewPostResponse, error) {
+	rsp, err := c.RenderPreviewApiRenderPreviewPost(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenderPreviewApiRenderPreviewPostResponse(rsp)
 }
 
 // ListTemplatesApiTemplatesGetWithResponse request returning *ListTemplatesApiTemplatesGetResponse
@@ -2249,6 +2454,39 @@ func ParseListPrintersApiPrintersGetResponse(rsp *http.Response) (*ListPrintersA
 	return response, nil
 }
 
+// ParseGetPrinterApiPrintersPrinterIdGetResponse parses an HTTP response from a GetPrinterApiPrintersPrinterIdGetWithResponse call
+func ParseGetPrinterApiPrintersPrinterIdGetResponse(rsp *http.Response) (*GetPrinterApiPrintersPrinterIdGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPrinterApiPrintersPrinterIdGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PrinterRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParsePausePrinterApiPrintersPrinterIdPausePostResponse parses an HTTP response from a PausePrinterApiPrintersPrinterIdPausePostWithResponse call
 func ParsePausePrinterApiPrintersPrinterIdPausePostResponse(rsp *http.Response) (*PausePrinterApiPrintersPrinterIdPausePostResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2414,6 +2652,32 @@ func ParseGetPrinterTapeApiPrintersPrinterIdTapeGetResponse(rsp *http.Response) 
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRenderPreviewApiRenderPreviewPostResponse parses an HTTP response from a RenderPreviewApiRenderPreviewPostWithResponse call
+func ParseRenderPreviewApiRenderPreviewPostResponse(rsp *http.Response) (*RenderPreviewApiRenderPreviewPostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RenderPreviewApiRenderPreviewPostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
 		var dest HTTPValidationError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

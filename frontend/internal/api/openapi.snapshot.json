@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Label Printer Hub — backend",
+    "title": "Label Printer Hub \u2014 backend",
     "version": "0.0.0-dev"
   },
   "paths": {
@@ -176,7 +176,7 @@
           "printers"
         ],
         "summary": "Pause job dispatch for a printer",
-        "description": "Sets ``printer_state.paused = true`` for this printer.  New jobs can still be queued but the worker will not dispatch them until the printer is resumed.  Idempotent — pausing an already-paused printer returns 204 without error.",
+        "description": "Sets ``printer_state.paused = true`` for this printer.  New jobs can still be queued but the worker will not dispatch them until the printer is resumed.  Idempotent \u2014 pausing an already-paused printer returns 204 without error.",
         "operationId": "pause_printer_api_printers__printer_id__pause_post",
         "parameters": [
           {
@@ -213,7 +213,7 @@
           "printers"
         ],
         "summary": "Resume job dispatch for a printer",
-        "description": "Sets ``printer_state.paused = false``.  Idempotent — resuming an already-active printer returns 204 without error.",
+        "description": "Sets ``printer_state.paused = false``.  Idempotent \u2014 resuming an already-active printer returns 204 without error.",
         "operationId": "resume_printer_api_printers__printer_id__resume_post",
         "parameters": [
           {
@@ -250,7 +250,7 @@
           "printers"
         ],
         "summary": "Cancel all queued jobs for a printer",
-        "description": "Bulk-cancels every job in ``queued`` state for this printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Returns 204 even when there are no queued jobs.",
+        "description": "Bulk-cancels every job in ``queued`` state for this printer.  Jobs in ``printing`` state are intentionally **not** cancelled \u2014 a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Returns 204 even when there are no queued jobs.",
         "operationId": "clear_printer_queue_api_printers__printer_id__queue_clear_post",
         "parameters": [
           {
@@ -295,12 +295,12 @@
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Filter by integration app (snipeit / grocy / spoolman / …)",
+              "description": "Filter by integration app (snipeit / grocy / spoolman / \u2026)",
               "title": "App",
               "type": "string",
               "nullable": true
             },
-            "description": "Filter by integration app (snipeit / grocy / spoolman / …)"
+            "description": "Filter by integration app (snipeit / grocy / spoolman / \u2026)"
           }
         ],
         "responses": {
@@ -345,12 +345,12 @@
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Filter by job state (queued / printing / done / failed / …)",
+              "description": "Filter by job state (queued / printing / done / failed / \u2026)",
               "title": "State",
               "type": "string",
               "nullable": true
             },
-            "description": "Filter by job state (queued / printing / done / failed / …)"
+            "description": "Filter by job state (queued / printing / done / failed / \u2026)"
           },
           {
             "name": "printer_id",
@@ -471,7 +471,7 @@
           "jobs"
         ],
         "summary": "Cancel a queued job",
-        "description": "Cancels a job that is in ``queued`` state.  Returns 409 ProblemDetail when the job is in ``printing`` (or any other non-QUEUED) state — mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.",
+        "description": "Cancels a job that is in ``queued`` state.  Returns 409 ProblemDetail when the job is in ``printing`` (or any other non-QUEUED) state \u2014 mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.",
         "operationId": "cancel_job_api_jobs__job_id__cancel_post",
         "parameters": [
           {
@@ -515,7 +515,7 @@
           "jobs"
         ],
         "summary": "Pause a job (not yet implemented)",
-        "description": "Placeholder — returns 501 ProblemDetail.  Mid-job pause will be implemented when the queue worker gains control-plane support for pausing an in-progress raster stream.  This endpoint exists so the Phase 7 UI can wire to a stable URL.",
+        "description": "Placeholder \u2014 returns 501 ProblemDetail.  Mid-job pause will be implemented when the queue worker gains control-plane support for pausing an in-progress raster stream.  This endpoint exists so the Phase 7 UI can wire to a stable URL.",
         "operationId": "pause_job_api_jobs__job_id__pause_post",
         "parameters": [
           {
@@ -559,7 +559,7 @@
           "jobs"
         ],
         "summary": "Resume a paused job (not yet implemented)",
-        "description": "Placeholder — returns 501 ProblemDetail.  Resume will be implemented alongside pause in a later phase.  This endpoint exists so the Phase 7 UI can wire to a stable URL.",
+        "description": "Placeholder \u2014 returns 501 ProblemDetail.  Resume will be implemented alongside pause in a later phase.  This endpoint exists so the Phase 7 UI can wire to a stable URL.",
         "operationId": "resume_job_api_jobs__job_id__resume_post",
         "parameters": [
           {
@@ -647,7 +647,7 @@
           "lookup"
         ],
         "summary": "Resolve an integration entity",
-        "description": "Looks up an entity from the given integration app by its identifier.  ``app`` must be one of ``snipeit``, ``grocy``, or ``spoolman`` — an unsupported value returns 422.  Returns 404 ProblemDetail when the entity does not exist in the integration's backend.  The ``url`` field is the deep-link to the entity in the integration's own web UI, suitable for embedding in a QR code or label.",
+        "description": "Looks up an entity from the given integration app by its identifier.  ``app`` must be one of ``snipeit``, ``grocy``, or ``spoolman`` \u2014 an unsupported value returns 422.  Returns 404 ProblemDetail when the entity does not exist in the integration's backend.  The ``url`` field is the deep-link to the entity in the integration's own web UI, suitable for embedding in a QR code or label.",
         "operationId": "lookup_api_lookup__app___entity_id__get",
         "parameters": [
           {
@@ -705,7 +705,7 @@
           "events"
         ],
         "summary": "Server-Sent Events stream for a printer",
-        "description": "Returns a ``text/event-stream`` response. Publishes ``job.state_changed``, ``printer.status``, and ``printer.tape_changed`` events as they occur. A keepalive comment is sent every 30 s when no events flow. Closes automatically after 5 minutes of inactivity. On reconnect the stream starts fresh — ``Last-Event-ID`` is observed but replay is deferred to Phase 7. Returns 404 if ``printer_id`` does not exist in the database. Returns 429 if the per-printer subscriber limit is reached.",
+        "description": "Returns a ``text/event-stream`` response. Publishes ``job.state_changed``, ``printer.status``, and ``printer.tape_changed`` events as they occur. A keepalive comment is sent every 30 s when no events flow. Closes automatically after 5 minutes of inactivity. On reconnect the stream starts fresh \u2014 ``Last-Event-ID`` is observed but replay is deferred to Phase 7. Returns 404 if ``printer_id`` does not exist in the database. Returns 429 if the per-printer subscriber limit is reached.",
         "operationId": "sse_events_api_events_get",
         "parameters": [
           {
@@ -722,6 +722,99 @@
         "responses": {
           "200": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/printers/{printer_id}": {
+      "get": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "Get printer detail",
+        "description": "Returns full metadata for a single printer, including the ``paused`` flag joined from ``printer_state``. Returns 404 when the printer is not registered.",
+        "operationId": "get_printer_api_printers__printer_id__get",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrinterRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/render/preview": {
+      "post": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "Render a template preview as PNG",
+        "description": "Renders the named template with the sample values declared in the template's own ``preview_sample`` block and returns a PNG image. Returns 404 if the template key is not registered. Returns 422 if the template has no ``preview_sample`` block.",
+        "operationId": "render_preview_api_render_preview_post",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "description": "Template key, e.g. 'snipeit-12mm'",
+              "title": "Key",
+              "type": "string"
+            },
+            "description": "Template key, e.g. 'snipeit-12mm'"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PNG image of the rendered sample label",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Template not found"
           },
           "422": {
             "description": "Validation Error",
@@ -859,7 +952,7 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Extra",
-            "description": "Integration-specific extras not covered by the core fields. Contents vary by app — see each integration's plugin docs."
+            "description": "Integration-specific extras not covered by the core fields. Contents vary by app \u2014 see each integration's plugin docs."
           }
         },
         "type": "object",
@@ -902,8 +995,7 @@
           },
           "paused": {
             "type": "boolean",
-            "title": "Paused",
-            "default": false
+            "title": "Paused"
           },
           "created_at": {
             "type": "string",
@@ -925,10 +1017,11 @@
           "connection",
           "enabled",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "paused"
         ],
         "title": "PrinterRead",
-        "description": "Full representation of a Printer row, augmented with the paused flag.\n\n``paused`` is joined from the ``printer_state`` table; it defaults to\n``False`` for printers whose state row was not yet created (safe — the\nDB lifespan helper creates state rows at startup, so this only matters\nin tests or during the very first boot)."
+        "description": "Full representation of a Printer row, augmented with the paused flag.\n\n``paused`` is joined from the ``printer_state`` table; it defaults to\n``False`` for printers whose state row was not yet created (safe \u2014 the\nDB lifespan helper creates state rows at startup, so this only matters\nin tests or during the very first boot)."
       },
       "PrinterStatus": {
         "properties": {

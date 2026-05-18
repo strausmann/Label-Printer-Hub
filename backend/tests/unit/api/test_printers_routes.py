@@ -902,6 +902,53 @@ async def test_get_printer_tape_direct_unknown_tape_size_raises_404(session) -> 
 
 
 @pytest.mark.asyncio
+async def test_get_printer_detail_returns_full_metadata(session) -> None:
+    """GET /api/printers/{id} returns full printer metadata including paused flag.
+
+    Regression for Bug 2 — the backend had no single-printer GET endpoint.
+    The frontend detail page showed only Status + Tape + Error, no metadata.
+    """
+    printer = await _make_printer(session)
+    await _make_printer_state(session, printer.id, paused=False)
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.get(f"/api/printers/{printer.id}")
+
+    assert r.status_code == 200
+    body = r.json()
+    required_fields = (
+        "id",
+        "name",
+        "model",
+        "backend",
+        "connection",
+        "enabled",
+        "paused",
+        "created_at",
+        "updated_at",
+    )
+    for field in required_fields:
+        assert field in body, f"missing field: {field}"
+    assert body["connection"]["host"] == "198.51.100.10"
+    assert body["connection"]["port"] == 9100
+    assert body["paused"] is False
+
+
+@pytest.mark.asyncio
+async def test_get_printer_detail_unknown_id_returns_404(session) -> None:
+    """GET /api/printers/{id} returns 404 for an unknown UUID."""
+    from uuid import uuid4
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.get(f"/api/printers/{uuid4()}")
+
+    assert r.status_code == 404
+    assert "not found" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_get_printer_queue_direct_returns_active_jobs(session) -> None:
     """get_printer_queue called directly returns QUEUED and PRINTING jobs.
 

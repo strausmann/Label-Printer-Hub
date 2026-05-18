@@ -186,15 +186,15 @@ var stubPageContent = map[string]string{
 	"dashboard": `{{define "content"}}<div id="printer-grid"></div>{{end}}
 {{define "dashboard-content"}}<div id="printer-grid">{{range .Printers}}<span>{{.Name}}</span>{{end}}</div>{{end}}`,
 	"printer": `{{define "content"}}<div id="printer-detail">printer</div>{{end}}
-{{define "printer-content"}}<div id="printer-detail">printer</div>{{end}}`,
+{{define "printer-content"}}{{if .Printer}}<div id="printer-detail" data-model="{{.Printer.Model}}" data-enabled="{{.Printer.Enabled}}">{{if and (index .Printer.Connection "host") (index .Printer.Connection "port")}}<span class="host-port">{{index .Printer.Connection "host"}}:{{index .Printer.Connection "port"}}</span>{{else if index .Printer.Connection "interface"}}<span class="usb-badge">{{index .Printer.Connection "interface"}}</span>{{end}}</div>{{else}}<div id="printer-detail">printer</div>{{end}}{{end}}`,
 	"jobs": `{{define "content"}}<div id="jobs-table-container"></div>{{end}}
 {{define "jobs-content"}}<div id="jobs-table-container">{{range .Jobs}}<span class="badge-{{.State}}">{{.State}}</span>{{end}}</div>{{end}}`,
 	"job": `{{define "content"}}<div id="job-detail">job</div>{{end}}
 {{define "job-content"}}<div id="job-detail">job</div>{{end}}`,
 	"templates": `{{define "content"}}<div id="templates-grid">templates</div>{{end}}
 {{define "templates-content"}}<div id="templates-grid">templates</div>{{end}}`,
-	"template": `{{define "content"}}<div id="template-detail">template</div>{{end}}
-{{define "template-content"}}<div id="template-detail">template</div>{{end}}`,
+	"template": `{{define "content"}}<div id="template-detail">template<img id="preview-img" src="{{ .PreviewURI }}"></div>{{end}}
+{{define "template-content"}}<div id="template-detail">template<img id="preview-img" src="{{ .PreviewURI }}"></div>{{end}}`,
 	"lookup": `{{define "content"}}<div id="lookup-result">lookup</div>{{end}}
 {{define "lookup-content"}}<div id="lookup-result">lookup</div>{{end}}`,
 	"admin_api_keys": `{{define "content"}}<div id="api-keys-list"></div>{{end}}

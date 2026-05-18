@@ -6,3 +6,7 @@ app: null
 tape_mm: 24
 elements:
   - { type: qr, x: 185, y: 13, size: 230, data_field: qr_payload }
+preview_sample:
+  primary_id: "Sample"
+  title: "Preview"
+  qr_payload: "https://example.com/preview"

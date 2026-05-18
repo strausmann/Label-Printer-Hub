@@ -81,6 +81,27 @@ func (c *HubClient) ListPrinters(ctx context.Context) ([]PrinterRead, error) {
 	return *resp.JSON200, nil
 }
 
+// GetPrinterDetail returns full printer metadata from GET /api/printers/{id}.
+func (c *HubClient) GetPrinterDetail(ctx context.Context, id string) (*PrinterRead, error) {
+	start := time.Now()
+	uid, err := parseUUID(id)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+	resp, err := c.gen.GetPrinterApiPrintersPrinterIdGetWithResponse(ctx, uid)
+	logCall("GetPrinterDetail", start, err)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode() == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("GetPrinterDetail: status %d", resp.StatusCode())
+	}
+	return resp.JSON200, nil
+}
+
 // GetPrinterStatus returns a fresh printer status probe from GET /api/printers/{id}/status.
 func (c *HubClient) GetPrinterStatus(ctx context.Context, id string) (*PrinterStatus, error) {
 	start := time.Now()

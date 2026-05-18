@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/base64"
+	"html/template"
 	"net/http"
 	"time"
 
@@ -13,8 +14,12 @@ import (
 // TemplateDetailData holds the template variables for the template detail page.
 type TemplateDetailData struct {
 	TemplateData
-	Template   *api.TemplateRead
-	PreviewURI string // base64 data URI or /static/preview-placeholder.svg
+	Template *api.TemplateRead
+	// PreviewURI is either a base64 data URL (rendered preview) or a static
+	// SVG path. The template.URL type is required so html/template does NOT
+	// escape "data:image/png;base64,..." as a potentially dangerous URL —
+	// without the type wrap, src= becomes "#ZgotmplZ" (issue #87).
+	PreviewURI template.URL
 	YAMLSource string // raw YAML source for display in <pre>
 }
 
@@ -57,12 +62,12 @@ func (h *PageHandler) TemplateDetailWithKey(w http.ResponseWriter, r *http.Reque
 
 	// Request a preview PNG from the backend's render endpoint.
 	// A 2-second sub-context timeout prevents a slow render from blocking the page.
-	previewURI := "/static/preview-placeholder.svg"
+	previewURI := template.URL("/static/preview-placeholder.svg")
 	previewCtx, previewCancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer previewCancel()
 	previewBytes, previewErr := h.client.RenderPreview(previewCtx, key)
 	if previewErr == nil && len(previewBytes) > 0 {
-		previewURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(previewBytes)
+		previewURI = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(previewBytes))
 	}
 
 	h.renderPage(w, r, "template", TemplateDetailData{
