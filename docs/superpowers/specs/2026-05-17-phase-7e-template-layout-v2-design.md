@@ -71,7 +71,7 @@ class TemplateSchemaV2(BaseModel):
 
     qr: QrSpec                    # Always required (all 3 layouts use a QR)
     text_lines: tuple[TextLineV2, ...] = ()       # Empty for qr-only; 1-4 entries for qr-left-text-right; treated as line-template for qr-with-listing
-    listing_field: str | None = None              # Required when layout="qr-with-listing" — the LabelData field that holds the list of child items (e.g. "compartments")
+    listing_field: str | None = None              # Required when layout="qr-with-listing" — the LabelData field that holds the list of child items (e.g. "items")
 
     preview_sample: dict[str, str | int | float | bool | tuple[str, ...]] | None = None
 ```
@@ -82,7 +82,7 @@ Pydantic validators enforce:
 
 | Rule | Validates |
 |---|---|
-| `qr-only` → text_lines MUST be empty | `qr-left-text-right` and `qr-with-listing` MUST have at least 1 text_line |
+| `qr-only` → text_lines MUST be empty | `qr-left-text-right` MUST have ≥ 1 text_line; `qr-with-listing` MUST have exactly 1 text_line (used as item-line template) |
 | `qr-with-listing` → listing_field MUST be set | other layouts → listing_field MUST be None |
 | `text_lines` ≤ 4 | hardware fits 4 lines max on 24mm tape, less on 12mm/18mm |
 | Each `text_line.field` and `qr.data_field` must reference a valid `LabelData` attribute | reject otherwise with 422 + clear message |
@@ -98,7 +98,7 @@ The new renderer module (`backend/app/services/label_renderer_v2.py`) computes p
 ### Constants table
 
 ```python
-# Brother PT @ 180 DPI — physical tape heights in pixels
+# Brother PT @ 300 DPI — physical tape heights in pixels
 TAPE_HEIGHT_PX = {12: 106, 18: 165, 24: 256}
 
 # Per-tape paddings and gaps (all in pixels)
@@ -135,7 +135,7 @@ LAYOUT_CONSTANTS = {
 3. QR size = `min(text_block_height, available_tape_height)` — QR is square; its height matches the text block (or the tape if text would overflow — validation prevents that)
 4. QR position: `(tape_padding_x, (tape_height - qr_size) // 2)` — vertically centered
 5. Text-block X start: `tape_padding_x + qr_size + qr_text_gap`
-6. First text line Y: `(tape_height - text_block_height) // 2 + first_line.font_size` — baseline of first line, centered vertically
+6. First text line Y: `(tape_height - text_block_height) // 2` — top of first line, centered vertically (PIL `draw.text` uses top-left anchor by default)
 
 **`qr-only`:**
 1. QR size = `available_tape_height` (full height minus paddings)
@@ -145,7 +145,7 @@ LAYOUT_CONSTANTS = {
 **`qr-with-listing`:**
 1. Same as `qr-left-text-right` for QR positioning
 2. Text-block instead repeats the single `text_lines[0]` template for each item in `LabelData.{listing_field}`
-3. Item rendering: e.g. for `listing_field="compartments"` with `LabelData.compartments = ["A", "B", "C", "D"]`, renders 4 lines using the template's font_size + spacing
+3. Item rendering: e.g. for `listing_field="items"` with `LabelData.items = [LabelDataItem(item="A"), ...]`, renders 4 lines using the template's font_size + spacing
 4. If items would overflow available height, render as many fit + add "(+N more)" indicator at the bottom
 
 ### Why auto-derive
@@ -173,9 +173,9 @@ All 12 seed templates in `backend/app/seed/templates/*.yaml` get rewritten in v2
 
 | New file | v2 layout | text_lines (treated as item-line template) | listing_field |
 |---|---|---|---|
-| `kallax-regal-overview-12mm.yaml` | qr-with-listing | `[{field: item, font_size: 16}]` | `compartments` |
-| `kallax-regal-overview-18mm.yaml` | qr-with-listing | `[{field: item, font_size: 20}]` | `compartments` |
-| `kallax-regal-overview-24mm.yaml` | qr-with-listing | `[{field: item, font_size: 24}]` | `compartments` |
+| `kallax-regal-overview-12mm.yaml` | qr-with-listing | `[{field: item, font_size: 16}]` | `items` |
+| `kallax-regal-overview-18mm.yaml` | qr-with-listing | `[{field: item, font_size: 20}]` | `items` |
+| `kallax-regal-overview-24mm.yaml` | qr-with-listing | `[{field: item, font_size: 24}]` | `items` |
 
 These align with the Hangar Kallax-Regal use case from Phase 7d brainstorming (one "Regal-Übersicht" label vs N "Fach"-Labels). 
 
