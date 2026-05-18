@@ -190,8 +190,8 @@ var stubPageContent = map[string]string{
 {{define "job-content"}}<div id="job-detail">job</div>{{end}}`,
 	"templates": `{{define "content"}}<div id="templates-grid">templates</div>{{end}}
 {{define "templates-content"}}<div id="templates-grid">templates</div>{{end}}`,
-	"template": `{{define "content"}}<div id="template-detail">template</div>{{end}}
-{{define "template-content"}}<div id="template-detail">template</div>{{end}}`,
+	"template": `{{define "content"}}<div id="template-detail">template<img id="preview-img" src="{{ .PreviewURI }}"></div>{{end}}
+{{define "template-content"}}<div id="template-detail">template<img id="preview-img" src="{{ .PreviewURI }}"></div>{{end}}`,
 	"lookup": `{{define "content"}}<div id="lookup-result">lookup</div>{{end}}
 {{define "lookup-content"}}<div id="lookup-result">lookup</div>{{end}}`,
 }
