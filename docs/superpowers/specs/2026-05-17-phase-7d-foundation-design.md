@@ -11,9 +11,9 @@
 
 Phase 7d delivers the **End-to-End MVP** for cross-application label-printing in the label-printer-hub project. After Phase 7b stabilised the foundation (lifespan, datetime, /readiness, status cache), Phase 7d turns the app outward by introducing two integration surfaces:
 
-1. **Generic Print API** (`POST /api/preview` + `POST /api/print`) that any external app can call with a uniform item payload. Hangar will be the first consumer (see strausmann/hangar#63), but the API is plugin-agnostic — Grocy/SnipeIt/Spoolman could also push from their own UIs if desired.
+1. **Generic Print API** (`POST /api/preview` + `POST /api/print`) that any external app can call with a uniform item payload. Hangar will be the first consumer (see strausmann/hangar#63), but the API is plugin-agnostic — Grocy/Snipe-IT/Spoolman could also push from their own UIs if desired.
 
-2. **QR Print Tab** (`/qr-print`) inside the label-printer-hub HTMX UI. Users can search across multiple external sources (Grocy, SnipeIt, Spoolman, Hangar) through a single search field with a platform toggle, select an item, choose a template, see a live preview with tape-match indicator, and print.
+2. **QR Print Tab** (`/qr-print`) inside the label-printer-hub HTMX UI. Users can search across multiple external sources (Grocy, Snipe-IT, Spoolman, Hangar) through a single search field with a platform toggle, select an item, choose a template, see a live preview with tape-match indicator, and print.
 
 The plugin system from Phase 3.5 (`IntegrationRegistry` with `lookup(identifier)`) is extended with `search(query)`, `get_item(item_id)`, and an optional `get_children(item_id)` for hierarchical sources like Hangar.
 
@@ -57,15 +57,15 @@ class IntegrationPlugin(Protocol):
     name: str                  # e.g. "grocy"
     display_name: str          # e.g. "Grocy"
 
-    async def lookup(identifier: str) -> PluginItem | None:
+    async def lookup(self, identifier: str) -> PluginItem | None:
         """Existing — barcode/identifier lookup."""
         ...
 
-    async def search(query: str, limit: int = 20) -> list[PluginItemSummary]:
+    async def search(self, query: str, limit: int = 20) -> list[PluginItemSummary]:
         """NEW Phase 7d — free-text search returning summary rows."""
         ...
 
-    async def get_item(item_id: str) -> PluginItem | None:
+    async def get_item(self, item_id: str) -> PluginItem | None:
         """NEW Phase 7d — full item data after user selection."""
         ...
 
@@ -73,7 +73,7 @@ class IntegrationPlugin(Protocol):
 class HasChildren(Protocol):
     """Optional capability — plugins with hierarchy implement this."""
 
-    async def get_children(item_id: str) -> list[PluginItemSummary]:
+    async def get_children(self, item_id: str) -> list[PluginItemSummary]:
         """Returns direct children of a container item (e.g. shelf -> compartments)."""
         ...
 
@@ -93,6 +93,10 @@ class PluginItem(BaseModel):
     qr_url: str | None = None  # Plugin computes the deep-link
     image_url: str | None = None
     extras: dict[str, Any] = {}
+    # NOTE: extras intentionally uses Any — plugin payloads are untrusted
+    # and may carry arbitrary types (nested dicts, None, lists) before the
+    # plugin maps them into a PrintItem.  The PrintItem.extras is the
+    # tighter public boundary (dict[str, str | int | float | bool]).
 ```
 
 ### Plugins in MVP
@@ -100,9 +104,9 @@ class PluginItem(BaseModel):
 | Plugin | search() | get_item() | get_children() | Notes |
 |---|---|---|---|---|
 | Grocy | ✅ new | ✅ new | — | Existing Phase-3.5 plugin; extend with the 2 new methods |
-| SnipeIt | ✅ new | ✅ new | — | Same |
+| Snipe-IT | ✅ new | ✅ new | — | Same |
 | Spoolman | ✅ new | ✅ new | — | Same |
-| **Hangar (NEW)** | ✅ | ✅ | ✅ | New plugin module `label_hub_hangar/` — see Section 8 |
+| **Hangar (NEW)** | ✅ | ✅ | ✅ | New plugin module `backend/app/integrations/hangar/` — see Section 8 |
 
 `HasChildren` is only implemented by Hangar in MVP. Other plugins simply don't expose the protocol — UI hides the "+ alle Kinder" toggle when `summary.has_children == False`.
 
@@ -111,11 +115,11 @@ class PluginItem(BaseModel):
 ### POST /api/preview
 
 ```
-Body: PrintRequest (max 5 items rendered, rest counted but not drawn)
+Body: PrintRequest (only items[0] is rendered as PNG; remaining items are counted but not drawn)
 Response: PreviewResponse {
   image_data_url: str               # "data:image/png;base64,..." for inline embed
   items_count: int                  # Total items in the request
-  items_rendered_count: int         # Always min(items_count, 5)
+  items_rendered_count: int         # Always 1 (items[0] only)
   total_labels: int                 # sum(item.copies for item in items)
   template_name: str
   current_tape: {
@@ -158,7 +162,7 @@ Authorisation: `print` scope required.
 
 ### Job-DB extensions (small Alembic migration)
 
-`Job` table gets two new optional columns:
+`Job` table gets five new optional columns:
 ```python
 api_key_id: UUID | None              # Set by Phase 7c auth middleware
 source_ip: str | None
@@ -177,7 +181,7 @@ New HTMX route `/qr-print` (server-rendered Go-templates in the frontend, no SPA
 
 ```
 +-- Plugin-Toggle (radio): -------------------------------------+
-|   (o) Grocy   ( ) SnipeIt   ( ) Spoolman   ( ) Hangar         |
+|   (o) Grocy   ( ) Snipe-IT   ( ) Spoolman   ( ) Hangar         |
 +---------------------------------------------------------------+
 | Search:  [ schraubendreher                  ]  [Suchen]       |
 +-- Results list (HTMX-swapped, 250ms debounce) ---------------+
@@ -220,7 +224,7 @@ New HTMX route `/qr-print` (server-rendered Go-templates in the frontend, no SPA
 | `POST /qr-print/preview` | Preview block fragment (image + tape-match border + caption) |
 | `POST /qr-print/print` | Toast fragment: "5 Jobs angelegt (#abc, #def, ...)" |
 
-All HTMX endpoints accept Pangolin-SSO (browser cookie) OR an API-Key header — see Section 9.
+Auth: `GET /qr-print/*` requires Pangolin-SSO (browser cookie). `POST /qr-print/preview` and `POST /qr-print/print` also accept an API-Key header (for programmatic use). Full auth matrix in Section 9.
 
 ## 6. Tape-Match Indicator
 
@@ -289,7 +293,7 @@ New plugin module: `backend/app/integrations/hangar/`
 
 ```python
 # backend/app/integrations/hangar/__init__.py
-from app.integrations.registry import IntegrationPlugin
+from app.integrations.base import IntegrationPlugin
 from app.integrations.hangar.client import HangarClient
 
 
@@ -298,7 +302,7 @@ class HangarPlugin:
     display_name = "Hangar"
 
     def __init__(self):
-        self._client = HangarClient()  # reads HANGAR_BASE_URL + HANGAR_API_KEY from settings
+        self._client = HangarClient()  # reads PRINTER_HUB_HANGAR_BASE_URL + PRINTER_HUB_HANGAR_API_KEY from settings
 
     async def lookup(self, identifier: str) -> PluginItem | None:
         """Slug lookup, e.g. 'kallax-02-fach-c'."""
@@ -354,13 +358,13 @@ class HangarPlugin:
 
 `HangarClient` is a thin httpx wrapper:
 - Base URL from `settings.PRINTER_HUB_HANGAR_BASE_URL` (e.g. `https://hangar.example.com`)
-- API key from `settings.hangar_api_key` — sent as `X-Hangar-API-Key` header
+- API key from `settings.PRINTER_HUB_HANGAR_API_KEY` — sent as `X-Hangar-API-Key` header
 - 5 s connect timeout, 10 s read timeout
 - 404 → returns None; 401/403 → raises with clear log message; 5xx → exponential backoff retry once
 
 The 3 Hangar endpoints the plugin calls are documented in **strausmann/hangar#63** which must ship before this plugin is deployable in production.
 
-For local dev / tests without a running Hangar instance, the plugin auto-disables itself when `settings.hangar_base_url` is empty.
+For local dev / tests without a running Hangar instance, the plugin auto-disables itself when `PRINTER_HUB_HANGAR_BASE_URL` is empty/unset.
 
 ## 9. Auth
 
@@ -413,7 +417,7 @@ Both projects can proceed in parallel once the API contract (this spec, Sections
 These are real future-work items but explicitly out of the MVP PR:
 
 - **Aggregations templates** ("one big label for an entire shelf showing all 4 compartment numbers") — needs template metadata `aggregate_children: bool` and a different renderer path. Phase 7e or later.
-- **Per-plugin search-result filters** (e.g. SnipeIt: filter by location/status; Grocy: filter by stock-level)
+- **Per-plugin search-result filters** (e.g. Snipe-IT: filter by location/status; Grocy: filter by stock-level)
 - **Saved searches / favourites in QR-Tab**
 - **Plugin configuration via UI** — for now plugins read all settings from env vars
 - **Multi-printer-fan-out** ("send half to PT-P750W, half to QL-820NWB") — single-printer per print request only
@@ -424,8 +428,8 @@ These are real future-work items but explicitly out of the MVP PR:
 ## 13. Definition of Done for Phase 7d
 
 - [ ] Item schema + Plugin protocol extensions land with full unit-test coverage
-- [ ] 3 existing plugins (Grocy, SnipeIt, Spoolman) implement `search()` + `get_item()` with at least one passing integration test against a mock HTTP server
-- [ ] Hangar plugin module implemented (search + get_item + get_children) — disabled when `HANGAR_BASE_URL` empty (for tests/local dev)
+- [ ] 3 existing plugins (Grocy, Snipe-IT, Spoolman) implement `search()` + `get_item()` with at least one passing integration test against a mock HTTP server
+- [ ] Hangar plugin module implemented (search + get_item + get_children) — disabled when `PRINTER_HUB_HANGAR_BASE_URL` empty (for tests/local dev)
 - [ ] `/api/preview` returns PNG + tape_match — integration test green
 - [ ] `/api/print` creates the right number of Jobs (items × copies) — integration test green
 - [ ] Tape mismatch refuses without override, accepts with override + audit flag
@@ -436,7 +440,7 @@ These are real future-work items but explicitly out of the MVP PR:
 
 ## 14. Self-review notes
 
-- **Privacy:** spec sanitised — personal-domain references replaced with `example.com` and RFC-5737 doc IPs (192.0.2.x range) per project privacy policy.
+- **Privacy:** spec sanitised — personal-domain references and internal IPs replaced with `example.com` / RFC-5737 doc IPs (192.0.2.x range) per project privacy policy.
 - **Internal consistency:** the per-item `copies` field is referenced consistently — `items × copies` everywhere.
 - **Scope:** 4 plugins + new endpoints + UI page = larger than a typical phase, but within MVP scope per Phase-7d-decomposition decision. Splitting into 7d-foundation (endpoints) + 7d-UI (QR-Tab) is possible at writing-plans time if the PR feels too heavy.
 - **Dependency declared:** Phase 7c (#78) hard-required for production; Phase 7b.1 (#77) currently merging in parallel.
