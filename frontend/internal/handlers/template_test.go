@@ -120,6 +120,33 @@ func TestTemplateDetailPreviewTimeout(t *testing.T) {
 	}
 }
 
+// TestTemplateDetailPreviewDataURLNotEscaped is the regression test for
+// issue #87: html/template was escaping the `data:image/png;base64,...` URL
+// in src= attributes to `#ZgotmplZ` because PreviewURI was typed `string`
+// (default url-sanitisation kicks in). After the fix PreviewURI is
+// template.URL, marking it as already-safe so it round-trips through the
+// rendered HTML unmodified.
+func TestTemplateDetailPreviewDataURLNotEscaped(t *testing.T) {
+	t.Parallel()
+	backend := templateDetailBackend(t, true) // serve preview PNG
+	defer backend.Close()
+	ph := handlers.NewPageHandlerFromURL(t, backend.URL)
+	req := httptest.NewRequest(http.MethodGet, "/templates/"+templateKey, nil)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	ph.TemplateDetailWithKey(w, req, templateKey)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d, body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "data:image/png;base64,") {
+		t.Errorf("preview src must contain data:image/png;base64 URL, got: %s", body)
+	}
+	if strings.Contains(body, "ZgotmplZ") {
+		t.Errorf("preview src is html-template-escaped (ZgotmplZ marker); PreviewURI must use template.URL type, got: %s", body)
+	}
+}
+
 func TestTemplateDetailBackendError(t *testing.T) {
 	t.Parallel()
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
