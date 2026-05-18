@@ -27,11 +27,14 @@ def test_verify_returns_true_for_correct_key():
     assert verify_api_key(plaintext, hashed) is True
 
 
+# NB: low-entropy fixture strings on purpose. GitGuardian's Generic
+# High-Entropy Secret detector flagged the previous "abc123"/"xyz999"
+# tails — see PR #88 round-4 commit. These are TEST literals.
 def test_verify_returns_false_for_wrong_key():
     from app.auth.verifier import verify_api_key
 
-    hashed = _make_hash("lh_correct_key_abc123")
-    assert verify_api_key("lh_wrong_key_xyz999", hashed) is False
+    hashed = _make_hash("lh_pat_TEST_CORRECT_KEY_FIXTURE")
+    assert verify_api_key("lh_pat_TEST_WRONG_KEY_FIXTURE", hashed) is False
 
 
 def test_verify_caches_result_on_second_call():
