@@ -228,7 +228,7 @@ async def _validate_api_key(
                 "error_code": "rate_limit_exceeded",
                 "error_message": (
                     f"Key '{key_row.name}' exceeded {key_row.rate_limit_per_minute}"
-                    " prints/minute. Retry after {retry_after} seconds."
+                    f" prints/minute. Retry after {retry_after} seconds."
                 ),
                 "retry_after_seconds": retry_after,
             },
