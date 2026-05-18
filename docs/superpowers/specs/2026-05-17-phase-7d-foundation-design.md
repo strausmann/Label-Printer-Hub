@@ -327,7 +327,7 @@ class HangarPlugin:
             id=loc["slug"],
             name=loc["name"],
             subtitle=" > ".join(loc["path"][:-1]) if len(loc["path"]) > 1 else None,
-            qr_url=f"https://hangar.strausmann.cloud/locations/{loc['slug']}",
+            qr_url=f"https://hangar.example.com/locations/{loc['slug']}",
             image_url=loc.get("image_url"),
             extras={
                 "slug": loc["slug"],
@@ -353,7 +353,7 @@ class HangarPlugin:
 ```
 
 `HangarClient` is a thin httpx wrapper:
-- Base URL from `settings.hangar_base_url` (e.g. `https://hangar.strausmann.cloud`)
+- Base URL from `settings.PRINTER_HUB_HANGAR_BASE_URL` (e.g. `https://hangar.example.com`)
 - API key from `settings.hangar_api_key` — sent as `X-Hangar-API-Key` header
 - 5 s connect timeout, 10 s read timeout
 - 404 → returns None; 401/403 → raises with clear log message; 5xx → exponential backoff retry once
@@ -436,7 +436,7 @@ These are real future-work items but explicitly out of the MVP PR:
 
 ## 14. Self-review notes
 
-- **Privacy:** spec uses RFC-5737 doc IPs and `*.strausmann.cloud` (already user-public via the merged Phase 7b spec).
+- **Privacy:** spec sanitised — personal-domain references replaced with `example.com` and RFC-5737 doc IPs (192.0.2.x range) per project privacy policy.
 - **Internal consistency:** the per-item `copies` field is referenced consistently — `items × copies` everywhere.
 - **Scope:** 4 plugins + new endpoints + UI page = larger than a typical phase, but within MVP scope per Phase-7d-decomposition decision. Splitting into 7d-foundation (endpoints) + 7d-UI (QR-Tab) is possible at writing-plans time if the PR feels too heavy.
 - **Dependency declared:** Phase 7c (#78) hard-required for production; Phase 7b.1 (#77) currently merging in parallel.
