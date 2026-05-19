@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## <small>0.6.1 (2026-05-19)</small>
+
+* fix(ui): preview-PNG data-URL must use template.URL type (#90) ([0f84976](https://github.com/strausmann/label-printer-hub/commit/0f84976)), closes [#90](https://github.com/strausmann/label-printer-hub/issues/90) [#87](https://github.com/strausmann/label-printer-hub/issues/87) [#22](https://github.com/strausmann/label-printer-hub/issues/22) [#89](https://github.com/strausmann/label-printer-hub/issues/89) [#22](https://github.com/strausmann/label-printer-hub/issues/22)
+* docs(api): Phase 7c API-Auth design — 3-scope keys + rate-limit + /admin/api-keys UI (#85) ([8792e84](https://github.com/strausmann/label-printer-hub/commit/8792e84)), closes [#85](https://github.com/strausmann/label-printer-hub/issues/85) [#22](https://github.com/strausmann/label-printer-hub/issues/22) [#78](https://github.com/strausmann/label-printer-hub/issues/78) [#85](https://github.com/strausmann/label-printer-hub/issues/85) [#22](https://github.com/strausmann/label-printer-hub/issues/22) [#79](https://github.com/strausmann/label-printer-hub/issues/79) [#22](https://github.com/strausmann/label-printer-hub/issues/22)
+* docs(api): Phase 7e Template Layout System v2 — semantic schema + aggregation (#86) ([0bab0c0](https://github.com/strausmann/label-printer-hub/commit/0bab0c0)), closes [#86](https://github.com/strausmann/label-printer-hub/issues/86) [#22](https://github.com/strausmann/label-printer-hub/issues/22) [#81](https://github.com/strausmann/label-printer-hub/issues/81) [#22](https://github.com/strausmann/label-printer-hub/issues/22)
+* chore(deps): bump the go-minor-and-patch group (#89) ([d6ba346](https://github.com/strausmann/label-printer-hub/commit/d6ba346)), closes [#89](https://github.com/strausmann/label-printer-hub/issues/89)
+
 ## 0.6.0 (2026-05-18)
 
 * docs(api): address PR #79 bot-review — privacy sanitise + protocol self + consistency fixes ([61602d0](https://github.com/strausmann/label-printer-hub/commit/61602d0)), closes [#79](https://github.com/strausmann/label-printer-hub/issues/79) [#22](https://github.com/strausmann/label-printer-hub/issues/22)
