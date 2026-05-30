@@ -245,13 +245,25 @@ def test_get_engine_lazy_init_returns_snmp_engine() -> None:
 
 
 def test_get_engine_returns_same_instance_when_loop_is_open() -> None:
-    """_get_engine() must be idempotent: same instance returned on repeated calls."""
+    """_get_engine() must be idempotent: same instance returned on repeated calls.
+
+    Wrapped in asyncio.run() because _get_engine() consults the current event
+    loop — without a running loop, asyncio.get_event_loop() emits a deprecation
+    or raises RuntimeError (Py 3.12+), causing the cached engine to be
+    discarded between calls. CI surfaced this; locally it passed because
+    pytest-asyncio's loop-policy left a usable loop attached.
+    """
+    import asyncio
+
     import app.printer_backends.snmp_helper as helper
 
-    helper._SNMP_ENGINE = None
-    engine_a = helper._get_engine()
-    engine_b = helper._get_engine()
-    assert engine_a is engine_b
+    async def _check() -> None:
+        helper._SNMP_ENGINE = None
+        engine_a = helper._get_engine()
+        engine_b = helper._get_engine()
+        assert engine_a is engine_b
+
+    asyncio.run(_check())
 
 
 def test_get_engine_reinitialises_after_closed_loop() -> None:
