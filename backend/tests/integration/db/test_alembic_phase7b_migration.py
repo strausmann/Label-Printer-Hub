@@ -37,9 +37,11 @@ def test_migration_adds_tz_to_naive_template_row(tmp_path):
     # Walk schema forward to head (gives us tables with the new column types).
     command.upgrade(cfg, "head")
 
-    # Roll back to the migration BEFORE this one so we can simulate a legacy
+    # Roll back to the migration BEFORE Phase 7b so we can simulate a legacy
     # DB with naive datetime rows, then upgrade forward and check the result.
-    command.downgrade(cfg, "-1")
+    # We target the explicit revision (b2668b6e8845 = before Phase 7b) instead
+    # of "-1" because later phases (7c+) added migrations on top of 7b.
+    command.downgrade(cfg, "b2668b6e8845")
 
     sync_engine = create_engine(sync_url)
     with sync_engine.begin() as conn:
@@ -84,7 +86,8 @@ def test_migration_does_not_touch_already_tz_aware_rows(tmp_path):
     sync_url = f"sqlite:///{db}"
     cfg = _alembic_config(db)
     command.upgrade(cfg, "head")
-    command.downgrade(cfg, "-1")
+    # Roll back to before Phase 7b (explicit revision — see above).
+    command.downgrade(cfg, "b2668b6e8845")
 
     sync_engine = create_engine(sync_url)
     with sync_engine.begin() as conn:
