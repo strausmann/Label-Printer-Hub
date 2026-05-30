@@ -87,9 +87,7 @@ async def test_batch_happy_path(batch_client, batch_db_session, batch_auth_heade
             for i in range(3)
         ]
     }
-    resp = await client.post(
-        f"/api/print/{p.slug}/batch", json=body, headers=batch_auth_headers
-    )
+    resp = await client.post(f"/api/print/{p.slug}/batch", json=body, headers=batch_auth_headers)
     assert resp.status_code == 202, resp.text
     data = resp.json()
     assert "batch_id" in data

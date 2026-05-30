@@ -13,7 +13,12 @@ from jinja2 import Environment, FileSystemLoader
 def jinja_env():
     # Hub-Templates liegen unter backend/app/templates/
     template_dir = Path(__file__).parent.parent.parent / "app" / "templates"
-    return Environment(loader=FileSystemLoader(str(template_dir)))
+    # autoescape=True via select_autoescape default — no functional change
+    # for our UUID/string substitutions, satisfies CodeQL py/jinja2-autoescape.
+    return Environment(
+        loader=FileSystemLoader(str(template_dir)),
+        autoescape=True,
+    )
 
 
 def test_job_state_fragment_has_data_job_id_and_state(jinja_env):

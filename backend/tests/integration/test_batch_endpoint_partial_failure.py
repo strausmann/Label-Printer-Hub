@@ -60,9 +60,7 @@ def partial_auth_headers() -> dict:
 
 
 @pytest.mark.asyncio
-async def test_batch_partial_failure(
-    partial_client, partial_db_session, partial_auth_headers
-):
+async def test_batch_partial_failure(partial_client, partial_db_session, partial_auth_headers):
     client, inner_app = partial_client
     p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
     await printers_repo.create(partial_db_session, p)
@@ -86,9 +84,7 @@ async def test_batch_partial_failure(
             },
         ]
     }
-    resp = await client.post(
-        f"/api/print/{p.slug}/batch", json=body, headers=partial_auth_headers
-    )
+    resp = await client.post(f"/api/print/{p.slug}/batch", json=body, headers=partial_auth_headers)
     assert resp.status_code == 202, resp.text
     data = resp.json()
     assert len(data["job_ids"]) == 2

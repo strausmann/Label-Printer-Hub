@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import AuthContext
+from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print
 from app.db.session import get_session
 from app.models.print_batch import PrintBatch
@@ -55,12 +55,34 @@ async def create_batch(
     session: SessionDep,
     auth: Annotated[AuthContext, Depends(require_print)],
 ) -> BatchResponse:
-    # 1. Resolve printer
+    # 1. Resolve printer (404 if unknown slug/uuid)
     printer = await printers_repo.resolve_by_slug_or_uuid(session, printer_key)
     if printer is None:
         raise HTTPException(404, detail={"error_code": "printer_not_found"})
 
-    # 2. Best-effort dispatch
+    # 2. ACL: api-key may be restricted to a subset of printer_ids
+    check_printer_access(auth, printer.id)
+
+    # 3. Verify the resolved printer matches the singleton wired into
+    # app.state.print_service. The Hub is currently single-printer at
+    # startup (main.py wires PrintService to app.state.printer_id).
+    # If the URL slug points to a different printer row, the dispatch
+    # would silently route to the wrong device. Reject explicitly.
+    seeded_printer_id = getattr(http.app.state, "printer_id", None)
+    if seeded_printer_id is not None and printer.id != seeded_printer_id:
+        raise HTTPException(
+            404,
+            detail={
+                "error_code": "printer_not_active",
+                "error_message": (
+                    "Resolved printer is not the currently-seeded device. "
+                    "Hub is single-printer at startup; multi-printer routing "
+                    "is a future enhancement."
+                ),
+            },
+        )
+
+    # 4. Best-effort dispatch
     service = http.app.state.print_service
     try:
         job_ids, errors = await dispatch_batch(service, body.items)
@@ -73,7 +95,7 @@ async def create_batch(
             },
         ) from exc
 
-    # 3. Persist tracking row
+    # 5. Persist tracking row
     # auth.subject_id does NOT exist — use api_key_id or source
     created_by = str(auth.api_key_id) if auth.api_key_id else auth.source
     batch_row = PrintBatch(

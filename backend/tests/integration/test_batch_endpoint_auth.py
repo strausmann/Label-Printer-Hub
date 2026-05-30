@@ -73,10 +73,6 @@ async def auth_db_session():
 @pytest.mark.asyncio
 async def test_batch_requires_auth(auth_client, auth_db_session):
     """Genuine 401 requires unauthenticated client; covered by Phase 7c auth tests."""
-    client, inner_app = auth_client
-    p = Printer(name="X", slug="x", model="X", backend="mock")
-    await printers_repo.create(auth_db_session, p)
-
     pytest.skip("401 requires unauthenticated client; covered by Phase 7c auth tests")
 
 

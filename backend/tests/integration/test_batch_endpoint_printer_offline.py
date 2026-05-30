@@ -87,8 +87,6 @@ async def test_batch_rejects_when_printer_offline(
             }
         ]
     }
-    resp = await client.post(
-        f"/api/print/{p.slug}/batch", json=body, headers=offline_auth_headers
-    )
+    resp = await client.post(f"/api/print/{p.slug}/batch", json=body, headers=offline_auth_headers)
     assert resp.status_code == 409, resp.text
     assert resp.json()["detail"]["error_code"] == "printer_offline"
