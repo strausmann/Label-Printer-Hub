@@ -20,18 +20,21 @@ from app.services.template_loader import TemplateLoader
 
 SEED_DIR = Path(__file__).parent.parent.parent.parent / "app" / "seed" / "templates"
 EXPECTED_IDS = {
+    "grocy-12mm",
+    "grocy-18mm",
+    "grocy-24mm",
+    "hangar-furniture-12mm",
+    "hangar-furniture-18mm",
+    "hangar-furniture-24mm",
+    "qr-only-12mm",
+    "qr-only-18mm",
+    "qr-only-24mm",
     "snipeit-12mm",
     "snipeit-18mm",
     "snipeit-24mm",
     "spoolman-12mm",
     "spoolman-18mm",
     "spoolman-24mm",
-    "grocy-12mm",
-    "grocy-18mm",
-    "grocy-24mm",
-    "qr-only-12mm",
-    "qr-only-18mm",
-    "qr-only-24mm",
 }
 
 
@@ -68,7 +71,7 @@ def dummy_data() -> LabelData:
 
 
 def test_all_expected_templates_are_loaded() -> None:
-    """The shipped set is exactly the 12 templates the spec calls for."""
+    """The shipped set is exactly the 15 templates the spec calls for."""
     assert set(TemplateLoader.all()) == EXPECTED_IDS
 
 

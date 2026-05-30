@@ -1,0 +1,16 @@
+# Hangar Furniture Tag — 12mm Endlostape (TZe-231)
+# 180 DPI: 12mm ≈ 85 px Höhe.
+# Layout: QR links (75x75), primary_id oben rechts, title kleiner darunter.
+schema_version: 1
+id: hangar-furniture-12mm
+name: "Hangar Furniture Tag (TZe-231, 12mm)"
+app: null
+tape_mm: 12
+elements:
+  - { type: qr,   x: 5,   y: 5,  size: 75, data_field: qr_payload }
+  - { type: text, x: 90,  y: 12, field: primary_id, font_size: 20 }
+  - { type: text, x: 90,  y: 50, field: title,      font_size: 14 }
+preview_sample:
+  primary_id: "HH-AK-KX10-F0203"
+  title: "Kallax Nr.10 Fach 2-3"
+  qr_payload: "https://hangar.strausmann.cloud/loc/HH-AK-KX10-F0203"
