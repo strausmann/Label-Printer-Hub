@@ -15,6 +15,9 @@ class Printer(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(index=True, unique=True)
+    slug: str = Field(default="", index=True, unique=True,
+                      description="Stable URL-safe identifier (e.g., 'brother-p750w'). "
+                                  "Defaults to slugified name on init.")
     model: str
     backend: str
     connection: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
