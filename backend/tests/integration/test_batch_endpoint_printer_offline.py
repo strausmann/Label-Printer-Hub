@@ -17,7 +17,11 @@ from httpx import ASGITransport, AsyncClient
 
 @pytest_asyncio.fixture
 async def offline_client():
-    """AsyncClient mit gefakter Auth + korrekt gepatchter DB-Session."""
+    """AsyncClient mit gefakter Auth + korrekt gepatchter DB-Session.
+
+    Yields (client, inner_app) so tests can set inner_app.state.printer_id
+    to align with the single-printer-binding check in batch.py.
+    """
     import app.db.engine as _eng
     import app.db.session as _sess
     from app.integrations import (  # type: ignore[attr-defined]
@@ -38,7 +42,9 @@ async def offline_client():
         inner.dependency_overrides[dep] = lambda _c=fake: _c
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        yield c
+        # Touch the app once so lifespan runs and state is populated
+        await c.get("/healthz")
+        yield c, inner
 
 
 @pytest_asyncio.fixture
@@ -57,13 +63,16 @@ def offline_auth_headers() -> dict:
 
 @pytest.mark.asyncio
 async def test_batch_rejects_when_printer_offline(
-    offline_client: AsyncClient,
+    offline_client,
     offline_db_session,
     offline_auth_headers,
     monkeypatch,
 ):
+    client, inner_app = offline_client
     p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
     await printers_repo.create(offline_db_session, p)
+    # Align app state with our test printer (single-printer-binding check)
+    inner_app.state.printer_id = p.id
 
     async def _raise(self, req):
         raise PrinterOfflineError("printer is offline")
@@ -78,7 +87,7 @@ async def test_batch_rejects_when_printer_offline(
             }
         ]
     }
-    resp = await offline_client.post(
+    resp = await client.post(
         f"/api/print/{p.slug}/batch", json=body, headers=offline_auth_headers
     )
     assert resp.status_code == 409, resp.text

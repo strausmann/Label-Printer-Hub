@@ -31,7 +31,11 @@ _BODY = {
 
 @pytest_asyncio.fixture
 async def auth_client():
-    """AsyncClient mit gefakter Auth + korrekt gepatchter DB-Session."""
+    """AsyncClient mit gefakter Auth + korrekt gepatchter DB-Session.
+
+    Yields (client, inner_app) so tests can set inner_app.state.printer_id
+    to align with the single-printer-binding check in batch.py.
+    """
     import app.db.engine as _eng
     import app.db.session as _sess
     from app.integrations import (  # type: ignore[attr-defined]
@@ -52,7 +56,9 @@ async def auth_client():
         inner.dependency_overrides[dep] = lambda _c=fake: _c
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        yield c
+        # Touch the app once so lifespan runs and state is populated
+        await c.get("/healthz")
+        yield c, inner
 
 
 @pytest_asyncio.fixture
@@ -65,8 +71,9 @@ async def auth_db_session():
 
 
 @pytest.mark.asyncio
-async def test_batch_requires_auth(auth_client: AsyncClient, auth_db_session):
+async def test_batch_requires_auth(auth_client, auth_db_session):
     """Genuine 401 requires unauthenticated client; covered by Phase 7c auth tests."""
+    client, inner_app = auth_client
     p = Printer(name="X", slug="x", model="X", backend="mock")
     await printers_repo.create(auth_db_session, p)
 
@@ -75,11 +82,14 @@ async def test_batch_requires_auth(auth_client: AsyncClient, auth_db_session):
 
 @pytest.mark.asyncio
 async def test_batch_print_scope_allowed(
-    auth_client: AsyncClient,
+    auth_client,
     auth_db_session,
 ):
+    client, inner_app = auth_client
     p = Printer(name="X", slug="x", model="X", backend="mock")
     await printers_repo.create(auth_db_session, p)
+    # Align app state with our test printer (single-printer-binding check)
+    inner_app.state.printer_id = p.id
 
-    resp = await auth_client.post("/api/print/x/batch", json=_BODY)
+    resp = await client.post("/api/print/x/batch", json=_BODY)
     assert resp.status_code == 202, resp.text

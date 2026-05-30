@@ -118,36 +118,41 @@ async def test_sse_contains_batch_job_events(
     """Submit Batch → PrintQueue publiziert Events → _sse_stream emittiert sie.
 
     Ablauf:
-    1. Drucker in DB anlegen (mock-Backend, 24mm-Tape).
-    2. Batch mit 3 Items submiten → 202, job_ids ermitteln.
-    3. App-internen EventBus und printer_id aus app._app.state lesen
-       (Lifespan hat bereits gestartet sobald der erste HTTP-Request lief).
+    1. Lifespan triggern (erster Request) — event_bus, print_service und
+       app.state.printer_id werden initialisiert (zufällige UUID, da kein Host).
+    2. Printer-Row in der DB mit derselben ID anlegen (id=app.state.printer_id),
+       damit batch.py's single-printer-binding-Check printer.id == seeded_printer_id
+       besteht, ohne dass wir die internen PrintQueue-Strukturen umpatchem müssen.
+    3. App-internen EventBus und printer_id aus app._app.state lesen.
     4. _sse_stream direkt aufrufen (umgeht ASGITransport-Buffering).
-    5. Warten bis alle 3 job_ids in SSE-Frames erscheinen (≤5 s).
+    5. Batch submiten und warten bis alle 3 job_ids in SSE-Frames erscheinen (≤5 s).
     """
     import app.api.routes.events as events_mod
     from app.models.printer import Printer
     from app.repositories import printers as printers_repo
 
-    # 1. Drucker anlegen
+    # 1. Lifespan triggern (erster Request startet event_bus + print_service)
+    warmup = await sse_batch_client.get("/healthz")
+    assert warmup.status_code == 200, f"warmup failed: {warmup.status_code}"
+
+    # 2. EventBus + printer_id aus app state lesen — Lifespan hat gestartet.
+    inner = sse_batch_app._app  # FastAPI-Instanz hinter _LifespanManager
+    bus = inner.state.event_bus
+    # printer_id aus dem Lifespan — PrintQueueProducer schreibt auf
+    # f"printer:{printer_id}:queue"
+    app_printer_id: uuid.UUID = inner.state.printer_id
+
+    # 3. Printer-Row mit ID=app_printer_id in die DB schreiben.
+    #    batch.py prüft printer.id == app.state.printer_id — durch die identische
+    #    ID passt der Check ohne dass PrintQueue-Interna umgebaut werden müssen.
     p = Printer(
+        id=app_printer_id,
         name="Brother PT-P750W",
         slug="brother-p750w",
         model="PT-P750W",
         backend="mock",
     )
     await printers_repo.create(sse_batch_db_session, p)
-
-    # 2. Lifespan triggern (erster Request startet event_bus + print_service)
-    warmup = await sse_batch_client.get("/healthz")
-    assert warmup.status_code == 200, f"warmup failed: {warmup.status_code}"
-
-    # 3. EventBus + printer_id aus app state lesen — Lifespan hat gestartet.
-    inner = sse_batch_app._app  # FastAPI-Instanz hinter _LifespanManager
-    bus = inner.state.event_bus
-    # printer_id aus dem Lifespan — PrintQueueProducer schreibt auf
-    # f"printer:{printer_id}:queue"
-    app_printer_id: uuid.UUID = inner.state.printer_id
 
     channels = [
         f"printer:{app_printer_id}:queue",

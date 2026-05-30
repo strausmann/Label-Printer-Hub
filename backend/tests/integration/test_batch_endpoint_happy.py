@@ -19,6 +19,9 @@ async def batch_client():
 
     Propagiert den _temp_db_engine-Patch (autouse) in app.db.session.
     Analoges Muster zu test_printers_filter_by_slug.py::slug_client.
+
+    Yields (client, inner_app) so tests can set inner_app.state.printer_id
+    to align with the single-printer-binding check in batch.py.
     """
     import app.db.engine as _eng
     import app.db.session as _sess
@@ -41,7 +44,9 @@ async def batch_client():
         inner.dependency_overrides[dep] = lambda _c=fake: _c
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        yield c
+        # Touch the app once so lifespan runs and state is populated
+        await c.get("/healthz")
+        yield c, inner
 
 
 @pytest_asyncio.fixture
@@ -60,9 +65,12 @@ def batch_auth_headers() -> dict:
 
 
 @pytest.mark.asyncio
-async def test_batch_happy_path(batch_client: AsyncClient, batch_db_session, batch_auth_headers):
+async def test_batch_happy_path(batch_client, batch_db_session, batch_auth_headers):
+    client, inner_app = batch_client
     p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
     await printers_repo.create(batch_db_session, p)
+    # Align app state with our test printer (single-printer-binding check)
+    inner_app.state.printer_id = p.id
 
     # Mock backend defaults to 24mm loaded tape → use 24mm template to avoid mismatch
     body = {
@@ -79,7 +87,7 @@ async def test_batch_happy_path(batch_client: AsyncClient, batch_db_session, bat
             for i in range(3)
         ]
     }
-    resp = await batch_client.post(
+    resp = await client.post(
         f"/api/print/{p.slug}/batch", json=body, headers=batch_auth_headers
     )
     assert resp.status_code == 202, resp.text
