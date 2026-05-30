@@ -1,4 +1,4 @@
-<div class="job-state-fragment">
+<div class="job-state-fragment" data-job-id="{{ job_id }}" data-state="{{ to_state }}">
   <span class="state-badge state-{{ to_state }}">{{ to_state | replace('_', ' ') | title }}</span>
   {% if queue_depth > 0 %}
   <span class="queue-depth">{{ queue_depth }} job{% if queue_depth != 1 %}s{% endif %} queued</span>

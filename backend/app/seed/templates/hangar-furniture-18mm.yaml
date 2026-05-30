@@ -1,0 +1,15 @@
+# Hangar Furniture Hauptschild — 18mm extrastark (TZe-S251)
+# 180 DPI: 18mm ≈ 128 px Höhe.
+schema_version: 1
+id: hangar-furniture-18mm
+name: "Hangar Furniture Hauptschild (TZe-S251, 18mm extrastark)"
+app: null
+tape_mm: 18
+elements:
+  - { type: qr,   x: 8,   y: 8,  size: 110, data_field: qr_payload }
+  - { type: text, x: 130, y: 18, field: primary_id, font_size: 30 }
+  - { type: text, x: 130, y: 75, field: title,      font_size: 18 }
+preview_sample:
+  primary_id: "HH-VK-BY03"
+  title: "Billy VK Nr.3 Hauptschild"
+  qr_payload: "https://hangar.example.test/loc/HH-VK-BY03"

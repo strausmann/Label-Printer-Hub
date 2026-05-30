@@ -34,3 +34,21 @@ async def create(session: AsyncSession, printer: Printer) -> Printer:
     await session.commit()
     await session.refresh(printer)
     return printer
+
+
+async def get_by_slug(session: AsyncSession, slug: str) -> Printer | None:
+    """Lookup nach slug. None wenn nicht vorhanden."""
+    result = await session.execute(select(Printer).where(col(Printer.slug) == slug))
+    return result.scalar_one_or_none()
+
+
+async def resolve_by_slug_or_uuid(session: AsyncSession, key: str) -> Printer | None:
+    """Akzeptiert Slug-String ODER UUID-String. UUID hat Vorrang (Performance)."""
+    try:
+        uuid_obj = UUID(key)
+        printer = await get(session, uuid_obj)
+        if printer is not None:
+            return printer
+    except ValueError:
+        pass
+    return await get_by_slug(session, key)

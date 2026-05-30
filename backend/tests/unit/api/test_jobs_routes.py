@@ -93,8 +93,11 @@ _printer_counter = 0
 async def _make_printer(session: AsyncSession, name: str | None = None) -> Printer:
     global _printer_counter
     _printer_counter += 1
+    resolved_name = name or f"test-printer-{_printer_counter}"
     p = Printer(
-        name=name or f"test-printer-{_printer_counter}",
+        name=resolved_name,
+        # slug must be unique — derive from name to avoid UNIQUE conflicts.
+        slug=resolved_name.lower().replace(" ", "-").replace("_", "-"),
         model="pt-series",
         backend="ptouch",
         connection={"host": "198.51.100.10", "port": 9100},

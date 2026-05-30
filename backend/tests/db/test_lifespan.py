@@ -29,8 +29,11 @@ from app.repositories import templates as templates_repo
 
 
 async def _make_printer(session, *, name: str = "pt-office") -> Printer:
+    # slug must be unique per Printer — derive from name to avoid
+    # UNIQUE constraint conflicts when several helpers run in one test.
     p = Printer(
         name=name,
+        slug=name.lower().replace(" ", "-").replace("_", "-"),
         model="pt-series",
         backend="ptouch",
         connection={"interface": "usb"},
