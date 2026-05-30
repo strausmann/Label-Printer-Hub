@@ -178,9 +178,6 @@ async def _build_initial_snapshot(
                     )
                 )
     except Exception:
-        # pid is str(uuid.UUID) — FastAPI validates the path param as UUID
-        # before this function is reached. Safe to log unsanitised.
-        # codeql[py/log-injection]
         _log.debug("_build_initial_snapshot: status cache read failed for %s", pid)
 
     # --- job.state_changed for each active (QUEUED|PRINTING) job ---
@@ -227,8 +224,6 @@ async def _build_initial_snapshot(
                 )
             )
     except Exception:
-        # pid is str(uuid.UUID) — see comment above
-        # codeql[py/log-injection]
         _log.debug("_build_initial_snapshot: job query failed for %s", pid)
 
     return snapshot
