@@ -1,4 +1,5 @@
 """Pydantic-Schemas für POST /api/print/{slug_or_uuid}/batch."""
+
 from __future__ import annotations
 
 from typing import Annotated
@@ -23,7 +24,7 @@ class BatchError(BaseModel):
     index: Annotated[int, Field(ge=0)]
     error_code: str
     error_message: str
-    error_detail: dict | None = None
+    error_detail: dict[str, object] | None = None
 
 
 class BatchResponse(BaseModel):

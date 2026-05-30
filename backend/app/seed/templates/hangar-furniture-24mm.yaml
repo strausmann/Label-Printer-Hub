@@ -12,4 +12,4 @@ elements:
 preview_sample:
   primary_id: "HH-AK-RAUM01"
   title: "Arbeitskeller Raum"
-  qr_payload: "https://hangar.strausmann.cloud/loc/HH-AK-RAUM01"
+  qr_payload: "https://hangar.example.test/loc/HH-AK-RAUM01"

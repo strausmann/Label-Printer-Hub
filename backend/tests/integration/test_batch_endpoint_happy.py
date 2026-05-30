@@ -1,16 +1,16 @@
 """Happy-Path: 3 valide Items, alle queued, 0 errors."""
+
 from __future__ import annotations
 
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
 from app.models.printer import Printer
 from app.repositories import printers as printers_repo
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest_asyncio.fixture
@@ -61,22 +61,27 @@ def batch_auth_headers() -> dict:
 
 @pytest.mark.asyncio
 async def test_batch_happy_path(batch_client: AsyncClient, batch_db_session, batch_auth_headers):
-    p = Printer(name="Brother PT-P750W", slug="brother-p750w",
-                model="PT-P750W", backend="mock")
+    p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
     await printers_repo.create(batch_db_session, p)
 
     # Mock backend defaults to 24mm loaded tape → use 24mm template to avoid mismatch
     body = {
         "items": [
-            {"template_id": "hangar-furniture-24mm",
-             "data": {"title": f"Item {i}", "primary_id": f"HH-AK-KX10-F{i:04d}",
-                      "qr_payload": f"https://hangar.test/loc/HH-AK-KX10-F{i:04d}"},
-             "options": {"copies": 1, "auto_cut": True}}
+            {
+                "template_id": "hangar-furniture-24mm",
+                "data": {
+                    "title": f"Item {i}",
+                    "primary_id": f"HH-AK-KX10-F{i:04d}",
+                    "qr_payload": f"https://hangar.test/loc/HH-AK-KX10-F{i:04d}",
+                },
+                "options": {"copies": 1, "auto_cut": True},
+            }
             for i in range(3)
         ]
     }
-    resp = await batch_client.post(f"/api/print/{p.slug}/batch",
-                                    json=body, headers=batch_auth_headers)
+    resp = await batch_client.post(
+        f"/api/print/{p.slug}/batch", json=body, headers=batch_auth_headers
+    )
     assert resp.status_code == 202, resp.text
     data = resp.json()
     assert "batch_id" in data

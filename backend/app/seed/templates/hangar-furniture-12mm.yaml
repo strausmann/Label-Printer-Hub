@@ -13,4 +13,4 @@ elements:
 preview_sample:
   primary_id: "HH-AK-KX10-F0203"
   title: "Kallax Nr.10 Fach 2-3"
-  qr_payload: "https://hangar.strausmann.cloud/loc/HH-AK-KX10-F0203"
+  qr_payload: "https://hangar.example.test/loc/HH-AK-KX10-F0203"

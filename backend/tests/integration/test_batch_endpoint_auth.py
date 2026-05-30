@@ -6,22 +6,27 @@ Testing genuine 401/403 requires a client WITHOUT overrides. That
 would need a separate fixture and is covered by Phase 7c auth tests.
 Only the positive 202 case is exercised here.
 """
+
 from __future__ import annotations
 
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
 from app.models.printer import Printer
 from app.repositories import printers as printers_repo
+from httpx import ASGITransport, AsyncClient
 
-
-_BODY = {"items": [{"template_id": "hangar-furniture-24mm",
-                    "data": {"title": "x", "primary_id": "x", "qr_payload": "q"}}]}
+_BODY = {
+    "items": [
+        {
+            "template_id": "hangar-furniture-24mm",
+            "data": {"title": "x", "primary_id": "x", "qr_payload": "q"},
+        }
+    ]
+}
 
 
 @pytest_asyncio.fixture

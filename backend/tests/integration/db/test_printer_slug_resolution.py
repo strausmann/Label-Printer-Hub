@@ -1,19 +1,16 @@
 """Repository-Tests für slug-Lookup und Slug-oder-UUID-Resolution."""
+
 from __future__ import annotations
 
-from uuid import uuid4
-
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.models.printer import Printer
 from app.repositories import printers as printers_repo
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio
 async def test_get_by_slug_returns_printer(db_session: AsyncSession):
-    p = Printer(name="Brother PT-P750W", slug="brother-p750w",
-                model="PT-P750W", backend="ptouch")
+    p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="ptouch")
     await printers_repo.create(db_session, p)
 
     found = await printers_repo.get_by_slug(db_session, "brother-p750w")

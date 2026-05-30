@@ -1,18 +1,18 @@
 """Mix 12mm + 24mm, eingelegt 24mm: 24mm queued, 12mm failed per-item."""
+
 from __future__ import annotations
 
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
 from app.models.printer import Printer
 from app.printer_backends.exceptions import TapeMismatchError
 from app.repositories import printers as printers_repo
 from app.services.print_service import PrintService
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest_asyncio.fixture
@@ -62,8 +62,7 @@ async def test_batch_tape_mismatch_per_item(
     tape_auth_headers,
     monkeypatch,
 ):
-    p = Printer(name="Brother PT-P750W", slug="brother-p750w",
-                model="PT-P750W", backend="mock")
+    p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
     await printers_repo.create(tape_db_session, p)
 
     # Simulate: 24mm loaded, 12mm items fail with tape_mismatch, 24mm items succeed
@@ -74,19 +73,28 @@ async def test_batch_tape_mismatch_per_item(
 
     monkeypatch.setattr(PrintService, "submit_print_job", _maybe_raise)
 
-    body = {"items": [
-        {"template_id": "hangar-furniture-24mm",
-         "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
-         "on_tape_mismatch": "fail"},
-        {"template_id": "hangar-furniture-12mm",
-         "data": {"title": "B", "primary_id": "B", "qr_payload": "q"},
-         "on_tape_mismatch": "fail"},
-        {"template_id": "hangar-furniture-24mm",
-         "data": {"title": "C", "primary_id": "C", "qr_payload": "q"},
-         "on_tape_mismatch": "fail"},
-    ]}
-    resp = await tape_client.post(f"/api/print/{p.slug}/batch",
-                                   json=body, headers=tape_auth_headers)
+    body = {
+        "items": [
+            {
+                "template_id": "hangar-furniture-24mm",
+                "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
+                "on_tape_mismatch": "fail",
+            },
+            {
+                "template_id": "hangar-furniture-12mm",
+                "data": {"title": "B", "primary_id": "B", "qr_payload": "q"},
+                "on_tape_mismatch": "fail",
+            },
+            {
+                "template_id": "hangar-furniture-24mm",
+                "data": {"title": "C", "primary_id": "C", "qr_payload": "q"},
+                "on_tape_mismatch": "fail",
+            },
+        ]
+    }
+    resp = await tape_client.post(
+        f"/api/print/{p.slug}/batch", json=body, headers=tape_auth_headers
+    )
     assert resp.status_code == 202, resp.text
     data = resp.json()
     assert len(data["job_ids"]) == 2

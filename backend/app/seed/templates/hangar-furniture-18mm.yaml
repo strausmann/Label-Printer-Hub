@@ -12,4 +12,4 @@ elements:
 preview_sample:
   primary_id: "HH-VK-BY03"
   title: "Billy VK Nr.3 Hauptschild"
-  qr_payload: "https://hangar.strausmann.cloud/loc/HH-VK-BY03"
+  qr_payload: "https://hangar.example.test/loc/HH-VK-BY03"

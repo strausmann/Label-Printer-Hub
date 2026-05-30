@@ -1,16 +1,16 @@
 """GET /api/printers?slug=... filtert auf einzelnen Printer."""
+
 from __future__ import annotations
 
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
 from app.models.printer import Printer
 from app.repositories import printers as printers_repo
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest_asyncio.fixture
@@ -61,13 +61,21 @@ def read_auth_headers() -> dict:
 
 
 @pytest.mark.asyncio
-async def test_filter_by_slug_returns_one(slug_client: AsyncClient, slug_db_session, read_auth_headers):
-    await printers_repo.create(slug_db_session,
-        Printer(name="Brother PT-P750W", slug="brother-p750w",
-                model="PT-P750W", backend="ptouch"))
-    await printers_repo.create(slug_db_session,
-        Printer(name="Brother QL-820NWB", slug="brother-ql820nwb",
-                model="QL-820NWB", backend="ptouch"))
+async def test_filter_by_slug_returns_one(
+    slug_client: AsyncClient,
+    slug_db_session,
+    read_auth_headers,
+):
+    await printers_repo.create(
+        slug_db_session,
+        Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="ptouch"),
+    )
+    await printers_repo.create(
+        slug_db_session,
+        Printer(
+            name="Brother QL-820NWB", slug="brother-ql820nwb", model="QL-820NWB", backend="ptouch"
+        ),
+    )
 
     resp = await slug_client.get("/api/printers?slug=brother-p750w", headers=read_auth_headers)
     assert resp.status_code == 200
@@ -84,10 +92,12 @@ async def test_filter_by_slug_returns_404_when_missing(slug_client, read_auth_he
 
 @pytest.mark.asyncio
 async def test_no_filter_returns_all(slug_client: AsyncClient, slug_db_session, read_auth_headers):
-    await printers_repo.create(slug_db_session,
-        Printer(name="A", slug="a", model="X", backend="mock"))
-    await printers_repo.create(slug_db_session,
-        Printer(name="B", slug="b", model="X", backend="mock"))
+    await printers_repo.create(
+        slug_db_session, Printer(name="A", slug="a", model="X", backend="mock")
+    )
+    await printers_repo.create(
+        slug_db_session, Printer(name="B", slug="b", model="X", backend="mock")
+    )
 
     resp = await slug_client.get("/api/printers", headers=read_auth_headers)
     assert resp.status_code == 200

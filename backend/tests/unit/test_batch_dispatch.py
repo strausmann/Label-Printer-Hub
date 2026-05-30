@@ -1,11 +1,10 @@
 """Unit-Tests für den Batch-Dispatcher (best-effort, pro-Item-Validation)."""
+
 from __future__ import annotations
 
 from uuid import uuid4
 
 import pytest
-
-from app.schemas.print_batch import BatchError
 from app.schemas.print_request import PrintRequest, RawLabelData
 from app.services.batch_dispatch import dispatch_batch
 from app.services.template_loader import TemplateNotFoundError
@@ -25,8 +24,9 @@ class _FakePrintService:
 
 
 def _item(template_id="hangar-furniture-12mm"):
-    return PrintRequest(template_id=template_id,
-                        data=RawLabelData(title="t", primary_id="p", qr_payload="q"))
+    return PrintRequest(
+        template_id=template_id, data=RawLabelData(title="t", primary_id="p", qr_payload="q")
+    )
 
 
 @pytest.mark.asyncio

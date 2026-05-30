@@ -10,6 +10,7 @@ Nach dem Batch-Submit wird _sse_stream direkt mit dem bus aus app._app.state
 aufgerufen, damit derselbe EventBus den die PrintQueue beschreibt auch
 abonniert wird.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -19,11 +20,9 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
-
+from httpx import ASGITransport, AsyncClient
 
 # ---------------------------------------------------------------------------
 # Local fixtures — mirror test_batch_endpoint_happy.py pattern
@@ -63,9 +62,7 @@ async def sse_batch_app():
 @pytest_asyncio.fixture
 async def sse_batch_client(sse_batch_app):
     """AsyncClient gegen die App — Lifespan startet bei erster Anfrage."""
-    async with AsyncClient(
-        transport=ASGITransport(app=sse_batch_app), base_url="http://t"
-    ) as c:
+    async with AsyncClient(transport=ASGITransport(app=sse_batch_app), base_url="http://t") as c:
         yield c
 
 

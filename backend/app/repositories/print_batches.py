@@ -1,4 +1,5 @@
 """CRUD für PrintBatch-Aggregat."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -34,9 +35,7 @@ async def list_recent(session: AsyncSession, hours: int = 24) -> list[PrintBatch
 
 async def prune_older_than(session: AsyncSession, hours: int = 24) -> int:
     cutoff = datetime.now(UTC) - timedelta(hours=hours)
-    result = await session.execute(
-        select(PrintBatch).where(col(PrintBatch.created_at) < cutoff)
-    )
+    result = await session.execute(select(PrintBatch).where(col(PrintBatch.created_at) < cutoff))
     rows = list(result.scalars())
     for row in rows:
         await session.delete(row)

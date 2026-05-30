@@ -1,21 +1,24 @@
 """Verifiziert dass die 3 Hangar-Templates valide YAML sind und beim Seed landen."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
 import yaml
-
 from app.schemas.template import TemplateSchema
 
 SEED_DIR = Path(__file__).parents[3] / "app" / "seed" / "templates"
 
 
-@pytest.mark.parametrize("tape_mm,template_id", [
-    (12, "hangar-furniture-12mm"),
-    (18, "hangar-furniture-18mm"),
-    (24, "hangar-furniture-24mm"),
-])
+@pytest.mark.parametrize(
+    "tape_mm,template_id",
+    [
+        (12, "hangar-furniture-12mm"),
+        (18, "hangar-furniture-18mm"),
+        (24, "hangar-furniture-24mm"),
+    ],
+)
 def test_hangar_template_parses(tape_mm: int, template_id: str):
     path = SEED_DIR / f"{template_id}.yaml"
     assert path.exists(), f"missing {path}"

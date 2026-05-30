@@ -1,18 +1,18 @@
 """Offline-Printer → 409 für ganzen Batch, kein Job queued."""
+
 from __future__ import annotations
 
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
 from app.models.printer import Printer
 from app.printer_backends.exceptions import PrinterOfflineError
 from app.repositories import printers as printers_repo
 from app.services.print_service import PrintService
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest_asyncio.fixture
@@ -62,8 +62,7 @@ async def test_batch_rejects_when_printer_offline(
     offline_auth_headers,
     monkeypatch,
 ):
-    p = Printer(name="Brother PT-P750W", slug="brother-p750w",
-                model="PT-P750W", backend="mock")
+    p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
     await printers_repo.create(offline_db_session, p)
 
     async def _raise(self, req):
@@ -71,9 +70,16 @@ async def test_batch_rejects_when_printer_offline(
 
     monkeypatch.setattr(PrintService, "submit_print_job", _raise)
 
-    body = {"items": [{"template_id": "hangar-furniture-24mm",
-                       "data": {"title": "A", "primary_id": "A", "qr_payload": "q"}}]}
-    resp = await offline_client.post(f"/api/print/{p.slug}/batch",
-                                      json=body, headers=offline_auth_headers)
+    body = {
+        "items": [
+            {
+                "template_id": "hangar-furniture-24mm",
+                "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
+            }
+        ]
+    }
+    resp = await offline_client.post(
+        f"/api/print/{p.slug}/batch", json=body, headers=offline_auth_headers
+    )
     assert resp.status_code == 409, resp.text
     assert resp.json()["detail"]["error_code"] == "printer_offline"

@@ -96,8 +96,10 @@ async def list_printers(
         if printer is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail={"error_code": "printer_not_found",
-                        "error_message": f"slug={slug!r} not found"},
+                detail={
+                    "error_code": "printer_not_found",
+                    "error_message": f"slug={slug!r} not found",
+                },
             )
         printers = [printer]
     else:

@@ -1,12 +1,13 @@
 """PrinterRead exposiert slug-Feld."""
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.schemas.printer import PrinterRead
 
 
 def test_printer_read_has_slug_field():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "id": str(uuid4()),
         "slug": "brother-p750w",

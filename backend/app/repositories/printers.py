@@ -38,9 +38,7 @@ async def create(session: AsyncSession, printer: Printer) -> Printer:
 
 async def get_by_slug(session: AsyncSession, slug: str) -> Printer | None:
     """Lookup nach slug. None wenn nicht vorhanden."""
-    result = await session.execute(
-        select(Printer).where(col(Printer.slug) == slug)
-    )
+    result = await session.execute(select(Printer).where(col(Printer.slug) == slug))
     return result.scalar_one_or_none()
 
 

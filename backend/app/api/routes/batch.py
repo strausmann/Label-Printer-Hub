@@ -1,4 +1,5 @@
 """POST /api/print/{printer_key}/batch — best-effort batch print."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -29,9 +30,9 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 router = APIRouter(prefix="/api")
 
 _SYNC_ERROR_MAP: dict[type[Exception], str] = {
-    PrinterOfflineError:   "printer_offline",
+    PrinterOfflineError: "printer_offline",
     PrinterCoverOpenError: "printer_cover_open",
-    SnmpQueryError:        "snmp_error",
+    SnmpQueryError: "snmp_error",
 }
 
 
@@ -64,10 +65,13 @@ async def create_batch(
     try:
         job_ids, errors = await dispatch_batch(service, body.items)
     except (PrinterOfflineError, PrinterCoverOpenError, SnmpQueryError) as exc:
-        raise HTTPException(409, detail={
-            "error_code": _SYNC_ERROR_MAP[type(exc)],
-            "error_message": str(exc),
-        })
+        raise HTTPException(
+            409,
+            detail={
+                "error_code": _SYNC_ERROR_MAP[type(exc)],
+                "error_message": str(exc),
+            },
+        ) from exc
 
     # 3. Persist tracking row
     # auth.subject_id does NOT exist — use api_key_id or source

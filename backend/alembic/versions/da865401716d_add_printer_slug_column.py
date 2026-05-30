@@ -5,6 +5,7 @@ Revises: 20260518_phase7c_pat_prefix
 Create Date: 2026-05-30 15:03:06.420359
 
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -30,9 +31,7 @@ def upgrade() -> None:
         ),
     )
     # Backfill aus name: existierende Drucker erhalten einen slug
-    op.execute(
-        "UPDATE printers SET slug = LOWER(REPLACE(name, ' ', '-')) WHERE slug = ''"
-    )
+    op.execute("UPDATE printers SET slug = LOWER(REPLACE(name, ' ', '-')) WHERE slug = ''")
     op.create_index(op.f("ix_printers_slug"), "printers", ["slug"], unique=True)
 
 
