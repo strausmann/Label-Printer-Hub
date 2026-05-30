@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import AuthContext, check_printer_access
@@ -80,12 +80,28 @@ async def _get_printer_or_404(session: AsyncSession, printer_id: UUID) -> Any:
     summary="List all printers",
     description=(
         "Returns every registered printer.  The ``paused`` flag is joined "
-        "from ``printer_state``; it is ``false`` when no state row exists yet."
+        "from ``printer_state``; it is ``false`` when no state row exists yet.  "
+        "Pass ``?slug=<slug>`` to filter to a single printer by exact slug match "
+        "(returns 404 when no printer with that slug exists)."
     ),
 )
-async def list_printers(session: SessionDep, _auth: ReadAuthDep) -> list[PrinterRead]:
-    """List all printers with their pause state."""
-    printers = await printers_repo.list_all(session)
+async def list_printers(
+    session: SessionDep,
+    _auth: ReadAuthDep,
+    slug: Annotated[str | None, Query(description="Filter by exact slug")] = None,
+) -> list[PrinterRead]:
+    """List all printers with their pause state, optionally filtered by slug."""
+    if slug is not None:
+        printer = await printers_repo.get_by_slug(session, slug)
+        if printer is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"error_code": "printer_not_found",
+                        "error_message": f"slug={slug!r} not found"},
+            )
+        printers = [printer]
+    else:
+        printers = await printers_repo.list_all(session)
     result: list[PrinterRead] = []
     for p in printers:
         state = await printer_state_repo.get(session, p.id)
@@ -94,6 +110,7 @@ async def list_printers(session: SessionDep, _auth: ReadAuthDep) -> list[Printer
             PrinterRead(
                 id=p.id,
                 name=p.name,
+                slug=p.slug,
                 model=p.model,
                 backend=p.backend,
                 connection=dict(p.connection),
