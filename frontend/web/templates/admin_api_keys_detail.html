@@ -1,0 +1,58 @@
+{{define "title"}}API Key — {{.Key.Name}} — Label Printer Hub{{end}}
+
+{{define "content"}}
+<div class="max-w-2xl space-y-6">
+  <div class="flex items-center gap-4">
+    <a href="/admin/api-keys" class="text-content-secondary hover:text-content-primary">&larr;</a>
+    <h1 class="text-2xl font-semibold text-content-primary">{{.Key.Name}}</h1>
+    {{if .Key.Enabled}}
+    <span class="text-xs text-green-600 font-medium px-2 py-1 bg-green-50 rounded">active</span>
+    {{else}}
+    <span class="text-xs text-red-500 font-medium px-2 py-1 bg-red-50 rounded">revoked</span>
+    {{end}}
+  </div>
+
+  <div class="bg-surface-raised rounded-lg border border-surface-border p-4 space-y-3 text-sm">
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-32">Prefix</span>
+      <code class="font-mono">{{.Key.KeyPrefix}}…</code>
+    </div>
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-32">Scopes</span>
+      <span>
+        {{range .Key.Scopes}}
+        <span class="inline-block px-2 py-0.5 rounded text-xs bg-surface text-content-secondary mr-1">{{.}}</span>
+        {{end}}
+      </span>
+    </div>
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-32">Rate Limit</span>
+      <span>{{.Key.RateLimitPerMinute}} req/min</span>
+    </div>
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-32">Created</span>
+      <span class="text-xs">{{.Key.CreatedAt}}</span>
+    </div>
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-32">Last Used</span>
+      <span class="text-xs">{{if .Key.LastUsedAt}}{{.Key.LastUsedAt}} from {{.Key.LastUsedIp}}{{else}}&mdash;{{end}}</span>
+    </div>
+    {{if .Key.Notes}}
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-32">Notes</span>
+      <span>{{.Key.Notes}}</span>
+    </div>
+    {{end}}
+  </div>
+
+  {{if .Key.Enabled}}
+  <form method="POST" action="/admin/api-keys/{{.Key.Id}}/revoke">
+    <button type="submit"
+            class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+            onclick="return confirm('Revoke this key? It cannot be undone.')">
+      Revoke Key
+    </button>
+  </form>
+  {{end}}
+</div>
+{{end}}

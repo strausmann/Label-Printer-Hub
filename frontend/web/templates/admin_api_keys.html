@@ -1,0 +1,71 @@
+{{define "title"}}API Keys — Label Printer Hub{{end}}
+
+{{define "content"}}
+<div class="space-y-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-2xl font-semibold text-content-primary">API Keys</h1>
+    <a href="/admin/api-keys/new"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 text-sm font-medium">
+      + New Key
+    </a>
+  </div>
+
+  {{if .Keys}}
+  <div class="overflow-x-auto rounded-lg border border-surface-border">
+    <table class="min-w-full divide-y divide-surface-border text-sm">
+      <thead class="bg-surface-raised text-content-secondary uppercase text-xs tracking-wide">
+        <tr>
+          <th class="px-4 py-3 text-left">Name</th>
+          <th class="px-4 py-3 text-left">Prefix</th>
+          <th class="px-4 py-3 text-left">Scopes</th>
+          <th class="px-4 py-3 text-left">Rate Limit</th>
+          <th class="px-4 py-3 text-left">Last Used</th>
+          <th class="px-4 py-3 text-left">Status</th>
+          <th class="px-4 py-3 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-surface-border bg-surface">
+        {{range .Keys}}
+        <tr>
+          <td class="px-4 py-3 font-medium text-content-primary">{{.Name}}</td>
+          <td class="px-4 py-3 font-mono text-content-secondary text-xs">{{.KeyPrefix}}</td>
+          <td class="px-4 py-3">
+            {{range .Scopes}}
+            <span class="inline-block px-2 py-0.5 rounded text-xs bg-surface-raised text-content-secondary mr-1">{{.}}</span>
+            {{end}}
+          </td>
+          <td class="px-4 py-3 text-content-secondary">{{.RateLimitPerMinute}}/min</td>
+          <td class="px-4 py-3 text-content-secondary text-xs">
+            {{if .LastUsedAt}}{{.LastUsedAt}}{{else}}&mdash;{{end}}
+          </td>
+          <td class="px-4 py-3">
+            {{if .Enabled}}
+            <span class="text-xs text-green-600 font-medium">active</span>
+            {{else}}
+            <span class="text-xs text-red-500 font-medium">revoked</span>
+            {{end}}
+          </td>
+          <td class="px-4 py-3 text-right">
+            <a href="/admin/api-keys/{{.Id}}"
+               class="text-xs text-primary hover:underline mr-3">Details</a>
+            {{if .Enabled}}
+            <form method="POST" action="/admin/api-keys/{{.Id}}/revoke" class="inline">
+              <button type="submit"
+                      class="text-xs text-red-500 hover:underline"
+                      onclick="return confirm('Revoke key {{.Name}}?')">Revoke</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="text-center py-12 text-content-secondary">
+    <p class="text-lg mb-2">No API keys yet.</p>
+    <p class="text-sm">Create your first key to allow authenticated API access.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}

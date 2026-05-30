@@ -158,7 +158,7 @@ def test_endpoint_count_in_range(openapi_schema: dict[str, Any]) -> None:
     undocumented endpoints lands (count exceeds 31).
     """
     count = sum(1 for _ in _iter_operations(openapi_schema))
-    assert 23 <= count <= 31, (
+    assert 28 <= count <= 38, (
         f"Operation count {count} is outside the expected 23-31 range.  "
         "If you intentionally added or removed endpoints, update this test."
     )

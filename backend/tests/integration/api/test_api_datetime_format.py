@@ -17,7 +17,7 @@ def _has_tz_suffix(s: str) -> bool:
 
 async def test_template_read_has_tz_suffix(api_client_with_seed):
     """GET /api/templates returns datetimes with TZ info that fromisoformat can parse."""
-    resp = await api_client_with_seed.get("/api/templates")
+    resp = await api_client_with_seed.get("/api/templates", headers={"X-Pangolin-User": "test"})
     assert resp.status_code == 200
     body = resp.json()
     assert body, "expected at least one seeded template"
@@ -36,7 +36,7 @@ async def test_printer_read_has_tz_suffix(api_client_with_seed):
     making this test always exercise the assertion block. Until then, the test
     skips gracefully when no printers exist in the test DB.
     """
-    resp = await api_client_with_seed.get("/api/printers")
+    resp = await api_client_with_seed.get("/api/printers", headers={"X-Pangolin-User": "test"})
     assert resp.status_code == 200
     body = resp.json()
     if not body:
@@ -56,7 +56,7 @@ async def test_job_read_has_tz_suffix(api_client_with_seed):
     print invocation will create jobs. Until then, the test skips gracefully when
     no jobs exist in the test DB.
     """
-    resp = await api_client_with_seed.get("/api/jobs")
+    resp = await api_client_with_seed.get("/api/jobs", headers={"X-Pangolin-User": "test"})
     assert resp.status_code == 200
     body = resp.json()
     if not body:

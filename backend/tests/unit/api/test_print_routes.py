@@ -3,9 +3,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
+from uuid import uuid4 as _uuid4
 
 import pytest
 from app.api.routes.print import router
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_print, require_read
 from app.printer_backends.exceptions import SnmpQueryError
 from app.printer_backends.snmp_helper import LiveStatus
 from app.services.job_lifecycle import Job, JobState
@@ -35,6 +38,9 @@ def _app(service, queue):
     app.state.print_service = service
     app.state.print_queue = queue
     app.include_router(router)
+    _fake_ctx = AuthContext(source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1")
+    for _dep in (require_read, require_print):
+        app.dependency_overrides[_dep] = lambda _c=_fake_ctx: _c
     return app
 
 

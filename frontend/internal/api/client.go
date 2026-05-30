@@ -58,6 +58,11 @@ func NewHubClient(backendURL string) *HubClient {
 	return &HubClient{gen: gen, hc: hc, baseURL: backendURL}
 }
 
+// BaseURL returns the backend base URL this client targets.
+func (c *HubClient) BaseURL() string {
+	return c.baseURL
+}
+
 func logCall(op string, start time.Time, err error) {
 	slog.Debug("backend call", "op", op, "ms", time.Since(start).Milliseconds(), "err", err)
 }

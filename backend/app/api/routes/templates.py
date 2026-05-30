@@ -27,6 +27,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_read
 from app.db.session import get_session
 from app.repositories import templates as templates_repo
 from app.schemas.label_data import LabelData
@@ -44,6 +46,7 @@ render_router = APIRouter(prefix="/api/render", tags=["templates"])
 
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
 
 
 def _build_label_data(
@@ -228,6 +231,7 @@ async def render_preview(
 )
 async def list_templates(
     session: SessionDep,
+    _auth: ReadAuthDep,
     app: str | None = Query(
         default=None,
         description="Filter by integration app (snipeit / grocy / spoolman / …)",

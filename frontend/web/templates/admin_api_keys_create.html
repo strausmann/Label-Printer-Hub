@@ -1,0 +1,60 @@
+{{define "title"}}New API Key — Label Printer Hub{{end}}
+
+{{define "content"}}
+<div class="max-w-xl space-y-6">
+  <div class="flex items-center gap-4">
+    <a href="/admin/api-keys" class="text-content-secondary hover:text-content-primary">&larr;</a>
+    <h1 class="text-2xl font-semibold text-content-primary">New API Key</h1>
+  </div>
+
+  {{if .Plaintext}}
+  <div class="bg-yellow-50 border border-yellow-300 rounded-lg p-4 space-y-2">
+    <p class="text-sm font-semibold text-yellow-800">Copy your key — it will not be shown again!</p>
+    <div class="flex items-center gap-2">
+      <code class="flex-1 font-mono text-sm bg-white border border-yellow-200 rounded px-3 py-2 break-all">{{.Plaintext}}</code>
+      <button onclick="navigator.clipboard.writeText('{{.Plaintext}}')"
+              class="px-3 py-2 text-xs bg-yellow-100 border border-yellow-300 rounded hover:bg-yellow-200">Copy</button>
+    </div>
+    <p class="text-xs text-yellow-700">Key prefix: <code class="font-mono">{{.Prefix}}</code></p>
+    <a href="/admin/api-keys" class="inline-block mt-2 text-sm text-primary hover:underline">Back to list &rarr;</a>
+  </div>
+  {{else}}
+  <form method="POST" action="/admin/api-keys/new" class="space-y-4 bg-surface-raised rounded-lg border border-surface-border p-6">
+    <div>
+      <label class="block text-sm font-medium text-content-primary mb-1">Name</label>
+      <input type="text" name="name" required
+             placeholder="e.g. Plex Print"
+             class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"/>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-content-primary mb-2">Scopes</label>
+      <div class="space-y-1">
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="scopes" value="read"> read (GET endpoints)
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="scopes" value="print" checked> print (submit jobs)
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="scopes" value="admin"> admin (manage keys + templates)
+        </label>
+      </div>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-content-primary mb-1">Rate Limit (requests/min)</label>
+      <input type="number" name="rate_limit_per_minute" value="60" min="1" max="10000"
+             class="w-32 rounded-lg border border-surface-border px-3 py-2 text-sm"/>
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-content-primary mb-1">Notes (optional)</label>
+      <input type="text" name="notes" placeholder="What uses this key?"
+             class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm"/>
+    </div>
+    <button type="submit"
+            class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 text-sm font-medium">
+      Create Key
+    </button>
+  </form>
+  {{end}}
+</div>
+{{end}}

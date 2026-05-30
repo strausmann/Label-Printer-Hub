@@ -8,7 +8,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_readiness_returns_200_when_ready(api_client_with_seed):
-    resp = await api_client_with_seed.get("/readiness")
+    resp = await api_client_with_seed.get("/readiness", headers={"X-Pangolin-User": "test"})
     body = resp.json()
     # template_seed will be ok (the fixture seeds), other critical checks ok →
     # printer_runtime may fail (no PT-P750W env) but that's non-critical, so degraded.
@@ -30,7 +30,7 @@ async def test_readiness_returns_200_when_ready(api_client_with_seed):
 
 
 async def test_readiness_returns_503_when_not_ready(api_client_with_broken_db):
-    resp = await api_client_with_broken_db.get("/readiness")
+    resp = await api_client_with_broken_db.get("/readiness", headers={"X-Pangolin-User": "test"})
     assert resp.status_code == 503
     body = resp.json()
     assert body["status"] == "not-ready"

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_print, require_read
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterOfflineError,
@@ -60,7 +62,11 @@ _SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
         "errors (tape mismatch, offline, cover open, etc.)."
     ),
 )
-async def create_print_job(request: PrintRequest, http: Request) -> Any:
+async def create_print_job(
+    request: PrintRequest,
+    http: Request,
+    _auth: Annotated[AuthContext, Depends(require_print)],
+) -> Any:
     service = http.app.state.print_service
     try:
         job_id = await service.submit_print_job(request)
@@ -88,7 +94,11 @@ async def create_print_job(request: PrintRequest, http: Request) -> Any:
         "Returns 404 when the job is not found."
     ),
 )
-async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
+async def get_job_status(
+    job_id: str,
+    http: Request,
+    _auth: Annotated[AuthContext, Depends(require_read)],
+) -> PrintJobStatusResponse:
     queue = http.app.state.print_queue
     try:
         job = await queue.get(job_id)
@@ -135,7 +145,10 @@ async def get_job_status(job_id: str, http: Request) -> PrintJobStatusResponse:
         "Returns 409 when the printer is already active."
     ),
 )
-async def resume_printer(http: Request) -> _PrinterResumeResponse | JSONResponse:
+async def resume_printer(
+    http: Request,
+    _auth: Annotated[AuthContext, Depends(require_print)],
+) -> _PrinterResumeResponse | JSONResponse:
     """Resume the printer queue after a recoverable error halted it.
 
     Recoverable errors (TapeEmpty, CoverOpen, TapeMismatch, PrinterOffline)
@@ -181,7 +194,11 @@ async def resume_printer(http: Request) -> _PrinterResumeResponse | JSONResponse
         "Returns 409 when the job is not in ``PAUSED`` state."
     ),
 )
-async def resume_job(job_id: str, http: Request) -> PrintJobStatusResponse | JSONResponse:
+async def resume_job(
+    job_id: str,
+    http: Request,
+    _auth: Annotated[AuthContext, Depends(require_print)],
+) -> PrintJobStatusResponse | JSONResponse:
     """Resume a job that is PAUSED waiting for a tape change.
 
     User-driven workflow: client posted /print with on_tape_mismatch=queue,

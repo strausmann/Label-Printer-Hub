@@ -128,7 +128,7 @@ async def test_status_endpoint_returns_pending_when_cache_empty(
 ):
     """When no cache row exists the endpoint returns online=None and a note."""
     client, pid = api_client_with_printer_no_cache
-    resp = await client.get(f"/api/printers/{pid}/status")
+    resp = await client.get(f"/api/printers/{pid}/status", headers={"X-Pangolin-User": "test"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["online"] is None
@@ -140,7 +140,7 @@ async def test_status_endpoint_returns_under_100ms(api_client_with_warm_cache):
     """Even with no live SNMP path, the endpoint answers from cache in <100ms."""
     client, pid = api_client_with_warm_cache
     t0 = time.monotonic()
-    resp = await client.get(f"/api/printers/{pid}/status")
+    resp = await client.get(f"/api/printers/{pid}/status", headers={"X-Pangolin-User": "test"})
     elapsed_ms = (time.monotonic() - t0) * 1000
     assert resp.status_code == 200
     assert elapsed_ms < 100, f"endpoint blocked {elapsed_ms:.1f}ms"
@@ -155,7 +155,7 @@ async def test_status_endpoint_returns_404_for_unknown_printer(
     from uuid import uuid4
 
     client, _ = api_client_with_printer_no_cache
-    resp = await client.get(f"/api/printers/{uuid4()}/status")
+    resp = await client.get(f"/api/printers/{uuid4()}/status", headers={"X-Pangolin-User": "test"})
     assert resp.status_code == 404
 
 
@@ -163,7 +163,7 @@ async def test_status_endpoint_returns_cached_tape_data(api_client_with_warm_cac
     """Cached loaded_tape_mm + error_flags surface as PrinterStatus.tape_loaded
     and PrinterStatus.error_state respectively (bot-review finding on PR #75)."""
     client, pid = api_client_with_warm_cache
-    resp = await client.get(f"/api/printers/{pid}/status")
+    resp = await client.get(f"/api/printers/{pid}/status", headers={"X-Pangolin-User": "test"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["online"] is True

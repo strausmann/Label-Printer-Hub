@@ -35,6 +35,9 @@ dependencies = [
     "ptouch>=1.1.0",
     "pysnmp>=6.2",
     "prometheus-client>=0.21",
+    # Phase 7c — API key authentication
+    "bcrypt>=4.0",
+    "cachetools>=5.0",
 ]
 
 [project.optional-dependencies]
@@ -90,7 +93,13 @@ select = [
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["ARG"]   # pytest fixtures
+"tests/**/*.py" = [
+    "ARG",   # pytest fixtures use unused args for dependency injection
+    "B008",  # Depends(require_scope(...)) in test route definitions is the FastAPI test pattern
+]
+"alembic/versions/*.py" = [
+    "T201",  # print() in migrations is intentional — bootstrap key must go to stdout
+]
 
 [tool.mypy]
 python_version = "3.12"
