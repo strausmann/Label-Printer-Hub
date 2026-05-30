@@ -7,18 +7,24 @@ mock backend so that lifespan startup succeeds without a printer on the network.
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import app.db.engine as _engine_module
 import app.db.lifespan as _lifespan_module
 import app.main as _main_module
 import app.models  # noqa: F401 — registers all models with SQLModel.metadata
 import pytest
 import pytest_asyncio
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_admin, require_print, require_read
 from app.config import get_settings
 from app.db.engine import _apply_pragmas
+from app.main import create_app
 from app.printer_backends import BackendRegistry
 from app.printer_models.registry import ModelRegistry
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
 
@@ -188,3 +194,65 @@ def _mock_backend_env(monkeypatch: pytest.MonkeyPatch) -> None:
     BackendRegistry._discovered = False
     ModelRegistry._models.clear()
     ModelRegistry._discovered = False
+
+
+@pytest_asyncio.fixture
+async def app_with_fake_auth():
+    """FastAPI-App mit gefakter Auth (dependency_overrides für require_*).
+
+    Pattern verifiziert gegen tests/integration/test_print_e2e.py:50-70.
+    Gibt den _LifespanManager zurück — den nutzt der AsyncClient mit
+    ASGITransport. dependency_overrides werden auf der inneren FastAPI-Instanz
+    gesetzt (app._app), nicht auf dem Wrapper.
+    """
+    app = create_app()
+    inner = app._app  # FastAPI hinter _LifespanManager (main.py:517+612)
+    fake = AuthContext(
+        source="api-key",
+        scope="admin",
+        api_key_id=uuid4(),
+        ip="127.0.0.1",
+    )
+    for dep in (require_read, require_print, require_admin):
+        inner.dependency_overrides[dep] = lambda _c=fake: _c
+    return app  # _LifespanManager — wichtig für ASGITransport!
+
+
+@pytest_asyncio.fixture
+async def client(app_with_fake_auth):
+    """ASGI-Test-Client gegen die App mit gefakter Auth.
+
+    `_temp_db_engine` (autouse) hat bereits eine Per-Test-SQLite-DB
+    vorbereitet und in app.db.engine + app.main gepatcht. Diese Fixture
+    setzt nur Auth-Overrides und einen httpx-Client darüber.
+    """
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_fake_auth),
+        base_url="http://t",
+    ) as c:
+        yield c
+
+
+@pytest_asyncio.fixture
+async def db_session() -> AsyncSession:
+    """DB-Session gegen die per-test temp-Engine aus `_temp_db_engine`.
+
+    Liest async_session dynamisch aus dem Engine-Modul, damit der
+    monkeypatch.setattr aus _temp_db_engine wirksam ist.
+    """
+    import app.db.engine as eng_mod
+
+    async with eng_mod.async_session() as s:
+        yield s
+
+
+@pytest.fixture
+def print_auth_headers() -> dict:
+    """Leere Dict — Auth ist via dependency_overrides gefakt."""
+    return {}
+
+
+@pytest.fixture
+def read_auth_headers() -> dict:
+    """Leere Dict — siehe print_auth_headers."""
+    return {}
