@@ -270,12 +270,19 @@ class MemoryJobStore(JobStore):
 
 Aenderungen in `backend/app/services/print_queue.py`:
 
-1. **Konstruktor:** neuer Parameter `store: JobStore`
-2. **`_jobs` dict entfernt** — `JobStore` ist Source of Truth
-3. **`start()`** ruft VOR Worker-Spawn `mark_interrupted` und `list_pending` pro Printer
-4. **`submit()`** ruft `await self._store.save(job)` nach Job-Erstellung
-5. **`submit_paused()`** ruft `await self._store.save(job)` nach Pause-Transition
-6. **`_worker()`** ruft `await self._store.save(job)` bei jeder State-Transition (QUEUED→PRINTING, PRINTING→DONE/FAILED)
+1. **Konstruktor:** neuer Parameter `store: JobStore`, `renderer: LabelRenderer | None`, `loader: TemplateLoader | None`
+2. **`_jobs` dict bleibt** — In-Memory-Store fuer laufende Dataclass-Jobs. **WICHTIG (R1-C2):** `_jobs` kann NICHT entfernt werden, weil es das `asyncio.Event` und `image_payload` (bytes) der Dataclass-Jobs hält — beides existiert nicht im SQLModel-DB-Job. Nach DONE/FAILED/CANCELLED wird der Eintrag aus `_jobs` bereinigt. `JobStore` ist *parallel* Source of Truth fuer den DB-State.
+3. **`start()`** ruft VOR Worker-Spawn `mark_interrupted` und `list_pending` pro Printer; Recovery-Jobs werden sowohl in `_jobs` als auch in die asyncio.Queue eingetragen.
+4. **`submit_with_id(job_id, ...)`** — neues öffentliches API: PrintService übergibt die extern erstellte DB-UUID; Dataclass-Job-Wrapper wird in `_jobs` eingetragen.
+5. **`_worker()`** ruft `await self._store.mark_printing/mark_done/mark_failed` bei jeder State-Transition.
+6. **`stop()`** ruft nach Dataclass-Transition auch `await self._store.mark_failed(job.id, "shutdown")` für PRINTING-Jobs (R1-M5).
+
+**Errata C1 — `recover_inflight_jobs` aus Lifespan entfernen (R1-C1):**
+
+Der bestehende Aufruf `recover_inflight_jobs()` in `db/lifespan.py` (Lifespan-Step 4 in `main.py:273`) markiert **alle** `QUEUED` und `PRINTING`-Jobs als `FAILED_RESTART` bevor die Queue startet. Das kollidiert direkt mit der Phase-2-Recovery in `PrintQueue.start()`, die QUEUED-Jobs re-enqueued:
+
+- Ohne Änderung: `start()` findet keine QUEUED-Jobs mehr (alle wurden bereits auf FAILED_RESTART gesetzt), die Re-Enqueue-Logik ist de facto tot.
+- **Fix:** `recover_inflight_jobs()` aus dem Lifespan-Startup entfernen (oder zu einem No-Op machen). `PrintQueue.start()` übernimmt vollständig mit korrekter QUEUED/PRINTING-Trennung.
 
 **Pseudocode des refactored Worker:**
 
@@ -342,7 +349,8 @@ async def start(self) -> None:
 Datei: `backend/app/api/routes/batches.py` (neu, oder in `batch.py` ergaenzt).
 
 ```python
-@router.get("/api/batches/{batch_id}", response_model=BatchRead)
+# router = APIRouter(prefix="/api/batches") — kein Doppel-/api in der Route-Dekorator-URL (R1-m4)
+@router.get("/{batch_id}", response_model=BatchRead)
 async def get_batch(
     batch_id: UUID,
     session: SessionDep,
@@ -371,10 +379,14 @@ async def get_batch(
         jobs=[JobRead.model_validate(j) for j in ordered_jobs],
         summary=BatchSummary(
             total=len(ordered_jobs),
-            queued=sum(1 for j in ordered_jobs if j.state == JobState.QUEUED),
-            printing=sum(1 for j in ordered_jobs if j.state == JobState.PRINTING),
-            done=sum(1 for j in ordered_jobs if j.state == JobState.DONE),
-            failed=sum(1 for j in ordered_jobs if j.state == JobState.FAILED),
+            queued=sum(1 for j in ordered_jobs if j.state == JobState.QUEUED.value),
+            printing=sum(1 for j in ordered_jobs if j.state == JobState.PRINTING.value),
+            done=sum(1 for j in ordered_jobs if j.state == JobState.DONE.value),
+            # R1-M3: FAILED_RESTART zaehlt ebenfalls als "fehlgeschlagen" fuer den User
+            failed=sum(
+                1 for j in ordered_jobs
+                if j.state in (JobState.FAILED.value, JobState.FAILED_RESTART.value)
+            ),
         ),
     )
 ```
@@ -398,7 +410,7 @@ class BatchSummary(BaseModel):
 class BatchRead(BaseModel):
     id: UUID
     printer_id: UUID
-    created_by: UUID
+    created_by: str | None   # PrintBatch.created_by ist str (SSO-Email oder API-Key-ID), kein UUID (R1-M1)
     created_at: datetime
     jobs: list[JobRead]
     summary: BatchSummary
@@ -407,11 +419,16 @@ class BatchRead(BaseModel):
 **Repository-Erweiterung** (`backend/app/repositories/jobs.py`):
 
 ```python
-async def list_by_ids(session: AsyncSession, job_ids: list[UUID]) -> list[Job]:
+async def list_by_ids(
+    session: AsyncSession,
+    job_ids: list[str | UUID],  # R1-M2: batch.job_ids ist list[str], Caller übergibt strings oder UUIDs
+) -> list[Job]:
     """Bulk-Fetch — Order ist nicht garantiert, Caller muss neu ordnen."""
     if not job_ids:
         return []
-    result = await session.execute(select(Job).where(Job.id.in_(job_ids)))
+    # Normalisierung: str-IDs zu UUID konvertieren fuer den IN-Vergleich mit UUID-Spalte
+    ids_as_uuid = [UUID(str(jid)) if not isinstance(jid, UUID) else jid for jid in job_ids]
+    result = await session.execute(select(Job).where(col(Job.id).in_(ids_as_uuid)))
     return list(result.scalars().all())
 ```
 
@@ -716,7 +733,7 @@ Das Repository hat bereits viele State-Transition-Helper. `SQLiteJobStore` nutzt
 | `mark_done(id)` | `jobs.mark_done(session, id, result)` | Nein |
 | `mark_failed(id, error)` | `jobs.mark_failed(session, id, error)` | Nein |
 | `mark_interrupted(printer_id)` | `jobs.mark_inflight_as_failed_restart(session)` aber **ohne** QUEUED-Filter | **Ja**, neuer Helper `jobs.mark_printing_as_failed_restart(session, printer_id)` der NUR PRINTING affected (nicht QUEUED — die werden re-enqueued) |
-| `list_pending(printer_id)` | `jobs.list_active(session)` aber filterbar nach printer_id | **Ja**, optional `printer_id` Parameter an `list_active` |
+| `list_pending(printer_id)` | `jobs.list_active(session)` liefert nur QUEUED+PRINTING, nicht PAUSED | **Ja**, neue eigene Funktion `jobs.list_pending(session, printer_id)` die QUEUED+PRINTING+PAUSED zurückgibt. `list_active` NICHT erweitern da andere Callers auf QUEUED+PRINTING-Semantik angewiesen sind (R1-M6). |
 | `evict_terminal_older_than(age)` | nicht vorhanden | **Ja**, neuer Helper |
 | `get(id)` | `jobs.get(session, id)` | Nein |
 
@@ -730,26 +747,49 @@ Im JobStore wird intern uebersetzt:
 - Spec sagte `DONE` als terminal-success -> bleibt `DONE` (matched models/job.JobState bereits)
 - Spec sagte `printing` -> `PRINTING` (matched bereits)
 
-Worker-Pseudocode wird zu (real):
+Worker-Pseudocode wird zu (real). **Wichtig (R1-C3):** Der Skip-Check `if job.state != JobState.QUEUED: continue` MUSS VOR `mark_printing` stehen — ein stale PAUSED-Job der aus der asyncio.Queue gepoppt wird soll niemals `mark_printing` aufrufen:
 
 ```python
 async def _worker(self, printer_id: UUID) -> None:
+    printer = self._printers[printer_id]
     queue = self._queues[printer_id]
-    while not self._stopping:
-        job = await queue.get()  # dataclass Job mit image_payload
+    while True:
+        item = await queue.get()
+        if item is None:          # Shutdown-Sentinel von stop()
+            return
+        job = item
 
-        await self._store.mark_printing(job.id)  # DB-write via jobs_repo
-        self._bus.publish(...)
+        # Pause-Wait (unveraendert)
+        while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
+            if self._stopping:
+                return
+            await self._worker_resume_events[printer_id].wait()
+
+        # Skip-Check MUSS vor mark_printing kommen — stale PAUSED/CANCELLED jobs
+        if job.state != JobState.QUEUED:  # job_lifecycle.JobState
+            continue
+
+        # Persist QUEUED -> PRINTING in DB
+        await self._store.mark_printing(str(job.id))  # bridged: dataclass.id ist str -> UUID(str)
+        JobStateMachine.transition(job, JobState.PRINTING)
+        self._notify_state_change(job, JobState.QUEUED, JobState.PRINTING, ...)
 
         try:
-            await self._backend.print(...)
-            await self._store.mark_done(job.id)  # DB-write
-            self._bus.publish(...)
+            await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
+            JobStateMachine.transition(job, JobState.COMPLETED)
+            await self._store.mark_done(str(job.id))   # DB-write
+            self._notify_state_change(job, JobState.PRINTING, JobState.COMPLETED, ...)
         except PrinterError as exc:
-            await self._store.mark_failed(job.id, str(exc))  # DB-write
-            self._bus.publish(...)
-
-        queue.task_done()
+            code, msg, detail = _printer_error_to_record(exc)
+            job.error_code = code
+            ...
+            JobStateMachine.transition(job, JobState.FAILED)
+            await self._store.mark_failed(str(job.id), str(exc))  # DB-write
+            self._notify_state_change(...)
+        except Exception as exc:
+            ...
+            JobStateMachine.transition(job, JobState.FAILED)
+            await self._store.mark_failed(str(job.id), str(exc))  # DB-write
 ```
 
 Recovery in `PrintQueue.start()`:
@@ -757,18 +797,25 @@ Recovery in `PrintQueue.start()`:
 ```python
 for printer_id in self._queues:
     interrupted = await self._store.mark_interrupted(printer_id)  # PRINTING -> FAILED_RESTART
-    pending_db_jobs = await self._store.list_pending(printer_id)  # QUEUED only
+    pending_db_jobs = await self._store.list_pending(printer_id)  # QUEUED only (PAUSED bleibt PAUSED)
     for db_job in pending_db_jobs:
-        # Rerender image aus template_key + payload
-        image = await self._renderer.rerender_from_db_job(db_job)
-        wrapper = Job(  # dataclass
-            id=db_job.id,
-            image_payload=image_to_png_bytes(image),
-            tape_mm=db_job.payload.get("tape_mm"),
-            options=db_job.payload.get("options", {}),
-            state=JobState.QUEUED,
-        )
-        await self._queues[printer_id].put(wrapper)
+        if db_job.state == models_job.JobState.QUEUED.value:
+            # Rerender image aus template_key + payload
+            label_data = LabelData.model_validate(db_job.payload["label_data"])
+            template = self._loader.get(db_job.template_key)
+            image = self._renderer.render(template, label_data)
+            payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
+            wrapper = lifecycle_Job(  # dataclass Job aus job_lifecycle
+                id=str(db_job.id),
+                printer_id=db_job.printer_id,
+                image_payload=payload_bytes,
+                tape_mm=db_job.payload.get("tape_mm"),
+                options=db_job.payload.get("options", {}),
+            )
+            self._jobs[str(db_job.id)] = wrapper   # in _jobs eintragen (s. R1-C2)
+            await self._queues[printer_id].put(wrapper)
+        elif db_job.state == models_job.JobState.PAUSED.value:
+            logger.info("Recovery: PAUSED job %s bleibt PAUSED, wartet auf resume", db_job.id)
 ```
 
 `PrintService.submit_print_job(request)` flow wird:
@@ -781,3 +828,46 @@ for printer_id in self._queues:
 ### Erratum 4 — PrintService bekommt JobStore-Reference
 
 `PrintService` bekommt im Konstruktor jetzt auch `store: JobStore`, damit Schritt 2 oben moeglich ist. Lifespan-Wiring aktualisiert (kein Breaking-Change in API).
+
+`PrintRequest` (in `app/schemas/print_request.py`) hat **keine** `api_key_id`- oder `source_ip`-Felder — das sind Felder aus `AuthContext` die der Endpoint-Layer übergeben muss. Der DB-Job wird mit `api_key_id=auth.api_key_id` (UUID | None) und `source_ip=auth.ip` (str | None) angelegt, nicht per `hasattr`-Workaround auf `request` (R2-M3).
+
+### Erratum 5 — Payload-Schema fuer `_rerender_from_db_job` (R1-M4, R2-C4)
+
+Der `payload: dict` im DB-Job hat folgende Struktur (von `PrintService.submit_print_job` gespeichert):
+
+```python
+payload = {
+    "label_data": label_data.model_dump(),   # LabelData-Felder als dict
+    "tape_mm": template.tape_mm,             # int
+    "options": {
+        "auto_cut": ...,                     # bool
+        "high_resolution": ...,              # bool
+    },
+}
+```
+
+Recovery-Rerender MUSS deshalb `LabelData.model_validate(db_job.payload["label_data"])` aufrufen, nicht rohen dict an `renderer.render()` übergeben:
+
+```python
+async def _rerender_from_db_job(self, db_job) -> Image.Image:
+    template = self._loader.get(db_job.template_key)
+    label_data = LabelData.model_validate(db_job.payload["label_data"])  # dict -> LabelData
+    return self._renderer.render(template, label_data)
+```
+
+### Erratum 6 — `stop()` muss DB-State für PRINTING-Jobs aktualisieren (R1-M5)
+
+`stop()` iteriert über `self._jobs.values()` (Dataclass-Jobs) und markiert PRINTING-Jobs per `JobStateMachine.transition(job, JobState.FAILED)`. Nach Phase-2-Refactor muss `stop()` zusätzlich den DB-State über den Store aktualisieren:
+
+```python
+for job in self._jobs.values():
+    if job.state == JobState.PRINTING:  # job_lifecycle.JobState
+        job.error_code = "shutdown"
+        job.error_message = "Print queue stopped during job execution"
+        try:
+            JobStateMachine.transition(job, JobState.FAILED)
+        except InvalidStateTransitionError:
+            job._done_event.set()
+        # NEU (R1-M5): DB-State aktualisieren
+        await self._store.mark_failed(job.id, "shutdown")
+```
