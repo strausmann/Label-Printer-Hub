@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import timedelta
 from unittest.mock import AsyncMock
 
@@ -11,14 +10,14 @@ from app.services.cleanup_task import CleanupTask
 
 
 @pytest.mark.asyncio
-async def test_cleanup_validates_retention_days():
+async def test_cleanup_validates_retention_days() -> None:
     store = AsyncMock()
     with pytest.raises(ValueError, match="retention_days must be >= 1"):
         CleanupTask(store=store, retention_days=0)
 
 
 @pytest.mark.asyncio
-async def test_cleanup_initial_run_on_start():
+async def test_cleanup_initial_run_on_start() -> None:
     store = AsyncMock()
     store.evict_terminal_older_than.return_value = 3
     task = CleanupTask(store=store, retention_days=30, interval=timedelta(seconds=99))
@@ -33,7 +32,7 @@ async def test_cleanup_initial_run_on_start():
 
 
 @pytest.mark.asyncio
-async def test_cleanup_fail_soft_on_exception():
+async def test_cleanup_fail_soft_on_exception() -> None:
     store = AsyncMock()
     store.evict_terminal_older_than.side_effect = RuntimeError("boom")
     task = CleanupTask(store=store, retention_days=30, interval=timedelta(seconds=99))

@@ -25,6 +25,9 @@ class CleanupTask:
 
     Der Loop führt beim Start sofort einen ersten Run durch, danach in ``interval``-Abständen.
     Exceptions in _run_once werden geloggt und der Loop läuft weiter (fail-soft).
+
+    Single-Use: nach stop() kann die Instanz nicht restartet werden.
+    Lifespan startet eine neue Instanz beim App-Startup.
     """
 
     def __init__(
@@ -56,9 +59,12 @@ class CleanupTask:
         if self._task is not None:
             try:
                 await asyncio.wait_for(self._task, timeout=timeout_s)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._task.cancel()
-                logger.warning("CleanupTask hat sich nicht in %ss beendet, Task gecancelled", timeout_s)
+                logger.warning(
+                    "CleanupTask hat sich nicht in %ss beendet, Task gecancelled",
+                    timeout_s,
+                )
             self._task = None
 
     async def _loop(self) -> None:
@@ -70,7 +76,7 @@ class CleanupTask:
                     self._stopping.wait(),
                     timeout=self._interval.total_seconds(),
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 await self._run_once()
 
     async def _run_once(self) -> None:
