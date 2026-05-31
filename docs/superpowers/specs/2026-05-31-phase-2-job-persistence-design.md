@@ -681,3 +681,103 @@ Keine — alle Design-Entscheidungen sind durch Brainstorming-Q&A (Sessions 26) 
 - Q4 Retention: Konfigurierbar, Default 30 Tage
 - Q5 SSE-Replay: Snapshot-GET + Live-SSE (kein Replay im Hub)
 - Q6 Approach: JobStore-Protocol mit DI
+
+---
+
+## Errata (Stand 2026-05-31, post-spec)
+
+Beim Plan-Schreiben sind drei Codebase-Eigenheiten aufgefallen, die Spec-Snippets ueberschreiben. Plan und Implementation folgen dieser Errata, nicht den frueheren Code-Snippets.
+
+### Erratum 1 — Zwei Job-Klassen + zwei JobState-Enums
+
+Die Codebase hat **getrennt**:
+
+| Klasse | Typ | Felder | Zweck |
+|--------|-----|--------|-------|
+| `app/services/job_lifecycle.py:Job` | `@dataclass` | `image_payload: bytes`, `tape_mm`, `options`, `state`, `error_message` | In-Memory Lifecycle in PrintQueue |
+| `app/models/job.py:Job` | `SQLModel(table=True)` | `template_key`, `payload: dict`, `state: str`, `error: str \| None`, `api_key_id`, `source_ip` | DB-Tabelle `jobs` |
+
+Plus zwei `JobState`-Enums mit unterschiedlichen Werten:
+- `job_lifecycle.JobState`: `QUEUED`, `PAUSED`, `PRINTING`, `COMPLETED`, `FAILED`, `CANCELLED`
+- `models/job.JobState`: `QUEUED`, `PRINTING`, `DONE`, `FAILED`, `CANCELLED`, `FAILED_RESTART`
+
+**Konsequenz fuer Phase 2:** JobStore arbeitet auf der **SQLModel-Klasse** (`app/models/job.py:Job`). Die Dataclass `Job` aus `job_lifecycle` bleibt In-Memory-Wrapper im Worker fuer den aktuellen Print-Vorgang. Beide referenzieren sich ueber `job.id`.
+
+Recovery rerendert das Bild aus `template_key + payload` (kein BLOB in DB).
+
+### Erratum 2 — Bestehende `jobs_repo` Funktionen wiederverwenden
+
+Das Repository hat bereits viele State-Transition-Helper. `SQLiteJobStore` nutzt diese statt eigene Queries zu bauen:
+
+| JobStore Methode | Existing repo function | Neu noetig? |
+|------------------|------------------------|-------------|
+| `save_queued(...)` | `jobs.create_queued(session, ...)` | Nein |
+| `mark_printing(id)` | `jobs.mark_printing(session, id)` | Nein |
+| `mark_done(id)` | `jobs.mark_done(session, id, result)` | Nein |
+| `mark_failed(id, error)` | `jobs.mark_failed(session, id, error)` | Nein |
+| `mark_interrupted(printer_id)` | `jobs.mark_inflight_as_failed_restart(session)` aber **ohne** QUEUED-Filter | **Ja**, neuer Helper `jobs.mark_printing_as_failed_restart(session, printer_id)` der NUR PRINTING affected (nicht QUEUED — die werden re-enqueued) |
+| `list_pending(printer_id)` | `jobs.list_active(session)` aber filterbar nach printer_id | **Ja**, optional `printer_id` Parameter an `list_active` |
+| `evict_terminal_older_than(age)` | nicht vorhanden | **Ja**, neuer Helper |
+| `get(id)` | `jobs.get(session, id)` | Nein |
+
+`JobStore` Protocol bleibt unveraendert (gleiche Methoden-Namen wie Spec); SQLiteJobStore delegiert intern an `jobs_repo`.
+
+### Erratum 3 — State-Mapping und Error-Field
+
+Im JobStore wird intern uebersetzt:
+
+- Spec sagte `FAILED + error_code=printer_interrupted` -> Tatsaechlich: **`FAILED_RESTART` + `error="printer_interrupted"`** (kein separates error_code-Field im SQLModel)
+- Spec sagte `DONE` als terminal-success -> bleibt `DONE` (matched models/job.JobState bereits)
+- Spec sagte `printing` -> `PRINTING` (matched bereits)
+
+Worker-Pseudocode wird zu (real):
+
+```python
+async def _worker(self, printer_id: UUID) -> None:
+    queue = self._queues[printer_id]
+    while not self._stopping:
+        job = await queue.get()  # dataclass Job mit image_payload
+
+        await self._store.mark_printing(job.id)  # DB-write via jobs_repo
+        self._bus.publish(...)
+
+        try:
+            await self._backend.print(...)
+            await self._store.mark_done(job.id)  # DB-write
+            self._bus.publish(...)
+        except PrinterError as exc:
+            await self._store.mark_failed(job.id, str(exc))  # DB-write
+            self._bus.publish(...)
+
+        queue.task_done()
+```
+
+Recovery in `PrintQueue.start()`:
+
+```python
+for printer_id in self._queues:
+    interrupted = await self._store.mark_interrupted(printer_id)  # PRINTING -> FAILED_RESTART
+    pending_db_jobs = await self._store.list_pending(printer_id)  # QUEUED only
+    for db_job in pending_db_jobs:
+        # Rerender image aus template_key + payload
+        image = await self._renderer.rerender_from_db_job(db_job)
+        wrapper = Job(  # dataclass
+            id=db_job.id,
+            image_payload=image_to_png_bytes(image),
+            tape_mm=db_job.payload.get("tape_mm"),
+            options=db_job.payload.get("options", {}),
+            state=JobState.QUEUED,
+        )
+        await self._queues[printer_id].put(wrapper)
+```
+
+`PrintService.submit_print_job(request)` flow wird:
+
+1. Render image (bestehend)
+2. Create DB-row via `await self._store.save_queued(printer_id, template_key, payload, api_key_id, source_ip)` -> liefert `job.id`
+3. Wrap as dataclass `Job(id=job.id, image_payload=png_bytes, tape_mm=..., options=...)` und an `queue.submit_existing(wrapper)` reichen
+4. Return `job.id`
+
+### Erratum 4 — PrintService bekommt JobStore-Reference
+
+`PrintService` bekommt im Konstruktor jetzt auch `store: JobStore`, damit Schritt 2 oben moeglich ist. Lifespan-Wiring aktualisiert (kein Breaking-Change in API).
