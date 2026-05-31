@@ -79,7 +79,8 @@ async def create_print_job(
                 "loaded_mm": exc.loaded_mm,
             }
         return JSONResponse(status_code=http_status, content=body)
-    return PrintJobResponse(job_id=job_id, status="queued")
+    # Phase 2: submit_print_job gibt jetzt UUID zurück; Response-Schema erwartet str.
+    return PrintJobResponse(job_id=str(job_id), status="queued")
 
 
 @router.get(

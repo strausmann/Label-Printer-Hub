@@ -276,6 +276,63 @@ class PrintQueue:
         # stream with spurious HTMX sse-swap updates (bot-review Finding F1).
         return job.id
 
+    async def submit_with_id(
+        self,
+        job_id: UUID,
+        printer_id: UUID,
+        image: Image.Image,
+        tape_mm: int,
+        **options: Any,
+    ) -> UUID:
+        """Phase 2: Wie submit(), aber mit extern erzeugter job_id.
+
+        Wird von PrintService genutzt, der die DB-Row zuerst anlegt (via
+        store.save_queued) und die resultierende UUID hier weitergibt.
+        Gibt die job_id unverändert zurück.
+        """
+        if printer_id not in self._queues:
+            raise KeyError(f"Unknown printer: {printer_id}")
+        payload = await asyncio.to_thread(_serialize_image_to_png, image)
+        job = Job(
+            id=str(job_id),
+            printer_id=printer_id,
+            image_payload=payload,
+            tape_mm=tape_mm,
+            options=dict(options),
+        )
+        self._jobs[str(job_id)] = job
+        await self._queues[printer_id].put(job)
+        logger.info("Job %s (extern-id) queued on %s", job_id, printer_id)
+        return job_id
+
+    async def submit_paused_with_id(
+        self,
+        job_id: UUID,
+        printer_id: UUID,
+        image: Image.Image,
+        tape_mm: int,
+        **options: Any,
+    ) -> UUID:
+        """Phase 2: Wie submit_paused(), aber mit extern erzeugter job_id.
+
+        Wird von PrintService für den on_tape_mismatch='queue'-Pfad genutzt.
+        Gibt die job_id unverändert zurück.
+        """
+        if printer_id not in self._queues:
+            raise KeyError(f"Unknown printer: {printer_id}")
+        payload = await asyncio.to_thread(_serialize_image_to_png, image)
+        job = Job(
+            id=str(job_id),
+            printer_id=printer_id,
+            image_payload=payload,
+            tape_mm=tape_mm,
+            options=dict(options),
+        )
+        JobStateMachine.transition(job, JobState.PAUSED)
+        self._jobs[str(job_id)] = job
+        logger.info("Job %s (extern-id) created paused on %s", job_id, printer_id)
+        return job_id
+
     async def submit_paused(
         self,
         printer_id: UUID,
@@ -311,8 +368,8 @@ class PrintQueue:
         logger.info("Job %s created paused on %s", job.id, printer_id)
         return job.id
 
-    async def get(self, job_id: str) -> Job:
-        return self._jobs[job_id]
+    async def get(self, job_id: str | UUID) -> Job:
+        return self._jobs[str(job_id)]
 
     async def wait_for_job(self, job_id: str, timeout_s: float = 60.0) -> Job:
         job = self._jobs[job_id]
