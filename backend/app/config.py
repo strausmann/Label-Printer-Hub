@@ -106,6 +106,16 @@ class Settings(BaseSettings):
     # Set to False during transition to avoid surprising existing automation.
     pangolin_bypass_scope_downgrade: bool = False
 
+    # Phase 2: Job-Retention für CleanupTask
+    job_retention_days: int = Field(
+        default=30,
+        ge=1,
+        description=(
+            "Terminal Jobs (DONE/FAILED/FAILED_RESTART/CANCELLED) werden nach diesem Zeitraum "
+            "vom CleanupTask gelöscht"
+        ),
+    )
+
     @field_validator("webhook_api_key")
     @classmethod
     def validate_api_key_length(cls, v: SecretStr) -> SecretStr:
