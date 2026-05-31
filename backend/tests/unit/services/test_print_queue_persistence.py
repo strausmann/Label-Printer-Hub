@@ -48,6 +48,10 @@ async def test_printqueue_constructor_accepts_store() -> None:
 async def test_printqueue_calls_mark_printing_then_mark_done() -> None:
     """Worker muss store.mark_printing dann store.mark_done bei Erfolg aufrufen."""
     store = AsyncMock(spec=MemoryJobStore)
+    # Recovery in start() ruft mark_interrupted + list_pending auf — konfigurieren
+    # damit start() sauber durchläuft ohne TypeError bei > 0-Vergleich.
+    store.mark_interrupted.return_value = 0
+    store.list_pending.return_value = []
     printer = _make_printer()
     queue = PrintQueue(
         printers=[printer],
@@ -73,6 +77,9 @@ async def test_printqueue_calls_mark_failed_on_printer_error() -> None:
     from app.printer_backends.exceptions import PrinterError
 
     store = AsyncMock(spec=MemoryJobStore)
+    # Recovery in start() konfigurieren — kein Absturz bei > 0-Vergleich
+    store.mark_interrupted.return_value = 0
+    store.list_pending.return_value = []
     printer = _make_printer()
     printer.print_image = AsyncMock(side_effect=PrinterError("tape_empty"))
     queue = PrintQueue(
@@ -107,6 +114,9 @@ async def test_stop_marks_inflight_jobs_as_failed_in_db() -> None:
     import asyncio
 
     store = AsyncMock(spec=MemoryJobStore)
+    # Recovery in start() konfigurieren — kein Absturz bei > 0-Vergleich
+    store.mark_interrupted.return_value = 0
+    store.list_pending.return_value = []
 
     # Printer der nie fertig wird — blockiert den Worker im print_image-Aufruf
     # bis der Test stop() aufruft und der Task gecancelled wird.

@@ -36,6 +36,7 @@ from app.printer_backends.exceptions import (
     TapeEmptyError,
     TapeMismatchError,
 )
+from app.models.job import Job as DbJob
 from app.services.job_lifecycle import (
     InvalidStateTransitionError,
     Job,
@@ -43,6 +44,14 @@ from app.services.job_lifecycle import (
     JobStateMachine,
 )
 from app.services.job_store import JobStore, MemoryJobStore
+
+# TYPE_CHECKING-Block verhindert zirkuläre Imports zur Laufzeit.
+# LabelRenderer und TemplateLoader sind nur für die Recovery-Methode nötig.
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.label_renderer import LabelRenderer
+    from app.services.template_loader import TemplateLoader
 
 
 # Callback type: called after each state transition.  The optional queue_depth
@@ -138,6 +147,8 @@ class PrintQueue:
         printers: list[_PrinterLike],
         on_state_change: _StateChangeCallback | None = None,
         store: JobStore | None = None,
+        renderer: LabelRenderer | None = None,
+        loader: type[TemplateLoader] | None = None,
     ) -> None:
         """Konstruktor.
 
@@ -151,9 +162,15 @@ class PrintQueue:
                 Default ist ``MemoryJobStore()`` für Backward-Compat mit
                 Pre-Phase-2-Tests — Production-Code wired in Lifespan
                 explizit ``SQLiteJobStore`` ein (Task 9).
+            renderer: LabelRenderer-Instanz für Recovery in start().
+                Optional — wenn None, wirft _rerender_from_db_job() RuntimeError.
+            loader: TemplateLoader-Klasse für Recovery in start().
+                Optional — wenn None, wirft _rerender_from_db_job() RuntimeError.
         """
         self._on_state_change = on_state_change
         self._store: JobStore = store if store is not None else MemoryJobStore()
+        self._renderer: LabelRenderer | None = renderer
+        self._loader: type[TemplateLoader] | None = loader
         self._printers: dict[UUID, _PrinterLike] = {p.id: p for p in printers}
         # Queue type is Job | None — None is the sentinel used by stop() to wake
         # workers that are blocked at queue.get().
@@ -182,11 +199,66 @@ class PrintQueue:
     async def start(self) -> None:
         if self._running:
             return
+
+        # Phase 2 Recovery: unterbrochene PRINTING-Jobs markieren + QUEUED re-enqueuen.
+        # mark_interrupted MUSS vor list_pending aufgerufen werden, damit die alten
+        # PRINTING-Jobs NICHT in list_pending zurückkommen.
+        for printer_id in self._queues:
+            interrupted = await self._store.mark_interrupted(printer_id)
+            if interrupted > 0:
+                logger.warning(
+                    "Recovery: %d PRINTING-Jobs auf Drucker %s als FAILED_RESTART markiert",
+                    interrupted,
+                    printer_id,
+                )
+            pending_db_jobs = await self._store.list_pending(printer_id)
+            for db_job in pending_db_jobs:
+                if db_job.state == "queued":
+                    # Bild aus template_key + payload neu rendern
+                    image = await self._rerender_from_db_job(db_job)
+                    payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
+                    wrapper = Job(
+                        id=str(db_job.id),
+                        printer_id=db_job.printer_id,
+                        image_payload=payload_bytes,
+                        tape_mm=db_job.payload.get("tape_mm"),
+                        options=db_job.payload.get("options", {}),
+                    )
+                    self._jobs[str(db_job.id)] = wrapper
+                    await self._queues[printer_id].put(wrapper)
+                    logger.info(
+                        "Recovery: QUEUED-Job %s auf Drucker %s re-enqueued",
+                        db_job.id,
+                        printer_id,
+                    )
+
         for printer_id in self._queues:
             self._workers[printer_id] = asyncio.create_task(
                 self._worker(printer_id), name=f"printer-worker-{printer_id}"
             )
         self._running = True
+
+    async def _rerender_from_db_job(self, db_job: DbJob) -> Image.Image:
+        """Phase 2: Label-Bild aus persistiertem template_key + payload neu rendern.
+
+        Wird während start() Recovery aufgerufen. Benötigt renderer + loader,
+        die via PrintQueue-Konstruktor verdrahtet werden müssen (Production-Lifespan).
+
+        Raises:
+            RuntimeError: wenn renderer oder loader nicht gesetzt sind.
+        """
+        if self._renderer is None or self._loader is None:
+            raise RuntimeError(
+                "PrintQueue Recovery benötigt renderer + loader "
+                "(via Konstruktor übergeben — siehe Lifespan-Konfiguration)"
+            )
+        template = self._loader.get(db_job.template_key)
+        # R2-C4: payload["label_data"] ist ein rohes dict (model_dump()).
+        # LabelRenderer.render() erwartet ein LabelData-Objekt — KEIN dict.
+        from app.schemas.label_data import LabelData
+
+        label_data = LabelData.model_validate(db_job.payload["label_data"])
+        return self._renderer.render(template, label_data)
 
     async def stop(self, timeout_s: float = 30.0) -> None:
         """Stop all workers.
