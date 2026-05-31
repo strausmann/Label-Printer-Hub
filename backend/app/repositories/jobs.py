@@ -170,13 +170,10 @@ async def list_active(
     Phase 2: optional printer_id filter for PrintQueue.start() recovery.
     """
     inflight = (JobState.QUEUED.value, JobState.PRINTING.value)
-    stmt = (
-        select(Job)
-        .where(col(Job.state).in_(inflight))
-        .order_by(col(Job.created_at))
-    )
+    stmt = select(Job).where(col(Job.state).in_(inflight))
     if printer_id is not None:
         stmt = stmt.where(col(Job.printer_id) == printer_id)
+    stmt = stmt.order_by(col(Job.created_at))
     result = await session.execute(stmt)
     return list(result.scalars())
 
@@ -220,6 +217,10 @@ async def evict_terminal_older_than(
 
     Terminal = DONE | FAILED | FAILED_RESTART | CANCELLED.
     Comparison is on finished_at (set whenever a job leaves a non-terminal state).
+
+    Jobs with finished_at IS NULL are NOT deleted (NULL < cutoff is SQL UNKNOWN,
+    which is falsy in WHERE). This is intentional — protects pre-Phase-2 rows
+    that may not have finished_at set.
 
     Returns the count of deleted rows.
     """
