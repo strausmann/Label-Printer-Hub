@@ -15,13 +15,12 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-from PIL import Image
-from sqlalchemy import update
-from sqlmodel import col
-
 from app.models.job import Job, JobState
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.print_queue import PrintQueue
+from PIL import Image
+from sqlalchemy import update
+from sqlmodel import col
 
 # Minimal-Payload der recovery-fähigen Jobs: label_data + tape_mm wie
 # print_service.submit_print_job() es schreibt (Task 5).
@@ -84,7 +83,9 @@ async def test_start_marks_printing_as_failed_restart(
     # save_queued setzt immer QUEUED — manuell auf PRINTING setzen
     async with async_session_factory() as s:
         await s.execute(
-            update(Job).where(col(Job.id) == interrupted_job.id).values(
+            update(Job)
+            .where(col(Job.id) == interrupted_job.id)
+            .values(
                 state=JobState.PRINTING.value,
             )
         )

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from app.models.job import Job, JobState
+from app.models.job import JobState
 from app.repositories import jobs as jobs_repo
 
 
@@ -17,23 +17,30 @@ async def test_mark_printing_as_failed_restart_only_printing(db_session):
     other_printer_id = uuid4()
 
     queued = await jobs_repo.create_queued(
-        db_session, printer_id=printer_id,
-        template_key="t", payload={"k": "v"},
+        db_session,
+        printer_id=printer_id,
+        template_key="t",
+        payload={"k": "v"},
     )
     printing = await jobs_repo.create_queued(
-        db_session, printer_id=printer_id,
-        template_key="t", payload={"k": "v"},
+        db_session,
+        printer_id=printer_id,
+        template_key="t",
+        payload={"k": "v"},
     )
     await jobs_repo.mark_printing(db_session, printing.id)
 
     other_printing = await jobs_repo.create_queued(
-        db_session, printer_id=other_printer_id,
-        template_key="t", payload={"k": "v"},
+        db_session,
+        printer_id=other_printer_id,
+        template_key="t",
+        payload={"k": "v"},
     )
     await jobs_repo.mark_printing(db_session, other_printing.id)
 
     affected = await jobs_repo.mark_printing_as_failed_restart(
-        db_session, printer_id,
+        db_session,
+        printer_id,
     )
     assert affected == 1  # nur das eine PRINTING auf unserem printer
 
@@ -66,18 +73,25 @@ async def test_list_active_filterable_by_printer(db_session):
 async def test_evict_terminal_older_than(db_session):
     """evict loescht DONE/FAILED/CANCELLED/FAILED_RESTART aelter als age."""
     printer_id = uuid4()
-    old_done = await jobs_repo.create_queued(db_session, printer_id=printer_id, template_key="t", payload={})
+    old_done = await jobs_repo.create_queued(
+        db_session, printer_id=printer_id, template_key="t", payload={}
+    )
     await jobs_repo.mark_printing(db_session, old_done.id)
     await jobs_repo.mark_done(db_session, old_done.id, result={})
     # backdate finished_at by hand for test
     old_done.finished_at = datetime.now(UTC) - timedelta(days=35)
     await db_session.commit()
 
-    young_done = await jobs_repo.create_queued(db_session, printer_id=printer_id, template_key="t", payload={})
+    young_done = await jobs_repo.create_queued(
+        db_session, printer_id=printer_id, template_key="t", payload={}
+    )
     await jobs_repo.mark_printing(db_session, young_done.id)
     await jobs_repo.mark_done(db_session, young_done.id, result={})  # finished_at is now()
 
-    queued = await jobs_repo.create_queued(db_session, printer_id=printer_id, template_key="t", payload={})  # not terminal
+    # not terminal
+    queued = await jobs_repo.create_queued(
+        db_session, printer_id=printer_id, template_key="t", payload={}
+    )
 
     deleted = await jobs_repo.evict_terminal_older_than(db_session, age=timedelta(days=30))
     assert deleted == 1

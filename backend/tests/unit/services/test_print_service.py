@@ -96,14 +96,14 @@ _PRINTER_ID = UUID("bbbbbbbb-0000-0000-0000-000000000001")
 
 
 def _service(loader, renderer, queue, lookup_service, backend, store=None):
-    kwargs = dict(
-        template_loader=loader,
-        renderer=renderer,
-        print_queue=queue,
-        lookup_service=lookup_service,
-        printer_id=_PRINTER_ID,
-        backend=backend,
-    )
+    kwargs = {
+        "template_loader": loader,
+        "renderer": renderer,
+        "print_queue": queue,
+        "lookup_service": lookup_service,
+        "printer_id": _PRINTER_ID,
+        "backend": backend,
+    }
     if store is not None:
         kwargs["store"] = store
     return PrintService(**kwargs)
@@ -402,21 +402,20 @@ async def test_tape_mismatch_queue_job_never_enters_asyncio_queue() -> None:
     completes.
     """
 
-    from uuid import UUID as _UUID
-
     from unittest.mock import AsyncMock, MagicMock
+    from uuid import UUID as _UUID
 
     from app.printer_backends.snmp_helper import PreflightStatus
     from app.services.print_queue import PrintQueue
     from app.services.print_service import PrintService
     from PIL import Image as _Image
 
-    _RACE_PRINTER_ID = _UUID("aaaaaaaa-0000-0000-0000-000000000001")
+    _race_printer_id = _UUID("aaaaaaaa-0000-0000-0000-000000000001")
 
     class _NeverPrint:
         """Printer that must never be called in this test."""
 
-        id = _RACE_PRINTER_ID
+        id = _race_printer_id
 
         async def print_image(self, image, *, tape_mm, **kw):
             raise AssertionError("Worker dequeued the paused job — race is present!")
@@ -446,7 +445,7 @@ async def test_tape_mismatch_queue_job_never_enters_asyncio_queue() -> None:
         renderer=renderer,
         print_queue=real_queue,
         lookup_service=AsyncMock(),
-        printer_id=_RACE_PRINTER_ID,
+        printer_id=_race_printer_id,
         backend=backend,
     )
 
@@ -461,7 +460,7 @@ async def test_tape_mismatch_queue_job_never_enters_asyncio_queue() -> None:
     # The asyncio.Queue MUST be empty — job was submitted in PAUSED state,
     # not enqueued. If this fails, the race-prone code path is still active.
     # Phase 2: Printer-Key ist jetzt UUID, nicht "pt@race".
-    queue_size = real_queue._queues[_RACE_PRINTER_ID].qsize()
+    queue_size = real_queue._queues[_race_printer_id].qsize()
     assert queue_size == 0, (
         f"Job was placed in asyncio.Queue (qsize={queue_size}) — "
         "race-prone submit+pause path still active, fix not applied!"

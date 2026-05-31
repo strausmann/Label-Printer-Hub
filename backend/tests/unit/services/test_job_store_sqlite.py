@@ -140,8 +140,7 @@ async def test_sqlite_store_mark_done_logs_warning_on_wrong_state(
         await store.mark_done(job.id)
 
     assert any(
-        "mark_done" in record.message and str(job.id) in record.message
-        for record in caplog.records
+        "mark_done" in record.message and str(job.id) in record.message for record in caplog.records
     ), f"Expected warning for mark_done on wrong state, got: {caplog.records}"
 
     # Zustand bleibt QUEUED

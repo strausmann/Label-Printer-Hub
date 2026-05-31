@@ -29,7 +29,8 @@ async def test_memory_store_save_and_get_round_trip() -> None:
     job = _make_job(uuid4())
     await store.save_queued(job)
     fetched = await store.get(job.id)
-    assert fetched is job  # MemoryJobStore-Semantik: gleiche Referenz. SQLiteJobStore gibt neue Instanz.
+    # MemoryJobStore-Semantik: gleiche Referenz. SQLiteJobStore gibt neue Instanz.
+    assert fetched is job
 
 
 @pytest.mark.asyncio
@@ -74,7 +75,8 @@ async def test_memory_store_list_pending_returns_queued_and_paused_not_terminal(
     await store.save_queued(pr1)
     await store.mark_printing(pr1.id)  # Transition: QUEUED -> PRINTING
     await store.save_queued(d1)
-    await store.mark_done(d1.id)  # Transition: QUEUED -> PRINTING -> DONE (via mark_printing zuerst)
+    # Transition: QUEUED -> PRINTING -> DONE (via mark_printing zuerst)
+    await store.mark_done(d1.id)
     await store.save_queued(q2)
 
     p1_pending = await store.list_pending(p1)
@@ -92,7 +94,8 @@ async def test_memory_store_evict_terminal_older_than() -> None:
     await store.save_queued(old)
     await store.save_queued(young)
     await store.save_queued(queued)
-    # Direkt den State auf DONE setzen via mark_printing + mark_done würde finished_at überschreiben.
+    # Direkt den State auf DONE setzen via mark_printing + mark_done
+    # würde finished_at überschreiben.
     # Deshalb: _jobs direkt befüllen für alte Jobs mit vorgegebenen Timestamps.
     store._jobs[old.id].state = JobState.DONE.value
     store._jobs[young.id].state = JobState.DONE.value
