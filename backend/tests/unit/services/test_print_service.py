@@ -95,8 +95,8 @@ def backend():
 _PRINTER_ID = UUID("bbbbbbbb-0000-0000-0000-000000000001")
 
 
-def _service(loader, renderer, queue, lookup_service, backend):
-    return PrintService(
+def _service(loader, renderer, queue, lookup_service, backend, store=None):
+    kwargs = dict(
         template_loader=loader,
         renderer=renderer,
         print_queue=queue,
@@ -104,6 +104,9 @@ def _service(loader, renderer, queue, lookup_service, backend):
         printer_id=_PRINTER_ID,
         backend=backend,
     )
+    if store is not None:
+        kwargs["store"] = store
+    return PrintService(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -470,3 +473,87 @@ async def test_tape_mismatch_queue_job_never_enters_asyncio_queue() -> None:
     assert job.state == JobState.PAUSED, f"Expected PAUSED, got {job.state}"
     assert job.error_code == "tape_mismatch"
     assert job.error_detail == {"expected_mm": 24, "loaded_mm": 12}
+
+
+# ---------------------------------------------------------------------------
+# Fix C-1: PAUSED-Pfad ruft save_queued NICHT auf
+# ---------------------------------------------------------------------------
+
+
+async def test_tape_mismatch_queue_path_does_not_persist_db_job(
+    loader, renderer, queue, lookup_service, backend
+) -> None:
+    """C-1-Fix: on_tape_mismatch=queue → save_queued wird NICHT aufgerufen.
+
+    Vorher wurde der Job als QUEUED persistiert, obwohl er in PAUSED-State
+    versetzt wurde. Nach Hub-Restart würde list_pending() ihn als QUEUED
+    finden und sofort drucken — Doppel-Druck-Risiko.
+    Fix: PAUSED-Jobs bleiben in-memory-only, kein DB-Persist.
+    """
+    backend.preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle",
+        loaded_tape_mm=12,  # mismatch: template wants 24mm
+        error_flags=[],
+    )
+    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
+    from app.services.job_lifecycle import JobStateMachine
+
+    JobStateMachine.transition(job, JobState.PAUSED)
+    queue.submit_paused_with_id.return_value = _FAKE_JOB_UUID
+    queue.get.return_value = job
+
+    mock_store = AsyncMock()
+
+    svc = _service(loader, renderer, queue, lookup_service, backend, store=mock_store)
+    req = PrintRequest(
+        template_id="qr-only-24mm",
+        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
+        on_tape_mismatch="queue",
+    )
+
+    job_id = await svc.submit_print_job(req)
+
+    assert isinstance(job_id, UUID)
+    # save_queued darf NICHT aufgerufen worden sein — kein DB-Persist für PAUSED
+    mock_store.save_queued.assert_not_awaited()
+    # submit_paused_with_id muss aber aufgerufen worden sein
+    queue.submit_paused_with_id.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Fix I-1: Rollback bei queue.submit_with_id Fehler
+# ---------------------------------------------------------------------------
+
+
+async def test_submit_with_failing_queue_marks_db_job_failed(
+    loader, renderer, queue, lookup_service, backend
+) -> None:
+    """I-1-Fix: Wenn queue.submit_with_id wirft, muss der DB-Job auf FAILED gesetzt werden.
+
+    Ohne Rollback bliebe eine stale QUEUED-Row in der DB ohne Worker-Gegenstück.
+    Nach Hub-Restart würde list_pending() sie finden und re-enqueuen — aber der
+    Job hat keinen gültigen Zustand mehr.
+    Fix: try/except um submit_with_id, bei Exception → mark_failed + re-raise.
+    """
+    submit_error = RuntimeError("asyncio.Queue voll oder andere Fehlerursache")
+    queue.submit_with_id.side_effect = submit_error
+
+    mock_store = AsyncMock()
+
+    svc = _service(loader, renderer, queue, lookup_service, backend, store=mock_store)
+    req = PrintRequest(
+        template_id="qr-only-24mm",
+        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
+    )
+
+    with pytest.raises(RuntimeError):
+        await svc.submit_print_job(req)
+
+    # save_queued muss aufgerufen worden sein (DB-Persist vor submit)
+    mock_store.save_queued.assert_awaited_once()
+    # mark_failed muss aufgerufen worden sein mit passendem error-String
+    mock_store.mark_failed.assert_awaited_once()
+    call_args = mock_store.mark_failed.call_args
+    error_msg: str = call_args.args[1] if call_args.args else call_args.kwargs["error"]
+    assert "submit_failed" in error_msg
+    assert "RuntimeError" in error_msg
