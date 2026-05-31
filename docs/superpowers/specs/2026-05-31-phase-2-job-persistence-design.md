@@ -3,7 +3,7 @@
 **Status:** Draft
 **Datum:** 2026-05-31
 **Issue:** [strausmann/Label-Printer-Hub#93](https://github.com/strausmann/Label-Printer-Hub/issues/93)
-**Bezug:** Entblockt [strausmann/hangar#81](https://git.strausmann.de/strausmann/hangar/-/work_items/81) (Result-Page Live-Updates)
+**Bezug:** Entblockt strausmann/hangar#81 (Result-Page Live-Updates)
 **Spec Author:** Orchestrator (Brainstorming-Session 26 Continuation)
 
 ---
@@ -32,7 +32,7 @@ Folgen des aktuellen Designs:
 
 ## Nicht-Ziele
 
-- **Hangar Phase 1d Implementation** — eigener MR im Hangar-Repo nach Hub-Merge ([#81](https://git.strausmann.de/strausmann/hangar/-/work_items/81))
+- **Hangar Phase 1d Implementation** — eigener MR im Hangar-Repo nach Hub-Merge (hangar#81)
 - **Worker resume von PRINTING-Jobs** — explizit als `FAILED` markiert, kein Auto-Retry (User-Entscheidung Q3)
 - **Per-Drucker-Konfigurierbarkeit** der Recovery-Strategie — alle Drucker nutzen gleichen `JobStore`
 - **Multi-Process-Support** — `JobStore` ist async-safe fuer SQLite-WAL, aber Single-Process. Multi-Worker via gunicorn nicht in Scope
@@ -682,7 +682,7 @@ Schema-Aenderung: **keine**. `jobs`-Tabelle existiert bereits in Migration `b266
 ## Referenzen
 
 - Issue: [strausmann/Label-Printer-Hub#93](https://github.com/strausmann/Label-Printer-Hub/issues/93)
-- Bezug: [strausmann/hangar#81](https://git.strausmann.de/strausmann/hangar/-/work_items/81) (Hangar Result-Page entblockt)
+- Bezug: strausmann/hangar#81 (Hangar Result-Page entblockt)
 - Phase 1 Spec: `docs/superpowers/specs/2026-05-30-hub-batch-endpoint-design.md` (hangar repo)
 - Brainstorming-Q&A: HomeLab Session 26 (Memory `briefing_session26.md`)
 - Code-Comment-Vorbereitung: `backend/app/services/print_queue.py:7-9` (Phase-5-Marker)
