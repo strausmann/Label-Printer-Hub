@@ -1,19 +1,22 @@
 """SQLite-backed JobStore — delegates to jobs_repo for actual SQL.
 
-Uses async_sessionmaker for per-operation sessions so we get clean
+Uses async_sessionmaker für per-operation sessions so we get clean
 transactions and no connection-pool starvation.
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models.job import Job
+from app.models.job import Job, JobState
 from app.repositories import jobs as jobs_repo
 from app.services.job_store import JobStore
+
+logger = logging.getLogger(__name__)
 
 
 class SQLiteJobStore(JobStore):
@@ -42,26 +45,58 @@ class SQLiteJobStore(JobStore):
     async def mark_printing(self, job_id: UUID) -> None:
         """Transition QUEUED -> PRINTING. Silently no-op if job not found."""
         async with self._session_factory() as session:
-            try:
-                await jobs_repo.mark_printing(session, job_id)
-            except ValueError:
-                pass  # job evicted or already transitioned — safe to ignore
+            job = await jobs_repo.get(session, job_id)
+            if job is None:
+                return  # silent no-op (Protocol contract)
+            if job.state != JobState.QUEUED.value:
+                logger.warning(
+                    "mark_printing called on job %s in state %s (expected queued)",
+                    job_id,
+                    job.state,
+                )
+                return
+            await jobs_repo.mark_printing(session, job_id)
 
     async def mark_done(self, job_id: UUID) -> None:
-        """Transition PRINTING -> DONE. Silently no-op if job not found."""
+        """Transition PRINTING -> DONE.
+
+        Delegiert an jobs_repo.mark_done mit result={} — JobStore-Protocol
+        speichert kein structured result (Phase-2 YAGNI; ergänzbar via
+        `set_result` Methode wenn Hangar das später braucht).
+        """
         async with self._session_factory() as session:
-            try:
-                await jobs_repo.mark_done(session, job_id, result={})
-            except ValueError:
-                pass  # job evicted or already transitioned — safe to ignore
+            job = await jobs_repo.get(session, job_id)
+            if job is None:
+                return  # silent no-op (Protocol contract)
+            if job.state != JobState.PRINTING.value:
+                logger.warning(
+                    "mark_done called on job %s in state %s (expected printing)",
+                    job_id,
+                    job.state,
+                )
+                return
+            await jobs_repo.mark_done(session, job_id, result={})
 
     async def mark_failed(self, job_id: UUID, error: str) -> None:
         """Transition any non-terminal -> FAILED. Silently no-op if job not found."""
+        _terminal = {
+            JobState.DONE.value,
+            JobState.FAILED.value,
+            JobState.CANCELLED.value,
+            JobState.FAILED_RESTART.value,
+        }
         async with self._session_factory() as session:
-            try:
-                await jobs_repo.mark_failed(session, job_id, error)
-            except ValueError:
-                pass  # job evicted or already transitioned — safe to ignore
+            job = await jobs_repo.get(session, job_id)
+            if job is None:
+                return  # silent no-op (Protocol contract)
+            if job.state in _terminal:
+                logger.warning(
+                    "mark_failed called on job %s in terminal state %s",
+                    job_id,
+                    job.state,
+                )
+                return
+            await jobs_repo.mark_failed(session, job_id, error)
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: mark all PRINTING jobs of this printer as FAILED_RESTART."""

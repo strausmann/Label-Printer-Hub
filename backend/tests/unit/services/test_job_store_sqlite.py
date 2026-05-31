@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -99,6 +100,79 @@ async def test_sqlite_store_list_pending_fifo(async_session_factory) -> None:  #
 
     pending = await store.list_pending(p1)
     assert [j.id for j in pending] == [j1.id, j2.id]
+
+
+@pytest.mark.asyncio
+async def test_sqlite_store_mark_printing_logs_warning_on_wrong_state(
+    async_session_factory, caplog: pytest.LogCaptureFixture
+) -> None:
+    """mark_printing auf einen Job im FAILED-State erzeugt logger.warning."""
+    store = SQLiteJobStore(async_session_factory)
+    job = Job(printer_id=uuid4(), template_key="t", payload={})
+    await store.save_queued(job)
+    await store.mark_printing(job.id)
+    await store.mark_failed(job.id, "tape_empty")
+
+    with caplog.at_level(logging.WARNING, logger="app.services.job_store_sqlite"):
+        await store.mark_printing(job.id)
+
+    assert any(
+        "mark_printing" in record.message and str(job.id) in record.message
+        for record in caplog.records
+    ), f"Expected warning for mark_printing on wrong state, got: {caplog.records}"
+
+    # Zustand bleibt FAILED — kein ungewollter Overwrite
+    fetched = await store.get(job.id)
+    assert fetched is not None
+    assert fetched.state == JobState.FAILED.value
+
+
+@pytest.mark.asyncio
+async def test_sqlite_store_mark_done_logs_warning_on_wrong_state(
+    async_session_factory, caplog: pytest.LogCaptureFixture
+) -> None:
+    """mark_done auf einen Job im QUEUED-State (nicht PRINTING) erzeugt logger.warning."""
+    store = SQLiteJobStore(async_session_factory)
+    job = Job(printer_id=uuid4(), template_key="t", payload={})
+    await store.save_queued(job)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.job_store_sqlite"):
+        await store.mark_done(job.id)
+
+    assert any(
+        "mark_done" in record.message and str(job.id) in record.message
+        for record in caplog.records
+    ), f"Expected warning for mark_done on wrong state, got: {caplog.records}"
+
+    # Zustand bleibt QUEUED
+    fetched = await store.get(job.id)
+    assert fetched is not None
+    assert fetched.state == JobState.QUEUED.value
+
+
+@pytest.mark.asyncio
+async def test_sqlite_store_mark_failed_logs_warning_on_terminal_state(
+    async_session_factory, caplog: pytest.LogCaptureFixture
+) -> None:
+    """mark_failed auf einen bereits DONE-Job erzeugt logger.warning."""
+    store = SQLiteJobStore(async_session_factory)
+    job = Job(printer_id=uuid4(), template_key="t", payload={})
+    await store.save_queued(job)
+    await store.mark_printing(job.id)
+    await store.mark_done(job.id)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.job_store_sqlite"):
+        await store.mark_failed(job.id, "late_error")
+
+    assert any(
+        "mark_failed" in record.message and str(job.id) in record.message
+        for record in caplog.records
+    ), f"Expected warning for mark_failed on terminal state, got: {caplog.records}"
+
+    # Zustand bleibt DONE
+    fetched = await store.get(job.id)
+    assert fetched is not None
+    assert fetched.state == JobState.DONE.value
 
 
 @pytest.mark.asyncio

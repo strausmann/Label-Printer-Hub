@@ -5,6 +5,8 @@ Hardware tests are skipped by default — pass `--hardware` to opt in.
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -30,11 +32,15 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 @pytest_asyncio.fixture
-async def async_session_factory(tmp_path):
-    """Async sessionmaker-Fixture für SQLiteJobStore Tests.
+async def async_session_factory(tmp_path: pathlib.Path):
+    """Per-test SQLite + async_sessionmaker für isolierte JobStore-Tests.
 
-    Erzeugt eine per-Test SQLite-DB (temp file, nicht :memory: für
-    Task-Isolation). Sichtbar für alle Tests unterhalb von tests/.
+    FOREIGN KEYS sind absichtlich DEAKTIVIERT (SQLite-Default).
+    Phase-2-Tests nutzen uuid4() als printer_id ohne echte Printer-Rows in
+    der DB — FK ON würde Tests verlangen die Printer-Stamm-Daten anlegen,
+    was den Test-Scope (JobStore-Isolation) unnötig erweitert.
+
+    Produktions-Code läuft mit FK ON (PRAGMA in app/db/engine.py).
     """
     import app.models  # noqa: F401 — registriert alle Models bei SQLModel.metadata
 
