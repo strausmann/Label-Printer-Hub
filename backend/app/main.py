@@ -92,7 +92,6 @@ from app.config import Settings, get_settings
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
     ensure_printer_state,
-    recover_inflight_jobs,
     run_migrations,
     seed_templates,
     upsert_runtime_printer,
@@ -100,12 +99,15 @@ from app.db.lifespan import (
 )
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
+from app.models.printer import Printer as _Printer
 from app.printer_backends import BackendRegistry
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
 from app.schemas.readiness import ReadinessResponse
+from app.services.cleanup_task import CleanupTask
 from app.services.event_bus import EventBus
+from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.label_renderer import LabelRenderer
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue
@@ -271,12 +273,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # 4. DB-bound init — plugin registry and template cache are populated.
     async with async_session() as s:
-        await recover_inflight_jobs(s)
+        # Phase 2: recover_inflight_jobs() entfernt (Spec R1-C1) —
+        # PrintQueue.start() übernimmt Recovery mit korrekter QUEUED/PRINTING-Differenzierung.
         await seed_templates(s, TemplateLoader)
         db_printer_id = await upsert_runtime_printer(s, settings)
         await ensure_printer_state(s)
         await s.commit()
     # -------------------------------------------------------------------------
+
+    # Phase 2: JobStore + CleanupTask
+    # 'async_session' ist die async_sessionmaker aus app.db.engine (R2-M5)
+    job_store = SQLiteJobStore(async_session)
+
+    cleanup_task = CleanupTask(
+        store=job_store,
+        retention_days=settings.job_retention_days,
+    )
+    await cleanup_task.start()
+    app.state.cleanup_task = cleanup_task
 
     discovery_host = settings.pt750w_host or ""
     if discovery_host and settings.printer_discover_via_snmp:
@@ -297,15 +311,51 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     tape_registry = TapeRegistry()
     printer = driver.make_queue_printer(tape_registry, printer_id=db_printer_id)
 
+    # Phase 2: Wenn kein Host konfiguriert ist (Mock-Backend / CI), legt
+    # upsert_runtime_printer keine Printer-Row an. make_queue_printer generiert
+    # dann eine frische uuid4. Damit jobs.printer_id (FK → printers.id) bei
+    # save_queued nicht verletzt wird, legen wir hier eine Stub-Row an.
+    if db_printer_id is None:
+        # Wenn kein Host konfiguriert ist (Mock-Backend / CI), liefert
+        # upsert_runtime_printer None zurück und fügt keine Printer-Row ein.
+        # make_queue_printer erzeugt dann eine neue uuid4. Damit
+        # jobs.printer_id (FK → printers.id) bei save_queued nicht verletzt
+        # wird, legen wir hier eine Stub-Row an. slug wird auf str(id) gesetzt
+        # (eindeutig durch UUID), damit der UNIQUE-Constraint nicht verletzt wird.
+        _stub_slug = str(printer.id)
+        async with async_session() as s:
+            existing = await s.get(_Printer, printer.id)
+            if existing is None:
+                s.add(
+                    _Printer(
+                        id=printer.id,
+                        name=f"stub-{printer.id}",
+                        slug=_stub_slug,
+                        model=model_id.lower(),
+                        backend=settings.printer_backend,
+                    )
+                )
+                await s.commit()
+
     # --- SSE EventBus ---
     event_bus = EventBus(queue_size=settings.sse_queue_size)
     app.state.event_bus = event_bus
     # ----- end SSE ------
 
+    # Shared LabelRenderer reused by both PrintService, preview endpoint and
+    # PrintQueue Recovery. Constructing it once avoids repeated font-loading
+    # overhead on every POST /api/render/preview request.
+    # Moved before PrintQueue construction so Recovery in queue.start() can use it.
+    shared_renderer = LabelRenderer()
+    app.state.label_renderer = shared_renderer
+
     pq_producer = PrintQueueProducer(bus=event_bus)
     queue = PrintQueue(
         printers=[printer],
         on_state_change=pq_producer.handle_transition,
+        store=job_store,
+        renderer=shared_renderer,
+        loader=TemplateLoader,
     )
     await queue.start()
 
@@ -330,11 +380,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.printer_id = printer.id
     app.state.printer_host = discovery_host
     app.state.printer_snmp_community = settings.printer_snmp_community
-    # Shared LabelRenderer reused by both PrintService and the preview endpoint.
-    # Constructing it once avoids repeated font-loading overhead on every
-    # POST /api/render/preview request.
-    shared_renderer = LabelRenderer()
-    app.state.label_renderer = shared_renderer
     app.state.print_service = PrintService(
         template_loader=TemplateLoader,
         renderer=shared_renderer,
@@ -342,6 +387,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         lookup_service=AppLookupService(),
         printer_id=printer.id,
         backend=backend,
+        store=job_store,
     )
 
     try:
@@ -349,6 +395,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if status_producer is not None:
             await status_producer.stop()
+        await cleanup_task.stop()
         await queue.stop(timeout_s=settings.printer_queue_timeout_s)
         await engine.dispose()
         # Close shared HTTP clients held by integration plugins that support it.

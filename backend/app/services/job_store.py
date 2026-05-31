@@ -141,7 +141,8 @@ class MemoryJobStore(JobStore):
 
     async def list_pending(self, printer_id: UUID) -> list[Job]:
         items = [
-            j for j in self._jobs.values()
+            j
+            for j in self._jobs.values()
             if j.printer_id == printer_id and j.state in _NON_TERMINAL
         ]
         return sorted(items, key=lambda j: j.created_at)
@@ -149,7 +150,8 @@ class MemoryJobStore(JobStore):
     async def evict_terminal_older_than(self, age: timedelta) -> int:
         cutoff = datetime.now(UTC) - age
         to_delete = [
-            jid for jid, j in self._jobs.items()
+            jid
+            for jid, j in self._jobs.items()
             if j.state in _TERMINAL and j.finished_at is not None and j.finished_at < cutoff
         ]
         for jid in to_delete:
