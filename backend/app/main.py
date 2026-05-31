@@ -311,10 +311,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     tape_registry = TapeRegistry()
     printer = driver.make_queue_printer(tape_registry, printer_id=db_printer_id)
 
-    # Phase 2: Wenn kein Host konfiguriert ist (Mock-Backend / CI), legt
-    # upsert_runtime_printer keine Printer-Row an. make_queue_printer generiert
-    # dann eine frische uuid4. Damit jobs.printer_id (FK → printers.id) bei
-    # save_queued nicht verletzt wird, legen wir hier eine Stub-Row an.
     if db_printer_id is None:
         # Wenn kein Host konfiguriert ist (Mock-Backend / CI), liefert
         # upsert_runtime_printer None zurück und fügt keine Printer-Row ein.
@@ -324,6 +320,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # (eindeutig durch UUID), damit der UNIQUE-Constraint nicht verletzt wird.
         _stub_slug = str(printer.id)
         async with async_session() as s:
+            # Defensive idempotency: in non-mock production paths the printer_id
+            # is explicit and would be reused, so the existing check matters
+            # there. In mock paths (printer_id=None), a fresh uuid4 means
+            # existing is always None.
             existing = await s.get(_Printer, printer.id)
             if existing is None:
                 s.add(
@@ -395,8 +395,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if status_producer is not None:
             await status_producer.stop()
-        await cleanup_task.stop()
         await queue.stop(timeout_s=settings.printer_queue_timeout_s)
+        await cleanup_task.stop()
         await engine.dispose()
         # Close shared HTTP clients held by integration plugins that support it.
         # Plugins that pre-date connection pooling may not have aclose(); skip them.
