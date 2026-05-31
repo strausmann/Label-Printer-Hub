@@ -1,11 +1,13 @@
-"""Per-printer async work queue.
+"""Per-printer async work queue mit Persistierungs-Boundary.
 
 Brother PT/QL printers expose TCP/9100 as a single-stream channel — there is
 no on-device multi-job queue. The hub serialises jobs per printer by running
 one asyncio worker task per printer and feeding it from an asyncio.Queue.
 
-Jobs live in-memory (MVP). Phase 5 will add SQLite persistence behind a
-JobStore protocol that this module will accept by dependency injection.
+In-Memory dataclass `Job` Instanzen (mit image_payload bytes und
+asyncio.Event) leben in `_jobs` während des Worker-Loops. Parallel
+persistiert der `JobStore` die SQLModel-Job-Rows in SQLite — siehe
+`app/services/job_store.py` (Phase 2).
 
 Internal dependency note: the worker reads `job._done_event` (a private field
 on `Job`) to signal completion to `wait_for_job`. `PrintQueue` and
@@ -137,6 +139,19 @@ class PrintQueue:
         on_state_change: _StateChangeCallback | None = None,
         store: JobStore | None = None,
     ) -> None:
+        """Konstruktor.
+
+        Args:
+            printers: Liste der Drucker-Objekte (jeder mit ``id`` UUID und
+                ``print_image`` Coroutine-Methode).
+            on_state_change: Optionaler Callback für SSE-Events. Wird nach
+                jeder Job-State-Transition aufgerufen; None deaktiviert das
+                Callback ohne sonstige Seiteneffekte.
+            store: JobStore für DB-Persistierung der Job-Transitionen.
+                Default ist ``MemoryJobStore()`` für Backward-Compat mit
+                Pre-Phase-2-Tests — Production-Code wired in Lifespan
+                explizit ``SQLiteJobStore`` ein (Task 9).
+        """
         self._on_state_change = on_state_change
         self._store: JobStore = store if store is not None else MemoryJobStore()
         self._printers: dict[UUID, _PrinterLike] = {p.id: p for p in printers}
@@ -222,6 +237,7 @@ class PrintQueue:
                 job.error_msg = job.error_message  # keep legacy field in sync (see line 466)
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
+                    await self._store.mark_failed(UUID(job.id), "shutdown")
                 except InvalidStateTransitionError:
                     # Defensive: job already moved to a terminal state by the
                     # worker — just ensure _done_event is set.
