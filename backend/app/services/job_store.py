@@ -47,13 +47,25 @@ class JobStore(Protocol):
         """Load a job by ID. None if not found."""
 
     async def mark_printing(self, job_id: UUID) -> None:
-        """Transition QUEUED -> PRINTING. Called by worker when it picks up the job."""
+        """Transition QUEUED -> PRINTING. Called by worker when it picks up the job.
+
+        Silently no-op if job_id does not exist in the store. Implementations
+        must NOT raise on missing jobs — callers may race against eviction.
+        """
 
     async def mark_done(self, job_id: UUID) -> None:
-        """Transition PRINTING -> DONE. Called by worker after successful print."""
+        """Transition PRINTING -> DONE. Called by worker after successful print.
+
+        Silently no-op if job_id does not exist in the store. Implementations
+        must NOT raise on missing jobs — callers may race against eviction.
+        """
 
     async def mark_failed(self, job_id: UUID, error: str) -> None:
-        """Transition any non-terminal -> FAILED with given error message."""
+        """Transition any non-terminal -> FAILED with given error message.
+
+        Silently no-op if job_id does not exist in the store. Implementations
+        must NOT raise on missing jobs — callers may race against eviction.
+        """
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: set all PRINTING jobs of this printer to FAILED_RESTART
@@ -79,7 +91,7 @@ class JobStore(Protocol):
         """
 
 
-class MemoryJobStore:
+class MemoryJobStore(JobStore):
     """In-Memory JobStore für Tests und PrintService Boot-Phase.
 
     Hält Job-Objekte in einem Dict mit id als Schlüssel. Nicht thread-safe, aber
