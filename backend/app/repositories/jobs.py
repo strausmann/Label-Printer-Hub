@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
@@ -160,12 +160,82 @@ async def mark_inflight_as_failed_restart(session: AsyncSession) -> int:
     return int(result.rowcount)  # type: ignore[attr-defined]  # rowcount on UPDATE result
 
 
-async def list_active(session: AsyncSession) -> list[Job]:
-    """Return all jobs in QUEUED or PRINTING state (covered by ix_jobs_state)."""
+async def list_active(
+    session: AsyncSession,
+    *,
+    printer_id: UUID | None = None,
+) -> list[Job]:
+    """Return all jobs in QUEUED or PRINTING state (covered by ix_jobs_state).
+
+    Phase 2: optional printer_id filter for PrintQueue.start() recovery.
+    """
     inflight = (JobState.QUEUED.value, JobState.PRINTING.value)
-    result = await session.execute(
+    stmt = (
         select(Job)
-        .where(col(Job.state).in_(inflight))  # col() gives proper Column typing for .in_()
-        .order_by(col(Job.created_at))  # col() gives proper Column typing
+        .where(col(Job.state).in_(inflight))
+        .order_by(col(Job.created_at))
     )
+    if printer_id is not None:
+        stmt = stmt.where(col(Job.printer_id) == printer_id)
+    result = await session.execute(stmt)
     return list(result.scalars())
+
+
+async def mark_printing_as_failed_restart(
+    session: AsyncSession,
+    printer_id: UUID,
+) -> int:
+    """Phase 2: UPDATE only PRINTING jobs for a specific printer to
+    FAILED_RESTART with error='printer_interrupted'.
+
+    Used at PrintQueue.start() — QUEUED jobs are NOT affected because
+    they will be re-enqueued cleanly. Only PRINTING jobs are ambiguous
+    (printer may have completed before crash but Hub couldn't update DB).
+
+    Returns the count of affected rows.
+    """
+    stmt = (
+        update(Job)
+        .where(
+            col(Job.printer_id) == printer_id,
+            col(Job.state) == JobState.PRINTING.value,
+        )
+        .values(
+            state=JobState.FAILED_RESTART.value,
+            error="printer_interrupted",
+            finished_at=datetime.now(UTC),
+        )
+        .execution_options(synchronize_session="fetch")
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return int(result.rowcount)  # type: ignore[attr-defined]
+
+
+async def evict_terminal_older_than(
+    session: AsyncSession,
+    age: timedelta,
+) -> int:
+    """Phase 2 cleanup: DELETE terminal jobs older than age.
+
+    Terminal = DONE | FAILED | FAILED_RESTART | CANCELLED.
+    Comparison is on finished_at (set whenever a job leaves a non-terminal state).
+
+    Returns the count of deleted rows.
+    """
+    terminal = (
+        JobState.DONE.value,
+        JobState.FAILED.value,
+        JobState.FAILED_RESTART.value,
+        JobState.CANCELLED.value,
+    )
+    cutoff = datetime.now(UTC) - age
+    stmt = (
+        delete(Job)
+        .where(col(Job.state).in_(terminal))
+        .where(col(Job.finished_at) < cutoff)
+        .execution_options(synchronize_session="fetch")
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return int(result.rowcount)  # type: ignore[attr-defined]
