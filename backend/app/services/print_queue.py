@@ -1,11 +1,13 @@
-"""Per-printer async work queue.
+"""Per-printer async work queue mit Persistierungs-Boundary.
 
 Brother PT/QL printers expose TCP/9100 as a single-stream channel — there is
 no on-device multi-job queue. The hub serialises jobs per printer by running
 one asyncio worker task per printer and feeding it from an asyncio.Queue.
 
-Jobs live in-memory (MVP). Phase 5 will add SQLite persistence behind a
-JobStore protocol that this module will accept by dependency injection.
+In-Memory dataclass `Job` Instanzen (mit image_payload bytes und
+asyncio.Event) leben in `_jobs` während des Worker-Loops. Parallel
+persistiert der `JobStore` die SQLModel-Job-Rows in SQLite — siehe
+`app/services/job_store.py` (Phase 2).
 
 Internal dependency note: the worker reads `job._done_event` (a private field
 on `Job`) to signal completion to `wait_for_job`. `PrintQueue` and
@@ -20,11 +22,14 @@ import logging
 import uuid
 from enum import StrEnum
 from io import BytesIO
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import UUID
 
 from PIL import Image
+from pydantic import ValidationError
 
+from app.models.job import Job as DbJob
+from app.models.job import JobState as DbJobState
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterError,
@@ -40,6 +45,17 @@ from app.services.job_lifecycle import (
     JobState,
     JobStateMachine,
 )
+from app.services.job_store import JobStore, MemoryJobStore
+
+# TYPE_CHECKING-Block verhindert zirkuläre Imports zur Laufzeit.
+# LabelRenderer und TemplateLoader sind nur für die Recovery-Methode nötig.
+if TYPE_CHECKING:
+    from app.services.label_renderer import LabelRenderer
+    from app.services.template_loader import TemplateLoader
+
+# TemplateNotFoundError wird zur Laufzeit benötigt (Recovery-Loop catch), daher
+# kein TYPE_CHECKING-Block — aber lazy import um Zirkel zu vermeiden.
+from app.services.template_loader import TemplateNotFoundError
 
 
 # Callback type: called after each state transition.  The optional queue_depth
@@ -134,8 +150,31 @@ class PrintQueue:
         self,
         printers: list[_PrinterLike],
         on_state_change: _StateChangeCallback | None = None,
+        store: JobStore | None = None,
+        renderer: LabelRenderer | None = None,
+        loader: type[TemplateLoader] | None = None,
     ) -> None:
+        """Konstruktor.
+
+        Args:
+            printers: Liste der Drucker-Objekte (jeder mit ``id`` UUID und
+                ``print_image`` Coroutine-Methode).
+            on_state_change: Optionaler Callback für SSE-Events. Wird nach
+                jeder Job-State-Transition aufgerufen; None deaktiviert das
+                Callback ohne sonstige Seiteneffekte.
+            store: JobStore für DB-Persistierung der Job-Transitionen.
+                Default ist ``MemoryJobStore()`` für Backward-Compat mit
+                Pre-Phase-2-Tests — Production-Code wired in Lifespan
+                explizit ``SQLiteJobStore`` ein (Task 9).
+            renderer: LabelRenderer-Instanz für Recovery in start().
+                Optional — wenn None, wirft _rerender_from_db_job() RuntimeError.
+            loader: TemplateLoader-Klasse für Recovery in start().
+                Optional — wenn None, wirft _rerender_from_db_job() RuntimeError.
+        """
         self._on_state_change = on_state_change
+        self._store: JobStore = store if store is not None else MemoryJobStore()
+        self._renderer: LabelRenderer | None = renderer
+        self._loader: type[TemplateLoader] | None = loader
         self._printers: dict[UUID, _PrinterLike] = {p.id: p for p in printers}
         # Queue type is Job | None — None is the sentinel used by stop() to wake
         # workers that are blocked at queue.get().
@@ -164,11 +203,87 @@ class PrintQueue:
     async def start(self) -> None:
         if self._running:
             return
-        for printer_id in self._queues:
-            self._workers[printer_id] = asyncio.create_task(
-                self._worker(printer_id), name=f"printer-worker-{printer_id}"
-            )
+        # I-1: Race-Guard — sofort setzen bevor erster await, damit ein zweiter
+        # gleichzeitiger start()-Aufruf am Guard oben scheitert.
         self._running = True
+        try:
+            # Phase 2 Recovery: unterbrochene PRINTING-Jobs markieren + QUEUED re-enqueuen.
+            # mark_interrupted MUSS vor list_pending aufgerufen werden, damit die alten
+            # PRINTING-Jobs NICHT in list_pending zurückkommen.
+            for printer_id in self._queues:
+                interrupted = await self._store.mark_interrupted(printer_id)
+                if interrupted > 0:
+                    logger.warning(
+                        "Recovery: %d PRINTING-Jobs auf Drucker %s als FAILED_RESTART markiert",
+                        interrupted,
+                        printer_id,
+                    )
+                pending_db_jobs = await self._store.list_pending(printer_id)
+                for db_job in pending_db_jobs:
+                    # S-1: StrEnum-Konsistenz — DbJobState.QUEUED.value statt String-Literal
+                    if db_job.state != DbJobState.QUEUED.value:
+                        continue
+                    # C-1/I-2: fehlerhafte/veraltete Rows dürfen die Recovery nicht abbrechen.
+                    # KeyError (fehlendes label_data), ValidationError (ungültige Struktur),
+                    # TemplateNotFoundError (Template inzwischen gelöscht) → Job FAILED markieren
+                    # und mit dem nächsten Job weitermachen.
+                    try:
+                        image = await self._rerender_from_db_job(db_job)
+                    except (KeyError, ValidationError, TemplateNotFoundError) as exc:
+                        logger.warning(
+                            "Recovery: Job %s rerender fehlgeschlagen (%s), FAILED",
+                            db_job.id,
+                            exc.__class__.__name__,
+                        )
+                        await self._store.mark_failed(db_job.id, f"recovery_rerender_failed: {exc}")
+                        continue
+                    payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
+                    wrapper = Job(
+                        id=str(db_job.id),
+                        printer_id=db_job.printer_id,
+                        image_payload=payload_bytes,
+                        tape_mm=db_job.payload.get("tape_mm"),
+                        options=db_job.payload.get("options", {}),
+                    )
+                    self._jobs[str(db_job.id)] = wrapper
+                    await self._queues[printer_id].put(wrapper)
+                    logger.info(
+                        "Recovery: QUEUED-Job %s auf Drucker %s re-enqueued",
+                        db_job.id,
+                        printer_id,
+                    )
+
+            for printer_id in self._queues:
+                self._workers[printer_id] = asyncio.create_task(
+                    self._worker(printer_id), name=f"printer-worker-{printer_id}"
+                )
+        except Exception:
+            # I-1: Bei Recovery-Fehler _running zurücksetzen, damit ein erneuter
+            # start()-Aufruf nicht am Guard scheitert.
+            self._running = False
+            raise
+
+    async def _rerender_from_db_job(self, db_job: DbJob) -> Image.Image:
+        """Phase 2: Label-Bild aus persistiertem template_key + payload neu rendern.
+
+        Wird während start() Recovery aufgerufen. Benötigt renderer + loader,
+        die via PrintQueue-Konstruktor verdrahtet werden müssen (Production-Lifespan).
+
+        Raises:
+            RuntimeError: wenn renderer oder loader nicht gesetzt sind.
+        """
+        if self._renderer is None or self._loader is None:
+            raise RuntimeError(
+                "PrintQueue Recovery benötigt renderer + loader "
+                "(via Konstruktor übergeben — siehe Lifespan-Konfiguration)"
+            )
+        template = self._loader.get(db_job.template_key)
+        # R2-C4: payload["label_data"] ist ein rohes dict (model_dump()).
+        # LabelRenderer.render() erwartet ein LabelData-Objekt — KEIN dict.
+        from app.schemas.label_data import LabelData
+
+        label_data = LabelData.model_validate(db_job.payload["label_data"])
+        return self._renderer.render(template, label_data)
 
     async def stop(self, timeout_s: float = 30.0) -> None:
         """Stop all workers.
@@ -219,6 +334,7 @@ class PrintQueue:
                 job.error_msg = job.error_message  # keep legacy field in sync (see line 466)
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
+                    await self._store.mark_failed(UUID(job.id), "shutdown")
                 except InvalidStateTransitionError:
                     # Defensive: job already moved to a terminal state by the
                     # worker — just ensure _done_event is set.
@@ -257,6 +373,63 @@ class PrintQueue:
         # stream with spurious HTMX sse-swap updates (bot-review Finding F1).
         return job.id
 
+    async def submit_with_id(
+        self,
+        job_id: UUID,
+        printer_id: UUID,
+        image: Image.Image,
+        tape_mm: int,
+        **options: Any,
+    ) -> UUID:
+        """Phase 2: Wie submit(), aber mit extern erzeugter job_id.
+
+        Wird von PrintService genutzt, der die DB-Row zuerst anlegt (via
+        store.save_queued) und die resultierende UUID hier weitergibt.
+        Gibt die job_id unverändert zurück.
+        """
+        if printer_id not in self._queues:
+            raise KeyError(f"Unknown printer: {printer_id}")
+        payload = await asyncio.to_thread(_serialize_image_to_png, image)
+        job = Job(
+            id=str(job_id),
+            printer_id=printer_id,
+            image_payload=payload,
+            tape_mm=tape_mm,
+            options=dict(options),
+        )
+        self._jobs[str(job_id)] = job
+        await self._queues[printer_id].put(job)
+        logger.info("Job %s (extern-id) queued on %s", job_id, printer_id)
+        return job_id
+
+    async def submit_paused_with_id(
+        self,
+        job_id: UUID,
+        printer_id: UUID,
+        image: Image.Image,
+        tape_mm: int,
+        **options: Any,
+    ) -> UUID:
+        """Phase 2: Wie submit_paused(), aber mit extern erzeugter job_id.
+
+        Wird von PrintService für den on_tape_mismatch='queue'-Pfad genutzt.
+        Gibt die job_id unverändert zurück.
+        """
+        if printer_id not in self._queues:
+            raise KeyError(f"Unknown printer: {printer_id}")
+        payload = await asyncio.to_thread(_serialize_image_to_png, image)
+        job = Job(
+            id=str(job_id),
+            printer_id=printer_id,
+            image_payload=payload,
+            tape_mm=tape_mm,
+            options=dict(options),
+        )
+        JobStateMachine.transition(job, JobState.PAUSED)
+        self._jobs[str(job_id)] = job
+        logger.info("Job %s (extern-id) created paused on %s", job_id, printer_id)
+        return job_id
+
     async def submit_paused(
         self,
         printer_id: UUID,
@@ -292,8 +465,8 @@ class PrintQueue:
         logger.info("Job %s created paused on %s", job.id, printer_id)
         return job.id
 
-    async def get(self, job_id: str) -> Job:
-        return self._jobs[job_id]
+    async def get(self, job_id: str | UUID) -> Job:
+        return self._jobs[str(job_id)]
 
     async def wait_for_job(self, job_id: str, timeout_s: float = 60.0) -> Job:
         job = self._jobs[job_id]
@@ -513,6 +686,9 @@ class PrintQueue:
             if job.state != JobState.QUEUED:
                 continue
 
+            # Phase 2: DB-State QUEUED->PRINTING persistieren (bridge: dataclass.id ist str)
+            await self._store.mark_printing(UUID(job.id))
+
             try:
                 _from = job.state
                 JobStateMachine.transition(job, JobState.PRINTING)
@@ -532,6 +708,7 @@ class PrintQueue:
                 await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
                 _from = job.state
                 JobStateMachine.transition(job, JobState.COMPLETED)
+                await self._store.mark_done(UUID(job.id))  # Phase 2: DB-State persistieren
                 self._notify_state_change(
                     job,
                     _from,
@@ -564,6 +741,8 @@ class PrintQueue:
                         job.state,
                         exc,
                     )
+                # Phase 2: DB-State persistieren (auch wenn Transition fehlschlug)
+                await self._store.mark_failed(UUID(job.id), f"{code}: {msg}")
                 logger.exception("Job %s failed on %s (printer error)", job.id, printer_id)
                 if isinstance(exc, _RECOVERABLE_PRINTER_ERRORS):
                     # Halt the whole printer queue — user must change tape /
@@ -589,4 +768,6 @@ class PrintQueue:
                         job.state,
                         exc,
                     )
+                # Phase 2: DB-State persistieren (auch wenn Transition fehlschlug)
+                await self._store.mark_failed(UUID(job.id), str(exc))
                 logger.exception("Job %s failed on %s", job.id, printer_id)
