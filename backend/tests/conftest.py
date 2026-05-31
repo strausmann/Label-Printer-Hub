@@ -6,6 +6,9 @@ Hardware tests are skipped by default — pass `--hardware` to opt in.
 from __future__ import annotations
 
 import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlmodel import SQLModel
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -24,3 +27,22 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         if "hardware" in item.keywords:
             item.add_marker(skip_hardware)
+
+
+@pytest_asyncio.fixture
+async def async_session_factory(tmp_path):
+    """Async sessionmaker-Fixture für SQLiteJobStore Tests.
+
+    Erzeugt eine per-Test SQLite-DB (temp file, nicht :memory: für
+    Task-Isolation). Sichtbar für alle Tests unterhalb von tests/.
+    """
+    import app.models  # noqa: F401 — registriert alle Models bei SQLModel.metadata
+
+    db_path = tmp_path / "job_store_test.db"
+    url = f"sqlite+aiosqlite:///{db_path}"
+    engine = create_async_engine(url, echo=False, connect_args={"check_same_thread": False})
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    yield factory
+    await engine.dispose()
