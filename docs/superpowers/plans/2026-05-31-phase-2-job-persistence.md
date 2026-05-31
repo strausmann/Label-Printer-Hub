@@ -150,10 +150,9 @@ async def test_evict_terminal_older_than(db_session):
     deleted = await jobs_repo.evict_terminal_older_than(db_session, age=timedelta(days=30))
     assert deleted == 1
 
-    remaining_ids = {j.id for j in (await jobs_repo.list_active(db_session)) + [
-        await jobs_repo.get(db_session, young_done.id),
-    ]}
-    assert old_done.id not in remaining_ids
+    assert await jobs_repo.get(db_session, old_done.id) is None
+    assert await jobs_repo.get(db_session, young_done.id) is not None
+    assert await jobs_repo.get(db_session, queued.id) is not None
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -259,7 +258,23 @@ async def evict_terminal_older_than(
     return int(result.rowcount)  # type: ignore[attr-defined]
 ```
 
-Stelle sicher dass `from datetime import UTC, datetime, timedelta` und `from sqlalchemy import delete, update` und `from sqlmodel import col` oben in `jobs.py` importiert sind.
+- [ ] **Step 5a: Import-Zeilen in `jobs.py` ergaenzen (R2-m1)**
+
+Oeffne `backend/app/repositories/jobs.py`. Suche den Block mit den bestehenden Imports am Dateianfang.
+
+Bestehendes Statement `from sqlalchemy import select` ersetzen durch:
+
+```python
+from sqlalchemy import delete, select, update
+```
+
+Bestehendes Statement `from datetime import datetime` (oder `from datetime import UTC, datetime`) ersetzen durch (sofern nicht schon vollstaendig vorhanden):
+
+```python
+from datetime import UTC, datetime, timedelta
+```
+
+Sicherstellen dass `from sqlmodel import col, select, SQLModel` oder aequivalent `col` exportiert — `col` wird von `sqlmodel` re-exportiert und ist bereits in den bestehenden `list_*`-Funktionen in Gebrauch. Kein neuer Import noetig, nur `delete` + `update` zur `sqlalchemy`-Zeile hinzufuegen.
 
 - [ ] **Step 6: Run tests to verify they pass**
 
@@ -399,6 +414,11 @@ Expected: FAIL `ModuleNotFoundError: No module named 'app.services.job_store'`.
 
 - [ ] **Step 3: Create JobStore Protocol + MemoryJobStore**
 
+**Wichtig (R2-C1):** `job_store.py` importiert `from app.models.job import Job, JobState` — das
+ist der **SQLModel-DB-Job** aus `app/models/job.py` (UUID-id, `template_key`, `payload: dict`).
+**NICHT** `app.services.job_lifecycle.Job` (Dataclass mit `image_payload`, `_done_event`).
+Der Worker bridged via `str(job.id)` (Dataclass-id ist str) → `UUID(job.id)` im Store-Call.
+
 Datei: `backend/app/services/job_store.py`
 
 ```python
@@ -407,6 +427,12 @@ Datei: `backend/app/services/job_store.py`
 JobStore is the persistence boundary that PrintQueue uses to save job
 state transitions. SQLiteJobStore (production) implements this Protocol
 by delegating to jobs_repo. MemoryJobStore is the test/migration impl.
+
+Klärung (R2-C1): Alle Store-Methoden arbeiten auf app.models.job.Job
+(SQLModel, UUID-id). Der Worker-Code in print_queue.py verwendet
+app.services.job_lifecycle.Job (Dataclass, str-id). Bridge:
+  worker ruft self._store.mark_printing(str(job.id))
+  Store konvertiert intern: UUID(job_id_str)
 """
 
 from __future__ import annotations
@@ -779,9 +805,20 @@ class SQLiteJobStore(JobStore):
             return await jobs_repo.evict_terminal_older_than(session, age)
 ```
 
-- [ ] **Step 4: Add async_session_factory fixture (if missing)**
+- [ ] **Step 4: Add async_session_factory fixture to root conftest (OBLIGATORISCH — R2-C2+M8)**
 
-Pruefe `backend/tests/unit/services/conftest.py`. Falls keine `async_session_factory` Fixture: kopiere folgendes hinein:
+**NICHT** in `tests/unit/services/conftest.py` eintragen! Die Fixture muss in
+`backend/tests/conftest.py` (Root-Level) definiert werden, damit sie sowohl von
+Unit-Tests (Task 3) als auch von Integration-Tests (Task 6 `test_print_queue_recovery.py`)
+sichtbar ist. pytest-conftest-Sichtbarkeit: eine conftest.py gilt nur für Tests im gleichen
+Verzeichnis und darunter.
+
+Die bestehende `tests/integration/conftest.py` hat eine `db_session`-Fixture (einzelne
+AsyncSession), aber **keine** `async_sessionmaker`-Fixture namens `async_session_factory`.
+Die `tests/unit/services/conftest.py` hat ebenfalls keine solche Fixture.
+
+Füge folgendes in `backend/tests/conftest.py` ein (nach den bestehenden `pytest_addoption`/
+`pytest_collection_modifyitems` Funktionen):
 
 ```python
 import pytest_asyncio
@@ -790,8 +827,15 @@ from sqlmodel import SQLModel
 
 
 @pytest_asyncio.fixture
-async def async_session_factory():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+async def async_session_factory(tmp_path):
+    """Async sessionmaker-Fixture für SQLiteJobStore Tests.
+
+    Erzeugt eine per-Test SQLite-DB (temp file, nicht :memory: für
+    Task-Isolation). Sichtbar für alle Tests unterhalb von tests/.
+    """
+    db_path = tmp_path / "job_store_test.db"
+    url = f"sqlite+aiosqlite:///{db_path}"
+    engine = create_async_engine(url, echo=False, connect_args={"check_same_thread": False})
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -914,61 +958,86 @@ Import oben in `print_queue.py`:
 from app.services.job_store import JobStore
 ```
 
-- [ ] **Step 4: Add store.mark_printing/mark_done/mark_failed calls in worker**
+- [ ] **Step 4: Add store.mark_printing/mark_done/mark_failed calls in worker (R2-C3)**
 
-Suche in `print_queue.py` den `_worker` async-method. Im Inneren des while-Loops, an den existierenden State-Transitions:
+**KEIN** vereinfachter Pseudocode-Skelett — verwende die echte Datei-Struktur.
+Zeilennummern beziehen sich auf `backend/app/services/print_queue.py` (Stand Branch-Basis):
+
+**Insert 1 — nach Zeile ~513 (`if job.state != JobState.QUEUED: continue`):**
+Zwischen Skip-Check und `try:`-Block, direkt VOR `_from = job.state`:
 
 ```python
-async def _worker(self, printer_id: UUID) -> None:
-    queue = self._queues[printer_id]
-    while not self._stopping:
-        job = await queue.get()  # dataclass Job
+        # Phase 2: Skip-Check MUSS vor mark_printing bleiben (R2-C3, Spec R1-C3)
+        if job.state != JobState.QUEUED:
+            continue
 
-        # NEU: persist queued -> printing transition
+        # Phase 2: DB-State QUEUED->PRINTING persistieren (bridge: dataclass.id ist str)
         await self._store.mark_printing(job.id)
 
-        JobStateMachine.transition(job, JobState.PRINTING)
-        self._bus.publish(...)
-
         try:
-            await self._backend(printer_id).print_image(
-                Image.open(BytesIO(job.image_payload)),
-                tape_mm=job.tape_mm,
-                **job.options,
-            )
-            JobStateMachine.transition(job, JobState.COMPLETED)
-            # NEU: persist printing -> done
-            await self._store.mark_done(job.id)
-            self._bus.publish(...)
-        except PrinterError as exc:
-            JobStateMachine.transition(job, JobState.FAILED)
-            job.error_message = str(exc)
-            # NEU: persist printing -> failed
-            await self._store.mark_failed(job.id, str(exc))
-            self._bus.publish(...)
-
-        queue.task_done()
+            _from = job.state
+            JobStateMachine.transition(job, JobState.PRINTING)
 ```
 
-(Der Punkt ist: bei den drei Transitionen QUEUED->PRINTING / PRINTING->DONE / PRINTING->FAILED je einen `await self._store.mark_*()` Call ergaenzen. Adjustiere an die tatsaechliche bestehende Code-Struktur.)
+**Insert 2 — PRINTING->COMPLETED (nach `JobStateMachine.transition(job, JobState.COMPLETED)`, ca. Zeile 534):**
 
-- [ ] **Step 5: Run unit test to verify it passes**
+```python
+            JobStateMachine.transition(job, JobState.COMPLETED)
+            await self._store.mark_done(job.id)   # Phase 2: DB-State persistieren
+            self._notify_state_change(
+```
+
+**Insert 3 — PrinterError Handler (nach `JobStateMachine.transition(job, JobState.FAILED)`, ca. Zeile 553):**
+
+```python
+                except InvalidStateTransitionError:
+                    logger.warning(...)
+                # Phase 2: DB-State persistieren
+                await self._store.mark_failed(job.id, f"{code}: {msg}")
+                logger.exception("Job %s failed on %s (printer error)", ...)
+```
+
+**Insert 4 — Generic Exception Handler (nach `JobStateMachine.transition(job, JobState.FAILED)`, ca. Zeile 577):**
+
+```python
+                except InvalidStateTransitionError:
+                    logger.warning(...)
+                # Phase 2: DB-State persistieren
+                await self._store.mark_failed(job.id, str(exc))
+                logger.exception("Job %s failed on %s", ...)
+```
+
+**Bewahre vollständig:**
+- SNMP-Preflight Checks (`job.tape_mm is None`, `job.image_payload is None`)
+- Pause-Logik (`while self._worker_states[...] == PrinterWorkerState.PAUSED`)
+- Differenzierte PrinterError vs. Exception Handler inkl. `_RECOVERABLE_PRINTER_ERRORS` pause_printer-Call
+- `asyncio.CancelledError` re-raise
+- `_notify_state_change` Calls an allen Transitionen
+
+Kein `queue.task_done()` — der reale Worker ruft das nicht auf.
+
+- [ ] **Step 5: Run existing print_queue tests — adapt SOFORT nach Konstruktor-Änderung (R2-M1)**
+
+**Reihenfolge (R2-M1):** Bestehende Tests adapten DIREKT NACH Step 3, BEVOR neuer Test grün gemacht wird.
+Nach Step 3 schlägt die Suite mit `TypeError: __init__() got unexpected keyword argument` fehl —
+das muss zuerst behoben werden.
+
+Run:
+```bash
+cd backend && pytest tests/unit/services/ -k print_queue -v
+```
+Adapte alle bestehenden `PrintQueue(...)` Aufrufe in Tests indem `store=MemoryJobStore()` ergänzt wird.
+Nutze `grep -r "PrintQueue(" tests/` um alle Stellen zu finden.
+
+Expected danach: bestehende Tests wieder grün.
+
+- [ ] **Step 6: Run new unit test to verify it passes**
 
 Run:
 ```bash
 cd backend && pytest tests/unit/services/test_print_queue_persistence.py -v
 ```
 Expected: 2 PASS.
-
-- [ ] **Step 6: Run existing print_queue tests — adapt if needed**
-
-Run:
-```bash
-cd backend && pytest tests/unit/services/ -k print_queue -v
-```
-Existing tests werden vermutlich brechen weil `store` Parameter fehlt. Adapte alle bestehenden `PrintQueue(...)` Aufrufe in tests indem `store=MemoryJobStore()` ergaenzt wird.
-
-Expected danach: alle gruen.
 
 - [ ] **Step 7: Commit**
 
@@ -1065,19 +1134,23 @@ label_data = await self._resolve_label_data(request)
 image = self._renderer.render(template, label_data)
 
 # Phase 2: Persist BEFORE queue.submit
+# R2-M3: PrintRequest (app/schemas/print_request.py) hat KEINE api_key_id/source_ip Felder.
+# Diese kommen aus AuthContext (auth.api_key_id, auth.ip) — der Endpoint-Layer muss
+# submit_print_job(request, auth_context) erweitern oder PrintService bekommt auth_context.
+# Bis zur Klärung: None setzen, KEIN hasattr-Workaround.
 db_job = Job(
     printer_id=self._printer_id,
     template_key=request.template_id,
     payload={
-        "label_data": label_data.model_dump() if hasattr(label_data, "model_dump") else dict(label_data),
+        "label_data": label_data.model_dump(),
         "tape_mm": template.tape_mm,
         "options": {
             "auto_cut": request.options.auto_cut,
             "high_resolution": request.options.high_resolution,
         },
     },
-    api_key_id=request.api_key_id if hasattr(request, "api_key_id") else None,
-    source_ip=request.source_ip if hasattr(request, "source_ip") else None,
+    api_key_id=None,    # TODO: aus AuthContext übergeben wenn Endpoint-Layer angepasst
+    source_ip=None,     # TODO: aus AuthContext übergeben wenn Endpoint-Layer angepasst
 )
 await self._store.save_queued(db_job)
 
@@ -1204,9 +1277,9 @@ async def test_start_marks_printing_as_failed_restart(
         state=JobState.PRINTING.value,
     )
     await store.save_queued(interrupted_job)
-    # Force PRINTING state manually (since save_queued overrides)
+    # Force PRINTING state manually (since save_queued always sets QUEUED)
     async with async_session_factory() as s:
-        from sqlmodel import update
+        from sqlalchemy import update   # R2-M4: update kommt aus sqlalchemy, NICHT sqlmodel
         from sqlmodel import col
         await s.execute(
             update(Job).where(col(Job.id) == interrupted_job.id).values(
@@ -1314,14 +1387,17 @@ async def _rerender_from_db_job(self, db_job) -> Image.Image:
     """Phase 2: rerender label image from persisted template_key + payload.
 
     Called during start() recovery. Requires renderer + loader to be wired
-    via PrintQueue.set_renderer() — see lifespan.
+    via PrintQueue constructor — see lifespan.
     """
     if self._renderer is None or self._loader is None:
         raise RuntimeError(
-            "PrintQueue recovery requires renderer + loader (set via lifespan)"
+            "PrintQueue recovery requires renderer + loader (pass via constructor)"
         )
     template = self._loader.get(db_job.template_key)
-    label_data = db_job.payload.get("label_data", {})
+    # R2-C4: payload["label_data"] ist ein rohes dict (model_dump()).
+    # renderer.render() erwartet ein LabelData-Objekt — KEIN dict.
+    from app.schemas.label_data import LabelData
+    label_data = LabelData.model_validate(db_job.payload["label_data"])
     return self._renderer.render(template, label_data)
 ```
 
@@ -1401,7 +1477,8 @@ async def test_cleanup_initial_run_on_start():
     store.evict_terminal_older_than.return_value = 3
     task = CleanupTask(store=store, retention_days=30, interval=timedelta(seconds=99))
     await task.start()
-    await asyncio.sleep(0.05)  # let the initial run schedule
+    # stop() wartet intern auf den laufenden Task — nach stop() ist der
+    # erste evict_terminal_older_than-Call garantiert erfolgt.
     await task.stop(timeout_s=1.0)
 
     store.evict_terminal_older_than.assert_awaited()
@@ -1415,7 +1492,6 @@ async def test_cleanup_fail_soft_on_exception():
     store.evict_terminal_older_than.side_effect = RuntimeError("boom")
     task = CleanupTask(store=store, retention_days=30, interval=timedelta(seconds=99))
     await task.start()
-    await asyncio.sleep(0.05)
     await task.stop(timeout_s=1.0)
     # No exception propagated; loop survives
 ```
@@ -1549,9 +1625,14 @@ Refs #93"
 - Modify: `backend/app/main.py` (register batches router)
 - Test: `backend/tests/integration/test_batch_snapshot_endpoint.py`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing test (R2-C6)**
 
 Datei: `backend/tests/integration/test_batch_snapshot_endpoint.py`
+
+**Wichtig (R2-C6):** Fixtures `auth_client`, `sqlite_store`, `sample_batch_done`, `batch_with_ghost_ids`
+existieren NICHT in der integration conftest. Stattdessen:
+- `auth_client` → **`client`** (existiert in `tests/integration/conftest.py:222`)
+- `sample_batch_done` und `batch_with_ghost_ids` müssen **explizit in dieser Datei** definiert werden
 
 ```python
 """GET /api/batches/{id} liefert Snapshot mit Jobs + Summary."""
@@ -1561,20 +1642,77 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
+from app.models.job import Job, JobState
+from app.models.print_batch import PrintBatch
+from app.repositories import jobs as jobs_repo
 
+
+# --- Fixtures (R2-C6: explizit definiert, nicht aus nicht-existenter conftest) ---
+
+@pytest_asyncio.fixture
+async def sample_batch_done(db_session):
+    """2 DONE-Jobs + PrintBatch in der Test-DB."""
+    printer_id = uuid4()
+    j1 = await jobs_repo.create_queued(
+        db_session, printer_id=printer_id, template_key="t", payload={}
+    )
+    j2 = await jobs_repo.create_queued(
+        db_session, printer_id=printer_id, template_key="t", payload={}
+    )
+    await jobs_repo.mark_printing(db_session, j1.id)
+    await jobs_repo.mark_done(db_session, j1.id, result={})
+    await jobs_repo.mark_printing(db_session, j2.id)
+    await jobs_repo.mark_done(db_session, j2.id, result={})
+
+    batch = PrintBatch(
+        printer_id=printer_id,
+        job_ids=[str(j1.id), str(j2.id)],
+        created_by="test@example.com",
+    )
+    db_session.add(batch)
+    await db_session.commit()
+    await db_session.refresh(batch)
+    return batch
+
+
+@pytest_asyncio.fixture
+async def batch_with_ghost_ids(db_session):
+    """PrintBatch mit 3 job_ids, davon 2 nach Anlage gelöscht (Geister-IDs)."""
+    printer_id = uuid4()
+    j1 = await jobs_repo.create_queued(
+        db_session, printer_id=printer_id, template_key="t", payload={}
+    )
+    await jobs_repo.mark_printing(db_session, j1.id)
+    await jobs_repo.mark_done(db_session, j1.id, result={})
+
+    ghost_id_1 = str(uuid4())  # nie in DB eingetragen
+    ghost_id_2 = str(uuid4())  # nie in DB eingetragen
+
+    batch = PrintBatch(
+        printer_id=printer_id,
+        job_ids=[str(j1.id), ghost_id_1, ghost_id_2],
+        created_by="test@example.com",
+    )
+    db_session.add(batch)
+    await db_session.commit()
+    await db_session.refresh(batch)
+    return batch
+
+
+# --- Tests ---
 
 @pytest.mark.asyncio
-async def test_get_batch_returns_404_for_unknown(auth_client):
-    client, _ = auth_client
+async def test_get_batch_returns_404_for_unknown(client):
+    # client kommt aus tests/integration/conftest.py:222 (fake-auth, kein eigenes auth_client)
     resp = await client.get(f"/api/batches/{uuid4()}")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_get_batch_returns_summary_with_all_terminal(
-    auth_client, sqlite_store, sample_batch_done,
+    client, sample_batch_done,
 ):
-    client, _ = auth_client
     resp = await client.get(f"/api/batches/{sample_batch_done.id}")
     assert resp.status_code == 200
     body = resp.json()
@@ -1588,10 +1726,9 @@ async def test_get_batch_returns_summary_with_all_terminal(
 
 @pytest.mark.asyncio
 async def test_get_batch_jobs_in_batch_order(
-    auth_client, sample_batch_done,
+    client, sample_batch_done,
 ):
     """Job-Reihenfolge im Response entspricht batch.job_ids Array, nicht DB-default."""
-    client, _ = auth_client
     resp = await client.get(f"/api/batches/{sample_batch_done.id}")
     body = resp.json()
     received_ids = [j["id"] for j in body["jobs"]]
@@ -1600,15 +1737,12 @@ async def test_get_batch_jobs_in_batch_order(
 
 
 @pytest.mark.asyncio
-async def test_get_batch_handles_missing_jobs(auth_client, batch_with_ghost_ids):
-    """Wenn Jobs vom Cleanup geloescht sind, werden sie uebersprungen."""
-    client, _ = auth_client
+async def test_get_batch_handles_missing_jobs(client, batch_with_ghost_ids):
+    """Wenn Jobs vom Cleanup geloescht sind (Geister-IDs), werden sie uebersprungen."""
     resp = await client.get(f"/api/batches/{batch_with_ghost_ids.id}")
     body = resp.json()
     assert body["summary"]["total"] < len(batch_with_ghost_ids.job_ids)
 ```
-
-Fixture `sample_batch_done` legt 2 Jobs in DONE State + Batch mit deren ids an. `batch_with_ghost_ids` legt Batch mit 3 job_ids an, davon werden 2 nach Anlage geloescht.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1678,7 +1812,7 @@ class BatchRead(BaseModel):
 
     id: UUID
     printer_id: UUID
-    created_by: UUID | None
+    created_by: str | None  # R2-C5: PrintBatch.created_by ist str (SSO-Email oder API-Key-ID), kein UUID
     created_at: datetime
     jobs: list[JobRead]
     summary: BatchSummary
@@ -1796,17 +1930,30 @@ Refs #93"
 **Files:**
 - Modify: `backend/app/main.py` — `lifespan` context
 
-- [ ] **Step 1: Wire JobStore + CleanupTask + PrintQueue in lifespan**
+- [ ] **Step 1: Wire JobStore + CleanupTask + PrintQueue in lifespan (R2-M5)**
 
-In `backend/app/main.py` finde den `lifespan` async-context-manager. Erweitere:
+**Konkrete Änderungen in `backend/app/main.py`.**
+
+Lese die Datei ZUERST um die realen Zeilennummern zu verifizieren (Stand 2026-05-31 ca. Zeile 304-344).
+
+Reale Variable aus `app/db/engine.py` importiert: `async_session` (eine `async_sessionmaker`).
+**NICHT** `async_session_factory` — diese Variable existiert nicht im Lifespan (R2-M5).
+
+Imports oben in `main.py` ergänzen:
+```python
+from app.services.job_store_sqlite import SQLiteJobStore
+from app.services.cleanup_task import CleanupTask
+```
+
+Änderungen im Lifespan (Insertion NACH `recover_inflight_jobs` entfernen, BEFORE queue-Setup,
+ca. um Zeile 273 nach dem `async with async_session() as s:` Block):
 
 ```python
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # ... existing engine + session_factory setup ...
+    # Phase 2: recover_inflight_jobs() ENTFERNT (Spec R1-C1) — PrintQueue.start() übernimmt
 
     # Phase 2: JobStore + CleanupTask
-    job_store = SQLiteJobStore(async_session_factory)
+    # 'async_session' ist die async_sessionmaker aus app.db.engine (R2-M5 — NICHT async_session_factory)
+    job_store = SQLiteJobStore(async_session)
 
     cleanup_task = CleanupTask(
         store=job_store,
@@ -1814,43 +1961,44 @@ async def lifespan(app: FastAPI):
     )
     await cleanup_task.start()
     app.state.cleanup_task = cleanup_task
-
-    # PrintQueue NUTZT jetzt store + renderer + loader fuer Recovery
-    print_queue = PrintQueue(
-        printer_ids=...,
-        backend_factory=...,
-        bus=event_bus,
-        store=job_store,                  # NEU
-        renderer=label_renderer,          # NEU
-        loader=template_loader,           # NEU
-    )
-    await print_queue.start()
-
-    # PrintService ebenfalls
-    print_service = PrintService(
-        printer_id=...,
-        queue=print_queue,
-        renderer=label_renderer,
-        loader=template_loader,
-        backend=...,
-        store=job_store,                  # NEU
-    )
-
-    app.state.print_queue = print_queue
-    app.state.print_service = print_service
-    app.state.job_store = job_store
-
-    yield
-
-    await cleanup_task.stop()
-    await print_queue.stop()
-    await event_bus.aclose()
 ```
 
-Imports oben:
+PrintQueue-Instantiierung (echte Signatur — R2-M5):
 ```python
-from app.services.job_store_sqlite import SQLiteJobStore
-from app.services.cleanup_task import CleanupTask
+    # Reale PrintQueue-Signatur: PrintQueue(printers=[printer], on_state_change=...)
+    # KEIN printer_ids / backend_factory — die Signatur existiert nicht
+    queue = PrintQueue(
+        printers=[printer],                              # existiert bereits
+        on_state_change=pq_producer.handle_transition,  # existiert bereits
+        store=job_store,                                 # NEU
+        renderer=shared_renderer,                        # NEU — für Recovery
+        loader=TemplateLoader,                           # NEU — für Recovery
+    )
+    await queue.start()  # ruft intern mark_interrupted + list_pending
+```
+
+PrintService-Instantiierung (echte Parameter-Namen aus `print_service.py`):
+```python
+    app.state.print_service = PrintService(
+        template_loader=TemplateLoader,    # bestehend
+        renderer=shared_renderer,          # bestehend
+        print_queue=queue,                 # bestehend
+        lookup_service=AppLookupService(), # bestehend
+        printer_id=printer.id,             # bestehend
+        backend=backend,                   # bestehend
+        store=job_store,                   # NEU
+    )
+```
+
+Shutdown-Block (vor `queue.stop()`):
+```python
+    finally:
+        if status_producer is not None:
+            await status_producer.stop()
+        await cleanup_task.stop()    # NEU — CleanupTask vor Queue stoppen
+        await queue.stop(timeout_s=settings.printer_queue_timeout_s)
+        await engine.dispose()
+        ...
 ```
 
 - [ ] **Step 2: Run full test suite — verify no regressions**
