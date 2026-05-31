@@ -40,6 +40,7 @@ from app.services.job_lifecycle import (
     JobState,
     JobStateMachine,
 )
+from app.services.job_store import JobStore, MemoryJobStore
 
 
 # Callback type: called after each state transition.  The optional queue_depth
@@ -134,8 +135,10 @@ class PrintQueue:
         self,
         printers: list[_PrinterLike],
         on_state_change: _StateChangeCallback | None = None,
+        store: JobStore | None = None,
     ) -> None:
         self._on_state_change = on_state_change
+        self._store: JobStore = store if store is not None else MemoryJobStore()
         self._printers: dict[UUID, _PrinterLike] = {p.id: p for p in printers}
         # Queue type is Job | None — None is the sentinel used by stop() to wake
         # workers that are blocked at queue.get().
@@ -513,6 +516,9 @@ class PrintQueue:
             if job.state != JobState.QUEUED:
                 continue
 
+            # Phase 2: DB-State QUEUED->PRINTING persistieren (bridge: dataclass.id ist str)
+            await self._store.mark_printing(UUID(job.id))
+
             try:
                 _from = job.state
                 JobStateMachine.transition(job, JobState.PRINTING)
@@ -532,6 +538,7 @@ class PrintQueue:
                 await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
                 _from = job.state
                 JobStateMachine.transition(job, JobState.COMPLETED)
+                await self._store.mark_done(UUID(job.id))  # Phase 2: DB-State persistieren
                 self._notify_state_change(
                     job,
                     _from,
@@ -564,6 +571,8 @@ class PrintQueue:
                         job.state,
                         exc,
                     )
+                # Phase 2: DB-State persistieren (auch wenn Transition fehlschlug)
+                await self._store.mark_failed(UUID(job.id), f"{code}: {msg}")
                 logger.exception("Job %s failed on %s (printer error)", job.id, printer_id)
                 if isinstance(exc, _RECOVERABLE_PRINTER_ERRORS):
                     # Halt the whole printer queue — user must change tape /
@@ -589,4 +598,6 @@ class PrintQueue:
                         job.state,
                         exc,
                     )
+                # Phase 2: DB-State persistieren (auch wenn Transition fehlschlug)
+                await self._store.mark_failed(UUID(job.id), str(exc))
                 logger.exception("Job %s failed on %s", job.id, printer_id)
