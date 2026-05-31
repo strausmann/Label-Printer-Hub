@@ -108,7 +108,7 @@ class PrintService:
             # AuthContext-Integration folgt in einem späteren Task.
             label_data = await self._resolve_label_data(request)
             image = self._renderer.render(template, label_data)
-            paused_job_id = Job(  # noqa: F841  — id wird aus submit_paused_with_id geholt
+            paused_job_id = Job(
                 printer_id=self._printer_id,
                 template_key=request.template_id,
                 payload={
@@ -119,8 +119,8 @@ class PrintService:
                         "high_resolution": request.options.high_resolution,
                     },
                 },
-                api_key_id=None,   # TODO: aus AuthContext wenn Endpoint-Layer angepasst
-                source_ip=None,    # TODO: aus AuthContext wenn Endpoint-Layer angepasst
+                api_key_id=None,  # TODO: aus AuthContext wenn Endpoint-Layer angepasst
+                source_ip=None,  # TODO: aus AuthContext wenn Endpoint-Layer angepasst
             )
             # Keine save_queued() — Job bleibt in-memory-only bis resume.
             await self._queue.submit_paused_with_id(
@@ -158,8 +158,8 @@ class PrintService:
                     "high_resolution": request.options.high_resolution,
                 },
             },
-            api_key_id=None,   # TODO: aus AuthContext wenn Endpoint-Layer angepasst
-            source_ip=None,    # TODO: aus AuthContext wenn Endpoint-Layer angepasst
+            api_key_id=None,  # TODO: aus AuthContext wenn Endpoint-Layer angepasst
+            source_ip=None,  # TODO: aus AuthContext wenn Endpoint-Layer angepasst
         )
         await self._store.save_queued(db_job)
         try:

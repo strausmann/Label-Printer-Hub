@@ -22,11 +22,14 @@ import logging
 import uuid
 from enum import StrEnum
 from io import BytesIO
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from uuid import UUID
 
 from PIL import Image
+from pydantic import ValidationError
 
+from app.models.job import Job as DbJob
+from app.models.job import JobState as DbJobState
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterError,
@@ -36,10 +39,6 @@ from app.printer_backends.exceptions import (
     TapeEmptyError,
     TapeMismatchError,
 )
-from pydantic import ValidationError
-
-from app.models.job import Job as DbJob
-from app.models.job import JobState as DbJobState
 from app.services.job_lifecycle import (
     InvalidStateTransitionError,
     Job,
@@ -50,8 +49,6 @@ from app.services.job_store import JobStore, MemoryJobStore
 
 # TYPE_CHECKING-Block verhindert zirkuläre Imports zur Laufzeit.
 # LabelRenderer und TemplateLoader sind nur für die Recovery-Methode nötig.
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
     from app.services.label_renderer import LabelRenderer
     from app.services.template_loader import TemplateLoader
@@ -234,13 +231,11 @@ class PrintQueue:
                         image = await self._rerender_from_db_job(db_job)
                     except (KeyError, ValidationError, TemplateNotFoundError) as exc:
                         logger.warning(
-                            "Recovery: Job %s kann nicht neu gerendert werden (%s), wird als FAILED markiert",
+                            "Recovery: Job %s rerender fehlgeschlagen (%s), FAILED",
                             db_job.id,
                             exc.__class__.__name__,
                         )
-                        await self._store.mark_failed(
-                            db_job.id, f"recovery_rerender_failed: {exc}"
-                        )
+                        await self._store.mark_failed(db_job.id, f"recovery_rerender_failed: {exc}")
                         continue
                     payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
                     wrapper = Job(

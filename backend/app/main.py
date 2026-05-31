@@ -76,6 +76,7 @@ import app.integrations as _integrations_init  # triggers integration plugin dis
 from app import __version__
 from app.api.error_handlers import register_error_handlers
 from app.api.routes import batch as batch_routes
+from app.api.routes import batches as batches_routes
 from app.api.routes import events as events_routes
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
@@ -597,6 +598,7 @@ def create_app() -> _LifespanManager:
     register_error_handlers(app)
     app.include_router(print_router)
     app.include_router(batch_routes.router)
+    app.include_router(batches_routes.router)
     app.include_router(events_routes.router)
     app.include_router(printers_routes.router)
     app.include_router(templates_routes.router)

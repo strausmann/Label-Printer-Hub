@@ -47,7 +47,15 @@ async def _temp_db_engine(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  #
     is a relative path that does not exist in CI.  The temp engine already has
     the full schema via SQLModel.metadata.create_all(), so migrations are
     redundant here.
+
+    Phase 2 (Task 8): app.db.session imports async_session at module-load time
+    via `from app.db.engine import async_session`. This creates a local binding
+    in session.py that is NOT updated when _engine_module.async_session is
+    patched. Routes using get_session() need the patched session factory, so we
+    patch app.db.session.async_session here too.
     """
+    import app.db.session as _session_module
+
     db_path = tmp_path / "integ_test.db"
     url = f"sqlite+aiosqlite:///{db_path}"
     eng = create_async_engine(url, echo=False, connect_args={"check_same_thread": False})
@@ -59,6 +67,7 @@ async def _temp_db_engine(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  #
     monkeypatch.setattr(_engine_module, "async_session", sess)
     monkeypatch.setattr(_main_module, "engine", eng)
     monkeypatch.setattr(_main_module, "async_session", sess)
+    monkeypatch.setattr(_session_module, "async_session", sess)
     # Alembic reads alembic.ini directly (sqlalchemy.url = ./data/hub.db),
     # bypassing the patched engine above.  Skip it — create_all() above is
     # the authoritative schema source for integration tests.

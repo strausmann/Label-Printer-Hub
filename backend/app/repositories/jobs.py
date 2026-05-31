@@ -209,6 +209,21 @@ async def mark_printing_as_failed_restart(
     return int(result.rowcount)  # type: ignore[attr-defined]
 
 
+async def list_by_ids(
+    session: AsyncSession,
+    job_ids: list[UUID],
+) -> list[Job]:
+    """Bulk-Fetch jobs by ids — order not guaranteed, caller re-orders.
+
+    Phase 2: used by GET /api/batches/{id} to load all jobs referenced
+    by a PrintBatch.job_ids list in a single SQL query.
+    """
+    if not job_ids:
+        return []
+    result = await session.execute(select(Job).where(col(Job.id).in_(job_ids)))
+    return list(result.scalars())
+
+
 async def evict_terminal_older_than(
     session: AsyncSession,
     age: timedelta,
