@@ -56,6 +56,7 @@ async def get_batch(
         failed=sum(
             1 for j in ordered if j.state in (JobState.FAILED.value, JobState.FAILED_RESTART.value)
         ),
+        cancelled=sum(1 for j in ordered if j.state == JobState.CANCELLED.value),
     )
 
     return BatchRead(

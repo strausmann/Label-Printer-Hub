@@ -25,6 +25,7 @@ class BatchSummary(BaseModel):
     printing: int
     done: int
     failed: int  # zählt FAILED + FAILED_RESTART
+    cancelled: int
     all_terminal: bool = False  # wird in model_validator gesetzt
 
     @model_validator(mode="after")
