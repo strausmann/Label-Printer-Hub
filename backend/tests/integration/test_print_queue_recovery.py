@@ -144,3 +144,114 @@ async def test_start_reenqueues_queued_jobs_in_fifo_order(
     assert recovered_ids == [str(j1.id), str(j2.id)]
 
     await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_recovery_skips_jobs_with_missing_label_data(
+    async_session_factory,
+):
+    """C-1: Job mit payload={} (kein label_data) darf Recovery nicht abbrechen.
+
+    Erwartet:
+    - Der fehlerhafte Job wird als FAILED markiert (error enthält
+      'recovery_rerender_failed').
+    - Ein weiterer QUEUED-Job mit gültigem Payload wird trotzdem re-enqueued.
+    """
+    store = SQLiteJobStore(async_session_factory)
+    printer_id = uuid4()
+
+    # Job ohne label_data — simuliert alte Pre-Phase-2-Row oder korrupte Daten
+    bad_job = Job(printer_id=printer_id, template_key="t", payload={})
+    await store.save_queued(bad_job)
+
+    # Gültiger Job der trotzdem verarbeitet werden soll
+    good_job = Job(printer_id=printer_id, template_key="t", payload=_SAMPLE_PAYLOAD)
+    await store.save_queued(good_job)
+
+    renderer, loader = _make_mock_renderer_and_loader()
+    fake_printer = _FakePrinter(printer_id)
+    queue = PrintQueue(
+        printers=[fake_printer],
+        store=store,
+        renderer=renderer,
+        loader=loader,
+    )
+    await queue.start()
+
+    # bad_job muss als FAILED in der DB stehen
+    fetched_bad = await store.get(bad_job.id)
+    assert fetched_bad is not None
+    assert fetched_bad.state == JobState.FAILED.value
+    assert fetched_bad.error is not None
+    assert "recovery_rerender_failed" in fetched_bad.error
+
+    # good_job muss in _jobs registriert worden sein (Recovery hat ihn enqueued).
+    # Wir prüfen _jobs statt die asyncio.Queue, weil der Worker den Job bereits
+    # konsumiert haben könnte (gleicher Event-Loop, aber Worker-Task darf aufwachen).
+    assert str(good_job.id) in queue._jobs
+
+    await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_recovery_skips_jobs_with_deleted_template(
+    async_session_factory,
+):
+    """I-2: Job mit nicht mehr existierendem Template darf Recovery nicht abbrechen.
+
+    loader.get() wirft TemplateNotFoundError für den fehlerhaften Job.
+    Erwartet:
+    - Der fehlerhafte Job wird als FAILED markiert.
+    - Ein weiterer QUEUED-Job mit gültigem Template wird trotzdem re-enqueued.
+    """
+    from app.services.template_loader import TemplateNotFoundError
+
+    store = SQLiteJobStore(async_session_factory)
+    printer_id = uuid4()
+
+    deleted_template_job = Job(
+        printer_id=printer_id,
+        template_key="nonexistent",
+        payload=_SAMPLE_PAYLOAD,
+    )
+    await store.save_queued(deleted_template_job)
+
+    good_job = Job(printer_id=printer_id, template_key="t", payload=_SAMPLE_PAYLOAD)
+    await store.save_queued(good_job)
+
+    mock_template = MagicMock()
+    mock_template.tape_mm = 24
+    mock_template.elements = []
+
+    loader = MagicMock()
+
+    def _get_side_effect(key: str):
+        if key == "nonexistent":
+            raise TemplateNotFoundError(key)
+        return mock_template
+
+    loader.get.side_effect = _get_side_effect
+
+    renderer = MagicMock()
+    renderer.render.return_value = Image.new("1", (200, 106))
+
+    fake_printer = _FakePrinter(printer_id)
+    queue = PrintQueue(
+        printers=[fake_printer],
+        store=store,
+        renderer=renderer,
+        loader=loader,
+    )
+    await queue.start()
+
+    # deleted_template_job muss als FAILED in der DB stehen
+    fetched_deleted = await store.get(deleted_template_job.id)
+    assert fetched_deleted is not None
+    assert fetched_deleted.state == JobState.FAILED.value
+    assert fetched_deleted.error is not None
+    assert "recovery_rerender_failed" in fetched_deleted.error
+
+    # good_job muss in _jobs registriert worden sein (Recovery hat ihn enqueued).
+    assert str(good_job.id) in queue._jobs
+
+    await queue.stop()

@@ -36,7 +36,10 @@ from app.printer_backends.exceptions import (
     TapeEmptyError,
     TapeMismatchError,
 )
+from pydantic import ValidationError
+
 from app.models.job import Job as DbJob
+from app.models.job import JobState as DbJobState
 from app.services.job_lifecycle import (
     InvalidStateTransitionError,
     Job,
@@ -52,6 +55,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.services.label_renderer import LabelRenderer
     from app.services.template_loader import TemplateLoader
+
+# TemplateNotFoundError wird zur Laufzeit benötigt (Recovery-Loop catch), daher
+# kein TYPE_CHECKING-Block — aber lazy import um Zirkel zu vermeiden.
+from app.services.template_loader import TemplateNotFoundError
 
 
 # Callback type: called after each state transition.  The optional queue_depth
@@ -199,23 +206,42 @@ class PrintQueue:
     async def start(self) -> None:
         if self._running:
             return
-
-        # Phase 2 Recovery: unterbrochene PRINTING-Jobs markieren + QUEUED re-enqueuen.
-        # mark_interrupted MUSS vor list_pending aufgerufen werden, damit die alten
-        # PRINTING-Jobs NICHT in list_pending zurückkommen.
-        for printer_id in self._queues:
-            interrupted = await self._store.mark_interrupted(printer_id)
-            if interrupted > 0:
-                logger.warning(
-                    "Recovery: %d PRINTING-Jobs auf Drucker %s als FAILED_RESTART markiert",
-                    interrupted,
-                    printer_id,
-                )
-            pending_db_jobs = await self._store.list_pending(printer_id)
-            for db_job in pending_db_jobs:
-                if db_job.state == "queued":
-                    # Bild aus template_key + payload neu rendern
-                    image = await self._rerender_from_db_job(db_job)
+        # I-1: Race-Guard — sofort setzen bevor erster await, damit ein zweiter
+        # gleichzeitiger start()-Aufruf am Guard oben scheitert.
+        self._running = True
+        try:
+            # Phase 2 Recovery: unterbrochene PRINTING-Jobs markieren + QUEUED re-enqueuen.
+            # mark_interrupted MUSS vor list_pending aufgerufen werden, damit die alten
+            # PRINTING-Jobs NICHT in list_pending zurückkommen.
+            for printer_id in self._queues:
+                interrupted = await self._store.mark_interrupted(printer_id)
+                if interrupted > 0:
+                    logger.warning(
+                        "Recovery: %d PRINTING-Jobs auf Drucker %s als FAILED_RESTART markiert",
+                        interrupted,
+                        printer_id,
+                    )
+                pending_db_jobs = await self._store.list_pending(printer_id)
+                for db_job in pending_db_jobs:
+                    # S-1: StrEnum-Konsistenz — DbJobState.QUEUED.value statt String-Literal
+                    if db_job.state != DbJobState.QUEUED.value:
+                        continue
+                    # C-1/I-2: fehlerhafte/veraltete Rows dürfen die Recovery nicht abbrechen.
+                    # KeyError (fehlendes label_data), ValidationError (ungültige Struktur),
+                    # TemplateNotFoundError (Template inzwischen gelöscht) → Job FAILED markieren
+                    # und mit dem nächsten Job weitermachen.
+                    try:
+                        image = await self._rerender_from_db_job(db_job)
+                    except (KeyError, ValidationError, TemplateNotFoundError) as exc:
+                        logger.warning(
+                            "Recovery: Job %s kann nicht neu gerendert werden (%s), wird als FAILED markiert",
+                            db_job.id,
+                            exc.__class__.__name__,
+                        )
+                        await self._store.mark_failed(
+                            db_job.id, f"recovery_rerender_failed: {exc}"
+                        )
+                        continue
                     payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
                     wrapper = Job(
                         id=str(db_job.id),
@@ -232,11 +258,15 @@ class PrintQueue:
                         printer_id,
                     )
 
-        for printer_id in self._queues:
-            self._workers[printer_id] = asyncio.create_task(
-                self._worker(printer_id), name=f"printer-worker-{printer_id}"
-            )
-        self._running = True
+            for printer_id in self._queues:
+                self._workers[printer_id] = asyncio.create_task(
+                    self._worker(printer_id), name=f"printer-worker-{printer_id}"
+                )
+        except Exception:
+            # I-1: Bei Recovery-Fehler _running zurücksetzen, damit ein erneuter
+            # start()-Aufruf nicht am Guard scheitert.
+            self._running = False
+            raise
 
     async def _rerender_from_db_job(self, db_job: DbJob) -> Image.Image:
         """Phase 2: Label-Bild aus persistiertem template_key + payload neu rendern.
