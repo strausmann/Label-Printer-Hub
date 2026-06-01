@@ -36,14 +36,15 @@ func (h *PageHandler) PrinterDetailWithID(w http.ResponseWriter, r *http.Request
 		queue   []map[string]any
 	)
 
+	authClient := h.client.WithAuthFrom(r)
 	g, ctx := errgroup.WithContext(r.Context())
 
 	g.Go(func() (err error) {
-		printer, err = h.client.GetPrinterDetail(ctx, id)
+		printer, err = authClient.GetPrinterDetail(ctx, id)
 		return
 	})
 	g.Go(func() (err error) {
-		status, err = h.client.GetPrinterStatus(ctx, id)
+		status, err = authClient.GetPrinterStatus(ctx, id)
 		// Status may be a 404 on unknown printer; also non-fatal when just unavailable.
 		if errors.Is(err, api.ErrNotFound) {
 			status = nil
@@ -52,7 +53,7 @@ func (h *PageHandler) PrinterDetailWithID(w http.ResponseWriter, r *http.Request
 		return
 	})
 	g.Go(func() (err error) {
-		tape, err = h.client.GetPrinterTape(ctx, id)
+		tape, err = authClient.GetPrinterTape(ctx, id)
 		// Tape absent is non-fatal (e.g. not yet measured).
 		if errors.Is(err, api.ErrNotFound) {
 			tape = nil
@@ -61,7 +62,7 @@ func (h *PageHandler) PrinterDetailWithID(w http.ResponseWriter, r *http.Request
 		return
 	})
 	g.Go(func() (err error) {
-		queue, err = h.client.GetPrinterQueue(ctx, id)
+		queue, err = authClient.GetPrinterQueue(ctx, id)
 		// Queue absent is non-fatal.
 		if errors.Is(err, api.ErrNotFound) {
 			queue = nil

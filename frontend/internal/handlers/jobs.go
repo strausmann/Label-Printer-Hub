@@ -49,7 +49,7 @@ func (h *PageHandler) JobsList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	jobs, err := h.client.ListJobs(r.Context(), params)
+	jobs, err := h.client.WithAuthFrom(r).ListJobs(r.Context(), params)
 	if err != nil {
 		h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error())
 		return

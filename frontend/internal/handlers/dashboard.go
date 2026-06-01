@@ -20,7 +20,7 @@ type DashboardData struct {
 // template (full page on first load, fragment-only on HTMX refresh), and
 // returns 503 Service Unavailable if the backend is unreachable.
 func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
-	printers, err := h.client.ListPrinters(r.Context())
+	printers, err := h.client.WithAuthFrom(r).ListPrinters(r.Context())
 	if err != nil {
 		h.renderError(w, r,
 			http.StatusServiceUnavailable,

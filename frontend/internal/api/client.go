@@ -28,10 +28,13 @@ import (
 // methods, structured logging, and sentinel errors.
 //
 // Use NewHubClient to construct.
+// Use WithAuthFrom to create a scoped copy that forwards auth headers from an
+// incoming browser request to all outgoing backend calls.
 type HubClient struct {
-	gen     *ClientWithResponses
-	hc      *http.Client // shared client used for raw requests (RenderPreview, CheckHealth)
-	baseURL string
+	gen         *ClientWithResponses
+	hc          *http.Client // shared client used for raw requests (RenderPreview, CheckHealth)
+	baseURL     string
+	authHeaders map[string]string // auth headers injected into every backend call
 }
 
 var (
@@ -63,6 +66,61 @@ func (c *HubClient) BaseURL() string {
 	return c.baseURL
 }
 
+// WithAuthFrom returns a new HubClient that copies auth-related headers from
+// the incoming browser request into every outgoing backend call.
+//
+// The headers forwarded are:
+//   - X-Label-Hub-Key   — API-key auth (Phase 7c)
+//   - X-Pangolin-User   — Pangolin SSO session token
+//   - Authorization     — Pangolin Basic-Auth bypass (claude-automation)
+//
+// This is required because the frontend-to-backend calls are internal
+// (Docker-network, no Pangolin in between) and the backend's Phase 7c auth
+// middleware rejects requests that carry none of these headers with 401.
+//
+// The original HubClient is not mutated; the returned copy shares the same
+// underlying http.Client and gen client but adds a RequestEditorFn that
+// injects the auth headers.
+func (c *HubClient) WithAuthFrom(r *http.Request) *HubClient {
+	headers := make(map[string]string, 3)
+	for _, h := range []string{"X-Label-Hub-Key", "X-Pangolin-User", "Authorization"} {
+		if v := r.Header.Get(h); v != "" {
+			headers[h] = v
+		}
+	}
+	return &HubClient{
+		gen:         c.gen,
+		hc:          c.hc,
+		baseURL:     c.baseURL,
+		authHeaders: headers,
+	}
+}
+
+// authEditor returns a RequestEditorFn that injects the stored auth headers
+// into every outgoing request. Returns nil when no auth headers are configured
+// (no-auth path — tests, health-checks).
+func (c *HubClient) authEditor() RequestEditorFn {
+	if len(c.authHeaders) == 0 {
+		return nil
+	}
+	headers := c.authHeaders // capture for closure
+	return func(_ context.Context, req *http.Request) error {
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		return nil
+	}
+}
+
+// editors returns the RequestEditorFn slice to pass to generated client methods.
+// Empty when no auth headers are configured.
+func (c *HubClient) editors() []RequestEditorFn {
+	if ed := c.authEditor(); ed != nil {
+		return []RequestEditorFn{ed}
+	}
+	return nil
+}
+
 func logCall(op string, start time.Time, err error) {
 	slog.Debug("backend call", "op", op, "ms", time.Since(start).Milliseconds(), "err", err)
 }
@@ -70,7 +128,7 @@ func logCall(op string, start time.Time, err error) {
 // ListPrinters returns all printers from GET /api/printers.
 func (c *HubClient) ListPrinters(ctx context.Context) ([]PrinterRead, error) {
 	start := time.Now()
-	resp, err := c.gen.ListPrintersApiPrintersGetWithResponse(ctx)
+	resp, err := c.gen.ListPrintersApiPrintersGetWithResponse(ctx, c.editors()...)
 	logCall("ListPrinters", start, err)
 	if err != nil {
 		return nil, err
@@ -88,7 +146,7 @@ func (c *HubClient) GetPrinterDetail(ctx context.Context, id string) (*PrinterRe
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	resp, err := c.gen.GetPrinterApiPrintersPrinterIdGetWithResponse(ctx, uid)
+	resp, err := c.gen.GetPrinterApiPrintersPrinterIdGetWithResponse(ctx, uid, c.editors()...)
 	logCall("GetPrinterDetail", start, err)
 	if err != nil {
 		return nil, err
@@ -109,7 +167,7 @@ func (c *HubClient) GetPrinterStatus(ctx context.Context, id string) (*PrinterSt
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	resp, err := c.gen.GetPrinterStatusApiPrintersPrinterIdStatusGetWithResponse(ctx, uid)
+	resp, err := c.gen.GetPrinterStatusApiPrintersPrinterIdStatusGetWithResponse(ctx, uid, c.editors()...)
 	logCall("GetPrinterStatus", start, err)
 	if err != nil {
 		return nil, err
@@ -130,7 +188,7 @@ func (c *HubClient) GetPrinterTape(ctx context.Context, id string) (map[string]a
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	resp, err := c.gen.GetPrinterTapeApiPrintersPrinterIdTapeGetWithResponse(ctx, uid)
+	resp, err := c.gen.GetPrinterTapeApiPrintersPrinterIdTapeGetWithResponse(ctx, uid, c.editors()...)
 	logCall("GetPrinterTape", start, err)
 	if err != nil {
 		return nil, err
@@ -151,7 +209,7 @@ func (c *HubClient) GetPrinterQueue(ctx context.Context, id string) ([]map[strin
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	resp, err := c.gen.GetPrinterQueueApiPrintersPrinterIdQueueGetWithResponse(ctx, uid)
+	resp, err := c.gen.GetPrinterQueueApiPrintersPrinterIdQueueGetWithResponse(ctx, uid, c.editors()...)
 	logCall("GetPrinterQueue", start, err)
 	if err != nil {
 		return nil, err
@@ -165,7 +223,7 @@ func (c *HubClient) GetPrinterQueue(ctx context.Context, id string) ([]map[strin
 // ListJobs returns jobs matching the given filters from GET /api/jobs.
 func (c *HubClient) ListJobs(ctx context.Context, params *ListJobsApiJobsGetParams) ([]JobRead, error) {
 	start := time.Now()
-	resp, err := c.gen.ListJobsApiJobsGetWithResponse(ctx, params)
+	resp, err := c.gen.ListJobsApiJobsGetWithResponse(ctx, params, c.editors()...)
 	logCall("ListJobs", start, err)
 	if err != nil {
 		return nil, err
@@ -183,7 +241,7 @@ func (c *HubClient) GetJob(ctx context.Context, id string) (*JobRead, error) {
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	resp, err := c.gen.GetJobApiJobsJobIdGetWithResponse(ctx, uid)
+	resp, err := c.gen.GetJobApiJobsJobIdGetWithResponse(ctx, uid, c.editors()...)
 	logCall("GetJob", start, err)
 	if err != nil {
 		return nil, err
@@ -204,7 +262,7 @@ func (c *HubClient) RetryJob(ctx context.Context, id string) (string, error) {
 	if err != nil {
 		return "", ErrNotFound
 	}
-	resp, err := c.gen.RetryJobApiJobsJobIdRetryPostWithResponse(ctx, uid)
+	resp, err := c.gen.RetryJobApiJobsJobIdRetryPostWithResponse(ctx, uid, c.editors()...)
 	logCall("RetryJob", start, err)
 	if err != nil {
 		return "", err
@@ -225,7 +283,7 @@ func (c *HubClient) ListTemplates(ctx context.Context, app string) ([]TemplateRe
 	if app != "" {
 		params = &ListTemplatesApiTemplatesGetParams{App: &app}
 	}
-	resp, err := c.gen.ListTemplatesApiTemplatesGetWithResponse(ctx, params)
+	resp, err := c.gen.ListTemplatesApiTemplatesGetWithResponse(ctx, params, c.editors()...)
 	logCall("ListTemplates", start, err)
 	if err != nil {
 		return nil, err
@@ -246,7 +304,7 @@ func (c *HubClient) ListTemplates(ctx context.Context, app string) ([]TemplateRe
 func (c *HubClient) LookupEntity(ctx context.Context, app, id string) (*LookupResult, error) {
 	start := time.Now()
 	appParam := LookupApiLookupAppEntityIdGetParamsApp(app)
-	rawResp, err := c.gen.LookupApiLookupAppEntityIdGet(ctx, appParam, id)
+	rawResp, err := c.gen.LookupApiLookupAppEntityIdGet(ctx, appParam, id, c.editors()...)
 	logCall("LookupEntity", start, err)
 	if err != nil {
 		return nil, err
