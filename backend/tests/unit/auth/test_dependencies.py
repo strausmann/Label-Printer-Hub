@@ -479,7 +479,6 @@ TRUST_TOKEN = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
 
 def _make_sso_app_with_trust(required_scope: str = "read"):
     """Build a minimal app with Pangolin-standard SSO headers configured."""
-    import app.models
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
@@ -563,8 +562,7 @@ async def test_sso_session_trust_token_wrong_value():
 
 @pytest.mark.asyncio
 async def test_sso_no_trust_token_configured_rejects_remote_user():
-    """Wenn sso_trust_token leer → Remote-User Header wird NICHT akzeptiert (Sicherheitsstandard)."""
-    import app.models
+    """Wenn sso_trust_token leer → Remote-User wird NICHT akzeptiert (Sicherheitsstandard)."""
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
@@ -604,8 +602,7 @@ async def test_sso_no_trust_token_configured_rejects_remote_user():
 
 @pytest.mark.asyncio
 async def test_sso_backwards_compat_x_pangolin_user():
-    """X-Pangolin-User Header weiterhin akzeptiert (Rückwärtskompatibilität, kein Trust-Token nötig)."""
-    import app.models
+    """X-Pangolin-User Header akzeptiert (Rückwärtskompatibilität, kein Trust-Token nötig)."""
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session
@@ -636,7 +633,9 @@ async def test_sso_backwards_compat_x_pangolin_user():
             headers={"X-Pangolin-User": "legacy-user@example.com"},
         )
 
-    assert resp.status_code == 200, f"Expected 200 for legacy X-Pangolin-User, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, (
+        f"Expected 200 for legacy X-Pangolin-User, got {resp.status_code}: {resp.text}"
+    )
     assert resp.json()["source"] == "pangolin-sso"
     await eng.dispose()
 
@@ -644,7 +643,6 @@ async def test_sso_backwards_compat_x_pangolin_user():
 @pytest.mark.asyncio
 async def test_sso_configurable_header_names():
     """Benutzerdefinierte SSO-Header-Namen werden korrekt ausgewertet."""
-    import app.models
     from app.auth.dependencies import require_scope
     from app.config import Settings
     from app.db.session import get_session

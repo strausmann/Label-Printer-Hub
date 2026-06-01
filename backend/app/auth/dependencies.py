@@ -125,10 +125,7 @@ def _has_pangolin_sso_session(request: Request, settings: Settings) -> bool:
             return True
 
     # Pfad 2: Legacy X-Pangolin-User (Rückwärtskompatibilität)
-    if request.headers.get("X-Pangolin-User"):
-        return True
-
-    return False
+    return bool(request.headers.get("X-Pangolin-User"))
 
 
 def _is_pangolin_bypass(request: Request) -> bool:
