@@ -1,15 +1,26 @@
 """FastAPI authentication dependency — Phase 7c require_scope().
 
-Three authentication paths (in priority order):
+Four authentication paths (in priority order):
 
 1. API-Key header ``X-Label-Hub-Key: lh_...``
    - Validated via bcrypt verify + LRU cache
    - Full 3-level scope model (read/print/admin)
    - Scope hierarchy: admin ⊇ print ⊇ read
 
-2. Pangolin-SSO browser session (``X-Pangolin-User`` header set by Pangolin)
+2. Pangolin-SSO browser session — Pangolin-Standard-Headers
+   - ``Remote-User`` (oder konfigurierbar via ``sso_user_header``) enthält
+     den eingeloggten Benutzernamen / die E-Mail-Adresse
+   - ``X-Pangolin-Token`` (oder konfigurierbar via ``sso_trust_header``) ist
+     ein statischer Trust-Token, den Pangolin beim Forwarding injiziert.
+     Pangolin-Resource → Header-Injection → Backend.
+   - Wird NUR akzeptiert wenn ``settings.sso_trust_token`` gesetzt ist UND
+     der Header-Wert exakt übereinstimmt. Leer = Pfad deaktiviert.
    - Only grants ``read`` scope
-   - Used by the frontend after SSO login
+
+2b. Backwards-Compatibility: ``X-Pangolin-User`` header (Legacy-Pfad)
+   - Wird weiterhin akzeptiert, kein Trust-Token erforderlich
+   - Nur für interne Frontend-Aufrufe via PR #95 Forwarding
+   - Only grants ``read`` scope
 
 3. Pangolin-bypass claude-automation (``Authorization: Basic ...`` with
    the claude-automation credential)
@@ -83,16 +94,41 @@ def _scope_satisfies(key_scope: str, required_scope: str) -> bool:
     return required_scope in _SCOPE_HIERARCHY[key_scope]
 
 
-def _has_pangolin_sso_session(request: Request) -> bool:
-    """Return True when the Pangolin reverse proxy has set the SSO user header.
+def _has_pangolin_sso_session(request: Request, settings: Settings) -> bool:
+    """Return True when the Pangolin reverse proxy has set a trusted SSO user header.
 
-    Pangolin sets ``X-Pangolin-User`` after the user has authenticated via SSO.
-    This header is trusted only when it originates from the Pangolin proxy —
-    in HomeLab deployments, direct internet access to the backend is blocked
-    at the network level (Tailscale), so the header cannot be spoofed by
-    external callers.
+    Zwei unterstützte Pfade (in Prioritätsreihenfolge):
+
+    1. **Pangolin-Standard-Headers** (bevorzugt, analog Hangar):
+       - ``Remote-User`` (oder konfigurierbar via ``settings.sso_user_header``)
+         enthält den authentifizierten Benutzernamen.
+       - ``X-Pangolin-Token`` (oder konfigurierbar via ``settings.sso_trust_header``)
+         ist ein statischer Trust-Token, den Pangolin beim Forwarding injiziert.
+       - Wird NUR akzeptiert wenn ``settings.sso_trust_token`` nicht leer ist
+         UND der Wert im Request-Header exakt mit dem konfigurierten Token
+         übereinstimmt. Leeres Token = dieser Pfad ist deaktiviert.
+
+    2. **Legacy ``X-Pangolin-User``** (Rückwärtskompatibilität):
+       - Wird weiterhin ohne Trust-Token akzeptiert.
+       - Für interne Frontend-Aufrufe via PR #95 Auth-Header-Forwarding.
+       - Kein Trust-Token erforderlich, da der Pfad ausschließlich über
+         das interne Tailscale-Netz erreichbar ist.
     """
-    return bool(request.headers.get("X-Pangolin-User"))
+    # Pfad 1: Pangolin-Standard mit konfiguriertem Trust-Token
+    trust_token = settings.sso_trust_token
+    if trust_token:
+        user_header = settings.sso_user_header
+        trust_header = settings.sso_trust_header
+        user_value = request.headers.get(user_header, "")
+        token_value = request.headers.get(trust_header, "")
+        if user_value and token_value == trust_token:
+            return True
+
+    # Pfad 2: Legacy X-Pangolin-User (Rückwärtskompatibilität)
+    if request.headers.get("X-Pangolin-User"):
+        return True
+
+    return False
 
 
 def _is_pangolin_bypass(request: Request) -> bool:
@@ -259,9 +295,10 @@ def require_scope(
         required: One of "read", "print", "admin".
         settings: Override settings (for testing). Defaults to get_settings().
 
-    The dependency resolves through three paths (in priority order):
+    The dependency resolves through four paths (in priority order):
       1. X-Label-Hub-Key API key header
-      2. Pangolin-SSO (X-Pangolin-User) — read scope only
+      2. Pangolin-SSO (Remote-User + X-Pangolin-Token Trust-Token) — read scope only
+      2b. Pangolin-SSO Legacy (X-Pangolin-User) — read scope only (Rückwärtskompatibilität)
       3. Pangolin-bypass (claude-automation Basic Auth) — read scope only
 
     Returns a callable that FastAPI injects as ``Depends(require_scope("read"))``.
@@ -279,8 +316,8 @@ def require_scope(
         if key_header:
             return await _validate_api_key(session, key_header, required, client_ip)
 
-        # Path 2: Pangolin-SSO (browser session)
-        if _has_pangolin_sso_session(request) and required == "read":
+        # Path 2: Pangolin-SSO (browser session) — Standard-Headers + Legacy
+        if _has_pangolin_sso_session(request, effective_settings) and required == "read":
             return AuthContext(
                 source="pangolin-sso",
                 scope="read",

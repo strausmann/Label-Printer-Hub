@@ -468,3 +468,221 @@ async def test_read_key_blocked_on_print_endpoint():
 
     assert resp.status_code == 403
     await eng.dispose()
+
+
+# --------------------------------------------------------------------------
+# Path 2b: Pangolin-Standard-Headers (Remote-User + X-Pangolin-Token)
+# --------------------------------------------------------------------------
+
+TRUST_TOKEN = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+
+
+def _make_sso_app_with_trust(required_scope: str = "read"):
+    """Build a minimal app with Pangolin-standard SSO headers configured."""
+    import app.models
+    from app.auth.dependencies import require_scope
+    from app.config import Settings
+    from app.db.session import get_session
+    from fastapi import Depends, FastAPI
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlmodel import SQLModel
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    settings = Settings(
+        _env_file=None,
+        sso_trust_token=TRUST_TOKEN,
+    )
+    test_app = FastAPI()
+
+    @test_app.get("/test")
+    async def ep(ctx=Depends(require_scope(required_scope, settings=settings))):
+        return {"source": ctx.source, "scope": ctx.scope}
+
+    async def override_session():
+        factory = async_sessionmaker(eng, expire_on_commit=False)
+        async with eng.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+        async with factory() as s:
+            yield s
+
+    test_app.dependency_overrides[get_session] = override_session
+    return test_app, eng
+
+
+@pytest.mark.asyncio
+async def test_sso_session_with_remote_user_and_trust_token():
+    """Remote-User + korrekter X-Pangolin-Token → 200 (Pangolin-Standard)."""
+    test_app, eng = _make_sso_app_with_trust("read")
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://t") as client:
+        resp = await client.get(
+            "/test",
+            headers={
+                "Remote-User": "sso-user@example.com",
+                "X-Pangolin-Token": TRUST_TOKEN,
+            },
+        )
+
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    assert resp.json()["source"] == "pangolin-sso"
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sso_session_remote_user_without_trust_token():
+    """Remote-User ohne X-Pangolin-Token → 401 (nicht vertrauenswürdig)."""
+    test_app, eng = _make_sso_app_with_trust("read")
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://t") as client:
+        resp = await client.get(
+            "/test",
+            headers={"Remote-User": "evil-user@attacker.com"},
+        )
+
+    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sso_session_trust_token_wrong_value():
+    """Remote-User + falscher X-Pangolin-Token → 401 (Token-Mismatch)."""
+    test_app, eng = _make_sso_app_with_trust("read")
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://t") as client:
+        resp = await client.get(
+            "/test",
+            headers={
+                "Remote-User": "sso-user@example.com",
+                "X-Pangolin-Token": "wrong-token-value",
+            },
+        )
+
+    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sso_no_trust_token_configured_rejects_remote_user():
+    """Wenn sso_trust_token leer → Remote-User Header wird NICHT akzeptiert (Sicherheitsstandard)."""
+    import app.models
+    from app.auth.dependencies import require_scope
+    from app.config import Settings
+    from app.db.session import get_session
+    from fastapi import Depends, FastAPI
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlmodel import SQLModel
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    settings = Settings(_env_file=None, sso_trust_token="")  # leer = SSO disabled
+    test_app = FastAPI()
+
+    @test_app.get("/test")
+    async def ep(ctx=Depends(require_scope("read", settings=settings))):
+        return {"source": ctx.source}
+
+    async def override_session():
+        factory = async_sessionmaker(eng, expire_on_commit=False)
+        async with eng.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+        async with factory() as s:
+            yield s
+
+    test_app.dependency_overrides[get_session] = override_session
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://t") as client:
+        resp = await client.get(
+            "/test",
+            headers={
+                "Remote-User": "sso-user@example.com",
+                "X-Pangolin-Token": TRUST_TOKEN,
+            },
+        )
+
+    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sso_backwards_compat_x_pangolin_user():
+    """X-Pangolin-User Header weiterhin akzeptiert (Rückwärtskompatibilität, kein Trust-Token nötig)."""
+    import app.models
+    from app.auth.dependencies import require_scope
+    from app.config import Settings
+    from app.db.session import get_session
+    from fastapi import Depends, FastAPI
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlmodel import SQLModel
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    settings = Settings(_env_file=None)  # sso_trust_token leer — X-Pangolin-User trotzdem erlaubt
+    test_app = FastAPI()
+
+    @test_app.get("/test")
+    async def ep(ctx=Depends(require_scope("read", settings=settings))):
+        return {"source": ctx.source}
+
+    async def override_session():
+        factory = async_sessionmaker(eng, expire_on_commit=False)
+        async with eng.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+        async with factory() as s:
+            yield s
+
+    test_app.dependency_overrides[get_session] = override_session
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://t") as client:
+        resp = await client.get(
+            "/test",
+            headers={"X-Pangolin-User": "legacy-user@example.com"},
+        )
+
+    assert resp.status_code == 200, f"Expected 200 for legacy X-Pangolin-User, got {resp.status_code}: {resp.text}"
+    assert resp.json()["source"] == "pangolin-sso"
+    await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_sso_configurable_header_names():
+    """Benutzerdefinierte SSO-Header-Namen werden korrekt ausgewertet."""
+    import app.models
+    from app.auth.dependencies import require_scope
+    from app.config import Settings
+    from app.db.session import get_session
+    from fastapi import Depends, FastAPI
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlmodel import SQLModel
+
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    settings = Settings(
+        _env_file=None,
+        sso_user_header="X-Custom-User",
+        sso_trust_header="X-Custom-Trust",
+        sso_trust_token=TRUST_TOKEN,
+    )
+    test_app = FastAPI()
+
+    @test_app.get("/test")
+    async def ep(ctx=Depends(require_scope("read", settings=settings))):
+        return {"source": ctx.source}
+
+    async def override_session():
+        factory = async_sessionmaker(eng, expire_on_commit=False)
+        async with eng.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.create_all)
+        async with factory() as s:
+            yield s
+
+    test_app.dependency_overrides[get_session] = override_session
+
+    async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://t") as client:
+        resp = await client.get(
+            "/test",
+            headers={
+                "X-Custom-User": "custom-user@example.com",
+                "X-Custom-Trust": TRUST_TOKEN,
+            },
+        )
+
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    assert resp.json()["source"] == "pangolin-sso"
+    await eng.dispose()

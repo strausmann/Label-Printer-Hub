@@ -106,6 +106,17 @@ class Settings(BaseSettings):
     # Set to False during transition to avoid surprising existing automation.
     pangolin_bypass_scope_downgrade: bool = False
 
+    # Pangolin-SSO Standard-Header-Konfiguration (analog Hangar).
+    # Pangolin setzt nach erfolgreicher SSO-Authentifizierung folgende Headers:
+    #   Remote-User  — Benutzername / E-Mail-Adresse
+    #   X-Pangolin-Token — statischer Trust-Token, der in der Pangolin-Resource
+    #                      konfiguriert wird (Resource → Header-Injection)
+    # Das Backend vertraut den Remote-* Headers NUR wenn der Trust-Token
+    # übereinstimmt. Ein leeres sso_trust_token deaktiviert diesen Pfad.
+    sso_user_header: str = "Remote-User"
+    sso_trust_header: str = "X-Pangolin-Token"
+    sso_trust_token: str = ""  # leer = SSO via Remote-User deaktiviert
+
     # Phase 2: Job-Retention für CleanupTask
     job_retention_days: int = Field(
         default=30,
