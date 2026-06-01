@@ -474,7 +474,7 @@ async def test_read_key_blocked_on_print_endpoint():
 # Path 2b: Pangolin-Standard-Headers (Remote-User + X-Pangolin-Token)
 # --------------------------------------------------------------------------
 
-TRUST_TOKEN = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+TRUST_TOKEN = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"  # nosec B105 noqa: S105
 
 
 def _make_sso_app_with_trust(required_scope: str = "read"):
