@@ -23,7 +23,7 @@ func (h *PageHandler) TemplatesList(w http.ResponseWriter, r *http.Request) {
 // and renders the templates list template. Exported so integration tests can supply
 // the app filter directly without URL parsing.
 func (h *PageHandler) TemplatesListWithApp(w http.ResponseWriter, r *http.Request, app string) {
-	templates, err := h.client.ListTemplates(r.Context(), app)
+	templates, err := h.client.WithAuthFrom(r).ListTemplates(r.Context(), app)
 	if err != nil {
 		h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error())
 		return

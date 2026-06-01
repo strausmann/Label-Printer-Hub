@@ -42,7 +42,7 @@ func (h *PageHandler) TemplateDetailWithKey(w http.ResponseWriter, r *http.Reque
 	// Fetch all templates and filter by key (the backend list endpoint supports
 	// key-based filtering via ?app= but not ?key=; we fetch all and filter
 	// client-side. Template lists are small — typically < 100 entries).
-	templates, err := h.client.ListTemplates(r.Context(), "")
+	templates, err := h.client.WithAuthFrom(r).ListTemplates(r.Context(), "")
 	if err != nil {
 		h.renderError(w, r, http.StatusServiceUnavailable, "Service Unavailable", err.Error())
 		return
@@ -65,7 +65,7 @@ func (h *PageHandler) TemplateDetailWithKey(w http.ResponseWriter, r *http.Reque
 	previewURI := template.URL("/static/preview-placeholder.svg")
 	previewCtx, previewCancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer previewCancel()
-	previewBytes, previewErr := h.client.RenderPreview(previewCtx, key)
+	previewBytes, previewErr := h.client.WithAuthFrom(r).RenderPreview(previewCtx, key)
 	if previewErr == nil && len(previewBytes) > 0 {
 		previewURI = template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(previewBytes))
 	}

@@ -24,7 +24,7 @@ func (h *PageHandler) JobDetail(w http.ResponseWriter, r *http.Request) {
 // JobDetailWithID fetches the job from the backend and renders the job detail
 // template. Exported so integration tests can supply the ID directly.
 func (h *PageHandler) JobDetailWithID(w http.ResponseWriter, r *http.Request, id string) {
-	job, err := h.client.GetJob(r.Context(), id)
+	job, err := h.client.WithAuthFrom(r).GetJob(r.Context(), id)
 	if errors.Is(err, api.ErrNotFound) {
 		h.renderError(w, r, http.StatusNotFound, "Not Found", "Job not found: "+id)
 		return
@@ -52,7 +52,7 @@ func (h *PageHandler) JobRetry(w http.ResponseWriter, r *http.Request) {
 // JobRetryWithID is the testable implementation of JobRetry.
 // It clones the job via the API and issues a 303 redirect to /jobs/{newID}.
 func (h *PageHandler) JobRetryWithID(w http.ResponseWriter, r *http.Request, id string) {
-	newID, err := h.client.RetryJob(r.Context(), id)
+	newID, err := h.client.WithAuthFrom(r).RetryJob(r.Context(), id)
 	if errors.Is(err, api.ErrNotFound) {
 		h.renderError(w, r, http.StatusNotFound, "Not Found", "Job not found: "+id)
 		return

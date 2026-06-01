@@ -26,7 +26,7 @@ func (h *PageHandler) LookupDisplay(w http.ResponseWriter, r *http.Request) {
 // the lookup display page. Exported so integration tests can supply params
 // directly without URL parsing.
 func (h *PageHandler) LookupDisplayWithParams(w http.ResponseWriter, r *http.Request, app, id string) {
-	result, err := h.client.LookupEntity(r.Context(), app, id)
+	result, err := h.client.WithAuthFrom(r).LookupEntity(r.Context(), app, id)
 	switch {
 	case errors.Is(err, api.ErrNotFound):
 		h.renderError(w, r, http.StatusNotFound, "Not Found",
