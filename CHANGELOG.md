@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## 0.8.0 (2026-06-01)
+
+* Merge pull request #94 from strausmann/feat/phase-2-job-persistence ([ef8fefd](https://github.com/strausmann/label-printer-hub/commit/ef8fefd)), closes [#94](https://github.com/strausmann/label-printer-hub/issues/94)
+* fix(batch): cancelled-Feld in BatchSummary ergänzt + Tests verschärft ([ddbe0d4](https://github.com/strausmann/label-printer-hub/commit/ddbe0d4)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* fix(cleanup-task): ruff/mypy strict-Blocker beheben ([71b2b28](https://github.com/strausmann/label-printer-hub/commit/71b2b28)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* fix(docs): private Domain-URLs aus Spec entfernt (Privacy-Scan CI) ([77e4450](https://github.com/strausmann/label-printer-hub/commit/77e4450)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* fix(job-store): Quality-Review-Findings I-1 bis I-4 behoben ([f2e2a4e](https://github.com/strausmann/label-printer-hub/commit/f2e2a4e)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* fix(plan): Phase-2-Plan adressiert alle Reviewer-Findings (C1–C6, M1–M8, m1) ([261fc85](https://github.com/strausmann/label-printer-hub/commit/261fc85)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* fix(print_queue): Recovery-Loop gegen KeyError, TemplateNotFoundError und Race absichern ([735a184](https://github.com/strausmann/label-printer-hub/commit/735a184)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* fix(queue): stop() persistiert PRINTING-Jobs als FAILED in DB ([002ef54](https://github.com/strausmann/label-printer-hub/commit/002ef54)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* fix(service): submit_print_job rollback + paused-jobs nicht persistieren ([ca88c52](https://github.com/strausmann/label-printer-hub/commit/ca88c52)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* style(tests): ruff-Befunde Phase 2 behoben (E501, I001, F401, C408, N806) ([16676fd](https://github.com/strausmann/label-printer-hub/commit/16676fd)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* refactor(main): Fix-Round Phase-2 Review (M-1, N-1, N-2) ([34f7e79](https://github.com/strausmann/label-printer-hub/commit/34f7e79)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* refactor(repo): jobs_repo Code-Quality-Findings Task 1 ([1b1cc1e](https://github.com/strausmann/label-printer-hub/commit/1b1cc1e)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* refactor(services): SQLiteJobStore Code-Quality-Findings Task 3 ([223a0cb](https://github.com/strausmann/label-printer-hub/commit/223a0cb)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* feat(api): GET /api/batches/{id} Snapshot-Endpoint (Phase 2) ([1344873](https://github.com/strausmann/label-printer-hub/commit/1344873)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* feat(lifespan): wire JobStore + CleanupTask in App-Startup (Phase 2) ([d027884](https://github.com/strausmann/label-printer-hub/commit/d027884)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* feat(queue): PrintQueue ruft JobStore bei jeder State-Transition (Phase 2) ([7aa9027](https://github.com/strausmann/label-printer-hub/commit/7aa9027)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* feat(queue): PrintQueue.start() Recovery (Phase 2) ([935a79a](https://github.com/strausmann/label-printer-hub/commit/935a79a)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* feat(repo): jobs_repo Helper für Phase 2 JobStore ([c80bda5](https://github.com/strausmann/label-printer-hub/commit/c80bda5)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* feat(service): PrintService persistiert Job-Row vor queue.submit (Phase 2) ([af20365](https://github.com/strausmann/label-printer-hub/commit/af20365)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* feat(services): CleanupTask + PRINTER_HUB_JOB_RETENTION_DAYS config (Phase 2) ([3c7a27d](https://github.com/strausmann/label-printer-hub/commit/3c7a27d)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* feat(services): JobStore Protocol + MemoryJobStore (Phase 2) ([d39c795](https://github.com/strausmann/label-printer-hub/commit/d39c795)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* feat(services): SQLiteJobStore delegiert an jobs_repo (Phase 2) ([d524859](https://github.com/strausmann/label-printer-hub/commit/d524859)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* docs(plan): Phase 2 Job Persistence Implementation Plan ([a8289c8](https://github.com/strausmann/label-printer-hub/commit/a8289c8)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* docs(spec): adressiere R1 Critical + Major Findings (Review 2026-05-31) ([6a94f11](https://github.com/strausmann/label-printer-hub/commit/6a94f11)), closes [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+* docs(spec): Phase 2 — Job Persistence Design ([a59b187](https://github.com/strausmann/label-printer-hub/commit/a59b187)), closes [strausmann/hangar#81](https://github.com/strausmann/hangar/issues/81) [#93](https://github.com/strausmann/label-printer-hub/issues/93)
+
 ## 0.7.0 (2026-05-31)
 
 * fix(api,security): admin_api_keys cleanup — Fixes D+E + GitGuardian (Fail 2) ([7e0b1e4](https://github.com/strausmann/label-printer-hub/commit/7e0b1e4)), closes [#22](https://github.com/strausmann/label-printer-hub/issues/22)
