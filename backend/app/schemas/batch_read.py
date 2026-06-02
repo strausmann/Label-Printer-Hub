@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_serializer, model_validator
 
+from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.job import JobRead
 
 
@@ -45,3 +46,7 @@ class BatchRead(BaseModel):
     created_at: datetime
     jobs: list[JobRead]
     summary: BatchSummary
+
+    @field_serializer("created_at")
+    def _serialise_created_at(self, dt: datetime, _info: object) -> str:
+        return serialize_datetime_utc(dt, _info)
