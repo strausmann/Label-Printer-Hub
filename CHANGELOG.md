@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## <small>0.8.1 (2026-06-02)</small>
+
+* fix(backend): Pangolin-Standard-Header (Remote-User + X-Pangolin-Token) als SSO-Pfad (#96) ([32cd93e](https://github.com/strausmann/label-printer-hub/commit/32cd93e)), closes [#96](https://github.com/strausmann/label-printer-hub/issues/96) [#95](https://github.com/strausmann/label-printer-hub/issues/95)
+* fix(frontend): Auth-Header-Weiterleitung an Backend behebt Dashboard 503 (#95) ([0d2de27](https://github.com/strausmann/label-printer-hub/commit/0d2de27)), closes [#95](https://github.com/strausmann/label-printer-hub/issues/95) [#88](https://github.com/strausmann/label-printer-hub/issues/88)
+
 ## 0.8.0 (2026-06-01)
 
 * Merge pull request #94 from strausmann/feat/phase-2-job-persistence ([ef8fefd](https://github.com/strausmann/label-printer-hub/commit/ef8fefd)), closes [#94](https://github.com/strausmann/label-printer-hub/issues/94)
