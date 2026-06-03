@@ -1,7 +1,8 @@
 """Lookup of Brother tape specifications by physical width + media type.
 
-QL-Series die-cut labels will be added once their byte-sequence reproducible
-fixtures are in place — see docs/decisions/0004-plugin-architecture-for-printer-models.md.
+Phase 1i Sub-Task G: QL-Series endless (continuous-length) DK tapes added.
+Die-cut labels will be added once their byte-sequence reproducible fixtures
+are in place — see docs/decisions/0004-plugin-architecture-for-printer-models.md.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import dataclasses
 
 from app.models.tape import TapeSpec
 from app.printer_models.pt import PT_HS_2_1_TAPES, PT_TZE_TAPES
+from app.printer_models.ql import QL_DK_ENDLESS_TAPES
 from app.services.status_block import MediaType
 
 
@@ -44,4 +46,27 @@ class TapeRegistry:
 
         raise UnknownTapeError(
             f"No PT-Series tape spec for width={width_mm}mm, media={media_type.name}"
+        )
+
+    @staticmethod
+    def lookup_ql(width_mm: int, media_type: MediaType) -> TapeSpec:
+        """Return the QL-Series tape spec for the given width + media type.
+
+        Phase 1i: only CONTINUOUS_LENGTH_TAPE (endless DK) tapes are registered.
+        DIE_CUT_LABEL support will be added in a future phase.
+        """
+        if media_type == MediaType.CONTINUOUS_LENGTH_TAPE:
+            table = QL_DK_ENDLESS_TAPES
+        else:
+            raise UnknownTapeError(
+                f"No QL-Series tape table for media_type={media_type.name} — "
+                f"only CONTINUOUS_LENGTH_TAPE is supported in Phase 1i"
+            )
+
+        for spec in table:
+            if spec.width_mm == width_mm:
+                return spec
+
+        raise UnknownTapeError(
+            f"No QL-Series tape spec for width={width_mm}mm, media={media_type.name}"
         )
