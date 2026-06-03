@@ -381,6 +381,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.printer_id = printer.id
     app.state.printer_host = discovery_host
     app.state.printer_snmp_community = settings.printer_snmp_community
+
+    # Phase 1i C-Fix: backend_router als Single-Printer-Shim.
+    # Die Batch-Route liest app.state.backend_router.get(slug) → PrinterBackend.
+    # In dieser Single-Printer-Phase bauen wir ein minimales Dict-Wrapper-Objekt
+    # das die printer.id → slug-Auflösung aus der DB nutzt.
+    async with async_session() as _br_sess:
+        _br_printer_row = await _br_sess.get(_Printer, printer.id)
+    _backend_slug = (
+        _br_printer_row.slug if _br_printer_row is not None else str(printer.id)
+    )
+
+    class _SinglePrinterBackendRouter:
+        """Minimal backend_router Shim für Single-Printer-Betrieb.
+
+        Im Single-Printer-Modus gibt get() immer das einzige Backend zurück —
+        unabhängig vom Slug. Die Batch-Route hat die Printer-Auflösung und den
+        seeded_printer_id-Check bereits durchlaufen, wenn get() hier aufgerufen
+        wird. Der Slug-Check dort stellt sicher dass nur bekannte Printer-Slugs
+        in der DB existieren → kein falsches Routing möglich.
+        """
+
+        def __init__(self, slug: str, _backend: Any) -> None:
+            self._slug = slug
+            self._backend = _backend
+
+        def get(self, slug: str) -> Any:  # noqa: ARG002
+            # Single-Printer: immer das einzige Backend zurückgeben.
+            return self._backend
+
+    app.state.backend_router = _SinglePrinterBackendRouter(_backend_slug, backend)
     app.state.print_service = PrintService(
         template_loader=TemplateLoader,
         renderer=shared_renderer,

@@ -22,6 +22,9 @@ class PrintOptions(BaseModel):
     copies: int = Field(default=1, ge=1, le=10)
     auto_cut: bool = True
     high_resolution: bool = False
+    # Phase 1i C-Fix:
+    half_cut: bool = False
+    last_page: bool = True
 
 
 class RawLabelData(BaseModel):

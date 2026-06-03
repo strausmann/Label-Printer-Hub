@@ -117,6 +117,8 @@ class PrintService:
                     "options": {
                         "auto_cut": request.options.auto_cut,
                         "high_resolution": request.options.high_resolution,
+                        "half_cut": request.options.half_cut,      # R4-C-1-Fix
+                        "last_page": request.options.last_page,    # R4-C-1-Fix
                     },
                 },
                 api_key_id=None,  # TODO: aus AuthContext wenn Endpoint-Layer angepasst
@@ -130,6 +132,8 @@ class PrintService:
                 tape_mm=template.tape_mm,
                 auto_cut=request.options.auto_cut,
                 high_resolution=request.options.high_resolution,
+                half_cut=request.options.half_cut,      # R4-C-1-Fix
+                last_page=request.options.last_page,    # R4-C-1-Fix
             )
             # Tape-mismatch Metadaten an den in-memory Job anhängen
             in_memory_job = await self._queue.get(str(paused_job_id.id))
@@ -156,6 +160,8 @@ class PrintService:
                     # `copies` wird nicht weitergeleitet — Phase-5 Follow-up.
                     "auto_cut": request.options.auto_cut,
                     "high_resolution": request.options.high_resolution,
+                    "half_cut": request.options.half_cut,      # R4-C-1-Fix
+                    "last_page": request.options.last_page,    # R4-C-1-Fix
                 },
             },
             api_key_id=None,  # TODO: aus AuthContext wenn Endpoint-Layer angepasst
@@ -170,6 +176,8 @@ class PrintService:
                 tape_mm=template.tape_mm,
                 auto_cut=request.options.auto_cut,
                 high_resolution=request.options.high_resolution,
+                half_cut=request.options.half_cut,      # R4-C-1-Fix
+                last_page=request.options.last_page,    # R4-C-1-Fix
             )
         except Exception as exc:
             # I-1-Fix: in-memory Submit fehlgeschlagen nach DB-Persist — Rollback.
