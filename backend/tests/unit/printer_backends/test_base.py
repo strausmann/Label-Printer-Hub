@@ -9,6 +9,7 @@ from PIL import Image
 class _Compliant:
     backend_id = "compliant"
     host = "1.2.3.4"
+    half_cut_supported = False
 
     async def print_image(
         self,
@@ -17,6 +18,8 @@ class _Compliant:
         *,
         auto_cut: bool = True,
         high_resolution: bool = False,
+        half_cut: bool = False,
+        last_page: bool = True,
     ) -> None:
         return None
 

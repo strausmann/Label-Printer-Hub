@@ -61,6 +61,7 @@ def _ptouch_print(  # pragma: no cover - real-hardware-only, tests monkeypatch t
     model_id: str,
     auto_cut: bool,
     high_resolution: bool,
+    half_cut: bool = False,
 ) -> None:
     """Synchronous helper — module-level so tests can monkeypatch it.
 
@@ -85,13 +86,23 @@ def _ptouch_print(  # pragma: no cover - real-hardware-only, tests monkeypatch t
     connection = ptouch.ConnectionNetwork(host, port=port, timeout=10.0)
     printer = printer_cls(connection=connection, high_resolution=high_resolution)
     label = ptouch.Label(image=image, tape=tape_cls)
-    printer.print(label, auto_cut=auto_cut, high_resolution=high_resolution)
+    try:
+        printer.print(
+            label,
+            auto_cut=auto_cut,
+            high_resolution=high_resolution,
+            half_cut=half_cut,
+        )
+    except TypeError:
+        # Older ptouch lib doesn't support half_cut — fall back to full cut
+        printer.print(label, auto_cut=auto_cut, high_resolution=high_resolution)
 
 
 class PTouchBackend:
     """PrinterBackend backed by the ptouch library."""
 
     backend_id = "ptouch"
+    half_cut_supported: bool = True
 
     def __init__(self, host: str, *, port: int = 9100, model_id: str = "PT-P750W") -> None:
         if not host:
@@ -175,6 +186,8 @@ class PTouchBackend:
         *,
         auto_cut: bool = True,
         high_resolution: bool = False,
+        half_cut: bool = False,
+        last_page: bool = True,
     ) -> None:
         """Pre-print validation via SNMP, then dispatch ptouch.print.
 
@@ -183,6 +196,10 @@ class PTouchBackend:
         raises TapeEmptyError / PrinterCoverOpenError / PrinterOfflineError on
         detected issues. TapeMismatchError is raised here after comparing the
         loaded tape to the requested tape_spec.
+
+        Phase 1i C-Fix:
+        - half_cut: passed through to _ptouch_print (PT-Series supports it).
+        - last_page: accepted for Protocol compliance but unused by PT-Series.
         """
         # SNMP preflight — replaces the broken ESC i S query_status path for
         # PT-Series. preflight_check raises TapeEmptyError / PrinterCoverOpenError
@@ -204,6 +221,7 @@ class PTouchBackend:
                 model_id=self._model_id,
                 auto_cut=auto_cut,
                 high_resolution=high_resolution,
+                half_cut=half_cut,
             )
         except (ptouch.PrinterWriteError, ptouch.PrinterPermissionError) as exc:
             # These are subclasses of PrinterConnectionError — must be caught first.

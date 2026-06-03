@@ -23,6 +23,8 @@ class PrinterBackend(Protocol):
 
     backend_id: str
     host: str
+    # Phase 1i C-Fix: PT-Series=True, QL-Series=False
+    half_cut_supported: bool
 
     async def print_image(
         self,
@@ -31,8 +33,17 @@ class PrinterBackend(Protocol):
         *,
         auto_cut: bool = True,
         high_resolution: bool = False,
+        half_cut: bool = False,
+        last_page: bool = True,
     ) -> None:
-        """Encode and send `image`. Raises a PrinterError subtype on failure."""
+        """Encode and send `image`. Raises a PrinterError subtype on failure.
+
+        Phase 1i C-Fix:
+        - half_cut: True bedeutet "tape + liner halb getrennt" (taktile Separation,
+          nur PT-Series). Bei half_cut_supported=False vom Backend ignoriert.
+        - last_page: True = letztes Item einer Batch (Voll-Cut), False = es folgt
+          mindestens ein weiteres Item (kein Cut zwischen).
+        """
 
     async def query_status(self) -> StatusBlock:
         """Send ESC i S, parse the 32-byte reply, return a StatusBlock."""

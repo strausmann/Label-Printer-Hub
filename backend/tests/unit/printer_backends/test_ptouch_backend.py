@@ -174,7 +174,7 @@ async def test_print_image_invokes_ptouch_when_healthy(
     )
     captured: dict[str, Any] = {}
 
-    def fake_print(host, port, image, tape_mm, *, model_id, auto_cut, high_resolution):
+    def fake_print(host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False):
         captured["host"] = host
         captured["port"] = port
         captured["tape_mm"] = tape_mm
@@ -374,3 +374,81 @@ async def test_preflight_check_does_not_raise_tape_mismatch(
     pf = await backend.preflight_check()
     # No exception — caller is responsible for raising TapeMismatchError
     assert pf.loaded_tape_mm == 12
+
+
+# ---------------------------------------------------------------------------
+# Phase 1i C-Fix: half_cut_supported capability + half_cut forwarding
+# ---------------------------------------------------------------------------
+
+
+def test_ptouch_backend_supports_half_cut() -> None:
+    """PTouchBackend deklariert half_cut_supported=True (PT-Series Capability)."""
+    assert PTouchBackend.half_cut_supported is True
+
+
+async def test_print_image_passes_half_cut_to_ptouch(
+    monkeypatch: pytest.MonkeyPatch,
+    img_128: Image.Image,
+    tape_24: TapeSpec,
+) -> None:
+    """half_cut wird an _ptouch_print durchgereicht."""
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=24,
+            error_flags=[],
+        )
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_print(host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False):
+        captured["half_cut"] = half_cut
+        captured["auto_cut"] = auto_cut
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend._ptouch_print",
+        fake_print,
+    )
+    backend = PTouchBackend(host="192.0.2.10")
+    await backend.print_image(img_128, tape_24, auto_cut=False, half_cut=True)
+    assert captured["half_cut"] is True
+    assert captured["auto_cut"] is False
+
+
+async def test_print_image_half_cut_defaults_to_false(
+    monkeypatch: pytest.MonkeyPatch,
+    img_128: Image.Image,
+    tape_24: TapeSpec,
+) -> None:
+    """half_cut=False ist der Default — bestehende Aufrufe ohne half_cut unberührt."""
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=24,
+            error_flags=[],
+        )
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_print(host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False):
+        captured["half_cut"] = half_cut
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend._ptouch_print",
+        fake_print,
+    )
+    backend = PTouchBackend(host="192.0.2.10")
+    await backend.print_image(img_128, tape_24)
+    assert captured["half_cut"] is False
