@@ -7,6 +7,7 @@ mock backend so that lifespan startup succeeds without a printer on the network.
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import uuid4
 
 import app.db.engine as _engine_module
@@ -180,17 +181,59 @@ async def api_client_with_broken_db(tmp_path):
     await eng.dispose()
 
 
+# Minimale printers.yaml-Konfiguration für Integration-Tests.
+# Wird als _PrinterConfigLoaderResult in _mock_backend_env gepatcht.
+_INTEGRATION_TEST_PRINTER_CONFIG_YAML = """\
+schema_version: 1
+printers:
+  - slug: mock-pt-p750w
+    name: Mock PT-P750W
+    backend: ptouch
+    model: PT-P750W
+    host: ''
+    port: 9100
+    snmp:
+      discover: false
+      community: public
+    cut_defaults:
+      half_cut: false
+      cut_at_end: true
+"""
+
+
 @pytest.fixture(autouse=True)
-def _mock_backend_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def _mock_backend_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Ensure integration tests use the mock backend and a known model.
 
-    The FastAPI lifespan wires up printer infrastructure — without real hardware
-    or this fixture, lifespan startup would fail and TestClient would raise before
-    any test body executes.
+    Phase 1i CA-1: Die alten Env-Vars (PRINTER_HUB_PRINTER_BACKEND,
+    PRINTER_HUB_PRINTER_MODEL, PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP) wurden
+    aus Settings entfernt (extra="forbid" würde sie ablehnen). Stattdessen wird
+    eine minimale printers.yaml in tmp_path geschrieben und
+    PRINTER_HUB_PRINTERS_CONFIG darauf gesetzt. PrinterConfigLoader.load_file()
+    in der lifespan liest diese Datei. Der _build_backend_from_config Shim
+    fällt bei leerem Host auf MockPrinterBackend zurück weil ptouch.from_settings()
+    leerem Host ein MockPrinterBackend zurückgibt (via getattr-Shim in main.py
+    der BackendRegistry.find_by_backend_id aufruft).
+
+    Wichtig: Da PT-P750W + leerem Host → _CfgShim.pt750w_host="" →
+    PTouchBackend.from_settings() wirft ValueError. Deshalb wird
+    _build_backend_from_config zusätzlich auf MockPrinterBackend gepatcht.
     """
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "PT-P750W")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "false")
+    from app.printer_backends.mock_backend import MockPrinterBackend
+    import app.main as _main_mod
+
+    # printers.yaml in tmp_path schreiben
+    _mock_printers_yaml = tmp_path / "printers.yaml"
+    _mock_printers_yaml.write_text(_INTEGRATION_TEST_PRINTER_CONFIG_YAML)
+    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(_mock_printers_yaml))
+
+    # _build_backend_from_config auf Mock-Backend patchen (leerem Host
+    # würde PTouchBackend.from_settings() ValueError werfen).
+    def _mock_build_backend(printer_cfg: Any) -> Any:  # noqa: ARG001
+        return MockPrinterBackend()
+
+    monkeypatch.setattr(_main_mod, "_build_backend_from_config", _mock_build_backend)
+
     get_settings.cache_clear()
     # Reset registry state so each test gets a clean discovery cycle.
     BackendRegistry._factories.clear()

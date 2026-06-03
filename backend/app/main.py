@@ -95,7 +95,7 @@ from app.db.lifespan import (
     ensure_printer_state,
     run_migrations,
     seed_templates,
-    upsert_runtime_printer,
+    upsert_runtime_printers,
     verify_alembic_at_head,
 )
 from app.db.session import get_session
@@ -113,6 +113,7 @@ from app.services.label_renderer import LabelRenderer
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue
 from app.services.print_service import PrintService
+from app.services.printer_config_loader import PrinterConfigLoader
 from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.status_probe_producer import StatusProbeProducer
 from app.services.producers.tape_change_producer import TapeChangeProducer
@@ -186,37 +187,62 @@ def _pinned_openapi_schema(app: FastAPI) -> Any:
     return app.openapi_schema
 
 
-def _build_backend(settings: Settings) -> Any:
-    """Resolve and instantiate the configured printer backend.
+def _build_backend_from_config(printer_cfg: Any) -> Any:
+    """Resolve and instantiate the configured printer backend from PrinterYAMLConfig.
 
-    Calls BackendRegistry.ensure_discovered() to guarantee entry-points are
-    loaded, then delegates construction to the factory's from_settings().
+    Phase 1i CA-1: ersetzt _build_backend(settings) — liest backend aus
+    PrinterYAMLConfig statt aus entfernten Settings-Feldern.
+
+    Übergangs-Shim: BackendFactory.from_settings() erwartet ein Settings-ähnliches
+    Objekt mit pt750w_host / pt750w_port / printer_model. Wir übergeben printer_cfg
+    direkt — PTouchBackend.from_settings() nutzt getattr() mit Defaults, und
+    MockBackend.from_settings() ignoriert Settings komplett. Das ist ein bewusst
+    minimaler Shim für Task 7a; Task 7b wird die Factory-Signatur auf
+    PrinterYAMLConfig umstellen.
     """
     BackendRegistry.ensure_discovered()
-    factory: Any = BackendRegistry.find_by_backend_id(settings.printer_backend)
-    return factory.from_settings(settings)
+    factory: Any = BackendRegistry.find_by_backend_id(printer_cfg.backend)
+    # Transitional: Backends expect from_settings()-style duck-typed object.
+    # PrinterYAMLConfig has .host and .port which ptouch_backend reads via
+    # getattr(settings, "pt750w_host") — but those attr names differ.
+    # Build a minimal shim namespace so from_settings() can read them.
+    class _CfgShim:
+        pt750w_host = printer_cfg.host
+        pt750w_port = printer_cfg.port
+        printer_model = printer_cfg.model
+
+    return factory.from_settings(_CfgShim())
 
 
-async def _resolve_model_id(settings: Settings, host: str) -> str:
-    """SNMP discovery first, fall back to settings.printer_model on failure.
+async def _resolve_model_id_from_config(printer_cfg: Any) -> str:
+    """SNMP discovery first, fall back to printer_cfg.model on failure.
 
-    Sends a single SNMP GET for the Brother PJL OID. On success the PJL string
-    is matched against ModelRegistry to return the canonical model_id.
-
-    On SnmpDiscoveryError the fallback path is taken only when
-    settings.printer_model is non-empty; otherwise the error is re-raised so
-    the application fails fast rather than starting with an unknown printer.
+    Phase 1i CA-1: ersetzt _resolve_model_id(settings, host) — liest SNMP-
+    und Fallback-Parameter aus PrinterYAMLConfig statt aus entfernten
+    Settings-Feldern.
     """
-    try:
-        pjl = await query_model_pjl(host, community=settings.printer_snmp_community)
-    except SnmpDiscoveryError as exc:
-        if settings.printer_model:
-            _log.warning(
-                "SNMP discovery failed (%s); falling back to printer_model=%r",
-                exc,
-                settings.printer_model,
+    host: str = printer_cfg.host
+    community: str = printer_cfg.snmp.community
+    model_fallback: str = printer_cfg.model
+
+    if not host or not printer_cfg.snmp.discover:
+        if not model_fallback:
+            raise ValueError(
+                "printer_cfg.model ist leer und SNMP-Discovery ist deaktiviert. "
+                "Setze 'model' in printers.yaml oder aktiviere snmp.discover."
             )
-            return settings.printer_model
+        return model_fallback
+
+    try:
+        pjl = await query_model_pjl(host, community=community)
+    except SnmpDiscoveryError as exc:
+        if model_fallback:
+            _log.warning(
+                "SNMP discovery failed (%s); falling back to model=%r",
+                exc,
+                model_fallback,
+            )
+            return model_fallback
         raise
     driver_cls = ModelRegistry.find_by_pjl(pjl)
     return driver_cls.model_id
@@ -246,6 +272,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cancels remaining workers forcibly.
     """
     settings = get_settings()
+
+    # Phase 1i CA-1: Drucker-Konfiguration aus printers.yaml laden.
+    # Dies ersetzt die entfernten Settings-Felder (printer_model, pt750w_host, …).
+    # Der Loader ist ein Klassenattribut-Cache — load_file() befüllt ihn atomic.
+    _printers_config_path = Path(settings.printers_config)
+    PrinterConfigLoader.load_file(_printers_config_path)
+    _printer_configs = PrinterConfigLoader.all()
+    if not _printer_configs:
+        raise RuntimeError(
+            f"printers.yaml unter {_printers_config_path} enthält keine Drucker. "
+            "Mindestens ein Drucker-Eintrag ist erforderlich."
+        )
+    # Single-Printer-Phase: ersten Drucker als aktiven Drucker verwenden.
+    # Task 7b wird dies zu vollständigem Multi-Printer-Routing erweitern.
+    _active_printer_cfg = _printer_configs[0]
 
     # --- DB startup: migrations first, then in-memory state, then DB writes ---
     await run_migrations()
@@ -277,10 +318,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Phase 2: recover_inflight_jobs() entfernt (Spec R1-C1) —
         # PrintQueue.start() übernimmt Recovery mit korrekter QUEUED/PRINTING-Differenzierung.
         await seed_templates(s, TemplateLoader)
-        db_printer_id = await upsert_runtime_printer(s, settings)
+        db_printer_ids = await upsert_runtime_printers(s, _printer_configs)
         await ensure_printer_state(s)
+        # upsert_runtime_printers already commits; ensure_printer_state may need commit
         await s.commit()
     # -------------------------------------------------------------------------
+
+    # Single-Printer-Phase: ersten DB-Printer-ID verwenden.
+    db_printer_id = db_printer_ids[0] if db_printer_ids else None
 
     # Phase 2: JobStore + CleanupTask
     # 'async_session' ist die async_sessionmaker aus app.db.engine (R2-M5)
@@ -293,19 +338,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await cleanup_task.start()
     app.state.cleanup_task = cleanup_task
 
-    discovery_host = settings.pt750w_host or ""
-    if discovery_host and settings.printer_discover_via_snmp:
-        model_id = await _resolve_model_id(settings, discovery_host)
-    else:
-        model_id = settings.printer_model
-        if not model_id:
-            raise ValueError(
-                "printer_model is empty and SNMP discovery is disabled "
-                "(or pt750w_host is not configured). "
-                "Set PRINTER_HUB_PRINTER_MODEL or enable SNMP discovery."
-            )
+    # Phase 1i CA-1: Model-Auflösung über PrinterYAMLConfig statt Settings-Feldern.
+    model_id = await _resolve_model_id_from_config(_active_printer_cfg)
 
-    backend = _build_backend(settings)
+    backend = _build_backend_from_config(_active_printer_cfg)
     driver_cls: Any = ModelRegistry.find_by_model_id(model_id)
     driver: Any = driver_cls(backend=backend)
 
@@ -313,18 +349,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     printer = driver.make_queue_printer(tape_registry, printer_id=db_printer_id)
 
     if db_printer_id is None:
-        # Wenn kein Host konfiguriert ist (Mock-Backend / CI), liefert
-        # upsert_runtime_printer None zurück und fügt keine Printer-Row ein.
-        # make_queue_printer erzeugt dann eine neue uuid4. Damit
-        # jobs.printer_id (FK → printers.id) bei save_queued nicht verletzt
-        # wird, legen wir hier eine Stub-Row an. slug wird auf str(id) gesetzt
-        # (eindeutig durch UUID), damit der UNIQUE-Constraint nicht verletzt wird.
+        # Wenn kein Host konfiguriert ist (Mock-Backend / CI ohne printers.yaml
+        # Host), liefert upsert_runtime_printers eine leere Liste zurück und
+        # fügt keine Printer-Row ein. make_queue_printer erzeugt dann eine neue
+        # uuid4. Damit jobs.printer_id (FK → printers.id) bei save_queued nicht
+        # verletzt wird, legen wir hier eine Stub-Row an.
         _stub_slug = str(printer.id)
         async with async_session() as s:
-            # Defensive idempotency: in non-mock production paths the printer_id
-            # is explicit and would be reused, so the existing check matters
-            # there. In mock paths (printer_id=None), a fresh uuid4 means
-            # existing is always None.
             existing = await s.get(_Printer, printer.id)
             if existing is None:
                 s.add(
@@ -333,7 +364,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         name=f"stub-{printer.id}",
                         slug=_stub_slug,
                         model=model_id.lower(),
-                        backend=settings.printer_backend,
+                        backend=_active_printer_cfg.backend,
                     )
                 )
                 await s.commit()
@@ -366,21 +397,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # protocol — any ModelRegistry-registered driver must supply describe_tape().
     tape_producer = TapeChangeProducer(bus=event_bus, tape_registry=tape_registry, model=driver)
     status_producer: StatusProbeProducer | None = None
-    if discovery_host:
+    _discovery_host = _active_printer_cfg.host or ""
+    if _discovery_host and _active_printer_cfg.snmp.discover:
         status_producer = StatusProbeProducer(
             bus=event_bus,
             printer_id=str(printer.id),
-            host=discovery_host,
+            host=_discovery_host,
             interval_s=settings.sse_probe_interval_s,
-            community=settings.printer_snmp_community,
+            community=_active_printer_cfg.snmp.community,
             tape_change_producer=tape_producer,
         )
         await status_producer.start()
 
     app.state.print_queue = queue
     app.state.printer_id = printer.id
-    app.state.printer_host = discovery_host
-    app.state.printer_snmp_community = settings.printer_snmp_community
+    app.state.printer_host = _discovery_host
+    app.state.printer_snmp_community = _active_printer_cfg.snmp.community
 
     # Phase 1i C-Fix: backend_router als Single-Printer-Shim.
     # Die Batch-Route liest app.state.backend_router.get(slug) → PrinterBackend.
@@ -426,7 +458,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         if status_producer is not None:
             await status_producer.stop()
-        await queue.stop(timeout_s=settings.printer_queue_timeout_s)
+        await queue.stop(timeout_s=_active_printer_cfg.queue.timeout_s)
         await cleanup_task.stop()
         await engine.dispose()
         # Close shared HTTP clients held by integration plugins that support it.

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
 import app.db.engine as _engine_module
 import app.db.lifespan as _lifespan_module
 import app.main as _main_module
@@ -48,6 +51,39 @@ async def _noop_seed_templates(*_args, **_kwargs) -> int:  # type: ignore[no-unt
     return 0
 
 
+def _write_printers_yaml(
+    tmp_path: Path,
+    *,
+    model: str = "PT-P750W",
+    host: str = "",
+    snmp_discover: bool = False,
+    snmp_community: str = "public",
+) -> Path:
+    """Schreibt eine minimale printers.yaml nach tmp_path und gibt den Pfad zurück.
+
+    Phase 1i CA-1: Ersetzt die alten PRINTER_HUB_PRINTER_* Env-Vars.
+    """
+    content = (
+        "schema_version: 1\n"
+        "printers:\n"
+        f"  - slug: test-printer\n"
+        f"    name: Test Printer\n"
+        f"    backend: ptouch\n"
+        f"    model: {model}\n"
+        f"    host: '{host}'\n"
+        f"    port: 9100\n"
+        f"    snmp:\n"
+        f"      discover: {'true' if snmp_discover else 'false'}\n"
+        f"      community: {snmp_community}\n"
+        f"    cut_defaults:\n"
+        f"      half_cut: false\n"
+        f"      cut_at_end: true\n"
+    )
+    p = tmp_path / "printers.yaml"
+    p.write_text(content)
+    return p
+
+
 @pytest_asyncio.fixture(autouse=True)
 async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: ignore[misc]
     """Reset registries and swap the module-level engine for a temp DB.
@@ -63,6 +99,8 @@ async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: 
     a relative path that does not exist in CI.  The schema is already present
     via create_all() above, so skipping migrations is correct here.
     """
+    import app.db.session as _session_module
+
     db_path = tmp_path / "lifespan_test.db"
     url = f"sqlite+aiosqlite:///{db_path}"
     eng = create_async_engine(url, echo=False, connect_args={"check_same_thread": False})
@@ -77,6 +115,7 @@ async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: 
     monkeypatch.setattr(_engine_module, "async_session", sess)
     monkeypatch.setattr(_main_module, "engine", eng)
     monkeypatch.setattr(_main_module, "async_session", sess)
+    monkeypatch.setattr(_session_module, "async_session", sess)
     monkeypatch.setattr(_lifespan_module, "run_migrations", _noop_migrations)
     # main.py binds `run_migrations` locally via `from app.db.lifespan import
     # run_migrations`.  Patching _lifespan_module alone does not update that
@@ -101,42 +140,84 @@ async def clean_registries(monkeypatch: pytest.MonkeyPatch, tmp_path):  # type: 
     await eng.dispose()
 
 
-async def test_lifespan_starts_with_mock_backend(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "PT-P750W")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "false")
+async def test_lifespan_starts_with_mock_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Phase 1i CA-1: printers.yaml statt PRINTER_HUB_PRINTER_BACKEND Env-Var."""
+    yaml_path = _write_printers_yaml(tmp_path, model="PT-P750W", host="", snmp_discover=False)
+    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(yaml_path))
+
+    # _build_backend_from_config patchen: leerer Host würde PTouchBackend ValueError werfen.
+    from app.printer_backends.mock_backend import MockPrinterBackend
+
+    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
+
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.get("/healthz")
         assert r.status_code in (200, 404)
 
 
-async def test_unknown_backend_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "zebra-zpl")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "PT-P750W")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "false")
+async def test_unknown_backend_fails_fast(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Phase 1i CA-1: Unbekannte backend-ID → BackendRegistry-Fehler."""
+    yaml_path = _write_printers_yaml(tmp_path, model="PT-P750W", host="", snmp_discover=False)
+    # printers.yaml schreibt ptouch; für diesen Test überschreiben wir den Loader.
+    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(yaml_path))
+
+    # _build_backend_from_config patchen um "zebra-zpl" zu simulieren.
+    def _raise_unknown(_cfg: Any) -> Any:
+        BackendRegistry.ensure_discovered()
+        BackendRegistry.find_by_backend_id("zebra-zpl")  # wirft KeyError/ValueError
+        return None
+
+    monkeypatch.setattr(_main_module, "_build_backend_from_config", _raise_unknown)
+
     app = create_app()
     with pytest.raises(Exception, match="zebra-zpl"):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
             await c.get("/healthz")
 
 
-async def test_unknown_model_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "Imaginary-9000")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "false")
+async def test_unknown_model_fails_fast(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Phase 1i CA-1: Unbekanntes Drucker-Modell → ModelRegistry-Fehler."""
+    yaml_path = _write_printers_yaml(
+        tmp_path, model="Imaginary-9000", host="", snmp_discover=False
+    )
+    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(yaml_path))
+
+    from app.printer_backends.mock_backend import MockPrinterBackend
+
+    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
+
     app = create_app()
     with pytest.raises(Exception, match="Imaginary-9000"):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
             await c.get("/healthz")
 
 
-async def test_snmp_discovery_resolves_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    """SNMP returns a stubbed PJL string; lifespan resolves it via find_by_pjl."""
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "true")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "")
-    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "192.0.2.10")
+async def test_snmp_discovery_resolves_model(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """SNMP returns a stubbed PJL string; lifespan resolves it via find_by_pjl.
+
+    Phase 1i CA-1: snmp.discover=true + host in printers.yaml statt Env-Vars.
+    """
+    yaml_path = _write_printers_yaml(
+        tmp_path, model="PT-P750W", host="192.0.2.10", snmp_discover=True
+    )
+    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(yaml_path))
+
+    from app.printer_backends.mock_backend import MockPrinterBackend
+
+    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
 
     async def fake_query(host: str, *, community: str = "public", timeout_s: float = 3.0):
         return "MFG:Brother;CMD:PJL;MDL:PT-P750W;CLS:PRINTER;DES:Brother PT-P750W;"
@@ -150,14 +231,23 @@ async def test_snmp_discovery_resolves_model(monkeypatch: pytest.MonkeyPatch) ->
         assert r.status_code in (200, 404)
 
 
-async def test_snmp_discovery_fallback_to_setting(monkeypatch: pytest.MonkeyPatch) -> None:
-    """SNMP fails but printer_model is configured → fall back, warn, succeed."""
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "true")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "PT-P750W")
-    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "192.0.2.10")
+async def test_snmp_discovery_fallback_to_setting(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """SNMP fails but model is configured in printers.yaml → fall back, warn, succeed.
+
+    Phase 1i CA-1: printer_cfg.model als Fallback statt settings.printer_model.
+    """
+    yaml_path = _write_printers_yaml(
+        tmp_path, model="PT-P750W", host="192.0.2.10", snmp_discover=True
+    )
+    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(yaml_path))
 
     from app.printer_backends.exceptions import SnmpDiscoveryError
+    from app.printer_backends.mock_backend import MockPrinterBackend
+
+    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
 
     async def fake_query(*_a, **_kw):
         raise SnmpDiscoveryError("timed out")
@@ -170,28 +260,63 @@ async def test_snmp_discovery_fallback_to_setting(monkeypatch: pytest.MonkeyPatc
         assert r.status_code in (200, 404)
 
 
-async def test_snmp_discovery_no_fallback_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    """SNMP fails AND printer_model is empty → SnmpDiscoveryError propagates."""
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "true")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "")
-    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "192.0.2.10")
+async def test_snmp_discovery_no_fallback_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """SNMP fails AND model is empty → ValueError propagates.
+
+    Phase 1i CA-1: printer_cfg.model="" + snmp.discover=true + SNMP-Fehler.
+    """
+    yaml_path = _write_printers_yaml(
+        tmp_path, model="PT-P750W", host="192.0.2.10", snmp_discover=True
+    )
+    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(yaml_path))
 
     from app.printer_backends.exceptions import SnmpDiscoveryError
+    from app.printer_backends.mock_backend import MockPrinterBackend
+
+    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
 
     async def fake_query(*_a, **_kw):
         raise SnmpDiscoveryError("timed out")
 
     monkeypatch.setattr("app.main.query_model_pjl", fake_query)
 
+    # Lade-Zeit-Override: model auf "" setzen damit _resolve_model_id_from_config
+    # keinen Fallback hat.
+    from app.services.printer_config_loader import PrinterConfigLoader
+    from app.schemas.printer_config import PrinterYAMLConfig, SNMPConfig, QueueConfig, CutDefaults
+
+    # Patch PrinterConfigLoader.all() so dass es ein Config mit leerem Model liefert
+    _empty_model_cfg = PrinterYAMLConfig(
+        slug="test-printer",
+        name="Test Printer",
+        backend="ptouch",
+        model="PT-P750W",  # Brauchen gültigen Wert für Schema-Validierung
+        host="192.0.2.10",
+        port=9100,
+        snmp=SNMPConfig(discover=True, community="public"),
+        queue=QueueConfig(timeout_s=30),
+        cut_defaults=CutDefaults(half_cut=False, cut_at_end=True),
+    )
+    # Patch model auf "" im Objekt (post-validation)
+    object.__setattr__(_empty_model_cfg, "model", "")
+
+    original_all = PrinterConfigLoader.all
+    monkeypatch.setattr(PrinterConfigLoader, "all", classmethod(lambda cls: [_empty_model_cfg]))
+
     app = create_app()
     with pytest.raises(SnmpDiscoveryError):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
             await c.get("/healthz")
 
+    monkeypatch.setattr(PrinterConfigLoader, "all", original_all)
+
 
 def test_lifespan_clears_integration_registry_on_shutdown(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Lifespan shutdown must call aclose() on plugins and IntegrationRegistry.clear().
 
@@ -202,15 +327,18 @@ def test_lifespan_clears_integration_registry_on_shutdown(
     """
     from starlette.testclient import TestClient
 
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "PT-P750W")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "false")
+    yaml_path = _write_printers_yaml(tmp_path, model="PT-P750W", host="", snmp_discover=False)
+    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(yaml_path))
     monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "http://snipe.example")
     monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "k")
     monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "http://grocy.example")
     monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "grocy-k")
     monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "http://spoolman.example")
     get_settings.cache_clear()
+
+    from app.printer_backends.mock_backend import MockPrinterBackend
+
+    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
 
     from app.integrations.grocy.plugin import GrocyPlugin
     from app.integrations.snipeit.plugin import SnipeITPlugin

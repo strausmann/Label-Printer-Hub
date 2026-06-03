@@ -1,12 +1,17 @@
-"""Phase 7b Cluster 1b — upsert_runtime_printer materialises one Printer row
-from env config, idempotent across restarts, returns None when env is silent."""
+"""Phase 1i CA-1 — upsert_runtime_printers materialises Printer rows
+from PrinterYAMLConfig list; idempotent across restarts.
+
+R4-M-4/M-5-Fix: Ersetzt test_lifespan_printer_upsert.py das noch die
+entfernte upsert_runtime_printer(Settings) Funktion testete.
+M-H2-Fix: Multi-Printer-Loop.
+"""
 
 from __future__ import annotations
 
 import pytest
-from app.config import Settings
-from app.db.lifespan import upsert_runtime_printer
+from app.db.lifespan import upsert_runtime_printers
 from app.models.printer import Printer
+from app.schemas.printer_config import CutDefaults, PrinterYAMLConfig, QueueConfig, SNMPConfig
 from app.services.printer_identity import derive_printer_id
 from sqlmodel import select
 
@@ -17,206 +22,103 @@ _PT750W_PORT = 9100
 _PT750W_MODEL = "PT-P750W"
 
 
-def _settings_with_pt750w() -> Settings:
-    """Settings with PT-P750W printer configured at a stable test address."""
-    return Settings(
-        _env_file=None,
-        pt750w_host=_PT750W_HOST,
-        pt750w_port=_PT750W_PORT,
-        printer_model=_PT750W_MODEL,
-        printer_backend="ptouch",
-        printer_discover_via_snmp=False,
-        printer_snmp_community="public",
-    )
-
-
-def _settings_with_mock_backend() -> Settings:
-    """Settings without any printer host — mock/test backend, no row expected."""
-    return Settings(
-        _env_file=None,
-        pt750w_host="",
-        ql820_host="",
-        printer_model="PT-P750W",
-        printer_backend="mock",
-        printer_discover_via_snmp=False,
+def _pt750w_cfg(
+    *,
+    slug: str = "pt-p750w-office",
+    name: str = "PT-P750W Office",
+    host: str = _PT750W_HOST,
+    port: int = _PT750W_PORT,
+    model: str = _PT750W_MODEL,
+) -> PrinterYAMLConfig:
+    """Test-PrinterYAMLConfig für PT-P750W."""
+    return PrinterYAMLConfig(
+        slug=slug,
+        name=name,
+        backend="ptouch",
+        model=model,
+        host=host,
+        port=port,
+        snmp=SNMPConfig(discover=False, community="public"),
+        queue=QueueConfig(timeout_s=30),
+        cut_defaults=CutDefaults(half_cut=False, cut_at_end=True),
     )
 
 
 async def test_upsert_creates_row_when_db_empty(async_session_empty):
-    settings = _settings_with_pt750w()
+    cfg = _pt750w_cfg()
     expected_id = derive_printer_id(_PT750W_MODEL, _PT750W_HOST, _PT750W_PORT)
 
-    returned_id = await upsert_runtime_printer(async_session_empty, settings)
+    returned_ids = await upsert_runtime_printers(async_session_empty, [cfg])
 
-    assert returned_id == expected_id
+    assert len(returned_ids) == 1
+    assert returned_ids[0] == expected_id
     result = await async_session_empty.execute(select(Printer))
     rows = list(result.scalars())
     assert len(rows) == 1
     assert rows[0].id == expected_id
+    assert rows[0].slug == cfg.slug
+    assert rows[0].name == cfg.name
 
 
 async def test_upsert_is_idempotent(async_session_empty):
-    settings = _settings_with_pt750w()
-    first = await upsert_runtime_printer(async_session_empty, settings)
-    second = await upsert_runtime_printer(async_session_empty, settings)
+    cfg = _pt750w_cfg()
+    first = await upsert_runtime_printers(async_session_empty, [cfg])
+    second = await upsert_runtime_printers(async_session_empty, [cfg])
     assert first == second
     result = await async_session_empty.execute(select(Printer))
     assert len(list(result.scalars())) == 1
 
 
-async def test_upsert_refreshes_fields_when_row_exists(async_session_empty):
-    """Re-running upsert updates the row's name + connection + enabled fields."""
-    settings = _settings_with_pt750w()
-    pid = await upsert_runtime_printer(async_session_empty, settings)
-    assert pid is not None
+async def test_upsert_refreshes_slug_and_name_when_row_exists(async_session_empty):
+    """Re-running upsert mit geändertem slug/name aktualisiert die Zeile."""
+    cfg_v1 = _pt750w_cfg(slug="pt-v1", name="PT v1")
+    ids_v1 = await upsert_runtime_printers(async_session_empty, [cfg_v1])
+    assert len(ids_v1) == 1
+    pid = ids_v1[0]
 
-    # Mutate the existing row in-DB so we can verify upsert overwrites it.
-    row = await async_session_empty.get(Printer, pid)
-    assert row is not None
-    row.enabled = False
-    row.name = "stale name"
-    await async_session_empty.flush()
+    cfg_v2 = _pt750w_cfg(slug="pt-v2", name="PT v2")
+    await upsert_runtime_printers(async_session_empty, [cfg_v2])
 
-    # Second upsert with same settings must restore the fields.
-    await upsert_runtime_printer(async_session_empty, settings)
     refreshed = await async_session_empty.get(Printer, pid)
     assert refreshed is not None
-    assert refreshed.enabled is True
-    assert refreshed.name == f"{_PT750W_MODEL} ({_PT750W_HOST})"
+    assert refreshed.slug == "pt-v2"
+    assert refreshed.name == "PT v2"
 
 
-async def test_upsert_returns_none_when_no_env_printer(async_session_empty):
-    settings = _settings_with_mock_backend()
-    result_id = await upsert_runtime_printer(async_session_empty, settings)
-    assert result_id is None
+async def test_upsert_returns_empty_list_for_empty_configs(async_session_empty):
+    result_ids = await upsert_runtime_printers(async_session_empty, [])
+    assert result_ids == []
     result = await async_session_empty.execute(select(Printer))
     assert len(list(result.scalars())) == 0
 
 
-async def test_upsert_handles_existing_row_with_same_name_different_id(
-    async_session_empty,
-):
-    """Phase 7b.1 regression test for issue #76:
-    An old Printer row (with a random uuid4 id) from Phase 7a has the
-    same NAME the new deterministic UUIDv5 wants. upsert_runtime_printer
-    must replace the old row, not crash with UNIQUE constraint failed.
-    """
-    from uuid import uuid4
+async def test_upsert_multiple_printers(async_session_empty):
+    """M-H2-Fix: Multi-Printer-Loop erzeugt mehrere Zeilen."""
+    cfg1 = _pt750w_cfg(slug="printer-a", name="Printer A", host="192.0.2.50")
+    cfg2 = _pt750w_cfg(slug="printer-b", name="Printer B", host="192.0.2.51")
+    expected_id1 = derive_printer_id(_PT750W_MODEL, "192.0.2.50", _PT750W_PORT)
+    expected_id2 = derive_printer_id(_PT750W_MODEL, "192.0.2.51", _PT750W_PORT)
 
-    # Settings configured for PT-P750W on 192.0.2.50:9100 — matches the
-    # deterministic UUIDv5 the test below expects to land in the DB.
-    settings = _settings_with_pt750w()
-    expected_id = derive_printer_id(_PT750W_MODEL, _PT750W_HOST, _PT750W_PORT)
+    returned_ids = await upsert_runtime_printers(async_session_empty, [cfg1, cfg2])
 
-    # Seed the DB with the SAME name but a different (random) id, mimicking
-    # the Phase 7a row that triggered the production crash.
-    old_id = uuid4()
-    assert old_id != expected_id
-    async_session_empty.add(
-        Printer(
-            id=old_id,
-            name=f"{_PT750W_MODEL} ({_PT750W_HOST})",  # same name upsert_runtime_printer computes
-            model="pt-p750w",
-            backend="ptouch",
-            connection={"host": _PT750W_HOST, "port": _PT750W_PORT},
-            enabled=True,
-        )
-    )
-    await async_session_empty.flush()
+    assert len(returned_ids) == 2
+    assert expected_id1 in returned_ids
+    assert expected_id2 in returned_ids
 
-    # Now call upsert — it must NOT raise IntegrityError
-    returned_id = await upsert_runtime_printer(async_session_empty, settings)
-
-    assert returned_id == expected_id
-
-    # Exactly one row should remain — the new one with the deterministic id
     result = await async_session_empty.execute(select(Printer))
     rows = list(result.scalars())
-    assert len(rows) == 1
-    assert rows[0].id == expected_id
-    assert rows[0].id != old_id
+    assert len(rows) == 2
 
 
-async def test_upsert_preserves_dependent_rows_during_id_migration(
-    async_session_empty,
-):
-    """Phase 7b.1 round 2: when a name-collision triggers id-migration, ALL
-    dependent rows (jobs, printer_state, printer_status_cache) must have
-    their FK references rewritten to the new deterministic UUIDv5 — not
-    cascade-deleted (which would lose historical print jobs)."""
-    from datetime import UTC, datetime
-    from uuid import uuid4
+async def test_upsert_multi_printer_is_idempotent(async_session_empty):
+    """Multi-Printer-Upsert bleibt idempotent."""
+    cfg1 = _pt750w_cfg(slug="printer-a", name="Printer A", host="192.0.2.50")
+    cfg2 = _pt750w_cfg(slug="printer-b", name="Printer B", host="192.0.2.51")
 
-    from app.models.job import Job, JobState
-    from app.models.printer import Printer
-    from app.models.printer_state import PrinterState
-    from app.models.printer_status_cache import PrinterStatusCache
+    first = await upsert_runtime_printers(async_session_empty, [cfg1, cfg2])
+    second = await upsert_runtime_printers(async_session_empty, [cfg1, cfg2])
 
-    settings = _settings_with_pt750w()
-    expected_id = derive_printer_id(_PT750W_MODEL, _PT750W_HOST, _PT750W_PORT)
-
-    # Seed: old Printer row with random uuid4 + dependent rows
-    old_id = uuid4()
-    assert old_id != expected_id
-    async_session_empty.add(
-        Printer(
-            id=old_id,
-            name=f"{_PT750W_MODEL} ({_PT750W_HOST})",
-            model="pt-p750w",
-            backend="ptouch",
-            connection={"host": _PT750W_HOST, "port": _PT750W_PORT},
-            enabled=True,
-        )
-    )
-    await async_session_empty.flush()
-
-    # Dependent rows that would trigger FOREIGN KEY constraint failure on DELETE
-    async_session_empty.add(
-        PrinterState(
-            printer_id=old_id,
-            paused=False,
-            updated_at=datetime.now(UTC),
-        )
-    )
-    async_session_empty.add(
-        PrinterStatusCache(
-            printer_id=old_id,
-            captured_at=datetime.now(UTC),
-            parsed={"online": False, "last_error": "stale data"},
-        )
-    )
-    async_session_empty.add(
-        Job(
-            id=uuid4(),
-            printer_id=old_id,
-            template_key="label/address",
-            state=JobState.DONE.value,
-        )
-    )
-    await async_session_empty.flush()
-
-    # NOW call upsert — must NOT raise IntegrityError, and must preserve dependent rows
-    returned_id = await upsert_runtime_printer(async_session_empty, settings)
-    assert returned_id == expected_id
-
-    # The Printer row migrated id (old row gone, new row exists with new id)
+    assert sorted(str(i) for i in first) == sorted(str(i) for i in second)
     result = await async_session_empty.execute(select(Printer))
     rows = list(result.scalars())
-    assert len(rows) == 1
-    assert rows[0].id == expected_id
-
-    # Dependent rows have FK rewritten to new id (not deleted)
-    result = await async_session_empty.execute(select(PrinterState))
-    states = list(result.scalars())
-    assert len(states) == 1
-    assert states[0].printer_id == expected_id
-
-    result = await async_session_empty.execute(select(PrinterStatusCache))
-    caches = list(result.scalars())
-    assert len(caches) == 1
-    assert caches[0].printer_id == expected_id
-
-    result = await async_session_empty.execute(select(Job))
-    jobs = list(result.scalars())
-    assert len(jobs) == 1
-    assert jobs[0].printer_id == expected_id
+    assert len(rows) == 2

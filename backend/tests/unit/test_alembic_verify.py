@@ -25,9 +25,9 @@ def _alembic_cfg(db_url_async: str) -> Config:
 
 
 def _settings(db_url_async: str) -> Settings:
+    # Phase 1i CA-1: printer_backend entfernt aus Settings.
     return Settings(
         database_url=db_url_async,
-        printer_backend="mock",
         _env_file=None,  # type: ignore[call-arg]
     )
 

@@ -19,10 +19,10 @@ _FAKE_AUTH = AuthContext(source="api-key", scope="admin", api_key_id=uuid4(), ip
 
 @pytest.fixture(autouse=True)
 def fresh_state(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "PT-P750W")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "false")
-    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "")
+    # Phase 1i CA-1: Die alten Env-Vars sind entfernt.
+    # _mock_backend_env (autouse, conftest.py) setzt bereits PRINTER_HUB_PRINTERS_CONFIG
+    # und patcht _build_backend_from_config auf MockPrinterBackend.
+    # Hier nur Registry-Reset + cache clear.
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False
     ModelRegistry._models.clear()
@@ -107,10 +107,17 @@ def _factory_with(**mock_kwargs):
 
 
 @pytest.fixture
-def mismatched_mock_backend():
+def mismatched_mock_backend(monkeypatch):
+    import app.main as _main_mod
+
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = True
     BackendRegistry.register("mock", _factory_with(loaded_tape_mm=12))
+    # Phase 1i CA-1: _mock_backend_env (autouse) patcht _build_backend_from_config
+    # auf immer-MockPrinterBackend(). Hier überschreiben wir es zurück auf die
+    # echte Registry-Logik damit die "mock"-Factory mit loaded_tape_mm=12 greift.
+    real_factory = _factory_with(loaded_tape_mm=12)
+    monkeypatch.setattr(_main_mod, "_build_backend_from_config", lambda _cfg: real_factory.from_settings(None))
     yield
 
 
@@ -135,10 +142,17 @@ async def test_tape_mismatch_synchronous_409(mismatched_mock_backend) -> None:
 
 
 @pytest.fixture
-def offline_mock_backend():
+def offline_mock_backend(monkeypatch):
+    import app.main as _main_mod
+
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = True
     BackendRegistry.register("mock", _factory_with(offline=True))
+    # Phase 1i CA-1: _mock_backend_env (autouse) patcht _build_backend_from_config
+    # auf immer-MockPrinterBackend(). Hier überschreiben wir es zurück auf die
+    # echte Registry-Logik damit die "mock"-Factory mit offline=True greift.
+    real_factory = _factory_with(offline=True)
+    monkeypatch.setattr(_main_mod, "_build_backend_from_config", lambda _cfg: real_factory.from_settings(None))
     yield
 
 

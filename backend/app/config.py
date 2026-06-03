@@ -1,16 +1,23 @@
 """Runtime configuration via Pydantic Settings.
 
 All settings are read from environment variables prefixed with ``PRINTER_HUB_``
-(e.g. ``PRINTER_HUB_QL820_HOST``). A ``.env`` file in the working directory is
+(e.g. ``PRINTER_HUB_DATABASE_URL``). A ``.env`` file in the working directory is
 loaded automatically when present; values from the environment always take
 precedence over ``.env`` values.
+
+Phase 1i CA-1: Die 9 drucker-spezifischen Einzelfelder (ql820_host, ql820_port,
+pt750w_host, pt750w_port, printer_backend, printer_model,
+printer_discover_via_snmp, printer_snmp_community, printer_queue_timeout_s)
+wurden entfernt. Drucker werden jetzt über printers.yaml konfiguriert.
+``extra="forbid"`` stellt sicher dass alte Env-Vars laut fehlschlagen statt
+still ignoriert zu werden.
 
 Usage::
 
     from app.config import get_settings
 
     settings = get_settings()
-    print(settings.ql820_host)
+    print(settings.printers_config)
 
 :func:`get_settings` is cached with :func:`functools.lru_cache` so that
 settings are only parsed once per process. Tests that instantiate
@@ -39,19 +46,15 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="PRINTER_HUB_",
         env_file=".env",
-        extra="ignore",
+        extra="forbid",
     )
 
     # Database
     database_url: str = "sqlite+aiosqlite:////data/printer-hub.db"
 
-    # Brother QL-820NWB — address label printer
-    ql820_host: str = ""
-    ql820_port: int = 9100
-
-    # Brother PT-750W — cable / panel label printer
-    pt750w_host: str = ""
-    pt750w_port: int = 9100
+    # Phase 1i Sub-Task H: Pfad zur printers.yaml (Multi-Printer-Config).
+    # CA-1-Fix: Ersetzt die 9 entfernten drucker-spezifischen Felder.
+    printers_config: str = "/etc/hub/printers.yaml"
 
     # Webhook authentication
     webhook_api_key: SecretStr = SecretStr("")
@@ -69,13 +72,6 @@ class Settings(BaseSettings):
     # Spoolman integration (no API key needed)
     spoolman_url: str = ""
     spoolman_timeout: float = 5.0
-
-    # --- First-Print ---
-    printer_backend: str = "ptouch"
-    printer_model: str = "PT-P750W"
-    printer_discover_via_snmp: bool = True
-    printer_snmp_community: str = "public"
-    printer_queue_timeout_s: float = 30.0
 
     # Server
     server_port: int = 8090

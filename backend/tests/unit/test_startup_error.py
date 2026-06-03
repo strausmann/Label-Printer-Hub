@@ -36,15 +36,13 @@ def _run_import(
     Only the overrides + minimal PATH are passed so test isolation is
     strict and no local .env can interfere.
     """
+    # Phase 1i CA-1: PRINTER_HUB_PRINTERS_CONFIG statt entfernte Printer-Felder.
+    # Ein nicht-existierender Pfad ist OK für den Import-Check — Settings-Validierung
+    # schlägt nicht fehl weil printers_config nur ein String ist (keine Datei-Existenz-Prüfung).
     env = {
         "PATH": os.environ.get("PATH", ""),
         "HOME": os.environ.get("HOME", ""),
         "PYTHONPATH": str(BACKEND_DIR),
-        # Provide valid required settings so only the explicitly broken
-        # setting triggers the ValidationError.
-        "PRINTER_HUB_PRINTER_BACKEND": "mock",
-        "PRINTER_HUB_PRINTER_MODEL": "PT-P750W",
-        "PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP": "false",
         **env_overrides,
     }
     return subprocess.run(

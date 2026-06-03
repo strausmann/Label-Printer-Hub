@@ -1,10 +1,11 @@
-"""Phase 7b Cluster 1a + 1b end-to-end test: a fresh DB after lifespan
-startup contains the seed templates AND one deterministic-id printer,
+"""Phase 1i CA-1 / Phase 7b Cluster 1a + 1b end-to-end test: a fresh DB after
+lifespan startup contains the seed templates AND one deterministic-id printer,
 and app.state.printer_id matches the DB printer.id."""
 
 from __future__ import annotations
 
 import app.db.engine as _engine_module
+import app.main as _main_module
 import pytest
 from app.models.printer import Printer
 from app.models.template import Template
@@ -17,14 +18,39 @@ pytestmark = pytest.mark.asyncio
 async def test_fresh_lifespan_seeds_templates_and_creates_printer(
     _temp_db_engine,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
     """After lifespan startup, templates are seeded AND printer is upserted,
-    and app.state.printer_id matches the one Printer row in the DB."""
-    # _mock_backend_env (autouse) sets PRINTER_HUB_PRINTER_MODEL=PT-P750W and
-    # PRINTER_HUB_PRINTER_BACKEND=mock.  We additionally set a host+port so
-    # upsert_runtime_printer() finds all three required fields (model, host, port).
-    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "192.0.2.50")
-    monkeypatch.setenv("PRINTER_HUB_PT750W_PORT", "9100")
+    and app.state.printer_id matches the one Printer row in the DB.
+
+    Phase 1i CA-1: printers.yaml mit nicht-leerem Host statt Env-Vars,
+    damit upsert_runtime_printers() eine echte Printer-Row anlegt.
+    _build_backend_from_config wird auf MockPrinterBackend gepatcht weil
+    PTouchBackend.from_settings() bei leerem Host ValueError wirft.
+    """
+    from app.printer_backends.mock_backend import MockPrinterBackend
+    from app.services.printer_identity import derive_printer_id
+
+    # printers.yaml mit echtem Host → upsert_runtime_printers legt Zeile an
+    _printers_yaml = tmp_path / "test_printers.yaml"
+    _printers_yaml.write_text(
+        "schema_version: 1\n"
+        "printers:\n"
+        "  - slug: test-pt-p750w\n"
+        "    name: Test PT-P750W\n"
+        "    backend: ptouch\n"
+        "    model: PT-P750W\n"
+        "    host: '192.0.2.50'\n"
+        "    port: 9100\n"
+        "    snmp:\n"
+        "      discover: false\n"
+        "      community: public\n"
+        "    cut_defaults:\n"
+        "      half_cut: false\n"
+        "      cut_at_end: true\n"
+    )
+    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(_printers_yaml))
+    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
 
     from app.config import get_settings
     from app.main import create_app
@@ -53,15 +79,19 @@ async def test_fresh_lifespan_seeds_templates_and_creates_printer(
         )
         assert len(printers) == 1, (
             f"Expected exactly one upserted Printer row, got {len(printers)}. "
-            "Check that upsert_runtime_printer() is wired in the lifespan."
+            "Check that upsert_runtime_printers() is wired in the lifespan."
         )
-        # The deterministic id produced by upsert_runtime_printer must be the
-        # same id that make_queue_printer received and exposed via app.state.printer_id.
-        # create_app() returns a _LifespanManager; the FastAPI state is on ._app.
+        # The deterministic id from upsert_runtime_printers must be the same id
+        # that make_queue_printer received and exposed via app.state.printer_id.
+        expected_id = derive_printer_id("PT-P750W", "192.0.2.50", 9100)
         inner_app_state = test_app._app.state  # type: ignore[attr-defined]
         assert inner_app_state.printer_id == printers[0].id, (
             f"app.state.printer_id={inner_app_state.printer_id!r} != "
             f"DB Printer.id={printers[0].id!r}. "
-            "The DB uuid from upsert_runtime_printer must be plumbed into "
+            "The DB uuid from upsert_runtime_printers must be plumbed into "
             "make_queue_printer(printer_id=db_printer_id)."
+        )
+        assert printers[0].id == expected_id, (
+            f"DB Printer.id={printers[0].id!r} != expected deterministic id {expected_id!r}. "
+            "upsert_runtime_printers muss derive_printer_id(model, host, port) nutzen."
         )
