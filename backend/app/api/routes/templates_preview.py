@@ -40,7 +40,7 @@ def _resolve_sample(
     return sample
 
 
-@router.get("/{key}/preview.png", response_class=Response)
+@router.get("/{key}/preview-png", response_class=Response)
 def preview_png(
     key: str,
     primary_id: str | None = Query(default=None),
