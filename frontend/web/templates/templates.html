@@ -29,18 +29,44 @@
        hx-swap="outerHTML"
        class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
     {{range .Templates}}
-    <a href="/templates/{{.Key}}"
-       class="rounded-lg border border-surface-border bg-surface-raised p-4 flex flex-col gap-2 hover:border-primary transition-colors">
-      <div class="flex items-center justify-between">
+    <div class="rounded-lg border border-surface-border bg-surface-raised p-4 flex flex-col gap-2 hover:border-primary transition-colors">
+      <a href="/templates/{{.Key}}" class="flex items-center justify-between">
         <span class="font-semibold text-content">{{.Name}}</span>
         {{if .App}}<span class="badge badge-printing">{{.App}}</span>{{end}}
-      </div>
+      </a>
       <p class="text-sm text-content-secondary font-mono">{{.Key}}</p>
       <p class="text-xs text-content-secondary">{{.TapeWidthMm}} mm · {{.PrinterModel}}</p>
-    </a>
+      <button
+        type="button"
+        hx-get="/api/templates/{{.Key}}/preview-svg"
+        hx-target="#preview-modal-body"
+        hx-trigger="click"
+        hx-swap="innerHTML"
+        class="mt-1 rounded bg-surface-border px-3 py-1 text-xs text-content-secondary hover:bg-primary hover:text-primary-fg transition-colors self-start"
+        onclick="document.getElementById('preview-modal').showModal()"
+      >
+        Preview
+      </button>
+    </div>
     {{else}}
     <p class="col-span-full py-8 text-center text-content-secondary">No templates found.</p>
     {{end}}
   </div>
+
+  <!-- Preview-Modal (Phase 1i D: SVG-Preview pro Card) -->
+  <dialog id="preview-modal" class="rounded-lg border border-surface-border bg-surface p-6 shadow-lg backdrop:bg-black/50 max-w-2xl w-full">
+    <div id="preview-modal-body" class="flex items-center justify-center min-h-[120px] text-content-secondary text-sm">
+      Loading…
+    </div>
+    <div class="mt-4 flex justify-end">
+      <button
+        type="button"
+        class="rounded bg-surface-border px-4 py-1 text-sm text-content hover:bg-primary hover:text-primary-fg transition-colors"
+        onclick="this.closest('dialog').close()"
+      >
+        Schließen
+      </button>
+    </div>
+  </dialog>
 </div>
 {{end}}

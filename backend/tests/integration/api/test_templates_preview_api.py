@@ -1,4 +1,8 @@
-"""Phase 1i Sub-Task A — Integration tests for GET /api/templates/{key}/preview.png."""
+"""Phase 1i Sub-Task A+D — Integration tests for preview endpoints.
+
+A: GET /api/templates/{key}/preview-png
+D: GET /api/templates/{key}/preview-svg
+"""
 
 from __future__ import annotations
 
@@ -26,3 +30,28 @@ async def test_preview_png_returns_bitmap(api_client_with_seed: AsyncClient) -> 
 async def test_preview_png_unknown_template_404(api_client_with_seed: AsyncClient) -> None:
     response = await api_client_with_seed.get("/api/templates/nonexistent/preview-png")
     assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_preview_svg_returns_svg(api_client_with_seed: AsyncClient) -> None:
+    """GET /api/templates/{key}/preview-svg returnt 200 image/svg+xml."""
+    response = await api_client_with_seed.get(
+        "/api/templates/hangar-furniture-12mm/preview-svg",
+        params={"primary_id": "X", "title": "Y", "qr_payload": "Z"},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert response.content.startswith(b"<?xml") or response.content.startswith(b"<svg")
+
+
+@pytest.mark.anyio
+async def test_preview_svg_etag_seed_template(api_client_with_seed: AsyncClient) -> None:
+    """ETag-Caching: zweiter Request mit If-None-Match gibt 304 zurück."""
+    r1 = await api_client_with_seed.get("/api/templates/hangar-furniture-12mm/preview-svg")
+    assert r1.status_code == 200
+    assert "ETag" in r1.headers
+    r2 = await api_client_with_seed.get(
+        "/api/templates/hangar-furniture-12mm/preview-svg",
+        headers={"If-None-Match": r1.headers["ETag"]},
+    )
+    assert r2.status_code == 304
