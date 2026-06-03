@@ -86,6 +86,7 @@ from app.api.routes import templates as templates_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.print import router as print_router
+from app.api.routes.templates_preview import router as templates_preview_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
 from app.config import Settings, get_settings
@@ -655,6 +656,7 @@ def create_app() -> _LifespanManager:
     app.include_router(webhooks_routes.router)
     app.include_router(qr_routes.router)
     app.include_router(admin_api_keys_router)
+    app.include_router(templates_preview_router)
 
     _static_dir = Path(__file__).parent / "static"
     if _static_dir.exists():
