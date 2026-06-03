@@ -52,3 +52,18 @@ async def async_session_factory(tmp_path: pathlib.Path):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     yield factory
     await engine.dispose()
+
+
+@pytest.fixture
+def printer_config_loader_fixture(tmp_path: pathlib.Path):
+    """Liefert (loader_cls, write_yaml(text) -> Path). Räumt Cache nach Test auf."""
+    from app.services.printer_config_loader import PrinterConfigLoader
+
+    def _write(text: str) -> pathlib.Path:
+        f = tmp_path / "printers.yaml"
+        f.write_text(text)
+        PrinterConfigLoader.load_file(f)
+        return f
+
+    yield PrinterConfigLoader, _write
+    PrinterConfigLoader.clear()
