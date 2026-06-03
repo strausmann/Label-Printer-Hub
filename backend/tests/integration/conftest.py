@@ -205,34 +205,24 @@ printers:
 def _mock_backend_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Ensure integration tests use the mock backend and a known model.
 
-    Phase 1i CA-1: Die alten Env-Vars (PRINTER_HUB_PRINTER_BACKEND,
-    PRINTER_HUB_PRINTER_MODEL, PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP) wurden
-    aus Settings entfernt (extra="forbid" würde sie ablehnen). Stattdessen wird
-    eine minimale printers.yaml in tmp_path geschrieben und
-    PRINTER_HUB_PRINTERS_CONFIG darauf gesetzt. PrinterConfigLoader.load_file()
-    in der lifespan liest diese Datei. Der _build_backend_from_config Shim
-    fällt bei leerem Host auf MockPrinterBackend zurück weil ptouch.from_settings()
-    leerem Host ein MockPrinterBackend zurückgibt (via getattr-Shim in main.py
-    der BackendRegistry.find_by_backend_id aufruft).
+    Phase 1i H (Task 7b): _build_backend_from_config wurde entfernt.
+    BackendRouter._build_one() wird jetzt gepatcht um MockPrinterBackend
+    zurückzugeben — leerem Host würde PTouchBackend ValueError werfen.
 
-    Wichtig: Da PT-P750W + leerem Host → _CfgShim.pt750w_host="" →
-    PTouchBackend.from_settings() wirft ValueError. Deshalb wird
-    _build_backend_from_config zusätzlich auf MockPrinterBackend gepatcht.
+    Eine minimale printers.yaml wird in tmp_path geschrieben und
+    PRINTER_HUB_PRINTERS_CONFIG darauf gesetzt.
     """
     from app.printer_backends.mock_backend import MockPrinterBackend
-    import app.main as _main_mod
+    from app.services.backend_router import BackendRouter
 
     # printers.yaml in tmp_path schreiben
     _mock_printers_yaml = tmp_path / "printers.yaml"
     _mock_printers_yaml.write_text(_INTEGRATION_TEST_PRINTER_CONFIG_YAML)
     monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(_mock_printers_yaml))
 
-    # _build_backend_from_config auf Mock-Backend patchen (leerem Host
-    # würde PTouchBackend.from_settings() ValueError werfen).
-    def _mock_build_backend(printer_cfg: Any) -> Any:  # noqa: ARG001
-        return MockPrinterBackend()
-
-    monkeypatch.setattr(_main_mod, "_build_backend_from_config", _mock_build_backend)
+    # BackendRouter._build_one auf Mock-Backend patchen (leerem Host
+    # würde PTouchBackend ValueError werfen).
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
 
     get_settings.cache_clear()
     # Reset registry state so each test gets a clean discovery cycle.

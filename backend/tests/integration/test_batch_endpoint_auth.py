@@ -15,8 +15,6 @@ import pytest
 import pytest_asyncio
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
-from app.models.printer import Printer
-from app.repositories import printers as printers_repo
 from httpx import ASGITransport, AsyncClient
 
 _BODY = {
@@ -82,10 +80,8 @@ async def test_batch_print_scope_allowed(
     auth_db_session,
 ):
     client, inner_app = auth_client
-    p = Printer(name="X", slug="x", model="X", backend="mock")
-    await printers_repo.create(auth_db_session, p)
-    # Align app state with our test printer (single-printer-binding check)
-    inner_app.state.printer_id = p.id
+    # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.
+    printer_slug = inner_app.state.backend_router.slugs()[0]
 
-    resp = await client.post("/api/print/x/batch", json=_BODY)
+    resp = await client.post(f"/api/print/{printer_slug}/batch", json=_BODY)
     assert resp.status_code == 202, resp.text

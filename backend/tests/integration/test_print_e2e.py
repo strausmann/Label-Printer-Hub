@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.main import create_app
 from app.printer_backends import BackendRegistry
 from app.printer_models.registry import ModelRegistry
+from app.services.backend_router import BackendRouter
 from httpx import ASGITransport, AsyncClient
 
 _FAKE_AUTH = AuthContext(source="api-key", scope="admin", api_key_id=uuid4(), ip="127.0.0.1")
@@ -108,16 +109,14 @@ def _factory_with(**mock_kwargs):
 
 @pytest.fixture
 def mismatched_mock_backend(monkeypatch):
-    import app.main as _main_mod
-
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = True
     BackendRegistry.register("mock", _factory_with(loaded_tape_mm=12))
-    # Phase 1i CA-1: _mock_backend_env (autouse) patcht _build_backend_from_config
-    # auf immer-MockPrinterBackend(). Hier überschreiben wir es zurück auf die
-    # echte Registry-Logik damit die "mock"-Factory mit loaded_tape_mm=12 greift.
+    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
+    # _mock_backend_env (autouse) überschreibt _build_one auf MockPrinterBackend().
+    # Hier setzen wir es auf die spezifische Factory mit loaded_tape_mm=12.
     real_factory = _factory_with(loaded_tape_mm=12)
-    monkeypatch.setattr(_main_mod, "_build_backend_from_config", lambda _cfg: real_factory.from_settings(None))
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: real_factory.from_settings(None)))
     yield
 
 
@@ -143,16 +142,12 @@ async def test_tape_mismatch_synchronous_409(mismatched_mock_backend) -> None:
 
 @pytest.fixture
 def offline_mock_backend(monkeypatch):
-    import app.main as _main_mod
-
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = True
     BackendRegistry.register("mock", _factory_with(offline=True))
-    # Phase 1i CA-1: _mock_backend_env (autouse) patcht _build_backend_from_config
-    # auf immer-MockPrinterBackend(). Hier überschreiben wir es zurück auf die
-    # echte Registry-Logik damit die "mock"-Factory mit offline=True greift.
+    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
     real_factory = _factory_with(offline=True)
-    monkeypatch.setattr(_main_mod, "_build_backend_from_config", lambda _cfg: real_factory.from_settings(None))
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: real_factory.from_settings(None)))
     yield
 
 

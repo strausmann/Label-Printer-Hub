@@ -8,8 +8,6 @@ import pytest
 import pytest_asyncio
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
-from app.models.printer import Printer
-from app.repositories import printers as printers_repo
 from httpx import ASGITransport, AsyncClient
 
 
@@ -55,9 +53,8 @@ async def test_batch_route_rejects_mismatched_printer_slug(
 ):
     """body.printer_slug != URL slug → 400 printer_slug_mismatch."""
     client, inner_app = slug_check_client
-    p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
-    await printers_repo.create(slug_check_db_session, p)
-    inner_app.state.printer_id = p.id
+    # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.
+    printer_slug = inner_app.state.backend_router.slugs()[0]
 
     body = {
         "items": [
@@ -66,9 +63,9 @@ async def test_batch_route_rejects_mismatched_printer_slug(
                 "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
             }
         ],
-        "printer_slug": "wrong-slug",  # mismatch with URL "brother-p750w"
+        "printer_slug": "wrong-slug",  # mismatch with URL printer_slug
     }
-    resp = await client.post(f"/api/print/{p.slug}/batch", json=body)
+    resp = await client.post(f"/api/print/{printer_slug}/batch", json=body)
     assert resp.status_code == 400, resp.text
     assert resp.json()["detail"]["error_code"] == "printer_slug_mismatch"
 
@@ -79,9 +76,8 @@ async def test_batch_route_accepts_matching_printer_slug(
 ):
     """body.printer_slug == URL slug → 202 accepted."""
     client, inner_app = slug_check_client
-    p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
-    await printers_repo.create(slug_check_db_session, p)
-    inner_app.state.printer_id = p.id
+    # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.
+    printer_slug = inner_app.state.backend_router.slugs()[0]
 
     body = {
         "items": [
@@ -90,9 +86,9 @@ async def test_batch_route_accepts_matching_printer_slug(
                 "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
             }
         ],
-        "printer_slug": "brother-p750w",  # matches URL slug
+        "printer_slug": printer_slug,  # matches URL slug
     }
-    resp = await client.post(f"/api/print/{p.slug}/batch", json=body)
+    resp = await client.post(f"/api/print/{printer_slug}/batch", json=body)
     assert resp.status_code == 202, resp.text
 
 
@@ -102,9 +98,8 @@ async def test_batch_route_accepts_none_printer_slug(
 ):
     """body.printer_slug=None (default) → kein Konsistenz-Check, 202 accepted."""
     client, inner_app = slug_check_client
-    p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
-    await printers_repo.create(slug_check_db_session, p)
-    inner_app.state.printer_id = p.id
+    # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.
+    printer_slug = inner_app.state.backend_router.slugs()[0]
 
     body = {
         "items": [
@@ -115,5 +110,5 @@ async def test_batch_route_accepts_none_printer_slug(
         ],
         # printer_slug not set (defaults to None) — no check
     }
-    resp = await client.post(f"/api/print/{p.slug}/batch", json=body)
+    resp = await client.post(f"/api/print/{printer_slug}/batch", json=body)
     assert resp.status_code == 202, resp.text

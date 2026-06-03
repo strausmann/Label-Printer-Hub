@@ -23,12 +23,13 @@ async def test_fresh_lifespan_seeds_templates_and_creates_printer(
     """After lifespan startup, templates are seeded AND printer is upserted,
     and app.state.printer_id matches the one Printer row in the DB.
 
-    Phase 1i CA-1: printers.yaml mit nicht-leerem Host statt Env-Vars,
+    Phase 1i CA-1/H (Task 7b): printers.yaml mit nicht-leerem Host statt Env-Vars,
     damit upsert_runtime_printers() eine echte Printer-Row anlegt.
-    _build_backend_from_config wird auf MockPrinterBackend gepatcht weil
-    PTouchBackend.from_settings() bei leerem Host ValueError wirft.
+    BackendRouter._build_one wird auf MockPrinterBackend gepatcht weil
+    PTouchBackend bei leerem Host ValueError wirft.
     """
     from app.printer_backends.mock_backend import MockPrinterBackend
+    from app.services.backend_router import BackendRouter
     from app.services.printer_identity import derive_printer_id
 
     # printers.yaml mit echtem Host → upsert_runtime_printers legt Zeile an
@@ -50,7 +51,8 @@ async def test_fresh_lifespan_seeds_templates_and_creates_printer(
         "      cut_at_end: true\n"
     )
     monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(_printers_yaml))
-    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
+    # Phase 1i H (Task 7b): _build_backend_from_config entfernt — BackendRouter._build_one patchen.
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
 
     from app.config import get_settings
     from app.main import create_app

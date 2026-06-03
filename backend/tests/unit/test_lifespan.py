@@ -15,6 +15,7 @@ from app.integrations.registry import IntegrationRegistry
 from app.main import create_app
 from app.printer_backends import BackendRegistry
 from app.printer_models.registry import ModelRegistry
+from app.services.backend_router import BackendRouter
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -148,10 +149,11 @@ async def test_lifespan_starts_with_mock_backend(
     yaml_path = _write_printers_yaml(tmp_path, model="PT-P750W", host="", snmp_discover=False)
     monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(yaml_path))
 
-    # _build_backend_from_config patchen: leerer Host würde PTouchBackend ValueError werfen.
+    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
+    # Leerer Host würde PTouchBackend ValueError werfen.
     from app.printer_backends.mock_backend import MockPrinterBackend
 
-    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
 
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
@@ -163,18 +165,24 @@ async def test_unknown_backend_fails_fast(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Phase 1i CA-1: Unbekannte backend-ID → BackendRegistry-Fehler."""
+    """Phase 1i H (Task 7b): Unbekannte backend-ID → BackendRouter.UnknownBackendError.
+
+    BackendRouter._build_one wirft UnknownBackendError für unbekannte backend-IDs.
+    Da PrinterYAMLConfig backend: Literal["ptouch", "brother_ql"] validiert,
+    simulieren wir den Fehler via direkten UnknownBackendError-Patch auf _build_one.
+    """
+    from app.printer_backends.mock_backend import MockPrinterBackend
+    from app.services.backend_router import UnknownBackendError
+
     yaml_path = _write_printers_yaml(tmp_path, model="PT-P750W", host="", snmp_discover=False)
-    # printers.yaml schreibt ptouch; für diesen Test überschreiben wir den Loader.
     monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(yaml_path))
 
-    # _build_backend_from_config patchen um "zebra-zpl" zu simulieren.
+    # _build_one patchen um UnknownBackendError zu simulieren (backend-Validierung ist
+    # bereits im Schema, aber _build_one wird in BackendRouter.__init__ aufgerufen).
     def _raise_unknown(_cfg: Any) -> Any:
-        BackendRegistry.ensure_discovered()
-        BackendRegistry.find_by_backend_id("zebra-zpl")  # wirft KeyError/ValueError
-        return None
+        raise UnknownBackendError("Unknown backend: 'zebra-zpl'")
 
-    monkeypatch.setattr(_main_module, "_build_backend_from_config", _raise_unknown)
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(_raise_unknown))
 
     app = create_app()
     with pytest.raises(Exception, match="zebra-zpl"):
@@ -194,7 +202,8 @@ async def test_unknown_model_fails_fast(
 
     from app.printer_backends.mock_backend import MockPrinterBackend
 
-    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
+    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
 
     app = create_app()
     with pytest.raises(Exception, match="Imaginary-9000"):
@@ -217,7 +226,8 @@ async def test_snmp_discovery_resolves_model(
 
     from app.printer_backends.mock_backend import MockPrinterBackend
 
-    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
+    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
 
     async def fake_query(host: str, *, community: str = "public", timeout_s: float = 3.0):
         return "MFG:Brother;CMD:PJL;MDL:PT-P750W;CLS:PRINTER;DES:Brother PT-P750W;"
@@ -247,7 +257,8 @@ async def test_snmp_discovery_fallback_to_setting(
     from app.printer_backends.exceptions import SnmpDiscoveryError
     from app.printer_backends.mock_backend import MockPrinterBackend
 
-    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
+    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
 
     async def fake_query(*_a, **_kw):
         raise SnmpDiscoveryError("timed out")
@@ -276,7 +287,8 @@ async def test_snmp_discovery_no_fallback_fails(
     from app.printer_backends.exceptions import SnmpDiscoveryError
     from app.printer_backends.mock_backend import MockPrinterBackend
 
-    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
+    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
 
     async def fake_query(*_a, **_kw):
         raise SnmpDiscoveryError("timed out")
@@ -338,7 +350,8 @@ def test_lifespan_clears_integration_registry_on_shutdown(
 
     from app.printer_backends.mock_backend import MockPrinterBackend
 
-    monkeypatch.setattr(_main_module, "_build_backend_from_config", lambda _cfg: MockPrinterBackend())
+    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
+    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
 
     from app.integrations.grocy.plugin import GrocyPlugin
     from app.integrations.snipeit.plugin import SnipeITPlugin

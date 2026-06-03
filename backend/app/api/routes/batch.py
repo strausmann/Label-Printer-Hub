@@ -77,26 +77,7 @@ async def create_batch(
     # 3. ACL: api-key may be restricted to a subset of printer_ids
     check_printer_access(auth, printer.id)
 
-    # 4. Verify the resolved printer matches the singleton wired into
-    # app.state.print_service. The Hub is currently single-printer at
-    # startup (main.py wires PrintService to app.state.printer_id).
-    # If the URL slug points to a different printer row, the dispatch
-    # would silently route to the wrong device. Reject explicitly.
-    seeded_printer_id = getattr(http.app.state, "printer_id", None)
-    if seeded_printer_id is not None and printer.id != seeded_printer_id:
-        raise HTTPException(
-            404,
-            detail={
-                "error_code": "printer_not_active",
-                "error_message": (
-                    "Resolved printer is not the currently-seeded device. "
-                    "Hub is single-printer at startup; multi-printer routing "
-                    "is a future enhancement."
-                ),
-            },
-        )
-
-    # 5. R3-Drift #10: backend_router direkt aus app.state — KEIN get_app_state.
+    # 4. R3-Drift #10: backend_router direkt aus app.state — KEIN get_app_state.
     backend_router = getattr(http.app.state, "backend_router", None)
     if backend_router is None:
         raise HTTPException(503, detail={"error_code": "router_not_initialized"})
@@ -111,8 +92,19 @@ async def create_batch(
             },
         )
 
+    # 5. R4-A-C2-Fix (Volle Multi-Printer): pro-Drucker PrintService via service_for().
+    try:
+        service = backend_router.service_for(printer.slug)
+    except KeyError:
+        raise HTTPException(
+            503,
+            detail={
+                "error_code": "service_not_initialized",
+                "error_message": f"No PrintService registered for slug={printer.slug!r}.",
+            },
+        )
+
     # 6. Best-effort dispatch
-    service = http.app.state.print_service
     try:
         job_ids, errors = await dispatch_batch(
             service,
