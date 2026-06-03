@@ -83,6 +83,13 @@ class TemplateSchema(BaseModel):
     name: str
     app: str | None
     tape_mm: int
+    printer_model: str | None = None
+    """Optional printer-model hint.  ``None`` → seed_db() defaults to
+    ``'pt-series'`` for backward-compatibility with existing YAMLs.
+    Use ``'brother_ql'`` for QL Endless (62mm DK) templates.
+    Used by the print-dispatcher (Phase 2) to route to the correct
+    hardware backend.
+    """
     elements: tuple[LayoutElement, ...]
     # Values use tuple (not list) so the entire schema is deeply immutable —
     # Pydantic frozen=True only prevents attribute re-assignment, not mutation

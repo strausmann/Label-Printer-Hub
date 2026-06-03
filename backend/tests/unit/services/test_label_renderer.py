@@ -198,7 +198,8 @@ class TestWhitespaceTrim:
         # The QR sits at x=260..340 with size=80; after trim with 6px margin,
         # width should be 80 + 2*6 = 92 px (give or take a pixel for QR rendering).
         assert img.width < 200, f"Expected compact label, got width={img.width}"
-        assert img.height == 106, "Tape-axis height must stay fixed"
+        # Height is pin-locked to ptouch Tape12mm print_pins (70px after DPI-Fix).
+        assert img.height == TAPE_HEIGHT_PX[12], "Tape-axis height must stay fixed"
 
     def test_entirely_blank_template_returns_unchanged_canvas(self) -> None:
         template = TemplateSchema(
@@ -219,4 +220,5 @@ class TestWhitespaceTrim:
         img = LabelRenderer().render(template, data)
         # No ink → no trim → full default canvas
         assert img.width == 600
-        assert img.height == 106
+        # Height is pin-locked to ptouch Tape12mm print_pins (70px after DPI-Fix).
+        assert img.height == TAPE_HEIGHT_PX[12]

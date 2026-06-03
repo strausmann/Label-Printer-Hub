@@ -1,15 +1,18 @@
 # Hangar Furniture Tag — 12mm Endlostape (TZe-231)
-# 180 DPI: 12mm ≈ 85 px Höhe.
-# Layout: QR links (75x75), primary_id oben rechts, title kleiner darunter.
+# ptouch PT-P750W 180 DPI: 12mm = 70 print_pins (Tape12mm).
+# A-Diagnose Fix: Canvas 106px→70px. Y/size mit scale_y=70/106≈0.660.
+# QR 58px (y=4: 4+58=62 < 70). Text-Y proportional skaliert.
+# Layout: QR links (58x58), primary_id oben rechts, title kleiner darunter.
 schema_version: 1
 id: hangar-furniture-12mm
 name: "Hangar Furniture Tag (TZe-231, 12mm)"
 app: null
 tape_mm: 12
+printer_model: ptouch
 elements:
-  - { type: qr,   x: 5,   y: 5,  size: 75, data_field: qr_payload }
-  - { type: text, x: 90,  y: 12, field: primary_id, font_size: 20 }
-  - { type: text, x: 90,  y: 50, field: title,      font_size: 14 }
+  - { type: qr,   x: 5,   y: 4,  size: 58, data_field: qr_payload }
+  - { type: text, x: 75,  y: 5,  field: primary_id, font_size: 13 }
+  - { type: text, x: 75,  y: 36, field: title,      font_size: 10 }
 preview_sample:
   primary_id: "HH-AK-KX10-F0203"
   title: "Kallax Nr.10 Fach 2-3"

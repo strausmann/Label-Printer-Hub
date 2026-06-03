@@ -1,14 +1,17 @@
 # Hangar Furniture Tag — 24mm (TZe-251)
-# 180 DPI: 24mm ≈ 170 px Höhe.
+# ptouch PT-P750W 180 DPI: 24mm = 128 print_pins (Tape24mm).
+# A-Diagnose Fix: Canvas 256px→128px. Y/size mit scale_y=128/256=0.500.
+# QR 110px (y=8: 8+110=118 < 128). Text-Y proportional skaliert.
 schema_version: 1
 id: hangar-furniture-24mm
 name: "Hangar Furniture Tag (TZe-251, 24mm)"
 app: null
 tape_mm: 24
+printer_model: ptouch
 elements:
-  - { type: qr,   x: 10,  y: 10, size: 150, data_field: qr_payload }
-  - { type: text, x: 175, y: 20, field: primary_id, font_size: 40 }
-  - { type: text, x: 175, y: 100, field: title,     font_size: 24 }
+  - { type: qr,   x: 10,  y: 8,  size: 110, data_field: qr_payload }
+  - { type: text, x: 130, y: 10, field: primary_id, font_size: 24 }
+  - { type: text, x: 130, y: 60, field: title,      font_size: 16 }
 preview_sample:
   primary_id: "HH-AK-RAUM01"
   title: "Arbeitskeller Raum"

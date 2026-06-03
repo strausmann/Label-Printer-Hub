@@ -1,0 +1,18 @@
+# Samla Stirntag — 62mm DK Endless (QL)
+# Für IKEA Samla Behälter: Stirnseiten-Etikett mit großem QR + Standort-ID + Titel.
+# Brother QL 62mm Endless: 696 printable pixels (native QL geometry).
+# Großzügiges Layout: QR 220px + großer Text für Fern-Lesbarkeit.
+schema_version: 1
+id: samla-stirntag-62mm
+name: "Samla Stirntag (DK 62mm Endless)"
+app: null
+tape_mm: 62
+printer_model: brother_ql
+elements:
+  - { type: qr,   x: 15,  y: 15, size: 220, data_field: qr_payload }
+  - { type: text, x: 250, y: 20, field: primary_id, font_size: 60 }
+  - { type: text, x: 250, y: 110, field: title,     font_size: 36 }
+preview_sample:
+  primary_id: "HH-AK-SM01-D2-S1"
+  title: "Samla 11L Stirntag"
+  qr_payload: "https://hangar.example.test/loc/HH-AK-SM01-D2-S1"

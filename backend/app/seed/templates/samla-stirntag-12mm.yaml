@@ -1,0 +1,18 @@
+# Samla Stirntag — 12mm Endlostape (TZe-231)
+# Für IKEA Samla Behälter: Stirnseiten-Etikett mit QR + Standort-ID + Titel.
+# ptouch PT-P750W 180 DPI: 12mm = 70 print_pins (Tape12mm).
+# QR 58px (y=4: 4+58=62 < 70). Standort-ID + Titel rechts vom QR.
+schema_version: 1
+id: samla-stirntag-12mm
+name: "Samla Stirntag (TZe 12mm)"
+app: null
+tape_mm: 12
+printer_model: ptouch
+elements:
+  - { type: qr,   x: 5,   y: 4,  size: 58, data_field: qr_payload }
+  - { type: text, x: 72,  y: 5,  field: primary_id, font_size: 13 }
+  - { type: text, x: 72,  y: 38, field: title,      font_size: 10 }
+preview_sample:
+  primary_id: "HH-AK-SM01-D2-S1"
+  title: "Samla 11L Stirntag"
+  qr_payload: "https://hangar.example.test/loc/HH-AK-SM01-D2-S1"

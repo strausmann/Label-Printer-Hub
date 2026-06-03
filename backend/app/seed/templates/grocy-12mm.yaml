@@ -1,14 +1,17 @@
 # Compact: QR + product id + name. Grocy LabelData has empty secondary,
 # so the 12mm layout (no secondary slot) is the natural fit.
+# A-Diagnose Fix: Canvas 106px→70px. scale_y=70/106≈0.660.
+# QR 58px (y=4: 4+58=62 < 70). Text-Y proportional skaliert.
 schema_version: 1
 id: grocy-12mm
 name: "Grocy Product (12mm)"
 app: grocy
 tape_mm: 12
+printer_model: ptouch
 elements:
-  - { type: qr,   x: 8,   y: 13, size: 80, data_field: qr_payload }
-  - { type: text, x: 100, y: 18, field: primary_id, font_size: 22 }
-  - { type: text, x: 100, y: 60, field: title,      font_size: 14 }
+  - { type: qr,   x: 5,   y: 4,  size: 58, data_field: qr_payload }
+  - { type: text, x: 72,  y: 4,  field: primary_id, font_size: 14 }
+  - { type: text, x: 72,  y: 38, field: title,      font_size: 10 }
 preview_sample:
   primary_id: "Erdbeermarmelade"
   title: "Lager > Vorrat"

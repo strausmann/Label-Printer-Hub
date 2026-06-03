@@ -134,7 +134,9 @@ class TemplateLoader:
         schema.app     Template.app (None for generic templates)
         schema.tape_mm Template.tape_width_mm
         schema.schema_version Template.schema_version
-        "pt-series"    Template.printer_model (seed YAMLs are PT-series)
+        schema.printer_model or "pt-series"
+                       Template.printer_model — YAML value takes precedence,
+                       falls back to "pt-series" for backward-compat
         schema.model_dump() Template.definition — serialised body
         ============== =====================================================
 
@@ -152,7 +154,7 @@ class TemplateLoader:
                 key=schema.id,
                 name=schema.name,
                 app=schema.app,
-                printer_model="pt-series",
+                printer_model=(schema.printer_model or "pt-series"),
                 tape_width_mm=schema.tape_mm,
                 schema_version=schema.schema_version,
                 definition=schema.model_dump(),
