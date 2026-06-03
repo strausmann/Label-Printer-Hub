@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## <small>0.8.2 (2026-06-03)</small>
+
+* fix(backend): BatchRead datetime UTC-Serializer für Hangar-Decode (#97) ([eb2132c](https://github.com/strausmann/label-printer-hub/commit/eb2132c)), closes [#97](https://github.com/strausmann/label-printer-hub/issues/97)
+
 ## <small>0.8.1 (2026-06-02)</small>
 
 * fix(backend): Pangolin-Standard-Header (Remote-User + X-Pangolin-Token) als SSO-Pfad (#96) ([32cd93e](https://github.com/strausmann/label-printer-hub/commit/32cd93e)), closes [#96](https://github.com/strausmann/label-printer-hub/issues/96) [#95](https://github.com/strausmann/label-printer-hub/issues/95)
