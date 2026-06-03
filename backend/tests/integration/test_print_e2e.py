@@ -116,7 +116,9 @@ def mismatched_mock_backend(monkeypatch):
     # _mock_backend_env (autouse) überschreibt _build_one auf MockPrinterBackend().
     # Hier setzen wir es auf die spezifische Factory mit loaded_tape_mm=12.
     real_factory = _factory_with(loaded_tape_mm=12)
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: real_factory.from_settings(None)))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: real_factory.from_settings(None))
+    )
     yield
 
 
@@ -147,7 +149,9 @@ def offline_mock_backend(monkeypatch):
     BackendRegistry.register("mock", _factory_with(offline=True))
     # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
     real_factory = _factory_with(offline=True)
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: real_factory.from_settings(None)))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: real_factory.from_settings(None))
+    )
     yield
 
 

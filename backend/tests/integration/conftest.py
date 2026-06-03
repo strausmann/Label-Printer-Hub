@@ -7,7 +7,6 @@ mock backend so that lifespan startup succeeds without a printer on the network.
 
 from __future__ import annotations
 
-from typing import Any
 from uuid import uuid4
 
 import app.db.engine as _engine_module
@@ -222,7 +221,9 @@ def _mock_backend_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
 
     # BackendRouter._build_one auf Mock-Backend patchen (leerem Host
     # würde PTouchBackend ValueError werfen).
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend())
+    )
 
     get_settings.cache_clear()
     # Reset registry state so each test gets a clean discovery cycle.

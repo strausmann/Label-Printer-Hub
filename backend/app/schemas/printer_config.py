@@ -56,7 +56,7 @@ class PrinterYAMLConfig(BaseModel):
     cut_defaults: CutDefaults = Field(default_factory=CutDefaults)
 
     @model_validator(mode="after")
-    def validate_cut_defaults_vs_backend(self) -> "PrinterYAMLConfig":
+    def validate_cut_defaults_vs_backend(self) -> PrinterYAMLConfig:
         # MA-1-Fix: Cross-Validierung
         if self.cut_defaults.half_cut and self.backend == "brother_ql":
             raise PrinterConfigValidationError(

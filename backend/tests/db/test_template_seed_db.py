@@ -17,9 +17,7 @@ from app.services.template_loader import TemplateLoader
 # ---------------------------------------------------------------------------
 
 
-def _load_stub_cache(
-    ids: list[str], *, printer_model: str | None = None
-) -> dict:
+def _load_stub_cache(ids: list[str], *, printer_model: str | None = None) -> dict:
     """Build synthetic TemplateSchema objects and inject them into the class
     cache without touching the filesystem or IntegrationRegistry.
 
@@ -35,13 +33,13 @@ def _load_stub_cache(
 
     cache = {}
     for id_ in ids:
-        kwargs: dict = dict(
-            id=id_,
-            name=f"Template {id_}",
-            app=None,  # generic — no integration dependency
-            tape_mm=12,
-            schema_version=1,
-            elements=(
+        kwargs: dict = {
+            "id": id_,
+            "name": f"Template {id_}",
+            "app": None,  # generic — no integration dependency
+            "tape_mm": 12,
+            "schema_version": 1,
+            "elements": (
                 {
                     "type": "qr",
                     "x": 0,
@@ -50,7 +48,7 @@ def _load_stub_cache(
                     "data_field": "url",
                 },
             ),
-        )
+        }
         if printer_model is not None:
             kwargs["printer_model"] = printer_model
         cache[id_] = TemplateSchema(**kwargs)

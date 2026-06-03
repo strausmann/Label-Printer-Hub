@@ -95,14 +95,14 @@ async def create_batch(
     # 5. R4-A-C2-Fix (Volle Multi-Printer): pro-Drucker PrintService via service_for().
     try:
         service = backend_router.service_for(printer.slug)
-    except KeyError:
+    except KeyError as err:
         raise HTTPException(
             503,
             detail={
                 "error_code": "service_not_initialized",
                 "error_message": f"No PrintService registered for slug={printer.slug!r}.",
             },
-        )
+        ) from err
 
     # 6. Best-effort dispatch
     try:

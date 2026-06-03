@@ -3,10 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from app.schemas.printer_config import PrinterYAMLConfig
 from app.services.printer_config_loader import PrinterConfigLoader
-
+from pydantic import ValidationError
 
 VALID_YAML = """
 schema_version: 1
@@ -31,7 +30,7 @@ def test_load_file_populates_cache(tmp_path: Path):
 def test_invalid_yaml_raises(tmp_path: Path):
     cfg_file = tmp_path / "bad.yaml"
     cfg_file.write_text("schema_version: 1\nprinters:\n  - slug: A-B-C\n")  # uppercase slug
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         PrinterConfigLoader.load_file(cfg_file)
 
 

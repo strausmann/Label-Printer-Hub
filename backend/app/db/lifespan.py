@@ -30,6 +30,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.models.printer import Printer
 from app.schemas.printer_config import PrinterYAMLConfig
 from app.services.printer_identity import derive_printer_id

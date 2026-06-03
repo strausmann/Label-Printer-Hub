@@ -112,7 +112,9 @@ async def test_lifespan_registers_per_slug_services(
     )
     monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(cfg))
     # BackendRouter._build_one auf MockPrinterBackend patchen (kein echter Drucker im Test).
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend())
+    )
     get_settings.cache_clear()
 
     test_app = create_app()
@@ -131,8 +133,7 @@ async def test_lifespan_registers_per_slug_services(
         # service_for('brother-p750w') gibt eine PrintService-Instanz zurück
         service = inner_state.backend_router.service_for("brother-p750w")
         assert isinstance(service, PrintService), (
-            f"service_for('brother-p750w') sollte PrintService sein, "
-            f"ist aber {type(service)!r}"
+            f"service_for('brother-p750w') sollte PrintService sein, ist aber {type(service)!r}"
         )
 
         # Backward-Compat: app.state.print_service verweist auf ersten Drucker

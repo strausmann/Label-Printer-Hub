@@ -89,7 +89,7 @@ from app.api.routes.print import router as print_router
 from app.api.routes.templates_preview import router as templates_preview_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
     ensure_printer_state,
@@ -100,12 +100,11 @@ from app.db.lifespan import (
 )
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
-from app.models.printer import Printer as _Printer
-from app.printer_backends import BackendRegistry
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
 from app.schemas.readiness import ReadinessResponse
+from app.services.backend_router import BackendRouter
 from app.services.cleanup_task import CleanupTask
 from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
@@ -113,7 +112,6 @@ from app.services.label_renderer import LabelRenderer
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue
 from app.services.print_service import PrintService
-from app.services.backend_router import BackendRouter
 from app.services.printer_config_loader import PrinterConfigLoader
 from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.status_probe_producer import StatusProbeProducer
@@ -376,7 +374,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
                 await producer.start()
                 status_producers.append(producer)
-            except Exception as probe_exc:  # noqa: BLE001
+            except Exception as probe_exc:
                 _log.warning(
                     "Degraded-Start: StatusProbeProducer für slug=%s (host=%s) fehlgeschlagen: %s. "
                     "Hub startet ohne diesen Drucker — SNMP-Status bleibt unreachable.",

@@ -41,11 +41,11 @@ def test_hangar_template_parses(tape_mm: int, template_id: str):
 @pytest.mark.parametrize(
     "tape_mm,printer_model,template_id",
     [
-        (12, "ptouch",     "samla-stirntag-12mm"),
-        (24, "ptouch",     "samla-stirntag-24mm"),
+        (12, "ptouch", "samla-stirntag-12mm"),
+        (24, "ptouch", "samla-stirntag-24mm"),
         (62, "brother_ql", "samla-stirntag-62mm"),
-        (12, "ptouch",     "samla-deckel-12mm"),
-        (24, "ptouch",     "samla-deckel-24mm"),
+        (12, "ptouch", "samla-deckel-12mm"),
+        (24, "ptouch", "samla-deckel-24mm"),
         (62, "brother_ql", "samla-deckel-62mm"),
     ],
 )

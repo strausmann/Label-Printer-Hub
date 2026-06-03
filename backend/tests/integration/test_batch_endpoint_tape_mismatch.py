@@ -97,7 +97,9 @@ async def test_batch_tape_mismatch_per_item(
             },
         ]
     }
-    resp = await client.post(f"/api/print/{printer_slug}/batch", json=body, headers=tape_auth_headers)
+    resp = await client.post(
+        f"/api/print/{printer_slug}/batch", json=body, headers=tape_auth_headers
+    )
     assert resp.status_code == 202, resp.text
     data = resp.json()
     assert len(data["job_ids"]) == 2

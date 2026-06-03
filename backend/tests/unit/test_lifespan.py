@@ -153,7 +153,9 @@ async def test_lifespan_starts_with_mock_backend(
     # Leerer Host würde PTouchBackend ValueError werfen.
     from app.printer_backends.mock_backend import MockPrinterBackend
 
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend())
+    )
 
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
@@ -171,7 +173,6 @@ async def test_unknown_backend_fails_fast(
     Da PrinterYAMLConfig backend: Literal["ptouch", "brother_ql"] validiert,
     simulieren wir den Fehler via direkten UnknownBackendError-Patch auf _build_one.
     """
-    from app.printer_backends.mock_backend import MockPrinterBackend
     from app.services.backend_router import UnknownBackendError
 
     yaml_path = _write_printers_yaml(tmp_path, model="PT-P750W", host="", snmp_discover=False)
@@ -195,15 +196,15 @@ async def test_unknown_model_fails_fast(
     tmp_path: Path,
 ) -> None:
     """Phase 1i CA-1: Unbekanntes Drucker-Modell → ModelRegistry-Fehler."""
-    yaml_path = _write_printers_yaml(
-        tmp_path, model="Imaginary-9000", host="", snmp_discover=False
-    )
+    yaml_path = _write_printers_yaml(tmp_path, model="Imaginary-9000", host="", snmp_discover=False)
     monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(yaml_path))
 
     from app.printer_backends.mock_backend import MockPrinterBackend
 
     # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend())
+    )
 
     app = create_app()
     with pytest.raises(Exception, match="Imaginary-9000"):
@@ -227,7 +228,9 @@ async def test_snmp_discovery_resolves_model(
     from app.printer_backends.mock_backend import MockPrinterBackend
 
     # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend())
+    )
 
     async def fake_query(host: str, *, community: str = "public", timeout_s: float = 3.0):
         return "MFG:Brother;CMD:PJL;MDL:PT-P750W;CLS:PRINTER;DES:Brother PT-P750W;"
@@ -258,7 +261,9 @@ async def test_snmp_discovery_fallback_to_setting(
     from app.printer_backends.mock_backend import MockPrinterBackend
 
     # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend())
+    )
 
     async def fake_query(*_a, **_kw):
         raise SnmpDiscoveryError("timed out")
@@ -288,7 +293,9 @@ async def test_snmp_discovery_no_fallback_fails(
     from app.printer_backends.mock_backend import MockPrinterBackend
 
     # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend())
+    )
 
     async def fake_query(*_a, **_kw):
         raise SnmpDiscoveryError("timed out")
@@ -297,8 +304,8 @@ async def test_snmp_discovery_no_fallback_fails(
 
     # Lade-Zeit-Override: model auf "" setzen damit _resolve_model_id_from_config
     # keinen Fallback hat.
+    from app.schemas.printer_config import CutDefaults, PrinterYAMLConfig, QueueConfig, SNMPConfig
     from app.services.printer_config_loader import PrinterConfigLoader
-    from app.schemas.printer_config import PrinterYAMLConfig, SNMPConfig, QueueConfig, CutDefaults
 
     # Patch PrinterConfigLoader.all() so dass es ein Config mit leerem Model liefert
     _empty_model_cfg = PrinterYAMLConfig(
@@ -351,7 +358,9 @@ def test_lifespan_clears_integration_registry_on_shutdown(
     from app.printer_backends.mock_backend import MockPrinterBackend
 
     # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend())
+    )
 
     from app.integrations.grocy.plugin import GrocyPlugin
     from app.integrations.snipeit.plugin import SnipeITPlugin

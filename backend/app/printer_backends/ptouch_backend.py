@@ -187,7 +187,7 @@ class PTouchBackend:
         auto_cut: bool = True,
         high_resolution: bool = False,
         half_cut: bool = False,
-        last_page: bool = True,
+        last_page: bool = True,  # noqa: ARG002
     ) -> None:
         """Pre-print validation via SNMP, then dispatch ptouch.print.
 

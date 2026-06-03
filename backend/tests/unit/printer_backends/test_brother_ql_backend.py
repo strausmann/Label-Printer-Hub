@@ -1,14 +1,14 @@
 """Phase 1i Sub-Task G: BrotherQLBackend tests."""
+
 from __future__ import annotations
 
 import logging
 
 import pytest
-from PIL import Image
-
 from app.models.tape import TapeSpec
 from app.printer_backends.brother_ql_backend import BrotherQLBackend
 from app.services.status_block import MediaType
+from PIL import Image
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def tape_spec_62() -> TapeSpec:
 
 @pytest.fixture
 def dummy_image() -> Image.Image:
-    """Minimal 696×200 white image — matches QL-820NWB 62mm print width."""
+    """Minimal 696x200 white image — matches QL-820NWB 62mm print width."""
     return Image.new("RGB", (696, 200), "white")
 
 
@@ -44,16 +44,12 @@ async def test_print_image_calls_brother_ql_send(
     def fake_send(data, identifier, **kwargs):
         send_calls.append((identifier, len(data), kwargs))
 
-    monkeypatch.setattr(
-        "app.printer_backends.brother_ql_backend._helpers_send", fake_send
-    )
+    monkeypatch.setattr("app.printer_backends.brother_ql_backend._helpers_send", fake_send)
 
-    backend = BrotherQLBackend(
-        host="172.16.51.213", port=9100, model_id="QL-820NWB"
-    )
+    backend = BrotherQLBackend(host="172.16.51.213", port=9100, model_id="QL-820NWB")
     await backend.print_image(dummy_image, tape_spec_62, auto_cut=True, last_page=True)
     assert len(send_calls) == 1
-    identifier, payload_len, kwargs = send_calls[0]
+    identifier, payload_len, _kwargs = send_calls[0]
     assert identifier == "tcp://172.16.51.213:9100"
     assert payload_len > 0
 

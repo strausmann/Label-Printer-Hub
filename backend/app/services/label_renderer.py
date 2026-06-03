@@ -10,7 +10,7 @@ The print area is constrained by the physical print_pins of the
 PT-P750W per tape width — see `TAPE_HEIGHT_PX` for the supported widths.
 
 A-Diagnose (2026-06-02): previous values (12:106, 18:165, 24:256) were
-derived from a brother_ql / 300 DPI geometry and caused 1.5x–2x canvas
+derived from a brother_ql / 300 DPI geometry and caused 1.5x-2x canvas
 overflow. ptouch._prepare_image() crops to print_pins on paste, silently
 clipping QR and text elements at the top. Fixed to match ptouch PIN_CONFIGS
 print_pins values at 180 DPI. QL 62mm Endless tape is unaffected.
@@ -33,7 +33,7 @@ from app.schemas.template import LayoutElement, TemplateSchema
 # Source: ptouch-py PIN_CONFIGS (Tape12mm=70, Tape18mm=112, Tape24mm=128).
 # QL 62mm Endless tape uses brother_ql geometry and is unchanged.
 TAPE_HEIGHT_PX: Final[dict[int, int]] = {
-    12: 70,   # PT-P750W Tape12mm print_pins (was 106 — 1.51x overflow)
+    12: 70,  # PT-P750W Tape12mm print_pins (was 106 — 1.51x overflow)
     18: 112,  # PT-P750W Tape18mm print_pins (was 165 — 1.47x overflow)
     24: 128,  # PT-P750W Tape24mm print_pins (was 256 — 2.00x overflow)
     62: 696,  # endless QL tape — unchanged

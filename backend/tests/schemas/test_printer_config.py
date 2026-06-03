@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
-
 from app.schemas.printer_config import (
     CutDefaults,
-    PrinterConfigValidationError,
-    PrinterYAMLConfig,
     PrintersFile,
-    QueueConfig,
-    SNMPConfig,
+    PrinterYAMLConfig,
 )
+from pydantic import ValidationError
 
 
 def test_minimal_printer_config_valid():
@@ -48,7 +44,11 @@ def test_invalid_backend_rejected():
 def test_extra_field_rejected_strict_mode():
     with pytest.raises(ValidationError):
         PrinterYAMLConfig(
-            slug="x", name="x", backend="ptouch", model="x", host="x",
+            slug="x",
+            name="x",
+            backend="ptouch",
+            model="x",
+            host="x",
             unknown_field="boom",
         )
 
@@ -72,7 +72,11 @@ def test_duplicate_slugs_rejected():
         PrintersFile(
             schema_version=1,
             printers=[
-                PrinterYAMLConfig(slug="a", name="A", backend="ptouch", model="PT-P750W", host="1.1.1.1"),
-                PrinterYAMLConfig(slug="a", name="B", backend="ptouch", model="PT-P750W", host="2.2.2.2"),
+                PrinterYAMLConfig(
+                    slug="a", name="A", backend="ptouch", model="PT-P750W", host="1.1.1.1"
+                ),
+                PrinterYAMLConfig(
+                    slug="a", name="B", backend="ptouch", model="PT-P750W", host="2.2.2.2"
+                ),
             ],
         )

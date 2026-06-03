@@ -71,9 +71,7 @@ async def test_batch_route_rejects_mismatched_printer_slug(
 
 
 @pytest.mark.asyncio
-async def test_batch_route_accepts_matching_printer_slug(
-    slug_check_client, slug_check_db_session
-):
+async def test_batch_route_accepts_matching_printer_slug(slug_check_client, slug_check_db_session):
     """body.printer_slug == URL slug → 202 accepted."""
     client, inner_app = slug_check_client
     # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.
@@ -93,9 +91,7 @@ async def test_batch_route_accepts_matching_printer_slug(
 
 
 @pytest.mark.asyncio
-async def test_batch_route_accepts_none_printer_slug(
-    slug_check_client, slug_check_db_session
-):
+async def test_batch_route_accepts_none_printer_slug(slug_check_client, slug_check_db_session):
     """body.printer_slug=None (default) → kein Konsistenz-Check, 202 accepted."""
     client, inner_app = slug_check_client
     # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.

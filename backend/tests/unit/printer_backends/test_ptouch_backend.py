@@ -174,7 +174,9 @@ async def test_print_image_invokes_ptouch_when_healthy(
     )
     captured: dict[str, Any] = {}
 
-    def fake_print(host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False):
+    def fake_print(
+        host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False
+    ):
         captured["host"] = host
         captured["port"] = port
         captured["tape_mm"] = tape_mm
@@ -407,7 +409,9 @@ async def test_print_image_passes_half_cut_to_ptouch(
     )
     captured: dict[str, Any] = {}
 
-    def fake_print(host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False):
+    def fake_print(
+        host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False
+    ):
         captured["half_cut"] = half_cut
         captured["auto_cut"] = auto_cut
 
@@ -442,7 +446,9 @@ async def test_print_image_half_cut_defaults_to_false(
     )
     captured: dict[str, Any] = {}
 
-    def fake_print(host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False):
+    def fake_print(
+        host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False
+    ):
         captured["half_cut"] = half_cut
 
     monkeypatch.setattr(

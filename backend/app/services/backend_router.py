@@ -25,11 +25,9 @@ class UnknownBackendError(ValueError):
 class BackendRouter:
     def __init__(self, configs: list[PrinterYAMLConfig]) -> None:
         self._configs: dict[str, PrinterYAMLConfig] = {c.slug: c for c in configs}
-        self._backends: dict[str, PrinterBackend] = {
-            c.slug: self._build_one(c) for c in configs
-        }
+        self._backends: dict[str, PrinterBackend] = {c.slug: self._build_one(c) for c in configs}
         # R4-A-C2-Fix: PrintService-Map, befüllt via register_service() im Lifespan.
-        self._services: dict[str, "PrintService"] = {}
+        self._services: dict[str, PrintService] = {}
 
     def get(self, slug: str) -> PrinterBackend | None:
         return self._backends.get(slug)
@@ -43,25 +41,25 @@ class BackendRouter:
     def slugs(self) -> list[str]:
         return list(self._configs.keys())
 
-    def register_service(self, slug: str, service: "PrintService") -> None:
+    def register_service(self, slug: str, service: PrintService) -> None:
         """Registriert einen PrintService für einen Drucker-Slug.
 
         Wird vom Lifespan nach make_queue_printer() pro Drucker aufgerufen.
         """
         self._services[slug] = service
 
-    def service_for(self, slug: str) -> "PrintService":
+    def service_for(self, slug: str) -> PrintService:
         """Gibt den PrintService für einen Drucker-Slug zurück.
 
         Raises KeyError wenn der Slug unbekannt oder service noch nicht registriert.
         """
         try:
             return self._services[slug]
-        except KeyError:
+        except KeyError as err:
             raise KeyError(
                 f"No PrintService registered for slug={slug!r}. "
                 f"Known slugs: {list(self._services.keys())}"
-            )
+            ) from err
 
     @staticmethod
     def _build_one(cfg: PrinterYAMLConfig) -> PrinterBackend:

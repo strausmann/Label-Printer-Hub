@@ -80,7 +80,9 @@ async def test_batch_partial_failure(partial_client, partial_db_session, partial
             },
         ]
     }
-    resp = await client.post(f"/api/print/{printer_slug}/batch", json=body, headers=partial_auth_headers)
+    resp = await client.post(
+        f"/api/print/{printer_slug}/batch", json=body, headers=partial_auth_headers
+    )
     assert resp.status_code == 202, resp.text
     data = resp.json()
     assert len(data["job_ids"]) == 2

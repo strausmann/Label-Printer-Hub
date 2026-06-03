@@ -1,22 +1,29 @@
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
-from uuid import uuid4
 
+import pytest
 from app.schemas.printer_config import CutDefaults, PrinterYAMLConfig
 from app.services.backend_router import BackendRouter, UnknownBackendError
 
 
 def _pt(slug: str = "brother-p750w") -> PrinterYAMLConfig:
     return PrinterYAMLConfig(
-        slug=slug, name=slug, backend="ptouch", model="PT-P750W", host="1.1.1.1",
+        slug=slug,
+        name=slug,
+        backend="ptouch",
+        model="PT-P750W",
+        host="1.1.1.1",
     )
 
 
 def _ql(slug: str = "brother-ql820") -> PrinterYAMLConfig:
     return PrinterYAMLConfig(
-        slug=slug, name=slug, backend="brother_ql", model="QL-820NWB", host="2.2.2.2",
+        slug=slug,
+        name=slug,
+        backend="brother_ql",
+        model="QL-820NWB",
+        host="2.2.2.2",
         cut_defaults=CutDefaults(half_cut=False, cut_at_end=True),
     )
 
@@ -45,7 +52,12 @@ def test_router_unknown_backend_string_raises():
     with pytest.raises(UnknownBackendError):
         BackendRouter._build_one(
             PrinterYAMLConfig.model_construct(
-                slug="x", name="x", backend="cups", model="x", host="x", port=9100,
+                slug="x",
+                name="x",
+                backend="cups",
+                model="x",
+                host="x",
+                port=9100,
             )
         )
 

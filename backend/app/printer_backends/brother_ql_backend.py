@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from brother_ql.backends.helpers import send as _helpers_send  # noqa: F401 — exported for monkeypatching
+from brother_ql.backends.helpers import (
+    send as _helpers_send,
+)
 from brother_ql.conversion import convert
 from brother_ql.raster import BrotherQLRaster
 from PIL import Image
@@ -60,7 +62,7 @@ class BrotherQLBackend:
         auto_cut: bool = True,
         high_resolution: bool = False,
         half_cut: bool = False,
-        last_page: bool = True,
+        last_page: bool = True,  # noqa: ARG002
     ) -> None:
         """Convert *image* to QL raster data and send to the printer.
 

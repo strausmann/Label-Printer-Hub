@@ -5,7 +5,6 @@ and app.state.printer_id matches the DB printer.id."""
 from __future__ import annotations
 
 import app.db.engine as _engine_module
-import app.main as _main_module
 import pytest
 from app.models.printer import Printer
 from app.models.template import Template
@@ -52,7 +51,9 @@ async def test_fresh_lifespan_seeds_templates_and_creates_printer(
     )
     monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(_printers_yaml))
     # Phase 1i H (Task 7b): _build_backend_from_config entfernt — BackendRouter._build_one patchen.
-    monkeypatch.setattr(BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend()))
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend())
+    )
 
     from app.config import get_settings
     from app.main import create_app
