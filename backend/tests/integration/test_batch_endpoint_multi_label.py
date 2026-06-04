@@ -148,9 +148,7 @@ async def test_post_batch_4_items_calls_print_images_once(ml_batch_client):
     call_args = print_images_mock.call_args
     assert call_args is not None, "print_images was never called"
     images_arg = call_args.args[0]
-    assert len(images_arg) == 4, (
-        f"Expected 4 images in print_images call, got {len(images_arg)}"
-    )
+    assert len(images_arg) == 4, f"Expected 4 images in print_images call, got {len(images_arg)}"
 
     # All 4 job_ids must reach state='done'
     for job_id in rb["job_ids"]:
