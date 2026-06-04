@@ -247,3 +247,39 @@ async def test_dispatch_batch_same_tape_mm_not_rejected():
     assert len(job_ids) == 2
     assert errors == []
     assert len(service.submit_batch_calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 1k.2 Task 9 follow-up: submit_batch_job forwards request options
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_dispatch_forwards_high_resolution_from_first_request():
+    """submit_batch_job forwards auto_cut + high_resolution from requests[0].options.
+
+    Regression guard: previously auto_cut=True + high_resolution=False were
+    hardcoded, silently dropping caller-provided values.
+    """
+    from app.schemas.print_request import PrintOptions
+
+    service = _FakePrintService()
+    items = [
+        PrintRequest(
+            template_id="hangar-furniture-12mm",
+            data=RawLabelData(title="t", primary_id="p", qr_payload="q"),
+            options=PrintOptions(copies=1, auto_cut=False, high_resolution=True),
+        ),
+    ]
+    backend = _FakeBackend(half_cut_supported=True)
+
+    job_ids, errors = await dispatch_batch(service, items, backend=backend)
+
+    assert errors == []
+    assert len(job_ids) == 1
+    assert len(service.submit_batch_calls) == 1
+
+    # submit_batch_calls stores (list[PrintRequest], half_cut)
+    sent_requests, _half_cut = service.submit_batch_calls[0]
+    assert sent_requests[0].options.high_resolution is True
+    assert sent_requests[0].options.auto_cut is False

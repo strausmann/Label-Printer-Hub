@@ -279,14 +279,18 @@ class PrintService:
             job_ids.append(job_id)
 
         # 5. Enqueue as BatchJob
+        # Phase 1k.2 Task 9 follow-up: read caller-provided options from
+        # requests[0] (all batch items share collective options — mixed-tape
+        # check upstream ensures all items are compatible).
+        first_options = requests[0].options
         await self._queue.enqueue_batch(
             printer_id=self._printer_id,
             images=images,
             job_ids=job_ids,
             tape_mm=tape_mm,
             options={
-                "auto_cut": True,
-                "high_resolution": False,
+                "auto_cut": first_options.auto_cut,
+                "high_resolution": first_options.high_resolution,
                 "half_cut": half_cut,
             },
         )
