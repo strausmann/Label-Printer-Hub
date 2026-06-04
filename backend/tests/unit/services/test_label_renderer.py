@@ -186,16 +186,33 @@ def test_label_renderer_uses_truetype_font() -> None:
     Root Cause: Container ohne fonts-dejavu-core → ImageFont.truetype('DejaVuSans.ttf', N)
     schlägt mit OSError fehl → _load_font_cached fällt auf load_default() zurück.
     Pillow's load_default() ist eine fixe-Größe Bitmap-Font die size IGNORIERT.
-    Fix: fonts-dejavu-core im Dockerfile installieren.
+    Fix: fonts-dejavu-core im Dockerfile installieren — siehe backend/Dockerfile.
 
-    Dieser Test schlägt im Container FEHL bis Dockerfile gefixt ist.
-    Auf Dev-Rechnern mit installierten Fonts läuft er grün.
+    In CI/Container ist die TTF garantiert verfügbar (apt-get install im Dockerfile).
+    Auf Dev-Rechnern (macOS/Windows ohne system-DejaVuSans) wird der Test übersprungen
+    statt zu failen — damit lokaler TDD-Workflow nicht durch fehlende Host-Fonts gestört
+    wird. (Gemini-Review PR #100)
     """
+    import os
+    from pathlib import Path
+
     from app.services.label_renderer import _load_font_cached
     from PIL import ImageFont
 
     # Cache leeren damit der Test sauber von Null startet
     _load_font_cached.cache_clear()
+
+    in_ci = os.environ.get("CI") == "true" or Path("/.dockerenv").exists()
+    try:
+        probe = ImageFont.truetype("DejaVuSans.ttf", 12)
+    except OSError:
+        if in_ci:
+            raise  # CI/Container MUSS die Font haben — apt-get-Fix verifizieren
+        pytest.skip(
+            "DejaVuSans.ttf nicht system-installiert — Dev-Maschine ohne fonts-dejavu. "
+            "In CI/Container wird der Test ausgeführt (Dockerfile installiert die Font)."
+        )
+    del probe
 
     font = _load_font_cached(22)
     assert isinstance(font, ImageFont.FreeTypeFont), (

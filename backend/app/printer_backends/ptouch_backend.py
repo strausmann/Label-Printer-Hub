@@ -100,7 +100,11 @@ def _ptouch_print(  # pragma: no cover - real-hardware-only, tests monkeypatch t
             feed=last_page,
         )
     except TypeError:
-        # Older ptouch lib doesn't support half_cut/feed — fall back to full cut
+        # Älterer ptouch-Lib (<1.1) unterstützt weder half_cut NOCH feed: beide
+        # werden im Fallback verworfen. half_cut → immer Voll-Cut; feed → immer
+        # Default True (= 22.5mm Pre-Roll pro Print, kein 5mm-Batch-Half-Cut).
+        # Phase 1i Batch-Half-Cut wird auf Legacy-ptouch stillschweigend zur
+        # Pre-Phase-1i-Semantik degradiert. (Copilot PR #100)
         printer.print(label, auto_cut=auto_cut, high_resolution=high_resolution)
 
 
