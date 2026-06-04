@@ -19,6 +19,7 @@ from brother_ql.raster import BrotherQLRaster
 from PIL import Image
 
 from app.models.tape import TapeSpec
+from app.printer_backends.batch_helper import default_print_images_loop
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterOfflineError,
@@ -119,6 +120,32 @@ class BrotherQLBackend:
             qlr.data,
             self._identifier,
             blocking=True,
+        )
+
+    async def print_images(
+        self,
+        images: list[Image.Image],
+        tape_spec: TapeSpec,
+        *,
+        auto_cut: bool = True,
+        high_resolution: bool = False,
+        half_cut: bool = True,  # noqa: ARG002
+    ) -> None:
+        """Batch-print N images via per-item Loop.
+
+        brother_ql Lib hat kein print_multi-Equivalent — QL ist Endless-Tape,
+        kein Half-Cut-Konzept zwischen Labels (jedes Label wird vom Druckkopf
+        ausgegeben und manuell abgeschnitten). Delegiert an
+        default_print_images_loop mit half_cut=False (QL ignoriert das Argument).
+        """
+        # QL-Series: half_cut existiert nicht. Backend-Capability-Flag erzwingt False.
+        await default_print_images_loop(
+            self,
+            images,
+            tape_spec,
+            auto_cut=auto_cut,
+            high_resolution=high_resolution,
+            half_cut=False,
         )
 
     async def preflight_check(
