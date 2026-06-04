@@ -175,7 +175,16 @@ async def test_print_image_invokes_ptouch_when_healthy(
     captured: dict[str, Any] = {}
 
     def fake_print(
-        host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False
+        host,
+        port,
+        image,
+        tape_mm,
+        *,
+        model_id,
+        auto_cut,
+        high_resolution,
+        half_cut=False,
+        last_page=True,
     ):
         captured["host"] = host
         captured["port"] = port
@@ -410,7 +419,16 @@ async def test_print_image_passes_half_cut_to_ptouch(
     captured: dict[str, Any] = {}
 
     def fake_print(
-        host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False
+        host,
+        port,
+        image,
+        tape_mm,
+        *,
+        model_id,
+        auto_cut,
+        high_resolution,
+        half_cut=False,
+        last_page=True,
     ):
         captured["half_cut"] = half_cut
         captured["auto_cut"] = auto_cut
@@ -447,7 +465,16 @@ async def test_print_image_half_cut_defaults_to_false(
     captured: dict[str, Any] = {}
 
     def fake_print(
-        host, port, image, tape_mm, *, model_id, auto_cut, high_resolution, half_cut=False
+        host,
+        port,
+        image,
+        tape_mm,
+        *,
+        model_id,
+        auto_cut,
+        high_resolution,
+        half_cut=False,
+        last_page=True,
     ):
         captured["half_cut"] = half_cut
 
@@ -458,3 +485,174 @@ async def test_print_image_half_cut_defaults_to_false(
     backend = PTouchBackend(host="192.0.2.10")
     await backend.print_image(img_128, tape_24)
     assert captured["half_cut"] is False
+
+
+# ---------------------------------------------------------------------------
+# Phase 1i smoke-test live-bugs: last_page → feed propagation
+# ---------------------------------------------------------------------------
+
+
+async def test_print_image_passes_last_page_false_to_ptouch(
+    monkeypatch: pytest.MonkeyPatch,
+    img_128: Image.Image,
+    tape_24: TapeSpec,
+) -> None:
+    """last_page=False muss an _ptouch_print als last_page=False durchgereicht werden.
+
+    batch_dispatch berechnet use_last_page=False für alle außer dem letzten Item.
+    Dieser Wert muss _ptouch_print erreichen, damit feed=False → ~5mm Half-Cut statt
+    22.5mm Pre-Roll (ptouch-py LabelPrinter.print(feed=False)).
+    """
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(*_a, **_kw):
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=24,
+            error_flags=[],
+        )
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend.query_preflight",
+        fake_preflight,
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_ptouch_print(
+        host,
+        port,
+        image,
+        tape_mm,
+        *,
+        model_id,
+        auto_cut,
+        high_resolution,
+        half_cut=False,
+        last_page=True,
+    ):
+        captured["last_page"] = last_page
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend._ptouch_print",
+        fake_ptouch_print,
+    )
+    backend = PTouchBackend(host="192.0.2.10")
+
+    # Intermediate batch item — last_page=False → minimal feed
+    await backend.print_image(img_128, tape_24, last_page=False)
+    assert captured["last_page"] is False, (
+        "last_page=False muss an _ptouch_print durchgereicht werden "
+        "(feed=False in ptouch-py → ~5mm Halbschnitt statt 22.5mm Pre-Roll)"
+    )
+
+    # Final batch item — last_page=True → full feed
+    captured.clear()
+    await backend.print_image(img_128, tape_24, last_page=True)
+    assert captured["last_page"] is True
+
+
+def test_ptouch_print_calls_printer_with_feed_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """_ptouch_print(last_page=False) → printer.print(feed=False).
+
+    Verifiziert dass _ptouch_print das last_page Keyword korrekt als feed=last_page
+    an die ptouch-Lib weitergibt. Das ist der direkte Fix für den 22.5mm Pre-Roll Bug.
+    """
+    import app.printer_backends.ptouch_backend as _mod
+    import ptouch as _ptouch
+    from app.printer_backends.ptouch_backend import _ptouch_print
+
+    captured: dict[str, Any] = {}
+
+    class FakeLabel:
+        pass
+
+    class FakePrinter:
+        def __init__(self, *_a: Any, **_kw: Any) -> None:
+            pass
+
+        def print(self, label: Any, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend._PTOUCH_PRINTER_CLASSES",
+        {"PT-P750W": FakePrinter},
+    )
+
+    # Patch ptouch.ConnectionNetwork, ptouch.Label so no real socket is opened
+    fake_connection_cls = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr(_ptouch, "ConnectionNetwork", fake_connection_cls)
+    monkeypatch.setattr(_ptouch, "Label", MagicMock(return_value=FakeLabel()))
+    # Patch tape class to something callable
+    monkeypatch.setattr(
+        _mod,
+        "_PTOUCH_TAPE_CLASSES",
+        {24: MagicMock(return_value=object())},
+    )
+
+    img = Image.new("1", (200, 128))
+    _ptouch_print(
+        "192.0.2.10",
+        9100,
+        img,
+        24,
+        model_id="PT-P750W",
+        auto_cut=True,
+        high_resolution=False,
+        half_cut=False,
+        last_page=False,
+    )
+    assert captured.get("feed") is False, (
+        f"_ptouch_print(last_page=False) muss feed=False an printer.print() weitergeben, "
+        f"got: {captured}"
+    )
+
+
+def test_ptouch_print_calls_printer_with_feed_true_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_ptouch_print ohne last_page (default=True) → printer.print(feed=True).
+
+    Sicherstellt dass der Default-Wert (last_page=True → feed=True → voller Feed)
+    für bestehende Aufrufe unverändert bleibt.
+    """
+    import app.printer_backends.ptouch_backend as _mod
+    import ptouch as _ptouch
+    from app.printer_backends.ptouch_backend import _ptouch_print
+
+    captured: dict[str, Any] = {}
+
+    class FakePrinter:
+        def __init__(self, *_a: Any, **_kw: Any) -> None:
+            pass
+
+        def print(self, label: Any, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend._PTOUCH_PRINTER_CLASSES",
+        {"PT-P750W": FakePrinter},
+    )
+    fake_connection_cls = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr(_ptouch, "ConnectionNetwork", fake_connection_cls)
+    monkeypatch.setattr(_ptouch, "Label", MagicMock(return_value=object()))
+    monkeypatch.setattr(
+        _mod,
+        "_PTOUCH_TAPE_CLASSES",
+        {24: MagicMock(return_value=object())},
+    )
+
+    img = Image.new("1", (200, 128))
+    _ptouch_print(
+        "192.0.2.10",
+        9100,
+        img,
+        24,
+        model_id="PT-P750W",
+        auto_cut=True,
+        high_resolution=False,
+        half_cut=False,
+        # last_page defaults to True
+    )
+    assert captured.get("feed") is True, (
+        f"_ptouch_print() ohne last_page muss feed=True (Default) senden, got: {captured}"
+    )

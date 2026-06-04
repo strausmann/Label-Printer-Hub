@@ -62,11 +62,16 @@ def _ptouch_print(  # pragma: no cover - real-hardware-only, tests monkeypatch t
     auto_cut: bool,
     high_resolution: bool,
     half_cut: bool = False,
+    last_page: bool = True,
 ) -> None:
     """Synchronous helper — module-level so tests can monkeypatch it.
 
     Model-aware: uses _PTOUCH_PRINTER_CLASSES[model_id] so the same code
     serves PT-P750W, PT-P900, PT-E550W, etc.
+
+    last_page maps to ptouch-py LabelPrinter.print(feed=last_page):
+      - feed=True  (last_page=True, default)  → voller Tape-Feed (~22.5mm Pre-Roll)
+      - feed=False (last_page=False)           → minimaler Feed (~5mm) für Batch-Items
 
     Excluded from coverage: the function only runs against the real ptouch
     library against actual hardware. Every unit test in
@@ -92,9 +97,10 @@ def _ptouch_print(  # pragma: no cover - real-hardware-only, tests monkeypatch t
             auto_cut=auto_cut,
             high_resolution=high_resolution,
             half_cut=half_cut,
+            feed=last_page,
         )
     except TypeError:
-        # Older ptouch lib doesn't support half_cut — fall back to full cut
+        # Older ptouch lib doesn't support half_cut/feed — fall back to full cut
         printer.print(label, auto_cut=auto_cut, high_resolution=high_resolution)
 
 
@@ -187,7 +193,7 @@ class PTouchBackend:
         auto_cut: bool = True,
         high_resolution: bool = False,
         half_cut: bool = False,
-        last_page: bool = True,  # noqa: ARG002
+        last_page: bool = True,
     ) -> None:
         """Pre-print validation via SNMP, then dispatch ptouch.print.
 
@@ -199,7 +205,9 @@ class PTouchBackend:
 
         Phase 1i C-Fix:
         - half_cut: passed through to _ptouch_print (PT-Series supports it).
-        - last_page: accepted for Protocol compliance but unused by PT-Series.
+        - last_page: maps to ptouch-py feed= parameter.
+            last_page=True  → feed=True  → voller Tape-Feed (~22.5mm Pre-Roll)
+            last_page=False → feed=False → minimaler Feed (~5mm) zwischen Batch-Items
         """
         # SNMP preflight — replaces the broken ESC i S query_status path for
         # PT-Series. preflight_check raises TapeEmptyError / PrinterCoverOpenError
@@ -222,6 +230,7 @@ class PTouchBackend:
                 auto_cut=auto_cut,
                 high_resolution=high_resolution,
                 half_cut=half_cut,
+                last_page=last_page,
             )
         except (ptouch.PrinterWriteError, ptouch.PrinterPermissionError) as exc:
             # These are subclasses of PrinterConnectionError — must be caught first.
