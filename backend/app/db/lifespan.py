@@ -31,6 +31,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 
 from app.config import Settings
 from app.models.printer import Printer
@@ -213,7 +214,7 @@ async def upsert_runtime_printers(
             # Das passiert wenn model/host/port sich geändert haben (neue deterministische UUID)
             # aber slug/name gleich geblieben sind.
             collision_result = await session.execute(
-                select(Printer).where(Printer.slug == cfg.slug)
+                select(Printer).where(col(Printer.slug) == cfg.slug)
             )
             colliding = collision_result.scalar_one_or_none()
             if colliding is not None and colliding.id != printer_id:
