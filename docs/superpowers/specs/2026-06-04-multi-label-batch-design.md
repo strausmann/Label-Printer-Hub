@@ -185,21 +185,23 @@ class PrinterBackend(Protocol):
         high_resolution: bool = False,
         half_cut: bool = True,    # Standard: Half-Cut zwischen Batch-Items
     ) -> None:
-        """Print N images as a batch. Default loops over print_image."""
-        for i, img in enumerate(images):
-            is_last = i == len(images) - 1
-            await self.print_image(
-                img, tape_spec,
-                auto_cut=auto_cut,
-                high_resolution=high_resolution,
-                half_cut=half_cut and not is_last,
-                last_page=is_last,
-            )
+        """Print N images as a batch — semantics depend on backend impl.
+
+        PT-Series via ptouch.print_multi: ATOMIC (success or all-fail at hardware level).
+        Default per-item loop (QL/Mock): best-effort per item — items 0..N-1 may already
+        be printed when item N fails. Job-state handling MUST treat partial-success
+        explicitly (see plan Task 8 _process_batch error handler).
+        """
+        # (Copilot-Review C1 PR #106): Default-Impl als FREIE Funktion in
+        # batch_helper.py, NICHT als Protocol-default — Python typing.Protocol
+        # method bodies werden nicht von conforming classes geerbt. Backends
+        # die nicht ueberschreiben rufen explicit default_print_images_loop auf.
+        ...  # siehe app.printer_backends.batch_helper.default_print_images_loop
 ```
 
-`PTouchBackend.print_images()` überschreibt diese Default-Impl und ruft direkt `_ptouch_print_multi`.
+`PTouchBackend.print_images()` überschreibt mit echtem `ptouch.print_multi` (atomic).
 
-`BrotherQLBackend` erbt Default und macht Status-quo-Verhalten (jedes Label einzeln). Damit ist Phase 1k.2 transparent für QL.
+`BrotherQLBackend` und `MockBackend` haben eigene `print_images` Methoden die explicit `default_print_images_loop(self, ...)` aus `app.printer_backends.batch_helper` aufrufen — Python Protocols haben keine vererbten Default-Methoden, daher MUSS jeder Backend die Methode haben.
 
 ## Failure Modes
 
@@ -231,7 +233,9 @@ except PtouchError as exc:
         )
 ```
 
-**Hangar-Sicht:** Wenn ein Item-Job-Status `failed` zeigt, weiss Hangar nicht ob NUR dieses Item gescheitert ist oder der ganze Batch. Lösung: Job-Record bekommt zusätzliches Feld `batch_failure_mode: atomic | individual` damit Hangar die UI entsprechend gestalten kann ("Batch failed — 4 items affected").
+**Hangar-Sicht (1k.2-Scope):** Wenn ein Item-Job-Status `failed` zeigt, weiß Hangar zunächst nicht ob NUR dieses Item gescheitert ist oder der ganze Batch — sie sehen alle vier als failed. Das ist **akzeptabel für 1k.2** weil Hangar-Code unverändert bleibt und die UI bereits "alle 4 sind rot" anzeigt.
+
+**Optionale Erweiterung (Phase 1k.2-Followup oder Phase 1l, OUT OF 1k.2 SCOPE):** Job-Record könnte ein zusätzliches Feld `batch_failure_mode: atomic | individual` bekommen, plus Hangar-UI-Anpassung "Batch failed — 4 items affected". Das ist **kein 1k.2-Scope** (würde Hangar-Änderung erfordern, was 1k.2 explizit ausschließt — siehe "Backward-Compatibility"). (Copilot-Review C2 PR #106 — Scope-Konflikt aufgelöst durch Verschiebung in Followup.)
 
 ## Test-Strategie
 
@@ -274,7 +278,9 @@ except PtouchError as exc:
 
 ## Referenzen
 
-- Phase 1i Smoke-Test Empirie: [docs/site/operations/protokolle/2026-06-04-phase1i-smoke-test-empirie.md](https://docs.strausmann.cloud/operations/protokolle/2026-06-04-phase1i-smoke-test-empirie/)
+(Copilot-Review C3 PR #106: Privacy-Konformität — keine `*.strausmann.*` Links. Phase 1i Smoke-Empirie ist im privaten Repo `homelab-management`, nicht in diesem OS-Repo gemirrort.)
+
+- Phase 1i Smoke-Test Empirie: internes Repo `homelab-management`, Pfad `docs/site/operations/protokolle/2026-06-04-phase1i-smoke-test-empirie.md` — Kurzfassung: PT-P750W druckt 22.5mm leeres Tape zwischen Multi-Label-Batches statt 5mm Half-Cut (Brother iOS App Verhalten). Empirisch verifiziert über 2 Smoke-Test-Iterationen (V1-V4 4-Varianten-Test) am 2026-06-04.
 - Hub PR #100 (last_page → feed groundwork): [https://github.com/strausmann/Label-Printer-Hub/pull/100](https://github.com/strausmann/Label-Printer-Hub/pull/100)
 - ptouch-py 1.1.0 `print_multi` Signatur: verifiziert in Container `docker exec label-printer-hub-backend python3 -c "import ptouch.printer; import inspect; print(inspect.signature(ptouch.printer.LabelPrinter.print_multi))"`
 - Issue #102 (1k.2): [https://github.com/strausmann/Label-Printer-Hub/issues/102](https://github.com/strausmann/Label-Printer-Hub/issues/102)

@@ -14,6 +14,7 @@
 |------|-----------|--------|
 | 2026-06-04 | Initial | superpowers:writing-plans (Commit `8917d0e`) |
 | 2026-06-04 | **G1** In-Memory Job-Registrierung in `enqueue_batch` (sonst `KeyError` bei `get`/`wait_for_job`); parallele PNG-Serialisierung. **G2** `JobStateMachine.transition` + `_notify_state_change` in `_process_batch` (sonst SSE-Stille + hängende Waiter). **G3** `asyncio.to_thread` + `asyncio.gather` für CPU-intensive Renders in `submit_batch_job` (sonst Event-Loop-Block). Inline-Imports vervollständigt. | Gemini-Code-Assist Review PR #106 (medium-priority Findings) |
+| 2026-06-04 | 9 Copilot-Findings adressiert: C1 Protocol-default-method-Approach klargestellt (alle Backends explizit `print_images`, helper macht Loop), C2 `batch_failure_mode` Hangar-UI-Anpassung als Out-of-1k.2-Scope verschoben, C3 personalisierte Doku-Links durch Repo-Hinweise ersetzt (Privacy-Policy), C4 Real name+email in Plan-Commits ersetzt durch plain `git commit`, C5 `print_images` docstring präzisiert (atomic für PT, best-effort für default-loop), C6 `_process_batch` PrinterError-Path nutzt `_printer_error_to_record` + `pause_printer` für recoverable errors (Konsistenz mit `_worker`), C7 `_validate_item_get_tape_mm` nutzt neue public `PrintService.get_template_tape_mm` statt private `_loader` Zugriff, C8 `label_data` einmal pro Item resolved (Render+Persist teilen sich denselben Wert), C9 Smoke-Script ohne hardcoded API-Key-Default. Plus: Privacy-Scan-grep in Final-Verification umformuliert. | Copilot Review PR #106 (9 Findings) |
 
 ---
 
@@ -288,7 +289,7 @@ backend/.venv/bin/ruff format --check backend/app/printer_backends/batch_helper.
 backend/.venv/bin/mypy backend/app/printer_backends/batch_helper.py 2>&1 | tail -3
 
 git add backend/app/printer_backends/batch_helper.py backend/tests/unit/printer_backends/test_batch_helper.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(printer_backends): default_print_images_loop helper (Phase 1k.2 Task 1)
+git commit -m "feat(printer_backends): default_print_images_loop helper (Phase 1k.2 Task 1)
 
 Backends ohne native batch-support (BrotherQLBackend, MockBackend) loopen
 per-item — Helper zentralisiert die half_cut + last_page Semantik analog
@@ -321,7 +322,18 @@ Append after the existing `print_image` declaration:
         high_resolution: bool = False,
         half_cut: bool = True,
     ) -> None:
-        """Batch-print N images. Atomic semantics: success or all-fail.
+        """Batch-print N images — atomic-or-best-effort je nach Backend-Impl.
+
+        Semantik haengt vom konkreten Backend ab:
+        - PTouchBackend via ptouch.print_multi: ATOMIC — auf Hardware-Ebene ein
+          einziger Print-Call. Bei Exception sind ggf. 0 oder ALLE Labels gedruckt,
+          niemals partial.
+        - Default-Loop (BrotherQLBackend, MockBackend) via
+          default_print_images_loop: BEST-EFFORT per item. Wenn item N
+          fehlschlaegt, koennen items 0..N-1 bereits physisch gedruckt sein.
+          Job-State-Handling muss damit umgehen (siehe Task 8 _process_batch).
+        (Copilot-Review C5 PR #106: vorher 'atomic semantics: success or all-fail'
+        war falsch fuer den default loop.)
 
         Phase 1k.2: Default-Loop ueber print_image() lebt in
         ``app.printer_backends.batch_helper.default_print_images_loop``.
@@ -402,7 +414,18 @@ class PrinterBackend(Protocol):
         high_resolution: bool = False,
         half_cut: bool = True,
     ) -> None:
-        """Batch-print N images. Atomic semantics: success or all-fail.
+        """Batch-print N images — atomic-or-best-effort je nach Backend-Impl.
+
+        Semantik haengt vom konkreten Backend ab:
+        - PTouchBackend via ptouch.print_multi: ATOMIC — auf Hardware-Ebene ein
+          einziger Print-Call. Bei Exception sind ggf. 0 oder ALLE Labels gedruckt,
+          niemals partial.
+        - Default-Loop (BrotherQLBackend, MockBackend) via
+          default_print_images_loop: BEST-EFFORT per item. Wenn item N
+          fehlschlaegt, koennen items 0..N-1 bereits physisch gedruckt sein.
+          Job-State-Handling muss damit umgehen (siehe Task 8 _process_batch).
+        (Copilot-Review C5 PR #106: vorher 'atomic semantics: success or all-fail'
+        war falsch fuer den default loop.)
 
         Phase 1k.2: Default-Loop ueber print_image() lebt in
         ``app.printer_backends.batch_helper.default_print_images_loop``.
@@ -440,7 +463,7 @@ Tests will fail at this point — they expect Backend implementations to have `p
 
 ```bash
 git add backend/app/printer_backends/base.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(printer_backends): PrinterBackend.print_images Protocol method (Phase 1k.2 Task 2)
+git commit -m "feat(printer_backends): PrinterBackend.print_images Protocol method (Phase 1k.2 Task 2)
 
 Backend-Contract erweitert um batch-print Method. PTouchBackend ueberschreibt
 fuer ptouch.print_multi (Task 3), andere Backends delegieren an
@@ -722,7 +745,7 @@ backend/.venv/bin/ruff format --check backend/app/printer_backends/ptouch_backen
 backend/.venv/bin/mypy backend/app/printer_backends/ptouch_backend.py 2>&1 | tail -3
 
 git add backend/app/printer_backends/ptouch_backend.py backend/tests/unit/printer_backends/test_ptouch_backend.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(ptouch): print_images via ptouch.print_multi (Phase 1k.2 Task 3)
+git commit -m "feat(ptouch): print_images via ptouch.print_multi (Phase 1k.2 Task 3)
 
 PTouchBackend.print_images() ueberschreibt Protocol-Default mit echtem
 batch-printing via ptouch.LabelPrinter.print_multi: 1 Connection, 1 Pre-Roll,
@@ -857,7 +880,7 @@ backend/.venv/bin/ruff check backend/app/printer_backends/brother_ql_backend.py 
 backend/.venv/bin/ruff format --check backend/app/printer_backends/brother_ql_backend.py backend/tests/unit/printer_backends/test_brother_ql_backend.py
 
 git add backend/app/printer_backends/brother_ql_backend.py backend/tests/unit/printer_backends/test_brother_ql_backend.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(brother_ql): print_images via default_print_images_loop (Phase 1k.2 Task 4)
+git commit -m "feat(brother_ql): print_images via default_print_images_loop (Phase 1k.2 Task 4)
 
 QL-Series ist Endless-Tape ohne Half-Cut-Konzept. BrotherQLBackend.print_images
 delegiert an default_print_images_loop mit half_cut=False (capability-flag erzwingt).
@@ -933,7 +956,7 @@ backend/.venv/bin/ruff check backend/app/printer_backends/mock_backend.py
 backend/.venv/bin/ruff format --check backend/app/printer_backends/mock_backend.py
 
 git add backend/app/printer_backends/mock_backend.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(mock): MockBackend.print_images via default_print_images_loop (Phase 1k.2 Task 5)
+git commit -m "feat(mock): MockBackend.print_images via default_print_images_loop (Phase 1k.2 Task 5)
 
 Refs #102"
 ```
@@ -1085,7 +1108,7 @@ backend/.venv/bin/ruff format --check backend/app/printer_models/pt.py backend/t
 backend/.venv/bin/mypy backend/app/printer_models/pt.py 2>&1 | tail -3
 
 git add backend/app/printer_models/pt.py backend/tests/unit/printer_models/test_pt.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(pt): _PTPQueuePrinter.print_images + bug-fix half_cut/last_page forwarding (Phase 1k.2 Task 6)
+git commit -m "feat(pt): _PTPQueuePrinter.print_images + bug-fix half_cut/last_page forwarding (Phase 1k.2 Task 6)
 
 Bug discovered during Phase 1k.2 plan-writing: _PTPQueuePrinter.print_image
 forwarded only auto_cut + high_resolution. half_cut und last_page wurden aus
@@ -1185,7 +1208,7 @@ backend/.venv/bin/ruff check backend/app/printer_models/ql.py backend/tests/unit
 backend/.venv/bin/ruff format --check backend/app/printer_models/ql.py backend/tests/unit/printer_models/test_ql.py
 
 git add backend/app/printer_models/ql.py backend/tests/unit/printer_models/test_ql.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(ql): _QLQueuePrinter.print_images adapter (Phase 1k.2 Task 7)
+git commit -m "feat(ql): _QLQueuePrinter.print_images adapter (Phase 1k.2 Task 7)
 
 QL erzwingt half_cut=False intern (capability-flag). Adapter-Konsistenz mit
 PT fuer Queue-BatchJob-Pfad.
@@ -1622,9 +1645,41 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
             logger.info("Batch %s completed on %s", batch.batch_id, printer_id)
         except asyncio.CancelledError:
             raise
+        except PrinterError as exc:
+            # Copilot-Review C6 (PR #106): Konsistenz mit existing _worker —
+            # PrinterError-Subtypes muessen via _printer_error_to_record auf
+            # strukturierte error_code/error_detail gemapped werden. Plus:
+            # recoverable hardware errors (tape_mismatch, cover_open, offline)
+            # MUESSEN den Printer pausieren, sonst laufen Folge-Jobs ins gleiche
+            # Problem.
+            code, msg, detail = _printer_error_to_record(exc)
+            for job in jobs:
+                job.error_code = code
+                job.error_message = msg
+                job.error_detail = detail
+                job.error_msg = msg  # legacy field sync
+                try:
+                    JobStateMachine.transition(job, JobState.FAILED)
+                    self._notify_state_change(
+                        job, JobState.PRINTING, JobState.FAILED,
+                        queue_depth=self._queue_depth(printer_id),
+                    )
+                except InvalidStateTransitionError:
+                    logger.warning(
+                        "Batch %s: failure-transition of %s failed (state=%s)",
+                        batch.batch_id, job.id, job.state,
+                    )
+                await self._store.mark_failed(UUID(job.id), f"{code}: {msg}")
+            logger.exception(
+                "Batch %s: PrinterError on %s — all %d items marked failed (%s)",
+                batch.batch_id, printer_id, len(jobs), code,
+            )
+            # Recoverable hardware error -> Printer pausieren (User-Interaktion noetig)
+            if isinstance(exc, _RECOVERABLE_PRINTER_ERRORS):
+                await self.pause_printer(printer_id, reason=code)
         except Exception as exc:
+            # Fallback fuer non-PrinterError exceptions
             error_msg = f"batch print failed: {exc}"
-            # Failure: alle Jobs PRINTING -> FAILED mit gemeinsamer Message
             for job in jobs:
                 job.error_code = "batch_failed"
                 job.error_message = error_msg
@@ -1671,7 +1726,7 @@ backend/.venv/bin/ruff format --check backend/app/services/print_queue.py backen
 backend/.venv/bin/mypy backend/app/services/print_queue.py 2>&1 | tail -3
 
 git add backend/app/services/print_queue.py backend/tests/unit/services/test_print_queue_batch.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(queue): BatchJob + enqueue_batch + worker isinstance dispatch (Phase 1k.2 Task 8)
+git commit -m "feat(queue): BatchJob + enqueue_batch + worker isinstance dispatch (Phase 1k.2 Task 8)
 
 Neuer BatchJob dataclass mit batch_id, printer_id, image_payloads (PNG bytes),
 job_ids[], tape_mm, options. PrintQueue.enqueue_batch validiert + serialisiert.
@@ -1865,13 +1920,36 @@ async def _validate_item_get_tape_mm(
     service: PrintService,
     item: PrintRequest,
 ) -> int:
-    """Load template, return its tape_mm. Raises TemplateNotFoundError on miss."""
-    # service has access to template_loader via private attr — use public helper.
-    template = service._loader.get(item.template_id)
-    return template.tape_mm
+    """Load template via public PrintService API, return tape_mm.
+
+    Raises TemplateNotFoundError on miss.
+
+    Copilot-Review C7 (PR #106): vorher hat dieser helper auf das private
+    Attribut service._loader zugegriffen. Plaene auf Internals brechen bei
+    Refactors. Stattdessen wird ein public Helper get_template_tape_mm auf
+    PrintService aufgerufen (Task 9 Step 4a ergaenzt diese Methode).
+    """
+    return await service.get_template_tape_mm(item.template_id)
 ```
 
-(Note: `service._loader` private attribute — alternative: add `get_template_tape_mm` public method on PrintService. Decide based on code-quality reviewer feedback.)
+**Zusaetzlicher Step 4a vor Step 4 (`submit_batch_job`): public Helper auf `PrintService`**
+
+In `backend/app/services/print_service.py` vor `submit_batch_job` adden:
+
+```python
+    async def get_template_tape_mm(self, template_id: str) -> int:
+        """Public helper: load template and return its tape_mm.
+
+        Used by batch_dispatch to validate tape_mm consistency across batch items
+        without reaching into the private _loader attribute. (Copilot-Review C7
+        PR #106.)
+
+        Raises:
+            TemplateNotFoundError: wenn template_id nicht im TemplateLoader.
+        """
+        template = self._loader.get(template_id)
+        return template.tape_mm
+```
 
 - [ ] **Step 4: Add `PrintService.submit_batch_job`**
 
@@ -1904,32 +1982,26 @@ In `backend/app/services/print_service.py`, add method after `submit_print_job`:
                 loaded_mm=preflight.loaded_tape_mm,
             )
 
-        # 3. Resolve LabelData + Render — Gemini-Review G3 (PR #106):
-        # CPU-intensive Pillow-Operationen muessen ueber asyncio.to_thread
-        # ausgefuehrt werden, sonst blockiert der Event-Loop. asyncio.gather
-        # parallelisiert die N Renders (statt sequenziell N*~50ms zu warten).
-        async def _render_one(req: PrintRequest, tmpl: TemplateSchema) -> Image.Image:
+        # 3. Resolve LabelData ONCE per item, then render — Copilot-Review C8 +
+        # Gemini-Review G3 (PR #106):
+        # - label_data wird einmal pro Item resolved, fuer Render UND Persist
+        #   wiederverwendet (vorher 2x: einmal fuer renderer, einmal fuer payload).
+        # - Pillow-Render via asyncio.to_thread (CPU-intensive, blockiert sonst Event-Loop).
+        # - asyncio.gather parallelisiert die N Resolve-und-Render Operationen.
+        async def _prepare_one(
+            req: PrintRequest, tmpl: TemplateSchema
+        ) -> tuple[Image.Image, dict[str, Any]]:
             label_data = await self._resolve_label_data(req)
-            return await asyncio.to_thread(self._renderer.render, tmpl, label_data)
+            image = await asyncio.to_thread(self._renderer.render, tmpl, label_data)
+            return image, label_data.model_dump()
 
-        images = list(
-            await asyncio.gather(
-                *[_render_one(r, t) for r, t in zip(requests, templates, strict=True)]
-            )
+        prepared = await asyncio.gather(
+            *[_prepare_one(r, t) for r, t in zip(requests, templates, strict=True)]
         )
+        images = [img for img, _ in prepared]
+        label_data_dumps = [dump for _, dump in prepared]
 
         # 4. Pre-allocate job UUIDs + persist in JobStore (analog submit_print_job)
-        # Gemini-Review G3 (PR #106): _resolve_label_data wird nur EINMAL pro
-        # Item gerufen — vorher Z.1903 + Z.1918 (Duplikat). label_data wird via
-        # parallele Helper-Coroutine wiederverwendet.
-        async def _resolve_for_payload(req: PrintRequest) -> dict[str, Any]:
-            ld = await self._resolve_label_data(req)
-            return ld.model_dump()
-
-        label_data_dumps = await asyncio.gather(
-            *[_resolve_for_payload(r) for r in requests]
-        )
-
         job_ids: list[UUID] = []
         for request, ld_dump in zip(requests, label_data_dumps, strict=True):
             job_id = uuid4()
@@ -1981,7 +2053,7 @@ backend/.venv/bin/ruff format --check backend/app/services/batch_dispatch.py bac
 backend/.venv/bin/mypy backend/app/services/batch_dispatch.py backend/app/services/print_service.py 2>&1 | tail -3
 
 git add backend/app/services/batch_dispatch.py backend/app/services/print_service.py backend/tests/unit/services/test_batch_dispatch.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(batch): dispatch_batch refactor to atomic BatchJob (Phase 1k.2 Task 9)
+git commit -m "feat(batch): dispatch_batch refactor to atomic BatchJob (Phase 1k.2 Task 9)
 
 dispatch_batch sammelt valide items (per-item template_not_found etc. weiter
 in errors[]), prueft mixed tape_mm vor Queue, ruft service.submit_batch_job
@@ -2072,7 +2144,7 @@ backend/.venv/bin/ruff format --check backend/app/api/routes/batch.py
 backend/.venv/bin/mypy backend/app/api/routes/batch.py 2>&1 | tail -3
 
 git add backend/app/api/routes/batch.py backend/tests/integration/api/
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(api): MixedTapeSizesError → 400 mixed_tape_sizes (Phase 1k.2 Task 10)
+git commit -m "feat(api): MixedTapeSizesError → 400 mixed_tape_sizes (Phase 1k.2 Task 10)
 
 Refs #102"
 ```
@@ -2155,7 +2227,7 @@ async def test_post_batch_failure_marks_all_jobs_failed(
 backend/.venv/bin/python -m pytest backend/tests/integration/test_batch_endpoint_multi_label.py -v 2>&1 | tail -10
 
 git add backend/tests/integration/test_batch_endpoint_multi_label.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "test(batch): end-to-end multi-label batch integration test (Phase 1k.2 Task 11)
+git commit -m "test(batch): end-to-end multi-label batch integration test (Phase 1k.2 Task 11)
 
 Refs #102"
 ```
@@ -2190,9 +2262,18 @@ import sys
 import httpx
 
 HUB_URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
-API_KEY = sys.argv[2] if len(sys.argv) > 2 else os.environ.get(
-    "PRINTER_HUB_WEBHOOK_API_KEY", "lh_pat_demo"
+# Copilot-Review C9 (PR #106): kein hardcoded API-Key Default. Wenn weder
+# CLI-Arg noch Env-Var gesetzt -> sofortiger Fehler mit klarer Meldung.
+API_KEY = (
+    sys.argv[2] if len(sys.argv) > 2
+    else os.environ.get("PRINTER_HUB_WEBHOOK_API_KEY")
 )
+if not API_KEY:
+    print(
+        "ERROR: API key required. Set $PRINTER_HUB_WEBHOOK_API_KEY or pass as 2nd CLI arg.",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 
 def main() -> None:
@@ -2227,7 +2308,7 @@ if __name__ == "__main__":
 
 ```bash
 git add backend/scripts/smoke_first_print_batch.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(scripts): smoke_first_print_batch.py — manual 4-item batch hardware-smoke (Phase 1k.2 Task 12)
+git commit -m "feat(scripts): smoke_first_print_batch.py — manual 4-item batch hardware-smoke (Phase 1k.2 Task 12)
 
 Verify 5mm Half-Cut between batch items vs Brother iOS App output.
 
@@ -2260,7 +2341,8 @@ Expected: clean (10 pre-existing import-untyped acceptable per Phase 1i baseline
 - [ ] **Step 3: Privacy + secret scan**
 
 ```bash
-grep -rnE "172\.16\.[0-9]+\.[0-9]+|hhdocker" backend/ docs/ 2>&1 | grep -v "policies/privacy.md" | head -5
+# (Privacy-scan: identisch zum CI-Job — siehe .github/workflows/ci.yml Step "Privacy / secret scan".
+# Implementer kann den CI-Step lokal nachbauen falls noetig.)
 ```
 
 Expected: empty (no privacy violations).
