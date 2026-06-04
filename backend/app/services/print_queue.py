@@ -20,10 +20,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from dataclasses import dataclass
 from enum import StrEnum
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from PIL import Image
 from pydantic import ValidationError
@@ -132,8 +133,9 @@ class _PrinterLike(Protocol):
     """Minimal printer contract this queue depends on.
 
     Real printer plugins (PR for Tasks 2.1/2.2) implement the richer
-    PrinterModel Protocol (PR #48). The queue depends only on `id` and
-    `print_image`. `tape_mm` is required as a keyword-only argument so mypy
+    PrinterModel Protocol (PR #48). The queue depends only on `id`,
+    `print_image`, and (Phase 1k.2) `print_images`.
+    `tape_mm` is required as a keyword-only argument so mypy
     strict can verify that conforming printer plugins accept it explicitly;
     `**options` carries driver-specific extras that vary per plugin.
     """
@@ -141,6 +143,27 @@ class _PrinterLike(Protocol):
     id: UUID
 
     async def print_image(self, image: Image.Image, *, tape_mm: int, **options: Any) -> None: ...
+
+    async def print_images(
+        self, images: list[Image.Image], *, tape_mm: int, **options: Any
+    ) -> None: ...
+
+
+@dataclass(frozen=False)
+class BatchJob:
+    """Queue-Item das mehrere Labels in einer Backend-Operation druckt.
+
+    Phase 1k.2: BatchJob ist orthogonal zu Job — der Worker dispatched per
+    isinstance. Auf success/failure werden alle job_ids gemeinsam markiert
+    (atomic semantics, User-Entscheidung Option 1).
+    """
+
+    batch_id: UUID
+    printer_id: UUID
+    image_payloads: list[bytes]  # PNG-encoded für DB-Konsistenz mit Job.image_payload
+    job_ids: list[UUID]
+    tape_mm: int
+    options: dict[str, Any]
 
 
 class PrintQueue:
@@ -176,9 +199,9 @@ class PrintQueue:
         self._renderer: LabelRenderer | None = renderer
         self._loader: type[TemplateLoader] | None = loader
         self._printers: dict[UUID, _PrinterLike] = {p.id: p for p in printers}
-        # Queue type is Job | None — None is the sentinel used by stop() to wake
-        # workers that are blocked at queue.get().
-        self._queues: dict[UUID, asyncio.Queue[Job | None]] = {
+        # Queue type is Job | BatchJob | None — None is the sentinel used by
+        # stop() to wake workers that are blocked at queue.get().
+        self._queues: dict[UUID, asyncio.Queue[Job | BatchJob | None]] = {
             p.id: asyncio.Queue() for p in printers
         }
         self._worker_states: dict[UUID, PrinterWorkerState] = {
@@ -465,6 +488,71 @@ class PrintQueue:
         logger.info("Job %s created paused on %s", job.id, printer_id)
         return job.id
 
+    async def enqueue_batch(
+        self,
+        *,
+        printer_id: UUID,
+        images: list[Image.Image],
+        job_ids: list[UUID],
+        tape_mm: int,
+        options: dict[str, Any],
+    ) -> UUID:
+        """Phase 1k.2: Submit N images as ONE BatchJob (atomic print_multi call).
+
+        Args:
+            printer_id: Target printer (must be registered in self._queues).
+            images: PIL Images in print order, len(images) >= 1.
+            job_ids: Pre-allocated job UUIDs, one per image. Must be len(images) long.
+            tape_mm: Shared tape width (12/18/24/62).
+            options: Collective options (auto_cut, high_resolution, half_cut).
+
+        Returns:
+            batch_id: New UUID identifying this batch.
+
+        Raises:
+            KeyError: unknown printer_id.
+            ValueError: len(images) != len(job_ids), or len(images) == 0.
+        """
+        if printer_id not in self._queues:
+            raise KeyError(f"Unknown printer: {printer_id}")
+        if not images:
+            raise ValueError("enqueue_batch requires at least one image")
+        if len(images) != len(job_ids):
+            raise ValueError(f"images and job_ids length mismatch: {len(images)} vs {len(job_ids)}")
+
+        # Gemini-Review G1 (PR #106): Parallel PNG-Serialisierung
+        payloads = await asyncio.gather(
+            *[asyncio.to_thread(_serialize_image_to_png, img) for img in images]
+        )
+
+        # Gemini-Review G1 (PR #106): In-Memory Job-Registrierung pro item.
+        # OHNE diese Schleife wirft get(job_id)/wait_for_job KeyError, weil
+        # die individuellen Jobs nie in self._jobs landen. SSE-Frontend und
+        # Hangar-Polling brauchen pro-Item-Job-Records (alle teilen das BatchJob
+        # als Owner, aber jeder Job hat eigene id/state/_done_event).
+        for jid, payload in zip(job_ids, payloads, strict=True):
+            job = Job(
+                id=str(jid),
+                printer_id=printer_id,
+                image_payload=payload,
+                tape_mm=tape_mm,
+                options=dict(options),
+            )
+            self._jobs[str(jid)] = job
+
+        batch_id = uuid4()
+        batch = BatchJob(
+            batch_id=batch_id,
+            printer_id=printer_id,
+            image_payloads=list(payloads),
+            job_ids=list(job_ids),
+            tape_mm=tape_mm,
+            options=dict(options),
+        )
+        await self._queues[printer_id].put(batch)
+        logger.info("Batch %s queued on %s with %d items", batch_id, printer_id, len(images))
+        return batch_id
+
     async def get(self, job_id: str | UUID) -> Job:
         return self._jobs[str(job_id)]
 
@@ -673,6 +761,11 @@ class PrintQueue:
             if item is None:  # sentinel — stop() requested a clean exit
                 return
 
+            # Phase 1k.2: BatchJob vs Job — dispatch per isinstance
+            if isinstance(item, BatchJob):
+                await self._process_batch(printer, printer_id, item)
+                continue
+
             job = item
 
             # Wait while paused — pause may have been set while we were idle at
@@ -771,3 +864,183 @@ class PrintQueue:
                 # Phase 2: DB-State persistieren (auch wenn Transition fehlschlug)
                 await self._store.mark_failed(UUID(job.id), str(exc))
                 logger.exception("Job %s failed on %s", job.id, printer_id)
+
+    async def _process_batch(
+        self,
+        printer: _PrinterLike,
+        printer_id: UUID,
+        batch: BatchJob,
+    ) -> None:
+        """Phase 1k.2: Handle BatchJob — atomic success/failure for all job_ids.
+
+        Decodes payloads, calls printer.print_images() once. On exception,
+        marks all job_ids as failed with a shared error_message.
+
+        Gemini-Review G2 (PR #106): Pro item MUSS JobStateMachine.transition
+        gerufen werden, sonst:
+        - _done_event wird nie gesetzt → wait_for_job(job_id) hängt unendlich
+        - _notify_state_change wird nie gerufen → SSE-Frontend (Hangar) bekommt
+          keine Updates und zeigt Jobs als ewig 'queued' an
+        - started_at/finished_at Timestamps bleiben None (UI-Probleme)
+        """
+        # Wait while paused (mirror _worker semantics)
+        while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
+            if self._stopping:
+                return
+            await self._worker_resume_events[printer_id].wait()
+
+        # Resolve all Job in-memory objects (registered in enqueue_batch via
+        # Gemini-Review G1 fix). Falls ein Job nicht mehr in self._jobs ist
+        # (cancel mid-flight), skip — terminale state-transition würde fehlen.
+        jobs: list[Job] = []
+        for jid in batch.job_ids:
+            job = self._jobs.get(str(jid))
+            if job is None:
+                logger.warning("Batch %s: job_id %s not in _jobs (cancelled?)", batch.batch_id, jid)
+                continue
+            jobs.append(job)
+        if not jobs:
+            logger.warning("Batch %s has no live jobs — skipping", batch.batch_id)
+            return
+
+        # Gemini-Review G2: in-memory transitions + SSE-Events + DB persist.
+        # QUEUED -> PRINTING für jeden Job.
+        #
+        # Gemini-Review G-R2-2 (PR #106): Wenn JobStateMachine.transition fails
+        # (z.B. job already CANCELLED), darf NICHT noch _store.mark_printing
+        # gerufen werden — sonst inkonsistent (in-memory CANCELLED vs DB PRINTING).
+        # Wir sammeln nur successfully transitioned jobs in active_jobs[] und
+        # nutzen die für alle folgenden DB-Calls + post-print transitions.
+        active_jobs: list[Job] = []
+        for job in jobs:
+            try:
+                JobStateMachine.transition(job, JobState.PRINTING)
+                self._notify_state_change(
+                    job,
+                    JobState.QUEUED,
+                    JobState.PRINTING,
+                    queue_depth=self._queue_depth(printer_id),
+                )
+                await self._store.mark_printing(UUID(job.id))
+                active_jobs.append(job)
+            except InvalidStateTransitionError:
+                logger.warning(
+                    "Batch %s: job %s skipped — state already %s (cancelled?)",
+                    batch.batch_id,
+                    job.id,
+                    job.state,
+                )
+
+        if not active_jobs:
+            logger.warning(
+                "Batch %s: 0 active jobs after transitions — skipping print", batch.batch_id
+            )
+            return
+
+        # Gemini-Review G1 (PR #106): Parallel image decode
+        # cast to list[Image.Image]: Image.open returns ImageFile (subtype); list
+        # is invariant so mypy needs an explicit cast here.
+        raw_images = await asyncio.gather(
+            *[asyncio.to_thread(Image.open, BytesIO(p)) for p in batch.image_payloads]
+        )
+        images: list[Image.Image] = list(raw_images)
+
+        try:
+            await printer.print_images(
+                images,
+                tape_mm=batch.tape_mm,
+                **batch.options,
+            )
+            # Success: alle active_jobs PRINTING -> COMPLETED.
+            # Gemini-Review G-R2-2 (PR #106): nur active_jobs, NICHT alle jobs —
+            # cancelled-mid-flight darf nicht überschrieben werden.
+            for job in active_jobs:
+                try:
+                    JobStateMachine.transition(job, JobState.COMPLETED)
+                    self._notify_state_change(
+                        job,
+                        JobState.PRINTING,
+                        JobState.COMPLETED,
+                        queue_depth=self._queue_depth(printer_id),
+                    )
+                    await self._store.mark_done(UUID(job.id))
+                except InvalidStateTransitionError:
+                    logger.warning(
+                        "Batch %s: success-transition of %s failed (state=%s)",
+                        batch.batch_id,
+                        job.id,
+                        job.state,
+                    )
+            logger.info("Batch %s completed on %s", batch.batch_id, printer_id)
+        except asyncio.CancelledError:
+            raise
+        except PrinterError as exc:
+            # Copilot-Review C6 (PR #106): Konsistenz mit existing _worker —
+            # PrinterError-Subtypes müssen via _printer_error_to_record auf
+            # strukturierte error_code/error_detail gemapped werden. Plus:
+            # recoverable hardware errors (tape_mismatch, cover_open, offline)
+            # MÜSSEN den Printer pausieren, sonst laufen Folge-Jobs ins gleiche
+            # Problem.
+            code, msg, detail = _printer_error_to_record(exc)
+            # Gemini-Review G-R2-2 (PR #106): nur active_jobs, NICHT alle jobs.
+            for job in active_jobs:
+                job.error_code = code
+                job.error_message = msg
+                job.error_detail = detail
+                job.error_msg = msg  # legacy field sync
+                try:
+                    JobStateMachine.transition(job, JobState.FAILED)
+                    self._notify_state_change(
+                        job,
+                        JobState.PRINTING,
+                        JobState.FAILED,
+                        queue_depth=self._queue_depth(printer_id),
+                    )
+                    await self._store.mark_failed(UUID(job.id), f"{code}: {msg}")
+                except InvalidStateTransitionError:
+                    logger.warning(
+                        "Batch %s: failure-transition of %s failed (state=%s)",
+                        batch.batch_id,
+                        job.id,
+                        job.state,
+                    )
+            logger.exception(
+                "Batch %s: PrinterError on %s — %d items marked failed (%s)",
+                batch.batch_id,
+                printer_id,
+                len(active_jobs),
+                code,
+            )
+            # Recoverable hardware error -> Printer pausieren (User-Interaktion nötig)
+            if isinstance(exc, _RECOVERABLE_PRINTER_ERRORS):
+                await self.pause_printer(printer_id, reason=code)
+        except Exception as exc:
+            # Fallback für non-PrinterError exceptions
+            error_msg = f"batch print failed: {exc}"
+            # Gemini-Review G-R2-2 (PR #106): nur active_jobs.
+            for job in active_jobs:
+                job.error_code = "batch_failed"
+                job.error_message = error_msg
+                job.error_msg = error_msg  # legacy field sync
+                try:
+                    JobStateMachine.transition(job, JobState.FAILED)
+                    self._notify_state_change(
+                        job,
+                        JobState.PRINTING,
+                        JobState.FAILED,
+                        queue_depth=self._queue_depth(printer_id),
+                    )
+                    await self._store.mark_failed(UUID(job.id), error_msg)
+                except InvalidStateTransitionError:
+                    logger.warning(
+                        "Batch %s: failure-transition of %s failed (state=%s)",
+                        batch.batch_id,
+                        job.id,
+                        job.state,
+                    )
+            logger.exception(
+                "Batch %s failed on %s — %d items marked failed",
+                batch.batch_id,
+                printer_id,
+                len(active_jobs),
+            )
