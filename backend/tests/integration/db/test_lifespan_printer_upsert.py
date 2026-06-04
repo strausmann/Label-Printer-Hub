@@ -128,6 +128,7 @@ async def test_upsert_multi_printer_is_idempotent(async_session_empty):
 
 # --- PR#98 Gemini + Copilot: flush() + slug-collision-detection ---
 
+
 async def test_same_uuid_update_idempotent(async_session_empty):
     """PR#98-Gemini: Gleiche UUID beim zweiten Upsert → normaler UPDATE-Pfad."""
     cfg_v1 = _pt750w_cfg(slug="pt-office", name="PT Office v1")

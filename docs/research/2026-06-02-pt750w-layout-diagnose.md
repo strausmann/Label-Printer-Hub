@@ -16,7 +16,7 @@
 | 18mm | 165px | 112px | +53px | -27px (Crop!) |
 | 24mm | 256px | 128px | +128px | -64px (Crop!) |
 
-Gemessene Bitmap aus `GET /api/templates/hangar-furniture-12mm/preview.png`:
+Gemessene Bitmap aus `GET /api/templates/hangar-furniture-12mm/preview-png`:
 
 - **Größe:** 284 × 106px (nach Trim-Crop auf der Längsachse)
 - **Erwartete Druckhöhe (ptouch native):** 70px

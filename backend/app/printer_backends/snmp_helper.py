@@ -15,8 +15,8 @@ __all__ = [
     "SnmpQueryError",
     "decode_error_flags",
     "parse_loaded_tape_mm",
-    "query_loaded_tape_mm",
     "query_live_status",
+    "query_loaded_tape_mm",
     "query_model_pjl",
     "query_preflight",
 ]
