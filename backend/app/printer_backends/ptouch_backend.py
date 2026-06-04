@@ -246,3 +246,14 @@ class PTouchBackend:
             ptouch.PrinterConnectionError,
         ) as exc:
             raise PrinterOfflineError(str(exc)) from exc
+
+    async def print_images(
+        self,
+        images: list[Image.Image],
+        tape_spec: TapeSpec,
+        *,
+        auto_cut: bool = True,
+        high_resolution: bool = False,
+        half_cut: bool = True,
+    ) -> None:
+        raise NotImplementedError("implemented in Task 3")

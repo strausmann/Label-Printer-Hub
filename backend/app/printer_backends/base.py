@@ -1,10 +1,10 @@
 """PrinterBackend Protocol — transport contract used by drivers.
 
-Two-method surface (print_image + query_status). A raw `send_bytes` escape
-hatch was deliberately removed during design: there is no concrete caller
-in First-Print, and opening a second TCP/9100 session in parallel with
-ptouch would hit Brother's single-session limit (Resource Busy). The
-hook can be added back additively if a future caller needs it.
+Three-method surface (print_image, print_images, query_status). A raw
+`send_bytes` escape hatch was deliberately removed during design: there is no
+concrete caller in First-Print, and opening a second TCP/9100 session in
+parallel with ptouch would hit Brother's single-session limit (Resource Busy).
+The hook can be added back additively if a future caller needs it.
 
 Phase 1k.2: print_images() added for batch printing via ptouch.print_multi
 on PT-Series. Other backends delegate to default_print_images_loop helper.
@@ -84,6 +84,8 @@ class PrinterBackend(Protocol):
             high_resolution: PT-Series HiRes-Mode.
             half_cut: True = 5mm taktile Separation zwischen Items (PT-Series).
                 Letztes Item bekommt immer Voll-Cut (half_cut=False intern).
+                Default True differs from print_image (default False): in batch
+                context, inter-label half-cut separation is the expected mode.
         """
 
     async def query_status(self) -> StatusBlock:

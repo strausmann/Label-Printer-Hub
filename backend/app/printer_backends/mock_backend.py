@@ -150,3 +150,14 @@ class MockPrinterBackend:
                 loaded_mm=status.loaded_tape_mm,
             )
         self.printed_images.append(image.copy())
+
+    async def print_images(
+        self,
+        images: list[Image.Image],
+        tape_spec: TapeSpec,
+        *,
+        auto_cut: bool = True,
+        high_resolution: bool = False,
+        half_cut: bool = True,
+    ) -> None:
+        raise NotImplementedError("implemented in Task 5")
