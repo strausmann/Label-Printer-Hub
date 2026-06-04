@@ -8,8 +8,9 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
+from app.printer_backends.exceptions import PrinterOfflineError
 from app.services.job_lifecycle import JobState
-from app.services.print_queue import PrintQueue
+from app.services.print_queue import PrinterWorkerState, PrintQueue
 from PIL import Image
 
 
@@ -230,3 +231,77 @@ async def test_batchjob_cancelled_job_skipped_in_active(fake_printer, make_image
     assert len(call_args.args[0]) == 2, (
         f"Expected 2 images (1 cancelled), got {len(call_args.args[0])}"
     )
+
+
+@pytest.mark.anyio
+async def test_batchjob_printer_offline_pauses_printer_and_marks_failed(
+    fake_printer: _FakePrinter,
+    make_image: Callable[[], Image.Image],
+) -> None:
+    """_process_batch C6 path: PrinterOfflineError pauses printer + all jobs failed."""
+    fake_printer.print_images = AsyncMock(side_effect=PrinterOfflineError("offline"))
+    queue = PrintQueue([fake_printer])
+    images = [make_image() for _ in range(2)]
+    job_ids = [uuid4(), uuid4()]
+
+    await queue.start()
+    try:
+        await queue.enqueue_batch(
+            printer_id=fake_printer.id,
+            images=images,
+            job_ids=job_ids,
+            tape_mm=12,
+            options={"auto_cut": True, "half_cut": True},
+        )
+        for _ in range(50):
+            if fake_printer.print_images.await_count > 0:
+                break
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)  # Allow state transitions to complete
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+    for jid in job_ids:
+        job = await queue.get(jid)
+        assert job.state == JobState.FAILED
+        assert job.error_code == "printer_offline"
+
+    # Recoverable PrinterError must pause the worker
+    assert queue._worker_states[fake_printer.id] == PrinterWorkerState.PAUSED
+
+
+@pytest.mark.anyio
+async def test_batchjob_generic_exception_marks_jobs_failed(
+    fake_printer: _FakePrinter,
+    make_image: Callable[[], Image.Image],
+) -> None:
+    """_process_batch fallback path: generic Exception marks jobs failed, no pause."""
+    fake_printer.print_images = AsyncMock(side_effect=RuntimeError("kapow"))
+    queue = PrintQueue([fake_printer])
+    images = [make_image() for _ in range(2)]
+    job_ids = [uuid4(), uuid4()]
+
+    await queue.start()
+    try:
+        await queue.enqueue_batch(
+            printer_id=fake_printer.id,
+            images=images,
+            job_ids=job_ids,
+            tape_mm=12,
+            options={"auto_cut": True, "half_cut": True},
+        )
+        for _ in range(50):
+            if fake_printer.print_images.await_count > 0:
+                break
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)  # Allow state transitions to complete
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+    for jid in job_ids:
+        job = await queue.get(jid)
+        assert job.state == JobState.FAILED
+        assert "kapow" in (job.error_message or "")
+
+    # Generic Exception must NOT pause the printer
+    assert queue._worker_states[fake_printer.id] == PrinterWorkerState.ACTIVE
