@@ -15,6 +15,7 @@
 | 2026-06-04 | Initial | superpowers:writing-plans (Commit `8917d0e`) |
 | 2026-06-04 | **G1** In-Memory Job-Registrierung in `enqueue_batch` (sonst `KeyError` bei `get`/`wait_for_job`); parallele PNG-Serialisierung. **G2** `JobStateMachine.transition` + `_notify_state_change` in `_process_batch` (sonst SSE-Stille + hängende Waiter). **G3** `asyncio.to_thread` + `asyncio.gather` für CPU-intensive Renders in `submit_batch_job` (sonst Event-Loop-Block). Inline-Imports vervollständigt. | Gemini-Code-Assist Review PR #106 (medium-priority Findings) |
 | 2026-06-04 | 9 Copilot-Findings adressiert: C1 Protocol-default-method-Approach klargestellt (alle Backends explizit `print_images`, helper macht Loop), C2 `batch_failure_mode` Hangar-UI-Anpassung als Out-of-1k.2-Scope verschoben, C3 personalisierte Doku-Links durch Repo-Hinweise ersetzt (Privacy-Policy), C4 Real name+email in Plan-Commits ersetzt durch plain `git commit`, C5 `print_images` docstring präzisiert (atomic für PT, best-effort für default-loop), C6 `_process_batch` PrinterError-Path nutzt `_printer_error_to_record` + `pause_printer` für recoverable errors (Konsistenz mit `_worker`), C7 `_validate_item_get_tape_mm` nutzt neue public `PrintService.get_template_tape_mm` statt private `_loader` Zugriff, C8 `label_data` einmal pro Item resolved (Render+Persist teilen sich denselben Wert), C9 Smoke-Script ohne hardcoded API-Key-Default. Plus: Privacy-Scan-grep in Final-Verification umformuliert. | Copilot Review PR #106 (9 Findings) |
+| 2026-06-04 | 3 Runtime-Bugs (R2) gefixt: **G-R2-1** `_QLQueuePrinter.print_images` ruft `lookup_ql(tape_mm)` ohne `media_type` → TypeError. Fix: pop media_type aus options + pass through. **G-R2-2** State-Inkonsistenz: `_process_batch` ruft `_store.mark_*` auch wenn `JobStateMachine.transition` failed (cancelled job mid-flight) → DB sagt COMPLETED, in-memory CANCELLED. Fix: `active_jobs[]` Liste nur mit erfolgreich transitioned jobs, alle folgenden DB-Calls + post-print transitions nutzen `active_jobs`, nicht `jobs`. **G-R2-3** `submit_batch_job` ruft `JobStore.save_queued(job_id=..., printer_id=..., ...)` mit kwargs → TypeError, erwartet `DbJob`-Instanz. Fix: `DbJob` model instanziieren + an save_queued übergeben (konsistent mit `submit_print_job`). Import `from app.models.job import Job as DbJob` ergänzt. | Gemini-Code-Assist Round-2 Review PR #106 (3 medium-priority Runtime-Crashes) |
 
 ---
 
@@ -1188,7 +1189,11 @@ In `backend/app/printer_models/ql.py`, in `_QLQueuePrinter` class (after `print_
 
         QL-Series unterstuetzt kein half_cut — Backend forciert intern False.
         """
-        tape_spec = self._tape_registry.lookup_ql(tape_mm)
+        # Gemini-Review G-R2-1 (PR #106): lookup_ql benoetigt tape_mm UND
+        # media_type — analog zu _PTPQueuePrinter.print_image. Nur mit tape_mm
+        # waerf TypeError.
+        media_type = options.pop("media_type", self._default_media_type)
+        tape_spec = self._tape_registry.lookup_ql(tape_mm, media_type)
         await self._backend.print_images(
             images,
             tape_spec,
@@ -1603,6 +1608,13 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
 
         # Gemini-Review G2: in-memory transitions + SSE-Events + DB persist.
         # QUEUED -> PRINTING fuer jeden Job.
+        #
+        # Gemini-Review G-R2-2 (PR #106): Wenn JobStateMachine.transition fails
+        # (z.B. job already CANCELLED), darf NICHT noch _store.mark_printing
+        # gerufen werden — sonst inkonsistent (in-memory CANCELLED vs DB PRINTING).
+        # Wir sammeln nur successfully transitioned jobs in active_jobs[] und
+        # nutzen die fuer alle folgenden DB-Calls + post-print transitions.
+        active_jobs: list[Job] = []
         for job in jobs:
             try:
                 JobStateMachine.transition(job, JobState.PRINTING)
@@ -1610,12 +1622,17 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
                     job, JobState.QUEUED, JobState.PRINTING,
                     queue_depth=self._queue_depth(printer_id),
                 )
+                await self._store.mark_printing(UUID(job.id))
+                active_jobs.append(job)
             except InvalidStateTransitionError:
                 logger.warning(
-                    "Batch %s: job %s skipped — state already %s",
+                    "Batch %s: job %s skipped — state already %s (cancelled?)",
                     batch.batch_id, job.id, job.state,
                 )
-            await self._store.mark_printing(UUID(job.id))
+
+        if not active_jobs:
+            logger.warning("Batch %s: 0 active jobs after transitions — skipping print", batch.batch_id)
+            return
 
         # Gemini-Review G1 (PR #106): Parallel image decode
         images = await asyncio.gather(
@@ -1628,20 +1645,22 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
                 tape_mm=batch.tape_mm,
                 **batch.options,
             )
-            # Success: alle Jobs PRINTING -> COMPLETED
-            for job in jobs:
+            # Success: alle active_jobs PRINTING -> COMPLETED.
+            # Gemini-Review G-R2-2 (PR #106): nur active_jobs, NICHT alle jobs —
+            # cancelled-mid-flight darf nicht ueberschrieben werden.
+            for job in active_jobs:
                 try:
                     JobStateMachine.transition(job, JobState.COMPLETED)
                     self._notify_state_change(
                         job, JobState.PRINTING, JobState.COMPLETED,
                         queue_depth=self._queue_depth(printer_id),
                     )
+                    await self._store.mark_done(UUID(job.id))
                 except InvalidStateTransitionError:
                     logger.warning(
                         "Batch %s: success-transition of %s failed (state=%s)",
                         batch.batch_id, job.id, job.state,
                     )
-                await self._store.mark_done(UUID(job.id))
             logger.info("Batch %s completed on %s", batch.batch_id, printer_id)
         except asyncio.CancelledError:
             raise
@@ -1653,7 +1672,8 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
             # MUESSEN den Printer pausieren, sonst laufen Folge-Jobs ins gleiche
             # Problem.
             code, msg, detail = _printer_error_to_record(exc)
-            for job in jobs:
+            # Gemini-Review G-R2-2 (PR #106): nur active_jobs, NICHT alle jobs.
+            for job in active_jobs:
                 job.error_code = code
                 job.error_message = msg
                 job.error_detail = detail
@@ -1664,15 +1684,15 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
                         job, JobState.PRINTING, JobState.FAILED,
                         queue_depth=self._queue_depth(printer_id),
                     )
+                    await self._store.mark_failed(UUID(job.id), f"{code}: {msg}")
                 except InvalidStateTransitionError:
                     logger.warning(
                         "Batch %s: failure-transition of %s failed (state=%s)",
                         batch.batch_id, job.id, job.state,
                     )
-                await self._store.mark_failed(UUID(job.id), f"{code}: {msg}")
             logger.exception(
-                "Batch %s: PrinterError on %s — all %d items marked failed (%s)",
-                batch.batch_id, printer_id, len(jobs), code,
+                "Batch %s: PrinterError on %s — %d items marked failed (%s)",
+                batch.batch_id, printer_id, len(active_jobs), code,
             )
             # Recoverable hardware error -> Printer pausieren (User-Interaktion noetig)
             if isinstance(exc, _RECOVERABLE_PRINTER_ERRORS):
@@ -1680,7 +1700,8 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
         except Exception as exc:
             # Fallback fuer non-PrinterError exceptions
             error_msg = f"batch print failed: {exc}"
-            for job in jobs:
+            # Gemini-Review G-R2-2 (PR #106): nur active_jobs.
+            for job in active_jobs:
                 job.error_code = "batch_failed"
                 job.error_message = error_msg
                 job.error_msg = error_msg  # legacy field sync
@@ -1690,15 +1711,15 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
                         job, JobState.PRINTING, JobState.FAILED,
                         queue_depth=self._queue_depth(printer_id),
                     )
+                    await self._store.mark_failed(UUID(job.id), error_msg)
                 except InvalidStateTransitionError:
                     logger.warning(
                         "Batch %s: failure-transition of %s failed (state=%s)",
                         batch.batch_id, job.id, job.state,
                     )
-                await self._store.mark_failed(UUID(job.id), error_msg)
             logger.exception(
-                "Batch %s failed on %s — all %d items marked failed",
-                batch.batch_id, printer_id, len(jobs),
+                "Batch %s failed on %s — %d items marked failed",
+                batch.batch_id, printer_id, len(active_jobs),
             )
 ```
 
@@ -2001,12 +2022,16 @@ In `backend/app/services/print_service.py`, add method after `submit_print_job`:
         images = [img for img, _ in prepared]
         label_data_dumps = [dump for _, dump in prepared]
 
-        # 4. Pre-allocate job UUIDs + persist in JobStore (analog submit_print_job)
+        # 4. Pre-allocate job UUIDs + persist in JobStore (analog submit_print_job).
+        # Gemini-Review G-R2-3 (PR #106): JobStore.save_queued erwartet eine
+        # DbJob model instance, NICHT kwargs. Konsistent mit submit_print_job.
+        # Implementer: ggf. import-Pfad an existing submit_print_job orientieren
+        # (from app.models.job import Job as DbJob).
         job_ids: list[UUID] = []
         for request, ld_dump in zip(requests, label_data_dumps, strict=True):
             job_id = uuid4()
-            await self._store.save_queued(
-                job_id=job_id,
+            db_job = DbJob(
+                id=job_id,
                 printer_id=self._printer_id,
                 template_key=request.template_id,
                 payload={
@@ -2014,7 +2039,10 @@ In `backend/app/services/print_service.py`, add method after `submit_print_job`:
                     "options": request.options.model_dump(),
                     "label_data": ld_dump,
                 },
+                api_key_id=None,
+                source_ip=None,
             )
+            await self._store.save_queued(db_job)
             job_ids.append(job_id)
 
         # 5. Enqueue as BatchJob
@@ -2041,6 +2069,7 @@ from uuid import UUID, uuid4
 
 from PIL import Image  # nur falls noch nicht da
 
+from app.models.job import Job as DbJob   # Gemini-Review G-R2-3 PR #106
 from app.schemas.template import TemplateSchema
 ```
 
