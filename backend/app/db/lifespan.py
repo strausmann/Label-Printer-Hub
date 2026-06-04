@@ -26,15 +26,20 @@ R4-M-4/M-5-Fix: alte Funktion referenzierte entfernte Settings-Felder.
 
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 
 from app.config import Settings
 from app.models.printer import Printer
 from app.schemas.printer_config import PrinterYAMLConfig
 from app.services.printer_identity import derive_printer_id
 from app.services.template_loader import TemplateLoader
+
+_logger = logging.getLogger(__name__)
 
 
 async def run_migrations() -> None:
@@ -190,6 +195,13 @@ async def upsert_runtime_printers(
               model in printers.yaml MUSS exakt der bisherigen Env-Var entsprechen.
     R4-M-4/M-5-Fix: Alte upsert_runtime_printer (Settings-abhängig) gelöscht —
                     referenzierte entfernte Felder und würde AttributeError geben.
+    PR#98-Gemini: session.flush() statt session.commit() innerhalb der Schleife —
+              commit() midloop bricht Transaktions-Atomizität. Einziger commit() am Ende.
+    PR#98-Copilot: Slug-Collision-Detection — wenn ein alter Row dieselbe slug/name
+              aber eine andere UUID trägt (z.B. nach model/host/port Änderung in YAML),
+              wird der alte Row auf die neue deterministische UUID migriert und ein
+              WARNING geloggt. Ohne diese Prüfung würde ein INSERT mit IntegrityError
+              abstürzen statt sauber zu migrieren.
 
     Returns: Liste der printer_id UUIDs (für lifespan-Wiring).
     """
@@ -198,22 +210,59 @@ async def upsert_runtime_printers(
         printer_id = derive_printer_id(cfg.model, cfg.host, cfg.port)
         existing = await session.get(Printer, printer_id)
         if existing is None:
-            session.add(
-                Printer(
-                    id=printer_id,
-                    slug=cfg.slug,
-                    name=cfg.name,
-                    model=cfg.model.lower(),
-                    backend=cfg.backend,
-                    connection={"host": cfg.host, "port": cfg.port},
-                    enabled=True,
-                )
+            # Slug-Collision-Check: gibt es einen Row mit gleicher slug aber anderer UUID?
+            # Das passiert wenn model/host/port sich geändert haben (neue deterministische UUID)
+            # aber slug/name gleich geblieben sind.
+            collision_result = await session.execute(
+                select(Printer).where(col(Printer.slug) == cfg.slug)
             )
+            colliding = collision_result.scalar_one_or_none()
+            if colliding is not None and colliding.id != printer_id:
+                _logger.warning(
+                    "upsert_runtime_printers: slug=%r already owned by printer_id=%s "
+                    "(different from new deterministic id=%s). "
+                    "Treating as migration — updating existing row to new UUID.",
+                    cfg.slug,
+                    colliding.id,
+                    printer_id,
+                )
+                # Migration: bestehenden Row auf neue UUID aktualisieren.
+                # Wir löschen den alten Row und fügen einen neuen ein, weil
+                # PRIMARY KEY Updates via SQLModel/SQLAlchemy nicht zuverlässig
+                # mit async sessions funktionieren.
+                await session.delete(colliding)
+                await session.flush()
+                session.add(
+                    Printer(
+                        id=printer_id,
+                        slug=cfg.slug,
+                        name=cfg.name,
+                        model=cfg.model.lower(),
+                        backend=cfg.backend,
+                        connection={"host": cfg.host, "port": cfg.port},
+                        enabled=True,
+                    )
+                )
+            else:
+                session.add(
+                    Printer(
+                        id=printer_id,
+                        slug=cfg.slug,
+                        name=cfg.name,
+                        model=cfg.model.lower(),
+                        backend=cfg.backend,
+                        connection={"host": cfg.host, "port": cfg.port},
+                        enabled=True,
+                    )
+                )
         else:
             existing.slug = cfg.slug
             existing.name = cfg.name
             existing.backend = cfg.backend
             # host/port/model bleiben stabil (UUID-Basis)
+        # flush() statt commit() hier: hält alle Änderungen in derselben Transaktion
+        # bis der finale commit() am Ende der Schleife alles atomar abschließt.
+        await session.flush()
         ids.append(printer_id)
     await session.commit()
     return ids

@@ -9,8 +9,12 @@ Phase 1i CA-1: Die 9 drucker-spezifischen Einzelfelder (ql820_host, ql820_port,
 pt750w_host, pt750w_port, printer_backend, printer_model,
 printer_discover_via_snmp, printer_snmp_community, printer_queue_timeout_s)
 wurden entfernt. Drucker werden jetzt über printers.yaml konfiguriert.
-``extra="forbid"`` stellt sicher dass alte Env-Vars laut fehlschlagen statt
-still ignoriert zu werden.
+
+``extra="forbid"`` rejects unknown CONSTRUCTOR KWARGS at instantiation time —
+NOT unknown environment variables. pydantic-settings silently ignores unknown
+env vars; leftover variables like the removed ``PRINTER_HUB_QL820_HOST`` etc.
+will be silently dropped on startup. Operators should rely on the changelog
+(or ``Settings(...)``-based init in tests) to detect leftover config.
 
 Usage::
 

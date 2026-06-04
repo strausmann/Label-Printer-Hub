@@ -39,11 +39,11 @@ TAPE_HEIGHT_PX: Final[dict[int, int]] = {
     62: 696,  # endless QL tape — unchanged
 }
 
-# Default label width in pixels — 600 px at 300 DPI ≈ 50.8mm, suitable for
-# typical asset/product label lengths. The actual width the printer receives
-# is determined by the print job; this is just the canvas the renderer
-# paints on.
 DEFAULT_LABEL_WIDTH_PX: Final[int] = 600
+"""Length-axis canvas width. Decoupled from any specific DPI:
+PT-Series renders at native 180 DPI, QL-Series at 300 DPI native.
+Templates use this as their coordinate-system width — the backend
+maps to print head dots at print time."""
 
 # Margin around the inked content when trimming whitespace on the length
 # axis. 6 px ≈ 1mm at 180 DPI / 0.5mm at 300 DPI — minimal padding so

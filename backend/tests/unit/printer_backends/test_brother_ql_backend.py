@@ -74,3 +74,69 @@ async def test_half_cut_ignored_on_ql_with_warning(
 
 def test_half_cut_supported_is_false() -> None:
     assert BrotherQLBackend.half_cut_supported is False
+
+
+# ---------------------------------------------------------------------------
+# preflight_check — Phase 1i hotfix (Task 8b)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_preflight_check_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """preflight_check returns PreflightStatus on healthy printer."""
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(
+        host: str, *, community: str = "public", timeout_s: float = 3.0
+    ) -> PreflightStatus:
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=62,
+            error_flags=[],
+        )
+
+    monkeypatch.setattr("app.printer_backends.brother_ql_backend.query_preflight", fake_preflight)
+    backend = BrotherQLBackend(host="192.0.2.11", model_id="QL-820NWB")
+    result = await backend.preflight_check()
+    assert result.hr_printer_status == "idle"
+    assert result.loaded_tape_mm == 62
+
+
+@pytest.mark.anyio
+async def test_preflight_check_raises_tape_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """preflight_check raises TapeEmptyError when noPaper bit is set."""
+    from app.printer_backends.exceptions import TapeEmptyError
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    async def fake_preflight(
+        host: str, *, community: str = "public", timeout_s: float = 3.0
+    ) -> PreflightStatus:
+        return PreflightStatus(
+            hr_printer_status="other",
+            loaded_tape_mm=None,
+            error_flags=["noPaper"],
+        )
+
+    monkeypatch.setattr("app.printer_backends.brother_ql_backend.query_preflight", fake_preflight)
+    backend = BrotherQLBackend(host="x", model_id="QL-820NWB")
+    with pytest.raises(TapeEmptyError):
+        await backend.preflight_check()
+
+
+@pytest.mark.anyio
+async def test_preflight_check_raises_offline_on_snmp_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """preflight_check raises PrinterOfflineError when SNMP query fails."""
+    from app.printer_backends.exceptions import PrinterOfflineError
+    from app.printer_backends.snmp_helper import PreflightStatus, SnmpQueryError
+
+    async def fake_preflight(
+        host: str, *, community: str = "public", timeout_s: float = 3.0
+    ) -> PreflightStatus:
+        raise SnmpQueryError("timeout")
+
+    monkeypatch.setattr("app.printer_backends.brother_ql_backend.query_preflight", fake_preflight)
+    backend = BrotherQLBackend(host="unreachable", model_id="QL-820NWB")
+    with pytest.raises(PrinterOfflineError, match="preflight SNMP failed"):
+        await backend.preflight_check()

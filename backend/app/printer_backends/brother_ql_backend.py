@@ -19,7 +19,17 @@ from brother_ql.raster import BrotherQLRaster
 from PIL import Image
 
 from app.models.tape import TapeSpec
-from app.printer_backends.exceptions import PrintFailedError
+from app.printer_backends.exceptions import (
+    PrinterCoverOpenError,
+    PrinterOfflineError,
+    PrintFailedError,
+    TapeEmptyError,
+)
+from app.printer_backends.snmp_helper import (
+    PreflightStatus,
+    SnmpQueryError,
+    query_preflight,
+)
 from app.services.status_block import StatusBlock
 
 _logger = logging.getLogger(__name__)
@@ -110,6 +120,39 @@ class BrotherQLBackend:
             self._identifier,
             blocking=True,
         )
+
+    async def preflight_check(
+        self,
+        *,
+        community: str = "public",
+        timeout_s: float = 3.0,
+    ) -> PreflightStatus:
+        """SNMP-based preflight: hrPrinterStatus + error bitmap + loaded tape.
+
+        QL-820NWB nutzt dieselbe Printer MIB wie PT-Series — query_preflight()
+        funktioniert identisch auf beiden Gerätereihen.
+
+        Raises:
+            PrinterOfflineError: SNMP query failed (host unreachable or timeout)
+            TapeEmptyError: hrPrinterDetectedErrorState has noPaper bit
+            PrinterCoverOpenError: hrPrinterDetectedErrorState has doorOpen bit
+
+        Does NOT raise TapeMismatchError — caller compares loaded_tape_mm.
+        """
+        try:
+            preflight = await query_preflight(
+                self.host,
+                community=community,
+                timeout_s=timeout_s,
+            )
+        except SnmpQueryError as exc:
+            raise PrinterOfflineError(f"preflight SNMP failed: {exc}") from exc
+
+        if "noPaper" in preflight.error_flags:
+            raise TapeEmptyError()
+        if "doorOpen" in preflight.error_flags:
+            raise PrinterCoverOpenError()
+        return preflight
 
     async def query_status(self) -> StatusBlock:
         """QL-Series uses SNMP-Probe via StatusProbeProducer, no synchronous path.
