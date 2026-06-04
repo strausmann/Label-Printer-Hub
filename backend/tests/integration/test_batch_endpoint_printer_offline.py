@@ -70,10 +70,12 @@ async def test_batch_rejects_when_printer_offline(
     # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.
     printer_slug = inner_app.state.backend_router.slugs()[0]
 
-    async def _raise(self, req):
+    # Phase 1k.2: dispatch_batch now calls submit_batch_job (not submit_print_job).
+    # Patch submit_batch_job to raise PrinterOfflineError.
+    async def _raise(self, requests, *, half_cut):
         raise PrinterOfflineError("printer is offline")
 
-    monkeypatch.setattr(PrintService, "submit_print_job", _raise)
+    monkeypatch.setattr(PrintService, "submit_batch_job", _raise)
 
     body = {
         "items": [

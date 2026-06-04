@@ -1,28 +1,63 @@
-"""Unit-Tests für den Batch-Dispatcher (best-effort, pro-Item-Validation)."""
+"""Unit-Tests für den Batch-Dispatcher (best-effort, pro-Item-Validation).
+
+Phase 1k.2: dispatch_batch queued ONE BatchJob statt N PrintJobs.
+Bestehende Tests wurden refactored — _FakePrintService hat jetzt
+get_template_tape_mm() + submit_batch_job() statt submit_print_job().
+"""
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
-from app.schemas.print_request import PrintOptions, PrintRequest, RawLabelData
-from app.services.batch_dispatch import dispatch_batch
+from app.schemas.print_request import PrintRequest, RawLabelData
+from app.services.batch_dispatch import MixedTapeSizesError, dispatch_batch
 from app.services.template_loader import TemplateNotFoundError
+
+# Default tape_mm für alle "normal" Test-Items
+_DEFAULT_TAPE_MM = 12
+_OTHER_TAPE_MM = 24
 
 
 class _FakePrintService:
-    def __init__(self, fail_at: dict[int, type[Exception]] | None = None):
-        self.fail_at = fail_at or {}
-        self.calls: int = 0
-        self.submitted: list[PrintRequest] = []
+    """Fake PrintService für dispatch_batch Unit-Tests (Phase 1k.2 Interface).
 
-    async def submit_print_job(self, req: PrintRequest):
-        idx = self.calls
-        self.calls += 1
-        self.submitted.append(req)
-        if idx in self.fail_at:
-            raise self.fail_at[idx]("simulated")
-        return str(uuid4())
+    - get_template_tape_mm(template_id) → int (simuliert TemplateLoader)
+    - submit_batch_job(requests, half_cut) → list[UUID]
+
+    fail_at_template: set of template_ids die TemplateNotFoundError werfen.
+    tape_mm_for: dict template_id → tape_mm (default: _DEFAULT_TAPE_MM)
+    """
+
+    def __init__(
+        self,
+        *,
+        fail_at_template: set[str] | None = None,
+        tape_mm_for: dict[str, int] | None = None,
+        batch_fail: type[Exception] | None = None,
+    ) -> None:
+        self.fail_at_template: set[str] = fail_at_template or set()
+        self.tape_mm_for: dict[str, int] = tape_mm_for or {}
+        self.batch_fail = batch_fail
+
+        # Captured calls for assertion
+        self.submit_batch_calls: list[tuple[list[PrintRequest], bool]] = []
+
+    async def get_template_tape_mm(self, template_id: str) -> int:
+        if template_id in self.fail_at_template:
+            raise TemplateNotFoundError(template_id)
+        return self.tape_mm_for.get(template_id, _DEFAULT_TAPE_MM)
+
+    async def submit_batch_job(
+        self,
+        requests: list[PrintRequest],
+        *,
+        half_cut: bool,
+    ) -> list[UUID]:
+        self.submit_batch_calls.append((list(requests), half_cut))
+        if self.batch_fail is not None:
+            raise self.batch_fail("simulated batch failure")
+        return [uuid4() for _ in requests]
 
 
 class _FakeBackend:
@@ -32,119 +67,183 @@ class _FakeBackend:
         self.half_cut_supported = half_cut_supported
 
 
-def _item(template_id="hangar-furniture-12mm"):
+def _item(template_id: str = "hangar-furniture-12mm") -> PrintRequest:
     return PrintRequest(
-        template_id=template_id, data=RawLabelData(title="t", primary_id="p", qr_payload="q")
+        template_id=template_id,
+        data=RawLabelData(title="t", primary_id="p", qr_payload="q"),
     )
 
 
-@pytest.mark.asyncio
+# ---------------------------------------------------------------------------
+# Basic batch success / partial-failure
+# ---------------------------------------------------------------------------
+
+
 async def test_dispatch_all_succeed():
     service = _FakePrintService()
     items = [_item() for _ in range(3)]
     job_ids, errors = await dispatch_batch(service, items)
     assert len(job_ids) == 3
     assert errors == []
+    # submit_batch_job called exactly once
+    assert len(service.submit_batch_calls) == 1
+    batch_requests, _half_cut = service.submit_batch_calls[0]
+    assert len(batch_requests) == 3
 
 
-@pytest.mark.asyncio
 async def test_dispatch_partial_failure_keeps_going():
-    service = _FakePrintService(fail_at={1: TemplateNotFoundError})
+    """Template-not-found für Item 1 → das Item landet in errors[], rest wird gequeued."""
+    service = _FakePrintService(fail_at_template={"typo"})
     items = [_item(), _item("typo"), _item()]
     job_ids, errors = await dispatch_batch(service, items)
+
+    # 2 valide items → 2 job_ids
     assert len(job_ids) == 2
     assert len(errors) == 1
     assert errors[0].index == 1
     assert errors[0].error_code == "template_not_found"
 
+    # submit_batch_job called once with 2 requests (not 3)
+    assert len(service.submit_batch_calls) == 1
+    batch_requests, _ = service.submit_batch_calls[0]
+    assert len(batch_requests) == 2
 
-# --- Phase 1i C-Fix: half_cut / last_page Pre-Compute Tests ---
+
+async def test_dispatch_all_fail_no_batch_submitted():
+    """Alle Items template_not_found → submit_batch_job wird NICHT aufgerufen."""
+    service = _FakePrintService(fail_at_template={"tmpl-a", "tmpl-b"})
+    items = [_item("tmpl-a"), _item("tmpl-b")]
+    job_ids, errors = await dispatch_batch(service, items)
+
+    assert job_ids == []
+    assert len(errors) == 2
+    assert service.submit_batch_calls == []
 
 
-@pytest.mark.asyncio
-async def test_dispatch_last_item_gets_full_cut_no_half_cut():
-    """Letztes Item bekommt last_page=True, half_cut=False (Voll-Cut)."""
+# ---------------------------------------------------------------------------
+# Phase 1k.2: half_cut logic — jetzt als batch-global flag, nicht per-item
+# ---------------------------------------------------------------------------
+
+
+async def test_dispatch_half_cut_passed_to_submit_batch_job_when_backend_supports():
+    """Backend supports half_cut → submit_batch_job bekommt half_cut=True."""
     service = _FakePrintService()
     backend = _FakeBackend(half_cut_supported=True)
     items = [_item() for _ in range(3)]
 
     await dispatch_batch(service, items, backend=backend)
 
-    assert len(service.submitted) == 3
-    # intermediate items: half_cut=True (backend supports it), last_page=False
-    assert service.submitted[0].options.half_cut is True
-    assert service.submitted[0].options.last_page is False
-    assert service.submitted[1].options.half_cut is True
-    assert service.submitted[1].options.last_page is False
-    # last item: half_cut=False, last_page=True
-    assert service.submitted[2].options.half_cut is False
-    assert service.submitted[2].options.last_page is True
+    assert len(service.submit_batch_calls) == 1
+    _, half_cut = service.submit_batch_calls[0]
+    assert half_cut is True
 
 
-@pytest.mark.asyncio
-async def test_dispatch_single_item_last_page_true_no_half_cut():
-    """Ein einzelnes Item ist immer last, also last_page=True, half_cut=False."""
-    service = _FakePrintService()
-    backend = _FakeBackend(half_cut_supported=True)
-    items = [_item()]
-
-    await dispatch_batch(service, items, backend=backend)
-
-    assert service.submitted[0].options.half_cut is False
-    assert service.submitted[0].options.last_page is True
-
-
-@pytest.mark.asyncio
-async def test_dispatch_half_cut_override_false_disables_half_cut():
-    """half_cut_override=False unterdrückt half_cut auch für mittlere Items."""
-    service = _FakePrintService()
-    backend = _FakeBackend(half_cut_supported=True)
-    items = [_item() for _ in range(3)]
-
-    await dispatch_batch(service, items, half_cut_override=False, backend=backend)
-
-    # All items should have half_cut=False since override=False
-    for req in service.submitted:
-        assert req.options.half_cut is False
-    # last item still last_page=True
-    assert service.submitted[-1].options.last_page is True
-
-
-@pytest.mark.asyncio
-async def test_dispatch_half_cut_suppressed_when_backend_not_supported():
-    """half_cut=False wenn Backend half_cut_supported=False (z.B. QL-Series)."""
+async def test_dispatch_half_cut_false_when_backend_not_supported():
+    """Backend half_cut_supported=False → submit_batch_job bekommt half_cut=False."""
     service = _FakePrintService()
     backend = _FakeBackend(half_cut_supported=False)
     items = [_item() for _ in range(3)]
 
     await dispatch_batch(service, items, backend=backend)
 
-    # Backend doesn't support half_cut — all items get half_cut=False
-    for req in service.submitted:
-        assert req.options.half_cut is False
+    assert len(service.submit_batch_calls) == 1
+    _, half_cut = service.submit_batch_calls[0]
+    assert half_cut is False
 
 
-@pytest.mark.asyncio
-async def test_dispatch_print_options_stays_frozen():
-    """PrintOptions ist frozen=True — dispatched options müssen immutable sein.
+async def test_dispatch_half_cut_override_false_disables_half_cut():
+    """half_cut_override=False erzwingt half_cut=False unabhängig vom Backend."""
+    service = _FakePrintService()
+    backend = _FakeBackend(half_cut_supported=True)
+    items = [_item() for _ in range(3)]
 
-    dispatch_batch baut neue PrintOptions-Instanzen explizit (KEIN model_copy
-    auf frozen PrintOptions). Dieser Test verifiziert dass:
-    1. Die dispatched Options eine PrintOptions-Instanz sind.
-    2. frozen=True gilt — direktes Setzen via setattr löst TypeError/ValidationError aus.
-    """
-    from pydantic import ValidationError
+    await dispatch_batch(service, items, half_cut_override=False, backend=backend)
 
+    assert len(service.submit_batch_calls) == 1
+    _, half_cut = service.submit_batch_calls[0]
+    assert half_cut is False
+
+
+async def test_dispatch_half_cut_override_true_with_backend_support():
+    """half_cut_override=True + backend supported → half_cut=True."""
     service = _FakePrintService()
     backend = _FakeBackend(half_cut_supported=True)
     items = [_item()]
 
-    await dispatch_batch(service, items, backend=backend)
+    await dispatch_batch(service, items, half_cut_override=True, backend=backend)
 
-    # Verify the submitted options are a fresh PrintOptions instance (frozen works)
-    opts = service.submitted[0].options
-    assert isinstance(opts, PrintOptions)
-    # frozen=True — attempting to set an attribute via __setattr__ raises TypeError
-    # (Pydantic V2 frozen models raise TypeError for direct attribute mutation)
-    with pytest.raises((TypeError, ValidationError)):
-        opts.half_cut = True  # type: ignore[misc]
+    assert len(service.submit_batch_calls) == 1
+    _, half_cut = service.submit_batch_calls[0]
+    assert half_cut is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 1k.2: MixedTapeSizesError
+# ---------------------------------------------------------------------------
+
+
+async def test_dispatch_batch_uses_enqueue_batch_path():
+    """dispatch_batch mit validen Items ruft submit_batch_job genau einmal auf."""
+    service = _FakePrintService()
+    items = [_item(), _item(), _item()]
+
+    job_ids, errors = await dispatch_batch(service, items)
+
+    assert len(job_ids) == 3
+    assert errors == []
+    assert len(service.submit_batch_calls) == 1
+
+
+async def test_dispatch_batch_rejects_mixed_tape_sizes():
+    """Items mit unterschiedlichen tape_mm werfen MixedTapeSizesError vor Queue."""
+    service = _FakePrintService(
+        tape_mm_for={
+            "tmpl-12mm": 12,
+            "tmpl-24mm": 24,
+        }
+    )
+    items = [_item("tmpl-12mm"), _item("tmpl-24mm")]
+
+    with pytest.raises(MixedTapeSizesError) as exc_info:
+        await dispatch_batch(service, items)
+
+    # submit_batch_job should NOT have been called
+    assert service.submit_batch_calls == []
+    # Error message includes the differing sizes
+    err = exc_info.value
+    assert 12 in err.tape_mm_values or 24 in err.tape_mm_values
+
+
+async def test_dispatch_batch_mixed_tape_sizes_partial_valid():
+    """Wenn ein Item fehlschlägt + rest mixed tape → MixedTapeSizesError für valide Items."""
+    service = _FakePrintService(
+        fail_at_template={"tmpl-bad"},
+        tape_mm_for={
+            "tmpl-12mm": 12,
+            "tmpl-24mm": 24,
+        },
+    )
+    # tmpl-bad → filtered out, tmpl-12mm + tmpl-24mm → mixed tape → raises
+    items = [_item("tmpl-bad"), _item("tmpl-12mm"), _item("tmpl-24mm")]
+
+    with pytest.raises(MixedTapeSizesError):
+        await dispatch_batch(service, items)
+
+    assert service.submit_batch_calls == []
+
+
+async def test_dispatch_batch_same_tape_mm_not_rejected():
+    """Alle Items mit gleicher tape_mm → kein Fehler, ONE batch."""
+    service = _FakePrintService(
+        tape_mm_for={
+            "tmpl-a": 24,
+            "tmpl-b": 24,
+        }
+    )
+    items = [_item("tmpl-a"), _item("tmpl-b")]
+
+    job_ids, errors = await dispatch_batch(service, items)
+
+    assert len(job_ids) == 2
+    assert errors == []
+    assert len(service.submit_batch_calls) == 1

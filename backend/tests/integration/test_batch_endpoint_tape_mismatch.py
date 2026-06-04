@@ -1,4 +1,9 @@
-"""Mix 12mm + 24mm, eingelegt 24mm: 24mm queued, 12mm failed per-item."""
+"""Phase 1k.2: Tape-Mismatch ist jetzt ein fataler Batch-Fehler (nicht per-item).
+
+Szenarien:
+- Alle Items gleiche tape_mm + falsches Tape eingelegt → TapeMismatchError → 409.
+- Items mit gemischter tape_mm → MixedTapeSizesError → 400.
+"""
 
 from __future__ import annotations
 
@@ -66,44 +71,74 @@ async def test_batch_tape_mismatch_per_item(
     tape_auth_headers,
     monkeypatch,
 ):
+    """Phase 1k.2: Alle Items gleiche tape_mm + falsches Tape → TapeMismatchError → 409.
+
+    Vorher (Phase 1i): TapeMismatchError war ein per-item-Fehler (best-effort).
+    Jetzt (Phase 1k.2): TapeMismatchError ist fatal — der gesamte Batch wird abgelehnt.
+    submit_batch_job prüft das Tape 1x für alle Items.
+    """
     client, inner_app = tape_client
     # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.
     printer_slug = inner_app.state.backend_router.slugs()[0]
 
-    # Simulate: 24mm loaded, 12mm items fail with tape_mismatch, 24mm items succeed
-    async def _maybe_raise(self, req):
-        if req.template_id == "hangar-furniture-12mm":
-            raise TapeMismatchError(expected_mm=12, loaded_mm=24)
-        return str(uuid4())
+    # Phase 1k.2: submit_batch_job (nicht mehr submit_print_job) wird aufgerufen.
+    # Simuliere: 24mm tape geladen, alle Items erwarten 12mm → TapeMismatchError.
+    async def _raise_mismatch(self, requests, *, half_cut):
+        raise TapeMismatchError(expected_mm=12, loaded_mm=24)
 
-    monkeypatch.setattr(PrintService, "submit_print_job", _maybe_raise)
+    monkeypatch.setattr(PrintService, "submit_batch_job", _raise_mismatch)
 
     body = {
         "items": [
             {
-                "template_id": "hangar-furniture-24mm",
+                "template_id": "hangar-furniture-12mm",
                 "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
-                "on_tape_mismatch": "fail",
             },
             {
                 "template_id": "hangar-furniture-12mm",
                 "data": {"title": "B", "primary_id": "B", "qr_payload": "q"},
-                "on_tape_mismatch": "fail",
-            },
-            {
-                "template_id": "hangar-furniture-24mm",
-                "data": {"title": "C", "primary_id": "C", "qr_payload": "q"},
-                "on_tape_mismatch": "fail",
             },
         ]
     }
     resp = await client.post(
         f"/api/print/{printer_slug}/batch", json=body, headers=tape_auth_headers
     )
-    assert resp.status_code == 202, resp.text
+    # Phase 1k.2: TapeMismatchError propagiert als fataler Fehler → 409
+    assert resp.status_code == 409, resp.text
     data = resp.json()
-    assert len(data["job_ids"]) == 2
-    assert len(data["errors"]) == 1
-    assert data["errors"][0]["index"] == 1
-    assert data["errors"][0]["error_code"] == "tape_mismatch"
-    assert data["errors"][0]["error_detail"] == {"expected_mm": 12, "loaded_mm": 24}
+    assert data["detail"]["error_code"] == "tape_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_batch_mixed_tape_sizes_returns_400(
+    tape_client,
+    tape_db_session,
+    tape_auth_headers,
+):
+    """Phase 1k.2: Batch mit Items die verschiedene tape_mm Templates nutzen → 400.
+
+    MixedTapeSizesError wird von dispatch_batch VOR submit_batch_job geworfen.
+    Der Route-Layer mappt das auf HTTP 400.
+    """
+    client, inner_app = tape_client
+    printer_slug = inner_app.state.backend_router.slugs()[0]
+
+    body = {
+        "items": [
+            {
+                "template_id": "hangar-furniture-12mm",
+                "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
+            },
+            {
+                "template_id": "hangar-furniture-24mm",
+                "data": {"title": "B", "primary_id": "B", "qr_payload": "q"},
+            },
+        ]
+    }
+    resp = await client.post(
+        f"/api/print/{printer_slug}/batch", json=body, headers=tape_auth_headers
+    )
+    assert resp.status_code == 400, resp.text
+    data = resp.json()
+    assert data["detail"]["error_code"] == "mixed_tape_sizes"
+    assert set(data["detail"]["tape_mm_values"]) == {12, 24}

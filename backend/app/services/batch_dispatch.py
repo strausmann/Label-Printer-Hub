@@ -1,4 +1,9 @@
-"""Best-effort Batch-Dispatcher: validiert + queued pro Item, sammelt Errors."""
+"""Best-effort Batch-Dispatcher: validiert + queued als atomic BatchJob.
+
+Phase 1k.2: Statt N PrintJobs (einer pro Item) wird genau EINE BatchJob
+in die Queue gegeben. Der Backend (PT-Series) verwendet ptouch.print_multi
+für atomic batch printing mit 5mm Half-Cut zwischen Labels.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +18,7 @@ from app.printer_backends.exceptions import (
     TapeMismatchError,
 )
 from app.schemas.print_batch import BatchError
-from app.schemas.print_request import PrintOptions, PrintRequest
+from app.schemas.print_request import PrintRequest
 from app.services.lookup_service import LookupFailedError
 from app.services.template_loader import TemplateNotFoundError
 
@@ -23,19 +28,33 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
+
+class MixedTapeSizesError(Exception):
+    """Batch enthält Items mit unterschiedlichen template.tape_mm.
+
+    Phase 1k.2: ptouch.print_multi unterstützt nur ein tape pro Call.
+    Vor Queue abfangen → 400 Response.
+    """
+
+    def __init__(self, tape_mm_values: list[int]) -> None:
+        super().__init__(f"Mixed tape sizes in batch: {sorted(set(tape_mm_values))}")
+        self.tape_mm_values = tape_mm_values
+
+
 # Per-item errors → collected into BatchError list (best-effort)
 _PER_ITEM_ERRORS: dict[type[Exception], str] = {
     TemplateNotFoundError: "template_not_found",
     LookupFailedError: "integration_lookup_failed",
-    TapeMismatchError: "tape_mismatch",
     TapeEmptyError: "tape_empty",
 }
 
-# Hardware preconditions → propagate (caller returns 409)
+# Hardware preconditions → propagate (caller returns 409 or 400)
 _BATCH_FATAL_ERRORS: tuple[type[Exception], ...] = (
     PrinterCoverOpenError,
     PrinterOfflineError,
     SnmpQueryError,
+    TapeMismatchError,  # atomic per Phase 1k.2 Spec
+    MixedTapeSizesError,
 )
 
 
@@ -46,78 +65,74 @@ async def dispatch_batch(
     half_cut_override: bool | None = None,
     backend: PrinterBackend | None = None,
 ) -> tuple[list[str], list[BatchError]]:
-    """Queue each item individually. Collect per-item errors.
-    Hardware errors propagate.
+    """Render N items, queue ONE BatchJob via PrintService.submit_batch_job.
 
-    Phase 1i C-Fix:
-    - half_cut_override: None=Hub-Default (False), True/False=explizit.
-      Bei backend ohne half_cut_supported wird half_cut=False erzwungen.
-    - backend: PrinterBackend-Instanz für half_cut_supported Check.
-    - Pre-Compute last_page + half_cut per Item vor dem Submit.
-      KEIN model_copy auf frozen PrintOptions — explizit neues Objekt bauen.
+    Phase 1k.2 architecture:
+    - Per-item validation (template_not_found, lookup_failed) collected in errors[]
+    - Hardware errors (printer_offline, cover_open, tape_mismatch) propagated to caller
+    - Mixed tape_mm → MixedTapeSizesError (400)
+    - Successful items → ONE BatchJob mit allen Images, gemeinsamer half_cut Logic
+
+    Returns:
+        (job_ids_str, errors): job_ids im Erfolgsfall, BatchError list für skipped items.
+        Bei BatchJob-Submit: alle job_ids gehören zu einer atomar-failed/atomar-success Batch.
     """
-    job_ids: list[str] = []
     errors: list[BatchError] = []
+    valid_items: list[tuple[int, PrintRequest, int]] = []  # (orig_index, request, tape_mm)
 
-    last_index = len(items) - 1
-    # Determine whether backend supports half_cut (default to False if unknown)
-    backend_supports_half_cut: bool = getattr(backend, "half_cut_supported", False)
-
+    # 1. Per-item validation: collect tape_mm + flag failures.
     for index, item in enumerate(items):
         try:
-            is_last = index == last_index
-            # last_page=True only for last item → full cut at end
-            # last_page=False for intermediate items → no cut between
-            use_last_page = is_last
-
-            # half_cut logic:
-            # - For non-last items: use half_cut_override (if set) or True
-            #   (taktile Separation zwischen Labels) — but only if backend supports it.
-            # - For last item: always False (Voll-Cut übernimmt die Trennung).
-            if is_last:
-                use_half_cut = False
-            elif half_cut_override is not None:
-                use_half_cut = half_cut_override and backend_supports_half_cut
-            else:
-                # Default: half_cut=True between items if backend supports it
-                use_half_cut = backend_supports_half_cut
-
-            # Build patched PrintOptions explicitly (frozen=True → no model_copy!)
-            patched_options = PrintOptions(
-                copies=item.options.copies,
-                auto_cut=item.options.auto_cut,
-                high_resolution=item.options.high_resolution,
-                half_cut=use_half_cut,
-                last_page=use_last_page,
-            )
-            # PrintRequest is NOT frozen → model_copy is safe here
-            patched_item = item.model_copy(update={"options": patched_options})
-
-            job_id = await service.submit_print_job(patched_item)
-            job_ids.append(str(job_id))
+            # Copilot-Review C7: public get_template_tape_mm statt _loader private access
+            tape_mm = await _validate_item_get_tape_mm(service, item)
+            valid_items.append((index, item, tape_mm))
         except _BATCH_FATAL_ERRORS:
             raise
         except tuple(_PER_ITEM_ERRORS) as exc:
             code = _PER_ITEM_ERRORS[type(exc)]
-            detail: dict[str, object] | None = None
-            if isinstance(exc, TapeMismatchError):
-                detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
-            errors.append(
-                BatchError(
-                    index=index,
-                    error_code=code,
-                    error_message=str(exc),
-                    error_detail=detail,
-                )
-            )
+            errors.append(BatchError(index=index, error_code=code, error_message=str(exc)))
         except Exception as exc:  # unknown sync failure
-            _log.exception("unexpected error in batch item %d", index)
+            _log.exception("unexpected error validating batch item %d", index)
             errors.append(
-                BatchError(
-                    index=index,
-                    error_code="internal_error",
-                    error_message=str(exc),
-                )
+                BatchError(index=index, error_code="internal_error", error_message=str(exc))
             )
 
-    return job_ids, errors
+    if not valid_items:
+        return [], errors
+
+    # 2. Mixed tape_mm check
+    tape_mm_set = {tm for _, _, tm in valid_items}
+    if len(tape_mm_set) > 1:
+        raise MixedTapeSizesError([tm for _, _, tm in valid_items])
+
+    # 3. Backend half_cut capability
+    backend_supports_half_cut: bool = getattr(backend, "half_cut_supported", False)
+    if half_cut_override is not None:
+        use_half_cut = half_cut_override and backend_supports_half_cut
+    else:
+        use_half_cut = backend_supports_half_cut
+
+    # 4. Submit as single BatchJob
+    requests = [req for _, req, _ in valid_items]
+    job_ids = await service.submit_batch_job(
+        requests,
+        half_cut=use_half_cut,
+    )
+
+    return [str(jid) for jid in job_ids], errors
+
+
+async def _validate_item_get_tape_mm(
+    service: PrintService,
+    item: PrintRequest,
+) -> int:
+    """Load template via public PrintService API, return tape_mm.
+
+    Raises TemplateNotFoundError on miss.
+
+    Copilot-Review C7 (PR #106): vorher hat dieser helper auf das private
+    Attribut service._loader zugegriffen. Pläne auf Internals brechen bei
+    Refactors. Stattdessen wird ein public Helper get_template_tape_mm auf
+    PrintService aufgerufen (Task 9 Step 4a ergänzt diese Methode).
+    """
+    return await service.get_template_tape_mm(item.template_id)
