@@ -175,6 +175,48 @@ def test_load_font_calls_truetype_only_once_per_size() -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Phase 1i smoke-test live-bug: DejaVuSans TTF verfügbar (font_size honored)
+# ---------------------------------------------------------------------------
+
+
+def test_label_renderer_uses_truetype_font() -> None:
+    """font_size-Parameter muss tatsächlich die Textgröße skalieren (kein Bitmap-Fallback).
+
+    Root Cause: Container ohne fonts-dejavu-core → ImageFont.truetype('DejaVuSans.ttf', N)
+    schlägt mit OSError fehl → _load_font_cached fällt auf load_default() zurück.
+    Pillow's load_default() ist eine fixe-Größe Bitmap-Font die size IGNORIERT.
+    Fix: fonts-dejavu-core im Dockerfile installieren.
+
+    Dieser Test schlägt im Container FEHL bis Dockerfile gefixt ist.
+    Auf Dev-Rechnern mit installierten Fonts läuft er grün.
+    """
+    from app.services.label_renderer import _load_font_cached
+    from PIL import ImageFont
+
+    # Cache leeren damit der Test sauber von Null startet
+    _load_font_cached.cache_clear()
+
+    font = _load_font_cached(22)
+    assert isinstance(font, ImageFont.FreeTypeFont), (
+        f"Erwartet FreeTypeFont (TTF), bekommen {type(font).__name__}. "
+        "Stelle sicher dass fonts-dejavu-core im Dockerfile installiert ist "
+        "(/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf muss existieren)."
+    )
+
+    # Tatsächliche Skalierung verifizieren: größere font_size → größere Glyphen
+    font10 = _load_font_cached(10)
+    font22 = _load_font_cached(22)
+    bbox10 = font10.getbbox("X")
+    bbox22 = font22.getbbox("X")
+    h10 = bbox10[3] - bbox10[1]
+    h22 = bbox22[3] - bbox22[1]
+    assert h22 > h10 * 1.5, (
+        f"Font-Skalierung defekt: h10={h10}px, h22={h22}px (Faktor {h22 / h10:.1f}x < 1.5x). "
+        "Bitmap-Fallback liefert immer dieselbe Höhe unabhängig von font_size."
+    )
+
+
 class TestWhitespaceTrim:
     """Cropping the inked content to save tape material on the length axis."""
 

@@ -113,6 +113,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # - curl: HEALTHCHECK
 # - tini: PID 1 signal handler so uvicorn shuts down cleanly on SIGTERM
 # - ca-certificates: outbound HTTPS to Snipe-IT / Grocy / Spoolman / printer web UIs
+# - fonts-dejavu-core: DejaVuSans.ttf — required so ImageFont.truetype('DejaVuSans.ttf', N)
+#   succeeds in label_renderer.py. Without this, Pillow falls back to load_default()
+#   which is a fixed-size bitmap font that ignores the size argument — all templates
+#   render identically large text regardless of font_size. Installs to:
+#   /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libjpeg62-turbo \
@@ -120,6 +125,7 @@ RUN apt-get update \
         curl \
         tini \
         ca-certificates \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
