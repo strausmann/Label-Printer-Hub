@@ -14,7 +14,7 @@ printers:
     name: "Brother P-750W"
     backend: ptouch
     model: PT-P750W
-    host: 172.16.50.212
+    host: 192.0.2.10
     port: 9100
 """
 

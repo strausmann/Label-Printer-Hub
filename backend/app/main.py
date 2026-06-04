@@ -25,7 +25,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 # ---------------------------------------------------------------------------
 # F3 — Early settings validation with a friendly error message.
@@ -389,13 +389,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # R4-A-C2-Fix (Volle Multi-Printer): PrintService-Map — eine Instanz pro Drucker.
     for cfg, printer_id in zip(_printer_configs, db_printer_ids, strict=True):
         printer_backend = backend_router.get(cfg.slug)
+        assert printer_backend is not None, (
+            f"BackendRouter missing backend for slug={cfg.slug!r} — "
+            "should have been registered during BackendRouter.__init__"
+        )
+        # cast: PrinterBackend satisfies _BackendProto at runtime (both concrete
+        # backends implement preflight_check). _BackendProto is a private Protocol
+        # in print_service and cannot be imported here for a clean annotation.
         service = PrintService(
             template_loader=TemplateLoader,
             renderer=shared_renderer,
             print_queue=queue,
             lookup_service=AppLookupService(),
             printer_id=printer_id,
-            backend=printer_backend,
+            backend=cast(Any, printer_backend),
             store=job_store,
         )
         backend_router.register_service(cfg.slug, service)

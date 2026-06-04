@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+from typing import cast
 
 from fastapi import APIRouter, Header, HTTPException, Query, Response
 
@@ -30,7 +31,9 @@ def _resolve_sample(
     qr_payload: str | None,
 ) -> dict[str, object]:
     """Merge query-params über template.preview_sample (Query gewinnt)."""
-    sample = dict(template_definition.get("preview_sample") or {})
+    sample: dict[str, object] = dict(
+        cast(dict[str, object], template_definition.get("preview_sample") or {})
+    )
     if primary_id is not None:
         sample["primary_id"] = primary_id
     if title is not None:
@@ -41,6 +44,21 @@ def _resolve_sample(
     sample.setdefault("primary_id", "PREVIEW")
     sample.setdefault("qr_payload", "https://hangar.example/preview")
     return sample
+
+
+def _label_data_from_sample(sample: dict[str, object], source_app: str) -> LabelData:
+    """Konstruiert LabelData aus dem sample-Dict mit expliziten Feldern.
+
+    Vermeidet **dict[str, object] unpack (mypy: Argument 1 to LabelData incompatible).
+    cast() ist safe weil _resolve_sample alle Felder als str setzt.
+    """
+    return LabelData(
+        primary_id=cast(str, sample.get("primary_id", "PREVIEW")),
+        title=cast(str, sample.get("title", "preview")),
+        qr_payload=cast(str, sample.get("qr_payload", "https://hangar.example/preview")),
+        secondary=cast(tuple[str, ...], sample.get("secondary", ())),
+        source_app=source_app,
+    )
 
 
 @router.get("/{key}/preview-png", response_class=Response)
@@ -61,7 +79,7 @@ def preview_png(
 
     renderer = LabelRenderer()
     # R3-Drift #5: source_app ist Pflichtfeld
-    label_data = LabelData(**sample, source_app="preview")
+    label_data = _label_data_from_sample(sample, source_app="preview")
     img = renderer.render(template, label_data)
 
     buf = io.BytesIO()
@@ -99,7 +117,7 @@ def preview_svg(
         return Response(status_code=304, headers={"ETag": weak_etag})
 
     # R3-Drift #5: source_app ist Pflichtfeld
-    label_data = LabelData(**sample, source_app="preview")
+    label_data = _label_data_from_sample(sample, source_app="preview")
 
     # R4-A-C1+MA2-Fix: render_template_svg erwartet dicts — .model_dump() konvertiert
     svg_str = render_template_svg(

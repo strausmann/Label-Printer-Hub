@@ -15,7 +15,7 @@ def test_minimal_printer_config_valid():
         name="Brother P-750W",
         backend="ptouch",
         model="PT-P750W",
-        host="172.16.50.212",
+        host="192.0.2.10",
     )
     assert cfg.port == 9100
     assert cfg.snmp.discover is True
@@ -61,7 +61,7 @@ def test_half_cut_true_on_brother_ql_rejected():
             name="QL820",
             backend="brother_ql",
             model="QL-820NWB",
-            host="172.16.51.213",
+            host="192.0.2.11",
             cut_defaults=CutDefaults(half_cut=True, cut_at_end=True),
         )
     assert "half_cut" in str(exc_info.value).lower()

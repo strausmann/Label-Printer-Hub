@@ -5,12 +5,13 @@ schema_version: 1
 # backend       = welche Hub-Backend-Implementation (ptouch | brother_ql)
 # model         = Library-konformes Brother-Modell (PT-P750W, QL-820NWB)
 # C8-Fix:         QL-820NWBc-Hardware -> model: QL-820NWB (Library kennt kein 'c')
+# Note: Example uses RFC 5737 documentation IPs (192.0.2.0/24). Replace with your printer IPs.
 printers:
   - slug: brother-p750w
     name: "Brother PT-P750W (Werkstatt)"
     backend: ptouch
     model: PT-P750W
-    host: 172.16.50.212
+    host: 192.0.2.10
     port: 9100
     snmp:
       discover: true
@@ -25,7 +26,7 @@ printers:
     name: "Brother QL-820NWBc (Büro)"
     backend: brother_ql
     model: QL-820NWB        # C8-Fix: kein 'c' — Library kennt nur QL-820NWB
-    host: 172.16.51.213
+    host: 192.0.2.11
     port: 9100
     snmp:
       discover: true

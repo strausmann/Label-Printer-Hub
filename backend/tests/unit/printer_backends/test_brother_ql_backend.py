@@ -46,11 +46,11 @@ async def test_print_image_calls_brother_ql_send(
 
     monkeypatch.setattr("app.printer_backends.brother_ql_backend._helpers_send", fake_send)
 
-    backend = BrotherQLBackend(host="172.16.51.213", port=9100, model_id="QL-820NWB")
+    backend = BrotherQLBackend(host="192.0.2.11", port=9100, model_id="QL-820NWB")
     await backend.print_image(dummy_image, tape_spec_62, auto_cut=True, last_page=True)
     assert len(send_calls) == 1
     identifier, payload_len, _kwargs = send_calls[0]
-    assert identifier == "tcp://172.16.51.213:9100"
+    assert identifier == "tcp://192.0.2.11:9100"
     assert payload_len > 0
 
 

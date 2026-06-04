@@ -20,6 +20,7 @@ from PIL import Image
 
 from app.models.tape import TapeSpec
 from app.printer_backends.exceptions import PrintFailedError
+from app.services.status_block import StatusBlock
 
 _logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ class BrotherQLBackend:
             blocking=True,
         )
 
-    async def query_status(self):
+    async def query_status(self) -> StatusBlock:
         """QL-Series uses SNMP-Probe via StatusProbeProducer, no synchronous path.
 
         Full implementation deferred to Phase 1j (SNMP status for QL-Series).
