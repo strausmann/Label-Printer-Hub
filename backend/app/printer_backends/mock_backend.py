@@ -12,6 +12,7 @@ from typing import Any
 from PIL import Image
 
 from app.models.tape import TapeSpec
+from app.printer_backends.batch_helper import default_print_images_loop
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterOfflineError,
@@ -160,4 +161,17 @@ class MockPrinterBackend:
         high_resolution: bool = False,
         half_cut: bool = True,
     ) -> None:
-        raise NotImplementedError("implemented in Task 5")
+        """Test-friendly Mock-Implementation via default_print_images_loop.
+
+        Records each print_image call (because self.print_image is the existing
+        Mock recording method). Phase 1k.2 Task 5: replaces NotImplementedError
+        stub from Task 2 fix-up commit.
+        """
+        await default_print_images_loop(
+            self,
+            images,
+            tape_spec,
+            auto_cut=auto_cut,
+            high_resolution=high_resolution,
+            half_cut=half_cut,
+        )
