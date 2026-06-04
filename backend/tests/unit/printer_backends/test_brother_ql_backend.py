@@ -96,7 +96,7 @@ async def test_preflight_check_success(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr("app.printer_backends.brother_ql_backend.query_preflight", fake_preflight)
-    backend = BrotherQLBackend(host="172.16.51.213", model_id="QL-820NWB")
+    backend = BrotherQLBackend(host="192.0.2.11", model_id="QL-820NWB")
     result = await backend.preflight_check()
     assert result.hr_printer_status == "idle"
     assert result.loaded_tape_mm == 62

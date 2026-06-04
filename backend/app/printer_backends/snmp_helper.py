@@ -9,6 +9,18 @@ __init__; use ``await UdpTransportTarget.create((host, port), ...)`` instead.
 
 from __future__ import annotations
 
+__all__ = [
+    "LiveStatus",
+    "PreflightStatus",
+    "SnmpQueryError",
+    "decode_error_flags",
+    "parse_loaded_tape_mm",
+    "query_loaded_tape_mm",
+    "query_live_status",
+    "query_model_pjl",
+    "query_preflight",
+]
+
 import asyncio
 import logging
 import re
