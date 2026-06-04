@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
+from app.services.job_lifecycle import JobState
 from app.services.print_queue import PrintQueue
 from PIL import Image
 
@@ -110,9 +111,12 @@ async def test_batchjob_success_marks_all_job_ids_completed(fake_printer, make_i
     finally:
         await queue.stop(timeout_s=2.0)
 
-    # Status check — depends on JobStore implementation. Use list_completed if available:
-    # For now, assert print_images called once (Mock-Store via MemoryJobStore default).
     assert fake_printer.print_images.await_count == 1
+
+    # Verify all jobs reached COMPLETED state (not just that print_images was called).
+    for jid in job_ids:
+        job = await queue.get(jid)
+        assert job.state == JobState.COMPLETED, f"job {jid} expected COMPLETED, got {job.state}"
 
 
 @pytest.mark.anyio
@@ -140,6 +144,14 @@ async def test_batchjob_failure_marks_all_job_ids_failed(fake_printer, make_imag
         await queue.stop(timeout_s=2.0)
 
     assert fake_printer.print_images.await_count == 1
+
+    # Verify all jobs reached FAILED state with the expected error message.
+    for jid in job_ids:
+        job = await queue.get(jid)
+        assert job.state == JobState.FAILED, f"job {jid} expected FAILED, got {job.state}"
+        assert "printer offline" in (job.error_message or ""), (
+            f"job {jid} error_message missing 'printer offline': {job.error_message!r}"
+        )
 
 
 @pytest.mark.anyio
@@ -170,3 +182,51 @@ async def test_enqueue_batch_requires_matching_lengths(fake_printer, make_image)
             tape_mm=12,
             options={},
         )
+
+
+@pytest.mark.anyio
+async def test_enqueue_batch_rejects_empty_images(fake_printer):
+    """enqueue_batch raises ValueError for empty images list."""
+    queue = PrintQueue([fake_printer])
+    with pytest.raises(ValueError, match="at least one image"):
+        await queue.enqueue_batch(
+            printer_id=fake_printer.id,
+            images=[],
+            job_ids=[],
+            tape_mm=12,
+            options={},
+        )
+
+
+@pytest.mark.anyio
+async def test_batchjob_cancelled_job_skipped_in_active(fake_printer, make_image):
+    """If a job is cancelled before worker picks it up, only active items get printed."""
+    queue = PrintQueue([fake_printer])
+    images = [make_image() for _ in range(3)]
+    job_ids = [uuid4(), uuid4(), uuid4()]
+
+    await queue.start()
+    try:
+        await queue.enqueue_batch(
+            printer_id=fake_printer.id,
+            images=images,
+            job_ids=job_ids,
+            tape_mm=12,
+            options={"auto_cut": True, "half_cut": True},
+        )
+        # Cancel the middle job BEFORE worker picks up
+        await queue.cancel(str(job_ids[1]))
+        # Wait for batch to process
+        for _ in range(50):
+            if fake_printer.print_images.await_count > 0:
+                break
+            await asyncio.sleep(0.05)
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+    # Worker called print_images once with only 2 images (middle was cancelled)
+    assert fake_printer.print_images.await_count == 1
+    call_args = fake_printer.print_images.call_args
+    assert len(call_args.args[0]) == 2, (
+        f"Expected 2 images (1 cancelled), got {len(call_args.args[0])}"
+    )

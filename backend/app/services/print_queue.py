@@ -889,20 +889,6 @@ class PrintQueue:
                 return
             await self._worker_resume_events[printer_id].wait()
 
-        # Resolve all Job in-memory objects (registered in enqueue_batch via
-        # Gemini-Review G1 fix). Falls ein Job nicht mehr in self._jobs ist
-        # (cancel mid-flight), skip — terminale state-transition würde fehlen.
-        jobs: list[Job] = []
-        for jid in batch.job_ids:
-            job = self._jobs.get(str(jid))
-            if job is None:
-                logger.warning("Batch %s: job_id %s not in _jobs (cancelled?)", batch.batch_id, jid)
-                continue
-            jobs.append(job)
-        if not jobs:
-            logger.warning("Batch %s has no live jobs — skipping", batch.batch_id)
-            return
-
         # Gemini-Review G2: in-memory transitions + SSE-Events + DB persist.
         # QUEUED -> PRINTING für jeden Job.
         #
@@ -911,8 +897,18 @@ class PrintQueue:
         # gerufen werden — sonst inkonsistent (in-memory CANCELLED vs DB PRINTING).
         # Wir sammeln nur successfully transitioned jobs in active_jobs[] und
         # nutzen die für alle folgenden DB-Calls + post-print transitions.
+        #
+        # Task 8 follow-up (G-R2-2): active_indices[] tracks the payload index of
+        # each active_job so we can filter batch.image_payloads to match.
+        # Without this, cancelled jobs would cause phantom prints (their payload
+        # would still be sent to the printer even though the job was cancelled).
         active_jobs: list[Job] = []
-        for job in jobs:
+        active_indices: list[int] = []
+        for idx, jid in enumerate(batch.job_ids):
+            job = self._jobs.get(str(jid))
+            if job is None:
+                logger.warning("Batch %s: job_id %s not in _jobs (cancelled?)", batch.batch_id, jid)
+                continue
             try:
                 JobStateMachine.transition(job, JobState.PRINTING)
                 self._notify_state_change(
@@ -923,6 +919,7 @@ class PrintQueue:
                 )
                 await self._store.mark_printing(UUID(job.id))
                 active_jobs.append(job)
+                active_indices.append(idx)
             except InvalidStateTransitionError:
                 logger.warning(
                     "Batch %s: job %s skipped — state already %s (cancelled?)",
@@ -938,10 +935,13 @@ class PrintQueue:
             return
 
         # Gemini-Review G1 (PR #106): Parallel image decode
+        # Task 8 follow-up: decode ONLY payloads of active_jobs to avoid phantom
+        # prints for jobs that were cancelled between enqueue_batch and worker pickup.
         # cast to list[Image.Image]: Image.open returns ImageFile (subtype); list
         # is invariant so mypy needs an explicit cast here.
+        active_payloads = [batch.image_payloads[i] for i in active_indices]
         raw_images = await asyncio.gather(
-            *[asyncio.to_thread(Image.open, BytesIO(p)) for p in batch.image_payloads]
+            *[asyncio.to_thread(Image.open, BytesIO(p)) for p in active_payloads]
         )
         images: list[Image.Image] = list(raw_images)
 
