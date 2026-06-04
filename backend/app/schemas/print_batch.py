@@ -15,6 +15,18 @@ class BatchRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     items: Annotated[list[PrintRequest], Field(min_length=1, max_length=500)]
+    # Phase 1i C-Fix (CA-2):
+    printer_slug: str | None = Field(
+        default=None,
+        description="Optional: Slug des Ziel-Druckers (muss mit URL-Path übereinstimmen).",
+    )
+    half_cut_override: bool | None = Field(
+        default=None,
+        description=(
+            "None=Hub-Default, False=Voll-Cut pro Label, True=explizit Half-Cut. "
+            "Bei QL-Series wird True als 'no-cut-between' interpretiert (kein echter Half-Cut)."
+        ),
+    )
 
 
 class BatchError(BaseModel):

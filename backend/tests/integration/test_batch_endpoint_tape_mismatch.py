@@ -8,9 +8,7 @@ import pytest
 import pytest_asyncio
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
-from app.models.printer import Printer
 from app.printer_backends.exceptions import TapeMismatchError
-from app.repositories import printers as printers_repo
 from app.services.print_service import PrintService
 from httpx import ASGITransport, AsyncClient
 
@@ -69,10 +67,8 @@ async def test_batch_tape_mismatch_per_item(
     monkeypatch,
 ):
     client, inner_app = tape_client
-    p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
-    await printers_repo.create(tape_db_session, p)
-    # Align app state with our test printer (single-printer-binding check)
-    inner_app.state.printer_id = p.id
+    # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.
+    printer_slug = inner_app.state.backend_router.slugs()[0]
 
     # Simulate: 24mm loaded, 12mm items fail with tape_mismatch, 24mm items succeed
     async def _maybe_raise(self, req):
@@ -101,7 +97,9 @@ async def test_batch_tape_mismatch_per_item(
             },
         ]
     }
-    resp = await client.post(f"/api/print/{p.slug}/batch", json=body, headers=tape_auth_headers)
+    resp = await client.post(
+        f"/api/print/{printer_slug}/batch", json=body, headers=tape_auth_headers
+    )
     assert resp.status_code == 202, resp.text
     data = resp.json()
     assert len(data["job_ids"]) == 2

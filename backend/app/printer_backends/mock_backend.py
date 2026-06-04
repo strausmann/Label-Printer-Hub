@@ -73,6 +73,7 @@ class MockPrinterBackend:
     """
 
     backend_id = "mock"
+    half_cut_supported: bool = False
 
     def __init__(
         self,
@@ -135,6 +136,8 @@ class MockPrinterBackend:
         *,
         auto_cut: bool = True,  # noqa: ARG002
         high_resolution: bool = False,  # noqa: ARG002
+        half_cut: bool = False,  # noqa: ARG002
+        last_page: bool = True,  # noqa: ARG002
     ) -> None:
         status = await self.query_status()
         if status.tape_empty:

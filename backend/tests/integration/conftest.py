@@ -180,17 +180,51 @@ async def api_client_with_broken_db(tmp_path):
     await eng.dispose()
 
 
+# Minimale printers.yaml-Konfiguration für Integration-Tests.
+# Wird als _PrinterConfigLoaderResult in _mock_backend_env gepatcht.
+_INTEGRATION_TEST_PRINTER_CONFIG_YAML = """\
+schema_version: 1
+printers:
+  - slug: mock-pt-p750w
+    name: Mock PT-P750W
+    backend: ptouch
+    model: PT-P750W
+    host: ''
+    port: 9100
+    snmp:
+      discover: false
+      community: public
+    cut_defaults:
+      half_cut: false
+      cut_at_end: true
+"""
+
+
 @pytest.fixture(autouse=True)
-def _mock_backend_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def _mock_backend_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Ensure integration tests use the mock backend and a known model.
 
-    The FastAPI lifespan wires up printer infrastructure — without real hardware
-    or this fixture, lifespan startup would fail and TestClient would raise before
-    any test body executes.
+    Phase 1i H (Task 7b): _build_backend_from_config wurde entfernt.
+    BackendRouter._build_one() wird jetzt gepatcht um MockPrinterBackend
+    zurückzugeben — leerem Host würde PTouchBackend ValueError werfen.
+
+    Eine minimale printers.yaml wird in tmp_path geschrieben und
+    PRINTER_HUB_PRINTERS_CONFIG darauf gesetzt.
     """
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "PT-P750W")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "false")
+    from app.printer_backends.mock_backend import MockPrinterBackend
+    from app.services.backend_router import BackendRouter
+
+    # printers.yaml in tmp_path schreiben
+    _mock_printers_yaml = tmp_path / "printers.yaml"
+    _mock_printers_yaml.write_text(_INTEGRATION_TEST_PRINTER_CONFIG_YAML)
+    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(_mock_printers_yaml))
+
+    # BackendRouter._build_one auf Mock-Backend patchen (leerem Host
+    # würde PTouchBackend ValueError werfen).
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: MockPrinterBackend())
+    )
+
     get_settings.cache_clear()
     # Reset registry state so each test gets a clean discovery cycle.
     BackendRegistry._factories.clear()

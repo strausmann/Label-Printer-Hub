@@ -29,6 +29,12 @@ EXPECTED_IDS = {
     "qr-only-12mm",
     "qr-only-18mm",
     "qr-only-24mm",
+    "samla-deckel-12mm",
+    "samla-deckel-24mm",
+    "samla-deckel-62mm",
+    "samla-stirntag-12mm",
+    "samla-stirntag-24mm",
+    "samla-stirntag-62mm",
     "snipeit-12mm",
     "snipeit-18mm",
     "snipeit-24mm",
@@ -71,7 +77,11 @@ def dummy_data() -> LabelData:
 
 
 def test_all_expected_templates_are_loaded() -> None:
-    """The shipped set is exactly the 15 templates the spec calls for."""
+    """The shipped set is exactly the 21 templates the spec calls for.
+
+    15 original templates + 6 new Samla templates (Phase 1i Task 10):
+    samla-stirntag-{12,24,62}mm and samla-deckel-{12,24,62}mm.
+    """
     assert set(TemplateLoader.all()) == EXPECTED_IDS
 
 

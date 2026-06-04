@@ -1,0 +1,40 @@
+schema_version: 1
+
+# Pro Drucker ein Eintrag.
+# slug          = identifier, in hub-layouts.yaml referenziert
+# backend       = welche Hub-Backend-Implementation (ptouch | brother_ql)
+# model         = Library-konformes Brother-Modell (PT-P750W, QL-820NWB)
+# C8-Fix:         QL-820NWBc-Hardware -> model: QL-820NWB (Library kennt kein 'c')
+# Note: Example uses RFC 5737 documentation IPs (192.0.2.0/24). Replace with your printer IPs.
+printers:
+  - slug: brother-p750w
+    name: "Brother PT-P750W (Werkstatt)"
+    backend: ptouch
+    model: PT-P750W
+    host: 192.0.2.10
+    port: 9100
+    snmp:
+      discover: true
+      community: public
+    queue:
+      timeout_s: 30
+    cut_defaults:
+      half_cut: true   # PT-Series: echter Half-Cut (ptouch Library)
+      cut_at_end: true
+
+  - slug: brother-ql820
+    name: "Brother QL-820NWBc (Büro)"
+    backend: brother_ql
+    model: QL-820NWB        # C8-Fix: kein 'c' — Library kennt nur QL-820NWB
+    host: 192.0.2.11
+    port: 9100
+    snmp:
+      discover: true
+      community: public
+    queue:
+      timeout_s: 30
+    cut_defaults:
+      # m-H3-Fix: half_cut=true ist für QL-Drucker NICHT unterstützt.
+      # MA-1-Fix: half_cut=true + backend=brother_ql -> PrinterConfigValidationError.
+      half_cut: false
+      cut_at_end: true

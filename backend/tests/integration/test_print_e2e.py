@@ -12,6 +12,7 @@ from app.config import get_settings
 from app.main import create_app
 from app.printer_backends import BackendRegistry
 from app.printer_models.registry import ModelRegistry
+from app.services.backend_router import BackendRouter
 from httpx import ASGITransport, AsyncClient
 
 _FAKE_AUTH = AuthContext(source="api-key", scope="admin", api_key_id=uuid4(), ip="127.0.0.1")
@@ -19,10 +20,10 @@ _FAKE_AUTH = AuthContext(source="api-key", scope="admin", api_key_id=uuid4(), ip
 
 @pytest.fixture(autouse=True)
 def fresh_state(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_BACKEND", "mock")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_MODEL", "PT-P750W")
-    monkeypatch.setenv("PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP", "false")
-    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "")
+    # Phase 1i CA-1: Die alten Env-Vars sind entfernt.
+    # _mock_backend_env (autouse, conftest.py) setzt bereits PRINTER_HUB_PRINTERS_CONFIG
+    # und patcht _build_backend_from_config auf MockPrinterBackend.
+    # Hier nur Registry-Reset + cache clear.
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False
     ModelRegistry._models.clear()
@@ -107,10 +108,17 @@ def _factory_with(**mock_kwargs):
 
 
 @pytest.fixture
-def mismatched_mock_backend():
+def mismatched_mock_backend(monkeypatch):
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = True
     BackendRegistry.register("mock", _factory_with(loaded_tape_mm=12))
+    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
+    # _mock_backend_env (autouse) überschreibt _build_one auf MockPrinterBackend().
+    # Hier setzen wir es auf die spezifische Factory mit loaded_tape_mm=12.
+    real_factory = _factory_with(loaded_tape_mm=12)
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: real_factory.from_settings(None))
+    )
     yield
 
 
@@ -135,10 +143,15 @@ async def test_tape_mismatch_synchronous_409(mismatched_mock_backend) -> None:
 
 
 @pytest.fixture
-def offline_mock_backend():
+def offline_mock_backend(monkeypatch):
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = True
     BackendRegistry.register("mock", _factory_with(offline=True))
+    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
+    real_factory = _factory_with(offline=True)
+    monkeypatch.setattr(
+        BackendRouter, "_build_one", staticmethod(lambda _cfg: real_factory.from_settings(None))
+    )
     yield
 
 

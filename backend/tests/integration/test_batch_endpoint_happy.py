@@ -8,8 +8,6 @@ import pytest
 import pytest_asyncio
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
-from app.models.printer import Printer
-from app.repositories import printers as printers_repo
 from httpx import ASGITransport, AsyncClient
 
 
@@ -67,10 +65,11 @@ def batch_auth_headers() -> dict:
 @pytest.mark.asyncio
 async def test_batch_happy_path(batch_client, batch_db_session, batch_auth_headers):
     client, inner_app = batch_client
-    p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
-    await printers_repo.create(batch_db_session, p)
-    # Align app state with our test printer (single-printer-binding check)
-    inner_app.state.printer_id = p.id
+    # Phase 1i H (Task 7b): Multi-Printer-Wiring — Drucker kommt aus Lifespan (BackendRouter).
+    # Die Lifespan legt 'mock-pt-p750w' via printers.yaml an und registriert es in BackendRouter.
+    # Wir lesen Slug und ID aus app.state statt einen eigenen Printer zu erstellen.
+    printer_id = inner_app.state.printer_id
+    printer_slug = inner_app.state.backend_router.slugs()[0]
 
     # Mock backend defaults to 24mm loaded tape → use 24mm template to avoid mismatch
     body = {
@@ -87,10 +86,12 @@ async def test_batch_happy_path(batch_client, batch_db_session, batch_auth_heade
             for i in range(3)
         ]
     }
-    resp = await client.post(f"/api/print/{p.slug}/batch", json=body, headers=batch_auth_headers)
+    resp = await client.post(
+        f"/api/print/{printer_slug}/batch", json=body, headers=batch_auth_headers
+    )
     assert resp.status_code == 202, resp.text
     data = resp.json()
     assert "batch_id" in data
-    assert data["printer_id"] == str(p.id)
+    assert data["printer_id"] == str(printer_id)
     assert len(data["job_ids"]) == 3
     assert data["errors"] == []

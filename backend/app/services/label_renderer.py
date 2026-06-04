@@ -5,9 +5,15 @@ It does not know the printer or the queue; it only produces the bitmap.
 The printer-backend plug-in (Phase 2 hardware tasks) converts the bitmap
 to raster bytes for the specific Brother model.
 
-Coordinate system: top-left origin, pixels at 300 DPI (brother_ql native).
-The print area is constrained by Brother's per-tape geometry tables —
-see `TAPE_HEIGHT_PX` for the supported widths.
+Coordinate system: top-left origin, pixels at ptouch native 180 DPI.
+The print area is constrained by the physical print_pins of the
+PT-P750W per tape width — see `TAPE_HEIGHT_PX` for the supported widths.
+
+A-Diagnose (2026-06-02): previous values (12:106, 18:165, 24:256) were
+derived from a brother_ql / 300 DPI geometry and caused 1.5x-2x canvas
+overflow. ptouch._prepare_image() crops to print_pins on paste, silently
+clipping QR and text elements at the top. Fixed to match ptouch PIN_CONFIGS
+print_pins values at 180 DPI. QL 62mm Endless tape is unaffected.
 """
 
 from __future__ import annotations
@@ -22,14 +28,15 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 from app.schemas.label_data import LabelData
 from app.schemas.template import LayoutElement, TemplateSchema
 
-# Tape-mm to printable-area pixel-height at 300 DPI (brother_ql native).
-# Source: Brother Raster Command Reference v1.02. Extend as new tape widths
-# are supported by the printer-model plugins.
+# Tape-mm to printable-area pixel-height — matched to ptouch PT-P750W
+# PIN_CONFIGS.print_pins values at native 180 DPI.
+# Source: ptouch-py PIN_CONFIGS (Tape12mm=70, Tape18mm=112, Tape24mm=128).
+# QL 62mm Endless tape uses brother_ql geometry and is unchanged.
 TAPE_HEIGHT_PX: Final[dict[int, int]] = {
-    12: 106,
-    18: 165,
-    24: 256,
-    62: 696,  # endless QL tape
+    12: 70,  # PT-P750W Tape12mm print_pins (was 106 — 1.51x overflow)
+    18: 112,  # PT-P750W Tape18mm print_pins (was 165 — 1.47x overflow)
+    24: 128,  # PT-P750W Tape24mm print_pins (was 256 — 2.00x overflow)
+    62: 696,  # endless QL tape — unchanged
 }
 
 # Default label width in pixels — 600 px at 300 DPI ≈ 50.8mm, suitable for

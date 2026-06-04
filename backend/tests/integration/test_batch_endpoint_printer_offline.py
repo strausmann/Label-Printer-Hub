@@ -8,9 +8,7 @@ import pytest
 import pytest_asyncio
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
-from app.models.printer import Printer
 from app.printer_backends.exceptions import PrinterOfflineError
-from app.repositories import printers as printers_repo
 from app.services.print_service import PrintService
 from httpx import ASGITransport, AsyncClient
 
@@ -69,10 +67,8 @@ async def test_batch_rejects_when_printer_offline(
     monkeypatch,
 ):
     client, inner_app = offline_client
-    p = Printer(name="Brother PT-P750W", slug="brother-p750w", model="PT-P750W", backend="mock")
-    await printers_repo.create(offline_db_session, p)
-    # Align app state with our test printer (single-printer-binding check)
-    inner_app.state.printer_id = p.id
+    # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.
+    printer_slug = inner_app.state.backend_router.slugs()[0]
 
     async def _raise(self, req):
         raise PrinterOfflineError("printer is offline")
@@ -87,6 +83,8 @@ async def test_batch_rejects_when_printer_offline(
             }
         ]
     }
-    resp = await client.post(f"/api/print/{p.slug}/batch", json=body, headers=offline_auth_headers)
+    resp = await client.post(
+        f"/api/print/{printer_slug}/batch", json=body, headers=offline_auth_headers
+    )
     assert resp.status_code == 409, resp.text
     assert resp.json()["detail"]["error_code"] == "printer_offline"

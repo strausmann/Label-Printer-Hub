@@ -6,18 +6,22 @@ context manager calls in sequence.  Keeping them as standalone coroutines
 reorder or disable in CI.
 
 Call order in main.py lifespan:
-    1. run_migrations()          — apply pending Alembic revisions
-    1b. verify_alembic_at_head() — assert DB revision == script head (fail fast)
-    2. _discover_plugins()       — register integration + model plugins (idempotent)
-    3. TemplateLoader.load_dir() — populate in-memory template cache (Cluster 1a)
-    4. recover_inflight_jobs()   — mark stale QUEUED/PRINTING jobs as failed_restart
-    5. seed_templates()          — YAML → DB upsert (defensive check on cache)
-    6. upsert_runtime_printer()  — env → DB Printer row (Cluster 1b)
-    7. ensure_printer_state()    — create missing printer_state rows per Printer
+    1. run_migrations()           — apply pending Alembic revisions
+    1b. verify_alembic_at_head()  — assert DB revision == script head (fail fast)
+    2. _discover_plugins()        — register integration + model plugins (idempotent)
+    3. TemplateLoader.load_dir()  — populate in-memory template cache (Cluster 1a)
+    4. recover_inflight_jobs()    — mark stale QUEUED/PRINTING jobs as failed_restart
+    5. seed_templates()           — YAML → DB upsert (defensive check on cache)
+    6. upsert_runtime_printers()  — printers.yaml → DB Printer rows (Cluster 1b, M-H2-Fix)
+    7. ensure_printer_state()     — create missing printer_state rows per Printer
 
 Note: steps 2 and 3 must precede step 5 — TemplateLoader.load_dir() validates
 templates against IntegrationRegistry (populated in step 2), and seed_templates()
 reads from the cache that load_dir() populates in step 3.
+
+Phase 1i CA-1: upsert_runtime_printer (Settings-abhängig) entfernt.
+Ersetzt durch upsert_runtime_printers (PrinterYAMLConfig-List).
+R4-M-4/M-5-Fix: alte Funktion referenzierte entfernte Settings-Felder.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.models.printer import Printer
+from app.schemas.printer_config import PrinterYAMLConfig
 from app.services.printer_identity import derive_printer_id
 from app.services.template_loader import TemplateLoader
 
@@ -174,109 +179,41 @@ async def ensure_printer_state(session: AsyncSession) -> int:
     return created
 
 
-async def upsert_runtime_printer(
+async def upsert_runtime_printers(
     session: AsyncSession,
-    settings: Settings,
-) -> UUID | None:
-    """Materialise one Printer row from env config; return its deterministic id.
+    configs: list[PrinterYAMLConfig],
+) -> list[UUID]:
+    """Materialisiert eine DB-Zeile pro Drucker-Eintrag aus printers.yaml.
 
-    Returns ``None`` when the environment does NOT declare a printer host
-    (e.g. mock backend in CI).  The lifespan calls this between
-    ``seed_templates`` and ``ensure_printer_state`` so every restart
-    keeps the single runtime printer row consistent with the current env.
+    M-H2-Fix: Multi-Printer-Loop.
+    MA-2-Fix: derive_printer_id(model, host, port) bleibt deterministisch —
+              model in printers.yaml MUSS exakt der bisherigen Env-Var entsprechen.
+    R4-M-4/M-5-Fix: Alte upsert_runtime_printer (Settings-abhängig) gelöscht —
+                    referenzierte entfernte Felder und würde AttributeError geben.
 
-    The Printer row is keyed by the deterministic UUIDv5 produced by
-    ``derive_printer_id(model, host, port)`` — the same id that the
-    print-queue driver uses, so the DB row and the in-memory printer share
-    one stable identity across restarts.
+    Returns: Liste der printer_id UUIDs (für lifespan-Wiring).
     """
-    model: str = settings.printer_model
-    # Resolve host: pt750w takes precedence, ql820 is the fallback.
-    host: str = settings.pt750w_host or settings.ql820_host or ""
-    port: int = settings.pt750w_port if settings.pt750w_host else settings.ql820_port
-
-    if not (model and host and port):
-        return None
-
-    printer_id: UUID = derive_printer_id(model, host, port)
-    connection: dict[str, object] = {
-        "host": host,
-        "port": port,
-        "snmp": settings.printer_discover_via_snmp,
-        "snmp_community": settings.printer_snmp_community,
-    }
-    name: str = f"{model} ({host})"
-
-    existing = await session.get(Printer, printer_id)
-    if existing is None:
-        # Phase 7b.1: handle upgrade path — an old Printer row (e.g. from
-        # Phase 7a with a random uuid4 id) may share the same name that the
-        # new deterministic UUIDv5 wants.  Migrate its id in-place via raw
-        # SQL UPDATEs so historical FK references (jobs, printer_state,
-        # printer_status_cache) are rewritten rather than cascade-deleted.
-        import json
-
-        from sqlalchemy import text
-
-        from app.repositories.printers import get_by_name
-
-        existing_by_name = await get_by_name(session, name)
-        if existing_by_name is not None:
-            old_id = existing_by_name.id
-            # SQLite stores UUIDs as 32-char hex strings (no dashes); raw SQL
-            # bind params must match that format for WHERE/SET to match rows.
-            new_hex = str(printer_id).replace("-", "")
-            old_hex = str(old_id).replace("-", "")
-            # Rewrite FK columns in dependent tables first
-            await session.execute(
-                text("UPDATE printer_status_cache SET printer_id = :new WHERE printer_id = :old"),
-                {"new": new_hex, "old": old_hex},
+    ids: list[UUID] = []
+    for cfg in configs:
+        printer_id = derive_printer_id(cfg.model, cfg.host, cfg.port)
+        existing = await session.get(Printer, printer_id)
+        if existing is None:
+            session.add(
+                Printer(
+                    id=printer_id,
+                    slug=cfg.slug,
+                    name=cfg.name,
+                    model=cfg.model.lower(),
+                    backend=cfg.backend,
+                    connection={"host": cfg.host, "port": cfg.port},
+                    enabled=True,
+                )
             )
-            await session.execute(
-                text("UPDATE printer_state SET printer_id = :new WHERE printer_id = :old"),
-                {"new": new_hex, "old": old_hex},
-            )
-            await session.execute(
-                text("UPDATE jobs SET printer_id = :new WHERE printer_id = :old"),
-                {"new": new_hex, "old": old_hex},
-            )
-            # Migrate the printer row's PK in-place (SQLite allows UPDATE on PK)
-            await session.execute(
-                text(
-                    "UPDATE printers"
-                    " SET id = :new, name = :name, connection = :conn,"
-                    " enabled = 1 WHERE id = :old"
-                ),
-                {
-                    "new": new_hex,
-                    "old": old_hex,
-                    "name": name,
-                    "conn": json.dumps(connection),
-                },
-            )
-            await session.flush()
-            # Expunge the stale ORM object and expire the identity map so
-            # raw SQL UPDATEs are visible on the next ORM read.
-            session.expunge(existing_by_name)
-            session.expire_all()
-            # The row now exists with the new id — treat as existing so the
-            # INSERT branch below is skipped.
-            existing = await session.get(Printer, printer_id)
-
-    if existing is not None:
-        existing.name = name
-        existing.connection = connection
-        existing.enabled = True
-    else:
-        session.add(
-            Printer(
-                id=printer_id,
-                name=name,
-                model=model.lower(),
-                backend=settings.printer_backend,
-                connection=connection,
-                enabled=True,
-            )
-        )
-    await session.flush()
-    return printer_id
+        else:
+            existing.slug = cfg.slug
+            existing.name = cfg.name
+            existing.backend = cfg.backend
+            # host/port/model bleiben stabil (UUID-Basis)
+        ids.append(printer_id)
+    await session.commit()
+    return ids

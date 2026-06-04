@@ -128,8 +128,6 @@ async def test_sse_contains_batch_job_events(
     5. Batch submiten und warten bis alle 3 job_ids in SSE-Frames erscheinen (≤5 s).
     """
     import app.api.routes.events as events_mod
-    from app.models.printer import Printer
-    from app.repositories import printers as printers_repo
 
     # 1. Lifespan triggern (erster Request startet event_bus + print_service)
     warmup = await sse_batch_client.get("/healthz")
@@ -142,29 +140,11 @@ async def test_sse_contains_batch_job_events(
     # f"printer:{printer_id}:queue"
     app_printer_id: uuid.UUID = inner.state.printer_id
 
-    # 3. Printer-Row mit ID=app_printer_id sicherstellen.
-    #    Phase 2: Lifespan legt bei Mock-Backend (kein Host) bereits eine Stub-Row
-    #    an. Wir holen die existierende Row und aktualisieren Name/Slug falls nötig,
-    #    statt blind create() aufzurufen (würde UNIQUE-Constraint verletzten).
-    #    batch.py prüft printer.id == app.state.printer_id — durch die identische
-    #    ID passt der Check ohne dass PrintQueue-Interna umgebaut werden müssen.
-    p = await sse_batch_db_session.get(Printer, app_printer_id)
-    if p is None:
-        p = Printer(
-            id=app_printer_id,
-            name="Brother PT-P750W",
-            slug="brother-p750w",
-            model="PT-P750W",
-            backend="mock",
-        )
-        await printers_repo.create(sse_batch_db_session, p)
-    else:
-        p.name = "Brother PT-P750W"
-        p.slug = "brother-p750w"
-        p.model = "pt-p750w"
-        p.backend = "mock"
-        await sse_batch_db_session.commit()
-        await sse_batch_db_session.refresh(p)
+    # 3. Printer-Row mit ID=app_printer_id sicherstellen und Lifespan-Slug lesen.
+    #    Phase 1i H (Task 7b): Die Lifespan registriert den Drucker über
+    #    upsert_runtime_printers. Slug kommt aus backend_router — kein manuelles
+    #    Erstellen von Printer-Rows nötig.
+    printer_slug = inner.state.backend_router.slugs()[0]
 
     channels = [
         f"printer:{app_printer_id}:queue",
@@ -211,7 +191,7 @@ async def test_sse_contains_batch_job_events(
         ]
     }
     resp = await sse_batch_client.post(
-        f"/api/print/{p.slug}/batch",
+        f"/api/print/{printer_slug}/batch",
         json=body,
         headers=sse_batch_auth_headers,
     )

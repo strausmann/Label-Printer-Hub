@@ -1,14 +1,18 @@
 # 18mm — secondary slot reserved (Grocy lookup may populate it later).
+# A-Diagnose Fix: Canvas 165px→112px. scale_y=112/165≈0.679.
+# QR 95px (y=6: 6+95=101 < 112). Text-Y proportional skaliert.
+# 3-Zeilen-Layout (primary+title+secondary) in 112px kompakt.
 schema_version: 1
 id: grocy-18mm
 name: "Grocy Product (18mm)"
 app: grocy
 tape_mm: 18
+printer_model: ptouch
 elements:
-  - { type: qr,   x: 13,  y: 13,  size: 140, data_field: qr_payload }
-  - { type: text, x: 170, y: 20,  field: primary_id, font_size: 32 }
-  - { type: text, x: 170, y: 70,  field: title,      font_size: 20 }
-  - { type: text, x: 170, y: 110, field: secondary,  font_size: 14 }
+  - { type: qr,   x: 8,   y: 6,  size: 95, data_field: qr_payload }
+  - { type: text, x: 112, y: 6,  field: primary_id, font_size: 22 }
+  - { type: text, x: 112, y: 42, field: title,      font_size: 15 }
+  - { type: text, x: 112, y: 80, field: secondary,  font_size: 11 }
 preview_sample:
   primary_id: "Erdbeermarmelade"
   title: "Lager > Vorrat"

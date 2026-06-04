@@ -1,11 +1,13 @@
-# 230px QR -> x = (600 - 230) / 2 = 185.
+# A-Diagnose Fix: Canvas 256px→128px. QR 120px centered vertically:
+# y = (128 - 120) // 2 = 4. x = (600 - 120) // 2 = 240 (centered on label length).
 schema_version: 1
 id: qr-only-24mm
 name: "QR-Code only (24mm)"
 app: null
 tape_mm: 24
+printer_model: ptouch
 elements:
-  - { type: qr, x: 185, y: 13, size: 230, data_field: qr_payload }
+  - { type: qr, x: 240, y: 4, size: 120, data_field: qr_payload }
 preview_sample:
   primary_id: "Sample"
   title: "Preview"

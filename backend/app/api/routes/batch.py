@@ -12,6 +12,7 @@ from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print
 from app.db.session import get_session
 from app.models.print_batch import PrintBatch
+from app.printer_backends.base import PrinterBackend  # noqa: F401 — used by dispatch_batch typing
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterOfflineError,
@@ -60,32 +61,57 @@ async def create_batch(
     if printer is None:
         raise HTTPException(404, detail={"error_code": "printer_not_found"})
 
-    # 2. ACL: api-key may be restricted to a subset of printer_ids
-    check_printer_access(auth, printer.id)
-
-    # 3. Verify the resolved printer matches the singleton wired into
-    # app.state.print_service. The Hub is currently single-printer at
-    # startup (main.py wires PrintService to app.state.printer_id).
-    # If the URL slug points to a different printer row, the dispatch
-    # would silently route to the wrong device. Reject explicitly.
-    seeded_printer_id = getattr(http.app.state, "printer_id", None)
-    if seeded_printer_id is not None and printer.id != seeded_printer_id:
+    # 2. Konsistenz-Check: body.printer_slug muss zur URL passen (wenn gesetzt)
+    if body.printer_slug is not None and body.printer_slug != printer.slug:
         raise HTTPException(
-            404,
+            400,
             detail={
-                "error_code": "printer_not_active",
+                "error_code": "printer_slug_mismatch",
                 "error_message": (
-                    "Resolved printer is not the currently-seeded device. "
-                    "Hub is single-printer at startup; multi-printer routing "
-                    "is a future enhancement."
+                    f"body.printer_slug={body.printer_slug!r} matches neither URL "
+                    f"slug={printer.slug!r}."
                 ),
             },
         )
 
-    # 4. Best-effort dispatch
-    service = http.app.state.print_service
+    # 3. ACL: api-key may be restricted to a subset of printer_ids
+    check_printer_access(auth, printer.id)
+
+    # 4. R3-Drift #10: backend_router direkt aus app.state — KEIN get_app_state.
+    backend_router = getattr(http.app.state, "backend_router", None)
+    if backend_router is None:
+        raise HTTPException(503, detail={"error_code": "router_not_initialized"})
+
+    backend = backend_router.get(printer.slug)
+    if backend is None:
+        raise HTTPException(
+            503,
+            detail={
+                "error_code": "printer_unreachable",
+                "error_message": f"No backend registered for slug={printer.slug!r}.",
+            },
+        )
+
+    # 5. R4-A-C2-Fix (Volle Multi-Printer): pro-Drucker PrintService via service_for().
     try:
-        job_ids, errors = await dispatch_batch(service, body.items)
+        service = backend_router.service_for(printer.slug)
+    except KeyError as err:
+        raise HTTPException(
+            503,
+            detail={
+                "error_code": "service_not_initialized",
+                "error_message": f"No PrintService registered for slug={printer.slug!r}.",
+            },
+        ) from err
+
+    # 6. Best-effort dispatch
+    try:
+        job_ids, errors = await dispatch_batch(
+            service,
+            body.items,
+            half_cut_override=body.half_cut_override,
+            backend=backend,
+        )
     except (PrinterOfflineError, PrinterCoverOpenError, SnmpQueryError) as exc:
         raise HTTPException(
             409,
@@ -95,7 +121,7 @@ async def create_batch(
             },
         ) from exc
 
-    # 5. Persist tracking row
+    # 7. Persist tracking row
     # auth.subject_id does NOT exist — use api_key_id or source
     created_by = str(auth.api_key_id) if auth.api_key_id else auth.source
     batch_row = PrintBatch(
