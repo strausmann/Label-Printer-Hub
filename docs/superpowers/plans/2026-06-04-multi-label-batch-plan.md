@@ -8,6 +8,13 @@
 
 **Tech Stack:** Python 3.12, FastAPI, Pydantic v2, PIL/Pillow, ptouch-py 1.1.0, brother_ql 0.9.4, asyncio, pytest.
 
+## Plan Revisions
+
+| Date | Revisions | Source |
+|------|-----------|--------|
+| 2026-06-04 | Initial | superpowers:writing-plans (Commit `8917d0e`) |
+| 2026-06-04 | **G1** In-Memory Job-Registrierung in `enqueue_batch` (sonst `KeyError` bei `get`/`wait_for_job`); parallele PNG-Serialisierung. **G2** `JobStateMachine.transition` + `_notify_state_change` in `_process_batch` (sonst SSE-Stille + hängende Waiter). **G3** `asyncio.to_thread` + `asyncio.gather` für CPU-intensive Renders in `submit_batch_job` (sonst Event-Loop-Block). Inline-Imports vervollständigt. | Gemini-Code-Assist Review PR #106 (medium-priority Findings) |
+
 ---
 
 ## File Structure
@@ -1470,15 +1477,31 @@ D) Add `enqueue_batch` method to `PrintQueue` (after `submit_paused`):
                 f"images and job_ids length mismatch: {len(images)} vs {len(job_ids)}"
             )
 
-        # Serialize images to PNG bytes (consistent with single-job storage)
-        payloads = [
-            await asyncio.to_thread(_serialize_image_to_png, img) for img in images
-        ]
+        # Gemini-Review G1 (PR #106): Parallel PNG-Serialisierung
+        payloads = await asyncio.gather(
+            *[asyncio.to_thread(_serialize_image_to_png, img) for img in images]
+        )
+
+        # Gemini-Review G1 (PR #106): In-Memory Job-Registrierung pro item.
+        # OHNE diese Schleife wirft get(job_id)/wait_for_job KeyError, weil
+        # die individuellen Jobs nie in self._jobs landen. SSE-Frontend und
+        # Hangar-Polling brauchen pro-Item-Job-Records (alle teilen das BatchJob
+        # als Owner, aber jeder Job hat eigene id/state/_done_event).
+        for jid, payload in zip(job_ids, payloads, strict=True):
+            job = Job(
+                id=str(jid),
+                printer_id=printer_id,
+                image_payload=payload,
+                tape_mm=tape_mm,
+                options=dict(options),
+            )
+            self._jobs[str(jid)] = job
+
         batch_id = uuid4()
         batch = BatchJob(
             batch_id=batch_id,
             printer_id=printer_id,
-            image_payloads=payloads,
+            image_payloads=list(payloads),
             job_ids=list(job_ids),
             tape_mm=tape_mm,
             options=dict(options),
@@ -1527,6 +1550,13 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
 
         Decodes payloads, calls printer.print_images() once. On exception,
         marks all job_ids as failed with a shared error_message.
+
+        Gemini-Review G2 (PR #106): Pro item MUSS JobStateMachine.transition
+        gerufen werden, sonst:
+        - _done_event wird nie gesetzt → wait_for_job(job_id) haengt unendlich
+        - _notify_state_change wird nie gerufen → SSE-Frontend (Hangar) bekommt
+          keine Updates und zeigt Jobs als ewig 'queued' an
+        - started_at/finished_at Timestamps bleiben None (UI-Probleme)
         """
         # Wait while paused (mirror _worker semantics)
         while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
@@ -1534,15 +1564,40 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
                 return
             await self._worker_resume_events[printer_id].wait()
 
-        # Persist transitions: all → PRINTING
+        # Resolve all Job in-memory objects (registered in enqueue_batch via
+        # Gemini-Review G1 fix). Falls ein Job nicht mehr in self._jobs ist
+        # (cancel mid-flight), skip — terminale state-transition wuerde fehlen.
+        jobs: list[Job] = []
         for jid in batch.job_ids:
-            await self._store.mark_printing(jid)
+            job = self._jobs.get(str(jid))
+            if job is None:
+                logger.warning("Batch %s: job_id %s not in _jobs (cancelled?)", batch.batch_id, jid)
+                continue
+            jobs.append(job)
+        if not jobs:
+            logger.warning("Batch %s has no live jobs — skipping", batch.batch_id)
+            return
 
-        # Decode PNG payloads back to PIL Images
-        images = [
-            await asyncio.to_thread(Image.open, BytesIO(p))
-            for p in batch.image_payloads
-        ]
+        # Gemini-Review G2: in-memory transitions + SSE-Events + DB persist.
+        # QUEUED -> PRINTING fuer jeden Job.
+        for job in jobs:
+            try:
+                JobStateMachine.transition(job, JobState.PRINTING)
+                self._notify_state_change(
+                    job, JobState.QUEUED, JobState.PRINTING,
+                    queue_depth=self._queue_depth(printer_id),
+                )
+            except InvalidStateTransitionError:
+                logger.warning(
+                    "Batch %s: job %s skipped — state already %s",
+                    batch.batch_id, job.id, job.state,
+                )
+            await self._store.mark_printing(UUID(job.id))
+
+        # Gemini-Review G1 (PR #106): Parallel image decode
+        images = await asyncio.gather(
+            *[asyncio.to_thread(Image.open, BytesIO(p)) for p in batch.image_payloads]
+        )
 
         try:
             await printer.print_images(
@@ -1550,18 +1605,45 @@ F) Add new `_process_batch` method to `PrintQueue` (after `_worker`):
                 tape_mm=batch.tape_mm,
                 **batch.options,
             )
-            for jid in batch.job_ids:
-                await self._store.mark_done(jid)
+            # Success: alle Jobs PRINTING -> COMPLETED
+            for job in jobs:
+                try:
+                    JobStateMachine.transition(job, JobState.COMPLETED)
+                    self._notify_state_change(
+                        job, JobState.PRINTING, JobState.COMPLETED,
+                        queue_depth=self._queue_depth(printer_id),
+                    )
+                except InvalidStateTransitionError:
+                    logger.warning(
+                        "Batch %s: success-transition of %s failed (state=%s)",
+                        batch.batch_id, job.id, job.state,
+                    )
+                await self._store.mark_done(UUID(job.id))
             logger.info("Batch %s completed on %s", batch.batch_id, printer_id)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             error_msg = f"batch print failed: {exc}"
-            for jid in batch.job_ids:
-                await self._store.mark_failed(jid, error_msg)
+            # Failure: alle Jobs PRINTING -> FAILED mit gemeinsamer Message
+            for job in jobs:
+                job.error_code = "batch_failed"
+                job.error_message = error_msg
+                job.error_msg = error_msg  # legacy field sync
+                try:
+                    JobStateMachine.transition(job, JobState.FAILED)
+                    self._notify_state_change(
+                        job, JobState.PRINTING, JobState.FAILED,
+                        queue_depth=self._queue_depth(printer_id),
+                    )
+                except InvalidStateTransitionError:
+                    logger.warning(
+                        "Batch %s: failure-transition of %s failed (state=%s)",
+                        batch.batch_id, job.id, job.state,
+                    )
+                await self._store.mark_failed(UUID(job.id), error_msg)
             logger.exception(
                 "Batch %s failed on %s — all %d items marked failed",
-                batch.batch_id, printer_id, len(batch.job_ids),
+                batch.batch_id, printer_id, len(jobs),
             )
 ```
 
@@ -1822,16 +1904,34 @@ In `backend/app/services/print_service.py`, add method after `submit_print_job`:
                 loaded_mm=preflight.loaded_tape_mm,
             )
 
-        # 3. Resolve LabelData + Render
-        images: list[Image.Image] = []
-        for request, template in zip(requests, templates, strict=True):
-            label_data = await self._resolve_label_data(request)
-            image = self._renderer.render(template, label_data)
-            images.append(image)
+        # 3. Resolve LabelData + Render — Gemini-Review G3 (PR #106):
+        # CPU-intensive Pillow-Operationen muessen ueber asyncio.to_thread
+        # ausgefuehrt werden, sonst blockiert der Event-Loop. asyncio.gather
+        # parallelisiert die N Renders (statt sequenziell N*~50ms zu warten).
+        async def _render_one(req: PrintRequest, tmpl: TemplateSchema) -> Image.Image:
+            label_data = await self._resolve_label_data(req)
+            return await asyncio.to_thread(self._renderer.render, tmpl, label_data)
+
+        images = list(
+            await asyncio.gather(
+                *[_render_one(r, t) for r, t in zip(requests, templates, strict=True)]
+            )
+        )
 
         # 4. Pre-allocate job UUIDs + persist in JobStore (analog submit_print_job)
+        # Gemini-Review G3 (PR #106): _resolve_label_data wird nur EINMAL pro
+        # Item gerufen — vorher Z.1903 + Z.1918 (Duplikat). label_data wird via
+        # parallele Helper-Coroutine wiederverwendet.
+        async def _resolve_for_payload(req: PrintRequest) -> dict[str, Any]:
+            ld = await self._resolve_label_data(req)
+            return ld.model_dump()
+
+        label_data_dumps = await asyncio.gather(
+            *[_resolve_for_payload(r) for r in requests]
+        )
+
         job_ids: list[UUID] = []
-        for i, (request, template) in enumerate(zip(requests, templates, strict=True)):
+        for request, ld_dump in zip(requests, label_data_dumps, strict=True):
             job_id = uuid4()
             await self._store.save_queued(
                 job_id=job_id,
@@ -1840,7 +1940,7 @@ In `backend/app/services/print_service.py`, add method after `submit_print_job`:
                 payload={
                     "tape_mm": tape_mm,
                     "options": request.options.model_dump(),
-                    "label_data": (await self._resolve_label_data(request)).model_dump(),
+                    "label_data": ld_dump,
                 },
             )
             job_ids.append(job_id)
@@ -1861,9 +1961,15 @@ In `backend/app/services/print_service.py`, add method after `submit_print_job`:
         return job_ids
 ```
 
-Add `uuid4` import at top of print_service.py if missing:
+Add imports at top of print_service.py if missing:
 ```python
+import asyncio
+from typing import Any
 from uuid import UUID, uuid4
+
+from PIL import Image  # nur falls noch nicht da
+
+from app.schemas.template import TemplateSchema
 ```
 
 - [ ] **Step 5: Run tests + commit**
