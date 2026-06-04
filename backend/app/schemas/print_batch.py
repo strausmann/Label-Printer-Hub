@@ -23,8 +23,9 @@ class BatchRequest(BaseModel):
     half_cut_override: bool | None = Field(
         default=None,
         description=(
-            "None=Hub-Default, False=Voll-Cut pro Label, True=explizit Half-Cut. "
-            "Bei QL-Series wird True als 'no-cut-between' interpretiert (kein echter Half-Cut)."
+            "Override half_cut for all items in this batch. "
+            "If the printer backend does not support half_cut (e.g. QL-Series), "
+            "the value is forced to False and a warning is logged."
         ),
     )
 
