@@ -4,6 +4,8 @@ from PrinterYAMLConfig list; idempotent across restarts.
 R4-M-4/M-5-Fix: Ersetzt test_lifespan_printer_upsert.py das noch die
 entfernte upsert_runtime_printer(Settings) Funktion testete.
 M-H2-Fix: Multi-Printer-Loop.
+PR#98-Gemini: session.flush() statt commit() im Loop — atomare Transaktion.
+PR#98-Copilot: Slug-Collision-Detection bei UUID-Wechsel.
 """
 
 from __future__ import annotations
@@ -122,3 +124,65 @@ async def test_upsert_multi_printer_is_idempotent(async_session_empty):
     result = await async_session_empty.execute(select(Printer))
     rows = list(result.scalars())
     assert len(rows) == 2
+
+
+# --- PR#98 Gemini + Copilot: flush() + slug-collision-detection ---
+
+async def test_same_uuid_update_idempotent(async_session_empty):
+    """PR#98-Gemini: Gleiche UUID beim zweiten Upsert → normaler UPDATE-Pfad."""
+    cfg_v1 = _pt750w_cfg(slug="pt-office", name="PT Office v1")
+    ids_v1 = await upsert_runtime_printers(async_session_empty, [cfg_v1])
+    pid = ids_v1[0]
+
+    cfg_v2 = _pt750w_cfg(slug="pt-office-renamed", name="PT Office v2")
+    ids_v2 = await upsert_runtime_printers(async_session_empty, [cfg_v2])
+
+    # UUID bleibt gleich (model/host/port unverändert)
+    assert ids_v2[0] == pid
+    result = await async_session_empty.execute(select(Printer))
+    rows = list(result.scalars())
+    assert len(rows) == 1
+    assert rows[0].slug == "pt-office-renamed"
+    assert rows[0].name == "PT Office v2"
+
+
+async def test_slug_collision_different_uuid_migrates(async_session_empty):
+    """PR#98-Copilot: Slug-Collision — alter Row mit gleicher slug aber anderer UUID
+    wird gelöscht und durch neuen Row mit neuer UUID ersetzt (Migration-Pfad).
+    """
+    # Erster Eintrag: PT-P750W auf host .50
+    cfg_old = _pt750w_cfg(slug="office-printer", name="Office Printer", host="192.0.2.50")
+    ids_old = await upsert_runtime_printers(async_session_empty, [cfg_old])
+    old_uuid = ids_old[0]
+
+    # Zweiter Eintrag: gleiche slug, aber anderer host → andere UUID
+    cfg_new = _pt750w_cfg(slug="office-printer", name="Office Printer", host="192.0.2.99")
+    new_uuid = derive_printer_id(_PT750W_MODEL, "192.0.2.99", _PT750W_PORT)
+    assert new_uuid != old_uuid  # Sicherheitscheck: UUIDs müssen verschieden sein
+
+    ids_new = await upsert_runtime_printers(async_session_empty, [cfg_new])
+    assert ids_new[0] == new_uuid
+
+    # Es gibt nur noch einen Row mit der neuen UUID
+    result = await async_session_empty.execute(select(Printer))
+    rows = list(result.scalars())
+    assert len(rows) == 1
+    assert rows[0].id == new_uuid
+    assert rows[0].slug == "office-printer"
+
+
+async def test_multi_printer_transaction_atomicity(async_session_empty):
+    """PR#98-Gemini: flush()-in-loop + commit()-am-Ende bleibt atomar.
+    Alle Rows landen in derselben Transaktion; kein Partial-Write bei Fehler.
+    """
+    cfg1 = _pt750w_cfg(slug="atomic-a", name="Atomic A", host="192.0.2.50")
+    cfg2 = _pt750w_cfg(slug="atomic-b", name="Atomic B", host="192.0.2.51")
+
+    returned_ids = await upsert_runtime_printers(async_session_empty, [cfg1, cfg2])
+    assert len(returned_ids) == 2
+
+    result = await async_session_empty.execute(select(Printer))
+    rows = list(result.scalars())
+    assert len(rows) == 2
+    slugs = {r.slug for r in rows}
+    assert slugs == {"atomic-a", "atomic-b"}
