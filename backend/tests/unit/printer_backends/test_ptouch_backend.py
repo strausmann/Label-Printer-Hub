@@ -656,3 +656,142 @@ def test_ptouch_print_calls_printer_with_feed_true_by_default(
     assert captured.get("feed") is True, (
         f"_ptouch_print() ohne last_page muss feed=True (Default) senden, got: {captured}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 1k.2: print_images batch via ptouch.print_multi
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_print_images_calls_ptouch_print_multi(monkeypatch):
+    """PTouchBackend.print_images → _ptouch_print_multi with all labels."""
+    from app.printer_backends.ptouch_backend import PTouchBackend
+    from app.printer_backends.snmp_helper import PreflightStatus
+    from app.services.status_block import MediaType
+
+    captured: dict[str, object] = {}
+
+    async def fake_preflight(self, **kw):
+        return PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12, error_flags=[])
+
+    def fake_ptouch_print_multi(host, port, images, tape_mm, **kwargs):
+        captured["host"] = host
+        captured["port"] = port
+        captured["num_images"] = len(images)
+        captured["tape_mm"] = tape_mm
+        captured.update(kwargs)
+
+    monkeypatch.setattr(PTouchBackend, "preflight_check", fake_preflight)
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend._ptouch_print_multi",
+        fake_ptouch_print_multi,
+    )
+
+    backend = PTouchBackend(host="192.0.2.10", model_id="PT-P750W")
+    tape_spec = TapeSpec(
+        width_mm=12,
+        media_type=MediaType.LAMINATED,
+        print_area_pins=70,
+        print_area_dots=70,
+        bytes_per_raster=9,
+        min_length_mm=4.4,
+        max_length_mm=1000,
+        cutter_min_length_mm=12.0,
+    )
+    images = [Image.new("1", (600, 70), color=1) for _ in range(3)]
+
+    await backend.print_images(
+        images,
+        tape_spec,
+        auto_cut=True,
+        high_resolution=False,
+        half_cut=True,
+    )
+
+    assert captured["host"] == "192.0.2.10"
+    assert captured["port"] == 9100
+    assert captured["num_images"] == 3
+    assert captured["tape_mm"] == 12
+    assert captured["model_id"] == "PT-P750W"
+    assert captured["auto_cut"] is True
+    assert captured["half_cut"] is True
+    assert captured["high_resolution"] is False
+
+
+@pytest.mark.anyio
+async def test_print_images_raises_tape_mismatch_at_batch_start(monkeypatch):
+    """If preflight tape != tape_spec.width_mm, batch fails atomically before print."""
+    from app.printer_backends.exceptions import TapeMismatchError
+    from app.printer_backends.ptouch_backend import PTouchBackend
+    from app.printer_backends.snmp_helper import PreflightStatus
+    from app.services.status_block import MediaType
+
+    async def fake_preflight(self, **kw):
+        return PreflightStatus(hr_printer_status="idle", loaded_tape_mm=18, error_flags=[])
+
+    monkeypatch.setattr(PTouchBackend, "preflight_check", fake_preflight)
+    # _ptouch_print_multi must NOT be called
+    called = False
+
+    def fake_pm(*a, **kw):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr("app.printer_backends.ptouch_backend._ptouch_print_multi", fake_pm)
+
+    backend = PTouchBackend(host="192.0.2.10", model_id="PT-P750W")
+    tape_spec = TapeSpec(
+        width_mm=12,
+        media_type=MediaType.LAMINATED,
+        print_area_pins=70,
+        print_area_dots=70,
+        bytes_per_raster=9,
+        min_length_mm=4.4,
+        max_length_mm=1000,
+        cutter_min_length_mm=12.0,
+    )
+    images = [Image.new("1", (600, 70), color=1) for _ in range(2)]
+
+    with pytest.raises(TapeMismatchError):
+        await backend.print_images(images, tape_spec, half_cut=True)
+    assert called is False
+
+
+def test_ptouch_print_multi_passes_labels_array(monkeypatch):
+    """_ptouch_print_multi constructs Labels[] and calls LabelPrinter.print_multi."""
+    from app.printer_backends.ptouch_backend import _ptouch_print_multi
+
+    captured: dict[str, object] = {}
+
+    class FakeLabelPrinter:
+        def __init__(self, *a, **kw):
+            pass
+
+        def print_multi(self, labels, **kwargs):
+            captured["num_labels"] = len(labels)
+            captured.update(kwargs)
+
+    import app.printer_backends.ptouch_backend as _ptouch_mod
+
+    monkeypatch.setitem(
+        _ptouch_mod._PTOUCH_PRINTER_CLASSES,
+        "PT-P750W",
+        FakeLabelPrinter,
+    )
+
+    images = [Image.new("1", (600, 70), color=1) for _ in range(4)]
+    _ptouch_print_multi(
+        host="192.0.2.10",
+        port=9100,
+        images=images,
+        tape_mm=12,
+        model_id="PT-P750W",
+        auto_cut=True,
+        high_resolution=False,
+        half_cut=True,
+    )
+
+    assert captured["num_labels"] == 4
+    assert captured["half_cut"] is True
+    assert captured["high_resolution"] is False

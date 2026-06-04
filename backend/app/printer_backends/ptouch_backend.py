@@ -108,6 +108,61 @@ def _ptouch_print(  # pragma: no cover - real-hardware-only, tests monkeypatch t
         printer.print(label, auto_cut=auto_cut, high_resolution=high_resolution)
 
 
+def _ptouch_print_multi(  # pragma: no cover - real-hardware-only, tests monkeypatch this
+    host: str,
+    port: int,
+    images: list[Image.Image],
+    tape_mm: int,
+    *,
+    model_id: str,
+    auto_cut: bool,
+    high_resolution: bool,
+    half_cut: bool,
+) -> None:
+    """Synchronous helper for batch printing via ptouch.LabelPrinter.print_multi.
+
+    ptouch-py 1.1.0: LabelPrinter.print_multi(labels, margin_mm=None,
+    high_resolution=None, half_cut=True) — 1 Connection, 1 Init (=1 Pre-Roll),
+    5mm Half-Cut zwischen Labels, voller Cut am Ende.
+
+    Excluded from coverage: real-hardware-only. Tests monkeypatch this module-level
+    function. Hardware verification per scripts/smoke_first_print_batch.py (Task 11).
+    """
+    try:
+        tape_cls = _PTOUCH_TAPE_CLASSES[tape_mm]
+    except KeyError as exc:
+        raise PrintFailedError(f"No ptouch tape class for {tape_mm}mm") from exc
+    try:
+        printer_cls = _PTOUCH_PRINTER_CLASSES[model_id]
+    except KeyError as exc:
+        raise PrintFailedError(f"No ptouch printer class for model {model_id!r}") from exc
+
+    connection = ptouch.ConnectionNetwork(host, port=port, timeout=10.0)
+    printer = printer_cls(connection=connection, high_resolution=high_resolution)
+    labels = [ptouch.Label(image=img, tape=tape_cls) for img in images]
+    try:
+        printer.print_multi(
+            labels,
+            high_resolution=high_resolution,
+            half_cut=half_cut,
+        )
+    except TypeError:
+        # Älterer ptouch-Lib (<1.1) hat kein print_multi — Fallback: per-Item-Loop
+        # mit print(). Degraded zu Phase-1i-Verhalten (22.5mm Pre-Roll pro Item).
+        for i, label in enumerate(labels):
+            is_last = i == len(labels) - 1
+            try:
+                printer.print(
+                    label,
+                    auto_cut=auto_cut,
+                    high_resolution=high_resolution,
+                    half_cut=half_cut and not is_last,
+                    feed=is_last,
+                )
+            except TypeError:
+                printer.print(label, auto_cut=auto_cut, high_resolution=high_resolution)
+
+
 class PTouchBackend:
     """PrinterBackend backed by the ptouch library."""
 
@@ -256,4 +311,42 @@ class PTouchBackend:
         high_resolution: bool = False,
         half_cut: bool = True,
     ) -> None:
-        raise NotImplementedError("implemented in Task 3")
+        """Batch-print via ptouch.LabelPrinter.print_multi — atomic.
+
+        Pre-Print: SNMP preflight 1x am Batch-Anfang. Bei Tape-Mismatch wird
+        TapeMismatchError sofort geworfen, kein print_multi-Call.
+
+        Phase 1k.2: ersetzt N separate ptouch.print() Calls durch 1 print_multi.
+        Resultat: 5mm Half-Cut zwischen Labels statt 22.5mm Pre-Roll.
+        """
+        if not images:
+            raise ValueError("print_images requires at least one image")
+
+        preflight = await self.preflight_check()
+        if preflight.loaded_tape_mm != tape_spec.width_mm:
+            raise TapeMismatchError(
+                expected_mm=tape_spec.width_mm,
+                loaded_mm=preflight.loaded_tape_mm,
+            )
+
+        try:
+            await asyncio.to_thread(
+                _ptouch_print_multi,
+                self.host,
+                self._port,
+                images,
+                tape_spec.width_mm,
+                model_id=self._model_id,
+                auto_cut=auto_cut,
+                high_resolution=high_resolution,
+                half_cut=half_cut,
+            )
+        except (ptouch.PrinterWriteError, ptouch.PrinterPermissionError) as exc:
+            raise PrintFailedError(str(exc)) from exc
+        except (
+            ptouch.PrinterNetworkError,
+            ptouch.PrinterTimeoutError,
+            ptouch.PrinterNotFoundError,
+            ptouch.PrinterConnectionError,
+        ) as exc:
+            raise PrinterOfflineError(str(exc)) from exc
