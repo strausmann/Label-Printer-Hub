@@ -12,7 +12,6 @@ from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print
 from app.db.session import get_session
 from app.models.print_batch import PrintBatch
-from app.printer_backends.base import PrinterBackend  # noqa: F401 — used by dispatch_batch typing
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterOfflineError,
@@ -22,7 +21,7 @@ from app.printer_backends.exceptions import (
 from app.repositories import print_batches as batches_repo
 from app.repositories import printers as printers_repo
 from app.schemas.print_batch import BatchRequest, BatchResponse
-from app.services.batch_dispatch import MixedTapeSizesError, dispatch_batch
+from app.services.batch_dispatch import dispatch_batch
 
 # SessionDep locally — Hub has no central app/api/deps.py module.
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -106,13 +105,18 @@ async def create_batch(
             },
         ) from err
 
-    # 6. Best-effort dispatch
+    # 6. Dispatch (half_cut: override takes precedence over backend capability)
+    backend_supports_half_cut: bool = getattr(backend, "half_cut_supported", False)
+    if body.half_cut_override is not None:
+        use_half_cut = body.half_cut_override and backend_supports_half_cut
+    else:
+        use_half_cut = backend_supports_half_cut
+
     try:
-        job_ids, errors = await dispatch_batch(
-            service,
-            body.items,
-            half_cut_override=body.half_cut_override,
-            backend=backend,
+        job_ids = await dispatch_batch(
+            service=service,
+            items=body.items,
+            half_cut=use_half_cut,
         )
     except (PrinterOfflineError, PrinterCoverOpenError, SnmpQueryError, TapeMismatchError) as exc:
         raise HTTPException(
@@ -122,22 +126,13 @@ async def create_batch(
                 "error_message": str(exc),
             },
         ) from exc
-    except MixedTapeSizesError as exc:
-        raise HTTPException(
-            400,
-            detail={
-                "error_code": "mixed_tape_sizes",
-                "error_message": str(exc),
-                "tape_mm_values": sorted(set(exc.tape_mm_values)),
-            },
-        ) from exc
 
     # 7. Persist tracking row
     # auth.subject_id does NOT exist — use api_key_id or source
     created_by = str(auth.api_key_id) if auth.api_key_id else auth.source
     batch_row = PrintBatch(
         printer_id=printer.id,
-        job_ids=job_ids,
+        job_ids=[str(jid) for jid in job_ids],
         created_by=created_by,
     )
     await batches_repo.create(session, batch_row)
@@ -146,6 +141,5 @@ async def create_batch(
         batch_id=batch_row.id,
         printer_id=printer.id,
         queued_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        job_ids=job_ids,
-        errors=errors,
+        job_ids=[str(jid) for jid in job_ids],
     )
