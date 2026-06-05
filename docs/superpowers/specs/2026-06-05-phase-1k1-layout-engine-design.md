@@ -67,7 +67,13 @@ Pixel-Werte aus Brother Pin-Konfiguration (PT-Serie 180 DPI, QL 300 DPI). Die 12
 
 `qr_max_px` folgt der allgemeinen Formel `printable_px - 2 * qr_padding_px` — damit ist die Geometrie pro Eintrag konsistent und nicht abhaengig von einem hardgecodeten Padding.
 
-`text_start_x` ist die **absolute Pixel-X-Position** ab dem linken Tape-Rand. Sie liegt logisch hinter dem QR-Block plus einem Gap von `2 * qr_padding_px` (symmetrisches Padding: einmal vor dem QR, das QR selbst, dann noch einmal das Padding als Trenn-Gap zum Text). Damit gilt die Formel `text_start_x = qr_padding_px + qr_max_px + 2 * qr_padding_px = printable_px + qr_padding_px`. Bei reinen Text-ContentTypes ohne QR (text_one_line, text_two_lines) wird `text_start_x` ignoriert — Text rendert ab `qr_padding_px` links.
+`text_start_x` ist die **absolute Pixel-X-Position** ab dem linken Tape-Rand. Sie setzt sich aus drei Komponenten zusammen:
+
+1. **Linker QR-Inset** = `qr_padding_px` (Abstand vom linken Tape-Rand bis zur linken QR-Kante)
+2. **QR-Code** = `qr_max_px` (Breite des QR)
+3. **Trenn-Gap zwischen QR und Text** = `2 * qr_padding_px` (rechte QR-Marge `qr_padding_px` + linker Text-Inset `qr_padding_px`)
+
+Daraus: `text_start_x = qr_padding_px + qr_max_px + 2 * qr_padding_px = printable_px + qr_padding_px`. Bei reinen Text-ContentTypes ohne QR (text_one_line, text_two_lines) wird `text_start_x` ignoriert — Text rendert ab `qr_padding_px` vom linken Tape-Rand.
 
 ```python
 # backend/app/schemas/tape_geometry.py
@@ -330,7 +336,7 @@ def downgrade() -> None:
         "templates",
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("key", sa.String, unique=True),
-        # ... ursprueengliche Spalten
+        # ... urspruengliche Spalten
     )
     with op.batch_alter_table("jobs") as batch_op:
         batch_op.alter_column("template_key", nullable=False)  # zurueck zu NOT NULL
@@ -790,3 +796,13 @@ Nach Round-5-Push hat Copilot eine sechste Review (commit 6a1b88d) durchgefuehrt
 - R6-1 (Copilot) — Spec-Header Status war "Draft (zur User-Review)" obwohl der Review-Verlauf "ship-ready" signalisiert. Status auf "Approved — Ready for writing-plans (Phase 1k.1a)" gesetzt
 - R6-2 (Copilot) — `UnsupportedTapeError` von HTTP **422 -> 409** geaendert. 409 (Conflict) passt zum bestehenden Error-Handler-Mapping fuer hardware-/preflight-bezogene Konflikte (TapeEmpty, CoverOpen, TapeMismatch sind ebenfalls 409). 422 bleibt fuer clientseitig korrigierbare Validation-Fehler (`ContentTypeDataMismatchError`)
 - R6-3 (Copilot) — Route-Prefix-Inkonsistenz im bestehenden Backend dokumentiert: `print.py` ohne Prefix vs `batch.py`/`jobs.py` mit `/api/`. Spec ergaenzt: Phase 1k.1a normalisiert ALLE Print-/Job-/Render-Routes auf `/api/` als bewusstes Breaking Change. Andere Routes (`/printers`, `/lookup`, `/webhooks`, `/qr`) bleiben in dieser Phase unveraendert.
+
+### Review-Round 7 (PR #108 — Konvergenz erreicht)
+
+Round 7 lieferte 3 minimale Findings — der Trend bestaetigt klare Konvergenz (R1: 18 -> R2: 7 -> R3: 4 -> R4: 4 -> R5: 4 -> R6: 3 -> R7: 3 minor).
+
+**Round-7 (2/3 adressiert, 1 Halluzination):**
+
+- R7-1 (Copilot, IGNORIERT) — Behauptet doppelte fuehrende Pipes `||` in Markdown-Tabellen die Spalten verschieben. Verifiziert: keine `||` im File, alle Tabellen nutzen einfache `|`. Halluzination des Reviewers, kein Code-Aenderungsbedarf
+- R7-2 (Copilot) — `text_start_x` Erklaerung umstrukturiert in 3 klare Komponenten (linker QR-Inset / QR-Code / Trenn-Gap) mit Formel-Ableitung. Beseitigt Mehrdeutigkeit zwischen "symmetrisches Padding" und "Gap von 2*qr_padding_px"
+- R7-3 (Copilot) — Typo `ursprueengliche` -> `urspruengliche` in Sektion 5 Migration-downgrade-Beispiel
