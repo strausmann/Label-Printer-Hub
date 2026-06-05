@@ -1,28 +1,34 @@
-"""POST /print + GET /jobs/{job_id} + POST /jobs/{job_id}/resume."""
+"""POST /print + GET /jobs/{job_id} + POST /jobs/{job_id}/resume + POST /render/preview."""
 
 from __future__ import annotations
 
+import io
 import logging
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
 from app.printer_backends.exceptions import (
+    ContentTypeDataMismatchError,
     PrinterCoverOpenError,
     PrinterOfflineError,
     SnmpQueryError,
     TapeEmptyError,
     TapeMismatchError,
+    UnsupportedTapeError,
 )
 from app.printer_backends.snmp_helper import LiveStatus, query_live_status
-from app.schemas.print_request import PrintRequest
+from app.schemas.content_type import ContentType
+from app.schemas.label_data import LabelData
+from app.schemas.print_request import PrintRequest, RawLabelData
 from app.schemas.print_response import PrintJobResponse, PrintJobStatusResponse
 from app.services.job_lifecycle import JobState
+from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import LookupFailedError
 from app.services.print_queue import PrinterAlreadyActiveError
 
@@ -242,3 +248,73 @@ async def resume_job(
         finished_at=getattr(job, "finished_at", None),
         live=None,
     )
+
+
+class _PreviewRequest(BaseModel):
+    """Request body for POST /render/preview.
+
+    Phase 1k.1a (Task 25): render-only endpoint — no printer, no queue, no DB.
+    """
+
+    content_type: ContentType
+    data: RawLabelData
+    tape_mm: int = 12
+
+
+@router.post(
+    "/render/preview",
+    tags=["print"],
+    summary="Render a label preview as PNG",
+    description=(
+        "Render a label using the LayoutEngine and return the result as a "
+        "PNG image (no printer interaction, no job created).  "
+        "Useful for UI preview and debugging.  "
+        "Returns 422 when ``data`` is missing fields required by ``content_type``.  "
+        "Returns 409 when ``tape_mm`` is not a supported tape width."
+    ),
+    response_class=Response,
+    responses={
+        200: {"content": {"image/png": {}}, "description": "PNG label bitmap"},
+        409: {"description": "Unsupported tape width"},
+        422: {"description": "Data missing required fields for content_type"},
+    },
+)
+async def render_preview(
+    body: _PreviewRequest,
+    _auth: Annotated[AuthContext, Depends(require_read)],
+) -> Response:
+    """Render a label preview without touching the printer or DB.
+
+    Uses a fresh LayoutEngine instance so that this endpoint works even
+    when no printer is configured (dev / CI mode).
+
+    Returns 200 with Content-Type: image/png on success.
+    Returns 409 (unsupported_tape) when tape_mm is not in TAPE_GEOMETRY.
+    Returns 422 (data_mismatch) when data is missing fields for content_type.
+    """
+    engine = LayoutEngine()
+    label_data = LabelData(
+        primary_id=body.data.primary_id,
+        title=body.data.title,
+        qr_payload=body.data.qr_payload,
+        source_app="preview",
+        secondary=body.data.secondary,
+        items=body.data.items,
+    )
+    try:
+        image = engine.render(body.tape_mm, body.content_type, label_data)
+    except UnsupportedTapeError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"error_code": "unsupported_tape", "error_message": str(exc)},
+        )
+    except ContentTypeDataMismatchError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content={"error_code": "data_mismatch", "error_message": str(exc)},
+        )
+
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    buf.seek(0)
+    return Response(content=buf.read(), media_type="image/png")

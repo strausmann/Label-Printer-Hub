@@ -59,7 +59,7 @@ async def test_batch_route_rejects_mismatched_printer_slug(
     body = {
         "items": [
             {
-                "template_id": "hangar-furniture-24mm",
+                "content_type": "qr_two_lines",
                 "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
             }
         ],
@@ -80,7 +80,7 @@ async def test_batch_route_accepts_matching_printer_slug(slug_check_client, slug
     body = {
         "items": [
             {
-                "template_id": "hangar-furniture-24mm",
+                "content_type": "qr_two_lines",
                 "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
             }
         ],
@@ -100,7 +100,7 @@ async def test_batch_route_accepts_none_printer_slug(slug_check_client, slug_che
     body = {
         "items": [
             {
-                "template_id": "hangar-furniture-24mm",
+                "content_type": "qr_two_lines",
                 "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
             }
         ],

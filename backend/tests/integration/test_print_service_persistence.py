@@ -1,6 +1,7 @@
 """PrintService muss Job-Row in DB anlegen BEVOR an PrintQueue übergeben wird.
 
-Task 5 — Phase 2 Job Persistence.
+Phase 1k.1a (Task 25): Adapted from template_id/renderer/template_loader API
+to content_type/LayoutEngine API.
 
 Fixtures erstellen PrintService + SQLiteJobStore + PrintQueue mit echtem DB-Backend.
 async_session_factory kommt aus tests/conftest.py (sichtbar für alle Tests).
@@ -15,9 +16,10 @@ import pytest
 import pytest_asyncio
 from app.models.job import JobState
 from app.printer_backends.snmp_helper import PreflightStatus
-from app.schemas.label_data import LabelData
+from app.schemas.content_type import ContentType
 from app.schemas.print_request import PrintRequest, RawLabelData
 from app.services.job_store_sqlite import SQLiteJobStore
+from app.services.layout_engine import LayoutEngine
 from app.services.print_queue import PrintQueue
 from app.services.print_service import PrintService
 from PIL import Image
@@ -66,9 +68,9 @@ def backend_mock():
 
 @pytest_asyncio.fixture
 def sample_request():
-    """Minimaler PrintRequest mit direktem LabelData."""
+    """Minimaler PrintRequest mit ContentType und direktem LabelData."""
     return PrintRequest(
-        template_id="test-label-24mm",
+        content_type=ContentType.QR_TWO_LINES,
         data=RawLabelData(
             title="Regal A-01",
             primary_id="SHF-001",
@@ -81,38 +83,20 @@ def sample_request():
 async def print_service(print_queue, sqlite_store, backend_mock):
     """PrintService mit SQLiteJobStore + submit_with_id-fähiger PrintQueue.
 
-    template_loader und renderer sind Mocks; die eigentliche Render-Logik
+    LayoutEngine ist ein Mock; die eigentliche Render-Logik
     wird nicht getestet — nur dass save_queued() VOR queue-Submit aufgerufen wird.
     """
     queue_obj, printer_id = print_queue
 
-    template = MagicMock()
-    template.tape_mm = 24
-    template.id = "test-label-24mm"
-
-    loader = MagicMock()
-    loader.get.return_value = template
-
-    renderer = MagicMock()
-    renderer.render.return_value = Image.new("1", (200, 128))
-
-    lookup_service = AsyncMock()
-    lookup_service.lookup.return_value = LabelData(
-        title="X",
-        primary_id="1",
-        qr_payload="u",
-        source_app="manual",
-        secondary=(),
-    )
+    engine_mock = MagicMock(spec=LayoutEngine)
+    engine_mock.render.return_value = Image.new("1", (200, 128))
 
     svc = PrintService(
-        template_loader=loader,
-        renderer=renderer,
-        print_queue=queue_obj,
-        lookup_service=lookup_service,
         printer_id=printer_id,
         backend=backend_mock,
+        queue=queue_obj,
         store=sqlite_store,
+        engine=engine_mock,
     )
     return svc, sqlite_store, printer_id
 
@@ -131,7 +115,7 @@ async def test_submit_persists_queued_job_before_queue(
     persisted = await sqlite_store.get(job_id)
     assert persisted is not None, "Job nicht in DB gefunden nach submit_print_job"
     assert persisted.state == JobState.QUEUED.value
-    assert persisted.template_key == sample_request.template_id
+    assert persisted.template_key is None  # Phase 1k.1a: template_key immer None
     assert persisted.printer_id == _printer_id
 
 

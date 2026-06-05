@@ -71,11 +71,11 @@ async def test_batch_happy_path(batch_client, batch_db_session, batch_auth_heade
     printer_id = inner_app.state.printer_id
     printer_slug = inner_app.state.backend_router.slugs()[0]
 
-    # Mock backend defaults to 24mm loaded tape → use 24mm template to avoid mismatch
+    # Phase 1k.1a: content_type-based API replaces template_id
     body = {
         "items": [
             {
-                "template_id": "hangar-furniture-24mm",
+                "content_type": "qr_two_lines",
                 "data": {
                     "title": f"Item {i}",
                     "primary_id": f"HH-AK-KX10-F{i:04d}",

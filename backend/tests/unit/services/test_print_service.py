@@ -49,10 +49,10 @@ def make_service():
         backend.preflight_check = AsyncMock(return_value=_preflight(loaded_tape_mm))
 
         queue = MagicMock()
-        queue.submit = AsyncMock()
+        queue.submit_with_id = AsyncMock()
 
         store = MagicMock()
-        store.save_queued = MagicMock()
+        store.save_queued = AsyncMock()
 
         engine = LayoutEngine()
 
@@ -88,8 +88,8 @@ class TestSubmitPrintJob:
         )
         job_id = await svc.submit_print_job(request)
         assert isinstance(job_id, UUID)
-        queue.submit.assert_awaited_once()
-        kwargs = queue.submit.await_args.kwargs
+        queue.submit_with_id.assert_awaited_once()
+        kwargs = queue.submit_with_id.await_args.kwargs
         assert kwargs.get("tape_mm") == 18
 
     @pytest.mark.asyncio
@@ -105,7 +105,7 @@ class TestSubmitPrintJob:
         )
         job_id = await svc.submit_print_job(request)
         assert isinstance(job_id, UUID)
-        queue.submit.assert_awaited_once()
+        queue.submit_with_id.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_qr_only_renders_minimally(self, make_service) -> None:
@@ -116,7 +116,7 @@ class TestSubmitPrintJob:
             data=RawLabelData(qr_payload="https://example.com/x"),
         )
         await svc.submit_print_job(request)
-        queue.submit.assert_awaited_once()
+        queue.submit_with_id.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_returns_uuid(self, make_service) -> None:
@@ -150,8 +150,8 @@ class TestSubmitPrintJob:
             options=PrintOptions(auto_cut=False, high_resolution=True),
         )
         await svc.submit_print_job(request)
-        queue.submit.assert_awaited_once()
-        kwargs = queue.submit.await_args.kwargs
+        queue.submit_with_id.assert_awaited_once()
+        kwargs = queue.submit_with_id.await_args.kwargs
         assert kwargs["auto_cut"] is False
         assert kwargs["high_resolution"] is True
         assert kwargs["tape_mm"] == 12
@@ -174,7 +174,7 @@ class TestNoTapeLoaded:
         )
         with pytest.raises(NoTapeLoadedError):
             await svc.submit_print_job(request)
-        queue.submit.assert_not_awaited()
+        queue.submit_with_id.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_no_tape_store_not_called(self, make_service) -> None:
@@ -206,7 +206,7 @@ class TestPreflightErrors:
         )
         with pytest.raises(PrinterOfflineError):
             await svc.submit_print_job(request)
-        queue.submit.assert_not_awaited()
+        queue.submit_with_id.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_preflight_tape_empty_raises(self, make_service) -> None:
@@ -219,7 +219,7 @@ class TestPreflightErrors:
         )
         with pytest.raises(TapeEmptyError):
             await svc.submit_print_job(request)
-        queue.submit.assert_not_awaited()
+        queue.submit_with_id.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_preflight_cover_open_raises(self, make_service) -> None:
@@ -232,7 +232,7 @@ class TestPreflightErrors:
         )
         with pytest.raises(PrinterCoverOpenError):
             await svc.submit_print_job(request)
-        queue.submit.assert_not_awaited()
+        queue.submit_with_id.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -259,9 +259,9 @@ class TestLookupPath:
         backend = AsyncMock()
         backend.preflight_check = AsyncMock(return_value=_preflight(18))
         queue = MagicMock()
-        queue.submit = AsyncMock()
+        queue.submit_with_id = AsyncMock()
         store = MagicMock()
-        store.save_queued = MagicMock()
+        store.save_queued = AsyncMock()
         engine = LayoutEngine()
 
         svc = PrintService(
@@ -280,7 +280,7 @@ class TestLookupPath:
         job_id = await svc.submit_print_job(request)
         assert isinstance(job_id, UUID)
         lookup_svc.resolve.assert_awaited_once_with("hangar", "K02")
-        queue.submit.assert_awaited_once()
+        queue.submit_with_id.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_data_path_bypasses_lookup(self, make_service) -> None:
@@ -291,9 +291,9 @@ class TestLookupPath:
         backend = AsyncMock()
         backend.preflight_check = AsyncMock(return_value=_preflight(12))
         queue = MagicMock()
-        queue.submit = AsyncMock()
+        queue.submit_with_id = AsyncMock()
         store = MagicMock()
-        store.save_queued = MagicMock()
+        store.save_queued = AsyncMock()
         engine = LayoutEngine()
 
         svc = PrintService(

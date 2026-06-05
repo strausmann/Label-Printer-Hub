@@ -83,8 +83,9 @@ class PrintService:
             api_key_id=None,
             source_ip=None,
         )
-        self._store.save_queued(job)
-        await self._queue.submit(
+        await self._store.save_queued(job)
+        await self._queue.submit_with_id(
+            job_id,
             self._printer_id,
             image,
             tape_mm=preflight.loaded_tape_mm,

@@ -6,6 +6,10 @@ Tests verifizieren:
 1. PRINTING-Jobs werden als FAILED_RESTART markiert
 2. QUEUED-Jobs werden in FIFO-Reihenfolge in die asyncio.Queue re-enqueued
 
+Phase 1k.1a (Task 25): Adapted from template_id/renderer/loader API to
+content_type/LayoutEngine API. _SAMPLE_PAYLOAD updated to match new format.
+test_recovery_skips_jobs_with_deleted_template removed (TemplateNotFoundError gone).
+
 async_session_factory kommt aus tests/conftest.py (sichtbar für alle Tests).
 """
 
@@ -17,13 +21,14 @@ from uuid import uuid4
 import pytest
 from app.models.job import Job, JobState
 from app.services.job_store_sqlite import SQLiteJobStore
+from app.services.layout_engine import LayoutEngine
 from app.services.print_queue import PrintQueue
 from PIL import Image
 from sqlalchemy import update
 from sqlmodel import col
 
-# Minimal-Payload der recovery-fähigen Jobs: label_data + tape_mm wie
-# print_service.submit_print_job() es schreibt (Task 5).
+# Minimal-Payload der recovery-fähigen Jobs: label_data + content_type +
+# rendered_tape_mm wie print_service.submit_print_job() es schreibt (Phase 1k.1a).
 _SAMPLE_PAYLOAD = {
     "label_data": {
         "title": "Test",
@@ -31,8 +36,18 @@ _SAMPLE_PAYLOAD = {
         "qr_payload": "https://example.com",
         "source_app": "manual",
         "secondary": [],
+        "items": [],
     },
+    "content_type": "qr_two_lines",
+    "rendered_tape_mm": 24,
     "tape_mm": 24,
+    "options": {
+        "copies": 1,
+        "auto_cut": True,
+        "high_resolution": False,
+        "half_cut": False,
+        "last_page": True,
+    },
 }
 
 
@@ -46,25 +61,6 @@ class _FakePrinter:
         pass
 
 
-def _make_mock_renderer_and_loader() -> tuple[MagicMock, MagicMock]:
-    """Renderer + Loader-Mocks für Recovery-Tests.
-
-    renderer.render() gibt ein minimales 1-bit-Image zurück.
-    loader.get() gibt ein Mock-Template mit tape_mm=24 zurück.
-    """
-    mock_template = MagicMock()
-    mock_template.tape_mm = 24
-    mock_template.elements = []
-
-    loader = MagicMock()
-    loader.get.return_value = mock_template
-
-    renderer = MagicMock()
-    renderer.render.return_value = Image.new("1", (200, 106))
-
-    return renderer, loader
-
-
 @pytest.mark.asyncio
 async def test_start_marks_printing_as_failed_restart(
     async_session_factory,
@@ -76,7 +72,7 @@ async def test_start_marks_printing_as_failed_restart(
     # Pre-seed: ein Job der in PRINTING-Zustand steckt (simuliert Absturz)
     interrupted_job = Job(
         printer_id=printer_id,
-        template_key="t",
+        template_key=None,
         payload={},
     )
     await store.save_queued(interrupted_job)
@@ -114,18 +110,20 @@ async def test_start_reenqueues_queued_jobs_in_fifo_order(
     store = SQLiteJobStore(async_session_factory)
     printer_id = uuid4()
 
-    j1 = Job(printer_id=printer_id, template_key="t", payload=_SAMPLE_PAYLOAD)
-    j2 = Job(printer_id=printer_id, template_key="t", payload=_SAMPLE_PAYLOAD)
+    j1 = Job(printer_id=printer_id, template_key=None, payload=_SAMPLE_PAYLOAD)
+    j2 = Job(printer_id=printer_id, template_key=None, payload=_SAMPLE_PAYLOAD)
     await store.save_queued(j1)
     await store.save_queued(j2)
 
-    renderer, loader = _make_mock_renderer_and_loader()
+    # Phase 1k.1a: use engine mock instead of renderer + loader
+    engine_mock = MagicMock(spec=LayoutEngine)
+    engine_mock.render.return_value = Image.new("1", (200, 106))
+
     fake_printer = _FakePrinter(printer_id)
     queue = PrintQueue(
         printers=[fake_printer],
         store=store,
-        renderer=renderer,
-        loader=loader,
+        engine=engine_mock,
     )
     await queue.start()
 
@@ -162,20 +160,22 @@ async def test_recovery_skips_jobs_with_missing_label_data(
     printer_id = uuid4()
 
     # Job ohne label_data — simuliert alte Pre-Phase-2-Row oder korrupte Daten
-    bad_job = Job(printer_id=printer_id, template_key="t", payload={})
+    bad_job = Job(printer_id=printer_id, template_key=None, payload={})
     await store.save_queued(bad_job)
 
     # Gültiger Job der trotzdem verarbeitet werden soll
-    good_job = Job(printer_id=printer_id, template_key="t", payload=_SAMPLE_PAYLOAD)
+    good_job = Job(printer_id=printer_id, template_key=None, payload=_SAMPLE_PAYLOAD)
     await store.save_queued(good_job)
 
-    renderer, loader = _make_mock_renderer_and_loader()
+    # Phase 1k.1a: use engine mock instead of renderer + loader
+    engine_mock = MagicMock(spec=LayoutEngine)
+    engine_mock.render.return_value = Image.new("1", (200, 106))
+
     fake_printer = _FakePrinter(printer_id)
     queue = PrintQueue(
         printers=[fake_printer],
         store=store,
-        renderer=renderer,
-        loader=loader,
+        engine=engine_mock,
     )
     await queue.start()
 
@@ -189,70 +189,6 @@ async def test_recovery_skips_jobs_with_missing_label_data(
     # good_job muss in _jobs registriert worden sein (Recovery hat ihn enqueued).
     # Wir prüfen _jobs statt die asyncio.Queue, weil der Worker den Job bereits
     # konsumiert haben könnte (gleicher Event-Loop, aber Worker-Task darf aufwachen).
-    assert str(good_job.id) in queue._jobs
-
-    await queue.stop()
-
-
-@pytest.mark.asyncio
-async def test_recovery_skips_jobs_with_deleted_template(
-    async_session_factory,
-):
-    """I-2: Job mit nicht mehr existierendem Template darf Recovery nicht abbrechen.
-
-    loader.get() wirft TemplateNotFoundError für den fehlerhaften Job.
-    Erwartet:
-    - Der fehlerhafte Job wird als FAILED markiert.
-    - Ein weiterer QUEUED-Job mit gültigem Template wird trotzdem re-enqueued.
-    """
-    from app.services.template_loader import TemplateNotFoundError
-
-    store = SQLiteJobStore(async_session_factory)
-    printer_id = uuid4()
-
-    deleted_template_job = Job(
-        printer_id=printer_id,
-        template_key="nonexistent",
-        payload=_SAMPLE_PAYLOAD,
-    )
-    await store.save_queued(deleted_template_job)
-
-    good_job = Job(printer_id=printer_id, template_key="t", payload=_SAMPLE_PAYLOAD)
-    await store.save_queued(good_job)
-
-    mock_template = MagicMock()
-    mock_template.tape_mm = 24
-    mock_template.elements = []
-
-    loader = MagicMock()
-
-    def _get_side_effect(key: str):
-        if key == "nonexistent":
-            raise TemplateNotFoundError(key)
-        return mock_template
-
-    loader.get.side_effect = _get_side_effect
-
-    renderer = MagicMock()
-    renderer.render.return_value = Image.new("1", (200, 106))
-
-    fake_printer = _FakePrinter(printer_id)
-    queue = PrintQueue(
-        printers=[fake_printer],
-        store=store,
-        renderer=renderer,
-        loader=loader,
-    )
-    await queue.start()
-
-    # deleted_template_job muss als FAILED in der DB stehen
-    fetched_deleted = await store.get(deleted_template_job.id)
-    assert fetched_deleted is not None
-    assert fetched_deleted.state == JobState.FAILED.value
-    assert fetched_deleted.error is not None
-    assert "recovery_rerender_failed" in fetched_deleted.error
-
-    # good_job muss in _jobs registriert worden sein (Recovery hat ihn enqueued).
     assert str(good_job.id) in queue._jobs
 
     await queue.stop()

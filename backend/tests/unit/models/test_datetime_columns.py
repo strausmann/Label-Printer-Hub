@@ -1,4 +1,8 @@
-"""Phase 7b Cluster 1c — every datetime column must be timezone-aware."""
+"""Phase 7b Cluster 1c — every datetime column must be timezone-aware.
+
+Phase 1k.1a (Task 25): Template model removed — Template entry dropped from
+parametrize list.
+"""
 
 import pytest
 from app.models.job import Job
@@ -6,14 +10,12 @@ from app.models.preset import Preset
 from app.models.printer import Printer
 from app.models.printer_state import PrinterState
 from app.models.printer_status_cache import PrinterStatusCache
-from app.models.template import Template
 from sqlalchemy import DateTime
 
 
 @pytest.mark.parametrize(
     "model,columns",
     [
-        (Template, ["created_at", "updated_at"]),
         (Printer, ["created_at", "updated_at"]),
         (Job, ["created_at", "updated_at", "started_at", "finished_at"]),
         (Preset, ["created_at", "updated_at"]),

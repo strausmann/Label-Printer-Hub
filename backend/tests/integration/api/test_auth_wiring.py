@@ -3,18 +3,17 @@
 Tests that each category of endpoint:
 1. Returns 401 without any auth
 2. Returns 200/204 with a valid auth header of the correct scope
+
+Phase 1k.1a (Task 25): Removed TemplateLoader and /api/templates tests.
+Templates are deleted in Phase 1k.1a.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import app.models  # noqa: F401
 import bcrypt
 import pytest
 from app.models.api_key import ApiKey
-
-_SEED_DIR = Path(__file__).parents[3] / "app" / "seed" / "templates"
 
 
 async def _make_print_key(factory):
@@ -72,34 +71,6 @@ async def _make_admin_key(factory):
     return plaintext
 
 
-# --------------------------------------------------------------------------
-# Helper: build app client with DB patched
-# --------------------------------------------------------------------------
-
-
-def _make_client_ctx(factory):
-    import app.db.session as _session_module
-    from app.main import create_app
-
-    _session_module.async_session = factory
-
-    from app.integrations import (  # type: ignore[attr-defined]
-        IntegrationRegistry,
-        _discover_plugins,
-    )
-
-    if not IntegrationRegistry.names():
-        _discover_plugins()
-
-    from app.services.template_loader import TemplateLoader
-
-    original_cache = dict(TemplateLoader._cache)
-    TemplateLoader.load_dir(_SEED_DIR)
-
-    app = create_app()
-    return app, original_cache, TemplateLoader
-
-
 @pytest.mark.asyncio
 async def test_get_printers_without_auth_returns_401(api_client_with_seed):
     resp = await api_client_with_seed.get("/api/printers")
@@ -118,26 +89,6 @@ async def test_get_printers_with_read_key_returns_200(api_client_with_seed):
         headers={"X-Label-Hub-Key": read_key},
     )
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
-
-
-@pytest.mark.asyncio
-async def test_get_templates_without_auth_returns_401(api_client_with_seed):
-    resp = await api_client_with_seed.get("/api/templates")
-    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}"
-
-
-@pytest.mark.asyncio
-async def test_get_templates_with_read_key_returns_200(api_client_with_seed):
-    import app.db.engine as _engine_module
-
-    factory = _engine_module.async_session
-    read_key = await _make_read_key(factory)
-
-    resp = await api_client_with_seed.get(
-        "/api/templates",
-        headers={"X-Label-Hub-Key": read_key},
-    )
-    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
 
 
 @pytest.mark.asyncio

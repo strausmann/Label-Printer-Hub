@@ -11,8 +11,10 @@ from pydantic import ValidationError
 
 
 def _sample_item() -> PrintRequest:
+    from app.schemas.content_type import ContentType
+
     return PrintRequest(
-        template_id="hangar-furniture-12mm",
+        content_type=ContentType.QR_TWO_LINES,
         data=RawLabelData(
             title="Kallax 10 Fach 2-3",
             primary_id="HH-AK-KX10-F0203",

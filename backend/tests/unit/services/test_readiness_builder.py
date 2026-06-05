@@ -1,6 +1,10 @@
-"""Phase 7b Cluster 1e — all 8 readiness checks: database, alembic,
-template_seed, printer_runtime, printer_db_sync, snmp_discovery,
-print_queue, sse_bus."""
+"""Phase 7b Cluster 1e — readiness checks: database, alembic,
+printer_runtime, printer_db_sync, snmp_discovery, print_queue, sse_bus.
+
+Phase 1k.1a (Task 25): template_seed check removed from readiness.py
+(templates table deleted). Tests for template_seed removed; fixture
+renamed from async_session_with_one_template to async_session_with_one_printer.
+"""
 
 from __future__ import annotations
 
@@ -39,14 +43,14 @@ def _state_with_queue_and_bus(printer_id=None, subs=0, max_subs=100):
 
 
 async def test_build_readiness_with_all_ok(
-    async_session_with_one_template, settings_at_head, runtime_printer_id
+    async_session_with_one_printer, settings_at_head, runtime_printer_id
 ):
     from app.services.readiness import build_readiness_response
 
-    # Use a state that includes print_queue + event_bus so all 8 checks pass.
+    # Use a state that includes print_queue + event_bus so all checks pass.
     state = _state_with_queue_and_bus(printer_id=runtime_printer_id)
     body = await build_readiness_response(
-        async_session_with_one_template,
+        async_session_with_one_printer,
         state,
         settings_at_head,
         version="dev",
@@ -55,37 +59,21 @@ async def test_build_readiness_with_all_ok(
     assert isinstance(body, ReadinessResponse)
     # printer_db_sync will be fail (runtime_printer_id has no DB row) → degraded
     # but all critical checks pass.
-    for name in ("database", "alembic", "template_seed", "printer_runtime"):
+    for name in ("database", "alembic", "printer_runtime"):
         assert body.checks[name].status == "ok", f"{name} not ok: {body.checks[name]}"
     assert body.status in {"ready", "degraded"}
-
-
-async def test_build_readiness_template_seed_fails_when_empty(
-    async_session_empty, settings_at_head
-):
-    from app.services.readiness import build_readiness_response
-
-    state = _FakeState(printer_id=None)
-    body = await build_readiness_response(
-        async_session_empty,
-        state,
-        settings_at_head,
-        version="dev",
-        revision="abc",
-    )
-    assert body.checks["template_seed"].status == "fail"
-    # template_seed is critical → aggregate is not-ready
-    assert body.status == "not-ready"
+    # template_seed check was removed in Phase 1k.1a
+    assert "template_seed" not in body.checks
 
 
 async def test_build_readiness_printer_runtime_fails_when_no_id(
-    async_session_with_one_template, settings_at_head
+    async_session_with_one_printer, settings_at_head
 ):
     from app.services.readiness import build_readiness_response
 
     state = _FakeState(printer_id=None)
     body = await build_readiness_response(
-        async_session_with_one_template,
+        async_session_with_one_printer,
         state,
         settings_at_head,
         version="dev",
@@ -102,12 +90,12 @@ async def test_build_readiness_printer_runtime_fails_when_no_id(
 
 
 async def test_check_printer_db_sync_skipped_when_no_runtime_id(
-    async_session_with_one_template, settings_at_head
+    async_session_with_one_printer, settings_at_head
 ):
     from app.services.readiness import build_readiness_response
 
     body = await build_readiness_response(
-        async_session_with_one_template,
+        async_session_with_one_printer,
         _state_with_queue_and_bus(printer_id=None),
         settings_at_head,
         version="v",
@@ -117,12 +105,12 @@ async def test_check_printer_db_sync_skipped_when_no_runtime_id(
 
 
 async def test_check_printer_db_sync_fail_when_id_has_no_row(
-    async_session_with_one_template, settings_at_head
+    async_session_with_one_printer, settings_at_head
 ):
     from app.services.readiness import build_readiness_response
 
     body = await build_readiness_response(
-        async_session_with_one_template,
+        async_session_with_one_printer,
         _state_with_queue_and_bus(printer_id=uuid4()),  # any uuid; not in DB
         settings_at_head,
         version="v",
@@ -132,11 +120,11 @@ async def test_check_printer_db_sync_fail_when_id_has_no_row(
 
 
 async def test_check_printer_db_sync_ok_when_row_exists(
-    async_session_with_one_template, settings_at_head
+    async_session_with_one_printer, settings_at_head
 ):
     pid = uuid4()
     # Insert a Printer row matching the runtime id
-    async_session_with_one_template.add(
+    async_session_with_one_printer.add(
         Printer(
             id=pid,
             name="x",
@@ -146,12 +134,12 @@ async def test_check_printer_db_sync_ok_when_row_exists(
             enabled=True,
         )
     )
-    await async_session_with_one_template.flush()
+    await async_session_with_one_printer.flush()
 
     from app.services.readiness import build_readiness_response
 
     body = await build_readiness_response(
-        async_session_with_one_template,
+        async_session_with_one_printer,
         _state_with_queue_and_bus(printer_id=pid),
         settings_at_head,
         version="v",
@@ -166,10 +154,10 @@ async def test_check_printer_db_sync_ok_when_row_exists(
 
 
 async def test_check_snmp_discovery_fail_when_no_probe_yet(
-    async_session_with_one_template, settings_at_head
+    async_session_with_one_printer, settings_at_head
 ):
     pid = uuid4()
-    async_session_with_one_template.add(
+    async_session_with_one_printer.add(
         Printer(
             id=pid,
             name="x",
@@ -179,11 +167,11 @@ async def test_check_snmp_discovery_fail_when_no_probe_yet(
             enabled=True,
         )
     )
-    await async_session_with_one_template.flush()
+    await async_session_with_one_printer.flush()
     from app.services.readiness import build_readiness_response
 
     body = await build_readiness_response(
-        async_session_with_one_template,
+        async_session_with_one_printer,
         _state_with_queue_and_bus(printer_id=pid),
         settings_at_head,
         version="v",
@@ -192,11 +180,9 @@ async def test_check_snmp_discovery_fail_when_no_probe_yet(
     assert body.checks["snmp_discovery"].status == "fail"
 
 
-async def test_check_snmp_discovery_ok_when_fresh(
-    async_session_with_one_template, settings_at_head
-):
+async def test_check_snmp_discovery_ok_when_fresh(async_session_with_one_printer, settings_at_head):
     pid = uuid4()
-    async_session_with_one_template.add(
+    async_session_with_one_printer.add(
         Printer(
             id=pid,
             name="x",
@@ -206,7 +192,7 @@ async def test_check_snmp_discovery_ok_when_fresh(
             enabled=True,
         )
     )
-    async_session_with_one_template.add(
+    async_session_with_one_printer.add(
         PrinterStatusCache(
             printer_id=pid,
             captured_at=datetime.now(UTC),
@@ -214,11 +200,11 @@ async def test_check_snmp_discovery_ok_when_fresh(
             raw_block=None,
         )
     )
-    await async_session_with_one_template.flush()
+    await async_session_with_one_printer.flush()
     from app.services.readiness import build_readiness_response
 
     body = await build_readiness_response(
-        async_session_with_one_template,
+        async_session_with_one_printer,
         _state_with_queue_and_bus(printer_id=pid),
         settings_at_head,
         version="v",
@@ -229,10 +215,10 @@ async def test_check_snmp_discovery_ok_when_fresh(
 
 
 async def test_check_snmp_discovery_stale_between_90_and_600(
-    async_session_with_one_template, settings_at_head
+    async_session_with_one_printer, settings_at_head
 ):
     pid = uuid4()
-    async_session_with_one_template.add(
+    async_session_with_one_printer.add(
         Printer(
             id=pid,
             name="x",
@@ -242,7 +228,7 @@ async def test_check_snmp_discovery_stale_between_90_and_600(
             enabled=True,
         )
     )
-    async_session_with_one_template.add(
+    async_session_with_one_printer.add(
         PrinterStatusCache(
             printer_id=pid,
             captured_at=datetime.now(UTC) - timedelta(seconds=200),
@@ -250,11 +236,11 @@ async def test_check_snmp_discovery_stale_between_90_and_600(
             raw_block=None,
         )
     )
-    await async_session_with_one_template.flush()
+    await async_session_with_one_printer.flush()
     from app.services.readiness import build_readiness_response
 
     body = await build_readiness_response(
-        async_session_with_one_template,
+        async_session_with_one_printer,
         _state_with_queue_and_bus(printer_id=pid),
         settings_at_head,
         version="v",
@@ -269,7 +255,7 @@ async def test_check_snmp_discovery_stale_between_90_and_600(
 
 
 async def test_check_print_queue_fail_when_missing(
-    async_session_with_one_template, settings_at_head
+    async_session_with_one_printer, settings_at_head
 ):
     state = _FakeState(printer_id=uuid4())
     # NO print_queue attribute
@@ -277,7 +263,7 @@ async def test_check_print_queue_fail_when_missing(
     from app.services.readiness import build_readiness_response
 
     body = await build_readiness_response(
-        async_session_with_one_template,
+        async_session_with_one_printer,
         state,
         settings_at_head,
         version="v",
@@ -292,12 +278,12 @@ async def test_check_print_queue_fail_when_missing(
 
 
 async def test_check_sse_bus_fail_when_subscribers_at_max(
-    async_session_with_one_template, settings_at_head
+    async_session_with_one_printer, settings_at_head
 ):
     from app.services.readiness import build_readiness_response
 
     body = await build_readiness_response(
-        async_session_with_one_template,
+        async_session_with_one_printer,
         _state_with_queue_and_bus(printer_id=uuid4(), subs=100, max_subs=100),
         settings_at_head,
         version="v",

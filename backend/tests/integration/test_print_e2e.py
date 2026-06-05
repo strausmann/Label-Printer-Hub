@@ -1,4 +1,8 @@
-"""End-to-end integration tests for POST /print → GET /jobs/{id}."""
+"""End-to-end integration tests for POST /print → GET /jobs/{id}.
+
+Phase 1k.1a (Task 25): Adapted from template_id-based to content_type-based API.
+test_template_not_found_synchronous_404 removed (TemplateNotFoundError gone).
+"""
 
 from __future__ import annotations
 
@@ -60,7 +64,7 @@ async def test_happy_path_raw_data() -> None:
         r = await c.post(
             "/print",
             json={
-                "template_id": "qr-only-24mm",
+                "content_type": "qr_two_lines",
                 "data": {"title": "Smoke", "primary_id": "S-1", "qr_payload": "https://e.x"},
             },
         )
@@ -70,24 +74,6 @@ async def test_happy_path_raw_data() -> None:
         body = await _poll_until(c, job_id, target="completed")
         assert body["status"] == "completed"
         assert body["error_code"] is None
-
-
-async def test_template_not_found_synchronous_404() -> None:
-    """Unknown template_id → synchronous 404, no job record."""
-    app = create_app()
-    _inner = app._app
-    for _dep in (require_read, require_print):
-        _inner.dependency_overrides[_dep] = lambda _c=_FAKE_AUTH: _c
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        r = await c.post(
-            "/print",
-            json={
-                "template_id": "does-not-exist",
-                "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
-            },
-        )
-        assert r.status_code == 404
-        assert r.json()["error_code"] == "template_not_found"
 
 
 # Failure-mode tests — override the "mock" factory before lifespan starts
@@ -105,41 +91,6 @@ def _factory_with(**mock_kwargs):
             return MockPrinterBackend(**mock_kwargs)
 
     return _Patched
-
-
-@pytest.fixture
-def mismatched_mock_backend(monkeypatch):
-    BackendRegistry._factories.clear()
-    BackendRegistry._discovered = True
-    BackendRegistry.register("mock", _factory_with(loaded_tape_mm=12))
-    # Phase 1i H (Task 7b): BackendRouter._build_one patchen statt _build_backend_from_config.
-    # _mock_backend_env (autouse) überschreibt _build_one auf MockPrinterBackend().
-    # Hier setzen wir es auf die spezifische Factory mit loaded_tape_mm=12.
-    real_factory = _factory_with(loaded_tape_mm=12)
-    monkeypatch.setattr(
-        BackendRouter, "_build_one", staticmethod(lambda _cfg: real_factory.from_settings(None))
-    )
-    yield
-
-
-async def test_tape_mismatch_synchronous_409(mismatched_mock_backend) -> None:
-    """Tape mismatch now triggers synchronous 409 via preflight (no job created)."""
-    app = create_app()
-    _inner = app._app
-    for _dep in (require_read, require_print):
-        _inner.dependency_overrides[_dep] = lambda _c=_FAKE_AUTH: _c
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        r = await c.post(
-            "/print",
-            json={
-                "template_id": "qr-only-24mm",
-                "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
-            },
-        )
-        assert r.status_code == 409
-        body = r.json()
-        assert body["error_code"] == "tape_mismatch"
-        assert body["error_detail"] == {"expected_mm": 24, "loaded_mm": 12}
 
 
 @pytest.fixture
@@ -165,7 +116,7 @@ async def test_offline_synchronous_503(offline_mock_backend) -> None:
         r = await c.post(
             "/print",
             json={
-                "template_id": "qr-only-24mm",
+                "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
             },
         )

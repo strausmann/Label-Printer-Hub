@@ -61,12 +61,12 @@ async def ml_batch_client():
         yield c, inner
 
 
-def _four_item_body(template_id: str = "hangar-furniture-24mm") -> dict:
-    """Build a 4-item batch request body using the given template."""
+def _four_item_body(content_type: str = "qr_two_lines") -> dict:
+    """Build a 4-item batch request body using the given content_type."""
     return {
         "items": [
             {
-                "template_id": template_id,
+                "content_type": content_type,
                 "data": {
                     "primary_id": f"ML-{i:04d}",
                     "title": f"Multi-Label Test {i}",
