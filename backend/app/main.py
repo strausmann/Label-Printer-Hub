@@ -109,6 +109,7 @@ from app.services.cleanup_task import CleanupTask
 from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.label_renderer import LabelRenderer
+from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue
 from app.services.print_service import PrintService
@@ -329,20 +330,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.event_bus = event_bus
     # ----- end SSE ------
 
-    # Shared LabelRenderer reused by both PrintService, preview endpoint and
-    # PrintQueue Recovery. Constructing it once avoids repeated font-loading
-    # overhead on every POST /api/render/preview request.
-    # Moved before PrintQueue construction so Recovery in queue.start() can use it.
+    # Shared LabelRenderer reused by the preview endpoint (still uses v1 API).
+    # LayoutEngine is the successor used by PrintService and PrintQueue recovery.
     shared_renderer = LabelRenderer()
     app.state.label_renderer = shared_renderer
+    # Shared LayoutEngine — stateless, safe to reuse across requests.
+    # Used by PrintQueue recovery and PrintService rendering.
+    shared_engine = LayoutEngine()
 
     pq_producer = PrintQueueProducer(bus=event_bus)
     queue = PrintQueue(
         printers=queue_printers,
         on_state_change=pq_producer.handle_transition,
         store=job_store,
-        renderer=shared_renderer,
-        loader=TemplateLoader,
+        engine=shared_engine,
     )
     await queue.start()
 
@@ -397,9 +398,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # backends implement preflight_check). _BackendProto is a private Protocol
         # in print_service and cannot be imported here for a clean annotation.
         service = PrintService(
-            template_loader=TemplateLoader,
-            renderer=shared_renderer,
-            print_queue=queue,
+            engine=shared_engine,
+            queue=queue,
             lookup_service=AppLookupService(),
             printer_id=printer_id,
             backend=cast(Any, printer_backend),
