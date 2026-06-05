@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+import qrcode
+import qrcode.constants
 from PIL import Image
 
 from app.printer_backends.exceptions import (
@@ -101,6 +103,29 @@ class LayoutEngine:
             )
 
     # ------------------------------------------------------------------
+    # Rendering helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_qr_image(payload: str, size_px: int) -> Image.Image:
+        """Render a QR code as a square 1-bit PIL Image at the requested size."""
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=10,
+            border=0,
+        )
+        qr.add_data(payload)
+        qr.make(fit=True)
+        rendered: Image.Image = qr.make_image(fill_color="black", back_color="white").convert("1")
+        return rendered.resize((size_px, size_px), Image.Resampling.NEAREST)
+
+    @staticmethod
+    def _blank_canvas(width: int, height: int) -> Image.Image:
+        """Return a white 1-bit PIL Image of the given size."""
+        return Image.new("1", (width, height), color=1)
+
+    # ------------------------------------------------------------------
     # _render_* methods — implemented in Tasks 7-13
     # ------------------------------------------------------------------
 
@@ -109,7 +134,18 @@ class LayoutEngine:
         geometry: TapeGeometry,
         data: LabelData,
     ) -> Image.Image:
-        raise NotImplementedError("Task 7")
+        """QR fills the full printable height, left-padded by qr_padding_px.
+
+        Width = qr_max_px + 2 * qr_padding_px = printable_px (square label).
+        """
+        qr_img = self._build_qr_image(
+            payload=data.qr_payload or "",
+            size_px=geometry.qr_max_px,
+        )
+        canvas_width = geometry.printable_px
+        canvas = self._blank_canvas(canvas_width, geometry.printable_px)
+        canvas.paste(qr_img, (geometry.qr_padding_px, geometry.qr_padding_px))
+        return canvas
 
     def _render_qr_one_line(
         self,
