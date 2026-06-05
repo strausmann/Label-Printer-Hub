@@ -142,3 +142,43 @@ class TestRenderQRTwoLines:
             ),
         )
         assert img.height == 696
+
+
+class TestRenderQRThreeLines:
+    def test_18mm_with_secondary(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=18,
+            content_type=ContentType.QR_THREE_LINES,
+            data=LabelData(
+                source_app="grocy",
+                primary_id="Erdbeermarmelade",
+                title="Lager > Vorrat",
+                qr_payload="https://example.com/x",
+                secondary=("MHD 2027-04-30",),
+            ),
+        )
+        assert img.height == 112
+
+    def test_24mm_renders(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=24,
+            content_type=ContentType.QR_THREE_LINES,
+            data=LabelData(
+                source_app="grocy",
+                primary_id="X",
+                title="Y",
+                qr_payload="https://example.com/x",
+                secondary=("Z",),
+            ),
+        )
+        assert img.height == 128
