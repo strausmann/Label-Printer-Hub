@@ -37,7 +37,6 @@ from app.config import Settings
 from app.models.printer import Printer
 from app.schemas.printer_config import PrinterYAMLConfig
 from app.services.printer_identity import derive_printer_id
-from app.services.template_loader import TemplateLoader
 
 _logger = logging.getLogger(__name__)
 
@@ -133,26 +132,16 @@ async def recover_inflight_jobs(session: AsyncSession) -> int:
     return await jobs_repo.mark_inflight_as_failed_restart(session)
 
 
-async def seed_templates(session: AsyncSession, loader: type[TemplateLoader]) -> int:
-    """Idempotent YAML → DB upsert, delegated to ``loader.seed_db(session)``.
+async def seed_templates(_session: AsyncSession, _loader: object = None) -> int:
+    """No-op stub — template seeding removed in Phase 1k.1a (Task 23/24).
 
-    The conversion logic lives on ``TemplateLoader.seed_db`` (Task 8) so
-    there is a single source of truth for the TemplateSchema → Template
-    column mapping.  This function exists only as a named startup step that
-    main.py can call by name, and is the natural seam for unit tests that
-    want to inject a mock loader without touching the real registry.
+    TemplateLoader and the templates table were deleted. This function is
+    kept as a named symbol so existing test imports don't break until
+    Task 25 cleans up the test suite.
 
-    Raises RuntimeError if the loader cache is empty — calling seed_templates
-    without first running TemplateLoader.load_dir() is a lifespan-ordering bug.
-
-    Returns the count of rows touched (inserted or updated).
+    Returns 0 (no rows touched).
     """
-    if not loader._cache:
-        raise RuntimeError(
-            "seed_templates called with empty TemplateLoader cache — "
-            "TemplateLoader.load_dir() must run before seed_templates()."
-        )
-    return await loader.seed_db(session)
+    return 0
 
 
 async def ensure_printer_state(session: AsyncSession) -> int:

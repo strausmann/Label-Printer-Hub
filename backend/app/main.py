@@ -82,11 +82,9 @@ from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
-from app.api.routes import templates as templates_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.print import router as print_router
-from app.api.routes.templates_preview import router as templates_preview_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
 from app.config import get_settings
@@ -94,7 +92,6 @@ from app.db.engine import async_session, engine
 from app.db.lifespan import (
     ensure_printer_state,
     run_migrations,
-    seed_templates,
     upsert_runtime_printers,
     verify_alembic_at_head,
 )
@@ -108,7 +105,6 @@ from app.services.backend_router import BackendRouter
 from app.services.cleanup_task import CleanupTask
 from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
-from app.services.label_renderer import LabelRenderer
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue
@@ -119,7 +115,6 @@ from app.services.producers.status_probe_producer import StatusProbeProducer
 from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.readiness import build_readiness_response
 from app.services.tape_registry import TapeRegistry
-from app.services.template_loader import TemplateLoader
 
 # Per ADR 0011 we pin the OpenAPI version explicitly rather than relying on
 # FastAPI's default, so a FastAPI upgrade can't drift the API contract version.
@@ -134,7 +129,6 @@ HUB_REPO_URL: str = os.environ.get(
     "HUB_REPO_URL", "https://github.com/strausmann/label-printer-hub"
 )
 
-_SEED_TEMPLATES_DIR = Path(__file__).parent / "seed" / "templates"
 _log = logging.getLogger(__name__)
 
 
@@ -262,31 +256,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await verify_alembic_at_head(settings)
 
     # 2. Plugin registries (idempotent — skips already-registered names).
-    # Must run BEFORE TemplateLoader.load_dir() because load_dir validates
-    # each template's `app` field against IntegrationRegistry.  Re-run if the
-    # registry was cleared (e.g. by test fixtures that call
+    # Re-run if the registry was cleared (e.g. by test fixtures that call
     # IntegrationRegistry._plugins.clear()).
     if not IntegrationRegistry.names():
         _integrations_init._discover_plugins()
 
     ModelRegistry.ensure_discovered()
 
-    # 3. Populate in-memory template cache BEFORE any DB writes that depend on it.
-    # load_dir must come after plugin discovery (above) and before seed_templates
-    # (below) — the seed step reads from the cache that load_dir populates.
-    if _SEED_TEMPLATES_DIR.exists():
-        TemplateLoader.load_dir(_SEED_TEMPLATES_DIR)
-    else:
-        raise RuntimeError(
-            f"Seed templates directory not found: {_SEED_TEMPLATES_DIR}. "
-            "The application package is incomplete — reinstall or rebuild the image."
-        )
-
-    # 4. DB-bound init — plugin registry and template cache are populated.
+    # 3. DB-bound init — plugin registry is populated.
     async with async_session() as s:
         # Phase 2: recover_inflight_jobs() entfernt (Spec R1-C1) —
         # PrintQueue.start() übernimmt Recovery mit korrekter QUEUED/PRINTING-Differenzierung.
-        await seed_templates(s, TemplateLoader)
         db_printer_ids = await upsert_runtime_printers(s, _printer_configs)
         await ensure_printer_state(s)
         # upsert_runtime_printers already commits; ensure_printer_state may need commit
@@ -330,13 +310,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.event_bus = event_bus
     # ----- end SSE ------
 
-    # Shared LabelRenderer reused by the preview endpoint (still uses v1 API).
-    # LayoutEngine is the successor used by PrintService and PrintQueue recovery.
-    shared_renderer = LabelRenderer()
-    app.state.label_renderer = shared_renderer
     # Shared LayoutEngine — stateless, safe to reuse across requests.
     # Used by PrintQueue recovery and PrintService rendering.
     shared_engine = LayoutEngine()
+    app.state.engine = shared_engine
 
     pq_producer = PrintQueueProducer(bus=event_bus)
     queue = PrintQueue(
@@ -649,11 +626,11 @@ def create_app() -> _LifespanManager:
         summary="Readiness probe",
         description=(
             "Deep readiness check: database connectivity, alembic migration "
-            "state, template seed, printer wiring, SNMP probe recency, "
+            "state, printer wiring, SNMP probe recency, "
             "print-queue liveness, and SSE subscriber capacity. "
             "Returns 200 with status in {ready, degraded} when all critical "
             "checks pass; 503 with status=not-ready when any critical check "
-            "(database / alembic / template_seed) fails."
+            "(database / alembic) fails."
         ),
         responses={503: {"model": ReadinessResponse}},
     )
@@ -679,14 +656,11 @@ def create_app() -> _LifespanManager:
     app.include_router(batches_routes.router)
     app.include_router(events_routes.router)
     app.include_router(printers_routes.router)
-    app.include_router(templates_routes.router)
-    app.include_router(templates_routes.render_router)
     app.include_router(jobs_routes.router)
     app.include_router(lookup_routes.router)
     app.include_router(webhooks_routes.router)
     app.include_router(qr_routes.router)
     app.include_router(admin_api_keys_router)
-    app.include_router(templates_preview_router)
 
     _static_dir = Path(__file__).parent / "static"
     if _static_dir.exists():

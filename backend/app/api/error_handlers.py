@@ -15,7 +15,6 @@ References:
     docs/superpowers/specs/2026-05-16-phase6a-rest-api-design.md
     app/services/errors.py
     app/printer_backends/exceptions.py
-    app/services/template_loader.py
 """
 
 from __future__ import annotations
@@ -34,7 +33,6 @@ from app.printer_backends.exceptions import (
 )
 from app.schemas.problem import ProblemDetail
 from app.services.errors import AppLookupNotFoundError
-from app.services.template_loader import TemplateNotFoundError
 
 # Mapping: exception class → (HTTP status code, problem-type slug)
 _MAPPING: dict[type[Exception], tuple[int, str]] = {
@@ -42,7 +40,6 @@ _MAPPING: dict[type[Exception], tuple[int, str]] = {
     TapeMismatchError: (409, "tape-mismatch"),
     TapeEmptyError: (409, "tape-empty"),
     PrinterCoverOpenError: (409, "printer-cover-open"),
-    TemplateNotFoundError: (404, "template-not-found"),
     AppLookupNotFoundError: (404, "app-lookup-not-found"),
 }
 

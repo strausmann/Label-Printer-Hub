@@ -25,7 +25,6 @@ from app.schemas.print_response import PrintJobResponse, PrintJobStatusResponse
 from app.services.job_lifecycle import JobState
 from app.services.lookup_service import LookupFailedError
 from app.services.print_queue import PrinterAlreadyActiveError
-from app.services.template_loader import TemplateNotFoundError
 
 _log = logging.getLogger(__name__)
 
@@ -40,7 +39,6 @@ class _PrinterResumeResponse(BaseModel):
 
 
 _SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
-    TemplateNotFoundError: (404, "template_not_found"),
     LookupFailedError: (502, "integration_lookup_failed"),
     TapeMismatchError: (409, "tape_mismatch"),
     TapeEmptyError: (409, "tape_empty"),
