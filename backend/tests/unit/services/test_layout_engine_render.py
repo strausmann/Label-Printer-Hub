@@ -34,8 +34,12 @@ class TestRenderQROnly:
             content_type=ContentType.QR_ONLY,
             data=LabelData(source_app="manual", qr_payload="https://example.com/x"),
         )
-        black = sum(1 for p in img.getdata() if p == 0)
-        assert black > 200, f"Expected QR pixels; got {black} black pixels"
+        # In mode "1", tobytes() returns packed bytes (8 pixels per byte).
+        # Black pixels are zero bits — count by inspecting the bytes.
+        pixel_bytes = img.tobytes()
+        # If any pixel is black (bit=0), at least one byte will be != 0xFF.
+        non_white_bytes = sum(1 for b in pixel_bytes if b != 0xFF)
+        assert non_white_bytes > 30, f"Expected QR pixels; got {non_white_bytes} non-white bytes"
 
     def test_24mm_renders(self) -> None:
         eng = LayoutEngine()

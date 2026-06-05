@@ -83,16 +83,18 @@ class TestLayoutEngineValidation:
         assert "qr_payload" in exc_info.value.missing_fields
         assert "items" in exc_info.value.missing_fields
 
-    def test_qr_with_listing_with_items_passes_validation_but_render_not_implemented(self) -> None:
+    def test_qr_with_listing_with_items_passes_validation(self) -> None:
+        """Validation passes with non-empty items; render returns a PIL Image."""
         eng = LayoutEngine()
-        with pytest.raises(NotImplementedError):
-            eng.render(
-                tape_mm=12,
-                content_type=ContentType.QR_WITH_LISTING,
-                data=LabelData(
-                    source_app="hangar",
-                    primary_id="K02",
-                    qr_payload="https://example.com/k02",
-                    items=(LabelDataItem(item="A"),),
-                ),
-            )
+        img = eng.render(
+            tape_mm=12,
+            content_type=ContentType.QR_WITH_LISTING,
+            data=LabelData(
+                source_app="hangar",
+                primary_id="K02",
+                qr_payload="https://example.com/k02",
+                items=(LabelDataItem(item="A"),),
+            ),
+        )
+        assert img is not None
+        assert img.height == 70  # 12mm printable_px
