@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from app.schemas.tape_geometry import TAPE_GEOMETRY, TapeGeometry
+from pydantic import ValidationError
 
 
 class TestTapeGeometryModel:
@@ -20,6 +21,8 @@ class TestTapeGeometryModel:
             font_s=10,
         )
         assert geom.printable_px == 70
+        assert geom.qr_max_px == 66
+        assert geom.font_xl == 22
 
     def test_zero_printable_px_rejected(self) -> None:
         with pytest.raises(ValueError, match="greater than 0"):
@@ -61,7 +64,7 @@ class TestTapeGeometryModel:
             font_m=14,
             font_s=10,
         )
-        with pytest.raises(ValueError):
+        with pytest.raises(ValidationError, match="frozen_instance"):
             geom.printable_px = 100  # type: ignore[misc]
 
 
