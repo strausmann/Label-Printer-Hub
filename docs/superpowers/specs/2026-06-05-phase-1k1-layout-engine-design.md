@@ -10,7 +10,7 @@
 
 Phase 1k.1 ersetzt die 21 hartcodierten YAML-Templates (hangar/grocy/snipeit/spoolman/qr-only x 12/18/24mm + 6 Samla) durch eine semantische **Layout-Engine** mit zwei Achsen:
 
-1. **TapeGeometry** — Tabelle mit allen 7 unterstuetzten Tape-Groessen (**4**/6/9/12/18/24/62mm — int, kleinste PT-TZe ist 4mm mit 24 Print-Pins) und ihren Render-Parametern (printable_px, qr_max, Font-Groessen)
+1. **TapeGeometry** — Tabelle mit allen 7 unterstuetzten Tape-Groessen (**4**/6/9/12/18/24/62mm — `int`, kleinste PT-TZe ist **4mm** (24 Print-Pins) — nicht 3.5mm wie in fruehen Drafts) und ihren Render-Parametern (printable_px, qr_max, Font-Groessen)
 2. **7 ContentTypes** — semantische Beschreibung was gerendert wird, **tape-unabhaengig** (qr_only, qr_one_line, qr_two_lines, **qr_three_lines** fuer 3-Zeilen-Layouts mit secondary, text_one_line, text_two_lines, qr_with_listing)
 
 **Tape-Unabhaengigkeit** ist der Kern-Wechsel: Hangar sendet `content_type: qr_two_lines` (ohne tape_mm), Hub liest `preflight.loaded_tape_mm` vom Drucker und rendert passend. Der bestehende `TapeMismatchError` wird damit obsolet — User wechselt physisch das Tape, das System rendert automatisch.
@@ -31,8 +31,8 @@ Sieben Types decken alle bisherigen Use Cases ab. Jeder Type definiert WAS geren
 |-------------|---------------------|---------------------------|----------------------------|
 | `qr_only` | QR fuellt volle Tape-Hoehe, kein Text | `qr_payload` | qr-only-12mm, qr-only-18mm, qr-only-24mm |
 | `qr_one_line` | QR links + 1 Text-Zeile (XL, vertikal zentriert) | `qr_payload`, `primary_id` | (neu, war Sonderfall) |
-| `qr_two_lines` | QR links + 2 Text-Zeilen (XL primary_id + L title) | `qr_payload`, `primary_id`, `title` | hangar-furniture-*-12mm, grocy-12mm, snipeit-12mm, spoolman-12mm, **alle Samla-* Templates** (Stirntag + Deckel, 12/24/62mm) |
-| `qr_three_lines` | QR links + 3 Text-Zeilen (XL primary_id + L title + S secondary[0]) | `qr_payload`, `primary_id`, `title`, `secondary` | grocy-18mm, grocy-24mm, snipeit-18mm, snipeit-24mm, spoolman-18mm, spoolman-24mm, hangar-furniture-18mm, hangar-furniture-24mm |
+| `qr_two_lines` | QR links + 2 Text-Zeilen (XL primary_id + L title) | `qr_payload`, `primary_id`, `title` | hangar-furniture-12mm, grocy-12mm, snipeit-12mm, spoolman-12mm, samla-stirntag-12mm, samla-stirntag-24mm, samla-stirntag-62mm, samla-deckel-12mm, samla-deckel-24mm, samla-deckel-62mm |
+| `qr_three_lines` | QR links + 3 Text-Zeilen (XL primary_id + L title + S secondary[0]) | `qr_payload`, `primary_id`, `title`, `secondary` | hangar-furniture-18mm, hangar-furniture-24mm, grocy-18mm, grocy-24mm, snipeit-18mm, snipeit-24mm, spoolman-18mm, spoolman-24mm |
 | `text_one_line` | Voll-Breite Text XL, kein QR | `primary_id` | (neu, kein altes Template) |
 | `text_two_lines` | 2 Text-Zeilen XL + L, kein QR | `primary_id`, `title` | (neu, kein altes Template) |
 | `qr_with_listing` | QR links + N Item-Zeilen (M-Groesse), Overflow zeigt "+N more" | `qr_payload`, `primary_id` (Header), `items: tuple[LabelDataItem,...]` | (neu, fuer Kallax-Regal-Uebersicht aus 7e-Spec) |
@@ -251,22 +251,27 @@ backend/tests/**/test_svg_renderer*          # SVG-Renderer-Tests gegen v1 Schem
 
 **Korrektur aus Gemini Review:** SQLite unterstuetzt `drop_column` nicht direkt — `op.batch_alter_table` ist Pflicht.
 
-**Korrektur aus Copilot Review CP-9:** Statt `content_type=NULL` zu lassen, backfillen wir deterministisch aus dem strukturierten `template_key` (z.B. `hangar-furniture-18mm` -> `qr_three_lines` + `rendered_tape_mm=18`).
+**Korrektur aus Copilot Review CP-9:** Statt `content_type=NULL` zu lassen, backfillen wir deterministisch aus dem strukturierten `template_key`.
 
-Neue Migration `XXXX_drop_templates_and_migrate_jobs.py`:
+**Designentscheidung aus Copilot Review R3-4:** Die Spalte `jobs.template_key` BLEIBT als Audit-/Debug-Information erhalten. Sie ist im bestehenden Backend als "snapshot string — survives template deletion" dokumentiert, wird in `JobRead` API ausgegeben und enthaelt auch Nicht-Seed-Keys wie `spoolman/<id>` oder `grocy/<id>`. Nur die `templates` Tabelle wird gedroppt (keine Templates mehr). `template_key` wird ueber das Schema-Update nullable (neue Jobs ab 1k.1a haben `template_key=NULL`, aber `content_type` + `rendered_tape_mm` gesetzt).
+
+Neue Migration `XXXX_drop_templates_table_and_add_content_columns.py`:
 ```python
 def upgrade() -> None:
-    # 1) Neue Spalten in jobs hinzufuegen
+    # 1) Neue Spalten in jobs hinzufuegen — content_type + rendered_tape_mm
     with op.batch_alter_table("jobs") as batch_op:
         batch_op.add_column(sa.Column("content_type", sa.String(32), nullable=True))
         batch_op.add_column(sa.Column("rendered_tape_mm", sa.Integer, nullable=True))
+        # 2) template_key: NOT NULL Constraint entfernen (neue Jobs setzen es nicht
+        #    mehr, alte Jobs behalten ihren Wert als Audit-Trail)
+        batch_op.alter_column("template_key", nullable=True)
 
-    # 2) Deterministisches Backfill basierend auf bekanntem Seed-Template-Schema.
-    #    HINWEIS: template_key ist im aktuellen Schema NOT NULL, kann aber nicht-Seed-
-    #    Werte enthalten (z.B. Webhook-Erzeugte Jobs wie "spoolman/<id>" oder
-    #    "grocy/<id>"). Diese matchen keinen der CASE-Patterns und bekommen
-    #    content_type=NULL — Frontend behandelt das als "(legacy)" Markierung.
-    #    Tape-Groesse fuer non-Seed-Keys: ebenfalls NULL.
+    # 3) Deterministisches Backfill basierend auf bekanntem Seed-Template-Schema.
+    #    HINWEIS: template_key kann auch nicht-Seed-Werte enthalten (z.B. Webhook-
+    #    Erzeugte Jobs wie "spoolman/<id>" oder "grocy/<id>"). Diese matchen keinen
+    #    der CASE-Patterns und behalten content_type=NULL. Das Frontend zeigt
+    #    template_key zusaetzlich an, sodass die historische Information sichtbar
+    #    bleibt.
     bind = op.get_bind()
     bind.execute(sa.text("""
         UPDATE jobs SET
@@ -292,10 +297,8 @@ def upgrade() -> None:
             END
     """))
 
-    # 3) Alte Spalte + Tabelle entfernen
-    with op.batch_alter_table("jobs") as batch_op:
-        batch_op.drop_column("template_key")
-
+    # 4) templates Tabelle entfernen — nicht mehr genutzt nach Hard-Cut.
+    #    template_key bleibt als Snapshot-Spalte in jobs erhalten.
     op.drop_table("templates")
 
 
@@ -307,12 +310,17 @@ def downgrade() -> None:
         # ... ursprueengliche Spalten
     )
     with op.batch_alter_table("jobs") as batch_op:
-        batch_op.add_column(sa.Column("template_key", sa.String, nullable=True))
+        batch_op.alter_column("template_key", nullable=False)  # zurueck zu NOT NULL
         batch_op.drop_column("content_type")
         batch_op.drop_column("rendered_tape_mm")
 ```
 
-Jobs mit `template_key=NULL` (bereits in obsoletem Zustand) bleiben mit `content_type=NULL` — fuer Historie tolerierbar (Frontend zeigt "(legacy)" wenn NULL).
+**JobRead API-Schema** (nach 1k.1a):
+- `content_type: ContentType | None` — fuer neue Jobs gesetzt; fuer historische Jobs aus Backfill bestimmt; NULL nur fuer non-matching template_keys
+- `rendered_tape_mm: int | None` — analog
+- `template_key: str | None` — Audit-Snapshot, NULL fuer neue Jobs, gesetzt fuer historische Jobs
+
+Frontend zeigt fuer historische Jobs zusaetzlich den `template_key` als Hint (z.B. tooltip "Original template: spoolman/abc-123"), damit die Provenance erkennbar bleibt.
 
 ### Pflicht-Smoke-Test nach Implementation
 
@@ -598,7 +606,7 @@ Snapshot-Test der gerenderten layout.templ:
 - [ ] `main.py` Router-Registrierungen + Imports aufgeraeumt (kein TemplateLoader mehr)
 - [ ] `lifespan.py` Template-Preload entfernt
 - [ ] `svg_renderer.py` analog migriert oder geloescht (je nach SVG-Use)
-- [ ] Alembic-Migration: `templates` Tabelle drop + `jobs.template_key` drop + `jobs.content_type` + `jobs.rendered_tape_mm` add via `op.batch_alter_table` (SQLite-kompatibel) mit deterministischem Backfill aus `template_key`
+- [ ] Alembic-Migration: `templates` Tabelle drop + `jobs.content_type` + `jobs.rendered_tape_mm` add via `op.batch_alter_table` (SQLite-kompatibel) mit deterministischem Backfill aus `template_key`. `jobs.template_key` BLEIBT als nullable Audit-Spalte erhalten (snapshot survives template deletion, sichtbar in JobRead API)
 - [ ] Tests gruen, Coverage >=90% auf neuen Modulen
 - [ ] Smoke-Test: 12mm V4-Baseline visuell identisch
 - [ ] Refs #103, Closes #81 (7e-Spec subsumiert)
@@ -715,3 +723,14 @@ Nach Round-1-Push hat Copilot eine zweite Review (commit 2545467) durchgefuehrt 
 Initial-Seeding der Hangar-Categories erfolgt ueber **Go-Code Defaults** (`DefaultCategories` Slice in `internal/category/defaults.go`), NICHT mehr ueber YAML. Reihenfolge beim ersten Start: DB-Init -> Moebel-Typen-Seed -> `DefaultCategories`-Seed. `HUB_LAYOUTS_PATH` und `hub-layouts.yaml` werden in 1k.1c deprecated und ignoriert. Ziel: YAML-freie Konfiguration, Categories sind ausschliesslich ueber Admin-UI editierbar.
 
 Sektion 6 (1k.1b) markiert die YAML-Datei explizit als Uebergangs-Loesung. Sektion 7 (1k.1c) definiert `DefaultCategories` als Source-of-Truth fuer den frischen Start. Out-of-Scope-Sektion ergaenzt: vollstaendiges Entfernen des YAML-Lese-Codes ist in einer Folge-Phase nach 1k.1c (kein eigenes Issue noetig).
+
+### Review-Round 3 (PR #108 Findings adressiert)
+
+Nach Round-2-Push hat Copilot eine dritte Review (commit 9c877cb) durchgefuehrt und 4 weitere Findings gemeldet — davon 1 Designentscheidung (template_key behalten) und 3 Klarstellungen.
+
+**Round-3 (4/4 adressiert):**
+
+- R3-1 (Copilot) — PR-Beschreibung war veraltet (6 ContentTypes / 3.5mm). PR-Body wird parallel aktualisiert; in der Spec selbst hat sich nichts geaendert (Source of Truth war immer Spec, nicht PR-Body)
+- R3-2 (Copilot) — Executive Summary explizit "4mm (nicht 3.5mm)" geschrieben um die historische Verwechslung zu adressieren
+- R3-3 (Copilot) — Mapping-Tabelle in Sektion 2: `hangar-furniture-*-12mm` Wildcard war irrefuehrend (keine Wildcards im Repo). Aufgeloest in konkrete Eintraege `hangar-furniture-12mm` etc.
+- R3-4 (Copilot, DESIGN-ENTSCHEIDUNG) — `jobs.template_key` Spalte wird NICHT gedroppt. Sie bleibt als nullable Audit-/Debug-Snapshot erhalten (Webhook-Keys wie `spoolman/<id>` waeren sonst nicht mehr rekonstruierbar; "survives template deletion" Eigenschaft bleibt erhalten). Migration NOT NULL -> nullable; neue Jobs setzen template_key=NULL aber content_type+rendered_tape_mm. Frontend zeigt template_key zusaetzlich als Provenance-Hint fuer historische Jobs
