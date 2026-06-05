@@ -10,7 +10,7 @@
 
 Phase 1k.1 ersetzt die 21 hartcodierten YAML-Templates (hangar/grocy/snipeit/spoolman/qr-only x 12/18/24mm + 6 Samla) durch eine semantische **Layout-Engine** mit zwei Achsen:
 
-1. **TapeGeometry** — Tabelle mit allen 7 unterstuetzten Tape-Groessen (**4**/6/9/12/18/24/62mm — `int`, kleinste PT-TZe ist **4mm** (24 Print-Pins) — nicht 3.5mm wie in fruehen Drafts) und ihren Render-Parametern (printable_px, qr_max, Font-Groessen)
+1. **TapeGeometry** — Tabelle mit **initialem Scope** von 7 Tape-Groessen (**4**/6/9/12/18/24/62mm — `int`, kleinste PT-TZe ist **4mm** (24 Print-Pins) — nicht 3.5mm wie in fruehen Drafts) und ihren Render-Parametern (printable_px, qr_max, Font-Groessen). Die bestehende `TapeRegistry` kennt zusaetzliche QL-DK-Breiten (29/38/50/54mm) — Layout-Engine in 1k.1 deckt diese **bewusst noch nicht** ab; entsprechende Print-Requests fuehren zu `UnsupportedTapeError`. Erweiterung der Tabelle ist Constants-Aenderung (kein Code-Refactor) und kann als Folge-Phase ergaenzt werden.
 2. **7 ContentTypes** — semantische Beschreibung was gerendert wird, **tape-unabhaengig** (qr_only, qr_one_line, qr_two_lines, **qr_three_lines** fuer 3-Zeilen-Layouts mit secondary, text_one_line, text_two_lines, qr_with_listing)
 
 **Tape-Unabhaengigkeit** ist der Kern-Wechsel: Hangar sendet `content_type: qr_two_lines` (ohne tape_mm), Hub liest `preflight.loaded_tape_mm` vom Drucker und rendert passend. Der bestehende `TapeMismatchError` wird damit obsolet — User wechselt physisch das Tape, das System rendert automatisch.
@@ -41,15 +41,23 @@ Sieben Types decken alle bisherigen Use Cases ab. Jeder Type definiert WAS geren
 
 ### Validation-Regeln
 
-| Regel | Geprueft |
-|-------|----------|
-| `qr_*` ContentType benoetigt nicht-leeres `qr_payload` in data | 422 wenn fehlt/leer |
-| `text_*` ContentType ignoriert `qr_payload` (kein Fehler, nur unused) | — |
-| `qr_with_listing` benoetigt `items: tuple[LabelDataItem,...]` mit mindestens 1 Item | 422 wenn fehlt/leer |
-| `qr_one_line` und `text_one_line` benoetigen `primary_id` | 422 wenn fehlt |
-| `*_two_lines` benoetigt `primary_id` UND `title` | 422 wenn eines fehlt |
-| `qr_three_lines` benoetigt `primary_id` UND `title` UND mindestens 1 `secondary`-Eintrag | 422 wenn eines fehlt |
-| `source_app` ist in `LabelData` Pflichtfeld (bestehend, unveraendert) | 422 wenn fehlt |
+**Schema-Anpassung erforderlich:** Im bestehenden Backend sind `LabelData.title`, `LabelData.primary_id` und `LabelData.qr_payload` als required Pydantic-Felder modelliert. Mit 7 ContentTypes die jeweils nur einen Teil der Felder benoetigen (z.B. `qr_only` nur qr_payload, `text_one_line` nur primary_id), wuerde Pydantic-Validation bereits 422 werfen bevor die Engine-Validation greift.
+
+**Loesung:** In Phase 1k.1a werden die Felder im `LabelData`-Basismodell **optional** gemacht (`str | None = None`). Die ContentType-spezifischen Pflichtfeld-Checks passieren **zentral in `LayoutEngine._validate_data(content_type, data)`** als ContentTypeDataMismatchError (422). `source_app` bleibt das einzige zwingend gesetzte Feld auf Datenebene.
+
+Pflichtfeld-Matrix (gepueft in `_validate_data`):
+
+| ContentType | qr_payload | primary_id | title | secondary | items | source_app |
+|-------------|-----------|------------|-------|-----------|-------|------------|
+| `qr_only` | erforderlich | — | — | — | — | erforderlich |
+| `qr_one_line` | erforderlich | erforderlich | — | — | — | erforderlich |
+| `qr_two_lines` | erforderlich | erforderlich | erforderlich | — | — | erforderlich |
+| `qr_three_lines` | erforderlich | erforderlich | erforderlich | mind. 1 Eintrag | — | erforderlich |
+| `text_one_line` | — | erforderlich | — | — | — | erforderlich |
+| `text_two_lines` | — | erforderlich | erforderlich | — | — | erforderlich |
+| `qr_with_listing` | erforderlich | erforderlich (Header) | — | — | mind. 1 Item | erforderlich |
+
+Bei Verstoss: `ContentTypeDataMismatchError(content_type, missing_fields)` -> 422. Felder die nicht erforderlich sind, werden beim Rendern ignoriert (nicht abgelehnt).
 
 ## 3. TapeGeometry (alle 7 Tape-Groessen)
 
@@ -97,14 +105,22 @@ TAPE_GEOMETRY: dict[int, TapeGeometry] = {
 ### Empirische Validierung post-Deploy
 
 12mm-Werte aus Phase 1i V4-Winner sind scan-verifiziert (siehe Issue #103 Issue-Kommentar fuer Detailwerte).
-4/6/9/18/24/62mm wurden via Pixel-Ratio extrapoliert (`new_value = 12mm_value * new_printable_px / 70`). Smoke-Test als Follow-up-Issue: jede Tape-Groesse einmal mit `qr_two_lines` drucken, Lesbarkeit pruefen, ggf. Werte korrigieren. User hat 24mm-Tapes und QL-Rollen verfuegbar.
+
+**Extrapolations-Methodologie fuer 4/6/9/18/24/62mm:**
+1. **Font-Groessen** (`font_xl`, `font_l`, `font_m`, `font_s`): via Pixel-Ratio `new_value = round(12mm_value * new_printable_px / 70)`, dann auf sinnvolle Lesbarkeit-Grenzen geclamped (Minimum 5px fuer 4mm).
+2. **`qr_padding_px`**: bewusst konstant bei `2` fuer 4-24mm Tape; auf `4` erhoeht fuer 62mm (hoehere DPI, mehr Platz). Kein lineares Scaling.
+3. **`line_spacing_px`**: via Ratio extrapoliert, dann auf Ganzzahl-Werte gerundet.
+4. **`text_start_x`**: deterministisch berechnet als `printable_px + qr_padding_px` (folgt der Formel aus dem Header-Block dieser Sektion).
+5. **`qr_max_px`**: deterministisch berechnet als `printable_px - 2 * qr_padding_px`.
+
+Smoke-Test als Follow-up-Issue: jede Tape-Groesse einmal mit `qr_two_lines` drucken, Lesbarkeit pruefen, ggf. Werte korrigieren. User hat 24mm-Tapes und QL-Rollen verfuegbar.
 
 ## 4. Layout-Engine API
 
 ```python
 # backend/app/services/layout_engine.py
 
-from PIL.Image import Image
+from PIL import Image
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.tape_geometry import TAPE_GEOMETRY
@@ -122,7 +138,7 @@ class LayoutEngine:
         tape_mm: int,
         content_type: ContentType,
         data: LabelData,
-    ) -> Image:
+    ) -> Image.Image:
         """Render-Pfad: tape_mm + content_type + data -> PIL Image.
 
         Raises UnsupportedTapeError wenn tape_mm nicht in TAPE_GEOMETRY.
@@ -593,7 +609,8 @@ Snapshot-Test der gerenderten layout.templ:
 - [ ] `TapeGeometry` (Pydantic mit `Field(gt=0)/Field(ge=0)` Constraints) + `TAPE_GEOMETRY: dict[int, TapeGeometry]` fuer 7 Tape-Groessen (4/6/9/12/18/24/62mm)
 - [ ] `ContentType` Enum mit 7 Werten (qr_only, qr_one_line, qr_two_lines, qr_three_lines, text_one_line, text_two_lines, qr_with_listing)
 - [ ] `LayoutEngine.render(tape_mm: int, content_type, data)` implementiert alle 7 ContentTypes
-- [ ] `LabelData.items` Erweiterung + `LabelDataItem`-Klasse; `source_app`-Pflichtfeld unveraendert
+- [ ] `LabelData` Schema-Anpassung: `title`, `primary_id`, `qr_payload` werden auf optional gesetzt (`str | None = None`); ContentType-spezifische Pflichtfeld-Validation zentral in `LayoutEngine._validate_data()`; nur `source_app` bleibt zwingend gesetzt
+- [ ] `LabelData.items` Erweiterung + `LabelDataItem`-Klasse
 - [ ] Routes `/api/print/*` umgebaut auf `content_type`; `template_id` und `on_tape_mismatch` Felder entfernt
 - [ ] `/api/render/preview` umgebaut auf **POST mit JSON-Body** `{content_type, tape_mm, data, format}`
 - [ ] Routes `/api/templates/*` komplett entfernt
@@ -734,3 +751,14 @@ Nach Round-2-Push hat Copilot eine dritte Review (commit 9c877cb) durchgefuehrt 
 - R3-2 (Copilot) — Executive Summary explizit "4mm (nicht 3.5mm)" geschrieben um die historische Verwechslung zu adressieren
 - R3-3 (Copilot) — Mapping-Tabelle in Sektion 2: `hangar-furniture-*-12mm` Wildcard war irrefuehrend (keine Wildcards im Repo). Aufgeloest in konkrete Eintraege `hangar-furniture-12mm` etc.
 - R3-4 (Copilot, DESIGN-ENTSCHEIDUNG) — `jobs.template_key` Spalte wird NICHT gedroppt. Sie bleibt als nullable Audit-/Debug-Snapshot erhalten (Webhook-Keys wie `spoolman/<id>` waeren sonst nicht mehr rekonstruierbar; "survives template deletion" Eigenschaft bleibt erhalten). Migration NOT NULL -> nullable; neue Jobs setzen template_key=NULL aber content_type+rendered_tape_mm. Frontend zeigt template_key zusaetzlich als Provenance-Hint fuer historische Jobs
+
+### Review-Round 4 (PR #108 Findings adressiert)
+
+Nach Round-3-Push hat Copilot eine vierte Review (commit b10552a) durchgefuehrt und 4 weitere Klarstellungen gemeldet.
+
+**Round-4 (4/4 adressiert):**
+
+- R4-1 (Copilot) — Validation-Regeln Pre-Condition: bestehendes `LabelData` hat `title/primary_id/qr_payload` als required. Spec ergaenzt um expliziten Schema-Anpassungs-Schritt: Felder werden auf `str | None = None` umgestellt, ContentType-Validation passiert zentral in `LayoutEngine._validate_data()`. Pflichtfeld-Matrix als Tabelle in Sektion 2 ergaenzt
+- R4-2 (Copilot) — Extrapolations-Methodologie pro Feld erklaert: Pixel-Ratio + Clamping fuer Fonts, konstantes qr_padding_px bei 2 (62mm: 4), deterministische Formeln fuer text_start_x und qr_max_px. Damit ist die Tabelle nachvollziehbar pflegbar
+- R4-3 (Copilot) — Executive Summary explizit: "initiale Scope" von 7 Groessen; bestehende `TapeRegistry` kennt weitere QL-DK-Breiten (29/38/50/54mm) die in 1k.1 bewusst noch nicht abgedeckt sind -> `UnsupportedTapeError`; Erweiterung in Folge-Phase moeglich
+- R4-4 (Copilot) — Import-Konvention angepasst: `from PIL.Image import Image` -> `from PIL import Image`, Return-Type `Image.Image` (konsistent mit Repo-Konvention)
