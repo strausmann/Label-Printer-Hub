@@ -15,7 +15,7 @@ from typing import ClassVar
 
 import qrcode
 import qrcode.constants
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from app.printer_backends.exceptions import (
     ContentTypeDataMismatchError,
@@ -125,6 +125,28 @@ class LayoutEngine:
         """Return a white 1-bit PIL Image of the given size."""
         return Image.new("1", (width, height), color=1)
 
+    @staticmethod
+    def _load_font(size_px: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
+        """Load DejaVuSans TrueType font at the requested pixel size.
+
+        DejaVuSans.ttf is installed via fonts-dejavu-core in the Dockerfile.
+        On dev machines without the system font, falls back to the default
+        bitmap font.
+        """
+        try:
+            return ImageFont.truetype("DejaVuSans.ttf", size_px)
+        except OSError:
+            return ImageFont.load_default()
+
+    @staticmethod
+    def _measure_text(
+        text: str,
+        font: ImageFont.ImageFont | ImageFont.FreeTypeFont,
+    ) -> tuple[int, int]:
+        """Return (width, height) bounding box of `text` rendered with `font`."""
+        bbox = ImageDraw.Draw(Image.new("1", (1, 1), color=1)).textbbox((0, 0), text, font=font)
+        return (int(bbox[2] - bbox[0]), int(bbox[3] - bbox[1]))
+
     # ------------------------------------------------------------------
     # _render_* methods — implemented in Tasks 7-13
     # ------------------------------------------------------------------
@@ -152,7 +174,21 @@ class LayoutEngine:
         geometry: TapeGeometry,
         data: LabelData,
     ) -> Image.Image:
-        raise NotImplementedError("Task 8")
+        """QR left + 1 text line (primary_id, font_xl, vertically centered)."""
+        qr_img = self._build_qr_image(
+            payload=data.qr_payload or "",
+            size_px=geometry.qr_max_px,
+        )
+        font = self._load_font(geometry.font_xl)
+        text = data.primary_id or ""
+        text_w, text_h = self._measure_text(text, font)
+
+        canvas_width = geometry.text_start_x + text_w + geometry.qr_padding_px
+        canvas = self._blank_canvas(canvas_width, geometry.printable_px)
+        canvas.paste(qr_img, (geometry.qr_padding_px, geometry.qr_padding_px))
+        text_y = max(0, (geometry.printable_px - text_h) // 2)
+        ImageDraw.Draw(canvas).text((geometry.text_start_x, text_y), text, font=font, fill=0)
+        return canvas
 
     def _render_qr_two_lines(
         self,

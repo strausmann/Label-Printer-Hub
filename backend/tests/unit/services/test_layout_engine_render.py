@@ -45,3 +45,41 @@ class TestRenderQROnly:
             data=LabelData(source_app="manual", qr_payload="https://example.com/y"),
         )
         assert img.height == TAPE_GEOMETRY[24].printable_px == 128
+
+
+class TestRenderQROneLine:
+    def test_image_height_matches_printable_px(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.schemas.tape_geometry import TAPE_GEOMETRY
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=12,
+            content_type=ContentType.QR_ONE_LINE,
+            data=LabelData(
+                source_app="manual",
+                qr_payload="https://example.com/x",
+                primary_id="X-001",
+            ),
+        )
+        assert img.height == TAPE_GEOMETRY[12].printable_px
+
+    def test_width_includes_text_column(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.schemas.tape_geometry import TAPE_GEOMETRY
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=12,
+            content_type=ContentType.QR_ONE_LINE,
+            data=LabelData(
+                source_app="manual",
+                qr_payload="https://example.com/x",
+                primary_id="X-001",
+            ),
+        )
+        assert img.width > TAPE_GEOMETRY[12].text_start_x
