@@ -1,7 +1,7 @@
 # Phase 1k.1 — Layout-Engine + TapeGeometry + ContentTypes (Design)
 
 **Datum:** 2026-06-05
-**Status:** Draft (zur User-Review)
+**Status:** Approved — Ready for writing-plans (Phase 1k.1a)
 **Tracking:** strausmann/Label-Printer-Hub#103 (Phase 1k.1 unter Umbrella #101)
 **Vorgaenger-Spec:** docs/superpowers/specs/2026-05-17-phase-7e-template-layout-v2-design.md (subsumiert)
 **Hardware-Baseline:** Phase 1i V4-Winner — empirisch validiert auf PT-P750W mit 12mm TZe-Tape. Pixel-Werte (QR x=2 y=2 max_size=66, text_start_x=72, font_xl=22, font_l=18) dokumentiert im Issue-Kommentar zu Issue #103. Das originale Smoke-Test-Protokoll liegt im privaten `homelab-management` Repo (kein OS-Pfad in diesem Repo).
@@ -172,8 +172,8 @@ Fuer `qr_three_lines`: rendert `primary_id` (XL, oben), `title` (L, mittig), und
 
 | Error | HTTP | Zweck |
 |-------|------|-------|
-| `UnsupportedTapeError(tape_mm)` | 422 | tape_mm nicht in TAPE_GEOMETRY (defensive — tritt mit 7 Groessen nicht praktisch auf) |
-| `ContentTypeDataMismatchError(content_type, missing_fields)` | 422 | data fehlen Pflichtfelder fuer den ContentType |
+| `UnsupportedTapeError(tape_mm)` | **409** | tape_mm nicht in TAPE_GEOMETRY — hardware-/preflight-bezogener Konflikt (konsistent mit existierenden TapeEmpty/CoverOpen/TapeMismatch 409-Mapping in error_handlers.py) |
+| `ContentTypeDataMismatchError(content_type, missing_fields)` | 422 | data fehlen Pflichtfelder fuer den ContentType (clientseitig korrigierbar -> Unprocessable Entity) |
 | `NoTapeLoadedError()` | 409 | preflight.loaded_tape_mm == None (Tape physisch nicht eingelegt) |
 
 `TapeMismatchError` wird ersatzlos geloescht (nicht mehr im Render-Pfad geworfen).
@@ -254,15 +254,19 @@ backend/tests/**/test_svg_renderer*          # SVG-Renderer-Tests gegen v1 Schem
 
 ### Neue/geanderte Routes
 
-| Route | Methode | Aenderung |
-|-------|---------|-----------|
-| `/api/print/{slug}` | POST | Request hat `content_type: ContentType`, `data: LabelData`, `options: PrintOptions` — `template_id` und `on_tape_mismatch` Felder geloescht |
-| `/api/print/{slug}/batch` | POST | items[] mit `content_type`, kein `template_id`, kein `on_tape_mismatch` |
+**Route-Prefix-Normalisierung:** Das aktuelle Backend ist inkonsistent — `print.py` hat `APIRouter()` ohne Prefix (Routes `/print/...`), waehrend `batch.py` (`prefix="/api"`) und `jobs.py` (`prefix="/api/jobs"`) den `/api`-Prefix verwenden. Phase 1k.1a normalisiert ALLE Print-/Job-/Render-Routes auf den durchgehenden `/api/`-Prefix als bewusstes Breaking Change. Bestehende Aufrufer (Hangar in 1k.1b, andere Clients) ziehen die Prefixes mit.
+
+| Route (neu, mit /api Prefix) | Methode | Aenderung |
+|------|---------|-----------|
+| `/api/print/{slug}` | POST | Vorher: `/print/{slug}` ohne Prefix. Request hat `content_type: ContentType`, `data: LabelData`, `options: PrintOptions` — `template_id` und `on_tape_mismatch` Felder geloescht |
+| `/api/print/{slug}/batch` | POST | Bereits mit `/api`-Prefix. items[] mit `content_type`, kein `template_id`, kein `on_tape_mismatch` |
 | `/api/render/preview` | **POST** | **POST mit JSON-Body** `{content_type, tape_mm, data, format: "png"\|"svg"}`. GET ist ungeeignet weil `qr_with_listing` mit `items: tuple[LabelDataItem,...]` URL-Length-Limits sprengt (proxy/browser caching/escaping-Issues) |
 | `/api/templates/*` | alle | komplett geloescht (Route-File weg) |
 | `/api/templates/{key}/preview-png` | GET | geloescht |
 | `/api/templates/{key}/preview-svg` | GET | geloescht |
-| `/api/jobs/{job_id}/resume` | POST | geloescht (PAUSED-State obsolet) |
+| `/api/jobs/{job_id}/resume` | POST | Bereits mit `/api/jobs`-Prefix. Geloescht (PAUSED-State obsolet) |
+
+Andere bestehende Routes wie `/printers/*`, `/lookup/*`, `/webhooks/*`, `/qr/*` werden in dieser Phase NICHT angefasst — Prefix-Normalisierung dort kann eine separate Folge-Phase werden.
 
 ### DB-Migration (Alembic)
 
@@ -776,3 +780,13 @@ Nach Round-4-Push hat Copilot eine fuenfte Review (commit c37d494) durchgefuehrt
 - R5-2 (Copilot) — Obsolete-Konzepte-Tabelle: PAUSED-State-Entfernung impliziert NICHT CANCELLED-State-Entfernung. Klarstellung in der Tabelle: Jobs nach 1k.1a sind QUEUED/PRINTING/COMPLETED/FAILED/**CANCELLED** — der CANCELLED-State bleibt erhalten (durch Cancel-Operation gesetzt, unabhaengig vom PAUSED-Pfad)
 - R5-3 (Copilot) — PR-Body weiterhin "6 ContentTypes" / "3.5mm" — Update aus Round 3 ist nicht persistiert (GraphQL-Warnung). Body wird via gh API erneut gesetzt
 - R5-4 (Copilot) — Hardware-Baseline-Referenz im Spec-Header zeigte auf nicht existierenden Pfad `docs/site/operations/protokolle/...`. Korrigiert: Verweis auf Issue #103 Kommentar (oeffentlich verfuegbar) + Hinweis dass Original-Protokoll im privaten `homelab-management` Repo liegt
+
+### Review-Round 6 (PR #108 Findings adressiert)
+
+Nach Round-5-Push hat Copilot eine sechste Review (commit 6a1b88d) durchgefuehrt und 3 weitere finishing-touch Findings gemeldet.
+
+**Round-6 (3/3 adressiert):**
+
+- R6-1 (Copilot) — Spec-Header Status war "Draft (zur User-Review)" obwohl der Review-Verlauf "ship-ready" signalisiert. Status auf "Approved — Ready for writing-plans (Phase 1k.1a)" gesetzt
+- R6-2 (Copilot) — `UnsupportedTapeError` von HTTP **422 -> 409** geaendert. 409 (Conflict) passt zum bestehenden Error-Handler-Mapping fuer hardware-/preflight-bezogene Konflikte (TapeEmpty, CoverOpen, TapeMismatch sind ebenfalls 409). 422 bleibt fuer clientseitig korrigierbare Validation-Fehler (`ContentTypeDataMismatchError`)
+- R6-3 (Copilot) — Route-Prefix-Inkonsistenz im bestehenden Backend dokumentiert: `print.py` ohne Prefix vs `batch.py`/`jobs.py` mit `/api/`. Spec ergaenzt: Phase 1k.1a normalisiert ALLE Print-/Job-/Render-Routes auf `/api/` als bewusstes Breaking Change. Andere Routes (`/printers`, `/lookup`, `/webhooks`, `/qr`) bleiben in dieser Phase unveraendert.
