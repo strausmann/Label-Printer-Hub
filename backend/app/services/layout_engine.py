@@ -313,7 +313,34 @@ class LayoutEngine:
         geometry: TapeGeometry,
         data: LabelData,
     ) -> Image.Image:
-        raise NotImplementedError("Task 12")
+        """2 text lines (primary_id XL + title L), no QR."""
+        font_primary = self._load_font(geometry.font_xl)
+        font_title = self._load_font(geometry.font_l)
+        primary_text = data.primary_id or ""
+        title_text = data.title or ""
+        primary_w, _ = self._measure_text(primary_text, font_primary)
+        title_w, _ = self._measure_text(title_text, font_title)
+        max_text_w = max(primary_w, title_w)
+
+        canvas_width = geometry.qr_padding_px + max_text_w + geometry.qr_padding_px
+        canvas = self._blank_canvas(canvas_width, geometry.printable_px)
+
+        draw = ImageDraw.Draw(canvas)
+        y = geometry.qr_padding_px
+        draw.text(
+            (geometry.qr_padding_px, y),
+            primary_text,
+            font=font_primary,
+            fill=0,
+        )
+        y += geometry.font_xl + geometry.line_spacing_px
+        draw.text(
+            (geometry.qr_padding_px, y),
+            title_text,
+            font=font_title,
+            fill=0,
+        )
+        return canvas
 
     def _render_qr_with_listing(
         self,

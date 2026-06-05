@@ -211,3 +211,18 @@ class TestRenderTextOneLine:
             data=LabelData(source_app="manual", primary_id="X"),
         )
         assert img.height == TAPE_GEOMETRY[24].printable_px
+
+
+class TestRenderTextTwoLines:
+    def test_18mm_renders(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=18,
+            content_type=ContentType.TEXT_TWO_LINES,
+            data=LabelData(source_app="manual", primary_id="LINE1", title="LINE2"),
+        )
+        assert img.height == 112
