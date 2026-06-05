@@ -292,7 +292,21 @@ class LayoutEngine:
         geometry: TapeGeometry,
         data: LabelData,
     ) -> Image.Image:
-        raise NotImplementedError("Task 11")
+        """Full-width text (primary_id, font_xl, vertically centered)."""
+        font = self._load_font(geometry.font_xl)
+        text = data.primary_id or ""
+        text_w, text_h = self._measure_text(text, font)
+
+        canvas_width = geometry.qr_padding_px + text_w + geometry.qr_padding_px
+        canvas = self._blank_canvas(canvas_width, geometry.printable_px)
+        text_y = max(0, (geometry.printable_px - text_h) // 2)
+        ImageDraw.Draw(canvas).text(
+            (geometry.qr_padding_px, text_y),
+            text,
+            font=font,
+            fill=0,
+        )
+        return canvas
 
     def _render_text_two_lines(
         self,

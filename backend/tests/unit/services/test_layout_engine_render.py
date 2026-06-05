@@ -182,3 +182,32 @@ class TestRenderQRThreeLines:
             ),
         )
         assert img.height == 128
+
+
+class TestRenderTextOneLine:
+    def test_no_qr_present(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=12,
+            content_type=ContentType.TEXT_ONE_LINE,
+            data=LabelData(source_app="manual", primary_id="HELLO"),
+        )
+        assert img.width < 200
+
+    def test_renders_at_correct_height(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.schemas.tape_geometry import TAPE_GEOMETRY
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=24,
+            content_type=ContentType.TEXT_ONE_LINE,
+            data=LabelData(source_app="manual", primary_id="X"),
+        )
+        assert img.height == TAPE_GEOMETRY[24].printable_px
