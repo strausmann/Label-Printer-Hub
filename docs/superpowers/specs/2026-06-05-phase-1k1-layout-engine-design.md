@@ -10,8 +10,8 @@
 
 Phase 1k.1 ersetzt die 21 hartcodierten YAML-Templates (hangar/grocy/snipeit/spoolman/qr-only x 12/18/24mm + 6 Samla) durch eine semantische **Layout-Engine** mit zwei Achsen:
 
-1. **TapeGeometry** — Tabelle mit allen 7 unterstuetzten Tape-Groessen (3.5/6/9/12/18/24/62mm) und ihren Render-Parametern (printable_px, qr_max, Font-Groessen)
-2. **6 ContentTypes** — semantische Beschreibung was gerendert wird, **tape-unabhaengig** (qr_only, qr_one_line, qr_two_lines, text_one_line, text_two_lines, qr_with_listing)
+1. **TapeGeometry** — Tabelle mit allen 7 unterstuetzten Tape-Groessen (**4**/6/9/12/18/24/62mm — int, kleinste PT-TZe ist 4mm mit 24 Print-Pins) und ihren Render-Parametern (printable_px, qr_max, Font-Groessen)
+2. **7 ContentTypes** — semantische Beschreibung was gerendert wird, **tape-unabhaengig** (qr_only, qr_one_line, qr_two_lines, **qr_three_lines** fuer 3-Zeilen-Layouts mit secondary, text_one_line, text_two_lines, qr_with_listing)
 
 **Tape-Unabhaengigkeit** ist der Kern-Wechsel: Hangar sendet `content_type: qr_two_lines` (ohne tape_mm), Hub liest `preflight.loaded_tape_mm` vom Drucker und rendert passend. Der bestehende `TapeMismatchError` wird damit obsolet — User wechselt physisch das Tape, das System rendert automatisch.
 
@@ -25,67 +25,79 @@ Phase 1k.1 ersetzt die 21 hartcodierten YAML-Templates (hangar/grocy/snipeit/spo
 
 ## 2. ContentTypes (semantische Render-Beschreibung)
 
-Sechs Types decken alle bisherigen Use Cases ab. Jeder Type definiert WAS gerendert wird, nicht WIE — die TapeGeometry-Tabelle und der Renderer berechnen Pixel-Positionen automatisch.
+Sieben Types decken alle bisherigen Use Cases ab. Jeder Type definiert WAS gerendert wird, nicht WIE — die TapeGeometry-Tabelle und der Renderer berechnen Pixel-Positionen automatisch.
 
 | ContentType | Layout-Beschreibung | Genutzte LabelData-Felder | Original Templates (vorher) |
 |-------------|---------------------|---------------------------|----------------------------|
 | `qr_only` | QR fuellt volle Tape-Hoehe, kein Text | `qr_payload` | qr-only-12mm, qr-only-18mm, qr-only-24mm |
 | `qr_one_line` | QR links + 1 Text-Zeile (XL, vertikal zentriert) | `qr_payload`, `primary_id` | (neu, war Sonderfall) |
-| `qr_two_lines` | QR links + 2 Text-Zeilen (XL primary_id + L title) | `qr_payload`, `primary_id`, `title` | hangar-furniture-*, grocy-*, snipeit-*, spoolman-* |
-| `text_one_line` | Voll-Breite Text XL, kein QR | `primary_id` | (neu) |
-| `text_two_lines` | 2 Text-Zeilen XL + L, kein QR | `primary_id`, `title` | samla-stirntag-* (teilweise) |
+| `qr_two_lines` | QR links + 2 Text-Zeilen (XL primary_id + L title) | `qr_payload`, `primary_id`, `title` | hangar-furniture-*-12mm, grocy-12mm, snipeit-12mm, spoolman-12mm, **alle Samla-* Templates** (Stirntag + Deckel, 12/24/62mm) |
+| `qr_three_lines` | QR links + 3 Text-Zeilen (XL primary_id + L title + S secondary[0]) | `qr_payload`, `primary_id`, `title`, `secondary` | grocy-18mm, grocy-24mm, snipeit-18mm, snipeit-24mm, spoolman-18mm, spoolman-24mm, hangar-furniture-18mm, hangar-furniture-24mm |
+| `text_one_line` | Voll-Breite Text XL, kein QR | `primary_id` | (neu, kein altes Template) |
+| `text_two_lines` | 2 Text-Zeilen XL + L, kein QR | `primary_id`, `title` | (neu, kein altes Template) |
 | `qr_with_listing` | QR links + N Item-Zeilen (M-Groesse), Overflow zeigt "+N more" | `qr_payload`, `primary_id` (Header), `items: tuple[LabelDataItem,...]` | (neu, fuer Kallax-Regal-Uebersicht aus 7e-Spec) |
+
+**User-Designentscheidung:** Samla-Boxen bekommen unabhaengig von der Anbringungsart (Stirn / Front / Deckel) das gleiche Label-Layout `qr_two_lines`. Die 6 Original-Templates `samla-stirntag-12/24/62mm` + `samla-deckel-12/24/62mm` werden durch eine einzige Hangar-Category "Samla" mit `content_type: qr_two_lines` ersetzt.
 
 ### Validation-Regeln
 
 | Regel | Geprueft |
 |-------|----------|
-| `qr_*` ContentType benoetigt `qr_payload` in data | 422 wenn fehlt |
+| `qr_*` ContentType benoetigt nicht-leeres `qr_payload` in data | 422 wenn fehlt/leer |
 | `text_*` ContentType ignoriert `qr_payload` (kein Fehler, nur unused) | — |
 | `qr_with_listing` benoetigt `items: tuple[LabelDataItem,...]` mit mindestens 1 Item | 422 wenn fehlt/leer |
-| `text_one_line` und `qr_one_line` benoetigen `primary_id` | 422 wenn fehlt |
+| `qr_one_line` und `text_one_line` benoetigen `primary_id` | 422 wenn fehlt |
 | `*_two_lines` benoetigt `primary_id` UND `title` | 422 wenn eines fehlt |
+| `qr_three_lines` benoetigt `primary_id` UND `title` UND mindestens 1 `secondary`-Eintrag | 422 wenn eines fehlt |
+| `source_app` ist in `LabelData` Pflichtfeld (bestehend, unveraendert) | 422 wenn fehlt |
 
 ## 3. TapeGeometry (alle 7 Tape-Groessen)
 
 Pixel-Werte aus Brother Pin-Konfiguration (PT-Serie 180 DPI, QL 300 DPI). Die 12mm-Zeile ist empirisch validiert (Phase 1i V4-Winner). Die anderen Zeilen sind via Pixel-Ratio extrapoliert und werden nach Implementation per Smoke-Test validiert.
 
+**Wichtig:** `tape_mm` ist konsistent mit dem bestehenden Backend (`TapeSpec.width_mm: int`, SNMP-Parsing `int`) als **Integer** modelliert. Die kleinste PT-TZe-Tape-Groesse ist **4mm** (24 Print-Pins), nicht 3.5mm.
+
+`qr_max_px` folgt der allgemeinen Formel `printable_px - 2 * qr_padding_px` — damit ist die Geometrie pro Eintrag konsistent und nicht abhaengig von einem hardgecodeten Padding.
+
+`text_start_x` ist die **absolute Pixel-X-Position** ab dem linken Tape-Rand. Sie liegt logisch nach dem QR-Block plus einem Gap von `qr_padding_px`. Bei reinen Text-ContentTypes ohne QR (text_one_line, text_two_lines) wird `text_start_x` ignoriert — Text rendert ab `qr_padding_px` links.
+
 ```python
 # backend/app/schemas/tape_geometry.py
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TapeGeometry(BaseModel):
     """Render-Parameter pro Tape-Groesse (alle Werte in Pixel)."""
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    printable_px: int        # Brother Pin-Count fuer die Tape-Groesse
-    qr_max_px: int           # printable_px - 4 (2px Padding pro Seite)
-    qr_padding_px: int       # Padding um den QR-Code
-    text_start_x: int        # X-Position wo Text nach QR beginnt
-    line_spacing_px: int     # Vertikaler Abstand zwischen Text-Zeilen
-    font_xl: int             # primary_id Groesse
-    font_l: int              # title Groesse
-    font_m: int              # listing item Groesse
-    font_s: int              # secondary Groesse (reserviert)
+    printable_px: int = Field(gt=0)            # Brother Pin-Count fuer die Tape-Groesse
+    qr_max_px: int = Field(gt=0)               # printable_px - 2 * qr_padding_px (Quadrat fuer QR)
+    qr_padding_px: int = Field(ge=0)           # Padding um den QR-Code (auch Gap zur ersten Text-Zeile)
+    text_start_x: int = Field(ge=0)            # Absolute X-Position wo Text nach QR beginnt
+    line_spacing_px: int = Field(ge=0)         # Vertikaler Abstand zwischen Text-Zeilen
+    font_xl: int = Field(gt=0)                 # primary_id Groesse
+    font_l: int = Field(gt=0)                  # title Groesse
+    font_m: int = Field(gt=0)                  # listing item Groesse
+    font_s: int = Field(gt=0)                  # secondary Groesse
 
 
-TAPE_GEOMETRY: dict[float, TapeGeometry] = {
-    3.5: TapeGeometry(printable_px=24,  qr_max_px=20,  qr_padding_px=2, text_start_x=26,  line_spacing_px=1, font_xl=8,   font_l=7,  font_m=6,  font_s=5),
-    6:   TapeGeometry(printable_px=32,  qr_max_px=28,  qr_padding_px=2, text_start_x=34,  line_spacing_px=2, font_xl=10,  font_l=9,  font_m=7,  font_s=6),
-    9:   TapeGeometry(printable_px=50,  qr_max_px=46,  qr_padding_px=2, text_start_x=52,  line_spacing_px=3, font_xl=14,  font_l=12, font_m=10, font_s=8),
-    12:  TapeGeometry(printable_px=70,  qr_max_px=66,  qr_padding_px=2, text_start_x=72,  line_spacing_px=4, font_xl=22,  font_l=18, font_m=14, font_s=10),  # V4-Winner
-    18:  TapeGeometry(printable_px=112, qr_max_px=108, qr_padding_px=2, text_start_x=114, line_spacing_px=6, font_xl=32,  font_l=26, font_m=20, font_s=14),
-    24:  TapeGeometry(printable_px=128, qr_max_px=124, qr_padding_px=2, text_start_x=130, line_spacing_px=8, font_xl=36,  font_l=30, font_m=24, font_s=18),
-    62:  TapeGeometry(printable_px=696, qr_max_px=672, qr_padding_px=4, text_start_x=680, line_spacing_px=20, font_xl=120, font_l=96, font_m=72, font_s=48),  # QL 300 DPI
+# tape_mm als int — konsistent mit TapeSpec.width_mm und SNMP-Parsing
+TAPE_GEOMETRY: dict[int, TapeGeometry] = {
+    4:   TapeGeometry(printable_px=24,  qr_max_px=20,  qr_padding_px=2, text_start_x=26,  line_spacing_px=1,  font_xl=8,   font_l=7,  font_m=6,  font_s=5),
+    6:   TapeGeometry(printable_px=32,  qr_max_px=28,  qr_padding_px=2, text_start_x=34,  line_spacing_px=2,  font_xl=10,  font_l=9,  font_m=7,  font_s=6),
+    9:   TapeGeometry(printable_px=50,  qr_max_px=46,  qr_padding_px=2, text_start_x=52,  line_spacing_px=3,  font_xl=14,  font_l=12, font_m=10, font_s=8),
+    12:  TapeGeometry(printable_px=70,  qr_max_px=66,  qr_padding_px=2, text_start_x=72,  line_spacing_px=4,  font_xl=22,  font_l=18, font_m=14, font_s=10),  # V4-Winner
+    18:  TapeGeometry(printable_px=112, qr_max_px=108, qr_padding_px=2, text_start_x=114, line_spacing_px=6,  font_xl=32,  font_l=26, font_m=20, font_s=14),
+    24:  TapeGeometry(printable_px=128, qr_max_px=124, qr_padding_px=2, text_start_x=130, line_spacing_px=8,  font_xl=36,  font_l=30, font_m=24, font_s=18),
+    62:  TapeGeometry(printable_px=696, qr_max_px=688, qr_padding_px=4, text_start_x=696, line_spacing_px=20, font_xl=120, font_l=96, font_m=72, font_s=48),  # QL 300 DPI
 }
 ```
 
 ### Empirische Validierung post-Deploy
 
-12mm-Werte aus Phase 1i V4-Winner sind scan-verifiziert.
-3.5/6/9/18/24/62mm wurden via Pixel-Ratio extrapoliert (`new_value = 12mm_value * new_printable_px / 70`). Smoke-Test als Follow-up-Issue: jede Tape-Groesse einmal mit `qr_two_lines` drucken, Lesbarkeit pruefen, ggf. Werte korrigieren. User hat 24mm-Tapes und QL-Rollen verfuegbar.
+12mm-Werte aus Phase 1i V4-Winner sind scan-verifiziert (siehe Issue #103 Issue-Kommentar fuer Detailwerte).
+4/6/9/18/24/62mm wurden via Pixel-Ratio extrapoliert (`new_value = 12mm_value * new_printable_px / 70`). Smoke-Test als Follow-up-Issue: jede Tape-Groesse einmal mit `qr_two_lines` drucken, Lesbarkeit pruefen, ggf. Werte korrigieren. User hat 24mm-Tapes und QL-Rollen verfuegbar.
 
 ## 4. Layout-Engine API
 
@@ -95,6 +107,7 @@ TAPE_GEOMETRY: dict[float, TapeGeometry] = {
 from PIL.Image import Image
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
+from app.schemas.tape_geometry import TAPE_GEOMETRY
 
 
 class LayoutEngine:
@@ -106,11 +119,15 @@ class LayoutEngine:
 
     def render(
         self,
-        tape_mm: float,
+        tape_mm: int,
         content_type: ContentType,
         data: LabelData,
     ) -> Image:
-        """Render-Pfad: tape_mm + content_type + data -> PIL Image."""
+        """Render-Pfad: tape_mm + content_type + data -> PIL Image.
+
+        Raises UnsupportedTapeError wenn tape_mm nicht in TAPE_GEOMETRY.
+        Raises ContentTypeDataMismatchError wenn data Pflichtfelder fehlen.
+        """
         geometry = self._lookup_geometry(tape_mm)
         self._validate_data(content_type, data)
 
@@ -121,6 +138,8 @@ class LayoutEngine:
                 return self._render_qr_one_line(geometry, data)
             case ContentType.QR_TWO_LINES:
                 return self._render_qr_two_lines(geometry, data)
+            case ContentType.QR_THREE_LINES:
+                return self._render_qr_three_lines(geometry, data)
             case ContentType.TEXT_ONE_LINE:
                 return self._render_text_one_line(geometry, data)
             case ContentType.TEXT_TWO_LINES:
@@ -130,6 +149,8 @@ class LayoutEngine:
 ```
 
 Jede `_render_*`-Methode ist klein (<30 Zeilen), nutzt nur `geometry` + `data`, und gibt ein PIL-Image zurueck dessen Hoehe `geometry.printable_px` entspricht. Die Breite wird durch Inhalt und Whitespace-Trim bestimmt (analog Phase 1i LabelRenderer-Verhalten).
+
+Fuer `qr_three_lines`: rendert `primary_id` (XL, oben), `title` (L, mittig), und den ersten Eintrag von `secondary` (S, unten). Weitere `secondary`-Eintraege werden ignoriert — falls Use Cases mit 2+ secondary-Zeilen aufkommen, wird ein separater ContentType `qr_with_listing` oder eine zukuenftige `qr_four_lines`-Variante erstellt.
 
 ### Errors
 
@@ -155,51 +176,124 @@ backend/tests/unit/services/
 +-- test_layout_engine.py   # Unit-Tests pro ContentType x Tape-Groesse
 ```
 
-### Modifizierte Files
+### Modifizierte Files (vervollstaendigt nach ops-agent + Copilot Review)
 
 ```
 backend/app/schemas/
-*-- label_data.py           # + items: tuple[LabelDataItem, ...] = ()
+*-- label_data.py           # + items: tuple[LabelDataItem, ...] = () und ggf. secondary-Validation
 +-- label_data_item.py      # NEU — LabelDataItem(item: str, qr_payload: str | None = None)
 backend/app/services/
-*-- print_service.py        # submit_job: render via LayoutEngine (statt LabelRenderer)
+*-- print_service.py        # submit_job: render via LayoutEngine (statt LabelRenderer); TapeMismatchError-Pfad raus
 *-- print_queue.py          # _process_job: nutzt content_type statt template
+                            # KRITISCH: _rerender_from_db Recovery-Pfad migrieren —
+                            # statt TemplateLoader+LabelRenderer jetzt LayoutEngine.render() mit
+                            # gespeicherten content_type + rendered_tape_mm + data Snapshot
+*-- batch_dispatch.py       # MixedTapeSizesError loeschen (in 1k.2 eingefuehrt, jetzt obsolet);
+                            # Tape-Konsistenz-Check raus, alle Items rendern auf loaded_tape_mm
+backend/app/services/
+*-- svg_renderer.py         # SVG-Pfad analog LayoutEngine — render(tape_mm, content_type, data) -> SVG;
+                            # falls SVG-Output noch genutzt wird (Preview-Endpoint, Tests)
 backend/app/api/routes/
-*-- print.py                # Request-Schema: content_type: ContentType, kein template_id mehr
-*-- batch.py                # Gleicher Pattern: items[].content_type statt items[].template_id
-backend/app/api/exceptions/  # neue Errors registriert
+*-- print.py                # Request-Schema: content_type: ContentType, kein template_id mehr;
+                            # on_tape_mismatch-Feld geloescht (Pfad obsolet, siehe unten)
+*-- batch.py                # items[].content_type statt items[].template_id;
+                            # MixedTapeSizesError 400-Mapping geloescht
+*-- jobs.py                 # POST /jobs/{job_id}/resume Route loeschen (PAUSED-Pfad obsolet);
+                            # Job-Schema content_type + rendered_tape_mm zurueckgeben
+backend/app/exceptions/
+*-- error_handlers.py       # TapeMismatchError + MixedTapeSizesError Handler entfernen;
+                            # UnsupportedTapeError + NoTapeLoadedError + ContentTypeDataMismatchError registrieren
+backend/app/main.py         # Router-Registrierungen: /api/templates Router entfernen;
+                            # imports von TemplateLoader entfernen
+backend/app/lifespan.py     # Template-Seed-Load beim Startup entfernen;
+                            # falls TemplateLoader.preload() aufgerufen wird, weg
 ```
 
 ### Geloeschte Files
 
 ```
-backend/app/services/label_renderer.py
-backend/app/services/template_loader.py
-backend/app/schemas/template.py
+backend/app/services/label_renderer.py       # ersetzt durch LayoutEngine
+backend/app/services/template_loader.py      # Templates obsolet
+backend/app/schemas/template.py              # v1 Schema obsolet
 backend/app/api/routes/templates.py          # /api/templates/* komplett weg
 backend/app/api/routes/templates_preview.py  # /api/templates/{key}/preview-* weg
 backend/app/seed/templates/*.yaml            # alle 21 YAML-Files
 backend/tests/**/test_template*              # alle Template-Tests
 backend/tests/**/test_label_renderer*        # alle alten Renderer-Tests
+backend/tests/**/test_svg_renderer*          # SVG-Renderer-Tests gegen v1 Schema
 ```
+
+### Obsolete Konzepte (komplette Pfade entfernen)
+
+| Konzept | Bisheriger Code-Pfad | Was passiert |
+|---------|---------------------|--------------|
+| `TapeMismatchError` | `print_service.py:94`, `:235`, `error_handlers.py` | Klasse + Handler geloescht — Engine rendert immer auf `loaded_tape_mm` |
+| `on_tape_mismatch=queue\|fail` PrintRequest-Feld | `routes/print.py`, `routes/batch.py` | Feld geloescht — alle Requests verhalten sich wie "auto-scale" |
+| PAUSED-Job State | `print_queue.py`, `JobStateMachine` | State + Transitions geloescht — Jobs sind QUEUED/PRINTING/COMPLETED/FAILED |
+| `POST /jobs/{job_id}/resume` Route | `routes/jobs.py:230` | Route geloescht — Resume war nur fuer PAUSED-Jobs noetig |
+| `MixedTapeSizesError` | `batch_dispatch.py`, `routes/batch.py:60+` | Klasse + 400-Mapping geloescht — Batches mit gemischten ContentTypes rendern alle auf gleiche `loaded_tape_mm` |
 
 ### Neue/geanderte Routes
 
 | Route | Methode | Aenderung |
 |-------|---------|-----------|
-| `/api/print/{slug}` | POST | Request hat `content_type: str` (Enum), `data: LabelData`, `options: PrintOptions` — `template_id` Feld geloescht |
-| `/api/print/{slug}/batch` | POST | items[] mit `content_type`, kein `template_id` |
-| `/api/render/preview` | GET | Query: `?content_type=qr_two_lines&tape_mm=18&data_json={...}` |
+| `/api/print/{slug}` | POST | Request hat `content_type: ContentType`, `data: LabelData`, `options: PrintOptions` — `template_id` und `on_tape_mismatch` Felder geloescht |
+| `/api/print/{slug}/batch` | POST | items[] mit `content_type`, kein `template_id`, kein `on_tape_mismatch` |
+| `/api/render/preview` | **POST** | **POST mit JSON-Body** `{content_type, tape_mm, data, format: "png"\|"svg"}`. GET ist ungeeignet weil `qr_with_listing` mit `items: tuple[LabelDataItem,...]` URL-Length-Limits sprengt (proxy/browser caching/escaping-Issues) |
 | `/api/templates/*` | alle | komplett geloescht (Route-File weg) |
 | `/api/templates/{key}/preview-png` | GET | geloescht |
 | `/api/templates/{key}/preview-svg` | GET | geloescht |
+| `/api/jobs/{job_id}/resume` | POST | geloescht (PAUSED-State obsolet) |
 
 ### DB-Migration (Alembic)
 
-Neue Migration `XXXX_drop_templates_table.py`:
+**Korrektur aus ops-agent Review:** Die bestehende Spalte heisst `template_key` (nicht `template_id`). Das `drop_column("template_id")` Beispiel war falsch.
+
+**Korrektur aus Gemini Review:** SQLite unterstuetzt `drop_column` nicht direkt — `op.batch_alter_table` ist Pflicht.
+
+**Korrektur aus Copilot Review CP-9:** Statt `content_type=NULL` zu lassen, backfillen wir deterministisch aus dem strukturierten `template_key` (z.B. `hangar-furniture-18mm` -> `qr_three_lines` + `rendered_tape_mm=18`).
+
+Neue Migration `XXXX_drop_templates_and_migrate_jobs.py`:
 ```python
 def upgrade() -> None:
+    # 1) Neue Spalten in jobs hinzufuegen
+    with op.batch_alter_table("jobs") as batch_op:
+        batch_op.add_column(sa.Column("content_type", sa.String(32), nullable=True))
+        batch_op.add_column(sa.Column("rendered_tape_mm", sa.Integer, nullable=True))
+
+    # 2) Deterministisches Backfill basierend auf bekanntem template_key-Schema
+    bind = op.get_bind()
+    bind.execute(sa.text("""
+        UPDATE jobs SET
+            content_type = CASE
+                WHEN template_key LIKE 'qr-only-%'             THEN 'qr_only'
+                WHEN template_key LIKE 'samla-%'               THEN 'qr_two_lines'
+                WHEN template_key IN ('hangar-furniture-12mm', 'grocy-12mm',
+                                       'snipeit-12mm', 'spoolman-12mm')
+                                                                THEN 'qr_two_lines'
+                WHEN template_key IN ('hangar-furniture-18mm', 'hangar-furniture-24mm',
+                                       'grocy-18mm', 'grocy-24mm',
+                                       'snipeit-18mm', 'snipeit-24mm',
+                                       'spoolman-18mm', 'spoolman-24mm')
+                                                                THEN 'qr_three_lines'
+                ELSE NULL
+            END,
+            rendered_tape_mm = CASE
+                WHEN template_key LIKE '%-12mm' THEN 12
+                WHEN template_key LIKE '%-18mm' THEN 18
+                WHEN template_key LIKE '%-24mm' THEN 24
+                WHEN template_key LIKE '%-62mm' THEN 62
+                ELSE NULL
+            END
+        WHERE template_key IS NOT NULL
+    """))
+
+    # 3) Alte Spalte + Tabelle entfernen
+    with op.batch_alter_table("jobs") as batch_op:
+        batch_op.drop_column("template_key")
+
     op.drop_table("templates")
+
 
 def downgrade() -> None:
     op.create_table(
@@ -208,17 +302,13 @@ def downgrade() -> None:
         sa.Column("key", sa.String, unique=True),
         # ... ursprueengliche Spalten
     )
+    with op.batch_alter_table("jobs") as batch_op:
+        batch_op.add_column(sa.Column("template_key", sa.String, nullable=True))
+        batch_op.drop_column("content_type")
+        batch_op.drop_column("rendered_tape_mm")
 ```
 
-Print-Jobs-Historie: bestehende `jobs.template_id`-Spalte wird ersetzt durch `jobs.content_type` + `jobs.rendered_tape_mm`. Migration:
-```python
-def upgrade() -> None:
-    op.add_column("jobs", sa.Column("content_type", sa.String(32)))
-    op.add_column("jobs", sa.Column("rendered_tape_mm", sa.Float))
-    op.drop_column("jobs", "template_id")
-```
-
-Existierende Jobs-Eintraege bekommen content_type=NULL — fuer Historie tolerierbar (Frontend zeigt "(legacy)" wenn NULL).
+Jobs mit `template_key=NULL` (bereits in obsoletem Zustand) bleiben mit `content_type=NULL` — fuer Historie tolerierbar (Frontend zeigt "(legacy)" wenn NULL).
 
 ### Pflicht-Smoke-Test nach Implementation
 
@@ -242,6 +332,8 @@ Existierende Jobs-Eintraege bekommen content_type=NULL — fuer Historie tolerie
 | `cmd/hangar/main_test.go` + `internal/generator/print_test.go` | Tests auf neue Felder umgestellt |
 
 ### Neue example-layouts.yaml
+
+User-Entscheidung: Samla-Boxen bekommen unabhaengig von der Anbringung (Stirn/Front/Deckel) das gleiche Label-Layout. **Eine Category "Samla"** statt drei separate.
 
 ```yaml
 # Phase 1k.1b: ContentType statt template_id, eine Zeile pro Moebeltyp
@@ -272,12 +364,10 @@ categories:
   "Billy-Ebene VK":
     printer_slug: brother-p750w
     content_type: qr_two_lines
-  Samla-Stirntag:
-    printer_slug: brother-ql820
-    content_type: text_two_lines        # Samla ohne QR (Aufdruck am Karton)
-  Samla-Deckel:
+  Samla:                                  # UNIFIED: alle Samla-Varianten (Stirn/Front/Deckel)
     printer_slug: brother-ql820
     content_type: qr_two_lines
+    quantity_default: 1
 ```
 
 Die Eintraege werden hier noch aus YAML gelesen. Phase 1k.1c migriert dann auf DB-Tabelle (yaml dient ab da nur noch als Initial-Seed).
@@ -459,16 +549,23 @@ Snapshot-Test der gerenderten layout.templ:
 
 ### Phase 1k.1a
 
-- [ ] `TapeGeometry` + `TAPE_GEOMETRY` dict fuer 7 Tape-Groessen
-- [ ] `ContentType` Enum mit 6 Werten
-- [ ] `LayoutEngine.render()` implementiert alle 6 ContentTypes
-- [ ] `LabelData.items` Erweiterung + `LabelDataItem`-Klasse
-- [ ] Routes `/api/print/*` umgebaut auf `content_type`
-- [ ] `/api/render/preview` umgebaut auf Query-Params
+- [ ] `TapeGeometry` (Pydantic mit `Field(gt=0)/Field(ge=0)` Constraints) + `TAPE_GEOMETRY: dict[int, TapeGeometry]` fuer 7 Tape-Groessen (4/6/9/12/18/24/62mm)
+- [ ] `ContentType` Enum mit 7 Werten (qr_only, qr_one_line, qr_two_lines, qr_three_lines, text_one_line, text_two_lines, qr_with_listing)
+- [ ] `LayoutEngine.render(tape_mm: int, content_type, data)` implementiert alle 7 ContentTypes
+- [ ] `LabelData.items` Erweiterung + `LabelDataItem`-Klasse; `source_app`-Pflichtfeld unveraendert
+- [ ] Routes `/api/print/*` umgebaut auf `content_type`; `template_id` und `on_tape_mismatch` Felder entfernt
+- [ ] `/api/render/preview` umgebaut auf **POST mit JSON-Body** `{content_type, tape_mm, data, format}`
 - [ ] Routes `/api/templates/*` komplett entfernt
+- [ ] `POST /api/jobs/{job_id}/resume` entfernt (PAUSED-State obsolet)
 - [ ] Alle 21 YAML-Templates geloescht
 - [ ] `LabelRenderer`, `TemplateLoader`, `template.py` Schema geloescht
-- [ ] Alembic-Migration: `templates` Tabelle drop + `jobs.content_type` add
+- [ ] **`print_queue.py._rerender_from_db`** Recovery-Pfad migriert: nutzt jetzt `LayoutEngine.render(rendered_tape_mm, content_type, data)` statt TemplateLoader+LabelRenderer (KRITISCH — sonst sind alle bestehenden Recovery-Operationen broken)
+- [ ] `batch_dispatch.py` `MixedTapeSizesError` + Tape-Konsistenz-Check entfernt
+- [ ] `error_handlers.py` alte Errors (TapeMismatchError, MixedTapeSizesError) entfernt; neue (UnsupportedTapeError, NoTapeLoadedError, ContentTypeDataMismatchError) registriert
+- [ ] `main.py` Router-Registrierungen + Imports aufgeraeumt (kein TemplateLoader mehr)
+- [ ] `lifespan.py` Template-Preload entfernt
+- [ ] `svg_renderer.py` analog migriert oder geloescht (je nach SVG-Use)
+- [ ] Alembic-Migration: `templates` Tabelle drop + `jobs.template_key` drop + `jobs.content_type` + `jobs.rendered_tape_mm` add via `op.batch_alter_table` (SQLite-kompatibel) mit deterministischem Backfill aus `template_key`
 - [ ] Tests gruen, Coverage >=90% auf neuen Modulen
 - [ ] Smoke-Test: 12mm V4-Baseline visuell identisch
 - [ ] Refs #103, Closes #81 (7e-Spec subsumiert)
@@ -524,10 +621,41 @@ Snapshot-Test der gerenderten layout.templ:
 
 **Scope-Aufteilung:** 4 Sub-Phasen mit klaren Abhaengigkeiten (a -> b -> c, d nach c). Jede Phase einzeln deploy-bar und reversibel.
 
-**ContentType-Auswahl:** 6 Types decken alle bisherigen 21 Templates ab plus Kallax-Aggregation aus 7e. Validation-Regeln sind explizit.
+**ContentType-Auswahl:** 7 Types decken alle bisherigen 21 Templates ab plus Kallax-Aggregation aus 7e plus 3-Zeilen-Layouts (qr_three_lines fuer grocy/snipeit/spoolman 18/24mm + hangar-furniture 18/24mm). Validation-Regeln sind explizit, source_app als bestehendes Pflichtfeld erwaehnt.
+
+**Samla-Unifikation:** Auf User-Wunsch werden alle 6 Samla-Templates (Stirntag/Deckel x 12/24/62mm) auf eine einzige Hangar-Category "Samla" mit `content_type: qr_two_lines` reduziert.
 
 **Tape-Independence:** Eliminiert TapeMismatchError aus Print-Pfad. Edge-Case "unsupported tape_mm" wird durch defensiv eingebaute Errors gefangen (sollte mit 7 Groessen praktisch nicht auftreten).
 
-**Migration:** DB-Migrationen sind klar, jobs.content_type-Spalte ist nullable fuer Historie. Hangar-YAML wird zur Seed-Quelle.
+**Migration:** DB-Migrationen nutzen `op.batch_alter_table` fuer SQLite-Kompatibilitaet. `jobs.content_type` wird beim Migrations-Run deterministisch aus `template_key` backfilled (kein Daten-Verlust fuer Historie). Hangar-YAML wird zur Seed-Quelle.
+
+**Konsistenz mit Backend-Typen:** `tape_mm` als `int` durchgehend — kein `float`. Stimmt mit `TapeSpec.width_mm` und SNMP-Parsing ueberein.
 
 **Out-of-Scope-Liste:** alle bekannten Versuchungen explizit ausgeschlossen (Multi-Printer-Model, WYSIWYG, Custom-Types, etc.).
+
+---
+
+### Review-Round 1 (PR #108 Findings adressiert)
+
+Diese Spec wurde nach der ersten Review-Runde durch ops-agent, Gemini Code Assist und GitHub Copilot ueberarbeitet. Adressierte Findings:
+
+**CRITICAL (8/8 adressiert):**
+- C1 (ops-agent) — Hard-Cut-Liste in Sektion 5 vervollstaendigt: svg_renderer, templates_preview, batch_dispatch, main, lifespan, error_handlers + KRITISCH print_queue._rerender_from_db Recovery-Pfad explizit benannt
+- C2 (ops-agent) — Alembic: `template_id` -> `template_key` korrigiert
+- C3 (ops-agent) — Obsolete Konzepte Tabelle in Sektion 5 ergaenzt: TapeMismatchError, on_tape_mismatch, PAUSED-State, /jobs/{id}/resume, MixedTapeSizesError
+- C4 (Copilot) — `tape_mm: int` durchgehend, `dict[int, TapeGeometry]`, 4mm statt 3.5mm (PT-TZe-Minimum)
+- C5 (Copilot) — `qr_three_lines` als 7. ContentType fuer grocy/snipeit/spoolman 18/24mm + hangar-furniture 18/24mm
+- C6 (Copilot) — `samla-stirntag-*` Mapping in Sektion 2 korrigiert zu `qr_two_lines` (haben QR); zusaetzlich User-Wunsch: Samla unified
+- C7 (Copilot) — 62mm Werte korrigiert: `qr_max_px=688` (war 672) mit `qr_padding_px=4`
+- C8 (Copilot) — Phase-1i-Smoke-Empirie-Pfad bleibt im Issue-Kommentar #103 erreichbar; im Spec wird darauf statt auf einen nicht-OS-Pfad verwiesen
+
+**MEDIUM (7/7 adressiert):**
+- M1 (Gemini) — Pydantic `Field(gt=0)/Field(ge=0)` Constraints in TapeGeometry
+- M2 (Gemini) — `op.batch_alter_table` fuer SQLite-Kompatibilitaet
+- M3 (Copilot) — `qr_max_px` Formel als `printable_px - 2 * qr_padding_px` im Sektion-3-Header beschrieben
+- M4 (Copilot + ops-agent) — Preview-Endpoint von GET auf POST mit JSON-Body
+- M5 (Copilot) — Deterministisches Backfill aus `template_key` in Migration
+- M6 (ops-agent) — `text_start_x` als absolute X-Position erklaert
+- M7 (ops-agent) — `source_app` Pflichtfeld in LabelData explizit in Validation-Regeln erwaehnt
+
+LOW-Findings (3) und PRAISE (5) sind im PR-Kommentar archiviert.
