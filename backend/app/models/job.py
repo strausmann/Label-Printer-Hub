@@ -33,7 +33,7 @@ class Job(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     printer_id: UUID = Field(foreign_key="printers.id")
-    template_key: str  # snapshot string — survives template deletion
+    template_key: str | None = Field(default=None)  # nullable since Phase 1k.1a (Task 15); Alembic migration in Task 22
     state: str = Field(default=JobState.QUEUED.value)
     payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     result: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
