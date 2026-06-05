@@ -15,6 +15,7 @@ from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
 from app.printer_backends.exceptions import (
     ContentTypeDataMismatchError,
+    NoTapeLoadedError,
     PrinterCoverOpenError,
     PrinterOfflineError,
     SnmpQueryError,
@@ -48,6 +49,7 @@ _SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     LookupFailedError: (502, "integration_lookup_failed"),
     TapeMismatchError: (409, "tape_mismatch"),
     TapeEmptyError: (409, "tape_empty"),
+    NoTapeLoadedError: (409, "no_tape_loaded"),
     PrinterCoverOpenError: (409, "printer_cover_open"),
     PrinterOfflineError: (503, "printer_offline"),
 }
