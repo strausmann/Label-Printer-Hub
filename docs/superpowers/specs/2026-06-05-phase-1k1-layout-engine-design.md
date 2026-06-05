@@ -59,7 +59,7 @@ Pixel-Werte aus Brother Pin-Konfiguration (PT-Serie 180 DPI, QL 300 DPI). Die 12
 
 `qr_max_px` folgt der allgemeinen Formel `printable_px - 2 * qr_padding_px` — damit ist die Geometrie pro Eintrag konsistent und nicht abhaengig von einem hardgecodeten Padding.
 
-`text_start_x` ist die **absolute Pixel-X-Position** ab dem linken Tape-Rand. Sie liegt logisch nach dem QR-Block plus einem Gap von `qr_padding_px`. Bei reinen Text-ContentTypes ohne QR (text_one_line, text_two_lines) wird `text_start_x` ignoriert — Text rendert ab `qr_padding_px` links.
+`text_start_x` ist die **absolute Pixel-X-Position** ab dem linken Tape-Rand. Sie liegt logisch hinter dem QR-Block plus einem Gap von `2 * qr_padding_px` (symmetrisches Padding: einmal vor dem QR, das QR selbst, dann noch einmal das Padding als Trenn-Gap zum Text). Damit gilt die Formel `text_start_x = qr_padding_px + qr_max_px + 2 * qr_padding_px = printable_px + qr_padding_px`. Bei reinen Text-ContentTypes ohne QR (text_one_line, text_two_lines) wird `text_start_x` ignoriert — Text rendert ab `qr_padding_px` links.
 
 ```python
 # backend/app/schemas/tape_geometry.py
@@ -90,7 +90,7 @@ TAPE_GEOMETRY: dict[int, TapeGeometry] = {
     12:  TapeGeometry(printable_px=70,  qr_max_px=66,  qr_padding_px=2, text_start_x=72,  line_spacing_px=4,  font_xl=22,  font_l=18, font_m=14, font_s=10),  # V4-Winner
     18:  TapeGeometry(printable_px=112, qr_max_px=108, qr_padding_px=2, text_start_x=114, line_spacing_px=6,  font_xl=32,  font_l=26, font_m=20, font_s=14),
     24:  TapeGeometry(printable_px=128, qr_max_px=124, qr_padding_px=2, text_start_x=130, line_spacing_px=8,  font_xl=36,  font_l=30, font_m=24, font_s=18),
-    62:  TapeGeometry(printable_px=696, qr_max_px=688, qr_padding_px=4, text_start_x=696, line_spacing_px=20, font_xl=120, font_l=96, font_m=72, font_s=48),  # QL 300 DPI
+    62:  TapeGeometry(printable_px=696, qr_max_px=688, qr_padding_px=4, text_start_x=700, line_spacing_px=20, font_xl=120, font_l=96, font_m=72, font_s=48),  # QL 300 DPI
 }
 ```
 
@@ -169,9 +169,9 @@ Fuer `qr_three_lines`: rendert `primary_id` (XL, oben), `title` (L, mittig), und
 ```
 backend/app/schemas/
 +-- tape_geometry.py        # TapeGeometry Pydantic-Model + TAPE_GEOMETRY dict
-+-- content_type.py         # ContentType Enum (6 Werte)
++-- content_type.py         # ContentType Enum (7 Werte)
 backend/app/services/
-+-- layout_engine.py        # LayoutEngine.render() + 6 _render_*-Methoden
++-- layout_engine.py        # LayoutEngine.render() + 7 _render_*-Methoden
 backend/tests/unit/services/
 +-- test_layout_engine.py   # Unit-Tests pro ContentType x Tape-Groesse
 ```
@@ -230,7 +230,7 @@ backend/tests/**/test_svg_renderer*          # SVG-Renderer-Tests gegen v1 Schem
 | `TapeMismatchError` | `print_service.py:94`, `:235`, `error_handlers.py` | Klasse + Handler geloescht — Engine rendert immer auf `loaded_tape_mm` |
 | `on_tape_mismatch=queue\|fail` PrintRequest-Feld | `routes/print.py`, `routes/batch.py` | Feld geloescht — alle Requests verhalten sich wie "auto-scale" |
 | PAUSED-Job State | `print_queue.py`, `JobStateMachine` | State + Transitions geloescht — Jobs sind QUEUED/PRINTING/COMPLETED/FAILED |
-| `POST /jobs/{job_id}/resume` Route | `routes/jobs.py:230` | Route geloescht — Resume war nur fuer PAUSED-Jobs noetig |
+| `POST /jobs/{job_id}/resume` Route | `routes/jobs.py:230` UND `routes/print.py` (separater Endpoint im on_tape_mismatch-PAUSED-Workflow) | Beide Routes geloescht — Resume war nur fuer PAUSED-Jobs noetig |
 | `MixedTapeSizesError` | `batch_dispatch.py`, `routes/batch.py:60+` | Klasse + 400-Mapping geloescht — Batches mit gemischten ContentTypes rendern alle auf gleiche `loaded_tape_mm` |
 
 ### Neue/geanderte Routes
@@ -261,7 +261,12 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("content_type", sa.String(32), nullable=True))
         batch_op.add_column(sa.Column("rendered_tape_mm", sa.Integer, nullable=True))
 
-    # 2) Deterministisches Backfill basierend auf bekanntem template_key-Schema
+    # 2) Deterministisches Backfill basierend auf bekanntem Seed-Template-Schema.
+    #    HINWEIS: template_key ist im aktuellen Schema NOT NULL, kann aber nicht-Seed-
+    #    Werte enthalten (z.B. Webhook-Erzeugte Jobs wie "spoolman/<id>" oder
+    #    "grocy/<id>"). Diese matchen keinen der CASE-Patterns und bekommen
+    #    content_type=NULL — Frontend behandelt das als "(legacy)" Markierung.
+    #    Tape-Groesse fuer non-Seed-Keys: ebenfalls NULL.
     bind = op.get_bind()
     bind.execute(sa.text("""
         UPDATE jobs SET
@@ -285,7 +290,6 @@ def upgrade() -> None:
                 WHEN template_key LIKE '%-62mm' THEN 62
                 ELSE NULL
             END
-        WHERE template_key IS NOT NULL
     """))
 
     # 3) Alte Spalte + Tabelle entfernen
@@ -326,14 +330,16 @@ Jobs mit `template_key=NULL` (bereits in obsoletem Zustand) bleiben mit `content
 | `internal/hub/layouts.go` | Struct `LayoutMapping`: `TemplateID string` -> `ContentType string`. YAML-Tag `template_id` -> `content_type`. |
 | `internal/hub/client.go` | `PrintRequest` struct: `template_id` Feld entfernen, `content_type` hinzufuegen. JSON-Marshaling angepasst. |
 | `internal/generator/print_p750w.go` | PrintRequest-Bau: `TemplateID: m.TemplateID` -> `ContentType: m.ContentType` |
-| `cmd/hangar/main.go:768` | Preview-Proxy: `/admin/print/preview/{template_id}` -> `/admin/print/preview?content_type=...&tape_mm=...`. Forward auf Hub `/api/render/preview` mit Query-String. |
-| `internal/hub/example-layouts.yaml` | Komplett neu geschrieben (siehe unten) |
+| `cmd/hangar/main.go:768` | Preview-Proxy umgebaut: `/admin/print/preview/{template_id}` -> `POST /admin/print/preview` mit JSON-Body `{content_type, tape_mm, data, format}`. Forward auf Hub `POST /api/render/preview` (Body durchreichen). GET-Variante mit Query-String wuerde URL-Length-Limits sprengen bei `qr_with_listing`. |
+| `internal/hub/example-layouts.yaml` | Komplett neu geschrieben (siehe unten); wird in Phase 1k.1c durch Go-Defaults abgeloest |
 | `internal/templates/print_form.templ` | Template-Picker raus (er war eh nur einer pro Category) |
 | `cmd/hangar/main_test.go` + `internal/generator/print_test.go` | Tests auf neue Felder umgestellt |
 
-### Neue example-layouts.yaml
+### Neue example-layouts.yaml (Uebergangs-Loesung)
 
 User-Entscheidung: Samla-Boxen bekommen unabhaengig von der Anbringung (Stirn/Front/Deckel) das gleiche Label-Layout. **Eine Category "Samla"** statt drei separate.
+
+**Wichtig:** Die YAML-Datei ist eine Zwischen-Loesung fuer Phase 1k.1b. Phase 1k.1c migriert die Categories vollstaendig in die DB mit **in Go-Code definierten Defaults** (siehe Sektion 7). Nach Phase 1k.1c gibt es keinen YAML-Pfad mehr — `HUB_LAYOUTS_PATH` Environment-Variable wird deprecated und in einer Folge-Phase entfernt.
 
 ```yaml
 # Phase 1k.1b: ContentType statt template_id, eine Zeile pro Moebeltyp
@@ -369,8 +375,6 @@ categories:
     content_type: qr_two_lines
     quantity_default: 1
 ```
-
-Die Eintraege werden hier noch aus YAML gelesen. Phase 1k.1c migriert dann auf DB-Tabelle (yaml dient ab da nur noch als Initial-Seed).
 
 ### Smoke-Test
 
@@ -413,8 +417,10 @@ GET    /admin/print/categories/{id}/edit          # Edit-Form mit Live-Preview
 PUT    /admin/print/categories/{id}               # Update
 DELETE /admin/print/categories/{id}               # Delete
 POST   /admin/print/categories/reorder            # Drag-and-Drop neu sortieren
-GET    /admin/print/categories/preview            # HTMX-Endpoint: liefert SVG aus Hub
-                                                  # Query: ?content_type=...&tape_mm=...&primary_id=...&title=...
+POST   /admin/print/categories/preview            # HTMX-Endpoint mit JSON-Body, forwarded an Hub
+                                                  # Body: {content_type, tape_mm, data, format}
+                                                  # Consistent mit Hub-Endpoint (POST wegen URL-Length
+                                                  # bei qr_with_listing items)
 ```
 
 ### Templates
@@ -429,30 +435,57 @@ internal/templates/
 ### Live-Preview-Verhalten
 
 User waehlt im Add/Edit-Form:
-1. `content_type` Dropdown (qr_only/qr_one_line/qr_two_lines/text_one_line/text_two_lines/qr_with_listing)
-2. Optionale Sample-Daten (primary_id, title, items) — defaults aus ContentType-Definition
+1. `content_type` Dropdown (qr_only / qr_one_line / qr_two_lines / **qr_three_lines** / text_one_line / text_two_lines / qr_with_listing — alle 7 Werte)
+2. Optionale Sample-Daten (primary_id, title, secondary, items) — defaults aus ContentType-Definition
 
-HTMX-Trigger: `change`-Event auf Form-Felder -> `GET /admin/print/categories/preview?content_type=...&tape_mm=12` -> Hub `/api/render/preview` -> SVG zurueck -> in Preview-Pane.
+HTMX-Trigger: `change`-Event auf Form-Felder -> `POST /admin/print/categories/preview` mit JSON-Body -> Hub `POST /api/render/preview` -> SVG zurueck -> in Preview-Pane.
 
 Preview-Pane zeigt 3 SVGs side-by-side: 12mm, 18mm, 24mm (oder 62mm wenn QL-Drucker). Per Tab oder Stack-Layout je nach Viewport.
 
-### YAML-Seed-Import
+### Initial-Seeding via Go-Defaults (kein YAML mehr)
 
-Beim ersten Start (wenn Tabelle leer):
-1. Lese `HUB_LAYOUTS_PATH` (z.B. /etc/hangar/hub-layouts.yaml)
-2. Iteriere `categories` und schreibe in DB
-3. Log: "Imported N categories from hub-layouts.yaml"
+**User-Designentscheidung:** Hangar shipped mit eingebauten Default-Categories direkt im Go-Code. Die `HUB_LAYOUTS_PATH` Env-Variable und `hub-layouts.yaml` wird obsolet.
 
-YAML-File bleibt erhalten (read-only Source), aber Service liest ab jetzt aus DB. Manueller Re-Import via Admin-Action "Seed neu einlesen".
+```go
+// internal/category/defaults.go
+package category
+
+// DefaultCategories: Initial-Set fuer frische Installationen.
+// Diese werden beim ersten Start in die DB geschrieben (wenn Tabelle leer ist).
+// Nach erfolgreicher Initialisierung der Datenbank werden zuerst die Moebel-Typen
+// initialisiert, danach diese Categories.
+var DefaultCategories = []Category{
+    {Name: "Kallax-Fach",            PrinterSlug: "brother-p750w", ContentType: "qr_two_lines",     QuantityDefault: 1, SortOrder: 10},
+    {Name: "Kallax-Regal",           PrinterSlug: "brother-p750w", ContentType: "qr_with_listing", QuantityDefault: 1, SortOrder: 20},
+    {Name: "Alex-Schublade",         PrinterSlug: "brother-p750w", ContentType: "qr_two_lines",     QuantityDefault: 1, SortOrder: 30},
+    {Name: "Schreibtisch-Schublade", PrinterSlug: "brother-p750w", ContentType: "qr_two_lines",     QuantityDefault: 1, SortOrder: 40},
+    {Name: "Billy-Ebene AK",         PrinterSlug: "brother-p750w", ContentType: "qr_two_lines",     QuantityDefault: 1, SortOrder: 50},
+    {Name: "Billy-Ebene VK",         PrinterSlug: "brother-p750w", ContentType: "qr_two_lines",     QuantityDefault: 1, SortOrder: 60},
+    {Name: "Samla",                  PrinterSlug: "brother-ql820", ContentType: "qr_two_lines",     QuantityDefault: 1, SortOrder: 70},
+}
+```
+
+**Seed-Reihenfolge beim ersten Start:**
+1. DB-Schema initialisieren (GORM auto-migrate)
+2. Moebel-Typen (bestehend, aus `internal/catalog/`) initialisieren falls leer
+3. **`DefaultCategories` in `print_categories` schreiben falls Tabelle leer**
+4. Log: `"Seeded N default print categories"`
+
+Nach Initial-Seed: User aendert Categories ueber Admin-UI (1k.1c CRUD-Editor). Default-Set ist nur bei frischer DB relevant; bestehende DBs werden nicht ueberschrieben.
+
+**YAML-Konfig-Pfad (`HUB_LAYOUTS_PATH` / `example-layouts.yaml`):**
+- Wird in Phase 1k.1c **als deprecated markiert** im Code (Log-Warning beim Start: "HUB_LAYOUTS_PATH is deprecated and ignored. Use Admin-UI to manage categories.")
+- In einer Folge-Phase (kein Issue noetig, kleiner Cleanup): YAML-Lese-Code und Env-Variable komplett entfernen
+- Test-Files unter `internal/hub/` die YAML laden: in 1k.1c geloescht oder auf Go-Defaults umgestellt
 
 ### Tests
 
 | Test-Layer | Coverage |
 |-----------|----------|
-| Unit | CategoryService CRUD, Validation, sort_order-Reorder |
+| Unit | CategoryService CRUD, Validation, sort_order-Reorder, Default-Seed-Idempotency |
 | Integration | HTTP-Routes mit auth-required Middleware, CSRF |
-| HTMX-Integration | Preview-Endpoint liefert valide SVG-Response |
-| Migration | Seed-Import aus example-layouts.yaml erzeugt korrekte DB-Eintraege |
+| HTMX-Integration | Preview-Endpoint (POST mit JSON-Body) liefert valide SVG-Response |
+| Initial-Seed | Bei leerer DB: nach DB-Init existieren genau N Categories aus DefaultCategories. Bei bestehender DB: keine Aenderung |
 
 ## 8. Phase 1k.1d — Hangar Navigation-Refactor
 
@@ -574,8 +607,8 @@ Snapshot-Test der gerenderten layout.templ:
 
 - [ ] `LayoutMapping` struct: `TemplateID` -> `ContentType`
 - [ ] `PrintRequest` struct: `template_id` -> `content_type`
-- [ ] `example-layouts.yaml` mit 6 ContentTypes + `Kallax-Regal` neu
-- [ ] Preview-Proxy-Route umgebaut
+- [ ] `example-layouts.yaml` als Uebergangs-Loesung umgeschrieben (7 ContentTypes inkl. qr_three_lines + `Kallax-Regal` + unified "Samla") — wird in 1k.1c durch Go-Defaults abgeloest
+- [ ] Preview-Proxy-Route umgebaut: `POST /admin/print/preview` mit JSON-Body, forward auf Hub `POST /api/render/preview`
 - [ ] `print_form.templ` Template-Picker entfernt
 - [ ] Tests gruen
 - [ ] Smoke: Kallax-Fach-Print identisch zu pre-Migration
@@ -586,10 +619,13 @@ Snapshot-Test der gerenderten layout.templ:
 - [ ] DB-Schema `print_categories` + GORM-Model
 - [ ] `CategoryService` mit CRUD-API
 - [ ] Routes `/admin/print/categories/*` mit Auth-Middleware
-- [ ] Templates: List, Add, Edit, Preview-Pane
-- [ ] HTMX Live-Preview-Endpoint mit Hub-Forwarding
-- [ ] YAML-Seed-Import beim ersten Start
-- [ ] Tests: Service-Unit + HTTP-Integration + HTMX-Integration
+- [ ] Templates: List, Add, Edit, Preview-Pane (Dropdown enthaelt alle **7 ContentTypes inkl. qr_three_lines**)
+- [ ] HTMX Live-Preview-Endpoint **POST mit JSON-Body** mit Hub-Forwarding (statt GET, konsistent mit Hub-Endpoint)
+- [ ] **`internal/category/defaults.go`** mit `DefaultCategories` Slice (Go-Code, KEIN YAML)
+- [ ] Initial-Seed-Logik beim ersten Start: nach DB-Init und Moebel-Typen-Seed → schreibt `DefaultCategories` in `print_categories` wenn Tabelle leer
+- [ ] **`HUB_LAYOUTS_PATH` Env-Variable + YAML-Lese-Code deprecated** mit Warning-Log; YAML-File wird ignoriert
+- [ ] `internal/hub/example-layouts.yaml` und zugehoeriger YAML-Loader-Code entweder geloescht oder als deprecated markiert
+- [ ] Tests: Service-Unit + HTTP-Integration + HTMX-Integration + Initial-Seed-Idempotency
 - [ ] Smoke: neue Category anlegen, Preview sehen, Test-Print starten
 - [ ] Refs #103
 
@@ -659,3 +695,23 @@ Diese Spec wurde nach der ersten Review-Runde durch ops-agent, Gemini Code Assis
 - M7 (ops-agent) — `source_app` Pflichtfeld in LabelData explizit in Validation-Regeln erwaehnt
 
 LOW-Findings (3) und PRAISE (5) sind im PR-Kommentar archiviert.
+
+### Review-Round 2 (PR #108 Findings adressiert) + User-Designentscheidung
+
+Nach Round-1-Push hat Copilot eine zweite Review (commit 2545467) durchgefuehrt und 7 weitere Inkonsistenzen gefunden. Zusaetzlich kam eine User-Designentscheidung zum Initial-Seeding hinzu.
+
+**Round-2 CRITICAL/MEDIUM (7/7 adressiert):**
+
+- R2-1 (Copilot) — Sektion 5 File-Liste-Kommentare: "ContentType Enum (6 Werte)" + "6 _render_* Methoden" -> "7 Werte" / "7 _render_* Methoden"
+- R2-2 (Copilot) — Sektion 7 1k.1c Dropdown-Liste: `qr_three_lines` als 4. Eintrag ergaenzt (war ausgelassen)
+- R2-3 (Copilot) — Sektion 3 `text_start_x` Formel korrekt: Gap zur Text-Spalte ist `2 * qr_padding_px` (symmetrisches Padding um QR); Beispiel: 12mm = `qr_padding_px(2) + qr_max_px(66) + 2*qr_padding_px(4) = 72`; 62mm korrigiert auf `printable_px(696) + qr_padding_px(4) = 700` (war 696 — die Formel-Anwendung fehlte)
+- R2-4 (Copilot) — Sektion 6 1k.1b Preview-Proxy: `cmd/hangar/main.go:768` jetzt `POST /admin/print/preview` mit JSON-Body statt Query-String, konsistent zur Hub-API
+- R2-5 (Copilot) — Sektion 7 1k.1c Categories-Preview-Route: `POST /admin/print/categories/preview` mit JSON-Body
+- R2-6 (Copilot) — Sektion 5 Alembic-Migration: `template_key` ist im aktuellen Schema NOT NULL und kann Nicht-Seed-Werte enthalten (z.B. Webhook-Erzeugte Jobs `spoolman/<id>`, `grocy/<id>`). Migration-Hinweis explizit ergaenzt — solche Eintraege bekommen `content_type=NULL` und werden im Frontend als "(legacy)" markiert
+- R2-7 (Copilot) — Sektion 5 Obsolete-Konzepte-Tabelle: `POST /jobs/{job_id}/resume` existiert auch separat in `routes/print.py` (on_tape_mismatch=queue / PAUSED-Workflow) — beide Routes geloescht
+
+**User-Designentscheidung (Round 2):**
+
+Initial-Seeding der Hangar-Categories erfolgt ueber **Go-Code Defaults** (`DefaultCategories` Slice in `internal/category/defaults.go`), NICHT mehr ueber YAML. Reihenfolge beim ersten Start: DB-Init -> Moebel-Typen-Seed -> `DefaultCategories`-Seed. `HUB_LAYOUTS_PATH` und `hub-layouts.yaml` werden in 1k.1c deprecated und ignoriert. Ziel: YAML-freie Konfiguration, Categories sind ausschliesslich ueber Admin-UI editierbar.
+
+Sektion 6 (1k.1b) markiert die YAML-Datei explizit als Uebergangs-Loesung. Sektion 7 (1k.1c) definiert `DefaultCategories` als Source-of-Truth fuer den frischen Start. Out-of-Scope-Sektion ergaenzt: vollstaendiges Entfernen des YAML-Lese-Codes ist in einer Folge-Phase nach 1k.1c (kein eigenes Issue noetig).
