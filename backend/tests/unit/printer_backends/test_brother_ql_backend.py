@@ -124,6 +124,45 @@ async def test_preflight_check_raises_tape_empty(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.anyio
+async def test_print_images_delegates_to_loop_helper(
+    monkeypatch: pytest.MonkeyPatch,
+    tape_spec_62: TapeSpec,
+) -> None:
+    """BrotherQLBackend.print_images delegates to default_print_images_loop with half_cut=False."""
+    captured: dict[str, object] = {}
+
+    async def fake_loop(backend, images, tape_spec, **kwargs):
+        captured["backend"] = backend
+        captured["num_images"] = len(images)
+        captured["tape_mm"] = tape_spec.width_mm
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.printer_backends.brother_ql_backend.default_print_images_loop",
+        fake_loop,
+    )
+
+    backend = BrotherQLBackend(host="192.0.2.11", model_id="QL-820NWB")
+    images = [Image.new("1", (696, 200), color=1) for _ in range(3)]
+
+    await backend.print_images(
+        images,
+        tape_spec_62,
+        auto_cut=True,
+        high_resolution=False,
+        half_cut=True,  # caller passes True; QL erzwingt False
+    )
+
+    assert captured["backend"] is backend
+    assert captured["num_images"] == 3
+    assert captured["tape_mm"] == 62
+    assert captured["auto_cut"] is True
+    assert captured["high_resolution"] is False
+    # QL-Series hat kein Half-Cut — Backend-Capability erzwingt half_cut=False
+    assert captured["half_cut"] is False
+
+
+@pytest.mark.anyio
 async def test_preflight_check_raises_offline_on_snmp_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

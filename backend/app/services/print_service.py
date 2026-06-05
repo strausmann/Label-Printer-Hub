@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Protocol
-from uuid import UUID
+import asyncio
+from typing import Any, Protocol
+from uuid import UUID, uuid4
 
 from PIL import Image
 
@@ -190,3 +191,108 @@ class PrintService:
             )
             raise
         return db_job.id
+
+    async def get_template_tape_mm(self, template_id: str) -> int:
+        """Public helper: load template and return its tape_mm.
+
+        Used by batch_dispatch to validate tape_mm consistency across batch items
+        without reaching into the private _loader attribute. (Copilot-Review C7
+        PR #106.)
+
+        Raises:
+            TemplateNotFoundError: wenn template_id nicht im TemplateLoader.
+        """
+        template = self._loader.get(template_id)
+        return template.tape_mm
+
+    async def submit_batch_job(
+        self,
+        requests: list[PrintRequest],
+        *,
+        half_cut: bool,
+    ) -> list[UUID]:
+        """Phase 1k.2: Render N items, submit ONE BatchJob to PrintQueue.
+
+        Atomic: alle job_ids werden gemeinsam als completed/failed markiert.
+        Preflight + tape-mismatch werden 1x am Anfang für alle Items geprüft.
+
+        Review fixes incorporated:
+        - C8 (Copilot): label_data resolved ONCE per item via _prepare_one helper
+          (nicht 2x für render + persist).
+        - G3 (Gemini): asyncio.to_thread + gather für parallele CPU-intensive Renders
+          (verhindert Event-Loop-Blockierung).
+        - G-R2-3 (Gemini R2): save_queued erhält DbJob-Instanz (nicht kwargs).
+        """
+        if not requests:
+            raise ValueError("submit_batch_job requires at least one request")
+
+        # 1. Load templates (alle müssen existieren — TemplateNotFoundError vorher abgefangen)
+        templates = [self._loader.get(r.template_id) for r in requests]
+        tape_mm = templates[0].tape_mm  # alle gleich (mixed-tape-check vorher in dispatch_batch)
+
+        # 2. Preflight + tape-mismatch (1x für alle)
+        preflight = await self._backend.preflight_check()
+        if preflight.loaded_tape_mm != tape_mm:
+            raise TapeMismatchError(
+                expected_mm=tape_mm,
+                loaded_mm=preflight.loaded_tape_mm,
+            )
+
+        # 3. Resolve LabelData ONCE per item, then render — Copilot-Review C8 +
+        # Gemini-Review G3 (PR #106):
+        # - label_data wird einmal pro Item resolved, für Render UND Persist
+        #   wiederverwendet (vorher 2x: einmal für renderer, einmal für payload).
+        # - Pillow-Render via asyncio.to_thread (CPU-intensive, blockiert sonst Event-Loop).
+        # - asyncio.gather parallelisiert die N Resolve-und-Render Operationen.
+        async def _prepare_one(
+            req: PrintRequest, tmpl: TemplateSchema
+        ) -> tuple[Image.Image, dict[str, Any]]:
+            label_data = await self._resolve_label_data(req)
+            image = await asyncio.to_thread(self._renderer.render, tmpl, label_data)
+            return image, label_data.model_dump()
+
+        prepared = await asyncio.gather(
+            *[_prepare_one(r, t) for r, t in zip(requests, templates, strict=True)]
+        )
+        images = [img for img, _ in prepared]
+        label_data_dumps = [dump for _, dump in prepared]
+
+        # 4. Pre-allocate job UUIDs + persist in JobStore (analog submit_print_job).
+        # Gemini-Review G-R2-3 (PR #106): JobStore.save_queued erwartet eine
+        # Job model instance, NICHT kwargs (konsistent mit submit_print_job).
+        job_ids: list[UUID] = []
+        for request, ld_dump in zip(requests, label_data_dumps, strict=True):
+            job_id = uuid4()
+            db_job = Job(
+                id=job_id,
+                printer_id=self._printer_id,
+                template_key=request.template_id,
+                payload={
+                    "tape_mm": tape_mm,
+                    "options": request.options.model_dump(),
+                    "label_data": ld_dump,
+                },
+                api_key_id=None,
+                source_ip=None,
+            )
+            await self._store.save_queued(db_job)
+            job_ids.append(job_id)
+
+        # 5. Enqueue as BatchJob
+        # Phase 1k.2 Task 9 follow-up: read caller-provided options from
+        # requests[0] (all batch items share collective options — mixed-tape
+        # check upstream ensures all items are compatible).
+        first_options = requests[0].options
+        await self._queue.enqueue_batch(
+            printer_id=self._printer_id,
+            images=images,
+            job_ids=job_ids,
+            tape_mm=tape_mm,
+            options={
+                "auto_cut": first_options.auto_cut,
+                "high_resolution": first_options.high_resolution,
+                "half_cut": half_cut,
+            },
+        )
+
+        return job_ids

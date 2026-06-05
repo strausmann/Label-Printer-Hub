@@ -111,3 +111,72 @@ async def test_queue_printer_default_media_type_override(
     qp = driver.make_queue_printer(tape_registry, default_media_type=MediaType.LAMINATED)
     image = Image.new("1", (200, 128))
     await qp.print_image(image, tape_mm=24)
+
+
+# ---------------------------------------------------------------------------
+# Phase 1k.2 Task 6: print_images adapter + PR #100 bug-fix
+# (half_cut / last_page forwarding)
+# ---------------------------------------------------------------------------
+
+
+async def test_ptp_queue_printer_print_image_forwards_half_cut_last_page() -> None:
+    """REGRESSION: print_image (single) must forward half_cut + last_page to backend.
+
+    PR #100 fix for last_page→feed landed in PTouchBackend, but the
+    _PTPQueuePrinter adapter silently dropped both kwargs.  Phase 1i
+    smoke-test 22.5mm pre-roll bug was caused by this silent drop.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    stub_backend = MagicMock()
+    stub_backend.print_image = AsyncMock()
+    stub_backend.half_cut_supported = True
+    # Make tape-registry lookup succeed for tape_mm=12, MediaType.LAMINATED
+    stub_tape_registry = TapeRegistry()
+
+    driver = PTP750WDriver(backend=stub_backend)
+    qp = driver.make_queue_printer(stub_tape_registry, default_media_type=MediaType.LAMINATED)
+
+    image = Image.new("1", (600, 70), color=1)
+    await qp.print_image(
+        image,
+        tape_mm=12,
+        auto_cut=True,
+        high_resolution=False,
+        half_cut=True,
+        last_page=False,
+    )
+
+    stub_backend.print_image.assert_awaited_once()
+    call = stub_backend.print_image.call_args
+    assert call.kwargs["half_cut"] is True, "half_cut must be forwarded to backend"
+    assert call.kwargs["last_page"] is False, "last_page must be forwarded to backend"
+
+
+async def test_ptp_queue_printer_print_images_forwards_to_backend() -> None:
+    """_PTPQueuePrinter.print_images calls backend.print_images with tape_spec + kwargs."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    stub_backend = MagicMock()
+    stub_backend.print_images = AsyncMock()
+    stub_backend.half_cut_supported = True
+    stub_tape_registry = TapeRegistry()
+
+    driver = PTP750WDriver(backend=stub_backend)
+    qp = driver.make_queue_printer(stub_tape_registry, default_media_type=MediaType.LAMINATED)
+
+    images = [Image.new("1", (600, 70), color=1) for _ in range(3)]
+    await qp.print_images(
+        images,
+        tape_mm=12,
+        auto_cut=True,
+        high_resolution=False,
+        half_cut=True,
+    )
+
+    stub_backend.print_images.assert_awaited_once()
+    call = stub_backend.print_images.call_args
+    assert call.args[0] is images, "images list must be passed as first positional arg"
+    assert call.args[1].width_mm == 12, "tape_spec.width_mm must match tape_mm"
+    assert call.kwargs["auto_cut"] is True
+    assert call.kwargs["half_cut"] is True

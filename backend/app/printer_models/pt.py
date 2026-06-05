@@ -256,11 +256,34 @@ class _PTPQueuePrinter:
     async def print_image(self, image: Image.Image, *, tape_mm: int, **options: Any) -> None:
         media_type = options.pop("media_type", self._default_media_type)
         tape_spec = self._tape_registry.lookup_pt(tape_mm, media_type)
+        # Phase 1k.2 Bug-Fix: half_cut + last_page wurden vorher NICHT forwarded.
+        # PR #100 Fix (last_page→feed) landete in PTouchBackend, aber der Adapter
+        # hat beide Kwargs still aus options.pop() geworfen ohne sie weiterzureichen.
         await self._backend.print_image(
             image,
             tape_spec,
             auto_cut=bool(options.pop("auto_cut", True)),
             high_resolution=bool(options.pop("high_resolution", False)),
+            half_cut=bool(options.pop("half_cut", False)),
+            last_page=bool(options.pop("last_page", True)),
+        )
+
+    async def print_images(
+        self,
+        images: list[Image.Image],
+        *,
+        tape_mm: int,
+        **options: Any,
+    ) -> None:
+        """Phase 1k.2: Adapter-Methode für Queue-BatchJob → backend.print_images."""
+        media_type = options.pop("media_type", self._default_media_type)
+        tape_spec = self._tape_registry.lookup_pt(tape_mm, media_type)
+        await self._backend.print_images(
+            images,
+            tape_spec,
+            auto_cut=bool(options.pop("auto_cut", True)),
+            high_resolution=bool(options.pop("high_resolution", False)),
+            half_cut=bool(options.pop("half_cut", True)),
         )
 
 

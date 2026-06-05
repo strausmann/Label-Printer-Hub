@@ -219,6 +219,32 @@ class _QLQueuePrinter:
             high_resolution=bool(options.pop("high_resolution", False)),
         )
 
+    async def print_images(
+        self,
+        images: list[Image.Image],
+        *,
+        tape_mm: int,
+        **options: Any,
+    ) -> None:
+        """Phase 1k.2: Adapter-Methode für Queue-BatchJob → backend.print_images.
+
+        QL-Series unterstützt kein half_cut — Adapter erzwingt intern False,
+        unabhängig vom Caller-Wert.
+
+        Gemini-Review G-R2-1 (PR #106): lookup_ql benötigt tape_mm UND
+        media_type — analog zu _PTPQueuePrinter.print_images. Nur mit tape_mm
+        würfe lookup_ql einen TypeError.
+        """
+        media_type = options.pop("media_type", self._default_media_type)
+        tape_spec = self._tape_registry.lookup_ql(tape_mm, media_type)
+        await self._backend.print_images(
+            images,
+            tape_spec,
+            auto_cut=bool(options.pop("auto_cut", True)),
+            high_resolution=bool(options.pop("high_resolution", False)),
+            half_cut=False,  # QL-Series erzwingt half_cut=False
+        )
+
 
 # Module-level registration so any import path triggers it.
 # cast: QL820NWBDriver satisfies PrinterModel structurally at runtime.

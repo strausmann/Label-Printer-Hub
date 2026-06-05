@@ -23,6 +23,17 @@ class _Compliant:
     ) -> None:
         return None
 
+    async def print_images(
+        self,
+        images: list[Image.Image],
+        tape_spec: TapeSpec,
+        *,
+        auto_cut: bool = True,
+        high_resolution: bool = False,
+        half_cut: bool = True,
+    ) -> None:
+        pass  # structural compliance only — behaviour tested via real backends
+
     async def query_status(self) -> StatusBlock:  # pragma: no cover - shape only
         # Use the test helper to construct a valid StatusBlock with all 18 fields
         from tests._helpers.status import make_status_block

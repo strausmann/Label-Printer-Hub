@@ -17,11 +17,12 @@ from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterOfflineError,
     SnmpQueryError,
+    TapeMismatchError,
 )
 from app.repositories import print_batches as batches_repo
 from app.repositories import printers as printers_repo
 from app.schemas.print_batch import BatchRequest, BatchResponse
-from app.services.batch_dispatch import dispatch_batch
+from app.services.batch_dispatch import MixedTapeSizesError, dispatch_batch
 
 # SessionDep locally — Hub has no central app/api/deps.py module.
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -34,6 +35,7 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
     PrinterOfflineError: "printer_offline",
     PrinterCoverOpenError: "printer_cover_open",
     SnmpQueryError: "snmp_error",
+    TapeMismatchError: "tape_mismatch",
 }
 
 
@@ -112,12 +114,21 @@ async def create_batch(
             half_cut_override=body.half_cut_override,
             backend=backend,
         )
-    except (PrinterOfflineError, PrinterCoverOpenError, SnmpQueryError) as exc:
+    except (PrinterOfflineError, PrinterCoverOpenError, SnmpQueryError, TapeMismatchError) as exc:
         raise HTTPException(
             409,
             detail={
                 "error_code": _SYNC_ERROR_MAP[type(exc)],
                 "error_message": str(exc),
+            },
+        ) from exc
+    except MixedTapeSizesError as exc:
+        raise HTTPException(
+            400,
+            detail={
+                "error_code": "mixed_tape_sizes",
+                "error_message": str(exc),
+                "tape_mm_values": sorted(set(exc.tape_mm_values)),
             },
         ) from exc
 
