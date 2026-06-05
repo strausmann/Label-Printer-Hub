@@ -83,3 +83,62 @@ class TestRenderQROneLine:
             ),
         )
         assert img.width > TAPE_GEOMETRY[12].text_start_x
+
+
+class TestRenderQRTwoLines:
+    def test_baseline_12mm_v4_winner(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.schemas.tape_geometry import TAPE_GEOMETRY
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=12,
+            content_type=ContentType.QR_TWO_LINES,
+            data=LabelData(
+                source_app="hangar",
+                primary_id="K-02",
+                title="Werkstatt",
+                qr_payload="https://example.com/locations/k-02",
+            ),
+        )
+        assert img.height == 70
+        geom = TAPE_GEOMETRY[12]
+        assert img.width > geom.text_start_x
+
+    def test_24mm_renders(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=24,
+            content_type=ContentType.QR_TWO_LINES,
+            data=LabelData(
+                source_app="hangar",
+                primary_id="K-02",
+                title="Werkstatt",
+                qr_payload="https://example.com/x",
+            ),
+        )
+        assert img.height == 128
+
+    def test_62mm_renders_at_higher_dpi(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=62,
+            content_type=ContentType.QR_TWO_LINES,
+            data=LabelData(
+                source_app="samla",
+                primary_id="HH-AK-SM01",
+                title="Samla 11L",
+                qr_payload="https://example.com/x",
+            ),
+        )
+        assert img.height == 696

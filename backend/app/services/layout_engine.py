@@ -195,7 +195,46 @@ class LayoutEngine:
         geometry: TapeGeometry,
         data: LabelData,
     ) -> Image.Image:
-        raise NotImplementedError("Task 9")
+        """QR left + 2 text lines (primary_id XL on top, title L below).
+
+        Phase 1i V4-Winner baseline for 12mm:
+          - primary_id at y=2 (font_xl=22)
+          - title at y=42 (font_l=18)
+          - text_start_x=72
+        Generalises to other tape widths via geometry constants.
+        """
+        qr_img = self._build_qr_image(
+            payload=data.qr_payload or "",
+            size_px=geometry.qr_max_px,
+        )
+        font_primary = self._load_font(geometry.font_xl)
+        font_title = self._load_font(geometry.font_l)
+
+        primary_text = data.primary_id or ""
+        title_text = data.title or ""
+        primary_w, _ = self._measure_text(primary_text, font_primary)
+        title_w, _ = self._measure_text(title_text, font_title)
+        max_text_w = max(primary_w, title_w)
+
+        canvas_width = geometry.text_start_x + max_text_w + geometry.qr_padding_px
+        canvas = self._blank_canvas(canvas_width, geometry.printable_px)
+        canvas.paste(qr_img, (geometry.qr_padding_px, geometry.qr_padding_px))
+
+        draw = ImageDraw.Draw(canvas)
+        draw.text(
+            (geometry.text_start_x, geometry.qr_padding_px),
+            primary_text,
+            font=font_primary,
+            fill=0,
+        )
+        title_y = geometry.qr_padding_px + geometry.font_xl + geometry.line_spacing_px
+        draw.text(
+            (geometry.text_start_x, title_y),
+            title_text,
+            font=font_title,
+            fill=0,
+        )
+        return canvas
 
     def _render_qr_three_lines(
         self,
