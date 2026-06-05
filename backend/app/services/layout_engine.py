@@ -347,4 +347,51 @@ class LayoutEngine:
         geometry: TapeGeometry,
         data: LabelData,
     ) -> Image.Image:
-        raise NotImplementedError("Task 13")
+        """QR left + N item lines (font_m). Overflow shows '+N more'."""
+        qr_img = self._build_qr_image(
+            payload=data.qr_payload or "",
+            size_px=geometry.qr_max_px,
+        )
+        font_item = self._load_font(geometry.font_m)
+        items = list(data.items)
+
+        available_h = geometry.printable_px - 2 * geometry.qr_padding_px
+        line_h = geometry.font_m + geometry.line_spacing_px
+        max_lines = max(1, available_h // line_h)
+
+        overflow_text: str | None
+        if len(items) > max_lines:
+            visible_count = max_lines - 1
+            overflow_text = f"+{len(items) - visible_count} more"
+            visible = items[:visible_count]
+        else:
+            visible = items
+            overflow_text = None
+
+        widths = [self._measure_text(it.item, font_item)[0] for it in visible]
+        if overflow_text:
+            widths.append(self._measure_text(overflow_text, font_item)[0])
+        max_text_w = max(widths) if widths else 0
+
+        canvas_width = geometry.text_start_x + max_text_w + geometry.qr_padding_px
+        canvas = self._blank_canvas(canvas_width, geometry.printable_px)
+        canvas.paste(qr_img, (geometry.qr_padding_px, geometry.qr_padding_px))
+
+        draw = ImageDraw.Draw(canvas)
+        y = geometry.qr_padding_px
+        for it in visible:
+            draw.text(
+                (geometry.text_start_x, y),
+                it.item,
+                font=font_item,
+                fill=0,
+            )
+            y += line_h
+        if overflow_text:
+            draw.text(
+                (geometry.text_start_x, y),
+                overflow_text,
+                font=font_item,
+                fill=0,
+            )
+        return canvas

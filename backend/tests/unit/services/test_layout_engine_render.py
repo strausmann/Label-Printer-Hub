@@ -226,3 +226,49 @@ class TestRenderTextTwoLines:
             data=LabelData(source_app="manual", primary_id="LINE1", title="LINE2"),
         )
         assert img.height == 112
+
+
+class TestRenderQRWithListing:
+    def test_4_items_render(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.schemas.label_data_item import LabelDataItem
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        img = eng.render(
+            tape_mm=24,
+            content_type=ContentType.QR_WITH_LISTING,
+            data=LabelData(
+                source_app="hangar",
+                primary_id="Kallax-02",
+                qr_payload="https://example.com/k02",
+                items=(
+                    LabelDataItem(item="A — Schrauben"),
+                    LabelDataItem(item="B — Muttern"),
+                    LabelDataItem(item="C — Werkzeug"),
+                    LabelDataItem(item="D — Kabel"),
+                ),
+            ),
+        )
+        assert img.height == 128
+
+    def test_overflow_shows_n_more(self) -> None:
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.schemas.label_data_item import LabelDataItem
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        many = tuple(LabelDataItem(item=f"Item {i}") for i in range(10))
+        img = eng.render(
+            tape_mm=12,
+            content_type=ContentType.QR_WITH_LISTING,
+            data=LabelData(
+                source_app="hangar",
+                primary_id="X",
+                qr_payload="x",
+                items=many,
+            ),
+        )
+        assert img.height == 70
