@@ -4,7 +4,7 @@
 **Status:** Draft (zur User-Review)
 **Tracking:** strausmann/Label-Printer-Hub#103 (Phase 1k.1 unter Umbrella #101)
 **Vorgaenger-Spec:** docs/superpowers/specs/2026-05-17-phase-7e-template-layout-v2-design.md (subsumiert)
-**Hardware-Baseline:** Phase 1i V4-Winner (docs/site/operations/protokolle/2026-06-04-phase1i-smoke-test-empirie.md)
+**Hardware-Baseline:** Phase 1i V4-Winner — empirisch validiert auf PT-P750W mit 12mm TZe-Tape. Pixel-Werte (QR x=2 y=2 max_size=66, text_start_x=72, font_xl=22, font_l=18) dokumentiert im Issue-Kommentar zu Issue #103. Das originale Smoke-Test-Protokoll liegt im privaten `homelab-management` Repo (kein OS-Pfad in diesem Repo).
 
 ## 1. Executive Summary
 
@@ -231,6 +231,9 @@ backend/app/lifespan.py     # Template-Seed-Load beim Startup entfernen;
 backend/app/services/label_renderer.py       # ersetzt durch LayoutEngine
 backend/app/services/template_loader.py      # Templates obsolet
 backend/app/schemas/template.py              # v1 Schema obsolet
+backend/app/schemas/template_read.py         # Read-Schema obsolet (kein API mehr)
+backend/app/models/template.py               # SQLAlchemy-Model obsolet
+backend/app/repositories/templates.py        # Repository obsolet (templates Tabelle dropped)
 backend/app/api/routes/templates.py          # /api/templates/* komplett weg
 backend/app/api/routes/templates_preview.py  # /api/templates/{key}/preview-* weg
 backend/app/seed/templates/*.yaml            # alle 21 YAML-Files
@@ -245,7 +248,7 @@ backend/tests/**/test_svg_renderer*          # SVG-Renderer-Tests gegen v1 Schem
 |---------|---------------------|--------------|
 | `TapeMismatchError` | `print_service.py:94`, `:235`, `error_handlers.py` | Klasse + Handler geloescht — Engine rendert immer auf `loaded_tape_mm` |
 | `on_tape_mismatch=queue\|fail` PrintRequest-Feld | `routes/print.py`, `routes/batch.py` | Feld geloescht — alle Requests verhalten sich wie "auto-scale" |
-| PAUSED-Job State | `print_queue.py`, `JobStateMachine` | State + Transitions geloescht — Jobs sind QUEUED/PRINTING/COMPLETED/FAILED |
+| PAUSED-Job State | `print_queue.py`, `JobStateMachine` | State + Transitions geloescht — Jobs sind QUEUED/PRINTING/COMPLETED/FAILED/**CANCELLED** (CANCELLED-State BLEIBT erhalten — wird durch Cancel-Operation gesetzt, unabhaengig vom PAUSED-Pfad) |
 | `POST /jobs/{job_id}/resume` Route | `routes/jobs.py:230` UND `routes/print.py` (separater Endpoint im on_tape_mismatch-PAUSED-Workflow) | Beide Routes geloescht — Resume war nur fuer PAUSED-Jobs noetig |
 | `MixedTapeSizesError` | `batch_dispatch.py`, `routes/batch.py:60+` | Klasse + 400-Mapping geloescht — Batches mit gemischten ContentTypes rendern alle auf gleiche `loaded_tape_mm` |
 
@@ -762,3 +765,14 @@ Nach Round-3-Push hat Copilot eine vierte Review (commit b10552a) durchgefuehrt 
 - R4-2 (Copilot) — Extrapolations-Methodologie pro Feld erklaert: Pixel-Ratio + Clamping fuer Fonts, konstantes qr_padding_px bei 2 (62mm: 4), deterministische Formeln fuer text_start_x und qr_max_px. Damit ist die Tabelle nachvollziehbar pflegbar
 - R4-3 (Copilot) — Executive Summary explizit: "initiale Scope" von 7 Groessen; bestehende `TapeRegistry` kennt weitere QL-DK-Breiten (29/38/50/54mm) die in 1k.1 bewusst noch nicht abgedeckt sind -> `UnsupportedTapeError`; Erweiterung in Folge-Phase moeglich
 - R4-4 (Copilot) — Import-Konvention angepasst: `from PIL.Image import Image` -> `from PIL import Image`, Return-Type `Image.Image` (konsistent mit Repo-Konvention)
+
+### Review-Round 5 (PR #108 Findings adressiert)
+
+Nach Round-4-Push hat Copilot eine fuenfte Review (commit c37d494) durchgefuehrt und 4 weitere Klarstellungen gemeldet — alle finishing touches.
+
+**Round-5 (4/4 adressiert):**
+
+- R5-1 (Copilot) — Geloeschte-Files-Liste vervollstaendigt: `backend/app/models/template.py` (SQLAlchemy-Model), `backend/app/repositories/templates.py` (Repository), `backend/app/schemas/template_read.py` (Read-Schema) wurden ergaenzt
+- R5-2 (Copilot) — Obsolete-Konzepte-Tabelle: PAUSED-State-Entfernung impliziert NICHT CANCELLED-State-Entfernung. Klarstellung in der Tabelle: Jobs nach 1k.1a sind QUEUED/PRINTING/COMPLETED/FAILED/**CANCELLED** — der CANCELLED-State bleibt erhalten (durch Cancel-Operation gesetzt, unabhaengig vom PAUSED-Pfad)
+- R5-3 (Copilot) — PR-Body weiterhin "6 ContentTypes" / "3.5mm" — Update aus Round 3 ist nicht persistiert (GraphQL-Warnung). Body wird via gh API erneut gesetzt
+- R5-4 (Copilot) — Hardware-Baseline-Referenz im Spec-Header zeigte auf nicht existierenden Pfad `docs/site/operations/protokolle/...`. Korrigiert: Verweis auf Issue #103 Kommentar (oeffentlich verfuegbar) + Hinweis dass Original-Protokoll im privaten `homelab-management` Repo liegt
