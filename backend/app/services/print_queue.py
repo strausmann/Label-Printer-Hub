@@ -261,15 +261,15 @@ class PrintQueue:
                         image = self._rerender_from_db_payload(db_job.payload)
                     except Exception as exc:  # defensive: per-job failure must not abort startup
                         logger.warning(
-                            "Recovery: Job %s rerender fehlgeschlagen (%s: %s),"
+                            "Recovery: Job %s rerender fehlgeschlagen (%s),"
                             " wird als FAILED markiert und übersprungen",
                             db_job.id,
                             exc.__class__.__name__,
-                            exc,
+                            exc_info=True,
                         )
                         await self._store.mark_failed(
                             db_job.id,
-                            f"recovery_rerender_failed: {exc!r}",
+                            f"recovery_rerender_failed: {exc.__class__.__name__}",
                         )
                         continue
                     payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)

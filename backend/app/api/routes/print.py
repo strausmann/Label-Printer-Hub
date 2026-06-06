@@ -295,7 +295,7 @@ async def render_preview(
 
     Returns 200 with Content-Type: image/png on success.
     Returns 409 (unsupported_tape) when tape_mm is not in TAPE_GEOMETRY.
-    Returns 422 (data_mismatch) when data is missing fields for content_type.
+    Returns 422 (content_type_data_mismatch) when data is missing fields for content_type.
     """
     engine = LayoutEngine()
     label_data = LabelData(
