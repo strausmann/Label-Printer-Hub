@@ -106,27 +106,24 @@ async def _noop_verify(*_args, **_kwargs) -> None:
     """
 
 
-async def _noop_seed_templates(*_args, **_kwargs) -> int:  # type: ignore[no-untyped-def]
-    """Drop-in replacement for seed_templates() in integration test fixtures.
-
-    The D1 defensive check raises RuntimeError when TemplateLoader._cache is
-    empty.  Integration tests exercise the lifespan for other purposes (printer
-    startup, SSE, healthz) and do not need templates seeded.  Patching this
-    no-op avoids a spurious failure until D2 fixes the load_dir ordering in
-    main.py lifespan.
-    """
-    return 0
+async def _fail_alembic_check(*_args, **_kwargs) -> None:
+    """Simulates a DB that has not been alembic-upgraded (drift detected)."""
+    raise RuntimeError("Alembic migration drift detected: DB at None, expected head 'abc123'")
 
 
 @pytest_asyncio.fixture
 async def api_client_with_broken_db(tmp_path):
-    """AsyncClient whose DB has never been alembic-upgraded.
+    """AsyncClient whose alembic check always fails.
 
-    The alembic_version table is absent, so _check_alembic() returns fail
-    which makes build_readiness_response() return status=not-ready.
-    /readiness should therefore respond 503.
+    _check_alembic() calls verify_alembic_at_head() which is patched here to
+    raise RuntimeError (simulating a DB with no alembic_version row).  The
+    autouse _temp_db_engine fixture patches verify_alembic_at_head to a noop,
+    so this fixture overrides that with a failure-raising version so that the
+    readiness endpoint returns status=not-ready → 503.
 
     /healthz MUST still respond 200 — it never touches the DB.
+
+    Phase 1k.1a (Task 25): seed_templates patches removed (function deleted).
     """
 
     import app.db.engine as _eng
@@ -134,8 +131,6 @@ async def api_client_with_broken_db(tmp_path):
     from app.main import create_app
     from httpx import ASGITransport, AsyncClient
 
-    # Point at an empty SQLite file — create_all() gives it the schema
-    # tables but NOT the alembic_version row, so verify_alembic_at_head fails.
     db_path = tmp_path / "broken.db"
     url = f"sqlite+aiosqlite:///{db_path}"
     eng = create_async_engine(url, echo=False, connect_args={"check_same_thread": False})
@@ -144,11 +139,8 @@ async def api_client_with_broken_db(tmp_path):
         await conn.run_sync(SQLModel.metadata.create_all)
     sess = async_sessionmaker(bind=eng, expire_on_commit=False)
 
-    # Patch the session but do NOT patch verify_alembic_at_head — we want
-    # that check to fail so the readiness probe returns not-ready.
     _sess.async_session = sess
 
-    # Patch engine references so create_app() finds the right session.
     from unittest.mock import patch
 
     with (
@@ -156,14 +148,11 @@ async def api_client_with_broken_db(tmp_path):
         patch.object(_eng, "async_session", sess),
         patch.object(_main_module, "engine", eng),
         patch.object(_main_module, "async_session", sess),
-        # run_migrations uses alembic.ini URL — patch to no-op so lifespan
-        # doesn't crash before the readiness endpoint is called.
         patch.object(_lifespan_module, "run_migrations", _noop_migrations),
         patch.object(_main_module, "run_migrations", _noop_migrations),
-        # seed_templates needs at least one cached template; patch to no-op
-        # since we only test /readiness and /healthz here.
-        patch.object(_lifespan_module, "seed_templates", _noop_seed_templates),
-        patch.object(_main_module, "seed_templates", _noop_seed_templates),
+        # Override the autouse noop — we WANT verify_alembic_at_head to fail
+        # so that _check_alembic() returns CheckStatus("fail") → not-ready → 503.
+        patch.object(_lifespan_module, "verify_alembic_at_head", _fail_alembic_check),
     ):
         from app.integrations import (  # type: ignore[attr-defined]
             IntegrationRegistry,

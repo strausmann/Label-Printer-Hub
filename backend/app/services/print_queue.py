@@ -23,13 +23,11 @@ import uuid
 from dataclasses import dataclass
 from enum import StrEnum
 from io import BytesIO
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
 from PIL import Image
-from pydantic import ValidationError
 
-from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
@@ -47,16 +45,7 @@ from app.services.job_lifecycle import (
     JobStateMachine,
 )
 from app.services.job_store import JobStore, MemoryJobStore
-
-# TYPE_CHECKING-Block verhindert zirkuläre Imports zur Laufzeit.
-# LabelRenderer und TemplateLoader sind nur für die Recovery-Methode nötig.
-if TYPE_CHECKING:
-    from app.services.label_renderer import LabelRenderer
-    from app.services.template_loader import TemplateLoader
-
-# TemplateNotFoundError wird zur Laufzeit benötigt (Recovery-Loop catch), daher
-# kein TYPE_CHECKING-Block — aber lazy import um Zirkel zu vermeiden.
-from app.services.template_loader import TemplateNotFoundError
+from app.services.layout_engine import LayoutEngine
 
 
 # Callback type: called after each state transition.  The optional queue_depth
@@ -174,8 +163,7 @@ class PrintQueue:
         printers: list[_PrinterLike],
         on_state_change: _StateChangeCallback | None = None,
         store: JobStore | None = None,
-        renderer: LabelRenderer | None = None,
-        loader: type[TemplateLoader] | None = None,
+        engine: LayoutEngine | None = None,
     ) -> None:
         """Konstruktor.
 
@@ -189,15 +177,13 @@ class PrintQueue:
                 Default ist ``MemoryJobStore()`` für Backward-Compat mit
                 Pre-Phase-2-Tests — Production-Code wired in Lifespan
                 explizit ``SQLiteJobStore`` ein (Task 9).
-            renderer: LabelRenderer-Instanz für Recovery in start().
-                Optional — wenn None, wirft _rerender_from_db_job() RuntimeError.
-            loader: TemplateLoader-Klasse für Recovery in start().
-                Optional — wenn None, wirft _rerender_from_db_job() RuntimeError.
+            engine: LayoutEngine-Instanz für Recovery in start().
+                Default ist eine neue ``LayoutEngine()`` — stateless, sicher
+                als Singleton.
         """
         self._on_state_change = on_state_change
         self._store: JobStore = store if store is not None else MemoryJobStore()
-        self._renderer: LabelRenderer | None = renderer
-        self._loader: type[TemplateLoader] | None = loader
+        self._engine: LayoutEngine = engine if engine is not None else LayoutEngine()
         self._printers: dict[UUID, _PrinterLike] = {p.id: p for p in printers}
         # Queue type is Job | BatchJob | None — None is the sentinel used by
         # stop() to wake workers that are blocked at queue.get().
@@ -247,18 +233,44 @@ class PrintQueue:
                     if db_job.state != DbJobState.QUEUED.value:
                         continue
                     # C-1/I-2: fehlerhafte/veraltete Rows dürfen die Recovery nicht abbrechen.
-                    # KeyError (fehlendes label_data), ValidationError (ungültige Struktur),
-                    # TemplateNotFoundError (Template inzwischen gelöscht) → Job FAILED markieren
-                    # und mit dem nächsten Job weitermachen.
+                    # KeyError (fehlendes label_data/content_type), ValidationError
+                    # (ungültige Struktur), ValueError (ungültiger ContentType-Wert) →
+                    # Job FAILED markieren und mit dem nächsten Job weitermachen.
+                    # MED-1/R2-1: Webhook-generated jobs (spoolman/<id>, grocy/<id>) have
+                    # template_key but NO content_type/label_data/rendered_tape_mm in
+                    # their payload. Skip gracefully before attempting rerender.
+                    # R2-1: check all three required keys — a job with content_type +
+                    # label_data but missing rendered_tape_mm would still fail in
+                    # _rerender_from_db_payload; guard must cover the full set.
+                    _required_rerender_keys = {"content_type", "label_data", "rendered_tape_mm"}
+                    _missing_keys = _required_rerender_keys - db_job.payload.keys()
+                    if _missing_keys:
+                        skip_msg = (
+                            f"Recovery: Skipping job {db_job.id} — payload lacks "
+                            f"{sorted(_missing_keys)} "
+                            f"(template_key={db_job.template_key!r}). "
+                            f"Legacy/webhook-generated jobs cannot be re-rendered."
+                        )
+                        logger.info(skip_msg)
+                        await self._store.mark_failed(
+                            db_job.id,
+                            f"recovery_skip_legacy_payload: {skip_msg}",
+                        )
+                        continue
                     try:
-                        image = await self._rerender_from_db_job(db_job)
-                    except (KeyError, ValidationError, TemplateNotFoundError) as exc:
+                        image = self._rerender_from_db_payload(db_job.payload)
+                    except Exception as exc:  # defensive: per-job failure must not abort startup
                         logger.warning(
-                            "Recovery: Job %s rerender fehlgeschlagen (%s), FAILED",
+                            "Recovery: Job %s rerender fehlgeschlagen (%s),"
+                            " wird als FAILED markiert und übersprungen",
                             db_job.id,
                             exc.__class__.__name__,
+                            exc_info=True,
                         )
-                        await self._store.mark_failed(db_job.id, f"recovery_rerender_failed: {exc}")
+                        await self._store.mark_failed(
+                            db_job.id,
+                            f"recovery_rerender_failed: {exc.__class__.__name__}",
+                        )
                         continue
                     payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
                     wrapper = Job(
@@ -286,27 +298,29 @@ class PrintQueue:
             self._running = False
             raise
 
-    async def _rerender_from_db_job(self, db_job: DbJob) -> Image.Image:
-        """Phase 2: Label-Bild aus persistiertem template_key + payload neu rendern.
+    def _rerender_from_db_payload(self, payload: dict[str, Any]) -> Image.Image:
+        """Reconstruct a PIL Image from a stored job payload.
 
-        Wird während start() Recovery aufgerufen. Benötigt renderer + loader,
-        die via PrintQueue-Konstruktor verdrahtet werden müssen (Production-Lifespan).
+        Used during startup recovery for QUEUED jobs persisted before crash.
+        The payload was produced by PrintService.submit_print_job (Task 15)
+        and contains content_type, rendered_tape_mm, and label_data snapshot.
 
         Raises:
-            RuntimeError: wenn renderer oder loader nicht gesetzt sind.
+            KeyError: wenn ``label_data`` oder ``content_type`` fehlt.
+            ValidationError: wenn ``label_data`` nicht in LabelData passt.
+            ValueError: wenn ``content_type`` kein gültiger ContentType-Wert ist.
         """
-        if self._renderer is None or self._loader is None:
-            raise RuntimeError(
-                "PrintQueue Recovery benötigt renderer + loader "
-                "(via Konstruktor übergeben — siehe Lifespan-Konfiguration)"
-            )
-        template = self._loader.get(db_job.template_key)
-        # R2-C4: payload["label_data"] ist ein rohes dict (model_dump()).
-        # LabelRenderer.render() erwartet ein LabelData-Objekt — KEIN dict.
+        from app.schemas.content_type import ContentType
         from app.schemas.label_data import LabelData
 
-        label_data = LabelData.model_validate(db_job.payload["label_data"])
-        return self._renderer.render(template, label_data)
+        label_data = LabelData(**payload["label_data"])
+        content_type = ContentType(payload["content_type"])
+        tape_mm = int(payload["rendered_tape_mm"])
+        return self._engine.render(
+            tape_mm=tape_mm,
+            content_type=content_type,
+            data=label_data,
+        )
 
     async def stop(self, timeout_s: float = 30.0) -> None:
         """Stop all workers.
@@ -424,69 +438,6 @@ class PrintQueue:
         await self._queues[printer_id].put(job)
         logger.info("Job %s (extern-id) queued on %s", job_id, printer_id)
         return job_id
-
-    async def submit_paused_with_id(
-        self,
-        job_id: UUID,
-        printer_id: UUID,
-        image: Image.Image,
-        tape_mm: int,
-        **options: Any,
-    ) -> UUID:
-        """Phase 2: Wie submit_paused(), aber mit extern erzeugter job_id.
-
-        Wird von PrintService für den on_tape_mismatch='queue'-Pfad genutzt.
-        Gibt die job_id unverändert zurück.
-        """
-        if printer_id not in self._queues:
-            raise KeyError(f"Unknown printer: {printer_id}")
-        payload = await asyncio.to_thread(_serialize_image_to_png, image)
-        job = Job(
-            id=str(job_id),
-            printer_id=printer_id,
-            image_payload=payload,
-            tape_mm=tape_mm,
-            options=dict(options),
-        )
-        JobStateMachine.transition(job, JobState.PAUSED)
-        self._jobs[str(job_id)] = job
-        logger.info("Job %s (extern-id) created paused on %s", job_id, printer_id)
-        return job_id
-
-    async def submit_paused(
-        self,
-        printer_id: UUID,
-        image: Image.Image,
-        tape_mm: int,
-        **options: Any,
-    ) -> str:
-        """Create a job in PAUSED state without enqueuing it.
-
-        Use this instead of ``submit()`` + ``JobStateMachine.transition(PAUSED)``
-        whenever the caller wants the job to start life paused — typically the
-        on_tape_mismatch='queue' path in PrintService.
-
-        The job is registered in ``_jobs`` and immediately transitioned to PAUSED
-        via JobStateMachine so all side-effects (timestamp, _done_event) are
-        consistent. Crucially, it is **not** placed in the asyncio.Queue, so the
-        worker can never dequeue it before the caller has a chance to attach
-        error metadata.  Only ``resume_job()`` can promote the job to QUEUED and
-        enqueue it later.
-        """
-        if printer_id not in self._queues:
-            raise KeyError(f"Unknown printer: {printer_id}")
-        payload = await asyncio.to_thread(_serialize_image_to_png, image)
-        job = Job(
-            id=str(uuid.uuid4()),
-            printer_id=printer_id,
-            image_payload=payload,
-            tape_mm=tape_mm,
-            options=dict(options),
-        )
-        JobStateMachine.transition(job, JobState.PAUSED)
-        self._jobs[job.id] = job
-        logger.info("Job %s created paused on %s", job.id, printer_id)
-        return job.id
 
     async def enqueue_batch(
         self,

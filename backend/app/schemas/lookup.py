@@ -28,10 +28,12 @@ class LookupResult(BaseModel):
     id: str = Field(
         description="The entity identifier as supplied by the caller",
     )
-    name: str = Field(
+    name: str | None = Field(
+        default=None,
         description="Human-readable display name of the entity",
     )
-    url: str = Field(
+    url: str | None = Field(
+        default=None,
         description=(
             "Deep-link URL to the entity in the integration's web UI "
             "(e.g. Snipe-IT asset page, Grocy product page, Spoolman spool page)"

@@ -9,19 +9,22 @@ run migrations against a real SQLite file which is covered by the
 existing Alembic CLI tests and by the full app startup in CI.  We
 skip a dedicated unit test here and cover only the three helpers that
 operate on the in-memory session fixture.
+
+Phase 1k.1a (Task 25): Template model removed — seed_templates is now a no-op
+stub and TemplateLoader is deleted. Tests that tested template-seeding behaviour
+(test_seed_templates_*) are removed. recover_inflight_jobs and ensure_printer_state
+tests remain unaffected.
 """
 
 from __future__ import annotations
 
 import pytest
-from app.db.lifespan import ensure_printer_state, recover_inflight_jobs, seed_templates
+from app.db.lifespan import ensure_printer_state, recover_inflight_jobs
 from app.models.job import Job, JobState
 from app.models.printer import Printer
 from app.models.printer_state import PrinterState
-from app.models.template import Template
 from app.repositories import jobs as jobs_repo
 from app.repositories import printers as printers_repo
-from app.repositories import templates as templates_repo
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -41,88 +44,9 @@ async def _make_printer(session, *, name: str = "pt-office") -> Printer:
     return await printers_repo.create(session, p)
 
 
-class _MockLoader:
-    """Minimal stand-in for TemplateLoader.all() that returns a fixed dict.
-
-    Avoids loading real YAML files (which would require IntegrationRegistry
-    to have plugins registered) and keeps the test self-contained.
-
-    ``_cache`` is populated on construction to satisfy the D1 defensive check
-    in seed_templates (which raises RuntimeError when the cache is empty).
-    """
-
-    def __init__(self, count: int = 3) -> None:
-        self._count = count
-        self._templates = {
-            f"tpl-{i}": _schema_stub(f"tpl-{i}", f"Template {i}") for i in range(count)
-        }
-        # Mirror _templates in _cache so the D1 check passes — this mock
-        # represents a loader that has already called load_dir().
-        self._cache = dict(self._templates)
-
-    def all(self) -> dict:
-        return dict(self._templates)
-
-    def __len__(self) -> int:
-        return self._count
-
-    async def seed_db(self, session) -> int:
-        """Implement seed_db so seed_templates can delegate (Task 8 interface)."""
-        rows = [
-            Template(
-                key=schema.id,
-                name=schema.name,
-                app=schema.app,
-                printer_model="pt-series",
-                tape_width_mm=schema.tape_mm,
-                schema_version=schema.schema_version,
-                definition=schema.model_dump(),
-                source="seed",
-            )
-            for schema in self._templates.values()
-        ]
-        return await templates_repo.upsert_seed(session, rows)
-
-
-def _schema_stub(id_: str, name: str):
-    """Build a minimal TemplateSchema-like object for testing."""
-    from app.schemas.template import TemplateSchema
-
-    return TemplateSchema(
-        id=id_,
-        name=name,
-        app=None,
-        tape_mm=12,
-        schema_version=1,
-        elements=(
-            {
-                "type": "qr",
-                "x": 0,
-                "y": 0,
-                "size": 80,
-                "data_field": "url",
-            },
-        ),
-    )
-
-
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_seed_templates_raises_on_empty_loader_cache():
-    """Cluster 1a defensive check: empty TemplateLoader cache → RuntimeError, no silent no-op."""
-    from app.services.template_loader import TemplateLoader
-
-    original_cache = dict(TemplateLoader._cache)
-    TemplateLoader._cache.clear()
-    try:
-        with pytest.raises(RuntimeError, match="empty"):
-            await seed_templates(None, TemplateLoader)  # type: ignore[arg-type]
-    finally:
-        TemplateLoader._cache = original_cache
 
 
 @pytest.mark.asyncio
@@ -143,21 +67,6 @@ async def test_recover_marks_inflight_as_failed_restart(session):
     refreshed = await session.get(Job, job.id)
     assert refreshed is not None
     assert refreshed.state == JobState.FAILED_RESTART.value
-
-
-@pytest.mark.asyncio
-async def test_seed_templates_idempotent(session):
-    """seed_templates called twice produces exactly N rows — no duplicates."""
-    loader = _MockLoader(count=3)
-
-    count_first = await seed_templates(session, loader)
-    count_second = await seed_templates(session, loader)
-
-    assert count_first == len(loader)
-    assert count_second == len(loader)
-
-    all_rows = await templates_repo.list_all(session)
-    assert len(all_rows) == len(loader)
 
 
 @pytest.mark.asyncio

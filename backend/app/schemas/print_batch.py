@@ -48,4 +48,5 @@ class BatchResponse(BaseModel):
     printer_id: UUID
     queued_at: str  # ISO-8601 mit Z-Suffix
     job_ids: list[str]
-    errors: list[BatchError] = Field(default_factory=list)
+    # R2-3: errors field removed — route never populates it after Task-17 refactor.
+    # BatchError class retained for potential future use (pre-validation per item).

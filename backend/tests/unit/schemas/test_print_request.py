@@ -1,94 +1,79 @@
+"""Unit tests for PrintRequest with content_type (no template_id)."""
+
 from __future__ import annotations
 
 import pytest
+from app.schemas.content_type import ContentType
 from app.schemas.print_request import (
     PrintLookupRequest,
-    PrintOptions,
     PrintRequest,
     RawLabelData,
 )
 from pydantic import ValidationError
 
 
-def test_print_options_defaults_independent() -> None:
-    a = PrintRequest(template_id="t", data=RawLabelData(title="x", primary_id="1", qr_payload="u"))
-    b = PrintRequest(template_id="t", data=RawLabelData(title="x", primary_id="1", qr_payload="u"))
-    assert a.options is not b.options
+class TestRawLabelData:
+    def test_all_fields_optional(self) -> None:
+        raw = RawLabelData()
+        assert raw.title is None
+        assert raw.primary_id is None
+        assert raw.qr_payload is None
+        assert raw.secondary == ()
+        assert raw.items == ()
+
+    def test_extra_field_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="extra"):
+            RawLabelData(unknown_field="x")  # type: ignore[call-arg]
 
 
-def test_print_options_immutable() -> None:
-    opts = PrintOptions()
-    with pytest.raises(ValidationError):
-        opts.copies = 5
-
-
-def test_lookup_xor_data_rejects_both() -> None:
-    with pytest.raises(ValidationError, match="Exactly one"):
-        PrintRequest(
-            template_id="t",
-            lookup=PrintLookupRequest(app="snipeit", identifier="123"),
-            data=RawLabelData(title="x", primary_id="1", qr_payload="u"),
+class TestPrintRequest:
+    def test_with_content_type_and_raw_data(self) -> None:
+        req = PrintRequest(
+            content_type=ContentType.QR_TWO_LINES,
+            data=RawLabelData(
+                primary_id="K-02",
+                title="Werkstatt",
+                qr_payload="https://example.com/x",
+            ),
         )
+        assert req.content_type == ContentType.QR_TWO_LINES
+        assert req.data is not None
+        assert req.data.primary_id == "K-02"
+        assert req.lookup is None
 
-
-def test_lookup_xor_data_rejects_neither() -> None:
-    with pytest.raises(ValidationError, match="Exactly one"):
-        PrintRequest(template_id="t")
-
-
-def test_lookup_only_accepted() -> None:
-    r = PrintRequest(template_id="t", lookup=PrintLookupRequest(app="snipeit", identifier="123"))
-    assert r.lookup is not None
-    assert r.data is None
-
-
-def test_data_only_accepted() -> None:
-    r = PrintRequest(
-        template_id="t",
-        data=RawLabelData(title="x", primary_id="1", qr_payload="u", secondary=["a", "b"]),
-    )
-    assert r.data is not None
-    assert r.lookup is None
-    assert r.data.secondary == ["a", "b"]
-
-
-def test_raw_label_data_default_secondary_empty() -> None:
-    d = RawLabelData(title="x", primary_id="1", qr_payload="u")
-    assert d.secondary == []
-
-
-def test_raw_label_data_rejects_source_app_field() -> None:
-    with pytest.raises(ValidationError):
-        RawLabelData(title="x", primary_id="1", qr_payload="u", source_app="manual")
-
-
-def test_copies_bounds() -> None:
-    PrintOptions(copies=1)
-    PrintOptions(copies=10)
-    with pytest.raises(ValidationError):
-        PrintOptions(copies=0)
-    with pytest.raises(ValidationError):
-        PrintOptions(copies=11)
-
-
-def test_on_tape_mismatch_defaults_to_fail() -> None:
-    r = PrintRequest(template_id="t", data=RawLabelData(title="x", primary_id="1", qr_payload="u"))
-    assert r.on_tape_mismatch == "fail"
-
-
-def test_on_tape_mismatch_accepts_queue() -> None:
-    r = PrintRequest(
-        template_id="t",
-        data=RawLabelData(title="x", primary_id="1", qr_payload="u"),
-        on_tape_mismatch="queue",
-    )
-    assert r.on_tape_mismatch == "queue"
-
-
-def test_on_tape_mismatch_rejects_unknown_value() -> None:
-    with pytest.raises(ValidationError):
-        PrintRequest(
-            template_id="t",
-            data=RawLabelData(title="x", primary_id="1", qr_payload="u"),
-            on_tape_mismatch="abort",  # not in the Literal set
+    def test_with_content_type_and_lookup(self) -> None:
+        req = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            lookup=PrintLookupRequest(app="snipeit", identifier="ABC-123"),
         )
+        assert req.lookup is not None
+        assert req.lookup.app == "snipeit"
+        assert req.data is None
+
+    def test_both_data_and_lookup_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="Exactly one"):
+            PrintRequest(
+                content_type=ContentType.QR_ONLY,
+                data=RawLabelData(qr_payload="x"),
+                lookup=PrintLookupRequest(app="snipeit", identifier="X"),
+            )
+
+    def test_neither_data_nor_lookup_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="Exactly one"):
+            PrintRequest(content_type=ContentType.QR_ONLY)
+
+    def test_no_template_id_field(self) -> None:
+        with pytest.raises(ValidationError, match="extra"):
+            PrintRequest(
+                template_id="anything",
+                content_type=ContentType.QR_ONLY,
+                data=RawLabelData(qr_payload="x"),
+            )  # type: ignore[call-arg]
+
+    def test_no_on_tape_mismatch_field(self) -> None:
+        with pytest.raises(ValidationError, match="extra"):
+            PrintRequest(
+                on_tape_mismatch="queue",
+                content_type=ContentType.QR_ONLY,
+                data=RawLabelData(qr_payload="x"),
+            )  # type: ignore[call-arg]

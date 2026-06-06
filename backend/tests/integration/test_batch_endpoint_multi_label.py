@@ -61,12 +61,12 @@ async def ml_batch_client():
         yield c, inner
 
 
-def _four_item_body(template_id: str = "hangar-furniture-24mm") -> dict:
-    """Build a 4-item batch request body using the given template."""
+def _four_item_body(content_type: str = "qr_two_lines") -> dict:
+    """Build a 4-item batch request body using the given content_type."""
     return {
         "items": [
             {
-                "template_id": template_id,
+                "content_type": content_type,
                 "data": {
                     "primary_id": f"ML-{i:04d}",
                     "title": f"Multi-Label Test {i}",
@@ -130,7 +130,8 @@ async def test_post_batch_4_items_calls_print_images_once(ml_batch_client):
         assert resp.status_code == 202, resp.text
         rb = resp.json()
         assert len(rb["job_ids"]) == 4
-        assert rb["errors"] == []
+        # R2-3: errors field removed from BatchResponse
+        assert "errors" not in rb
 
         # Wait for the worker to dequeue + call print_images
         deadline = asyncio.get_event_loop().time() + 5.0
@@ -187,7 +188,8 @@ async def test_post_batch_failure_marks_all_jobs_failed(ml_batch_client):
         assert resp.status_code == 202, resp.text
         rb = resp.json()
         assert len(rb["job_ids"]) == 4
-        assert rb["errors"] == []
+        # R2-3: errors field removed from BatchResponse
+        assert "errors" not in rb
 
         # Wait for the worker to attempt + fail
         deadline = asyncio.get_event_loop().time() + 5.0

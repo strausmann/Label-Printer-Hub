@@ -1,4 +1,10 @@
-"""SQLModel table definition for Preset entities."""
+"""SQLModel table definition for Preset entities.
+
+Phase 1k.1a (Task 25): template_id foreign key removed — the templates table
+and Template model were deleted in Phase 1k.1a. Presets are now independent
+of templates (template_id column dropped via migration
+20260605_phase1k1a_drop_preset_template_id).
+"""
 
 from __future__ import annotations
 
@@ -16,7 +22,6 @@ class Preset(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str
     printer_id: UUID | None = Field(default=None, foreign_key="printers.id")
-    template_id: UUID = Field(foreign_key="templates.id")
     field_values: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),

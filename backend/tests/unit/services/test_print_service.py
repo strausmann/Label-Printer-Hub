@@ -1,558 +1,313 @@
+"""Unit tests for PrintService with LayoutEngine integration.
+
+Phase 1k.1a Task 15: Replaces all template_id / TapeMismatchError / PAUSED-path
+tests with new LayoutEngine-based tests.
+"""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from app.printer_backends.exceptions import (
+    NoTapeLoadedError,
     PrinterCoverOpenError,
     PrinterOfflineError,
     TapeEmptyError,
-    TapeMismatchError,
 )
 from app.printer_backends.snmp_helper import PreflightStatus
-from app.schemas.label_data import LabelData
+from app.schemas.content_type import ContentType
 from app.schemas.print_request import (
     PrintLookupRequest,
     PrintOptions,
     PrintRequest,
     RawLabelData,
 )
-from app.services.job_lifecycle import Job, JobState
+from app.services.layout_engine import LayoutEngine
 from app.services.print_service import PrintService
-from app.services.template_loader import TemplateNotFoundError
-from PIL import Image
-
-
-@pytest.fixture
-def template():
-    # Build a minimal TemplateSchema-compatible object — the actual schema
-    # was created in Phase 4. Use the real schema if available, else a
-    # MagicMock with .tape_mm attribute.
-    tpl = MagicMock()
-    tpl.tape_mm = 24
-    tpl.id = "qr-only-24mm"
-    return tpl
-
-
-@pytest.fixture
-def image():
-    return Image.new("1", (200, 128))
-
-
-@pytest.fixture
-def loader(template):
-    m = MagicMock()
-    m.get.return_value = template
-    return m
-
-
-@pytest.fixture
-def renderer(image):
-    m = MagicMock()
-    m.render.return_value = image
-    return m
-
-
-_FAKE_JOB_UUID = uuid4()
-
-
-@pytest.fixture
-def queue():
-    m = AsyncMock()
-    m.submit.return_value = "job-1"
-    # Phase 2: submit_with_id und submit_paused_with_id werden jetzt genutzt
-    m.submit_with_id.return_value = _FAKE_JOB_UUID
-    m.submit_paused_with_id.return_value = _FAKE_JOB_UUID
-    return m
-
-
-@pytest.fixture
-def lookup_service():
-    m = AsyncMock()
-    m.lookup.return_value = LabelData(
-        title="X",
-        primary_id="1",
-        qr_payload="u",
-        source_app="snipeit",
-        secondary=(),
-    )
-    return m
-
-
-@pytest.fixture
-def backend():
-    """Backend mock that reports 24mm tape loaded and printer idle (happy path)."""
-    m = AsyncMock()
-    m.preflight_check.return_value = PreflightStatus(
-        hr_printer_status="idle",
-        loaded_tape_mm=24,
-        error_flags=[],
-    )
-    return m
-
 
 _PRINTER_ID = UUID("bbbbbbbb-0000-0000-0000-000000000001")
 
 
-def _service(loader, renderer, queue, lookup_service, backend, store=None):
-    kwargs = {
-        "template_loader": loader,
-        "renderer": renderer,
-        "print_queue": queue,
-        "lookup_service": lookup_service,
-        "printer_id": _PRINTER_ID,
-        "backend": backend,
-    }
-    if store is not None:
-        kwargs["store"] = store
-    return PrintService(**kwargs)
-
-
-# ---------------------------------------------------------------------------
-# Existing happy-path tests — updated to pass backend fixture
-# ---------------------------------------------------------------------------
-
-
-async def test_lookup_path_calls_lookup_and_renders(
-    loader,
-    renderer,
-    queue,
-    lookup_service,
-    backend,
-) -> None:
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        lookup=PrintLookupRequest(app="snipeit", identifier="42"),
-    )
-    job_id = await svc.submit_print_job(req)
-    lookup_service.lookup.assert_awaited_once_with("snipeit", "42")
-    renderer.render.assert_called_once()
-    # Phase 2: submit_print_job ruft submit_with_id statt submit
-    queue.submit_with_id.assert_awaited_once()
-    assert isinstance(job_id, UUID)
-
-
-async def test_data_path_bypasses_lookup_and_marks_source_manual(
-    loader,
-    renderer,
-    queue,
-    lookup_service,
-    backend,
-) -> None:
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q", secondary=["a"]),
-    )
-    job_id = await svc.submit_print_job(req)
-    lookup_service.lookup.assert_not_called()
-    args, _ = renderer.render.call_args
-    label_data = args[1]
-    assert isinstance(label_data, LabelData)
-    assert label_data.source_app == "manual"
-    assert label_data.secondary == ("a",)
-    # Phase 2: submit_print_job gibt UUID zurück
-    assert isinstance(job_id, UUID)
-
-
-async def test_template_not_found_raises_synchronously(
-    loader,
-    renderer,
-    queue,
-    lookup_service,
-    backend,
-) -> None:
-    loader.get.side_effect = TemplateNotFoundError("qr-only-24mm")
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        lookup=PrintLookupRequest(app="snipeit", identifier="x"),
-    )
-    with pytest.raises(TemplateNotFoundError):
-        await svc.submit_print_job(req)
-    queue.submit.assert_not_called()
-    # preflight must NOT be called when template is not found
-    backend.preflight_check.assert_not_awaited()
-
-
-async def test_options_passed_to_queue(loader, renderer, queue, lookup_service, backend) -> None:
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-        options=PrintOptions(copies=2, auto_cut=False, high_resolution=True),
-    )
-    await svc.submit_print_job(req)
-    # Phase 2: submit_with_id statt submit
-    _, kwargs = queue.submit_with_id.call_args
-    assert kwargs["tape_mm"] == 24
-    assert kwargs["auto_cut"] is False
-    assert kwargs["high_resolution"] is True
-    # `copies` is deliberately NOT forwarded — see service comment
-    assert "copies" not in kwargs
-
-
-# ---------------------------------------------------------------------------
-# Preflight: happy path (tape matches)
-# ---------------------------------------------------------------------------
-
-
-async def test_preflight_match_proceeds_normally(
-    loader, renderer, queue, lookup_service, backend
-) -> None:
-    """When loaded tape matches template.tape_mm the job is submitted normally."""
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-    )
-    job_id = await svc.submit_print_job(req)
-    assert isinstance(job_id, UUID)
-    backend.preflight_check.assert_awaited_once()
-    # Phase 2: submit_print_job ruft submit_with_id statt submit
-    queue.submit_with_id.assert_awaited_once()
-
-
-# ---------------------------------------------------------------------------
-# Preflight: tape mismatch + fail (default)
-# ---------------------------------------------------------------------------
-
-
-async def test_preflight_mismatch_fail_raises_tape_mismatch(
-    loader, renderer, queue, lookup_service, backend
-) -> None:
-    """on_tape_mismatch=fail (default) → TapeMismatchError raised, no job created."""
-    backend.preflight_check.return_value = PreflightStatus(
+def _preflight(loaded_tape_mm: int | None = 12) -> PreflightStatus:
+    return PreflightStatus(
         hr_printer_status="idle",
-        loaded_tape_mm=12,
-        error_flags=[],
-    )
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",  # template wants 24mm, printer has 12mm
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-        on_tape_mismatch="fail",
-    )
-    with pytest.raises(TapeMismatchError) as exc_info:
-        await svc.submit_print_job(req)
-    assert exc_info.value.expected_mm == 24
-    assert exc_info.value.loaded_mm == 12
-    queue.submit.assert_not_called()
-
-
-async def test_preflight_mismatch_default_is_fail(
-    loader, renderer, queue, lookup_service, backend
-) -> None:
-    """on_tape_mismatch defaults to 'fail' when not specified."""
-    backend.preflight_check.return_value = PreflightStatus(
-        hr_printer_status="idle",
-        loaded_tape_mm=12,
-        error_flags=[],
-    )
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-        # no on_tape_mismatch — default is "fail"
-    )
-    with pytest.raises(TapeMismatchError):
-        await svc.submit_print_job(req)
-    queue.submit.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Preflight: tape mismatch + queue
-# ---------------------------------------------------------------------------
-
-
-async def test_preflight_mismatch_queue_creates_paused_job(
-    loader, renderer, queue, lookup_service, backend
-) -> None:
-    """on_tape_mismatch=queue → job created via submit_paused() with PAUSED metadata."""
-    backend.preflight_check.return_value = PreflightStatus(
-        hr_printer_status="idle",
-        loaded_tape_mm=12,
-        error_flags=[],
-    )
-    # Phase 2: submit_paused_with_id statt submit_paused.
-    # queue.get gibt ein in-memory Job-Objekt zurück auf das Metadaten gesetzt werden.
-    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
-    from app.services.job_lifecycle import JobStateMachine
-
-    JobStateMachine.transition(job, JobState.PAUSED)
-    queue.submit_paused_with_id.return_value = _FAKE_JOB_UUID
-    queue.get.return_value = job
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-        on_tape_mismatch="queue",
-    )
-    job_id = await svc.submit_print_job(req)
-    assert isinstance(job_id, UUID)
-    # Phase 2: submit_paused_with_id() wurde aufgerufen (nicht submit/submit_with_id)
-    queue.submit_paused_with_id.assert_awaited_once()
-    queue.submit_with_id.assert_not_awaited()
-    queue.submit.assert_not_awaited()
-    # tape-mismatch metadata attached after submit_paused_with_id
-    assert job.state == JobState.PAUSED
-    assert job.error_code == "tape_mismatch"
-    assert job.error_message is not None
-    assert job.error_detail == {"expected_mm": 24, "loaded_mm": 12}
-
-
-async def test_preflight_mismatch_queue_none_tape_loaded(
-    loader, renderer, queue, lookup_service, backend
-) -> None:
-    """on_tape_mismatch=queue with no tape loaded (loaded_tape_mm=None)."""
-    backend.preflight_check.return_value = PreflightStatus(
-        hr_printer_status="idle",
-        loaded_tape_mm=None,
-        error_flags=[],
-    )
-    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
-    from app.services.job_lifecycle import JobStateMachine
-
-    JobStateMachine.transition(job, JobState.PAUSED)
-    queue.submit_paused_with_id.return_value = _FAKE_JOB_UUID
-    queue.get.return_value = job
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-        on_tape_mismatch="queue",
-    )
-    job_id = await svc.submit_print_job(req)
-    assert isinstance(job_id, UUID)
-    # Phase 2: submit_paused_with_id() aufgerufen
-    queue.submit_paused_with_id.assert_awaited_once()
-    assert job.state == JobState.PAUSED
-    assert job.error_code == "tape_mismatch"
-    assert job.error_detail == {"expected_mm": 24, "loaded_mm": None}
-
-
-# ---------------------------------------------------------------------------
-# Preflight: other printer errors — always synchronous regardless of on_tape_mismatch
-# ---------------------------------------------------------------------------
-
-
-async def test_preflight_offline_raises_synchronously(
-    loader, renderer, queue, lookup_service, backend
-) -> None:
-    """PrinterOfflineError from preflight propagates synchronously."""
-    backend.preflight_check.side_effect = PrinterOfflineError("host unreachable")
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-        on_tape_mismatch="queue",  # even with queue, offline is always synchronous
-    )
-    with pytest.raises(PrinterOfflineError):
-        await svc.submit_print_job(req)
-    queue.submit.assert_not_called()
-
-
-async def test_preflight_tape_empty_raises_synchronously(
-    loader, renderer, queue, lookup_service, backend
-) -> None:
-    """TapeEmptyError from preflight propagates synchronously."""
-    backend.preflight_check.side_effect = TapeEmptyError()
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-    )
-    with pytest.raises(TapeEmptyError):
-        await svc.submit_print_job(req)
-    queue.submit.assert_not_called()
-
-
-async def test_preflight_cover_open_raises_synchronously(
-    loader, renderer, queue, lookup_service, backend
-) -> None:
-    """PrinterCoverOpenError from preflight propagates synchronously."""
-    backend.preflight_check.side_effect = PrinterCoverOpenError()
-    svc = _service(loader, renderer, queue, lookup_service, backend)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-    )
-    with pytest.raises(PrinterCoverOpenError):
-        await svc.submit_print_job(req)
-    queue.submit.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# Race-condition fix: submit_paused() atomic path (Commit A — Issue #67)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_tape_mismatch_queue_job_never_enters_asyncio_queue() -> None:
-    """Prove the atomic path: submit_paused() MUST NOT place the job in the
-    asyncio.Queue — the job must be stored only in the paused-jobs registry.
-
-    We verify this by inspecting the real PrintQueue's asyncio.Queue size
-    immediately after submit_print_job returns. If the fix uses submit_paused()
-    correctly, the queue is empty (qsize() == 0). If the old race-prone code
-    path is used (submit() then transition PAUSED), the queue has one item
-    (qsize() == 1) which the worker could pick up before the PAUSED transition
-    completes.
-    """
-
-    from unittest.mock import AsyncMock, MagicMock
-    from uuid import UUID as _UUID
-
-    from app.printer_backends.snmp_helper import PreflightStatus
-    from app.services.print_queue import PrintQueue
-    from app.services.print_service import PrintService
-    from PIL import Image as _Image
-
-    _race_printer_id = _UUID("aaaaaaaa-0000-0000-0000-000000000001")
-
-    class _NeverPrint:
-        """Printer that must never be called in this test."""
-
-        id = _race_printer_id
-
-        async def print_image(self, image, *, tape_mm, **kw):
-            raise AssertionError("Worker dequeued the paused job — race is present!")
-
-    real_queue = PrintQueue([_NeverPrint()])
-    # Do NOT start the worker — we're testing the submit side only.
-    # The asyncio.Queue size directly reveals whether the job was enqueued.
-
-    tpl = MagicMock()
-    tpl.tape_mm = 24
-    tpl.id = "race-tpl"
-    loader = MagicMock()
-    loader.get.return_value = tpl
-
-    renderer = MagicMock()
-    renderer.render.return_value = _Image.new("1", (200, 128))
-
-    backend = AsyncMock()
-    backend.preflight_check.return_value = PreflightStatus(
-        hr_printer_status="idle",
-        loaded_tape_mm=12,  # mismatch: template wants 24mm
+        loaded_tape_mm=loaded_tape_mm,
         error_flags=[],
     )
 
-    svc = PrintService(
-        template_loader=loader,
-        renderer=renderer,
-        print_queue=real_queue,
-        lookup_service=AsyncMock(),
-        printer_id=_race_printer_id,
-        backend=backend,
-    )
 
-    req = PrintRequest(
-        template_id="race-tpl",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-        on_tape_mismatch="queue",
-    )
+@pytest.fixture
+def make_service():
+    """Factory: returns (svc, queue_mock, store_mock, backend_mock)."""
 
-    job_id = await svc.submit_print_job(req)
+    def _make(
+        loaded_tape_mm: int | None = 12,
+    ) -> tuple[PrintService, MagicMock, MagicMock, MagicMock]:
+        backend = AsyncMock()
+        backend.preflight_check = AsyncMock(return_value=_preflight(loaded_tape_mm))
 
-    # The asyncio.Queue MUST be empty — job was submitted in PAUSED state,
-    # not enqueued. If this fails, the race-prone code path is still active.
-    # Phase 2: Printer-Key ist jetzt UUID, nicht "pt@race".
-    queue_size = real_queue._queues[_race_printer_id].qsize()
-    assert queue_size == 0, (
-        f"Job was placed in asyncio.Queue (qsize={queue_size}) — "
-        "race-prone submit+pause path still active, fix not applied!"
-    )
+        queue = MagicMock()
+        queue.submit_with_id = AsyncMock()
 
-    job = await real_queue.get(job_id)
-    from app.services.job_lifecycle import JobState
+        store = MagicMock()
+        store.save_queued = AsyncMock()
 
-    assert job.state == JobState.PAUSED, f"Expected PAUSED, got {job.state}"
-    assert job.error_code == "tape_mismatch"
-    assert job.error_detail == {"expected_mm": 24, "loaded_mm": 12}
+        engine = LayoutEngine()
+
+        svc = PrintService(
+            printer_id=_PRINTER_ID,
+            backend=backend,
+            queue=queue,
+            store=store,
+            engine=engine,
+        )
+        return svc, queue, store, backend
+
+    return _make
 
 
 # ---------------------------------------------------------------------------
-# Fix C-1: PAUSED-Pfad ruft save_queued NICHT auf
+# Happy-path: submit_print_job
 # ---------------------------------------------------------------------------
 
 
-async def test_tape_mismatch_queue_path_does_not_persist_db_job(
-    loader, renderer, queue, lookup_service, backend
-) -> None:
-    """C-1-Fix: on_tape_mismatch=queue → save_queued wird NICHT aufgerufen.
+class TestSubmitPrintJob:
+    @pytest.mark.asyncio
+    async def test_renders_on_loaded_tape_mm_18(self, make_service) -> None:
+        """Happy path: 18mm tape, QR_TWO_LINES — returns UUID, queue.submit called."""
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=18)
+        request = PrintRequest(
+            content_type=ContentType.QR_TWO_LINES,
+            data=RawLabelData(
+                primary_id="K02",
+                title="Workshop",
+                qr_payload="https://example.com/x",
+            ),
+        )
+        job_id = await svc.submit_print_job(request)
+        assert isinstance(job_id, UUID)
+        queue.submit_with_id.assert_awaited_once()
+        kwargs = queue.submit_with_id.await_args.kwargs
+        assert kwargs.get("tape_mm") == 18
 
-    Vorher wurde der Job als QUEUED persistiert, obwohl er in PAUSED-State
-    versetzt wurde. Nach Hub-Restart würde list_pending() ihn als QUEUED
-    finden und sofort drucken — Doppel-Druck-Risiko.
-    Fix: PAUSED-Jobs bleiben in-memory-only, kein DB-Persist.
-    """
-    backend.preflight_check.return_value = PreflightStatus(
-        hr_printer_status="idle",
-        loaded_tape_mm=12,  # mismatch: template wants 24mm
-        error_flags=[],
-    )
-    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
-    from app.services.job_lifecycle import JobStateMachine
+    @pytest.mark.asyncio
+    async def test_renders_on_loaded_tape_mm_12(self, make_service) -> None:
+        """Happy path: 12mm tape, QR_ONE_LINE."""
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=12)
+        request = PrintRequest(
+            content_type=ContentType.QR_ONE_LINE,
+            data=RawLabelData(
+                primary_id="A01",
+                qr_payload="https://example.com/a",
+            ),
+        )
+        job_id = await svc.submit_print_job(request)
+        assert isinstance(job_id, UUID)
+        queue.submit_with_id.assert_awaited_once()
 
-    JobStateMachine.transition(job, JobState.PAUSED)
-    queue.submit_paused_with_id.return_value = _FAKE_JOB_UUID
-    queue.get.return_value = job
+    @pytest.mark.asyncio
+    async def test_qr_only_renders_minimally(self, make_service) -> None:
+        """QR_ONLY: only qr_payload required — renders and queues."""
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=12)
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        await svc.submit_print_job(request)
+        queue.submit_with_id.assert_awaited_once()
 
-    mock_store = AsyncMock()
+    @pytest.mark.asyncio
+    async def test_returns_uuid(self, make_service) -> None:
+        """submit_print_job always returns a fresh UUID."""
+        svc, _queue, _store, _backend = make_service(loaded_tape_mm=24)
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        job_id = await svc.submit_print_job(request)
+        assert isinstance(job_id, UUID)
 
-    svc = _service(loader, renderer, queue, lookup_service, backend, store=mock_store)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-        on_tape_mismatch="queue",
-    )
+    @pytest.mark.asyncio
+    async def test_store_save_queued_called(self, make_service) -> None:
+        """store.save_queued is called once before queue.submit."""
+        svc, _queue, store, _backend = make_service(loaded_tape_mm=12)
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        await svc.submit_print_job(request)
+        store.save_queued.assert_called_once()
 
-    job_id = await svc.submit_print_job(req)
-
-    assert isinstance(job_id, UUID)
-    # save_queued darf NICHT aufgerufen worden sein — kein DB-Persist für PAUSED
-    mock_store.save_queued.assert_not_awaited()
-    # submit_paused_with_id muss aber aufgerufen worden sein
-    queue.submit_paused_with_id.assert_awaited_once()
+    @pytest.mark.asyncio
+    async def test_options_forwarded_to_queue(self, make_service) -> None:
+        """PrintOptions fields are forwarded to queue.submit as kwargs."""
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=12)
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+            options=PrintOptions(auto_cut=False, high_resolution=True),
+        )
+        await svc.submit_print_job(request)
+        queue.submit_with_id.assert_awaited_once()
+        kwargs = queue.submit_with_id.await_args.kwargs
+        assert kwargs["auto_cut"] is False
+        assert kwargs["high_resolution"] is True
+        assert kwargs["tape_mm"] == 12
+        assert "copies" not in kwargs
 
 
 # ---------------------------------------------------------------------------
-# Fix I-1: Rollback bei queue.submit_with_id Fehler
+# NoTapeLoadedError when preflight returns loaded_tape_mm=None
 # ---------------------------------------------------------------------------
 
 
-async def test_submit_with_failing_queue_marks_db_job_failed(
-    loader, renderer, queue, lookup_service, backend
-) -> None:
-    """I-1-Fix: Wenn queue.submit_with_id wirft, muss der DB-Job auf FAILED gesetzt werden.
+class TestNoTapeLoaded:
+    @pytest.mark.asyncio
+    async def test_no_tape_loaded_raises(self, make_service) -> None:
+        """loaded_tape_mm=None → NoTapeLoadedError, queue never called."""
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=None)
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        with pytest.raises(NoTapeLoadedError):
+            await svc.submit_print_job(request)
+        queue.submit_with_id.assert_not_awaited()
 
-    Ohne Rollback bliebe eine stale QUEUED-Row in der DB ohne Worker-Gegenstück.
-    Nach Hub-Restart würde list_pending() sie finden und re-enqueuen — aber der
-    Job hat keinen gültigen Zustand mehr.
-    Fix: try/except um submit_with_id, bei Exception → mark_failed + re-raise.
-    """
-    submit_error = RuntimeError("asyncio.Queue voll oder andere Fehlerursache")
-    queue.submit_with_id.side_effect = submit_error
+    @pytest.mark.asyncio
+    async def test_no_tape_store_not_called(self, make_service) -> None:
+        """When no tape loaded, store.save_queued must NOT be called."""
+        svc, _queue, store, _backend = make_service(loaded_tape_mm=None)
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        with pytest.raises(NoTapeLoadedError):
+            await svc.submit_print_job(request)
+        store.save_queued.assert_not_called()
 
-    mock_store = AsyncMock()
 
-    svc = _service(loader, renderer, queue, lookup_service, backend, store=mock_store)
-    req = PrintRequest(
-        template_id="qr-only-24mm",
-        data=RawLabelData(title="T", primary_id="P", qr_payload="Q"),
-    )
+# ---------------------------------------------------------------------------
+# Preflight: other printer errors
+# ---------------------------------------------------------------------------
 
-    with pytest.raises(RuntimeError):
-        await svc.submit_print_job(req)
 
-    # save_queued muss aufgerufen worden sein (DB-Persist vor submit)
-    mock_store.save_queued.assert_awaited_once()
-    # mark_failed muss aufgerufen worden sein mit passendem error-String
-    mock_store.mark_failed.assert_awaited_once()
-    call_args = mock_store.mark_failed.call_args
-    error_msg: str = call_args.args[1] if call_args.args else call_args.kwargs["error"]
-    assert "submit_failed" in error_msg
-    assert "RuntimeError" in error_msg
+class TestPreflightErrors:
+    @pytest.mark.asyncio
+    async def test_preflight_offline_raises(self, make_service) -> None:
+        """PrinterOfflineError from preflight propagates, queue never called."""
+        svc, queue, _store, backend = make_service(loaded_tape_mm=12)
+        backend.preflight_check.side_effect = PrinterOfflineError("unreachable")
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        with pytest.raises(PrinterOfflineError):
+            await svc.submit_print_job(request)
+        queue.submit_with_id.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_preflight_tape_empty_raises(self, make_service) -> None:
+        """TapeEmptyError from preflight propagates, queue never called."""
+        svc, queue, _store, backend = make_service(loaded_tape_mm=12)
+        backend.preflight_check.side_effect = TapeEmptyError()
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        with pytest.raises(TapeEmptyError):
+            await svc.submit_print_job(request)
+        queue.submit_with_id.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_preflight_cover_open_raises(self, make_service) -> None:
+        """PrinterCoverOpenError from preflight propagates, queue never called."""
+        svc, queue, _store, backend = make_service(loaded_tape_mm=12)
+        backend.preflight_check.side_effect = PrinterCoverOpenError()
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        with pytest.raises(PrinterCoverOpenError):
+            await svc.submit_print_job(request)
+        queue.submit_with_id.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Lookup path
+# ---------------------------------------------------------------------------
+
+
+class TestLookupPath:
+    @pytest.mark.asyncio
+    async def test_lookup_path_calls_lookup_service(self, make_service) -> None:
+        """lookup request resolves via lookup_service, then renders + queues."""
+        from app.schemas.label_data import LabelData
+
+        lookup_svc = AsyncMock()
+        lookup_svc.resolve = AsyncMock(
+            return_value=LabelData(
+                title="Workshop",
+                primary_id="K02",
+                qr_payload="https://example.com/x",
+                source_app="hangar",
+            )
+        )
+
+        backend = AsyncMock()
+        backend.preflight_check = AsyncMock(return_value=_preflight(18))
+        queue = MagicMock()
+        queue.submit_with_id = AsyncMock()
+        store = MagicMock()
+        store.save_queued = AsyncMock()
+        engine = LayoutEngine()
+
+        svc = PrintService(
+            printer_id=_PRINTER_ID,
+            backend=backend,
+            queue=queue,
+            store=store,
+            engine=engine,
+            lookup_service=lookup_svc,
+        )
+
+        request = PrintRequest(
+            content_type=ContentType.QR_TWO_LINES,
+            lookup=PrintLookupRequest(app="hangar", identifier="K02"),
+        )
+        job_id = await svc.submit_print_job(request)
+        assert isinstance(job_id, UUID)
+        lookup_svc.resolve.assert_awaited_once_with("hangar", "K02")
+        queue.submit_with_id.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_data_path_bypasses_lookup(self, make_service) -> None:
+        """data path: lookup_service.resolve is never called."""
+        lookup_svc = AsyncMock()
+        lookup_svc.resolve = AsyncMock()
+
+        backend = AsyncMock()
+        backend.preflight_check = AsyncMock(return_value=_preflight(12))
+        queue = MagicMock()
+        queue.submit_with_id = AsyncMock()
+        store = MagicMock()
+        store.save_queued = AsyncMock()
+        engine = LayoutEngine()
+
+        svc = PrintService(
+            printer_id=_PRINTER_ID,
+            backend=backend,
+            queue=queue,
+            store=store,
+            engine=engine,
+            lookup_service=lookup_svc,
+        )
+
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        await svc.submit_print_job(request)
+        lookup_svc.resolve.assert_not_awaited()

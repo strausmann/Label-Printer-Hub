@@ -1,15 +1,15 @@
-"""Phase 7b Cluster 1e — readiness aggregator (all 8 checks).
+"""Phase 7b Cluster 1e — readiness aggregator (7 checks).
 
 Checks implemented:
   database         — SELECT 1 latency (critical)
   alembic          — alembic_version at head (critical)
-  template_seed    — templates table non-empty (critical)
   printer_runtime  — app.state.printer_id set (non-critical)
   printer_db_sync  — runtime printer_id has a DB row (non-critical)
   snmp_discovery   — PrinterStatusCache recency (non-critical)
   print_queue      — print_queue in app.state (non-critical)
   sse_bus          — subscriber capacity (non-critical)
 
+Phase 1k.1a Task 24: template_seed check removed (templates table dropped).
 F4 wires the FastAPI route + HTTP status mapping.
 """
 
@@ -19,16 +19,15 @@ import time
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from sqlalchemy import func, select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.models.printer import Printer
 from app.models.printer_status_cache import PrinterStatusCache
-from app.models.template import Template
 from app.schemas.readiness import CheckStatus, ReadinessResponse
 
-_CRITICAL_CHECKS = ("database", "alembic", "template_seed")
+_CRITICAL_CHECKS = ("database", "alembic")
 
 
 async def _check_database(session: AsyncSession) -> CheckStatus:
@@ -49,18 +48,6 @@ async def _check_alembic(settings: Settings) -> CheckStatus:
         return CheckStatus(status="ok")
     except Exception as exc:
         return CheckStatus(status="fail", detail=str(exc))
-
-
-async def _check_template_seed(session: AsyncSession) -> CheckStatus:
-    count = await session.scalar(select(func.count()).select_from(Template))
-    cnt = int(count or 0)
-    if cnt >= 1:
-        return CheckStatus(status="ok", metric={"templates_in_db": cnt})
-    return CheckStatus(
-        status="fail",
-        detail="Templates table is empty — lifespan init-order regression?",
-        metric={"templates_in_db": cnt},
-    )
 
 
 def _check_printer_runtime(app_state: Any) -> CheckStatus:
@@ -160,7 +147,6 @@ async def build_readiness_response(
     checks: dict[str, CheckStatus] = {
         "database": await _check_database(session),
         "alembic": await _check_alembic(settings),
-        "template_seed": await _check_template_seed(session),
         "printer_runtime": _check_printer_runtime(app_state),
         "printer_db_sync": await _check_printer_db_sync(session, app_state),
         "snmp_discovery": await _check_snmp_discovery(session, app_state),

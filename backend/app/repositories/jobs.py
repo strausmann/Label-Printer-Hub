@@ -46,7 +46,7 @@ async def create_queued(
     session: AsyncSession,
     *,
     printer_id: UUID,
-    template_key: str,
+    template_key: str | None,
     payload: dict[str, Any],
     api_key_id: UUID | None = None,
     source_ip: str | None = None,

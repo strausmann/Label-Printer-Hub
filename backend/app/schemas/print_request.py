@@ -1,10 +1,18 @@
-"""Request schemas for POST /print and supporting models."""
+"""Request schemas for POST /api/print + supporting models.
+
+Phase 1k.1a: template_id and on_tape_mismatch removed; content_type added.
+RawLabelData mirrors LabelData (minus source_app which is set server-side
+to 'manual' for raw requests).
+"""
 
 from __future__ import annotations
 
-from typing import Literal, Self
+from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.schemas.content_type import ContentType
+from app.schemas.label_data_item import LabelDataItem
 
 
 class PrintLookupRequest(BaseModel):
@@ -22,7 +30,6 @@ class PrintOptions(BaseModel):
     copies: int = Field(default=1, ge=1, le=10)
     auto_cut: bool = True
     high_resolution: bool = False
-    # Phase 1i C-Fix:
     half_cut: bool = False
     last_page: bool = True
 
@@ -30,28 +37,43 @@ class PrintOptions(BaseModel):
 class RawLabelData(BaseModel):
     """Raw label payload accepted when the client supplies data directly.
 
-    Mirrors LabelData minus `source_app` (always set to "manual" server-side).
+    Mirrors LabelData minus `source_app` (set server-side to 'manual').
+    All content fields are optional — ContentType-specific validation
+    happens in LayoutEngine._validate_data.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    title: str
-    primary_id: str
-    qr_payload: str
-    secondary: list[str] = Field(default_factory=list)
+    title: str | None = None
+    primary_id: str | None = None
+    qr_payload: str | None = None
+    secondary: tuple[str, ...] = ()
+    items: tuple[LabelDataItem, ...] = ()
 
 
 class PrintRequest(BaseModel):
-    """Top-level POST /print body."""
+    """POST /api/print body.
 
-    model_config = ConfigDict(extra="forbid")
-    template_id: str
-    lookup: PrintLookupRequest | None = None
+    Either `data` (RawLabelData) or `lookup` (PrintLookupRequest) is provided.
+    Exactly one of the two must be present.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    content_type: ContentType
+    """Semantic content type — drives LayoutEngine render dispatch."""
+
+    options: PrintOptions = PrintOptions()
+    """Per-print options (copies, cut behaviour, etc.)."""
+
     data: RawLabelData | None = None
-    options: PrintOptions = Field(default_factory=PrintOptions)
-    on_tape_mismatch: Literal["fail", "queue"] = "fail"
+    """Raw label data (preferred over lookup)."""
+
+    lookup: PrintLookupRequest | None = None
+    """Lookup-based label data (resolved via plugin)."""
 
     @model_validator(mode="after")
-    def _exactly_one_source(self) -> Self:
-        if (self.lookup is None) == (self.data is None):
-            raise ValueError("Exactly one of `lookup` or `data` must be set.")
+    def _exactly_one_data_source(self) -> Self:
+        if (self.data is None) == (self.lookup is None):
+            msg = "Exactly one of 'data' or 'lookup' must be set."
+            raise ValueError(msg)
         return self

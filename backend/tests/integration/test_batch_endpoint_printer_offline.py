@@ -80,7 +80,7 @@ async def test_batch_rejects_when_printer_offline(
     body = {
         "items": [
             {
-                "template_id": "hangar-furniture-24mm",
+                "content_type": "qr_two_lines",
                 "data": {"title": "A", "primary_id": "A", "qr_payload": "q"},
             }
         ]
@@ -88,5 +88,7 @@ async def test_batch_rejects_when_printer_offline(
     resp = await client.post(
         f"/api/print/{printer_slug}/batch", json=body, headers=offline_auth_headers
     )
-    assert resp.status_code == 409, resp.text
+    # R2-2: PrinterOfflineError → 503 (network/server issue, retry later)
+    # was 409 before R2-2 fix; consistent with print.py behaviour.
+    assert resp.status_code == 503, resp.text
     assert resp.json()["detail"]["error_code"] == "printer_offline"

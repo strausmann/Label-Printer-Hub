@@ -50,3 +50,35 @@ class TestTapeMismatchFields:
         err = TapeMismatchError(expected_mm=18, loaded_mm=12)
         s = str(err)
         assert "18" in s and "12" in s
+
+
+from app.printer_backends.exceptions import (  # noqa: E402
+    ContentTypeDataMismatchError,
+    NoTapeLoadedError,
+    UnsupportedTapeError,
+)
+
+
+class TestUnsupportedTapeError:
+    def test_carries_tape_mm(self) -> None:
+        exc = UnsupportedTapeError(tape_mm=36)
+        assert exc.tape_mm == 36
+        assert "36" in str(exc)
+        assert "supported" in str(exc).lower()
+
+
+class TestNoTapeLoadedError:
+    def test_message_default(self) -> None:
+        exc = NoTapeLoadedError()
+        assert "no tape" in str(exc).lower()
+
+
+class TestContentTypeDataMismatchError:
+    def test_carries_content_type_and_missing(self) -> None:
+        exc = ContentTypeDataMismatchError(
+            content_type="qr_two_lines",
+            missing_fields=("primary_id", "title"),
+        )
+        assert exc.content_type == "qr_two_lines"
+        assert exc.missing_fields == ("primary_id", "title")
+        assert "primary_id" in str(exc) and "title" in str(exc)

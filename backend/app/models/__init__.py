@@ -11,7 +11,6 @@ from app.models.print_batch import PrintBatch
 from app.models.printer import Printer
 from app.models.printer_state import PrinterState
 from app.models.printer_status_cache import PrinterStatusCache
-from app.models.template import Template
 
 __all__ = [
     "ApiKey",
@@ -22,5 +21,4 @@ __all__ = [
     "Printer",
     "PrinterState",
     "PrinterStatusCache",
-    "Template",
 ]

@@ -20,7 +20,7 @@ from httpx import ASGITransport, AsyncClient
 _BODY = {
     "items": [
         {
-            "template_id": "hangar-furniture-24mm",
+            "content_type": "qr_two_lines",
             "data": {"title": "x", "primary_id": "x", "qr_payload": "q"},
         }
     ]

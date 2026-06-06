@@ -23,7 +23,7 @@ class JobRead(BaseModel):
 
     id: UUID
     printer_id: UUID
-    template_key: str
+    template_key: str | None
     state: str  # 'queued' | 'printing' | 'done' | 'failed' | 'cancelled' | 'failed_restart'
     payload: dict[str, Any]
     result: dict[str, Any] | None

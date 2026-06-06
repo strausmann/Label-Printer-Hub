@@ -1,26 +1,31 @@
-"""Phase 1i CA-1 / Phase 7b Cluster 1a + 1b end-to-end test: a fresh DB after
-lifespan startup contains the seed templates AND one deterministic-id printer,
-and app.state.printer_id matches the DB printer.id."""
+"""Phase 1i CA-1 / Phase 7b Cluster 1b end-to-end test: a fresh DB after
+lifespan startup contains one deterministic-id printer, and
+app.state.printer_id matches the DB printer.id.
+
+Phase 1k.1a (Task 25): Template seeding removed (templates table dropped).
+Test renamed from test_fresh_lifespan_seeds_templates_and_creates_printer
+→ test_fresh_lifespan_creates_printer_with_deterministic_id.
+Template assertions removed; printer assertions kept verbatim.
+"""
 
 from __future__ import annotations
 
 import app.db.engine as _engine_module
 import pytest
 from app.models.printer import Printer
-from app.models.template import Template
 from httpx import ASGITransport, AsyncClient
 from sqlmodel import select
 
 pytestmark = pytest.mark.asyncio
 
 
-async def test_fresh_lifespan_seeds_templates_and_creates_printer(
+async def test_fresh_lifespan_creates_printer_with_deterministic_id(
     _temp_db_engine,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    """After lifespan startup, templates are seeded AND printer is upserted,
-    and app.state.printer_id matches the one Printer row in the DB.
+    """After lifespan startup, printer is upserted and app.state.printer_id
+    matches the one Printer row in the DB.
 
     Phase 1i CA-1/H (Task 7b): printers.yaml mit nicht-leerem Host statt Env-Vars,
     damit upsert_runtime_printers() eine echte Printer-Row anlegt.
@@ -72,14 +77,8 @@ async def test_fresh_lifespan_seeds_templates_and_creates_printer(
         # Use the attribute on _engine_module (patched by _temp_db_engine fixture),
         # not the name bound at test-module import time.
         async with _engine_module.async_session() as s:
-            templates = list((await s.execute(select(Template))).scalars())
             printers = list((await s.execute(select(Printer))).scalars())
 
-        assert len(templates) >= 1, (
-            f"Expected at least one seeded template, got {len(templates)}. "
-            "Check that TemplateLoader.load_dir() runs BEFORE seed_templates() "
-            "in the lifespan."
-        )
         assert len(printers) == 1, (
             f"Expected exactly one upserted Printer row, got {len(printers)}. "
             "Check that upsert_runtime_printers() is wired in the lifespan."

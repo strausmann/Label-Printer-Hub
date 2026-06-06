@@ -4,7 +4,11 @@ Each test builds a minimal FastAPI app with one route that raises a mapped
 exception, registers the global handlers via :func:`register_error_handlers`,
 then hits the route and asserts the RFC 7807 ProblemDetail shape + status code.
 
-All six mapped exceptions are covered (one test per mapping in ``_MAPPING``).
+All mapped exceptions are covered (one test per mapping in ``_MAPPING``).
+
+Phase 1k.1a (Task 25): TemplateNotFoundError and template_loader removed.
+Tests for template_not_found removed; error_handlers._MAPPING no longer
+contains a TemplateNotFoundError entry.
 """
 
 from __future__ import annotations
@@ -18,7 +22,6 @@ from app.printer_backends.exceptions import (
     TapeMismatchError,
 )
 from app.services.errors import AppLookupNotFoundError
-from app.services.template_loader import TemplateNotFoundError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -89,19 +92,6 @@ def test_printer_cover_open_returns_409_problem_detail() -> None:
     assert body["status"] == 409
 
 
-def test_template_not_found_returns_404_problem_detail() -> None:
-    client = TestClient(
-        _app_raising(TemplateNotFoundError("tpl-xyz")),
-        raise_server_exceptions=False,
-    )
-    r = client.get("/boom")
-    assert r.status_code == 404
-    body = r.json()
-    assert body["type"] == "template-not-found"
-    assert body["status"] == 404
-    assert "tpl-xyz" in body["detail"]
-
-
 def test_app_lookup_not_found_returns_404_problem_detail() -> None:
     client = TestClient(
         _app_raising(AppLookupNotFoundError("asset 99 not found")),
@@ -127,7 +117,6 @@ def test_app_lookup_not_found_returns_404_problem_detail() -> None:
         TapeMismatchError(expected_mm=6, loaded_mm=None),
         TapeEmptyError("empty"),
         PrinterCoverOpenError("open"),
-        TemplateNotFoundError("missing"),
         AppLookupNotFoundError("not found"),
     ],
 )

@@ -180,7 +180,7 @@ async def test_sse_contains_batch_job_events(
     body = {
         "items": [
             {
-                "template_id": "hangar-furniture-24mm",
+                "content_type": "qr_two_lines",
                 "data": {
                     "title": f"T{i}",
                     "primary_id": f"P{i}",

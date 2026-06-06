@@ -1,3 +1,11 @@
+"""Unit tests for app.api.routes.print.
+
+Phase 1k.1a (Task 25): TemplateNotFoundError and template_loader removed.
+Tests using old template_id-based API (POST /print with template_id) adapted to
+content_type-based API. test_post_print_template_not_found_is_404 removed.
+All other tests for jobs, resume, printer-resume kept verbatim.
+"""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -13,7 +21,6 @@ from app.printer_backends.exceptions import SnmpQueryError
 from app.printer_backends.snmp_helper import LiveStatus
 from app.services.job_lifecycle import Job, JobState
 from app.services.lookup_service import LookupFailedError
-from app.services.template_loader import TemplateNotFoundError
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
@@ -48,12 +55,17 @@ def _client(app):
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
+# ---------------------------------------------------------------------------
+# POST /print — content_type-based API (Phase 1k.1a)
+# ---------------------------------------------------------------------------
+
+
 async def test_post_print_data_path_returns_202(fake_service, fake_queue) -> None:
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.post(
             "/print",
             json={
-                "template_id": "t",
+                "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
             },
         )
@@ -67,7 +79,7 @@ async def test_post_print_lookup_path_returns_202(fake_service, fake_queue) -> N
         r = await c.post(
             "/print",
             json={
-                "template_id": "t",
+                "content_type": "qr_two_lines",
                 "lookup": {"app": "snipeit", "identifier": "42"},
             },
         )
@@ -76,22 +88,8 @@ async def test_post_print_lookup_path_returns_202(fake_service, fake_queue) -> N
 
 async def test_post_print_neither_source_is_422(fake_service, fake_queue) -> None:
     async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/print", json={"template_id": "t"})
+        r = await c.post("/print", json={"content_type": "qr_two_lines"})
     assert r.status_code == 422
-
-
-async def test_post_print_template_not_found_is_404(fake_service, fake_queue) -> None:
-    fake_service.submit_print_job.side_effect = TemplateNotFoundError("missing")
-    async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post(
-            "/print",
-            json={
-                "template_id": "missing",
-                "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
-            },
-        )
-    assert r.status_code == 404
-    assert r.json()["error_code"] == "template_not_found"
 
 
 async def test_post_print_lookup_failed_is_502(fake_service, fake_queue) -> None:
@@ -100,7 +98,7 @@ async def test_post_print_lookup_failed_is_502(fake_service, fake_queue) -> None
         r = await c.post(
             "/print",
             json={
-                "template_id": "t",
+                "content_type": "qr_two_lines",
                 "lookup": {"app": "snipeit", "identifier": "x"},
             },
         )
@@ -186,7 +184,7 @@ async def test_post_print_tape_mismatch_fail_is_409_with_detail(fake_service, fa
         r = await c.post(
             "/print",
             json={
-                "template_id": "t",
+                "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
             },
         )
@@ -204,7 +202,7 @@ async def test_post_print_tape_mismatch_no_tape_loaded(fake_service, fake_queue)
         r = await c.post(
             "/print",
             json={
-                "template_id": "t",
+                "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
             },
         )
@@ -222,7 +220,7 @@ async def test_post_print_printer_offline_is_503(fake_service, fake_queue) -> No
         r = await c.post(
             "/print",
             json={
-                "template_id": "t",
+                "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
             },
         )
@@ -238,7 +236,7 @@ async def test_post_print_tape_empty_is_409(fake_service, fake_queue) -> None:
         r = await c.post(
             "/print",
             json={
-                "template_id": "t",
+                "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
             },
         )
@@ -254,7 +252,7 @@ async def test_post_print_cover_open_is_409(fake_service, fake_queue) -> None:
         r = await c.post(
             "/print",
             json={
-                "template_id": "t",
+                "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
             },
         )

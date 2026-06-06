@@ -33,13 +33,12 @@ async def _noop_verify(*_args, **_kwargs) -> None:
     pass
 
 
-async def _noop_seed_templates(*_args, **_kwargs) -> int:
-    return 0
-
-
 @pytest.fixture()
 async def clean_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    """Temp-DB + noop-migrations für Multi-Printer-Test."""
+    """Temp-DB + noop-migrations für Multi-Printer-Test.
+
+    Phase 1k.1a (Task 25): seed_templates patches removed (function deleted).
+    """
     import app.db.session as _session_module
 
     db_path = tmp_path / "multi_printer_test.db"
@@ -59,8 +58,6 @@ async def clean_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
     monkeypatch.setattr(_main_module, "run_migrations", _noop_migrations)
     monkeypatch.setattr(_lifespan_module, "verify_alembic_at_head", _noop_verify)
     monkeypatch.setattr(_main_module, "verify_alembic_at_head", _noop_verify)
-    monkeypatch.setattr(_lifespan_module, "seed_templates", _noop_seed_templates)
-    monkeypatch.setattr(_main_module, "seed_templates", _noop_seed_templates)
 
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False
