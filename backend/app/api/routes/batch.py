@@ -13,10 +13,13 @@ from app.auth.scope_deps import require_print
 from app.db.session import get_session
 from app.models.print_batch import PrintBatch
 from app.printer_backends.exceptions import (
+    ContentTypeDataMismatchError,
+    NoTapeLoadedError,
     PrinterCoverOpenError,
     PrinterOfflineError,
     SnmpQueryError,
     TapeMismatchError,
+    UnsupportedTapeError,
 )
 from app.repositories import print_batches as batches_repo
 from app.repositories import printers as printers_repo
@@ -123,7 +126,38 @@ async def create_batch(
             409,
             detail={
                 "error_code": _SYNC_ERROR_MAP[type(exc)],
+                # str(exc) is safe here: these exceptions carry only hardware-state
+                # descriptions (e.g. "Expected 12mm tape, loaded 24mm"), no stack
+                # trace fragments or internal paths.
                 "error_message": str(exc),
+            },
+        ) from exc
+    except (NoTapeLoadedError, UnsupportedTapeError) as exc:
+        # 409: tape hardware state — client must change tape and retry.
+        # NOTE: We do NOT expose str(exc) — CWE-209 guard: use a fixed message
+        # + structured detail instead of raw exception text.
+        if isinstance(exc, NoTapeLoadedError):
+            error_code = "no_tape_loaded"
+            error_msg = "No tape loaded — insert a Brother TZe or DK cartridge."
+            error_detail: dict[str, object] = {}
+        else:
+            error_code = "unsupported_tape"
+            error_msg = "The currently loaded tape width is not supported by the layout engine."
+            error_detail = {"tape_mm": exc.tape_mm}
+        detail: dict[str, object] = {"error_code": error_code, "error_message": error_msg}
+        if error_detail:
+            detail["error_detail"] = error_detail
+        raise HTTPException(409, detail=detail) from exc
+    except ContentTypeDataMismatchError as exc:
+        # 422: client-side data error — missing fields for the chosen content type.
+        raise HTTPException(
+            422,
+            detail={
+                "error_code": "content_type_data_mismatch",
+                "error_message": (
+                    "The label data is missing fields required for the selected content type."
+                ),
+                "error_detail": {"missing_fields": list(exc.missing_fields)},
             },
         ) from exc
 
