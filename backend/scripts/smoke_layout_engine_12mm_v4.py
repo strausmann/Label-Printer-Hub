@@ -3,6 +3,13 @@
 Phase 1k.1a (Task 25): Verifies that the LayoutEngine renders a 12mm
 QR_TWO_LINES label to a valid PIL image without crashing.
 
+Phase 1k.1a (Round-1 fix, MED-2): Added SHA-256 pixel-hash to detect
+rendering regressions across code changes. EXPECTED_SHA is set to None
+until first hardware-verified baseline. Set it to the printed SHA after
+verifying the render output is correct on target hardware:
+
+    EXPECTED_SHA = "<sha from first verified run>"
+
 Run from the backend directory:
 
     python -m scripts.smoke_layout_engine_12mm_v4
@@ -13,6 +20,7 @@ Exits 0 on success, 1 on failure.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import sys
 
@@ -20,6 +28,11 @@ from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.services.layout_engine import LayoutEngine
 from PIL import Image
+
+# Pinned pixel-hash for regression detection.
+# Set to the SHA printed after the first hardware-verified run.
+# None = hash is printed but not validated (initial setup mode).
+_EXPECTED_SHA: str | None = None
 
 
 def main() -> int:
@@ -66,6 +79,21 @@ def main() -> int:
         return 1
 
     print(f"OK: PNG encode produced {len(png_bytes)} bytes")  # noqa: T201
+
+    # Pixel-hash: SHA-256 of the raw PNG bytes. Detects rendering regressions
+    # (font changes, geometry tweaks, QR algorithm changes) across code changes.
+    # Set EXPECTED_SHA after verifying the render on target hardware.
+    sha = hashlib.sha256(png_bytes).hexdigest()
+    print(f"SHA-256: {sha}")  # noqa: T201
+
+    # Compare against pinned baseline (set _EXPECTED_SHA at module top after first verified run).
+    if _EXPECTED_SHA is not None and sha != _EXPECTED_SHA:
+        print(  # noqa: T201
+            f"WARNING: SHA mismatch! Expected {_EXPECTED_SHA}, got {sha}",
+            file=sys.stderr,
+        )
+        return 1
+
     print("SMOKE PASS")  # noqa: T201
     return 0
 
