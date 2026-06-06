@@ -84,7 +84,8 @@ from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.admin_api_keys import router as admin_api_keys_router
-from app.api.routes.print import render_router, router as print_router
+from app.api.routes.print import render_router
+from app.api.routes.print import router as print_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
 from app.config import get_settings
