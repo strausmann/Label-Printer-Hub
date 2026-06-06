@@ -130,7 +130,8 @@ async def test_post_batch_4_items_calls_print_images_once(ml_batch_client):
         assert resp.status_code == 202, resp.text
         rb = resp.json()
         assert len(rb["job_ids"]) == 4
-        assert rb["errors"] == []
+        # R2-3: errors field removed from BatchResponse
+        assert "errors" not in rb
 
         # Wait for the worker to dequeue + call print_images
         deadline = asyncio.get_event_loop().time() + 5.0
@@ -187,7 +188,8 @@ async def test_post_batch_failure_marks_all_jobs_failed(ml_batch_client):
         assert resp.status_code == 202, resp.text
         rb = resp.json()
         assert len(rb["job_ids"]) == 4
-        assert rb["errors"] == []
+        # R2-3: errors field removed from BatchResponse
+        assert "errors" not in rb
 
         # Wait for the worker to attempt + fail
         deadline = asyncio.get_event_loop().time() + 5.0

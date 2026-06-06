@@ -236,20 +236,25 @@ class PrintQueue:
                     # KeyError (fehlendes label_data/content_type), ValidationError
                     # (ungültige Struktur), ValueError (ungültiger ContentType-Wert) →
                     # Job FAILED markieren und mit dem nächsten Job weitermachen.
-                    # MED-1: Webhook-generated jobs (spoolman/<id>, grocy/<id>) have
+                    # MED-1/R2-1: Webhook-generated jobs (spoolman/<id>, grocy/<id>) have
                     # template_key but NO content_type/label_data/rendered_tape_mm in
                     # their payload. Skip gracefully before attempting rerender.
-                    if "content_type" not in db_job.payload or "label_data" not in db_job.payload:
+                    # R2-1: check all three required keys — a job with content_type +
+                    # label_data but missing rendered_tape_mm would still fail in
+                    # _rerender_from_db_payload; guard must cover the full set.
+                    _required_rerender_keys = {"content_type", "label_data", "rendered_tape_mm"}
+                    _missing_keys = _required_rerender_keys - db_job.payload.keys()
+                    if _missing_keys:
                         skip_msg = (
                             f"Recovery: Skipping job {db_job.id} — payload lacks "
-                            f"content_type/label_data "
+                            f"{sorted(_missing_keys)} "
                             f"(template_key={db_job.template_key!r}). "
-                            f"Webhook-generated jobs cannot be re-rendered."
+                            f"Legacy/webhook-generated jobs cannot be re-rendered."
                         )
                         logger.info(skip_msg)
                         await self._store.mark_failed(
                             db_job.id,
-                            f"recovery_skip_webhook_payload: {skip_msg}",
+                            f"recovery_skip_legacy_payload: {skip_msg}",
                         )
                         continue
                     try:

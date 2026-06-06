@@ -36,7 +36,8 @@ router = APIRouter(prefix="/api")
 _SYNC_ERROR_MAP: dict[type[Exception], str] = {
     PrinterOfflineError: "printer_offline",
     PrinterCoverOpenError: "printer_cover_open",
-    SnmpQueryError: "snmp_error",
+    # R2-2: align with print.py — snmp_query_failed (was snmp_error)
+    SnmpQueryError: "snmp_query_failed",
     TapeMismatchError: "tape_mismatch",
 }
 
@@ -121,7 +122,8 @@ async def create_batch(
             items=body.items,
             half_cut=use_half_cut,
         )
-    except (PrinterOfflineError, PrinterCoverOpenError, SnmpQueryError, TapeMismatchError) as exc:
+    except (PrinterCoverOpenError, TapeMismatchError) as exc:
+        # 409: hardware state the user can fix (cover open / wrong tape)
         raise HTTPException(
             409,
             detail={
@@ -129,6 +131,16 @@ async def create_batch(
                 # str(exc) is safe here: these exceptions carry only hardware-state
                 # descriptions (e.g. "Expected 12mm tape, loaded 24mm"), no stack
                 # trace fragments or internal paths.
+                "error_message": str(exc),
+            },
+        ) from exc
+    except (PrinterOfflineError, SnmpQueryError) as exc:
+        # R2-2: 503 — server-side / network issue, client should retry later.
+        # Consistent with print.py which maps PrinterOfflineError → 503.
+        raise HTTPException(
+            503,
+            detail={
+                "error_code": _SYNC_ERROR_MAP[type(exc)],
                 "error_message": str(exc),
             },
         ) from exc

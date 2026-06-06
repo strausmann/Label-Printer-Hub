@@ -40,15 +40,15 @@ def test_batch_request_caps_at_500():
 
 
 def test_batch_response_with_all_succeeded():
+    # R2-3: errors field removed from BatchResponse
     resp = BatchResponse(
         batch_id=uuid4(),
         printer_id=uuid4(),
         queued_at="2026-05-30T19:42:01Z",
         job_ids=[str(uuid4()) for _ in range(5)],
-        errors=[],
     )
     assert len(resp.job_ids) == 5
-    assert resp.errors == []
+    assert not hasattr(resp, "errors")
 
 
 def test_batch_error_with_required_fields():

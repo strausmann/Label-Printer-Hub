@@ -94,4 +94,5 @@ async def test_batch_happy_path(batch_client, batch_db_session, batch_auth_heade
     assert "batch_id" in data
     assert data["printer_id"] == str(printer_id)
     assert len(data["job_ids"]) == 3
-    assert data["errors"] == []
+    # R2-3: errors field removed from BatchResponse
+    assert "errors" not in data

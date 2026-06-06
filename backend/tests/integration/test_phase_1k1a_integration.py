@@ -129,7 +129,8 @@ async def test_render_preview_missing_required_field_returns_422(client):
         headers={"X-Pangolin-User": "test"},
     )
     assert resp.status_code == 422, resp.text
-    assert resp.json()["error_code"] == "data_mismatch"
+    # R2-4: aligned with /print endpoint — was "data_mismatch"
+    assert resp.json()["error_code"] == "content_type_data_mismatch"
 
 
 async def test_render_preview_qr_only_no_extra_fields(client):

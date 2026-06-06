@@ -336,7 +336,9 @@ async def render_preview(
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
-                "error_code": "data_mismatch",
+                # R2-4: align with /print endpoint (_SYNC_ERROR_MAP) which uses
+                # "content_type_data_mismatch" — was inconsistently "data_mismatch"
+                "error_code": "content_type_data_mismatch",
                 "error_message": (
                     "The label data is missing fields required for the selected content type."
                 ),

@@ -181,15 +181,15 @@ async def test_recovery_skips_jobs_with_missing_label_data(
 
     # bad_job muss als FAILED in der DB stehen.
     # Phase 1k.1a Round-1 fix (MED-1): Jobs ohne content_type/label_data werden
-    # jetzt als Webhook-Payload-Skip behandelt (recovery_skip_webhook_payload)
-    # statt als allgemeiner Rerender-Fehler (recovery_rerender_failed).
+    # als Payload-Skip behandelt statt als allgemeiner Rerender-Fehler.
+    # R2-1: Prefix jetzt recovery_skip_legacy_payload (deckt alle 3 fehlenden Keys).
     # Beide Pfade enden in JobState.FAILED — der Prefix unterscheidet die Ursache.
     fetched_bad = await store.get(bad_job.id)
     assert fetched_bad is not None
     assert fetched_bad.state == JobState.FAILED.value
     assert fetched_bad.error is not None
     assert (
-        "recovery_skip_webhook_payload" in fetched_bad.error
+        "recovery_skip_legacy_payload" in fetched_bad.error
         or "recovery_rerender_failed" in fetched_bad.error
     )
 
