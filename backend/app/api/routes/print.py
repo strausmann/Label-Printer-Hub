@@ -1,4 +1,4 @@
-"""POST /print + GET /jobs/{job_id} + POST /jobs/{job_id}/resume + POST /render/preview."""
+"""POST /print + GET /jobs/{job_id} + POST /jobs/{job_id}/resume + POST /api/render/preview."""
 
 from __future__ import annotations
 
@@ -37,6 +37,11 @@ from app.services.print_queue import PrinterAlreadyActiveError
 _log = logging.getLogger(__name__)
 
 router = APIRouter()
+# Separate router with /api prefix for the render/preview endpoint so that
+# the effective URL matches the approved spec: POST /api/render/preview.
+# The legacy /print, /jobs, /printer routes on `router` have no /api prefix
+# for backwards-compatibility with existing clients; render/preview is new.
+render_router = APIRouter(prefix="/api")
 
 
 class _PrinterResumeResponse(BaseModel):
@@ -266,7 +271,7 @@ class _PreviewRequest(BaseModel):
     tape_mm: int = 12
 
 
-@router.post(
+@render_router.post(
     "/render/preview",
     tags=["print"],
     summary="Render a label preview as PNG",

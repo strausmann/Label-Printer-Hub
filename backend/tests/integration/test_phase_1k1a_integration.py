@@ -1,12 +1,12 @@
-"""Phase 1k.1a integration tests — LayoutEngine + /render/preview endpoint.
+"""Phase 1k.1a integration tests — LayoutEngine + /api/render/preview endpoint.
 
 Task 25: End-to-end verification that the LayoutEngine-based pipeline
-produces valid images and the /render/preview REST endpoint works correctly.
+produces valid images and the /api/render/preview REST endpoint works correctly.
 
 Covered:
-- POST /render/preview 200 → PNG bytes (valid image)
-- POST /render/preview 409 → unsupported tape_mm
-- POST /render/preview 422 → data missing required fields
+- POST /api/render/preview 200 → PNG bytes (valid image)
+- POST /api/render/preview 409 → unsupported tape_mm
+- POST /api/render/preview 422 → data missing required fields
 - All 7 ContentTypes render without exception on 12mm, 18mm, 24mm tape
 - LayoutEngine is stateless (reuse instance, same output)
 """
@@ -21,7 +21,7 @@ from PIL import Image
 pytestmark = pytest.mark.asyncio
 
 # ---------------------------------------------------------------------------
-# /render/preview — happy paths
+# /api/render/preview — happy paths
 # ---------------------------------------------------------------------------
 
 _VALID_BODY_QR_TWO_LINES = {
@@ -36,9 +36,9 @@ _VALID_BODY_QR_TWO_LINES = {
 
 
 async def test_render_preview_returns_png(client):
-    """POST /render/preview → 200 with image/png content-type."""
+    """POST /api/render/preview → 200 with image/png content-type."""
     resp = await client.post(
-        "/render/preview",
+        "/api/render/preview",
         json=_VALID_BODY_QR_TWO_LINES,
         headers={"X-Pangolin-User": "test"},
     )
@@ -61,7 +61,7 @@ async def test_render_preview_12mm(client):
         "tape_mm": 12,
     }
     resp = await client.post(
-        "/render/preview",
+        "/api/render/preview",
         json=body,
         headers={"X-Pangolin-User": "test"},
     )
@@ -82,7 +82,7 @@ async def test_render_preview_18mm(client):
         "tape_mm": 18,
     }
     resp = await client.post(
-        "/render/preview",
+        "/api/render/preview",
         json=body,
         headers={"X-Pangolin-User": "test"},
     )
@@ -92,7 +92,7 @@ async def test_render_preview_18mm(client):
 
 
 # ---------------------------------------------------------------------------
-# /render/preview — error cases
+# /api/render/preview — error cases
 # ---------------------------------------------------------------------------
 
 
@@ -104,7 +104,7 @@ async def test_render_preview_unsupported_tape_returns_409(client):
         "tape_mm": 999,
     }
     resp = await client.post(
-        "/render/preview",
+        "/api/render/preview",
         json=body,
         headers={"X-Pangolin-User": "test"},
     )
@@ -124,7 +124,7 @@ async def test_render_preview_missing_required_field_returns_422(client):
         "tape_mm": 24,
     }
     resp = await client.post(
-        "/render/preview",
+        "/api/render/preview",
         json=body,
         headers={"X-Pangolin-User": "test"},
     )
@@ -141,7 +141,7 @@ async def test_render_preview_qr_only_no_extra_fields(client):
         "tape_mm": 12,
     }
     resp = await client.post(
-        "/render/preview",
+        "/api/render/preview",
         json=body,
         headers={"X-Pangolin-User": "test"},
     )
@@ -198,10 +198,10 @@ async def test_all_content_types_via_preview_endpoint(
     data_kwargs: dict,
     tape_mm: int,
 ) -> None:
-    """All 7 ContentTypes x {12, 18, 24}mm produce a valid PNG via /render/preview."""
+    """All 7 ContentTypes x {12, 18, 24}mm produce a valid PNG via /api/render/preview."""
     body = {"content_type": content_type, "data": data_kwargs, "tape_mm": tape_mm}
     resp = await client.post(
-        "/render/preview",
+        "/api/render/preview",
         json=body,
         headers={"X-Pangolin-User": "test"},
     )

@@ -49,9 +49,11 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
     tags=["print"],
     summary="Submit a batch of print jobs",
     description=(
-        "Best-effort batch print. Validates each item individually and "
-        "returns per-item errors. Hardware preconditions (printer_offline, "
-        "cover_open) reject the entire batch with 409."
+        "Atomic batch print. Validates all items and enqueues the entire batch "
+        "as a unit — no per-item errors are returned. Any validation failure "
+        "or hardware precondition (printer_offline, cover_open, unsupported_tape, "
+        "no_tape_loaded, content_type_data_mismatch) rejects the whole batch "
+        "with the appropriate 4xx status code."
     ),
 )
 async def create_batch(

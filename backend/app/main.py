@@ -84,7 +84,7 @@ from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.admin_api_keys import router as admin_api_keys_router
-from app.api.routes.print import router as print_router
+from app.api.routes.print import render_router, router as print_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
 from app.config import get_settings
@@ -652,6 +652,7 @@ def create_app() -> _LifespanManager:
 
     register_error_handlers(app)
     app.include_router(print_router)
+    app.include_router(render_router)
     app.include_router(batch_routes.router)
     app.include_router(batches_routes.router)
     app.include_router(events_routes.router)

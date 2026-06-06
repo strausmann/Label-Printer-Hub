@@ -52,8 +52,12 @@ class SnmpQueryError(PrinterError):
     """
 
 
-class UnsupportedTapeError(Exception):
+class UnsupportedTapeError(PrinterError):
     """Raised when the preflight-detected tape_mm is not in TAPE_GEOMETRY.
+
+    Inherits from PrinterError to keep the exception hierarchy consistent:
+    all hardware/tape precondition failures share the same base class and
+    can be caught with a single ``except PrinterError`` if needed.
 
     HTTP-Status: 409 (Conflict) — same family as TapeEmptyError, CoverOpenError.
     The user must switch to a supported tape; retrying with the same loaded
@@ -74,8 +78,12 @@ class UnsupportedTapeError(Exception):
         )
 
 
-class NoTapeLoadedError(Exception):
+class NoTapeLoadedError(PrinterError):
     """Raised when preflight returns loaded_tape_mm=None (no tape inserted).
+
+    Inherits from PrinterError to keep the exception hierarchy consistent:
+    all hardware/tape precondition failures share the same base class and
+    can be caught with a single ``except PrinterError`` if needed.
 
     HTTP-Status: 409 (Conflict) — physical hardware state, retry needed
     after user inserts tape.
