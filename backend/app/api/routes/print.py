@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 from typing import Annotated, Any
@@ -52,6 +53,8 @@ _SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     NoTapeLoadedError: (409, "no_tape_loaded"),
     PrinterCoverOpenError: (409, "printer_cover_open"),
     PrinterOfflineError: (503, "printer_offline"),
+    UnsupportedTapeError: (409, "unsupported_tape"),
+    ContentTypeDataMismatchError: (422, "content_type_data_mismatch"),
 }
 
 
@@ -303,20 +306,42 @@ async def render_preview(
         secondary=body.data.secondary,
         items=body.data.items,
     )
-    try:
+
+    def _render() -> bytes:
         image = engine.render(body.tape_mm, body.content_type, label_data)
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        return buf.getvalue()
+
+    # asyncio.to_thread: render() + image.save() are CPU-bound (QR generation,
+    # font rendering, PNG encoding). Offloading to a thread pool prevents blocking
+    # the event loop during heavy rendering.
+    # Errors are raised from the thread and re-raised here for structured handling.
+    # NOTE: We do NOT expose str(exc) directly to the client — CodeQL CWE-209:
+    # raw exception strings may contain stack trace fragments or internal paths.
+    try:
+        png_bytes = await asyncio.to_thread(_render)
     except UnsupportedTapeError as exc:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
-            content={"error_code": "unsupported_tape", "error_message": str(exc)},
+            content={
+                "error_code": "unsupported_tape",
+                "error_message": (
+                    "The currently loaded tape width is not supported by the layout engine."
+                ),
+                "error_detail": {"tape_mm": exc.tape_mm},
+            },
         )
     except ContentTypeDataMismatchError as exc:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={"error_code": "data_mismatch", "error_message": str(exc)},
+            content={
+                "error_code": "data_mismatch",
+                "error_message": (
+                    "The label data is missing fields required for the selected content type."
+                ),
+                "error_detail": {"missing_fields": list(exc.missing_fields)},
+            },
         )
 
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    buf.seek(0)
-    return Response(content=buf.read(), media_type="image/png")
+    return Response(content=png_bytes, media_type="image/png")

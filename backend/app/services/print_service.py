@@ -62,10 +62,14 @@ class PrintService:
             raise NoTapeLoadedError()
 
         label_data = await self._resolve_label_data(request)
-        image = self._engine.render(
-            tape_mm=preflight.loaded_tape_mm,
-            content_type=request.content_type,
-            data=label_data,
+        # asyncio.to_thread: render() is CPU-bound (QR generation + font rendering).
+        # Offloading keeps the event loop responsive for concurrent requests.
+        # Matches the pattern already used in submit_batch_job._prepare_one.
+        image = await asyncio.to_thread(
+            self._engine.render,
+            preflight.loaded_tape_mm,
+            request.content_type,
+            label_data,
         )
 
         job_id = uuid4()

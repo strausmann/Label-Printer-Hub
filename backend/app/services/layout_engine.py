@@ -11,6 +11,7 @@ The _render_*() methods are implemented in subsequent tasks (7-13).
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import ClassVar
 
 import qrcode
@@ -126,12 +127,20 @@ class LayoutEngine:
         return Image.new("1", (width, height), color=1)
 
     @staticmethod
+    @lru_cache(maxsize=32)
     def _load_font(size_px: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
         """Load DejaVuSans TrueType font at the requested pixel size.
 
         DejaVuSans.ttf is installed via fonts-dejavu-core in the Dockerfile.
         On dev machines without the system font, falls back to the default
         bitmap font.
+
+        @lru_cache(maxsize=32): font loading is I/O-bound on first call
+        (truetype parses the .ttf file). Caching eliminates repeated disk
+        reads per render. 32 slots covers all distinct size_px values used
+        across tape geometries with room to spare.
+        Note: @staticmethod must be the outer decorator; @lru_cache wraps
+        the underlying function before staticmethod descriptor takes effect.
         """
         try:
             return ImageFont.truetype("DejaVuSans.ttf", size_px)
