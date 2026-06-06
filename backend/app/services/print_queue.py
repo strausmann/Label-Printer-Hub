@@ -27,7 +27,6 @@ from typing import Any, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
 from PIL import Image
-from pydantic import ValidationError
 
 from app.models.job import JobState as DbJobState
 from app.printer_backends.exceptions import (
@@ -237,15 +236,36 @@ class PrintQueue:
                     # KeyError (fehlendes label_data/content_type), ValidationError
                     # (ungültige Struktur), ValueError (ungültiger ContentType-Wert) →
                     # Job FAILED markieren und mit dem nächsten Job weitermachen.
+                    # MED-1: Webhook-generated jobs (spoolman/<id>, grocy/<id>) have
+                    # template_key but NO content_type/label_data/rendered_tape_mm in
+                    # their payload. Skip gracefully before attempting rerender.
+                    if "content_type" not in db_job.payload or "label_data" not in db_job.payload:
+                        skip_msg = (
+                            f"Recovery: Skipping job {db_job.id} — payload lacks "
+                            f"content_type/label_data "
+                            f"(template_key={db_job.template_key!r}). "
+                            f"Webhook-generated jobs cannot be re-rendered."
+                        )
+                        logger.info(skip_msg)
+                        await self._store.mark_failed(
+                            db_job.id,
+                            f"recovery_skip_webhook_payload: {skip_msg}",
+                        )
+                        continue
                     try:
                         image = self._rerender_from_db_payload(db_job.payload)
-                    except (KeyError, ValidationError, ValueError) as exc:
+                    except Exception as exc:  # defensive: per-job failure must not abort startup
                         logger.warning(
-                            "Recovery: Job %s rerender fehlgeschlagen (%s), FAILED",
+                            "Recovery: Job %s rerender fehlgeschlagen (%s: %s),"
+                            " wird als FAILED markiert und übersprungen",
                             db_job.id,
                             exc.__class__.__name__,
+                            exc,
                         )
-                        await self._store.mark_failed(db_job.id, f"recovery_rerender_failed: {exc}")
+                        await self._store.mark_failed(
+                            db_job.id,
+                            f"recovery_rerender_failed: {exc!r}",
+                        )
                         continue
                     payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
                     wrapper = Job(
