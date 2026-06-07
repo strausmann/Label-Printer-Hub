@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## 0.10.0 (2026-06-07)
+
+* feat(1k.1a): Hub Layout-Engine — replaces 21 templates with semantic engine (#109) ([ddcf114](https://github.com/strausmann/label-printer-hub/commit/ddcf114)), closes [#109](https://github.com/strausmann/label-printer-hub/issues/109) [#152](https://github.com/strausmann/label-printer-hub/issues/152) [#81](https://github.com/strausmann/label-printer-hub/issues/81) [#103](https://github.com/strausmann/label-printer-hub/issues/103) [#101](https://github.com/strausmann/label-printer-hub/issues/101)
+* docs(research): Brother PT-P750W Multi-Label Half-Cut Gap ([126d2d4](https://github.com/strausmann/label-printer-hub/commit/126d2d4)), closes [nbuchwitz/ptouch#20](https://github.com/nbuchwitz/ptouch/issues/20) [#102](https://github.com/strausmann/label-printer-hub/issues/102)
+
 ## 0.9.0 (2026-06-05)
 
 * feat: Phase 1i — Label-Quality + Multi-Printer + Samla + Preview (#98) ([a33dda9](https://github.com/strausmann/label-printer-hub/commit/a33dda9)), closes [#98](https://github.com/strausmann/label-printer-hub/issues/98)
