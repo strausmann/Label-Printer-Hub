@@ -100,7 +100,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: always() && hashFiles('backend/coverage.xml', 'coverage.xml') != ''
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: backend/coverage.xml,coverage.xml
