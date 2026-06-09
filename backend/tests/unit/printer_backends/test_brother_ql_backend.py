@@ -179,3 +179,37 @@ async def test_preflight_check_raises_offline_on_snmp_error(
     backend = BrotherQLBackend(host="unreachable", model_id="QL-820NWB")
     with pytest.raises(PrinterOfflineError, match="preflight SNMP failed"):
         await backend.preflight_check()
+
+
+@pytest.mark.anyio
+async def test_preflight_check_no_duplicate_prefix_when_snmp_error_already_has_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #105: PrinterOfflineError darf 'preflight SNMP failed' nicht doppelt enthalten.
+
+    query_preflight() erzeugt SnmpQueryError-Messages die bereits mit
+    'preflight SNMP failed: ' beginnen (snmp_helper.py Zeile 191).
+    Das BrotherQLBackend darf dann den Prefix NICHT nochmal voranstellen.
+    """
+    from app.printer_backends.exceptions import PrinterOfflineError
+    from app.printer_backends.snmp_helper import PreflightStatus, SnmpQueryError
+
+    # Simuliert was snmp_helper.query_preflight() bei SNMP-Fehler wirft —
+    # die Message beginnt bereits mit "preflight SNMP failed: ".
+    already_prefixed_msg = "preflight SNMP failed: UDP transport error"
+
+    async def fake_preflight(
+        host: str, *, community: str = "public", timeout_s: float = 3.0
+    ) -> PreflightStatus:
+        raise SnmpQueryError(already_prefixed_msg)
+
+    monkeypatch.setattr("app.printer_backends.brother_ql_backend.query_preflight", fake_preflight)
+    backend = BrotherQLBackend(host="unreachable", model_id="QL-820NWB")
+    with pytest.raises(PrinterOfflineError) as exc_info:
+        await backend.preflight_check()
+
+    error_msg = str(exc_info.value)
+    # Darf nur EINMAL "preflight SNMP failed" enthalten
+    assert error_msg.count("preflight SNMP failed") == 1, (
+        f"Duplicate prefix in error message: {error_msg!r}"
+    )

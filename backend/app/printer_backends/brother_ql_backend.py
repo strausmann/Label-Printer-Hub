@@ -173,7 +173,12 @@ class BrotherQLBackend:
                 timeout_s=timeout_s,
             )
         except SnmpQueryError as exc:
-            raise PrinterOfflineError(f"preflight SNMP failed: {exc}") from exc
+            # Issue #105: query_preflight() kann bereits "preflight SNMP failed: …"
+            # im SnmpQueryError enthalten — doppeltes Prefixen vermeiden.
+            msg = str(exc)
+            if not msg.startswith("preflight SNMP failed:"):
+                msg = f"preflight SNMP failed: {msg}"
+            raise PrinterOfflineError(msg) from exc
 
         if "noPaper" in preflight.error_flags:
             raise TapeEmptyError()
