@@ -19,14 +19,13 @@ services:
     environment:
       - PORT=${BACKEND_PORT:-8000}
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-*}
-      - PRINTERS=${PRINTERS}
-      - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/printer-hub.db}
-      - WEBHOOK_API_KEY=${WEBHOOK_API_KEY}
-      - UI_BASE_URL=https://${PRINTERHUB_HOST}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PRINTER_HUB_PRINTERS_CONFIG=${PRINTER_HUB_PRINTERS_CONFIG:-/etc/hub/printers.yaml}
+      - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
+      - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY}
+      - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data
+      - ./printers.yaml:/etc/hub/printers.yaml:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:${BACKEND_PORT:-8000}/healthz"]
@@ -40,7 +39,7 @@ services:
     container_name: label-printer-hub-frontend
     user: "1000:1000"
     networks:
-      - pangolin-newt
+      - pangolin_mgmt
       - hub-internal
     environment:
       - PORT=${FRONTEND_PORT:-8080}
@@ -57,26 +56,40 @@ services:
       retries: 3
       start_period: 15s
     labels:
-      - "pangolin.enable=true"
+      # Main UI — behind Pangolin SSO
+      - "pangolin.public-resources.printerhub.name=Label Printer Hub"
+      - "pangolin.public-resources.printerhub.full-domain=${PRINTERHUB_HOST}"
+      - "pangolin.public-resources.printerhub.protocol=http"
+      - "pangolin.public-resources.printerhub.ssl=true"
+      - "pangolin.public-resources.printerhub.targets[0].method=http"
+      - "pangolin.public-resources.printerhub.targets[0].port=${FRONTEND_PORT:-8080}"
+      - "pangolin.public-resources.printerhub.targets[0].path-match=prefix"
+      - "pangolin.public-resources.printerhub.auth.sso-enabled=true"
 
-      # Main UI behind SSO
-      - "pangolin.resources.printerhub.protocol=https"
-      - "pangolin.resources.printerhub.full-domain=${PRINTERHUB_HOST}"
-      - "pangolin.resources.printerhub.port=${FRONTEND_PORT:-8080}"
-      - "pangolin.resources.printerhub.auth.sso-enabled=true"
-
-      # Webhook subroute without SSO (Two-Resources pattern)
-      - "pangolin.resources.printerhub-webhooks.protocol=https"
-      - "pangolin.resources.printerhub-webhooks.full-domain=${PRINTERHUB_HOST}"
-      - "pangolin.resources.printerhub-webhooks.path-prefix=/api/webhook/"
-      - "pangolin.resources.printerhub-webhooks.port=${FRONTEND_PORT:-8080}"
-      - "pangolin.resources.printerhub-webhooks.auth.bypass=true"
+      # Webhook subroute — auth bypass (Two-Resources pattern)
+      # Note: Two routes on the same full-domain are only possible with distinct
+      # path-prefix values. The webhook resource bypasses SSO so that external
+      # callers can post without a browser session.
+      - "pangolin.public-resources.printerhub-webhooks.name=Label Printer Hub Webhooks"
+      - "pangolin.public-resources.printerhub-webhooks.full-domain=${PRINTERHUB_HOST}"
+      - "pangolin.public-resources.printerhub-webhooks.protocol=http"
+      - "pangolin.public-resources.printerhub-webhooks.ssl=true"
+      - "pangolin.public-resources.printerhub-webhooks.targets[0].method=http"
+      - "pangolin.public-resources.printerhub-webhooks.targets[0].port=${FRONTEND_PORT:-8080}"
+      - "pangolin.public-resources.printerhub-webhooks.targets[0].path-match=prefix"
+      - "pangolin.public-resources.printerhub-webhooks.targets[0].path=/api/webhook/"
+      - "pangolin.public-resources.printerhub-webhooks.auth.bypass=true"
 
 networks:
-  pangolin-newt:
+  pangolin_mgmt:
+    # Use the alias-name pattern so this compose works regardless of where
+    # Pangolin is deployed. The Newt container joins the network under its
+    # own project name (typically "pangolin_pangolin_mgmt").
+    name: pangolin_pangolin_mgmt
     external: true
   hub-internal:
     driver: bridge
 
-# After deploy, restart the newt container so blueprint labels are reloaded:
-#   docker restart pangolin-newt
+# After deploy, reload the Newt container so the blueprint labels are picked up.
+# Use your container management tool (Dockhand, Portainer, or similar) to
+# restart the Newt container — do not bypass it with a raw docker command.
