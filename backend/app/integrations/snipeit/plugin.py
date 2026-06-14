@@ -8,13 +8,29 @@ shape.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TypedDict
 from urllib.parse import quote
 
 import httpx
 
 from app.schemas.label_data import LabelData
 from app.services.errors import AppLookupNotFoundError
+
+
+class _SnipeITAssetResponse(TypedDict, total=False):
+    """Subset of Snipe-IT `/api/v1/hardware/bytag/{tag}` response we actually
+    read. Strikt-typisiert statt `dict[str, Any]` — beschränkt sich auf die
+    Felder die `_payload_to_label` konsumiert. `total=False` weil alle Felder
+    außer `id` optional sind (User-Mapping kann Snipe-IT-fields ausblenden).
+
+    Audit #67 / PR #51 Finding: das alte `dict[str, Any]` hat das Hub-mypy-
+    strict-Verbot von `Any` in Plugin-Responses verletzt.
+    """
+
+    id: int
+    asset_tag: str | None
+    name: str | None
+    serial: str | None
 
 
 class SnipeITNotFoundError(AppLookupNotFoundError):
@@ -72,10 +88,10 @@ class SnipeITPlugin:
         # decide whether to treat them as configuration errors vs transient failures.
         response.raise_for_status()
 
-        payload: dict[str, Any] = response.json()
+        payload: _SnipeITAssetResponse = response.json()
         return self._payload_to_label(payload, asset_tag)
 
-    def _payload_to_label(self, payload: dict[str, Any], asset_tag: str) -> LabelData:
+    def _payload_to_label(self, payload: _SnipeITAssetResponse, asset_tag: str) -> LabelData:
         asset_id = payload.get("id")
         if asset_id is None:
             raise ValueError(f"Snipe-IT response for {asset_tag!r} is missing required field 'id'")
