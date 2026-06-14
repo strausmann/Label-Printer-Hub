@@ -162,12 +162,12 @@ class PrintService:
             return image, label_data.model_dump()
 
         prepared = await asyncio.gather(*[_prepare_one(r) for r in requests])
-        images = [img for img, _ in prepared]
-        label_data_dumps = [dump for _, dump in prepared]
 
         # 3. Pre-allocate job UUIDs + persist in JobStore
+        # Pro Request 1 Job persistieren (DB-Tracking bleibt 1:1 zur Hangar-Bestellung).
+        # Image-Replication für copies > 1 kommt in Schritt 4 (Batch-Enqueue).
         job_ids: list[UUID] = []
-        for request, ld_dump in zip(requests, label_data_dumps, strict=True):
+        for request, (_img, ld_dump) in zip(requests, prepared, strict=True):
             job_id = uuid4()
             db_job = Job(
                 id=job_id,
@@ -186,12 +186,29 @@ class PrintService:
             await self._store.save_queued(db_job)
             job_ids.append(job_id)
 
+        # 3b. Image-Liste für die Hardware aufbauen — Bug 2026-06-14:
+        # `PrintOptions.copies > 1` ist im DB-Schema vorgesehen, wurde aber
+        # bisher nicht in die Hardware-Druck-Liste übersetzt. Effekt: ein Request
+        # mit copies=3 schickte nur 1 Image an print_multi() → 1 Etikett statt 3.
+        # Fix: pro Request das Image so oft replizieren wie options.copies sagt.
+        # job_ids werden parallel repliziert damit die Längen-Validierung in
+        # enqueue_batch passt; duplizierte UUIDs landen einmal im self._jobs-Dict
+        # (Dict-Set überschreibt). Der Batch-Worker markiert je Job-ID einmal
+        # done — Hangar-Bestellung bleibt 1:N mit den replizierten Etiketten.
+        images: list[Image.Image] = []
+        expanded_job_ids: list[UUID] = []
+        for req, (img, _ld), jid in zip(requests, prepared, job_ids, strict=True):
+            n = max(1, int(req.options.copies))
+            for _ in range(n):
+                images.append(img)
+                expanded_job_ids.append(jid)
+
         # 4. Enqueue as BatchJob
         first_options = requests[0].options
         await self._queue.enqueue_batch(
             printer_id=self._printer_id,
             images=images,
-            job_ids=job_ids,
+            job_ids=expanded_job_ids,
             tape_mm=tape_mm,
             options={
                 "auto_cut": first_options.auto_cut,
