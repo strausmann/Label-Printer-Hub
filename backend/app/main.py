@@ -101,6 +101,7 @@ from app.integrations.registry import IntegrationRegistry
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
+from app.schemas.printer_config import PrinterYAMLConfig
 from app.schemas.readiness import ReadinessResponse
 from app.services.backend_router import BackendRouter
 from app.services.cleanup_task import CleanupTask
@@ -182,7 +183,7 @@ def _pinned_openapi_schema(app: FastAPI) -> Any:
     return app.openapi_schema
 
 
-async def _resolve_model_id_from_config(printer_cfg: Any) -> str:
+async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
     """SNMP discovery first, fall back to printer_cfg.model on failure.
 
     Phase 1i CA-1: ersetzt _resolve_model_id(settings, host) — liest SNMP-
