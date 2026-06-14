@@ -163,3 +163,102 @@ def test_settings_printers_config_env_override(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", "/custom/path/printers.yaml")
     s = Settings(_env_file=None)
     assert s.printers_config == "/custom/path/printers.yaml"
+
+
+# ---------------------------------------------------------------------------
+# Issue #46 — Stricter validation for log_level and webhook_api_key
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "level",
+    ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+)
+def test_settings_log_level_accepts_valid(level: str) -> None:
+    """Alle dokumentierten Python-Loglevels muessen akzeptiert werden."""
+    s = Settings(log_level=level, _env_file=None)  # type: ignore[call-arg]
+    assert s.log_level == level
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    ["debug", "info", "TRACE", "VERBOSE", "", "INFOO"],
+)
+def test_settings_log_level_rejects_invalid(invalid: str) -> None:
+    """log_level=Literal: ungueltige Werte muessen einen ValidationError werfen."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(log_level=invalid, _env_file=None)  # type: ignore[call-arg]
+
+
+def test_settings_log_level_default_is_info() -> None:
+    """Default-Loglevel bleibt INFO (keine Regression)."""
+    s = Settings(_env_file=None)
+    assert s.log_level == "INFO"
+
+
+@pytest.mark.parametrize(
+    "whitespace_key",
+    [
+        " " * 32,
+        "\t" * 33,
+        " \t\n" * 12 + "    ",
+    ],
+)
+def test_settings_webhook_api_key_rejects_whitespace_only(whitespace_key: str) -> None:
+    """Whitespace-only Keys mit >=32 Zeichen muessen abgelehnt werden.
+
+    Ohne Validation wuerden Tippfehler wie ein versehentlicher Space-Wall
+    im .env durchgehen — und der Webhook-Endpunkt akzeptiert dann jedes
+    Header-Token das whitespace ist.
+    """
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="whitespace"):
+        Settings(webhook_api_key=whitespace_key, _env_file=None)  # type: ignore[call-arg]
+
+
+def test_settings_webhook_api_key_accepts_real_key() -> None:
+    """Echte Keys (32+ Zeichen, kein whitespace-only) bleiben akzeptiert."""
+    real_key = "a" * 32
+    s = Settings(webhook_api_key=real_key, _env_file=None)  # type: ignore[call-arg]
+    assert s.webhook_api_key.get_secret_value() == real_key
+
+
+def test_settings_webhook_api_key_empty_still_accepted() -> None:
+    """Leerer Key (Phase 1-Default) bleibt erlaubt fuer Bootstrap ohne Webhook-Auth."""
+    s = Settings(webhook_api_key="", _env_file=None)  # type: ignore[call-arg]
+    assert s.webhook_api_key.get_secret_value() == ""
+
+
+@pytest.mark.parametrize(
+    "padded_key",
+    [
+        " " * 31 + "a",  # Gemini-Finding: 32 Zeichen formal, 1 Zeichen echt
+        " " * 32 + "abc",  # langer Whitespace-Padding
+        "\t\tshort\n",  # mit Newline/Tab
+    ],
+)
+def test_settings_webhook_api_key_rejects_short_effective_length(padded_key: str) -> None:
+    """Stripped-Laenge <32 muss abgelehnt werden, auch wenn Rohlaenge >=32.
+
+    Gemini-Review #116: ``" " * 31 + "a"`` hatte mit der alten Validation
+    durchgegangen — 32 Zeichen formal, aber 1 Zeichen Auth-Material. Das
+    war das gleiche Sicherheitsrisiko wie ein zu kurzer Key.
+    """
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="at least 32 non-whitespace"):
+        Settings(webhook_api_key=padded_key, _env_file=None)  # type: ignore[call-arg]
+
+
+def test_settings_webhook_api_key_strips_leading_trailing_whitespace() -> None:
+    """Gueltige Keys mit aussen-Whitespace werden getrimmt und gespeichert.
+
+    Vermeidet Inkonsistenzen wenn der Key im .env mit Trailing-Space landet.
+    """
+    real_key = "x" * 40
+    padded = "  " + real_key + " \n"
+    s = Settings(webhook_api_key=padded, _env_file=None)  # type: ignore[call-arg]
+    assert s.webhook_api_key.get_secret_value() == real_key
