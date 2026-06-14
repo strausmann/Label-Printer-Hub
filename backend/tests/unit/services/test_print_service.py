@@ -159,6 +159,74 @@ class TestSubmitPrintJob:
 
 
 # ---------------------------------------------------------------------------
+# Copies-Replikation in submit_batch_job (Bug 2026-06-14)
+# ---------------------------------------------------------------------------
+
+
+class TestSubmitBatchJobCopies:
+    """Verifiziert dass PrintOptions.copies > 1 in enqueue_batch zu N Images
+    repliziert wird. Bug 2026-06-14: zuvor wurde copies in der DB gespeichert
+    aber nie an print_multi() weitergereicht → User-Report nur 1 Etikett
+    statt N. Refs Hangar Issue #109."""
+
+    @pytest.mark.asyncio
+    async def test_copies_3_yields_three_images(self, make_service) -> None:
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=12)
+        queue.enqueue_batch = AsyncMock()
+        request = PrintRequest(
+            content_type=ContentType.QR_TWO_LINES,
+            data=RawLabelData(
+                primary_id="SMA-022-003",
+                title="Samla 22L Box 3",
+                qr_payload="https://example.com/loc/SMA-022-003",
+            ),
+            options=PrintOptions(copies=3),
+        )
+        await svc.submit_batch_job([request], half_cut=True)
+        queue.enqueue_batch.assert_awaited_once()
+        kwargs = queue.enqueue_batch.await_args.kwargs
+        assert len(kwargs["images"]) == 3, "copies=3 must yield 3 images"
+        assert len(kwargs["job_ids"]) == 3, "job_ids must match images length"
+        # Alle drei job_ids zeigen auf den gleichen Hangar-Request-Job
+        assert len(set(kwargs["job_ids"])) == 1, "same job_id replicated 3x"
+
+    @pytest.mark.asyncio
+    async def test_copies_1_yields_single_image(self, make_service) -> None:
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=12)
+        queue.enqueue_batch = AsyncMock()
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+            options=PrintOptions(copies=1),
+        )
+        await svc.submit_batch_job([request], half_cut=False)
+        kwargs = queue.enqueue_batch.await_args.kwargs
+        assert len(kwargs["images"]) == 1
+        assert len(kwargs["job_ids"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_mixed_copies_per_request(self, make_service) -> None:
+        """Mehrere Requests mit unterschiedlichem copies-Wert: total images = Summe."""
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=12)
+        queue.enqueue_batch = AsyncMock()
+        req1 = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/a"),
+            options=PrintOptions(copies=2),
+        )
+        req2 = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/b"),
+            options=PrintOptions(copies=1),
+        )
+        await svc.submit_batch_job([req1, req2], half_cut=False)
+        kwargs = queue.enqueue_batch.await_args.kwargs
+        assert len(kwargs["images"]) == 3, "copies=2 + copies=1 = 3 images"
+        assert len(kwargs["job_ids"]) == 3
+        assert len(set(kwargs["job_ids"])) == 2, "two distinct request-jobs"
+
+
+# ---------------------------------------------------------------------------
 # NoTapeLoadedError when preflight returns loaded_tape_mm=None
 # ---------------------------------------------------------------------------
 
