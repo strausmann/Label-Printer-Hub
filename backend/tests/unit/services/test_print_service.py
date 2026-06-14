@@ -182,13 +182,18 @@ class TestSubmitBatchJobCopies:
             ),
             options=PrintOptions(copies=3),
         )
-        await svc.submit_batch_job([request], half_cut=True)
+        master_ids = await svc.submit_batch_job([request], half_cut=True)
         queue.enqueue_batch.assert_awaited_once()
         kwargs = queue.enqueue_batch.await_args.kwargs
         assert len(kwargs["images"]) == 3, "copies=3 must yield 3 images"
         assert len(kwargs["job_ids"]) == 3, "job_ids must match images length"
-        # Alle drei job_ids zeigen auf den gleichen Hangar-Request-Job
-        assert len(set(kwargs["job_ids"])) == 1, "same job_id replicated 3x"
+        # Bug Round 2: jeder Copy braucht eine eigene job_id, sonst skippt
+        # der BatchWorker die 2. und 3. Etiketten als "already printing".
+        assert len(set(kwargs["job_ids"])) == 3, "each copy needs unique job_id"
+        # Hangar-API: trotzdem nur 1 master-ID pro Request zurueck (1:1 mit
+        # Hangar-Bestellung), der erste der drei Hub-internen job_ids.
+        assert len(master_ids) == 1
+        assert master_ids[0] in kwargs["job_ids"], "master id must be one of the enqueued job_ids"
 
     @pytest.mark.asyncio
     async def test_copies_1_yields_single_image(self, make_service) -> None:
@@ -219,11 +224,14 @@ class TestSubmitBatchJobCopies:
             data=RawLabelData(qr_payload="https://example.com/b"),
             options=PrintOptions(copies=1),
         )
-        await svc.submit_batch_job([req1, req2], half_cut=False)
+        master_ids = await svc.submit_batch_job([req1, req2], half_cut=False)
         kwargs = queue.enqueue_batch.await_args.kwargs
         assert len(kwargs["images"]) == 3, "copies=2 + copies=1 = 3 images"
         assert len(kwargs["job_ids"]) == 3
-        assert len(set(kwargs["job_ids"])) == 2, "two distinct request-jobs"
+        # Bug Round 2: 3 unique job_ids — 2 fuer req1 (copies=2) + 1 fuer req2.
+        assert len(set(kwargs["job_ids"])) == 3, "all 3 copy jobs must be unique"
+        # 1 master_id pro Request (Hangar-API): 2 Requests → 2 master ids.
+        assert len(master_ids) == 2
 
 
 # ---------------------------------------------------------------------------
