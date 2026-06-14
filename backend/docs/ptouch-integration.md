@@ -7,7 +7,7 @@ Version: `ptouch>=1.1.0` (pinned in pyproject.toml).
 - `ptouch.ConnectionNetwork(host: str, port: int = 9100, timeout: float = 5.0)`
 - `ptouch.PTP750W(connection, use_compression=None, high_resolution=None)` (subclass of `LabelPrinter`)
 - `ptouch.Label(image: PIL.Image.Image, tape: type[Tape] | Tape)`
-- Tape classes: `ptouch.LaminatedTape4mm` ... `ptouch.LaminatedTape24mm` (size suffix matches `tape_mm`).
+- Tape classes: `ptouch.Tape3_5mm`, `ptouch.Tape6mm`, `ptouch.Tape9mm`, `ptouch.Tape12mm`, `ptouch.Tape18mm`, `ptouch.Tape24mm`, `ptouch.Tape36mm` (size suffix matches `tape_mm`; 3.5mm is the actual narrow tape — `ptouch.Tape4mm` does not exist). `LaminatedTape*mm` variants exist parallel; we use the plain `Tape*mm` form which is the laminated default for PT-series.
 - Print method: `LabelPrinter.print(label, margin_mm=None, high_resolution=None, feed=True, auto_cut=None, half_cut=None)`
 
 ## ptouch exception hierarchy (caught by PTouchBackend and rewrapped)
