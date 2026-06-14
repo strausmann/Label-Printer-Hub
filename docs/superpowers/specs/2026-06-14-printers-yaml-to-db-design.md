@@ -1,12 +1,31 @@
 # Hub Printers YAML → DB + Admin-UI Design
 
-> **Status:** DRAFT Round-2 — Round-1-Review-Findings adressiert
+> **Status:** DRAFT Round-3 — Round-1 + Round-2-Review-Findings adressiert
 > **Issue:** [#124 — printers.yaml entfernen, Drucker in DB + Admin-UI](https://github.com/strausmann/Label-Printer-Hub/issues/124)
 > **PR:** [#125](https://github.com/strausmann/Label-Printer-Hub/pull/125)
 > **Related:** Hangar #110 (hardcoded Drucker-/Möbel-Spezifika entfernen)
 > **Datum:** 2026-06-14
 > **Autor:** Brainstorming-Session mit @strausmann (2026-06-14)
-> **Reviews adressiert:** ops, network, storage, code-quality (Round-1)
+> **Reviews adressiert:**
+> - Round-1: ops, network, storage, code-quality (alle 4 NEEDS_FIXES)
+> - Round-2: ops APPROVE, network/storage/code-quality NEEDS_FIXES (3 HIGH + 4 MED + 4 LOW)
+
+## Round-2-Findings Verarbeitung (NEU)
+
+| Finding | Severity | Status | Wo adressiert |
+|---|---|---|---|
+| H7 Healthcheck-Labels im Blueprint fehlen | HIGH | ✅ ergänzt | Sektion "Authentifizierung" Blueprint-Snippet |
+| H8a SNMP-Schema flach vs verschachtelt | HIGH | ✅ entschieden: **verschachtelt** | Sektion "Pydantic-Schemas" |
+| H8b Bestand-DB fehlen SNMP/queue/cut_defaults | HIGH | ✅ entschieden: **Alembic-Backfill** | Sektion "Migration für Bestand" Phase 1b |
+| H9 2 weitere Test-Files übersehen | HIGH | ✅ ergänzt | Sektion "Migration für Bestand" + "ID-Generierung" |
+| M7 BEGIN IMMEDIATE vs session.begin() | MED | ✅ konkrete Strategie | Sektion "Data Flow" |
+| M8 PrintService.submit_print_job enabled-Check | MED | ✅ explizit | Sektion "Implikationen für Hangar+PrintService" |
+| M9 redact_secrets Modul-Pfad | MED | ✅ `app/services/audit_redaction.py` | Sektion "Komponenten" |
+| M10 Container-DNS-Name `print-hub` Live-Verifikation | MED | ✅ Smoke-Step | Sektion "Migration für Bestand" Phase 3 |
+| L Pangolin-Resource-Standard Vault-Item-Naming | LOW | ✅ verlinkt | Sektion "Authentifizierung" |
+| L Pangolin Bug #3099 (Basic-Auth-Dialog) | LOW | ✅ als bekanntes Phänomen | Sektion "Risiken" |
+| L CSRF-Test-Strategie 4 Fälle | LOW | ✅ konkretisiert | Sektion "Testing" |
+| L Trailing-Slash-Konvention | LOW | ✅ ohne Slash | Sektion "JSON-API" |
 
 ## Round-1-Findings Verarbeitung
 
@@ -107,16 +126,46 @@ Drei Auth-Pfade durch dieselbe Resource:
 2. **Tooling/Ansible → Header-Auth-Bypass** (`claude-automation` + 64-hex-Secret)
 3. **API-Key (legacy)** — `app/api/routes/admin_api_keys.py` bleibt verfügbar für interne Skripte
 
-Header-Auth-Bypass wird **per Compose-Label** auf der Hub-Resource gesetzt (Pangolin Blueprint, NIEMALS per API — siehe `feedback_pangolin_labels_source_of_truth`):
+Header-Auth-Bypass wird **per Compose-Label** auf der Hub-Resource gesetzt (Pangolin Blueprint, NIEMALS per API — siehe `feedback_pangolin_labels_source_of_truth`).
+
+**Vollständiges Blueprint-Set** (H7-Ergänzung, alle Pflichtfelder per `pangolin-resource-standard.md`):
 
 ```yaml
 labels:
+  # Identität
+  - "pangolin.public-resources.print-hub.name=Print Hub"
+  - "pangolin.public-resources.print-hub.full-domain=print-hub.strausmann.cloud"
+  # Routing
+  - "pangolin.public-resources.print-hub.protocol=http"
+  - "pangolin.public-resources.print-hub.ssl=true"
+  - "pangolin.public-resources.print-hub.targets[0].method=http"
+  - "pangolin.public-resources.print-hub.targets[0].port=8000"
+  - "pangolin.public-resources.print-hub.targets[0].path-match=prefix"
+  # Healthcheck (Pflicht seit Newt v1.18.4)
+  - "pangolin.public-resources.print-hub.targets[0].healthcheck.enabled=true"
+  - "pangolin.public-resources.print-hub.targets[0].healthcheck.hostname=print-hub"
+  - "pangolin.public-resources.print-hub.targets[0].healthcheck.path=/healthz"
+  - "pangolin.public-resources.print-hub.targets[0].healthcheck.port=8000"
+  - "pangolin.public-resources.print-hub.targets[0].healthcheck.interval=30"
+  # Auth: SSO + Header-Auth-Bypass
   - "pangolin.public-resources.print-hub.auth.sso-enabled=true"
   - "pangolin.public-resources.print-hub.auth.basic-auth.user=claude-automation"
   - "pangolin.public-resources.print-hub.auth.basic-auth.password=<64-hex-secret>"
 ```
 
-**Migration-Schritt:** Bestandsresource `print-hub.strausmann.cloud` muss vor Implementation auf diesen Standard gebracht werden — siehe `pangolin-resource-standard.md`. Bei der Implementierung ist zu prüfen, ob die Labels bereits gesetzt sind (Live-Check via `mcp__pangolin-api__resource_by_resourceId`).
+**Vault-Item (per `pangolin-resource-standard.md` Konvention):**
+- Name: `Pangolin Header Auth - Print Hub`
+- Username: `claude-automation`
+- Password: das 64-hex Secret (gleicher Wert wie im Compose-Label)
+- Collection: `Automation/Claude-Team`
+
+**Migration-Schritt:** Bestandsresource `print-hub.strausmann.cloud` muss vor Implementation auf diesen Standard gebracht werden — siehe `pangolin-resource-standard.md`. Bei der Implementierung ist zu prüfen, ob die Labels bereits gesetzt sind:
+
+```python
+# Phase-0-Live-Check
+resource = mcp__pangolin-api__resource_by_resourceId(resourceId=<print-hub-id>)
+# Erwartet: response.headerAuth ist nicht None, response.targets[0].healthCheck.enabled=true
+```
 
 ### CSRF-Schutz (H3)
 
@@ -201,12 +250,16 @@ Mechanismus: **Starlette CSRF Middleware** (`starlette-csrf` package) mit Cookie
 
 - `app/services/printer_admin_service.py`
 - `app/services/printer_model_registry.py`
+- `app/services/audit_redaction.py` (M9 — redact_secrets als eigenes Modul)
 - `app/api/routes/admin_printers.py` (JSON-API unter `/api/v1/admin/printers`)
 - `app/web/routes/admin_printers.py` (HTML-UI unter `/admin/printers`)
 - `app/templates/admin_printers/` (Jinja2: `list.html`, `form.html`, `confirm_disable.html`)
 - `app/templates/_base.html` (Layout, falls noch keins existiert)
 - `app/middleware/csrf.py` (Starlette-CSRF-Wrapper)
-- Alembic-Migration `<timestamp>_add_printers_audit.py`
+- `app/exceptions.py`: neue Exception `PrinterDisabledError` (M8)
+- `app/services/print_service.py`: enabled-Check in `submit_print_job` (M8 — keine neue Datei, Modifikation)
+- `app/db/engine.py`: SQLite-Connect-Listener für `journal_mode=WAL` + `isolation_level=SERIALIZABLE` (M7)
+- Alembic-Migration `<timestamp>_add_printers_audit_and_backfill_connection.py` (M7 + H8b kombiniert: Schema-Erweiterung `queue_timeout_s`/`cut_defaults_half_cut` + Audit-Tabelle + Bestand-Backfill)
 
 ## Komponenten
 
@@ -257,11 +310,15 @@ def derive_printer_id(
     return uuid.uuid5(uuid.NAMESPACE_URL, salt)
 ```
 
-**C4-Klarstellung:** Bestandsdrucker werden NICHT neu generiert. `upsert_runtime_printers` wird komplett entfernt — kein Aufrufer der alten 3-arg-Variante bleibt im Code. Die 3 betroffenen Test-Files (`tests/services/test_printer_identity.py`, `tests/db/test_lifespan.py`, `tests/services/test_printer_config_loader.py`) werden:
+**C4-Klarstellung:** Bestandsdrucker werden NICHT neu generiert. `upsert_runtime_printers` wird komplett entfernt — kein Aufrufer der alten 3-arg-Variante bleibt im Code. Die **5 betroffenen Test-Files** (H9-Ergänzung Round-2) werden:
 
-- `test_printer_identity.py`: auf 4-arg-Signatur migriert, neuer Test für `naive datetime → ValueError`.
-- `test_lifespan.py`: `upsert_runtime_printers`-Tests gelöscht (Funktion existiert nicht mehr).
-- `test_printer_config_loader.py`: komplett gelöscht (PrinterConfigLoader existiert nicht mehr).
+- `tests/services/test_printer_identity.py`: auf 4-arg-Signatur migriert, neuer Test für `naive datetime → ValueError`.
+- `tests/db/test_lifespan.py`: `upsert_runtime_printers`-Tests gelöscht (Funktion existiert nicht mehr).
+- `tests/services/test_printer_config_loader.py`: komplett gelöscht (PrinterConfigLoader existiert nicht mehr).
+- `tests/db/test_lifespan_seeds_and_upserts.py` (H9): komplett gelöscht — testet `upsert_runtime_printers` Sub-Pfade.
+- `tests/db/test_lifespan_printer_upsert.py` (H9): komplett gelöscht — testet `derive_printer_id` mit 3-arg-Signatur direkt.
+
+**Verifikationsschritt im Plan:** `grep -rn "upsert_runtime_printers\|PrinterConfigLoader" backend/tests/` MUSS leer sein nach den Löschungen. `grep -rn "derive_printer_id(" backend/` darf nur 4-arg-Aufrufe finden.
 
 ### 3. Pydantic-Schemas (H6)
 
@@ -270,17 +327,23 @@ def derive_printer_id(
 
 SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"
 
+class SNMPConfig(BaseModel):
+    """Verschachtelte Sub-Struktur — bewusst gleiches Schema wie das alte YAML
+    (snmp.discover, snmp.community), damit YAML-Backups und Live-DB
+    strukturell vergleichbar bleiben (H8a-Entscheidung)."""
+    discover: bool = False
+    community: str | None = Field(default="public", max_length=64)
+
+    @model_validator(mode="after")
+    def _community_consistency(self) -> "SNMPConfig":
+        if self.discover and not self.community:
+            raise ValueError("snmp.community ist Pflicht wenn snmp.discover=True ist")
+        return self
+
 class PrinterConnection(BaseModel):
     host: str = Field(min_length=1, max_length=253)
     port: int = Field(ge=1, le=65535)
-    snmp_discover: bool = False
-    snmp_community: str | None = Field(default="public", max_length=64)
-
-    @model_validator(mode="after")
-    def _snmp_consistency(self) -> "PrinterConnection":
-        if self.snmp_discover and not self.snmp_community:
-            raise ValueError("snmp_community ist Pflicht wenn snmp_discover=True ist")
-        return self
+    snmp: SNMPConfig = Field(default_factory=SNMPConfig)
 
 class PrinterCutDefaults(BaseModel):
     half_cut: bool = False
@@ -306,6 +369,23 @@ class PrinterUpdatePayload(BaseModel):
     cut_defaults: PrinterCutDefaults | None = None
     enabled: bool | None = None
 ```
+
+### DB-JSON-Form
+
+Was konkret in `printers.connection` und in den Audit-Snapshots steht:
+
+```json
+{
+  "host": "192.0.2.10",
+  "port": 9100,
+  "snmp": {
+    "discover": true,
+    "community": "***REDACTED***"
+  }
+}
+```
+
+`queue.timeout_s`, `cut_defaults.half_cut` werden in der `printers`-Tabelle **als separate Spalten** geführt (siehe Phase 1b der Migration unten — bestehendes Schema wird erweitert). Begründung: stabile Spalten erleichtern SQL-Filter ("alle Drucker mit half_cut") und vermeiden JSON-Path-Queries in SQLite.
 
 Error-Messages: **deutsch** (i18n-Policy L-Finding). Pydantic-Custom-Error-Map nutzt `pydantic.v1.errors.PydanticValueError`-Pattern oder `model_validator`-Returns.
 
@@ -345,6 +425,8 @@ Error-Messages: **deutsch** (i18n-Policy L-Finding). Pydantic-Custom-Error-Map n
 | `POST /api/v1/admin/printers/{slug}/enable` | dito | Reaktivieren |
 
 Public `GET /api/printers` bleibt unverändert, filtert `enabled=true` (Hangar sieht keine deaktivierten Drucker).
+
+**Trailing-Slash-Konvention (L-Round-2):** **ohne Trailing-Slash**. FastAPI-Standard: `/api/v1/admin/printers` (Liste), nicht `/api/v1/admin/printers/`. Konsistent mit den existing Hub-Endpoints (`/api/printers`, `/api/admin/api-keys`).
 
 ### 6. Plugin-Registry für Model-Dropdown
 
@@ -388,7 +470,33 @@ op.create_index("idx_printers_audit_created_at_desc", "printers_audit", [sa.text
 
 **FK auf printers_audit.printer_id (L-Finding):** **Bewusst kein FK** weil Soft-Delete die Parent-Row sowieso behält. Ein FK würde nichts verhindern (printers wird nie hard-deleted), aber Alembic-Migrations-Reihenfolge unnötig komplex machen.
 
-**SNMP-Community-Redaction (H4):** `connection.snmp_community` wird vor dem Schreiben in `before_json`/`after_json` durch `***REDACTED***` ersetzt. Helper `redact_secrets(payload: dict) -> dict` im Service. Falls künftig weitere Secret-Felder hinzukommen (z.B. `auth_token`), Redaction-Liste erweitern.
+**SNMP-Community-Redaction (H4 + M9):** `connection.snmp.community` wird vor dem Schreiben in `before_json`/`after_json` durch `***REDACTED***` ersetzt.
+
+Helper lebt in **eigenem Modul** `app/services/audit_redaction.py` (M9-Ergänzung):
+
+```python
+# app/services/audit_redaction.py
+SECRET_PATHS: frozenset[tuple[str, ...]] = frozenset({
+    ("connection", "snmp", "community"),
+    # Künftige Secret-Felder hier ergänzen
+})
+
+def redact_secrets(payload: dict[str, Any]) -> dict[str, Any]:
+    """Erzeugt eine Deepcopy mit allen bekannten Secret-Pfaden durch
+    '***REDACTED***' ersetzt.
+
+    Edge-Case: wenn das Feld None oder leer ist, bleibt der Wert
+    unverändert (kein versehentliches Verschleiern eines fehlenden Wertes).
+    """
+    ...
+```
+
+Coverage-Schwelle für `audit_redaction.py`: **80 %** (Pure-Helper mit
+mehreren Branches). Tests:
+- Drucker mit SNMP-Community → wird redacted
+- Drucker ohne SNMP-Block (Bestandsdrucker vor Backfill) → unverändert
+- Drucker mit `snmp.community=None` → unverändert (kein Redact von None)
+- Weitere Felder im Payload bleiben unangetastet
 
 **Audit-Retention (L-Finding):** Keine Retention. Worst-Case: 10 Drucker × 30 Edits/Jahr × 10 Jahre = 3000 Rows ≈ 30KB. Unwesentlich.
 
@@ -419,7 +527,7 @@ op.create_index("idx_printers_audit_created_at_desc", "printers_audit", [sa.text
 2. PrinterAdminService.get_printer(slug) → Row
 3. HTML-Form mit aktuellen Werten (slug/model/backend disabled)
 4. POST /admin/printers/{slug} (mit CSRF)
-5. PrinterAdminService.update_printer (async with session.begin()):
+5. PrinterAdminService.update_printer (Transaktion — siehe M7 unten):
    a. SELECT … WHERE slug=? — SQLite hat kein FOR UPDATE, BEGIN IMMEDIATE
       gibt uns exklusive Schreib-Sperre auf der DB-Datei (H5).
    b. Apply patch — ignoriere slug/model/backend/id wenn im Payload gesetzt (silent)
@@ -428,6 +536,48 @@ op.create_index("idx_printers_audit_created_at_desc", "printers_audit", [sa.text
    e. INSERT INTO printers_audit (action='update', before=…, after=…)
 6. Redirect 303 → /admin/printers?info=updated&slug=<slug>
 ```
+
+### M7 — Transaktions-Strategie (BEGIN IMMEDIATE × session.begin())
+
+Storage-Round-2 hat einen Konflikt aufgezeigt: `async with session.begin():`
+öffnet bereits eine Transaktion via SQLAlchemy. Ein zusätzliches manuelles
+`BEGIN IMMEDIATE` würde mit `OperationalError: cannot start a transaction
+within a transaction` brechen.
+
+**Entscheidung (M7):** Nicht beide nutzen — sondern die Engine-Defaults der
+aiosqlite-Connection auf IMMEDIATE setzen, damit jede Transaktion (auch die
+implizite aus `session.begin()`) als IMMEDIATE startet:
+
+```python
+# app/db/engine.py — Listener registrieren (einmalig beim Engine-Setup)
+from sqlalchemy import event
+
+@event.listens_for(engine.sync_engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, _connection_record):
+    # SQLite: Transaktionen sofort als IMMEDIATE statt DEFERRED starten
+    # Verhindert Race zwischen mehreren parallelen Writes (sehr seltener Fall im
+    # Hub-Single-Replica-Setup, aber per Best-Practice abgesichert).
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+# Plus: isolation_level beim Connect erzwingen
+engine = create_async_engine(
+    DATABASE_URL,
+    isolation_level="SERIALIZABLE",  # aiosqlite mappt das auf IMMEDIATE
+    ...
+)
+```
+
+**Innerhalb des Services** verwendet jeder Mutations-Pfad dann nur noch
+`async with session.begin():` ohne expliziten `BEGIN IMMEDIATE`-Aufruf —
+SQLAlchemy startet die Transaktion automatisch im IMMEDIATE-Modus.
+
+**Atomicity-Garantie:** Die Transaktion umschließt INSERT printers +
+INSERT printers_audit gemeinsam. Bei Audit-INSERT-Fehler wird der
+printers-INSERT vollständig zurückgerollt (SQLAlchemy-Rollback-Verhalten
+im Context-Manager).
 
 ### Disable-Flow (vorher Delete-Flow — C5-Entscheidung Soft-Delete)
 
@@ -443,12 +593,38 @@ op.create_index("idx_printers_audit_created_at_desc", "printers_audit", [sa.text
 4. Redirect 303 → /admin/printers?info=disabled&slug=<slug>
 ```
 
-**Implikationen für Hangar (Soft-Delete):**
+**Implikationen für Hangar + PrintService (Soft-Delete, M8-Ergänzung):**
 
 - Nächster `GET /api/printers` filtert deaktivierte Drucker raus → Hangar PrinterSync entfernt sie aus seinem Cache.
 - FK-Referenzen in `jobs`, `print_batches`, `presets`, `printer_state` bleiben intakt — der Drucker existiert weiter.
-- PrintRequest mit der UUID eines disabled Druckers schlägt mit `409 printer disabled` fehl (statt vorher 404).
+- **PrintService.submit_print_job MUSS angepasst werden (M8):**
+
+```python
+# app/services/print_service.py:submit_print_job — neuer Pre-Check
+async def submit_print_job(self, request: PrintRequest) -> UUID:
+    printer = await self._printers.get_by_id(request.printer_id)
+    if printer is None:
+        raise PrinterNotFoundError(request.printer_id)
+    if not printer.enabled:
+        raise PrinterDisabledError(request.printer_id, printer.slug)
+    # ... existing logic
+```
+
+Neue Exception `PrinterDisabledError` in `app/exceptions.py`:
+```python
+class PrinterDisabledError(LabelHubException):
+    """Drucker existiert, ist aber deaktiviert (Soft-Delete-Status)."""
+    http_status = 409
+```
+
+Error-Handler in `app/error_handlers.py` mappt auf 409 mit Body
+`{"error": "printer_disabled", "slug": "<slug>"}`.
+
 - Re-Enable über `/admin/printers/{slug}/enable` macht den Drucker sofort wieder verfügbar.
+
+**Test-Cases für M8** (in `tests/services/test_print_service.py`):
+- `submit_print_job` mit existierendem aber `enabled=false` Drucker → raises `PrinterDisabledError`
+- HTTP-Integration: `POST /api/v1/print` mit disabled-Drucker-UUID → 409 mit `printer_disabled`-Body
 
 ### Startup-Flow (neu)
 
@@ -460,9 +636,9 @@ op.create_index("idx_printers_audit_created_at_desc", "printers_audit", [sa.text
 
 Bei **leerer `printers`-Tabelle** (Fresh-Install): keinerlei Action. Hub startet sauber, `GET /api/printers` liefert `[]`. Operator legt seine Drucker via Admin-UI an.
 
-## Migration für Bestand (Round-1 verschärft)
+## Migration für Bestand (Round-2 erweitert)
 
-### Phase 1: Vor-Deploy — Snapshot + env-merge
+### Phase 1a: Vor-Deploy — Snapshot + env-merge
 
 ```bash
 # 1. SQLite-Backup (M1)
@@ -479,6 +655,56 @@ ssh root@hhdocker03 \
 mcp__dockhand__set_container_auto_update(
     environmentId=10, containerName="hangar-print-hub-print-hub-1",
     auto_update="never")
+```
+
+### Phase 1b: Alembic-Backfill für Bestands-Drucker (NEU H8b)
+
+Die DB-Tabelle `printers` wurde bisher von `upsert_runtime_printers()` mit
+`connection = {"host": ..., "port": ...}` befüllt — SNMP/queue/cut_defaults
+existieren **gar nicht** in den Bestands-Rows. Wenn YAML wegfällt und die
+Admin-UI diese Felder erwartet, hätten Bestandsdrucker leere/fehlende Werte.
+
+**Alembic-Migration `<timestamp>_backfill_printer_connection_and_defaults.py`**
+läuft im selben Schritt wie `add_printers_audit`:
+
+```python
+# Schema-Erweiterung: queue/cut_defaults als separate Spalten
+op.add_column("printers", sa.Column("queue_timeout_s",
+              sa.Integer(), nullable=False, server_default="30"))
+op.add_column("printers", sa.Column("cut_defaults_half_cut",
+              sa.Boolean(), nullable=False, server_default=sa.false()))
+
+# Daten-Backfill: connection.snmp ergänzen, falls nicht vorhanden
+# (verschachtelte Struktur — siehe Pydantic-Schema)
+connection_table = sa.table(
+    "printers",
+    sa.column("id", sa.UUID()),
+    sa.column("connection", sa.JSON()),
+)
+conn = op.get_bind()
+for row in conn.execute(sa.select(connection_table.c.id, connection_table.c.connection)):
+    conn_json = row.connection or {}
+    # Idempotent: nur ergänzen wenn snmp fehlt
+    if "snmp" not in conn_json:
+        conn_json["snmp"] = {"discover": False, "community": "public"}
+        conn.execute(
+            connection_table.update()
+            .where(connection_table.c.id == row.id)
+            .values(connection=conn_json)
+        )
+```
+
+**Verifikation nach Migration (per Spec-Akzeptanzkriterium):**
+
+```sql
+SELECT slug,
+       json_extract(connection, '$.snmp.discover') AS snmp_discover,
+       json_extract(connection, '$.snmp.community') AS snmp_community,
+       queue_timeout_s,
+       cut_defaults_half_cut
+FROM printers
+WHERE enabled = 1;
+-- Erwartet: alle Bestandsdrucker haben snmp.discover=0, community='public', timeout=30, half_cut=0
 ```
 
 ### Phase 2: Deploy
@@ -507,17 +733,39 @@ mcp__dockhand__start_stack(environmentId=10, name="hangar-print-hub")
 
 Anschließend `printers.yaml` aus `/docker/stacks/hangar-print-hub/config/` löschen.
 
-### Phase 3: Verifikation (Round-2-Smoke)
+### Phase 3: Verifikation (Round-2-Smoke + M10)
 
 ```
-✓ Hub-Container kommt healthy hoch (Healthcheck /healthz)
-✓ GET /api/printers liefert alle Bestandsdrucker
+✓ Container-DNS verifizieren (M10):
+  docker exec hangar-print-hub-hangar-1 \
+    getent hosts print-hub
+  → muss IP des print-hub-Containers zurückgeben
+  (falls Service-Name abweicht: Compose-Service-Definition prüfen)
+
+✓ Hub-Container kommt healthy hoch (Healthcheck /healthz HTTP 200)
+
+✓ Bestand-Backfill-Verifikation (H8b):
+  docker exec hangar-print-hub-print-hub-1 sqlite3 /data/printer-hub.db \
+    "SELECT slug, json_extract(connection, '\$.snmp.discover') AS d,
+            queue_timeout_s, cut_defaults_half_cut FROM printers"
+  → alle Bestandsdrucker zeigen d=0, timeout=30, half_cut=0
+
+✓ GET /api/printers liefert alle Bestandsdrucker (mit ergänzten Defaults)
+
 ✓ Hangar PrinterSync log zeigt keinen Fehler
+
 ✓ /admin/printers/ zeigt Liste mit allen Bestandsdruckern
-✓ Edit auf Bestandsdrucker speichert + Audit-Row erscheint
-✓ Test-Drucker anlegen + sofort wieder disablen → Audit zeigt 3 Rows (create, disable)
-✓ GET /api/printers nach Test-Disable filtert ihn raus
-✓ Hangar Print-Button für Bestandskategorien funktioniert
+
+✓ Edit auf Bestandsdrucker speichert + Audit-Row erscheint mit
+  redaktiertem snmp.community
+
+✓ Test-Drucker anlegen + sofort wieder disablen → Audit zeigt
+  2 Rows (create, disable), GET /api/printers filtert ihn raus
+
+✓ POST /api/v1/print mit disabled-Drucker-UUID → 409 printer_disabled (M8)
+
+✓ Hangar Print-Button für Bestandskategorien funktioniert (Smoke 1 Label)
+
 ✓ Watchtower wieder auf "any" setzen
 ```
 
@@ -588,6 +836,16 @@ CI-Gate per `pyproject.toml` Section `[tool.coverage.report]`:
 - 403 wenn kein Remote-User-Header
 - 409 bei Duplicate slug
 
+### CSRF-Test-Strategie (4 explizite Fälle, L-Round-2)
+
+```python
+# tests/middleware/test_csrf.py
+# 1. POST mit gültigem Cookie + Hidden-Field-Token-Match → 303 (Erfolg)
+# 2. POST mit Cookie aber FEHLENDEM Hidden-Field → 403
+# 3. POST mit Cookie aber FALSCHEM Hidden-Field → 403
+# 4. POST mit Authorization-Header (Basic/Bearer) und KEINEM Cookie → CSRF skipped, 303/200
+```
+
 ### E2E-Test
 
 - Frische DB (keine printers.yaml, leere printers-Tabelle, leere Audit-Tabelle)
@@ -618,6 +876,7 @@ CI-Gate per `pyproject.toml` Section `[tool.coverage.report]`:
 | R5 | LAN-Routing Hub→Drucker-IPs gilt als gegeben | Hub-Container ist im traefik-public + LAN-Bridge — Routing existiert. Live-Check beim Deploy. |
 | R6 | Audit-Retention: Tabelle wächst nie über 30KB → keine Cleanup-Pflicht | dokumentiert, kein Code nötig |
 | R7 | DB-Backup enthält Audit-JSON — SNMP-Community NICHT in before/after dank Redaction | H4 mitigiert |
+| R8 | Pangolin Bug #3099 (Basic-Auth-Dialog statt SSO-Redirect bei SSO+BasicAuth Resourcen) | Bekanntes Phänomen — beim Browser-Test ggf. Basic-Auth-Dialog statt SSO-Page sichtbar. Cancel im Dialog führt auf SSO-Login. **Nicht** als Bug reporten. Siehe `pangolin-resource-standard.md` Abschnitt "Bekannte Pangolin-Issues" und [fosrl/pangolin#3099](https://github.com/fosrl/pangolin/issues/3099). |
 
 ## Out of Scope (für Issue #124)
 
@@ -632,15 +891,19 @@ CI-Gate per `pyproject.toml` Section `[tool.coverage.report]`:
 ## Akzeptanzkriterien
 
 - [ ] `printers.yaml` ist nirgendwo mehr referenziert (Code + Compose + Stack-Env + Docs + /docker/stacks/hangar-print-hub/config/)
-- [ ] `PrinterConfigLoader` + `upsert_runtime_printers` sind entfernt + zugehörige Tests entfernt
-- [ ] `derive_printer_id` ist 4-arg (timezone-aware created_at_utc); naive datetime → ValueError; 3-arg-Aufrufer im Code = 0
-- [ ] `/admin/printers/` erreichbar, SSO-protected via Pangolin, CSRF-protected
+- [ ] `PrinterConfigLoader` + `upsert_runtime_printers` sind entfernt + **5 Test-Files** entfernt/migriert (siehe ID-Generierung-Sektion)
+- [ ] `derive_printer_id` ist 4-arg (timezone-aware created_at_utc); naive datetime → ValueError; 3-arg-Aufrufer im Code = 0 (`grep` verifiziert)
+- [ ] `/admin/printers/` erreichbar, SSO-protected via Pangolin, CSRF-protected (4 Test-Fälle grün)
 - [ ] Create/Edit/Disable/Enable funktionieren via Browser (HTML-Forms) + JSON-API (`/api/v1/admin/printers`, Basic-Auth `claude-automation`)
-- [ ] Pangolin-Resource `print-hub.strausmann.cloud` hat Header-Auth-Bypass-Label (`claude-automation` + 64-hex-Secret in Vault-Item `Pangolin Header Auth - Print Hub`)
-- [ ] Audit-Trail `printers_audit` wird gefüllt, SNMP-Community redacted (`***REDACTED***`)
+- [ ] Pangolin-Resource `print-hub.strausmann.cloud` hat **alle Pflicht-Blueprint-Labels** (name, full-domain, protocol, ssl, target+healthcheck, auth.sso-enabled, auth.basic-auth) und Vault-Item `Pangolin Header Auth - Print Hub` mit `claude-automation`-Credentials
+- [ ] **Bestand-Backfill verifiziert (H8b):** alle Bestandsdrucker haben `snmp.discover=false`, `snmp.community="public"`, `queue_timeout_s=30`, `cut_defaults_half_cut=0`
+- [ ] **PrintService enabled-Check (M8):** `submit_print_job` mit disabled-Drucker → `PrinterDisabledError`/409 + Test-Cases grün
+- [ ] **redact_secrets im eigenen Modul `app/services/audit_redaction.py`** (M9) mit ≥80% Coverage und 4 Test-Fällen
+- [ ] **SQLite-Engine SERIALIZABLE + WAL** (M7) in `app/db/engine.py` via Connect-Listener
+- [ ] Audit-Trail `printers_audit` wird gefüllt, **`connection.snmp.community` redacted** (`***REDACTED***`)
 - [ ] `GET /api/printers` unverändert für Hangar, filtert `enabled=true`
 - [ ] Fresh-Install-Test: Hub startet ohne YAML mit leerer printers-Tabelle, Operator legt Drucker via UI/API an
-- [ ] Production-Smoke: Bestandsdrucker funktional, Print-Buttons in Hangar funktionieren, Healthcheck 200
+- [ ] Production-Smoke: Bestandsdrucker funktional, Container-DNS `print-hub` aus Hangar-Container erreichbar (M10), Print-Buttons in Hangar funktionieren, Healthcheck 200
 - [ ] Rollback-Pfad dokumentiert (SQLite-Restore + Compose-Revert + Stack-Env-Merge)
 - [ ] Coverage-Schwellen (siehe Testing-Sektion) erreicht, CI-Gate hart (kein `|| true`)
 - [ ] Doku: README `printers.yaml` Sektion entfernt, Admin-UI Section ergänzt, deutsch
