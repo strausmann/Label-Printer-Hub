@@ -230,3 +230,35 @@ def test_settings_webhook_api_key_empty_still_accepted() -> None:
     """Leerer Key (Phase 1-Default) bleibt erlaubt fuer Bootstrap ohne Webhook-Auth."""
     s = Settings(webhook_api_key="", _env_file=None)  # type: ignore[call-arg]
     assert s.webhook_api_key.get_secret_value() == ""
+
+
+@pytest.mark.parametrize(
+    "padded_key",
+    [
+        " " * 31 + "a",  # Gemini-Finding: 32 Zeichen formal, 1 Zeichen echt
+        " " * 32 + "abc",  # langer Whitespace-Padding
+        "\t\tshort\n",  # mit Newline/Tab
+    ],
+)
+def test_settings_webhook_api_key_rejects_short_effective_length(padded_key: str) -> None:
+    """Stripped-Laenge <32 muss abgelehnt werden, auch wenn Rohlaenge >=32.
+
+    Gemini-Review #116: ``" " * 31 + "a"`` hatte mit der alten Validation
+    durchgegangen — 32 Zeichen formal, aber 1 Zeichen Auth-Material. Das
+    war das gleiche Sicherheitsrisiko wie ein zu kurzer Key.
+    """
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="at least 32 non-whitespace"):
+        Settings(webhook_api_key=padded_key, _env_file=None)  # type: ignore[call-arg]
+
+
+def test_settings_webhook_api_key_strips_leading_trailing_whitespace() -> None:
+    """Gueltige Keys mit aussen-Whitespace werden getrimmt und gespeichert.
+
+    Vermeidet Inkonsistenzen wenn der Key im .env mit Trailing-Space landet.
+    """
+    real_key = "x" * 40
+    padded = "  " + real_key + " \n"
+    s = Settings(webhook_api_key=padded, _env_file=None)  # type: ignore[call-arg]
+    assert s.webhook_api_key.get_secret_value() == real_key

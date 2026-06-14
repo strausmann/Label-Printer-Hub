@@ -136,7 +136,7 @@ class Settings(BaseSettings):
     @field_validator("webhook_api_key")
     @classmethod
     def validate_api_key_length(cls, v: SecretStr) -> SecretStr:
-        """Reject keys shorter than 32 characters or whitespace-only keys.
+        """Reject keys whose effective length (after stripping whitespace) is < 32.
 
         An empty string is accepted so that the hub can start without
         webhook authentication configured (the webhook endpoint will
@@ -146,15 +146,22 @@ class Settings(BaseSettings):
         ``\"                                \"``) sind faktisch leere Keys —
         sie schützen nichts und sollten beim Startup fehlschlagen statt
         eine trügerische Sicherheit zu suggerieren.
+
+        Gemini-Review (#116): die alte Implementierung verglich `len(secret) < 32`
+        gegen die **Rohlänge**. Das liess ``" " * 31 + "a"`` durch — 32 Zeichen
+        formal, aber effektiv 1 Zeichen Auth-Material. Wir messen die Stripped-
+        Länge und geben den getrimmten Wert als neuen SecretStr zurück, damit
+        spätere Vergleiche konsistent gegen den effektiven Key laufen.
         """
         secret = v.get_secret_value()
         if not secret:
             return v
-        if len(secret) < 32:
-            raise ValueError("PRINTER_HUB_WEBHOOK_API_KEY must be at least 32 characters")
-        if secret.strip() == "":
-            raise ValueError("PRINTER_HUB_WEBHOOK_API_KEY must not be whitespace-only")
-        return v
+        stripped = secret.strip()
+        if len(stripped) < 32:
+            raise ValueError(
+                "PRINTER_HUB_WEBHOOK_API_KEY must be at least 32 non-whitespace characters"
+            )
+        return SecretStr(stripped)
 
 
 @lru_cache
