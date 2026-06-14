@@ -56,7 +56,12 @@ sse_connections_total = Counter(
 
 sse_events_published_total = Counter(
     "printer_hub_sse_events_published_total",
-    "Total events published to the SSE stream",
+    # Inkrementiert pro SSE-Subscriber, nicht pro publish()-Call: ein
+    # publish() mit N aktiven Clients erhoeht den Counter um N. Der
+    # Metric-Name ist aus historischen Gruenden behalten (Grafana-
+    # Dashboards) — semantisch ist es "delivered to subscriber",
+    # nicht "published once" (siehe Audit #67 Hinweis).
+    "Total SSE events delivered to subscribers (one increment per subscriber per publish)",
     ["channel"],
 )
 
