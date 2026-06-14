@@ -259,10 +259,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 2. Plugin registries (idempotent — skips already-registered names).
     # Re-run if the registry was cleared (e.g. by test fixtures that call
     # IntegrationRegistry._plugins.clear()).
+    #
+    # Audit #67: beide Calls machen sync I/O (entry_points-Discovery + Module-
+    # Imports lesen .dist-info vom Disk). Im FastAPI-async-Lifespan blockt das
+    # den event-loop — bei kalten Containern dauert das spürbar.
+    # Wir schieben beide Discovery-Schritte in einen Thread.
     if not IntegrationRegistry.names():
-        _integrations_init._discover_plugins()
+        await asyncio.to_thread(_integrations_init._discover_plugins)
 
-    ModelRegistry.ensure_discovered()
+    await asyncio.to_thread(ModelRegistry.ensure_discovered)
 
     # 3. DB-bound init — plugin registry is populated.
     async with async_session() as s:
