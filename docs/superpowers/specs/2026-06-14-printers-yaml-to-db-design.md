@@ -1,6 +1,6 @@
 # Hub Printers YAML → DB + Admin-UI Design
 
-> **Status:** DRAFT Round-3 — Round-1 + Round-2-Review-Findings adressiert
+> **Status:** DRAFT Round-4 — Round-1 + Round-2 + Round-3-Review-Findings adressiert
 > **Issue:** [#124 — printers.yaml entfernen, Drucker in DB + Admin-UI](https://github.com/strausmann/Label-Printer-Hub/issues/124)
 > **PR:** [#125](https://github.com/strausmann/Label-Printer-Hub/pull/125)
 > **Related:** Hangar #110 (hardcoded Drucker-/Möbel-Spezifika entfernen)
@@ -9,6 +9,7 @@
 > **Reviews adressiert:**
 > - Round-1: ops, network, storage, code-quality (alle 4 NEEDS_FIXES)
 > - Round-2: ops APPROVE, network/storage/code-quality NEEDS_FIXES (3 HIGH + 4 MED + 4 LOW)
+> - Round-3: ops/network/storage APPROVE, code-quality NEEDS_FIXES (2 MED + 1 LOW: M11 LabelHubException, M12 Flattening, Engine-Snippet)
 
 ## Round-2-Findings Verarbeitung (NEU)
 
@@ -387,6 +388,69 @@ Was konkret in `printers.connection` und in den Audit-Snapshots steht:
 
 `queue.timeout_s`, `cut_defaults.half_cut` werden in der `printers`-Tabelle **als separate Spalten** geführt (siehe Phase 1b der Migration unten — bestehendes Schema wird erweitert). Begründung: stabile Spalten erleichtern SQL-Filter ("alle Drucker mit half_cut") und vermeiden JSON-Path-Queries in SQLite.
 
+### M12 — Flattening zwischen Pydantic-Verschachtelung und flachen DB-Spalten
+
+`payload.model_dump()` liefert verschachtelte Dicts (`{"queue": {"timeout_s": 30}, "cut_defaults": {"half_cut": true}}`). Die DB-Spalten sind aber flach (`queue_timeout_s`, `cut_defaults_half_cut`). Das Mapping erledigt ein expliziter Helper im Service:
+
+```python
+# app/services/printer_admin_service.py (internal)
+def _payload_to_row(
+    payload: PrinterCreatePayload,
+    printer_id: UUID,
+    created_at_utc: datetime,
+) -> dict[str, Any]:
+    """Mappt Pydantic-Payload auf flache DB-Spalten-dict."""
+    return {
+        "id": printer_id,
+        "name": payload.name,
+        "slug": payload.slug,
+        "model": payload.model,
+        "backend": payload.backend,
+        "connection": payload.connection.model_dump(mode="json"),  # bleibt verschachtelt im JSON-Feld
+        "queue_timeout_s": payload.queue.timeout_s,
+        "cut_defaults_half_cut": payload.cut_defaults.half_cut,
+        "enabled": payload.enabled,
+        "created_at": created_at_utc,
+        "updated_at": created_at_utc,
+    }
+
+def _apply_update_patch(row: Printer, patch: PrinterUpdatePayload) -> dict[str, Any]:
+    """Wendet PATCH-Felder auf row an. Slug/model/backend/id werden silent
+    ignoriert. Returnt dict mit nur den geänderten Spalten für SQL-UPDATE."""
+    changes: dict[str, Any] = {}
+    if patch.name is not None:
+        changes["name"] = patch.name
+    if patch.connection is not None:
+        changes["connection"] = patch.connection.model_dump(mode="json")
+    if patch.queue is not None:
+        changes["queue_timeout_s"] = patch.queue.timeout_s
+    if patch.cut_defaults is not None:
+        changes["cut_defaults_half_cut"] = patch.cut_defaults.half_cut
+    if patch.enabled is not None:
+        changes["enabled"] = patch.enabled
+    return changes
+
+def _row_to_audit_view(row: dict[str, Any]) -> dict[str, Any]:
+    """Audit-JSON-Sicht: connection bleibt verschachtelt, queue/cut_defaults
+    werden wieder verschachtelt damit Audit-Snapshots lesbar bleiben."""
+    return {
+        "id": str(row["id"]),
+        "name": row.get("name"),
+        "slug": row.get("slug"),
+        "model": row.get("model"),
+        "backend": row.get("backend"),
+        "connection": row.get("connection"),
+        "queue": {"timeout_s": row.get("queue_timeout_s")},
+        "cut_defaults": {"half_cut": row.get("cut_defaults_half_cut")},
+        "enabled": row.get("enabled"),
+    }
+```
+
+**Test-Cases für Flattening (in `tests/services/test_printer_admin_service.py`):**
+- `_payload_to_row` setzt `queue_timeout_s=30` aus `payload.queue.timeout_s`
+- `_apply_update_patch` mit nur `queue=PrinterQueueSettings(timeout_s=60)` returnt `{"queue_timeout_s": 60}` und keine anderen Felder
+- `_row_to_audit_view` rekonstruiert die verschachtelte Form für `redact_secrets`-Input
+
 Error-Messages: **deutsch** (i18n-Policy L-Finding). Pydantic-Custom-Error-Map nutzt `pydantic.v1.errors.PydanticValueError`-Pattern oder `model_validator`-Returns.
 
 ### 4. Web-Routes (HTML)
@@ -512,9 +576,9 @@ mehreren Branches). Tests:
 5. PrinterAdminService.create_printer (async with session.begin() — atomare Transaktion):
    a. created_at_utc = datetime.now(timezone.utc)
    b. printer_id = derive_printer_id(model, host, port, created_at_utc)
-   c. row_dict = payload.model_dump() + {"id": printer_id, "created_at": created_at_utc, "updated_at": created_at_utc}
+   c. row_dict = _payload_to_row(payload, printer_id, created_at_utc)  # siehe Flattening-Helper M12
    d. INSERT INTO printers (...)
-   e. INSERT INTO printers_audit (action='create', before=NULL, after=redact_secrets(row_dict))
+   e. INSERT INTO printers_audit (action='create', before=NULL, after=redact_secrets(_row_to_audit_view(row_dict)))
    (Transaktion COMMIT bei session.begin()-Exit)
 6. Redirect 303 → /admin/printers?info=created&slug=<new-slug>
 7. Hangar nächste Sync-Runde (≤5min) zieht neuen Drucker via GET /api/printers
@@ -530,10 +594,12 @@ mehreren Branches). Tests:
 5. PrinterAdminService.update_printer (Transaktion — siehe M7 unten):
    a. SELECT … WHERE slug=? — SQLite hat kein FOR UPDATE, BEGIN IMMEDIATE
       gibt uns exklusive Schreib-Sperre auf der DB-Datei (H5).
-   b. Apply patch — ignoriere slug/model/backend/id wenn im Payload gesetzt (silent)
-   c. Diff alte vs neue Werte (für Audit, beide redacted)
-   d. UPDATE printers SET name=?, connection=?, … updated_at=? WHERE id=?
-   e. INSERT INTO printers_audit (action='update', before=…, after=…)
+   b. before_view = _row_to_audit_view(row)
+   c. changes = _apply_update_patch(row, patch)  # silent ignore von slug/model/backend/id (M12)
+   d. UPDATE printers SET <changes>, updated_at=? WHERE id=?
+   e. after_view = _row_to_audit_view(merged_row)
+   f. INSERT INTO printers_audit (action='update',
+        before=redact_secrets(before_view), after=redact_secrets(after_view))
 6. Redirect 303 → /admin/printers?info=updated&slug=<slug>
 ```
 
@@ -549,26 +615,39 @@ aiosqlite-Connection auf IMMEDIATE setzen, damit jede Transaktion (auch die
 implizite aus `session.begin()`) als IMMEDIATE startet:
 
 ```python
-# app/db/engine.py — Listener registrieren (einmalig beim Engine-Setup)
-from sqlalchemy import event
+# app/db/engine.py — Pseudo-Code, korrekte Reihenfolge:
+# 1) Engine zuerst erstellen, 2) DANN Listener registrieren.
+# Vorhandener engine.py-Aufbau wird minimal erweitert um isolation_level + Listener.
 
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import create_async_engine
+
+# Schritt 1: Engine erstellen (existing — isolation_level NEU hinzufügen)
+engine = create_async_engine(
+    DATABASE_URL,
+    isolation_level="SERIALIZABLE",  # aiosqlite mappt SERIALIZABLE auf BEGIN IMMEDIATE
+    # ... existing kwargs (echo, pool_pre_ping, etc.) bleiben
+)
+
+# Schritt 2: Connect-Listener auf engine.sync_engine NACH Engine-Creation
 @event.listens_for(engine.sync_engine, "connect")
 def _set_sqlite_pragma(dbapi_connection, _connection_record):
-    # SQLite: Transaktionen sofort als IMMEDIATE statt DEFERRED starten
-    # Verhindert Race zwischen mehreren parallelen Writes (sehr seltener Fall im
-    # Hub-Single-Replica-Setup, aber per Best-Practice abgesichert).
+    """Setzt SQLite-Pragmas bei jedem neuen Connection-Open.
+
+    - journal_mode=WAL: erlaubt parallele Reader während Writer aktiv ist,
+      reduziert Lock-Konflikte im Single-Replica-Setup.
+    - foreign_keys=ON: SQLite default ist OFF — wir wollen Constraints aktiv.
+    """
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
-
-# Plus: isolation_level beim Connect erzwingen
-engine = create_async_engine(
-    DATABASE_URL,
-    isolation_level="SERIALIZABLE",  # aiosqlite mappt das auf IMMEDIATE
-    ...
-)
 ```
+
+**Was sich konkret an `engine.py` ändert (Delta-Hinweis L-Round-3):**
+- NEU: `isolation_level="SERIALIZABLE"` als `create_async_engine`-Argument
+- NEU: `@event.listens_for`-Decorated Listener-Funktion direkt nach Engine-Creation
+- Existing: alles andere unverändert (`DATABASE_URL`-Auflösung, `_ensure_data_dir`, etc.)
 
 **Innerhalb des Services** verwendet jeder Mutations-Pfad dann nur noch
 `async with session.begin():` ohne expliziten `BEGIN IMMEDIATE`-Aufruf —
@@ -610,14 +689,26 @@ async def submit_print_job(self, request: PrintRequest) -> UUID:
     # ... existing logic
 ```
 
-Neue Exception `PrinterDisabledError` in `app/exceptions.py`:
+Neue Exception `PrinterDisabledError` in der existierenden Hierarchie
+`app/printer_backends/exceptions.py` (M11 — `PrinterError` ist die Root-
+Basisklasse, `LabelHubException` existiert nicht):
+
 ```python
-class PrinterDisabledError(LabelHubException):
-    """Drucker existiert, ist aber deaktiviert (Soft-Delete-Status)."""
-    http_status = 409
+# app/printer_backends/exceptions.py
+class PrinterDisabledError(PrinterError):
+    """Drucker existiert in DB, ist aber deaktiviert (Soft-Delete-Status).
+
+    Mappt in der HTTP-Schicht auf 409 (nicht 404), weil der Drucker
+    semantisch existiert — er ist nur vorübergehend nicht verwendbar.
+    """
+    def __init__(self, printer_id: UUID, slug: str) -> None:
+        self.printer_id = printer_id
+        self.slug = slug
+        super().__init__(f"Printer {slug} ({printer_id}) is disabled")
 ```
 
-Error-Handler in `app/error_handlers.py` mappt auf 409 mit Body
+Error-Handler in `app/api/routes/print.py` (analog `TapeMismatchError`-
+Pattern) mappt auf 409 mit Body
 `{"error": "printer_disabled", "slug": "<slug>"}`.
 
 - Re-Enable über `/admin/printers/{slug}/enable` macht den Drucker sofort wieder verfügbar.
