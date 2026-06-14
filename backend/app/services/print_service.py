@@ -164,51 +164,55 @@ class PrintService:
         prepared = await asyncio.gather(*[_prepare_one(r) for r in requests])
 
         # 3. Pre-allocate job UUIDs + persist in JobStore
-        # Pro Request 1 Job persistieren (DB-Tracking bleibt 1:1 zur Hangar-Bestellung).
-        # Image-Replication für copies > 1 kommt in Schritt 4 (Batch-Enqueue).
-        job_ids: list[UUID] = []
-        for request, (_img, ld_dump) in zip(requests, prepared, strict=True):
-            job_id = uuid4()
-            db_job = Job(
-                id=job_id,
-                printer_id=self._printer_id,
-                template_key=None,
-                payload={
-                    "tape_mm": tape_mm,
-                    "content_type": str(request.content_type),
-                    "rendered_tape_mm": tape_mm,
-                    "options": request.options.model_dump(),
-                    "label_data": ld_dump,
-                },
-                api_key_id=None,
-                source_ip=None,
-            )
-            await self._store.save_queued(db_job)
-            job_ids.append(job_id)
-
-        # 3b. Image-Liste für die Hardware aufbauen — Bug 2026-06-14:
-        # `PrintOptions.copies > 1` ist im DB-Schema vorgesehen, wurde aber
-        # bisher nicht in die Hardware-Druck-Liste übersetzt. Effekt: ein Request
-        # mit copies=3 schickte nur 1 Image an print_multi() → 1 Etikett statt 3.
-        # Fix: pro Request das Image so oft replizieren wie options.copies sagt.
-        # job_ids werden parallel repliziert damit die Längen-Validierung in
-        # enqueue_batch passt; duplizierte UUIDs landen einmal im self._jobs-Dict
-        # (Dict-Set überschreibt). Der Batch-Worker markiert je Job-ID einmal
-        # done — Hangar-Bestellung bleibt 1:N mit den replizierten Etiketten.
+        # Bug 2026-06-14 Round 2: PR #115 hatte das Image N-mal mit DERSELBEN
+        # job_id eingereiht — der BatchWorker scheitert dann beim zweiten
+        # `JobStateMachine.transition(job, PRINTING)` mit
+        # InvalidStateTransitionError (Job ist bereits PRINTING) und skippt
+        # die Replikate. Live-Log:
+        #     "Batch ...: job 711db9bc skipped — state already printing"
+        # Resultat: 1 Etikett trotz copies=3.
+        #
+        # Fix: pro Request UND pro Copy einen eigenen DB-Job-Record mit
+        # eindeutiger UUID anlegen, damit der Worker jeden Druck unabhängig
+        # transitionen kann. Hangar-Bestellung bleibt 1:1 zur Hangar-Sicht —
+        # wir geben nur den ersten ("master") Job pro Request zurück, alle
+        # Replikate landen aber in der Hub-DB für Audit/Logging.
+        job_ids: list[UUID] = []  # master IDs, 1 pro request — Hangar-API
+        all_job_ids: list[UUID] = []  # alle inkl. Copies — für enqueue_batch
         images: list[Image.Image] = []
-        expanded_job_ids: list[UUID] = []
-        for req, (img, _ld), jid in zip(requests, prepared, job_ids, strict=True):
-            n = max(1, int(req.options.copies))
-            for _ in range(n):
+        for request, (img, ld_dump) in zip(requests, prepared, strict=True):
+            n = max(1, int(request.options.copies))
+            master_id = uuid4()
+            job_ids.append(master_id)
+            for copy_idx in range(n):
+                this_id = master_id if copy_idx == 0 else uuid4()
+                db_job = Job(
+                    id=this_id,
+                    printer_id=self._printer_id,
+                    template_key=None,
+                    payload={
+                        "tape_mm": tape_mm,
+                        "content_type": str(request.content_type),
+                        "rendered_tape_mm": tape_mm,
+                        "options": request.options.model_dump(),
+                        "label_data": ld_dump,
+                        "copy_index": copy_idx,
+                        "copy_total": n,
+                        "copy_master_id": str(master_id),
+                    },
+                    api_key_id=None,
+                    source_ip=None,
+                )
+                await self._store.save_queued(db_job)
                 images.append(img)
-                expanded_job_ids.append(jid)
+                all_job_ids.append(this_id)
 
         # 4. Enqueue as BatchJob
         first_options = requests[0].options
         await self._queue.enqueue_batch(
             printer_id=self._printer_id,
             images=images,
-            job_ids=expanded_job_ids,
+            job_ids=all_job_ids,
             tape_mm=tape_mm,
             options={
                 "auto_cut": first_options.auto_cut,
