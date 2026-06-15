@@ -6,7 +6,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/oapi-codegen/oapi-codegen/v2 v2.7.1
 	github.com/oapi-codegen/runtime v1.4.1
-	golang.org/x/sync v0.20.0
+	golang.org/x/sync v0.21.0
 )
 
 require (
