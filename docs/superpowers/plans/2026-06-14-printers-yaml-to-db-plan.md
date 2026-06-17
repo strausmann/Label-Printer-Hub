@@ -14,7 +14,18 @@
 
 **Issue:** https://github.com/strausmann/Label-Printer-Hub/issues/124
 
-**Status:** Plan Round-3 — Round-2-Review-Findings adressiert (2 MED + 3 LOW)
+**Status:** Plan Round-4 FINAL — Round-3-Review-Findings adressiert (4 LOW, alle Teams APPROVE)
+
+### Round-3-Review-Findings Verarbeitung
+
+| # | Team | Finding | Status | Wo adressiert |
+|---|---|---|---|---|
+| R3-L1 | network | `sleep 60` kein expliziter Loop-Timeout | ✅ Retry-Schleife 5×60s | Task 8.3.5 Step 1 |
+| R3-L2 | network | Bestand-Detection ohne `ssoEnabled==false` Fall | ✅ Zeile ergänzt | Phase 0 Step 3 |
+| R3-L3 | storage | Task 8.5 Step 2 `rm` VOR `cp` semantisch korrekter | ✅ 2a/2b geteilt | Task 8.5 Step 2 |
+| R3-L4 | code-q | Task 6.3-Stub ohne Pflicht-Hinweis | ✅ Blockquote ergänzt | Task 6.3 |
+
+
 
 ### Round-2-Review-Findings Verarbeitung
 
@@ -162,6 +173,7 @@ git checkout -b feat/issue-124-printers-yaml-to-db
 | `headerAuth.user == "claude-automation"` | Vault-Item-Passwort holen statt neu generieren — Phase 6.1 entfällt, nur Labels ergänzen falls Healthcheck-Labels fehlen |
 | `headerAuth.user != "claude-automation"` | **STOP** — manuelle Klärung mit User: bestehender User-Konflikt. Entscheidung: ersetzen oder zweiten Bypass-Account anlegen? |
 | `healthCheck.enabled == false` | Pflicht-Labels ergänzen — Newt v1.18.4 fordert healthcheck-Pflicht-Felder |
+| `auth.ssoEnabled == false` (R3-LOW network Round-3) | Phase 6.2 aktiviert SSO unbedingt mit `auth.sso-enabled=true` — kein Sonder-Fall, läuft im Standard-Pfad |
 
 Ergebnisse in `docs/superpowers/plans/2026-06-14-phase0-live-check-results.md` festhalten unter `## Pangolin-Resource-Bestand`.
 
@@ -3653,11 +3665,14 @@ In `docs/superpowers/plans/2026-06-14-phase0-live-check-results.md` festhalten:
 
 ### Task 6.3: [R2-L2 Round-2 verschoben nach Task 8.3.5]
 
-Der ursprünglich hier definierte curl-Verifikations-Schritt war zeitlich falsch eingeordnet — Pangolin sieht die neuen Header-Auth-Labels erst nach `start_stack` (Phase 8.3) und Newt-Sync (kann bis 5 Min dauern). Die Verifikation gehört daher zwischen `start_stack` und Smoke-Test. Siehe **Task 8.3.5** unten.
+Der ursprünglich hier definierte curl-Verifikations-Schritt war zeitlich falsch eingeordnet — Pangolin sieht die neuen Header-Auth-Labels erst nach `start_stack` (Phase 8.3) und Newt-Sync (kann bis 5 Min dauern). Die Verifikation gehört daher zwischen `start_stack` und Smoke-Test.
+
+> **PFLICHT-HINWEIS (R3-LOW code-quality):** Task 8.3.5 ist KEIN optionaler Schritt. Phase 6 ohne 8.3.5 ist UNVOLLSTÄNDIG — der Header-Auth-Bypass MUSS funktional verifiziert sein bevor Smoke-Test (8.4) Tooling drauf zugreift. Subagent-Driven-Development markiert Phase 6 NICHT als komplett bis 8.3.5 grün ist.
 
 Phase 6 ist damit:
 - 6.1: Vault-Item anlegen
 - 6.2: Compose-Labels in Repo-Snippet vorbereiten (eigentlicher Deploy in 8.3)
+- **8.3.5: Header-Auth curl-Verifikation (PFLICHT, gehört logisch zu Phase 6, läuft aber in Phase 8 wegen Newt-Sync-Reihenfolge)**
 
 (Siehe Task 8.3.5)
 
@@ -3881,13 +3896,22 @@ ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
 
 Nach Phase 8.3 `start_stack` muss Newt die neuen Compose-Labels gesehen haben (kann bis 5 Min dauern). Diese Task verifiziert dass der Header-Auth-Bypass funktioniert BEVOR der Smoke-Test (8.4) Tooling drauf zugreift.
 
-- [ ] **Step 1: Auf Newt-Sync warten + Hub-Health**
+- [ ] **Step 1: Auf Newt-Sync warten + Hub-Health (R3-LOW network: Retry-Schleife)**
+
+R3-LOW-Befund: `sleep 60` ist nur ein Minimum-Puffer. Wir nutzen eine Retry-Schleife mit Max-Timeout von 5 Min — das deckt die obere Grenze realistischer Newt-Sync-Zeiten ab:
 
 ```bash
-sleep 60  # Newt-Sync-Puffer
-curl -fsS https://print-hub.strausmann.cloud/healthz
+# Initial-Puffer + Retry bis 5 Min
+for i in 1 2 3 4 5; do
+  sleep 60
+  if curl -fsS --max-time 10 https://print-hub.strausmann.cloud/healthz; then
+    echo "Health OK nach $((i*60))s"
+    break
+  fi
+  echo "Newt-Sync noch nicht durch (Versuch $i/5)..."
+done
 ```
-Expected: 200.
+Expected: 200 spätestens bei Versuch 5. Falls nach 5 Min noch rot: Newt-Logs prüfen (`docker logs --tail 50 hangar-print-hub-newt-1`) bevor Step 2 fortgesetzt wird.
 
 - [ ] **Step 2: curl gegen Public-Endpoint ohne Auth (Erwartung: 401/403)**
 
@@ -4011,16 +4035,19 @@ gh issue close 124 --reason completed --comment "Implementiert in PR #<NUMBER> +
 mcp__dockhand__down_stack(environmentId=10, name="hangar-print-hub")
 ```
 
-- [ ] **Step 2: SQLite-Restore aus Pre-Deploy-Backup**
+- [ ] **Step 2: SQLite-Restore aus Pre-Deploy-Backup (R3-LOW storage: rm VOR cp)**
+
+R3-LOW-Befund: WAL/SHM-Files müssen ENTFERNT werden BEVOR die restaurierte .db eingespielt wird. Sonst könnte SQLite die neue DB kurzzeitig mit dem alten WAL-Zustand sehen (Stack ist zwar gestoppt, aber semantisch korrekter Reihenfolge):
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
-  "cp /docker/stacks/hangar-print-hub/backups/printer-hub.db.bak-pre-124 \
-      /docker/stacks/hangar-print-hub/data/printer-hub.db"
-# WAL/SHM Files entfernen falls vorhanden (sonst SQLite mountet wieder WAL-Zustand)
+# Schritt 2a: WAL/SHM Files vorher entfernen — sonst inkompatibler WAL-Recovery-Versuch
 ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
   "rm -f /docker/stacks/hangar-print-hub/data/printer-hub.db-wal \
          /docker/stacks/hangar-print-hub/data/printer-hub.db-shm"
+# Schritt 2b: Jetzt die DB-Datei aus dem Backup einspielen
+ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
+  "cp /docker/stacks/hangar-print-hub/backups/printer-hub.db.bak-pre-124 \
+      /docker/stacks/hangar-print-hub/data/printer-hub.db"
 ```
 
 - [ ] **Step 3: Compose-Revert via Dockhand**
