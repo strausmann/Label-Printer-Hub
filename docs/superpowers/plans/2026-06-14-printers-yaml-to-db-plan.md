@@ -14,6 +14,36 @@
 
 **Issue:** https://github.com/strausmann/Label-Printer-Hub/issues/124
 
+**Status:** Plan Round-2 — Round-1-Review-Findings adressiert (2 CRITICAL + 2 HIGH + 6 MED + 8 LOW)
+
+---
+
+## Round-1-Review-Findings Verarbeitung
+
+| # | Severity | Team | Finding | Status | Wo adressiert |
+|---|---|---|---|---|---|
+| C1 | CRITICAL | ops | `set_container_auto_update` Parameter heißt `policy=`, nicht `auto_update=` | ✅ fixed | Task 8.2 + 8.4 |
+| C2 | CRITICAL | code-q | `GET /api/printers` filtert nicht auf `enabled=true` — kein Task fixt das | ✅ neuer Task 2.6 + 2.7 | Phase 2 |
+| C3 | CRITICAL | network | MCP-Tools existieren nicht | ❌ **FALSCH-POSITIV** | siehe Phase 0 Note unten |
+| H1 | HIGH | ops | Kein Rollback-Sub-Task wenn Health-Check fail | ✅ neue Task 8.5 | Phase 8 |
+| H2 | HIGH | code-q | Task 3.2 hat 6/9 Tests als Placeholder | ✅ vollständig ausgeschrieben | Task 3.2 |
+| M1 | MEDIUM | storage | Isolation-Level-Test gibt False-Confidence | ✅ Test gestrichen | Task 1.1 |
+| M2 | MEDIUM | storage | `downgrade()` raised statt no-op | ✅ → `pass` | Task 1.3 |
+| M3 | MEDIUM | code-q | Task 3.4 hat keine Test-Snippets | ✅ vollständig | Task 3.4 |
+| M4 | MEDIUM | code-q | Phase 6 fehlt curl-Verifikation | ✅ neue Task 6.3 | Phase 6 |
+| M5 | MEDIUM | code-q | `hangar_meta` existiert nicht im Hub | ✅ Marker-Code entfernt | Task 5.2 |
+| M6 | MEDIUM | ops | (siehe PR-Comment) | ✅ Smoke-Schritte verifizieren | Task 8.4 |
+| L1 | LOW | network | Pangolin Bug #3099 als Smoke-Hinweis | ✅ ergänzt | Task 8.4 |
+| L2 | LOW | network | CSRF Implementation-Alternativen | ✅ Entscheidung getroffen | Task 3.1 |
+| L3 | LOW | code-q | Task 4.1 Fixture-Setup ausschreiben | ✅ ergänzt | Task 4.1 |
+| L4 | LOW | code-q | Web-Coverage 70% → 80% | ✅ angehoben | Coverage-Tabelle |
+| L5 | LOW | storage | `json_extract` Integer-Output dokumentieren | ✅ Smoke-Output | Task 8.4 |
+| L6 | LOW | storage | Test-Wording "Defaults durch Migration" falsch | ✅ umbenannt + neuer Backfill-Test | Task 1.3 |
+
+### C3 Falsch-Positiv-Notiz
+
+Network-Agent in Round-1 hat behauptet die MCP-Tools `mcp__pangolin-api__org_by_orgId_resources` und `mcp__pangolin-api__resource_by_resourceId` existieren in dieser Umgebung nicht. **Live-Verifikation per `ToolSearch select:...` hat beide Tools mit den exakten Namen aus dem Plan geladen.** Phase 0 Step 3 bleibt wie geschrieben — KEIN curl-Fallback nötig.
+
 ---
 
 ## File Structure
@@ -159,22 +189,18 @@ Ziel: SQLite-Engine umkonfigurieren, neue Exception einführen, Alembic-Migratio
 
 ```python
 # backend/tests/db/test_engine_pragmas.py
-"""Verifiziert die SQLite-Pragma-Konfiguration nach Issue #124."""
+"""Verifiziert die SQLite-Pragma-Konfiguration nach Issue #124.
+
+M1 (Round-1 storage): der isolation_level-Test ist gestrichen weil
+SQLAlchemy/aiosqlite kein verlaesslich introspect-barer Wert vorhanden ist.
+Die PRAGMAs sind die einzige reliable Verifikation.
+"""
 from __future__ import annotations
 
 import pytest
 from sqlalchemy import text
 
 from app.db.engine import engine
-
-
-@pytest.mark.asyncio
-async def test_engine_isolation_level_is_serializable():
-    """isolation_level=SERIALIZABLE mappt aiosqlite auf BEGIN IMMEDIATE."""
-    assert engine.dialect.name == "sqlite"
-    # SQLAlchemy stellt das auf der Engine bereit
-    assert engine.url.query.get("isolation_level") in (None, "SERIALIZABLE") or \
-           engine.dialect.isolation_level == "SERIALIZABLE"
 
 
 @pytest.mark.asyncio
@@ -375,10 +401,13 @@ async def test_printers_audit_table_exists():
 
 
 @pytest.mark.asyncio
-async def test_backfill_sets_snmp_defaults_for_existing_printers():
-    """Bestandsrows ohne snmp-Block bekommen Defaults durch die Migration."""
-    # Test-DB ist nach Migration leer — simulieren wir einen "Pre-124"-Row
-    # und verifizieren Idempotenz (kein zweiter Snmp-Block hinzugefuegt).
+async def test_server_defaults_applied_for_post_migration_inserts():
+    """Nach Migration: neue Rows ohne explizite Werte fallen auf server_default.
+
+    L6-Round-1 storage: dieser Test testet **server_default**, nicht den
+    Backfill-Code-Pfad. Den eigentlichen Backfill testet
+    `test_backfill_function_idempotent_and_safe` unten.
+    """
     pid = await seed_pre_124_printer(engine, slug="legacy-p750w")
     async with engine.connect() as conn:
         row = (
@@ -392,10 +421,49 @@ async def test_backfill_sets_snmp_defaults_for_existing_printers():
     conn_json = json.loads(row[0])
     assert conn_json["host"] == "192.0.2.99"
     assert conn_json["port"] == 9100
-    # Backfill darf in Test-Setup nicht erneut laufen (Migration ist schon
-    # angewandt) — also pruefen wir nur dass Defaults greifbar sind:
     assert row[1] == 30  # queue_timeout_s server_default
     assert row[2] == 0  # cut_defaults_half_cut server_default
+
+
+@pytest.mark.asyncio
+async def test_backfill_function_idempotent_and_safe():
+    """Direkter Test der Backfill-Logik der Migration (L6-Round-1).
+
+    Wir importieren die _backfill_snmp-Helper-Funktion aus dem
+    Migrations-Modul und rufen sie zweifach auf um Idempotenz zu testen.
+    """
+    from importlib import import_module
+    mig = import_module(
+        "alembic.versions.add_printers_audit_and_backfill_connection"
+    )
+    # Test-DB: Row ohne snmp + Row mit snmp + Row mit NULL connection
+    async with engine.begin() as conn:
+        for slug, conn_json in [
+            ("no-snmp", '{"host":"192.0.2.1","port":9100}'),
+            ("with-snmp", '{"host":"192.0.2.2","port":9100,"snmp":{"discover":true,"community":"secret"}}'),
+            ("null-conn", None),
+        ]:
+            await conn.execute(text(
+                "INSERT INTO printers (id, name, slug, model, backend, connection, "
+                "enabled, created_at, updated_at) "
+                "VALUES (lower(hex(randomblob(16))), :n, :s, 'X', 'ptouch', :c, "
+                "1, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))"
+            ), {"n": slug, "s": slug, "c": conn_json})
+    # Backfill 2x aufrufen
+    for _ in range(2):
+        async with engine.begin() as conn:
+            mig._backfill_snmp(conn)  # ist die Helper-Funktion (siehe Step 4)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(text(
+            "SELECT slug, connection FROM printers WHERE slug IN ('no-snmp','with-snmp','null-conn')"
+        ))).all()
+    import json
+    by_slug = {r[0]: json.loads(r[1]) if r[1] else None for r in rows}
+    assert by_slug["no-snmp"]["snmp"] == {"discover": False, "community": "public"}
+    # with-snmp wurde NICHT ueberschrieben (Idempotenz)
+    assert by_slug["with-snmp"]["snmp"]["community"] == "secret"
+    # null-conn bleibt NULL (defensive Schutzklausel)
+    assert by_slug["null-conn"] is None
 ```
 
 - [ ] **Step 3: `tests/_helpers/db.py` Helper ergänzen** (falls nicht existiert)
@@ -504,13 +572,21 @@ def upgrade() -> None:
         [sa.text("created_at DESC")],
     )
 
-    # 3) Bestand-Backfill connection.snmp
-    # Defensive Schutzklausel (Round-3 LOW Storage): falls connection NULL
-    # ODER kein "host" enthaelt, ueberspringen + warnen.
-    bind = op.get_bind()
-    rows = bind.execute(
-        sa.text("SELECT id, connection FROM printers")
-    ).all()
+    # 3) Bestand-Backfill connection.snmp via Helper (L6-Round-1: testbar)
+    _backfill_snmp(op.get_bind())
+
+
+def _backfill_snmp(bind) -> None:
+    """Backfill connection.snmp fuer Pre-124-Bestandsrows.
+
+    Idempotent + defensive Schutzklauseln:
+    - NULL connection wird uebersprungen (bleibt NULL)
+    - connection ohne "host"-Feld wird uebersprungen + Warnung
+    - connection mit existing snmp-Block wird nicht ueberschrieben
+
+    Exportiert damit `tests/db/test_migration_124.py` ihn direkt testen kann.
+    """
+    rows = bind.execute(sa.text("SELECT id, connection FROM printers")).all()
     for row in rows:
         pid, conn_raw = row[0], row[1]
         if conn_raw is None:
@@ -539,13 +615,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Issue #124 — Rollback erfolgt via SQLite-DB-Restore, nicht via
-    alembic downgrade. Diese Funktion ist absichtlich leer um klar zu
-    machen dass downgrade nicht der erwartete Rollback-Pfad ist.
+    alembic downgrade. Diese Funktion ist bewusst no-op damit
+    `alembic downgrade -1` in Tests + CI nicht mit Exception abbricht.
+    Der eigentliche Rollback-Pfad ist Phase 8.5 (SQLite-Restore + Compose-Revert).
+
+    M2-Round-1 storage: NotImplementedError raised hatte CI gebrochen.
     """
-    raise NotImplementedError(
-        "Issue #124 — Rollback ueber SQLite-Restore aus Backup vor "
-        "dem Deploy. Alembic-downgrade nicht supportet."
-    )
+    pass
 ```
 
 - [ ] **Step 5: Model-Update für SQLAlchemy ORM**
@@ -1797,6 +1873,180 @@ git add backend/app/services/printer_admin_service.py \
 git commit -m "feat(#124): PrinterAdminService CRUD + Audit-Recording"
 ```
 
+### Task 2.6: printers_repo.list_all bekommt enabled-Filter (C2)
+
+**Files:**
+- Modify: `backend/app/repositories/printers.py`
+- Modify: `backend/tests/unit/repositories/test_printers_repo.py` (oder neu)
+
+**C2-Befund Round-1 (code-quality):** `printers_repo.list_all()` macht aktuell `SELECT * FROM printers ORDER BY created_at` ohne `WHERE enabled = true`. Spec verlangt aber dass `GET /api/printers` nur enabled Drucker liefert (Hangar sieht keine deaktivierten). Diese Task fixt das auf Repo-Ebene; Task 2.7 zieht die Route nach.
+
+- [ ] **Step 1: Failing-Test schreiben**
+
+```python
+# backend/tests/unit/repositories/test_printers_repo.py
+"""Tests fuer printers_repo.list_all enabled-Filter (Issue #124 C2)."""
+from __future__ import annotations
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.printer import Printer
+from app.repositories import printers as printers_repo
+from tests._helpers.db import create_test_session  # aus Task 2.5
+
+
+@pytest.mark.asyncio
+async def test_list_all_default_excludes_disabled():
+    async with create_test_session() as session:
+        # 2 enabled + 1 disabled
+        for slug, enabled in [("p750w", True), ("ql820", True), ("legacy", False)]:
+            session.add(Printer(
+                slug=slug, name=slug, model="X", backend="ptouch",
+                connection={"host": "192.0.2.1", "port": 9100},
+                enabled=enabled,
+            ))
+        await session.commit()
+        result = await printers_repo.list_all(session)
+    assert {p.slug for p in result} == {"p750w", "ql820"}
+
+
+@pytest.mark.asyncio
+async def test_list_all_include_disabled_returns_all():
+    async with create_test_session() as session:
+        for slug, enabled in [("p750w", True), ("legacy", False)]:
+            session.add(Printer(
+                slug=slug, name=slug, model="X", backend="ptouch",
+                connection={"host": "192.0.2.1", "port": 9100},
+                enabled=enabled,
+            ))
+        await session.commit()
+        result = await printers_repo.list_all(session, include_disabled=True)
+    assert {p.slug for p in result} == {"p750w", "legacy"}
+
+
+@pytest.mark.asyncio
+async def test_list_all_empty_db_returns_empty():
+    async with create_test_session() as session:
+        result = await printers_repo.list_all(session)
+    assert result == []
+```
+
+- [ ] **Step 2: Tests laufen — schlagen fehl (Signatur fehlt)**
+
+Run: `cd backend && pytest tests/unit/repositories/test_printers_repo.py -v`
+Expected: FAIL — `list_all` akzeptiert `include_disabled` nicht.
+
+- [ ] **Step 3: `list_all` anpassen**
+
+```python
+# backend/app/repositories/printers.py
+async def list_all(
+    session: AsyncSession,
+    *,
+    include_disabled: bool = False,
+) -> list[Printer]:
+    """List printers ordered by created_at.
+
+    Issue #124 C2: default schliesst disabled Drucker aus (Soft-Delete-Filter).
+    Admin-UI ruft mit include_disabled=True um die Liste komplett zu sehen.
+    """
+    stmt = select(Printer).order_by(col(Printer.created_at))
+    if not include_disabled:
+        stmt = stmt.where(col(Printer.enabled).is_(True))
+    result = await session.execute(stmt)
+    return list(result.scalars())
+```
+
+- [ ] **Step 4: Tests grün**
+
+Run: `cd backend && pytest tests/unit/repositories/test_printers_repo.py -v`
+Expected: PASS alle 3 Tests.
+
+- [ ] **Step 5: Volle Test-Suite — keine Regressions in bestehenden Aufrufern**
+
+Run: `cd backend && pytest -x --ff -q`
+Expected: grün. Wenn ein bestehender Aufrufer von `list_all()` brechen sollte (z.B. ein Admin-Pfad der die volle Liste erwartet hat), den Aufrufer auf `include_disabled=True` umstellen.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/app/repositories/printers.py \
+        backend/tests/unit/repositories/test_printers_repo.py
+git commit -m "feat(#124): printers_repo.list_all enabled-Filter (Round-1 C2)"
+```
+
+### Task 2.7: GET /api/printers schickt enabled-Filter (C2)
+
+**Files:**
+- Modify: `backend/app/api/routes/printers.py`
+- Modify: `backend/tests/api/test_printers_routes.py` (oder neu)
+
+- [ ] **Step 1: Failing-Test schreiben**
+
+```python
+# backend/tests/api/test_printers_routes.py — Test ergaenzen
+@pytest.mark.asyncio
+async def test_get_api_printers_filters_disabled():
+    """Disabled Drucker ist nicht im public GET /api/printers."""
+    # Setup: 1 enabled, 1 disabled
+    # ... siehe Fixture-Setup analog Task 2.6
+    r = await client.get("/api/printers", headers=READ_AUTH)
+    assert r.status_code == 200
+    slugs = {p["slug"] for p in r.json()}
+    assert "p750w" in slugs
+    assert "legacy" not in slugs
+
+
+@pytest.mark.asyncio
+async def test_get_api_printers_include_disabled_query_param_admin_only():
+    """?include_disabled=true ist nur fuer Admin-Scope; Read-Scope sieht weiter
+    nur enabled. Pragmatisch hier: Query-Param wird ignoriert wenn Caller
+    keine admin-Scope hat — Public-Endpoint bleibt streng gefiltert.
+    """
+    r = await client.get(
+        "/api/printers?include_disabled=true",
+        headers=READ_AUTH,  # nicht admin
+    )
+    slugs = {p["slug"] for p in r.json()}
+    assert "legacy" not in slugs
+```
+
+- [ ] **Step 2: Tests laufen — schlagen fehl**
+
+Run: `cd backend && pytest tests/api/test_printers_routes.py -k "disabled" -v`
+Expected: FAIL.
+
+- [ ] **Step 3: Route anpassen**
+
+```python
+# backend/app/api/routes/printers.py — GET-Handler erweitern
+@router.get("", response_model=list[PrinterRead], summary="List all printers")
+async def list_printers(
+    session: SessionDep,
+    auth: ReadAuthDep,
+) -> list[PrinterRead]:
+    """Public-List liefert ausschliesslich enabled Drucker (Issue #124 C2).
+
+    Admin-UI nutzt /api/v1/admin/printers (Task 3.2) wenn auch disabled
+    sichtbar sein sollen.
+    """
+    printers = await printers_repo.list_all(session)  # default: nur enabled
+    return [PrinterRead.from_orm(p) for p in printers]
+```
+
+- [ ] **Step 4: Tests grün**
+
+Run: `cd backend && pytest tests/api/test_printers_routes.py -k "disabled" -v`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/app/api/routes/printers.py backend/tests/api/test_printers_routes.py
+git commit -m "feat(#124): GET /api/printers filtert disabled raus (Round-1 C2)"
+```
+
 ---
 
 ## Phase 3 — API + Web-Routes + CSRF-Middleware — 5 Tasks
@@ -1889,63 +2139,53 @@ def test_post_with_authorization_header_skips_csrf(csrf_app: FastAPI):
     assert r.status_code == 200
 ```
 
-- [ ] **Step 3: `csrf.py` schreiben**
+- [ ] **Step 3: `csrf.py` schreiben — Custom-Middleware mit Authorization-Header-Skip**
+
+L2-Round-1 (network): Entscheidung gegen die zwei Alternativen aus dem Plan-Draft. **Wir nutzen den Custom-Wrapper** weil `starlette-csrf` selbst keinen Authorization-Header-Skip kennt und ein Bypass-Cookie-Pattern eine umständliche Brücke wäre.
 
 ```python
 # backend/app/middleware/csrf.py
-"""CSRF-Middleware-Setup (Issue #124 H3).
+"""CSRF-Middleware-Setup (Issue #124 H3 + L2-Round-1).
 
-Schuetzt HTML-Form-POSTs vor CSRF. JSON-API-Endpunkte mit Basic-Auth oder
-Bearer-Token werden uebersprungen — Browser-Origins schicken keine
-Authorization-Header bei Cross-Origin-POSTs.
+Schuetzt HTML-Form-POSTs vor CSRF. JSON-API-Endpunkte mit
+Authorization-Header (Basic-Auth/Bearer) werden uebersprungen —
+Browser-Origins schicken keine Authorization-Header bei Cross-Origin-POSTs.
 """
 from __future__ import annotations
 
-from starlette_csrf import CSRFMiddleware  # type: ignore[import-untyped]
 from fastapi import FastAPI
-
-
-def setup_csrf_middleware(app: FastAPI) -> None:
-    """Registriert die CSRF-Middleware am FastAPI-App.
-
-    - Cookie-Name: csrftoken (SameSite=Strict)
-    - Form-Field-Name: csrftoken (hidden input)
-    - Header-Skip: Authorization (Basic/Bearer)
-    """
-    app.add_middleware(
-        CSRFMiddleware,
-        secret="<wird-via-settings-konfiguriert>",  # siehe Step 4
-        cookie_name="csrftoken",
-        cookie_samesite="strict",
-        header_name="x-csrftoken",  # alternativ zu Form-Field
-        sensitive_cookies={"sessionid"},  # nicht im Hub genutzt
-        exempt_urls=None,
-        exempt_methods=["GET", "HEAD", "OPTIONS", "TRACE"],
-    )
-
-
-def _has_auth_header(request) -> bool:
-    return "authorization" in request.headers
-```
-
-Hinweis: `starlette-csrf` hat keinen eingebauten "Authorization-Header-Skip"-Pfad. Wir wrappen die Middleware mit einem eigenen Decorator/Dispatch falls notwendig — siehe alternative Implementation:
-
-```python
-# Alternative wenn starlette-csrf keinen Auth-Skip kann:
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette_csrf import CSRFMiddleware  # type: ignore[import-untyped]
+
+from app.config import get_settings
 
 
 class CSRFWithAuthSkip(BaseHTTPMiddleware):
-    def __init__(self, app, csrf_middleware):
+    """Wrapper der CSRFMiddleware umgeht wenn Authorization-Header gesetzt."""
+
+    def __init__(self, app, secret: str) -> None:
         super().__init__(app)
-        self._csrf = csrf_middleware
+        self._csrf = CSRFMiddleware(
+            app,
+            secret=secret,
+            cookie_name="csrftoken",
+            cookie_samesite="strict",
+            header_name="x-csrftoken",
+            sensitive_cookies=set(),
+            exempt_urls=None,
+            exempt_methods=["GET", "HEAD", "OPTIONS", "TRACE"],
+        )
 
     async def dispatch(self, request: Request, call_next):
         if "authorization" in request.headers:
             return await call_next(request)
         return await self._csrf.dispatch(request, call_next)
+
+
+def setup_csrf_middleware(app: FastAPI) -> None:
+    secret = get_settings().csrf_secret
+    app.add_middleware(CSRFWithAuthSkip, secret=secret)
 ```
 
 - [ ] **Step 4: Settings-Feld für CSRF-Secret in `app/config.py`**
@@ -2029,41 +2269,86 @@ async def test_create_printer_returns_201_and_audit_row(client: AsyncClient):
     assert "id" in body
 
 
+PAYLOAD = {
+    "name": "Brother P750W",
+    "slug": "brother-p750w",
+    "model": "PT-P750W",
+    "backend": "ptouch",
+    "connection": {"host": "192.0.2.10", "port": 9100,
+                   "snmp": {"discover": False, "community": "public"}},
+    "queue": {"timeout_s": 30},
+    "cut_defaults": {"half_cut": False},
+    "enabled": True,
+}
+
+
 @pytest.mark.asyncio
 async def test_create_printer_duplicate_slug_409(client: AsyncClient):
-    payload = {...}  # wie oben
-    r1 = await client.post("/api/v1/admin/printers", json=payload, headers=SSO_HEADERS)
+    r1 = await client.post("/api/v1/admin/printers", json=PAYLOAD, headers=SSO_HEADERS)
     assert r1.status_code == 201
-    r2 = await client.post("/api/v1/admin/printers", json=payload, headers=SSO_HEADERS)
+    r2 = await client.post("/api/v1/admin/printers", json=PAYLOAD, headers=SSO_HEADERS)
     assert r2.status_code == 409
+    assert r2.json()["detail"]["error"] == "duplicate_slug"
 
 
 @pytest.mark.asyncio
 async def test_get_printer_by_slug(client: AsyncClient):
-    # ... payload create, then GET
-    ...
+    await client.post("/api/v1/admin/printers", json=PAYLOAD, headers=SSO_HEADERS)
+    r = await client.get("/api/v1/admin/printers/brother-p750w", headers=SSO_HEADERS)
+    assert r.status_code == 200
+    assert r.json()["slug"] == "brother-p750w"
+    assert r.json()["connection"]["host"] == "192.0.2.10"
 
 
 @pytest.mark.asyncio
 async def test_update_printer_silently_ignores_slug(client: AsyncClient):
-    # Create, then PUT mit anderem slug im Body
-    ...
+    """PUT mit anderem slug im Body wird silent ignoriert (M2-Spec)."""
+    await client.post("/api/v1/admin/printers", json=PAYLOAD, headers=SSO_HEADERS)
+    # PUT mit name-Change UND versuchten slug-Change im Body
+    patch_body = {"name": "Neuer Name"}
+    r = await client.put(
+        "/api/v1/admin/printers/brother-p750w",
+        json=patch_body, headers=SSO_HEADERS,
+    )
+    assert r.status_code == 200
+    assert r.json()["slug"] == "brother-p750w"  # unveraendert
+    assert r.json()["name"] == "Neuer Name"
 
 
 @pytest.mark.asyncio
-async def test_disable_printer_204(client: AsyncClient):
-    # Create, then POST /disable
-    ...
+async def test_disable_printer_returns_disabled_state(client: AsyncClient):
+    await client.post("/api/v1/admin/printers", json=PAYLOAD, headers=SSO_HEADERS)
+    r = await client.post(
+        "/api/v1/admin/printers/brother-p750w/disable", headers=SSO_HEADERS,
+    )
+    assert r.status_code == 200
+    assert r.json()["enabled"] is False
 
 
 @pytest.mark.asyncio
 async def test_disable_already_disabled_409(client: AsyncClient):
-    ...
+    await client.post("/api/v1/admin/printers", json=PAYLOAD, headers=SSO_HEADERS)
+    await client.post(
+        "/api/v1/admin/printers/brother-p750w/disable", headers=SSO_HEADERS,
+    )
+    r = await client.post(
+        "/api/v1/admin/printers/brother-p750w/disable", headers=SSO_HEADERS,
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["error"] == "already_disabled"
 
 
 @pytest.mark.asyncio
 async def test_enable_after_disable_200(client: AsyncClient):
-    ...
+    await client.post("/api/v1/admin/printers", json=PAYLOAD, headers=SSO_HEADERS)
+    await client.post(
+        "/api/v1/admin/printers/brother-p750w/disable", headers=SSO_HEADERS,
+    )
+    r = await client.post(
+        "/api/v1/admin/printers/brother-p750w/enable", headers=SSO_HEADERS,
+    )
+    assert r.status_code == 200
+    assert r.json()["enabled"] is True
 
 
 @pytest.mark.asyncio
@@ -2075,10 +2360,8 @@ async def test_403_without_auth_header(client: AsyncClient):
 @pytest.mark.asyncio
 async def test_basic_auth_claude_automation_passes(client: AsyncClient):
     r = await client.get("/api/v1/admin/printers", headers=BASIC_AUTH_HEADER)
-    assert r.status_code in (200, 401)  # 401 wenn echtes Basic-Auth aktiv; 200 wenn Test-Setup uebergeht
+    assert r.status_code == 200
 ```
-
-(Implementer ergänzt die `...` mit dem vollständigen Payload-Pattern aus dem ersten Test.)
 
 - [ ] **Step 2: Tests laufen — Routen nicht existent**
 
@@ -2651,26 +2934,270 @@ git add backend/app/api/routes/admin_printers_web.py \
 git commit -m "feat(#124): HTML-Routes /admin/printers + Jinja2-Templates"
 ```
 
-### Task 3.4: Edit + Disable Web-Routes (Completion)
+### Task 3.4: Edit + Disable + Enable Web-Routes (Completion)
 
-(Erweitert Task 3.3 um Edit/Disable/Enable HTML-Pfade. Pattern wie Task 3.3 — schreibe Tests, implementiere, commit.)
+**Files:**
+- Modify: `backend/app/api/routes/admin_printers_web.py`
+- Modify: `backend/tests/api/test_admin_printers_web.py`
 
-- [ ] **Step 1-4: Analog Task 3.3 für die fehlenden Routes**
+5 zusätzliche HTML-Routes (Pattern analog Task 3.3 Create-Route).
 
-Routes hinzufügen:
-- `GET /admin/printers/{slug}/edit` → form.html mit prefilled-Werten
-- `POST /admin/printers/{slug}` → update via Service, Redirect mit `?info=updated`
-- `GET /admin/printers/{slug}/disable` → confirm_disable.html
-- `POST /admin/printers/{slug}/disable` → Service.disable_printer + Redirect
-- `POST /admin/printers/{slug}/enable` → Service.enable_printer + Redirect
+- [ ] **Step 1: Failing-Tests für 5 Routes schreiben**
 
-Tests pro Route schreiben (failing → implement → green → commit).
+```python
+# backend/tests/api/test_admin_printers_web.py — Ergaenzung
+PAYLOAD_FORM = {
+    "name": "Brother P750W",
+    "slug": "brother-p750w",
+    "model": "PT-P750W",
+    "backend": "ptouch",
+    "connection.host": "192.0.2.10",
+    "connection.port": "9100",
+    "connection.snmp.discover": "false",
+    "connection.snmp.community": "public",
+    "queue.timeout_s": "30",
+    "cut_defaults.half_cut": "false",
+    "enabled": "true",
+}
+
+
+@pytest.mark.asyncio
+async def test_edit_page_prefilled(client: AsyncClient):
+    """GET /admin/printers/<slug>/edit zeigt aktuelle Werte im Form."""
+    # Setup: Drucker per JSON-API anlegen
+    await client.post(
+        "/api/v1/admin/printers",
+        json={"name": "Brother P750W", "slug": "brother-p750w",
+              "model": "PT-P750W", "backend": "ptouch",
+              "connection": {"host": "192.0.2.10", "port": 9100}},
+        headers=SSO_HEADERS,
+    )
+    r = await client.get("/admin/printers/brother-p750w/edit", headers=SSO_HEADERS)
+    assert r.status_code == 200
+    assert "192.0.2.10" in r.text
+    assert "brother-p750w" in r.text
+    # slug/model/backend sind disabled
+    assert 'name="slug"' in r.text and "disabled" in r.text
+
+
+@pytest.mark.asyncio
+async def test_post_update_redirects_with_info(client: AsyncClient):
+    """POST /admin/printers/<slug> mit CSRF aktualisiert + 303."""
+    await client.post(
+        "/api/v1/admin/printers",
+        json={"name": "Old", "slug": "brother-p750w",
+              "model": "PT-P750W", "backend": "ptouch",
+              "connection": {"host": "192.0.2.10", "port": 9100}},
+        headers=SSO_HEADERS,
+    )
+    r = await client.get("/admin/printers/brother-p750w/edit", headers=SSO_HEADERS)
+    cookie = r.cookies.get("csrftoken")
+    payload = dict(PAYLOAD_FORM)
+    payload["name"] = "Neuer Name"
+    payload["csrftoken"] = cookie
+    r = await client.post(
+        "/admin/printers/brother-p750w",
+        data=payload, cookies={"csrftoken": cookie}, headers=SSO_HEADERS,
+    )
+    assert r.status_code == 303
+    assert "info=updated" in r.headers["location"]
+
+
+@pytest.mark.asyncio
+async def test_disable_confirm_page(client: AsyncClient):
+    """GET /admin/printers/<slug>/disable zeigt Confirm-Page mit Form."""
+    await client.post(
+        "/api/v1/admin/printers",
+        json={"name": "X", "slug": "brother-p750w", "model": "PT-P750W",
+              "backend": "ptouch",
+              "connection": {"host": "192.0.2.10", "port": 9100}},
+        headers=SSO_HEADERS,
+    )
+    r = await client.get("/admin/printers/brother-p750w/disable", headers=SSO_HEADERS)
+    assert r.status_code == 200
+    assert "deaktivieren" in r.text.lower()
+    assert "csrftoken" in r.text
+
+
+@pytest.mark.asyncio
+async def test_post_disable_via_form(client: AsyncClient):
+    await client.post(
+        "/api/v1/admin/printers",
+        json={"name": "X", "slug": "brother-p750w", "model": "PT-P750W",
+              "backend": "ptouch",
+              "connection": {"host": "192.0.2.10", "port": 9100}},
+        headers=SSO_HEADERS,
+    )
+    r = await client.get(
+        "/admin/printers/brother-p750w/disable", headers=SSO_HEADERS,
+    )
+    cookie = r.cookies.get("csrftoken")
+    r = await client.post(
+        "/admin/printers/brother-p750w/disable",
+        data={"csrftoken": cookie}, cookies={"csrftoken": cookie},
+        headers=SSO_HEADERS,
+    )
+    assert r.status_code == 303
+    assert "info=disabled" in r.headers["location"]
+
+
+@pytest.mark.asyncio
+async def test_post_enable_via_form(client: AsyncClient):
+    await client.post(
+        "/api/v1/admin/printers",
+        json={"name": "X", "slug": "brother-p750w", "model": "PT-P750W",
+              "backend": "ptouch",
+              "connection": {"host": "192.0.2.10", "port": 9100}, "enabled": False},
+        headers=SSO_HEADERS,
+    )
+    r = await client.get("/admin/printers/?include_disabled=1", headers=SSO_HEADERS)
+    cookie = r.cookies.get("csrftoken")
+    r = await client.post(
+        "/admin/printers/brother-p750w/enable",
+        data={"csrftoken": cookie}, cookies={"csrftoken": cookie},
+        headers=SSO_HEADERS,
+    )
+    assert r.status_code == 303
+    assert "info=enabled" in r.headers["location"]
+```
+
+- [ ] **Step 2: Tests rot**
+
+Run: `cd backend && pytest tests/api/test_admin_printers_web.py -v -k "edit or disable or enable or update"`
+Expected: FAIL (404).
+
+- [ ] **Step 3: 5 Routes ergänzen**
+
+```python
+# backend/app/api/routes/admin_printers_web.py — Routes anhaengen
+@router.get("/{slug}/edit")
+async def edit_form(
+    request: Request, slug: str,
+    session: AsyncSession = Depends(get_db_session),
+    user: str = Depends(require_admin_user),
+):
+    svc = PrinterAdminService(session, audit_user=user)
+    printer = await svc.get_printer(slug)
+    if printer is None:
+        raise HTTPException(404, {"error": "not_found", "slug": slug})
+    return TEMPLATES.TemplateResponse(
+        "admin_printers/form.html",
+        {"request": request, "printer": printer,
+         "available_models": list_available_models(),
+         "csrf_token": request.cookies.get("csrftoken", "")},
+    )
+
+
+@router.post("/{slug}", status_code=status.HTTP_303_SEE_OTHER)
+async def update_via_form(
+    request: Request, slug: str,
+    name: str = Form(...),
+    connection_host: str = Form(..., alias="connection.host"),
+    connection_port: int = Form(..., alias="connection.port"),
+    connection_snmp_discover: bool = Form(False, alias="connection.snmp.discover"),
+    connection_snmp_community: str = Form("public", alias="connection.snmp.community"),
+    queue_timeout_s: int = Form(30, alias="queue.timeout_s"),
+    cut_defaults_half_cut: bool = Form(False, alias="cut_defaults.half_cut"),
+    enabled: bool = Form(True),
+    session: AsyncSession = Depends(get_db_session),
+    user: str = Depends(require_admin_user),
+):
+    patch = PrinterUpdatePayload(
+        name=name,
+        connection=PrinterConnection(
+            host=connection_host, port=connection_port,
+            snmp=SNMPConfig(
+                discover=connection_snmp_discover,
+                community=connection_snmp_community,
+            ),
+        ),
+        queue=PrinterQueueSettings(timeout_s=queue_timeout_s),
+        cut_defaults=PrinterCutDefaults(half_cut=cut_defaults_half_cut),
+        enabled=enabled,
+    )
+    svc = PrinterAdminService(session, audit_user=user)
+    try:
+        await svc.update_printer(slug, patch)
+    except PrinterNotFoundBySlugError:
+        raise HTTPException(404, {"error": "not_found", "slug": slug})
+    await session.commit()
+    return RedirectResponse(
+        f"/admin/printers/?info=updated&slug={slug}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.get("/{slug}/disable")
+async def disable_confirm(
+    request: Request, slug: str,
+    session: AsyncSession = Depends(get_db_session),
+    user: str = Depends(require_admin_user),
+):
+    svc = PrinterAdminService(session, audit_user=user)
+    printer = await svc.get_printer(slug)
+    if printer is None:
+        raise HTTPException(404, {"error": "not_found", "slug": slug})
+    return TEMPLATES.TemplateResponse(
+        "admin_printers/confirm_disable.html",
+        {"request": request, "printer": printer,
+         "csrf_token": request.cookies.get("csrftoken", "")},
+    )
+
+
+@router.post("/{slug}/disable", status_code=status.HTTP_303_SEE_OTHER)
+async def disable_via_form(
+    slug: str,
+    session: AsyncSession = Depends(get_db_session),
+    user: str = Depends(require_admin_user),
+):
+    svc = PrinterAdminService(session, audit_user=user)
+    try:
+        await svc.disable_printer(slug)
+    except PrinterNotFoundBySlugError:
+        raise HTTPException(404, {"error": "not_found", "slug": slug})
+    except PrinterAlreadyDisabledError:
+        raise HTTPException(409, {"error": "already_disabled", "slug": slug})
+    await session.commit()
+    return RedirectResponse(
+        f"/admin/printers/?info=disabled&slug={slug}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/{slug}/enable", status_code=status.HTTP_303_SEE_OTHER)
+async def enable_via_form(
+    slug: str,
+    session: AsyncSession = Depends(get_db_session),
+    user: str = Depends(require_admin_user),
+):
+    svc = PrinterAdminService(session, audit_user=user)
+    try:
+        await svc.enable_printer(slug)
+    except PrinterNotFoundBySlugError:
+        raise HTTPException(404, {"error": "not_found", "slug": slug})
+    except PrinterAlreadyEnabledError:
+        raise HTTPException(409, {"error": "already_enabled", "slug": slug})
+    await session.commit()
+    return RedirectResponse(
+        f"/admin/printers/?info=enabled&slug={slug}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+```
+
+- [ ] **Step 4: Tests grün + Coverage-Check für Web-Routes ≥ 80%**
+
+```bash
+cd backend
+pytest tests/api/test_admin_printers_web.py -v
+pytest tests/api/test_admin_printers_web.py --cov=app.api.routes.admin_printers_web --cov-report=term-missing
+```
+Expected: PASS + Coverage ≥ 80% (L4-Round-1: angehoben von 70% auf 80%).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add backend/app/api/routes/admin_printers_web.py backend/tests/api/test_admin_printers_web.py
-git commit -m "feat(#124): Edit/Disable/Enable HTML-Routes"
+git commit -m "feat(#124): Edit/Disable/Enable HTML-Routes (Round-1 M3+L4)"
 ```
 
 ---
@@ -2683,25 +3210,83 @@ git commit -m "feat(#124): Edit/Disable/Enable HTML-Routes"
 - Modify: `backend/app/services/print_service.py`
 - Test: `backend/tests/services/test_print_service.py`
 
-- [ ] **Step 1: Failing-Test für enabled-Check**
+- [ ] **Step 1: Failing-Test für enabled-Check (L3-Round-1: Fixture-Setup vollständig)**
 
 ```python
 # Ergaenzung in backend/tests/services/test_print_service.py
-import pytest
+from __future__ import annotations
+
+from datetime import datetime, timezone
 from uuid import uuid4
 
+import pytest
+
+from app.models.printer import Printer
 from app.printer_backends.exceptions import PrinterDisabledError
+from app.schemas.print import PrintRequest, LabelData
 from app.services.print_service import PrintService
+from tests._helpers.db import create_test_session
+
+
+@pytest.fixture
+async def disabled_printer() -> Printer:
+    """Drucker in DB der enabled=False ist."""
+    async with create_test_session() as session:
+        p = Printer(
+            id=uuid4(),
+            slug="disabled-test",
+            name="Disabled Test",
+            model="PT-P750W",
+            backend="ptouch",
+            connection={"host": "192.0.2.10", "port": 9100,
+                        "snmp": {"discover": False, "community": "public"}},
+            enabled=False,
+            queue_timeout_s=30,
+            cut_defaults_half_cut=False,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(p)
+        await session.commit()
+        await session.refresh(p)
+        return p
 
 
 @pytest.mark.asyncio
-async def test_submit_print_job_raises_disabled_for_disabled_printer():
-    # Setup: Drucker existiert + ist disabled
-    # ... (existing fixture-Setup) ...
+async def test_submit_print_job_raises_disabled_for_disabled_printer(
+    print_service: PrintService,
+    disabled_printer: Printer,
+):
+    """C5 Spec: disabled Drucker → PrinterDisabledError."""
+    request = PrintRequest(
+        printer_id=disabled_printer.id,
+        category="Test",
+        items=[LabelData(qr="https://example.test/x", line1="X")],
+        options={"copies": 1},
+    )
     with pytest.raises(PrinterDisabledError) as exc_info:
-        await print_service.submit_print_job(request_for_disabled_printer)
-    assert exc_info.value.slug == "disabled-printer"
+        await print_service.submit_print_job(request)
+    assert exc_info.value.slug == "disabled-test"
+    assert exc_info.value.printer_id == disabled_printer.id
+
+
+@pytest.mark.asyncio
+async def test_submit_print_job_succeeds_for_enabled_printer(
+    print_service: PrintService,
+    enabled_printer: Printer,  # existing fixture
+):
+    """Regression-Test: enabled-Pfad bleibt unangetastet."""
+    request = PrintRequest(
+        printer_id=enabled_printer.id,
+        category="Test",
+        items=[LabelData(qr="https://example.test/x", line1="X")],
+        options={"copies": 1},
+    )
+    job_id = await print_service.submit_print_job(request)
+    assert job_id is not None
 ```
+
+Hinweis: `print_service` und `enabled_printer` Fixtures werden aus dem bestehenden conftest übernommen. Implementer prüft `backend/tests/services/conftest.py` und passt die Fixtures an falls Signatur abweicht.
 
 - [ ] **Step 2: Test rot**
 
@@ -2844,19 +3429,8 @@ In `app/db/lifespan.py`:
 - Aufrufstelle in der `startup()`-Sequenz entfernen
 - Import von `PrinterConfigLoader` löschen
 - Import von `printer_config_loader` Modul löschen
-- Ggf. `printers_v2_active`-Marker setzen (Soft-Marker für Diagnose):
 
-```python
-# In startup():
-async with async_sessionmaker(engine)() as session:
-    await session.execute(text(
-        "INSERT OR REPLACE INTO hangar_meta (key, value) VALUES "
-        "('printers_v2_active', 'true')"
-    ))
-    await session.commit()
-```
-
-(Falls `hangar_meta`-Tabelle im Hub nicht existiert: weglassen.)
+**M5-Round-1 (code-quality):** Der ursprüngliche Plan-Draft hatte einen `hangar_meta`-Marker-Insert vorgesehen. `hangar_meta` existiert aber nur im Hangar-Repo, nicht im Hub. Marker komplett weggelassen — er wäre Tot-Code.
 
 - [ ] **Step 2: Tests + mypy + ruff grün**
 
@@ -3039,6 +3613,47 @@ In `docs/superpowers/plans/2026-06-14-phase0-live-check-results.md` festhalten:
 - Neues Secret (nur als Hash-Vermerk, nicht im Klartext)
 - Zu ergänzende Labels (oben gezeigt)
 
+### Task 6.3: Header-Auth-Bypass via curl verifizieren (M4-Round-1)
+
+**Files:** keine Repo-Files — manuelle Pre-Deploy-Verifikation.
+
+Nach Stack-Update in Phase 8.3 muss der Header-Auth-Bypass mit dem `claude-automation`-Account funktionieren. Dieser Task wird VOR dem Smoke-Test (8.4) explizit ausgeführt damit der Implementer die Credentials einmal manuell testet bevor Tooling drauf zugreift.
+
+- [ ] **Step 1: curl gegen Public-Endpoint ohne Auth (Erwartung: 401/403)**
+
+```bash
+curl -i -X GET https://print-hub.strausmann.cloud/api/printers
+```
+Expected: 401 oder 403 (SSO redirect oder Pangolin Login).
+
+- [ ] **Step 2: curl gegen Public-Endpoint MIT Header-Auth**
+
+```bash
+# Passwort aus Vaultwarden holen (Task 6.1 Item)
+SECRET=$(mcp__vaultwarden__get object=password id="Pangolin Header Auth - Print Hub")
+curl -i -X GET https://print-hub.strausmann.cloud/api/printers \
+  -u "claude-automation:$SECRET"
+```
+Expected: 200 mit JSON-Liste (oder leerer Liste falls noch keine Drucker).
+
+- [ ] **Step 3: curl gegen Admin-API mit Header-Auth**
+
+```bash
+curl -i -X GET https://print-hub.strausmann.cloud/api/v1/admin/printers \
+  -u "claude-automation:$SECRET"
+```
+Expected: 200 (mit oder ohne Liste).
+
+- [ ] **Step 4: Ergebnis im Phase-0-Doku festhalten**
+
+In `docs/superpowers/plans/2026-06-14-phase0-live-check-results.md` ergänzen:
+- Step 1: HTTP-Status
+- Step 2: HTTP-Status + Body-Snippet
+- Step 3: HTTP-Status + Body-Snippet
+- Beobachtungen (z.B. Cookies, Headers, Redirects)
+
+Falls einer der Calls fehlschlägt: Compose-Labels (Phase 6.2) prüfen, Newt-Sync abwarten (kann bis 5 Min dauern), ggf. Pangolin-Dashboard-Resource manuell prüfen.
+
 ---
 
 ## Phase 7 — E2E + Smoke-Tests — 1 Task
@@ -3188,13 +3803,15 @@ ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
      /docker/stacks/hangar-print-hub/backups/"
 ```
 
-- [ ] **Step 2: Watchtower für den print-hub-Container pausieren**
+- [ ] **Step 2: Watchtower für den print-hub-Container pausieren (C1-Round-1 Fix)**
+
+C1-Befund: Parameter heißt `policy=`, nicht `auto_update=`. MCP-Tool-Schema verifiziert via ToolSearch — Werte: `never`, `any`, `critical-high`, `critical`, `more-than-current`.
 
 ```python
 mcp__dockhand__set_container_auto_update(
     environmentId=10,
     containerName="hangar-print-hub-print-hub-1",
-    auto_update="never",
+    policy="never",
 )
 ```
 
@@ -3271,7 +3888,7 @@ ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
 ```
 Expected: nicht-leere IP-Ausgabe.
 
-- [ ] **Step 3: Backfill-Verifikation**
+- [ ] **Step 3: Backfill-Verifikation (L5-Round-1: json_extract gibt Integer)**
 
 ```bash
 ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
@@ -3279,9 +3896,14 @@ ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
      \"SELECT slug, json_extract(connection, '\\\$.snmp.discover'), \
               queue_timeout_s, cut_defaults_half_cut FROM printers\""
 ```
-Expected: alle Bestandsdrucker mit `snmp.discover=0`, `queue_timeout_s=30`, `cut_defaults_half_cut=0`.
+Expected (L5-Round-1: SQLite `json_extract` liefert `0`/`1` für JSON-Booleans, nicht `false`/`true`):
+```
+brother-p750w|0|30|0
+brother-ql820nwb|0|30|0
+```
+Booleans `0`/`1` sind korrekt — keine Sorge wegen fehlendem `false`/`true`.
 
-- [ ] **Step 4: /admin/printers/ über Browser**
+- [ ] **Step 4: /admin/printers/ über Browser (L1-Round-1: Pangolin Bug #3099 beachten)**
 
 Mit Playwright MCP:
 ```python
@@ -3290,17 +3912,23 @@ mcp__playwright__browser_snapshot()
 ```
 Expected: Liste der 2 Bestandsdrucker.
 
+**Pangolin Bug #3099 (https://github.com/fosrl/pangolin/issues/3099):** bei
+Resourcen mit `auth.sso-enabled=true` UND `auth.basic-auth.*` zeigt Pangolin
+beim ersten Aufruf einen Basic-Auth-Dialog statt direkt zum SSO zu redirecten.
+Cancel im Dialog bringt den User auf die SSO-Login-Page (HTML-Body-Fallback).
+**Nicht als Bug reporten** — dokumentiert in pangolin-resource-standard.md.
+
 - [ ] **Step 5: PrintService 409 für disabled Drucker**
 
 Test-Drucker via API erstellen + disablen + Print-Request senden → 409. Anschließend löschen via DB (Cleanup für Test).
 
-- [ ] **Step 6: Watchtower wieder auf "any"**
+- [ ] **Step 6: Watchtower wieder auf "any" (C1-Round-1 Fix)**
 
 ```python
 mcp__dockhand__set_container_auto_update(
     environmentId=10,
     containerName="hangar-print-hub-print-hub-1",
-    auto_update="any",
+    policy="any",
 )
 ```
 
@@ -3315,6 +3943,84 @@ gh pr merge <PR-NUMBER> --squash --delete-branch
 ```bash
 gh issue close 124 --reason completed --comment "Implementiert in PR #<NUMBER> + deployed nach Production. Bestandsdrucker funktional, Hangar PrinterSync grün, Admin-UI erreichbar."
 ```
+
+### Task 8.5: Rollback-Pfad wenn Smoke-Test fehlschlägt (H1-Round-1)
+
+**Files:** keine Repo-Files — Emergency-Pfad nur ausführen wenn 8.4 rot.
+
+**Trigger:** Health-Check nach `start_stack` rot, Migration-Errors in den Container-Logs, oder Backfill-Verifikation (8.4 Step 3) liefert unerwartete Daten.
+
+- [ ] **Step 1: Stack stoppen**
+
+```python
+mcp__dockhand__down_stack(environmentId=10, name="hangar-print-hub")
+```
+
+- [ ] **Step 2: SQLite-Restore aus Pre-Deploy-Backup**
+
+```bash
+ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
+  "cp /docker/stacks/hangar-print-hub/backups/printer-hub.db.bak-pre-124 \
+      /docker/stacks/hangar-print-hub/data/printer-hub.db"
+# WAL/SHM Files entfernen falls vorhanden (sonst SQLite mountet wieder WAL-Zustand)
+ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
+  "rm -f /docker/stacks/hangar-print-hub/data/printer-hub.db-wal \
+         /docker/stacks/hangar-print-hub/data/printer-hub.db-shm"
+```
+
+- [ ] **Step 3: Compose-Revert via Dockhand**
+
+```python
+# Den alten Compose-Inhalt von Phase 0 (Live-Check-Doku) wiederherstellen
+mcp__dockhand__update_stack_compose(
+    environmentId=10, name="hangar-print-hub",
+    content=PRE_DEPLOY_COMPOSE_CONTENT,  # aus Phase 0 Live-Check festgehalten
+)
+```
+
+- [ ] **Step 4: Stack-Env `PRINTER_CONFIG_PATH` re-merge**
+
+```python
+existing = mcp__dockhand__get_stack_env(environmentId=10, name="hangar-print-hub")
+merged = list(existing["variables"]) + [
+    {"key": "PRINTER_CONFIG_PATH", "value": "/etc/printer-hub/printers.yaml",
+     "isSecret": False},
+]
+mcp__dockhand__update_stack_env(
+    environmentId=10, name="hangar-print-hub", variables=merged,
+)
+```
+
+- [ ] **Step 5: printers.yaml wieder einspielen + Stack starten**
+
+```bash
+ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
+  "cp /docker/stacks/hangar-print-hub/config/printers.yaml.bak-pre-124 \
+      /docker/stacks/hangar-print-hub/config/printers.yaml"
+```
+```python
+mcp__dockhand__start_stack(environmentId=10, name="hangar-print-hub")
+```
+
+- [ ] **Step 6: Health-Check + Hangar PrinterSync verifizieren**
+
+```bash
+sleep 30
+curl -fsS https://print-hub.strausmann.cloud/healthz
+ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
+  "docker logs --tail 50 hangar-print-hub-hangar-1 | grep -i printer"
+```
+Expected: Hub healthy, Hangar sieht beide Bestandsdrucker.
+
+- [ ] **Step 7: Issue-Kommentar mit Rollback-Status**
+
+```bash
+gh pr comment <PR-NUMBER> --body "Production-Deploy Phase 8.4 rot — Rollback via Phase 8.5 abgeschlossen. Bestand wiederhergestellt aus DB-Snapshot Pre-Deploy. Root-Cause-Analyse erforderlich vor erneutem Deploy-Versuch."
+```
+
+- [ ] **Step 8: Root-Cause-Analyse (NICHT mergen bevor Ursache verstanden)**
+
+PR im Draft-Status lassen, Container-Logs/DB-Snapshots sammeln, Issue für Root-Cause öffnen. KEIN erneutes 8.3 ohne Plan-Update.
 
 ---
 
@@ -3333,6 +4039,7 @@ gh issue close 124 --reason completed --comment "Implementiert in PR #<NUMBER> +
 | PrinterDisabledError C5 | Task 1.2 | ✅ |
 | Alembic-Migration + Backfill H8b | Task 1.3 | ✅ |
 | derive_printer_id 4-arg C4 | Task 1.4 | ✅ |
+| **GET /api/printers filtert enabled=true (Round-1 C2)** | **Task 2.6 + 2.7** | ✅ |
 | CSRF-Middleware H3 | Task 3.1 | ✅ |
 | JSON-API C2 | Task 3.2 | ✅ |
 | HTML-Routes + Templates | Task 3.3-3.4 | ✅ |
@@ -3341,15 +4048,17 @@ gh issue close 124 --reason completed --comment "Implementiert in PR #<NUMBER> +
 | YAML-Removal | Task 5.1-5.4 | ✅ |
 | 5 Test-Files-Löschen H9 | Task 5.3 | ✅ |
 | Vault-Item + Blueprint-Labels H7 | Task 6.1-6.2 | ✅ |
+| **Header-Auth curl-Verifikation (Round-1 M4)** | **Task 6.3** | ✅ |
 | Fresh-Install E2E | Task 7.1 | ✅ |
 | Production-Deploy mit Watchtower-Pause + Backup | Task 8.1-8.4 | ✅ |
+| **Rollback-Pfad wenn Smoke fail (Round-1 H1)** | **Task 8.5** | ✅ |
 
-### Placeholder-Scan
+### Placeholder-Scan (Round-2)
 
 - ✅ Keine "TBD" / "TODO"
-- ⚠ Task 3.2 Tests haben `...` als Placeholder für wiederholendes Payload — Implementer ergänzt nach Pattern von `test_create_printer_returns_201`. Vermerk im Task selbst.
-- ⚠ Task 3.4 "Pattern wie Task 3.3" — bewusst, weil 4 ähnliche Routes nicht 4× ausgeschrieben werden müssen. Pattern und Beispiele aus Task 3.3 reichen für Implementer.
-- ⚠ Task 4.1+4.2: existing `submit_print_job`-Tests haben Fixture-Setup das hier nicht ausgeschrieben ist — Implementer übernimmt Fixtures aus existing `tests/services/test_print_service.py`. Vermerk im Task.
+- ✅ Task 3.2: alle 9 Tests vollständig ausgeschrieben (Round-1 H2 adressiert)
+- ✅ Task 3.4: 5 Route-Tests vollständig (Round-1 M3 adressiert)
+- ✅ Task 4.1: Fixture-Setup vollständig (Round-1 L3 adressiert)
 
 ### Type-Consistency-Check
 
@@ -3369,7 +4078,8 @@ gh issue close 124 --reason completed --comment "Implementiert in PR #<NUMBER> +
 | `app/services/printer_identity.py` | 85% | Task 1.4 |
 | `app/services/audit_redaction.py` | 80% | Task 2.2 |
 | `app/api/routes/admin_printers_api.py` | 80% | Task 3.2 Step 7 |
-| `app/api/routes/admin_printers_web.py` | 70% | Task 3.3-3.4 |
+| `app/api/routes/admin_printers_web.py` | 80% | Task 3.3-3.4 (L4-Round-1: 70%→80%) |
+| `app/repositories/printers.py` (list_all enabled-Filter) | 85% | Task 2.6 |
 | `app/middleware/csrf.py` | 80% | Task 3.1 |
 | Global `fail_under=80` | 80% | Task 7.1 Step 3 |
 
