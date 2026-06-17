@@ -14,7 +14,21 @@
 
 **Issue:** https://github.com/strausmann/Label-Printer-Hub/issues/124
 
-**Status:** Plan Round-2 — Round-1-Review-Findings adressiert (2 CRITICAL + 2 HIGH + 6 MED + 8 LOW)
+**Status:** Plan Round-3 — Round-2-Review-Findings adressiert (2 MED + 3 LOW)
+
+### Round-2-Review-Findings Verarbeitung
+
+| # | Severity | Team | Finding | Status | Wo adressiert |
+|---|---|---|---|---|---|
+| R2-M1 | MEDIUM | storage | Task 1.3 Backfill-Test nutzt AsyncConnection ohne run_sync — Coroutine nie ausgeführt | ✅ → `await conn.run_sync(...)` | Task 1.3 |
+| R2-M2 | MEDIUM | code-q | Task 8.5 Step 4 Env-Re-Merge kann `PRINTER_CONFIG_PATH` duplizieren | ✅ Filter analog 8.3 ergänzt | Task 8.5 |
+| R2-L1 | LOW | ops + code-q | `PRE_DEPLOY_COMPOSE_CONTENT` nicht explizit in Phase 0 gesichert | ✅ Phase 0 Step 4b ergänzt | Phase 0 + Task 8.5 |
+| R2-L2 | LOW | network | Task 6.3 Ausführungszeitpunkt unklar | ✅ Task umbenannt zu 8.3.5 (zwischen 8.3 und 8.4) | Phase 8 |
+| R2-L3 | LOW | network | Pangolin-Resource Bestand-Detection-Pfad fehlt | ✅ Phase 0 Step 3 erweitert | Phase 0 |
+
+Verarbeitungs-Mapping für Round-2:
+
+
 
 ---
 
@@ -130,14 +144,26 @@ Expected: working tree clean, auf `main`.
 git checkout -b feat/issue-124-printers-yaml-to-db
 ```
 
-- [ ] **Step 3: Pangolin-Resource Live-Check für `print-hub.strausmann.cloud`**
+- [ ] **Step 3: Pangolin-Resource Live-Check für `print-hub.strausmann.cloud` (R2-L3 erweitert)**
 
 Über `mcp__pangolin-api__org_by_orgId_resources` mit `orgId=strausmann` die Resource finden, dann `mcp__pangolin-api__resource_by_resourceId` mit der gefundenen `resourceId`. Notieren:
-- Hat sie `headerAuth` (nicht None)?
-- Hat `targets[0].healthCheck.enabled == true`?
-- Welche `port` ist im Target gesetzt? (sollte 8000 sein)
 
-Ergebnisse in `docs/superpowers/plans/2026-06-14-phase0-live-check-results.md` festhalten.
+- `resourceId` (Zahl) — für Spätere Verweise
+- `name`, `fullDomain` — Pflichtfelder
+- `targets[0].port`, `targets[0].method`, `targets[0].path-match` — sollten port=8000, method=http, prefix sein
+- `targets[0].healthCheck.{enabled, hostname, path, port, interval}` — alle Pflicht
+- `auth.ssoEnabled`, `auth.basicAuth` — entscheidet ob Phase 6.2 Compose-Labels erweitert oder ersetzt
+
+**Bestand-Detection-Entscheidungsbaum (R2-L3 network):**
+
+| Befund | Aktion in Phase 6.2 |
+|---|---|
+| `headerAuth` ist null | Compose-Labels komplett wie in Phase 6.2 ergänzen + neues Vault-Item in Phase 6.1 |
+| `headerAuth.user == "claude-automation"` | Vault-Item-Passwort holen statt neu generieren — Phase 6.1 entfällt, nur Labels ergänzen falls Healthcheck-Labels fehlen |
+| `headerAuth.user != "claude-automation"` | **STOP** — manuelle Klärung mit User: bestehender User-Konflikt. Entscheidung: ersetzen oder zweiten Bypass-Account anlegen? |
+| `healthCheck.enabled == false` | Pflicht-Labels ergänzen — Newt v1.18.4 fordert healthcheck-Pflicht-Felder |
+
+Ergebnisse in `docs/superpowers/plans/2026-06-14-phase0-live-check-results.md` festhalten unter `## Pangolin-Resource-Bestand`.
 
 - [ ] **Step 4: DB-Schema-Snapshot aus Production ziehen**
 
@@ -148,6 +174,16 @@ ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
      '.schema printers_audit'"
 ```
 Expected: `printers` existiert mit den Spalten aus der Spec; `printers_audit` existiert NICHT (wird in Phase 1 angelegt). Falls `printers_audit` schon existiert: Spec-Annahmen prüfen.
+
+- [ ] **Step 4b: Compose-Content Pre-Deploy sichern (R2-L1 für Rollback in Task 8.5)**
+
+```python
+pre_deploy_compose = mcp__dockhand__get_stack_compose(
+    environmentId=10, name="hangar-print-hub",
+)["content"]
+```
+
+Den vollständigen YAML-Block in `docs/superpowers/plans/2026-06-14-phase0-live-check-results.md` unter einem `## Pre-Deploy Compose-Snapshot`-Heading als Code-Block speichern. Diese Variable ist `PRE_DEPLOY_COMPOSE_CONTENT` in Task 8.5 Step 3.
 
 - [ ] **Step 5: Test-Files-Inventar grepen (Verifikation H9)**
 
@@ -449,10 +485,12 @@ async def test_backfill_function_idempotent_and_safe():
                 "VALUES (lower(hex(randomblob(16))), :n, :s, 'X', 'ptouch', :c, "
                 "1, strftime('%Y-%m-%dT%H:%M:%fZ','now'), strftime('%Y-%m-%dT%H:%M:%fZ','now'))"
             ), {"n": slug, "s": slug, "c": conn_json})
-    # Backfill 2x aufrufen
+    # Backfill 2x aufrufen — R2-M1: AsyncConnection braucht run_sync damit
+    # die sync SQLAlchemy-Aufrufe im Helper tatsaechlich laufen (analog
+    # zu alembic env.py das ebenfalls run_sync nutzt).
     for _ in range(2):
         async with engine.begin() as conn:
-            mig._backfill_snmp(conn)  # ist die Helper-Funktion (siehe Step 4)
+            await conn.run_sync(mig._backfill_snmp)
     async with engine.connect() as conn:
         rows = (await conn.execute(text(
             "SELECT slug, connection FROM printers WHERE slug IN ('no-snmp','with-snmp','null-conn')"
@@ -3613,46 +3651,15 @@ In `docs/superpowers/plans/2026-06-14-phase0-live-check-results.md` festhalten:
 - Neues Secret (nur als Hash-Vermerk, nicht im Klartext)
 - Zu ergänzende Labels (oben gezeigt)
 
-### Task 6.3: Header-Auth-Bypass via curl verifizieren (M4-Round-1)
+### Task 6.3: [R2-L2 Round-2 verschoben nach Task 8.3.5]
 
-**Files:** keine Repo-Files — manuelle Pre-Deploy-Verifikation.
+Der ursprünglich hier definierte curl-Verifikations-Schritt war zeitlich falsch eingeordnet — Pangolin sieht die neuen Header-Auth-Labels erst nach `start_stack` (Phase 8.3) und Newt-Sync (kann bis 5 Min dauern). Die Verifikation gehört daher zwischen `start_stack` und Smoke-Test. Siehe **Task 8.3.5** unten.
 
-Nach Stack-Update in Phase 8.3 muss der Header-Auth-Bypass mit dem `claude-automation`-Account funktionieren. Dieser Task wird VOR dem Smoke-Test (8.4) explizit ausgeführt damit der Implementer die Credentials einmal manuell testet bevor Tooling drauf zugreift.
+Phase 6 ist damit:
+- 6.1: Vault-Item anlegen
+- 6.2: Compose-Labels in Repo-Snippet vorbereiten (eigentlicher Deploy in 8.3)
 
-- [ ] **Step 1: curl gegen Public-Endpoint ohne Auth (Erwartung: 401/403)**
-
-```bash
-curl -i -X GET https://print-hub.strausmann.cloud/api/printers
-```
-Expected: 401 oder 403 (SSO redirect oder Pangolin Login).
-
-- [ ] **Step 2: curl gegen Public-Endpoint MIT Header-Auth**
-
-```bash
-# Passwort aus Vaultwarden holen (Task 6.1 Item)
-SECRET=$(mcp__vaultwarden__get object=password id="Pangolin Header Auth - Print Hub")
-curl -i -X GET https://print-hub.strausmann.cloud/api/printers \
-  -u "claude-automation:$SECRET"
-```
-Expected: 200 mit JSON-Liste (oder leerer Liste falls noch keine Drucker).
-
-- [ ] **Step 3: curl gegen Admin-API mit Header-Auth**
-
-```bash
-curl -i -X GET https://print-hub.strausmann.cloud/api/v1/admin/printers \
-  -u "claude-automation:$SECRET"
-```
-Expected: 200 (mit oder ohne Liste).
-
-- [ ] **Step 4: Ergebnis im Phase-0-Doku festhalten**
-
-In `docs/superpowers/plans/2026-06-14-phase0-live-check-results.md` ergänzen:
-- Step 1: HTTP-Status
-- Step 2: HTTP-Status + Body-Snippet
-- Step 3: HTTP-Status + Body-Snippet
-- Beobachtungen (z.B. Cookies, Headers, Redirects)
-
-Falls einer der Calls fehlschlägt: Compose-Labels (Phase 6.2) prüfen, Newt-Sync abwarten (kann bis 5 Min dauern), ggf. Pangolin-Dashboard-Resource manuell prüfen.
+(Siehe Task 8.3.5)
 
 ---
 
@@ -3868,6 +3875,54 @@ ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
       /docker/stacks/hangar-print-hub/config/printers.yaml.bak-pre-124"
 ```
 
+### Task 8.3.5: Header-Auth-Bypass curl-Verifikation (R2-L2: nach 8.3, vor 8.4)
+
+**Files:** keine Repo-Files — Live-Verifikation nach Stack-Restart.
+
+Nach Phase 8.3 `start_stack` muss Newt die neuen Compose-Labels gesehen haben (kann bis 5 Min dauern). Diese Task verifiziert dass der Header-Auth-Bypass funktioniert BEVOR der Smoke-Test (8.4) Tooling drauf zugreift.
+
+- [ ] **Step 1: Auf Newt-Sync warten + Hub-Health**
+
+```bash
+sleep 60  # Newt-Sync-Puffer
+curl -fsS https://print-hub.strausmann.cloud/healthz
+```
+Expected: 200.
+
+- [ ] **Step 2: curl gegen Public-Endpoint ohne Auth (Erwartung: 401/403)**
+
+```bash
+curl -i -X GET https://print-hub.strausmann.cloud/api/printers
+```
+Expected: 401, 403 oder 302 (SSO redirect / Pangolin Login / Basic-Auth-Dialog wegen Bug #3099).
+
+- [ ] **Step 3: curl gegen Public-Endpoint MIT Header-Auth**
+
+```bash
+# Passwort aus Vaultwarden holen (Task 6.1 Item)
+SECRET=$(mcp__vaultwarden__get object=password id="Pangolin Header Auth - Print Hub")
+curl -i -X GET https://print-hub.strausmann.cloud/api/printers \
+  -u "claude-automation:$SECRET"
+```
+Expected: 200 mit JSON-Liste (Bestandsdrucker).
+
+- [ ] **Step 4: curl gegen Admin-API mit Header-Auth**
+
+```bash
+curl -i -X GET https://print-hub.strausmann.cloud/api/v1/admin/printers \
+  -u "claude-automation:$SECRET"
+```
+Expected: 200 mit Liste inkl. allen Bestandsdruckern + ggf. disabled.
+
+- [ ] **Step 5: Ergebnis im Phase-0-Doku festhalten**
+
+In `docs/superpowers/plans/2026-06-14-phase0-live-check-results.md` ergänzen unter `## Header-Auth-Verifikation Post-Deploy`:
+- Step 2: HTTP-Status
+- Step 3: HTTP-Status + Body-Snippet
+- Step 4: HTTP-Status + Body-Snippet
+
+Falls einer der Calls fehlschlägt: Pangolin-Dashboard-Resource manuell prüfen, Newt-Logs auf `print-hub` Container checken (`docker logs --tail 50 hangar-print-hub-newt-1`), ggf. weitere 2 Min auf Sync warten und Step 2-4 wiederholen. Falls Header-Auth-Account abweicht: siehe Phase 0 Step 3 Bestand-Detection-Entscheidungsbaum.
+
 ### Task 8.4: Smoke-Test post-Deploy
 
 **Files:** keine Repo-Files — Verifikation.
@@ -3978,14 +4033,19 @@ mcp__dockhand__update_stack_compose(
 )
 ```
 
-- [ ] **Step 4: Stack-Env `PRINTER_CONFIG_PATH` re-merge**
+- [ ] **Step 4: Stack-Env `PRINTER_CONFIG_PATH` re-merge (R2-M2: Filter erst!)**
+
+R2-M2-Befund: Wenn 8.3 nur partiell durchgelaufen ist, könnte `PRINTER_CONFIG_PATH` noch existieren. Filter analog 8.3 vor dem Append damit kein Duplikat:
 
 ```python
 existing = mcp__dockhand__get_stack_env(environmentId=10, name="hangar-print-hub")
-merged = list(existing["variables"]) + [
-    {"key": "PRINTER_CONFIG_PATH", "value": "/etc/printer-hub/printers.yaml",
-     "isSecret": False},
-]
+# Filter analog 8.3 Step 1: erst alle Vorkommen entfernen, dann sauber neu hinzufuegen
+merged = [v for v in existing["variables"] if v["key"] != "PRINTER_CONFIG_PATH"]
+merged.append({
+    "key": "PRINTER_CONFIG_PATH",
+    "value": "/etc/printer-hub/printers.yaml",
+    "isSecret": False,
+})
 mcp__dockhand__update_stack_env(
     environmentId=10, name="hangar-print-hub", variables=merged,
 )
@@ -4048,7 +4108,7 @@ PR im Draft-Status lassen, Container-Logs/DB-Snapshots sammeln, Issue für Root-
 | YAML-Removal | Task 5.1-5.4 | ✅ |
 | 5 Test-Files-Löschen H9 | Task 5.3 | ✅ |
 | Vault-Item + Blueprint-Labels H7 | Task 6.1-6.2 | ✅ |
-| **Header-Auth curl-Verifikation (Round-1 M4)** | **Task 6.3** | ✅ |
+| **Header-Auth curl-Verifikation (Round-1 M4 + Round-2 L2)** | **Task 8.3.5** (verschoben aus 6.3) | ✅ |
 | Fresh-Install E2E | Task 7.1 | ✅ |
 | Production-Deploy mit Watchtower-Pause + Backup | Task 8.1-8.4 | ✅ |
 | **Rollback-Pfad wenn Smoke fail (Round-1 H1)** | **Task 8.5** | ✅ |
