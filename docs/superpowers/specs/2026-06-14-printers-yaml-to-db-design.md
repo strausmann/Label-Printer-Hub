@@ -1,6 +1,6 @@
 # Hub Printers YAML → DB + Admin-UI Design
 
-> **Status:** DRAFT Round-5 — Live-State-Reset (Two-Container) auf approved Round-4-Spec angewandt
+> **Status:** DRAFT Round-6 — Round-5-Review-Findings adressiert (3 HIGH + 2 MED + 3 LOW), CSRF-Hardening eingerollt
 > **Issue:** [#124 — printers.yaml entfernen, Drucker in DB + Admin-UI](https://github.com/strausmann/Label-Printer-Hub/issues/124)
 > **PR:** [#125](https://github.com/strausmann/Label-Printer-Hub/pull/125)
 > **Related:** Hangar #110 (hardcoded Drucker-/Möbel-Spezifika entfernen)
@@ -237,11 +237,242 @@ req.Header.Set("X-Remote-User", remoteUser) // aus Pangolin Remote-User Header
 
 Der Plan (Round-4 final) muss in Round-5 angepasst werden:
 - **Phase 3 (Backend HTML-Routes + Templates)** → **gestrichen**, ersetzt durch neue **Phase 3-Frontend (Go-Handler + Templates + Routing)**
-- **Task 3.1 CSRF-Middleware** → **gestrichen**, Frontend hat existing CSRF
+- **Task 3.1 CSRF-Middleware** → **ins Frontend verschoben** (siehe Round-6-Sektion: CSRF muss aktiv im Frontend eingeführt werden, NICHT existing)
 - **Phase 8** angepasst für Stack-Namen + beide Container Watchtower-Pause
 - **Akzeptanzkriterien-Liste** auf 24+ Punkte erweitert (Backend bleibt; Frontend kommt dazu)
 
 Plan-Round-5 wird nach Spec-Round-5-Approval geschrieben.
+
+---
+
+## Round-6 — Review-Findings adressiert (2026-06-19 abends)
+
+Round-5-Reviews: ops APPROVE, network APPROVE, storage NEEDS_FIXES (2 HIGH + 1 LOW), code-quality NEEDS_FIXES (1 HIGH + 2 MED + 1 LOW).
+
+### Round-6 Findings-Mapping
+
+| # | Severity | Team | Finding | Status | Wo adressiert |
+|---|---|---|---|---|---|
+| H1 | HIGH | storage | Alte Sektionen (Phase 1a/2/3) nutzen `hangar-print-hub-print-hub-1` und Stack `hangar-print-hub` | ✅ Globalreplace + Round-6-Hinweise | Migration-Sektion |
+| H2 | HIGH | storage | `sqlite3` CLI fehlt im Production-Container — Backup-Befehl bricht | ✅ Backup via `docker cp` vom Host | Migration Phase A.1 |
+| H3 | HIGH | code-q | CSRF-Stack existiert NICHT im Frontend (`go.mod` hat keine CSRF-Library) — existing Admin-API-Keys-Routes sind ungeschützt | ✅ `gorilla/csrf` einführen + existing Admin-Routes nachrüsten | Neue Sektion "Frontend CSRF-Hardening" |
+| M1 | MED | code-q | Round-4-Sektionen (Web-Routes, CSRF-Middleware, Coverage) nicht explizit invalidiert | ✅ Inline-⚠-Markierungen | Diverse Round-4-Sektionen |
+| M2 | MED | code-q | `BackendServiceAccountKey` Bootstrap fehlt — Henne-Ei-Problem | ✅ Phase 6.0 Service-Account-Key-Bootstrap | Migration Phase 6.0 |
+| L1 | LOW | network | Vault-Notes "Site 4" statt "Site 6" | ✅ als Fix-Hinweis | Anhang Round-6 |
+| L2 | LOW | code-q | Coverage-Tabelle hat obsolete Backend-Python-Pfade | ✅ in Round-4-Sektion markiert + neue Coverage-Tabelle | Coverage-Tabelle Round-6 |
+| L3 | LOW | storage | Host-Pfad der DB nicht explizit | ✅ ergänzt | Migration Phase A.1 |
+
+### Round-6 Migration-Sektion (überschreibt Round-1 bis Round-4)
+
+**Phase A.0 — Container-Namen-Reset (gegenüber Round-1 bis Round-4):**
+
+Alle Container/Stack-Referenzen in den Round-1 bis Round-4-Sektionen sind ÜBERSCHRIEBEN:
+
+| Round-1-4 (veraltet) | Round-5/6 aktuell |
+|---|---|
+| Stack `hangar-print-hub` | Stack `label-printer-hub` |
+| Container `hangar-print-hub-print-hub-1` | Container `label-printer-hub-backend` |
+| (implizit) Frontend-Container | `label-printer-hub-frontend` |
+| Host-Pfad `/docker/stacks/hangar-print-hub/...` | Host-Pfad `/docker/stacks/label-printer-hub/...` |
+| DB Host-Pfad | `/docker/stacks/label/label-printer-hub/data/printer-hub.db` |
+| `mcp__dockhand__set_container_auto_update(env, "hangar-print-hub-print-hub-1", ...)` | `mcp__dockhand__set_container_auto_update(env, "label-printer-hub-backend", policy="never")` + ein weiterer Aufruf für `label-printer-hub-frontend` |
+
+Implementer-Verantwortung: bei JEDEM `docker exec` / `docker cp` / `mcp__dockhand__*`-Aufruf den Round-5/6-Container-Namen verwenden, NICHT die Round-1-4-Namen.
+
+**Phase A.1 — Pre-Deploy DB-Backup via docker cp (H2-Round-5-Fix):**
+
+Der Production-Container hat **kein `sqlite3` CLI**. Backup muss via `docker cp` direkt vom Host laufen — das ist WAL-safe wenn die DB-Datei im konsistenten Snapshot-Zustand gelesen wird (SQLite WAL-Mode garantiert das wenn keine Schreibvorgänge mitten in der Kopie laufen):
+
+```bash
+# Schritt 1: kurze App-Pause für saubere Kopie (Container down stoppt Schreibvorgänge)
+mcp__dockhand__stop_container(environmentId=10, name="label-printer-hub-backend")
+
+# Schritt 2: WAL-Checkpoint via Python (falls sqlite3-Modul im Container vorhanden)
+# Alternativ: Container ist gestoppt → kein WAL-Replay nötig
+
+# Schritt 3: DB-Datei + WAL + SHM auf Host kopieren (alle 3 für sauberen Restore)
+ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
+  "cp /docker/stacks/label/label-printer-hub/data/printer-hub.db \
+      /docker/stacks/label/label-printer-hub/backups/printer-hub.db.bak-pre-124 && \
+   cp /docker/stacks/label/label-printer-hub/data/printer-hub.db-wal \
+      /docker/stacks/label/label-printer-hub/backups/printer-hub.db-wal.bak-pre-124 2>/dev/null || true && \
+   cp /docker/stacks/label/label-printer-hub/data/printer-hub.db-shm \
+      /docker/stacks/label/label-printer-hub/backups/printer-hub.db-shm.bak-pre-124 2>/dev/null || true"
+
+# Schritt 4: Container wieder starten
+mcp__dockhand__start_container(environmentId=10, name="label-printer-hub-backend")
+```
+
+Restore-Pfad analog: WAL/SHM löschen, .db-Datei restore, Container neu starten.
+
+**Phase A.2 — Watchtower-Pause für BEIDE Container (Round-5):**
+
+```python
+for container in ["label-printer-hub-backend", "label-printer-hub-frontend"]:
+    mcp__dockhand__set_container_auto_update(
+        environmentId=10, containerName=container, policy="never",
+    )
+```
+
+### Round-6 Frontend CSRF-Hardening (H3 — eingerollt in Issue #124)
+
+**Befund (Round-5 code-quality, verifiziert):** Das Frontend hat **keine CSRF-Library** in `frontend/go.mod` (kein `gorilla/csrf`, kein `justinas/nosurf`). Die existing Admin-Routes (`/admin/api-keys/*`) sind **ungeschützt für CSRF**. Das ist eine Security-Lücke unabhängig von Issue #124, wird aber im selben Issue mit-adressiert (User-Entscheidung 2026-06-19).
+
+**Lösung:**
+
+1. **Library:** `github.com/gorilla/csrf` (Standard Go-Lib, weit verbreitet, gut gewartet)
+2. **go.mod-Update:** `go get github.com/gorilla/csrf` ergänzt Dependency
+3. **CSRF-Middleware-Setup in `cmd/server/main.go`:**
+
+```go
+import "github.com/gorilla/csrf"
+
+// In main():
+csrfKey := []byte(os.Getenv("CSRF_KEY"))  // 32-byte hex-string, neu in Frontend-ENV
+if len(csrfKey) != 32 {
+    log.Fatal("CSRF_KEY env-var must be 32 bytes")
+}
+csrfMW := csrf.Protect(
+    csrfKey,
+    csrf.Secure(true),         // HTTPS-only
+    csrf.SameSite(csrf.SameSiteStrictMode),
+    csrf.CookieName("__Host-csrf"),
+    csrf.RequestHeader("X-CSRF-Token"),
+    csrf.FieldName("csrf_token"),
+)
+
+// Anwenden auf Admin-Routes (NEU + EXISTING):
+r.Route("/admin", func(r chi.Router) {
+    r.Use(csrfMW)
+    // EXISTING (Round-6 nachgerüstet):
+    r.Get("/api-keys", h.AdminAPIKeysList)
+    r.Post("/api-keys", h.AdminAPIKeysCreate)
+    r.Post("/api-keys/{id}/revoke", h.AdminAPIKeysRevoke)
+    // ... weitere existing admin-routes mit Mutations
+    // NEU für Issue #124:
+    r.Route("/printers", func(r chi.Router) {
+        r.Get("/", h.AdminPrintersList)
+        r.Get("/new", h.AdminPrintersNewForm)
+        r.Post("/", h.AdminPrintersCreate)
+        // ... weitere
+    })
+})
+```
+
+4. **Template-Update:** ALLE existing Admin-Templates (`admin_api_keys*.html`) bekommen `{{ .csrfField }}` in ihre POST-Forms. Das ist ein 1-Zeilen-Update pro Template.
+
+5. **CSRF_KEY-Bootstrap:** Phase 6.0 (siehe nächste Sektion) generiert + verteilt das Secret.
+
+### Phase 6.0 — Service-Account-Key + CSRF_KEY Bootstrap (M2-Round-5 + H3-Round-5)
+
+**Henne-Ei-Problem:** Frontend braucht Backend-API-Key um `/api/v1/admin/printers` aufzurufen. Backend-API-Key wird im Backend's existing `admin_api_keys`-System verwaltet — das wiederum braucht Admin-UI zum Erstellen. Lösung: einmaliger Bootstrap via Backend-CLI / direkten Backend-Aufruf.
+
+**Schritte:**
+
+1. **API-Key im Backend erstellen** (existing `/api/v1/admin/api-keys` POST):
+
+```bash
+# Per Pangolin Header-Auth-Bypass (claude-automation)
+curl -X POST https://labels.strausmann.cloud/api/v1/admin/api-keys \
+  -u "claude-automation:$(mcp__vaultwarden__get object=password id='Pangolin Header Auth - Label Printer Hub')" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "frontend-service-account",
+    "scopes": ["admin:printers", "admin:read"],
+    "rate_limit_per_minute": 600
+  }'
+# → Response enthält plaintext-Key (einmal sichtbar)
+```
+
+2. **Plaintext-Key in Vaultwarden speichern:**
+
+```
+mcp__vaultwarden__create_item(
+  name="Hub Frontend Service-Account API-Key",
+  type=1,
+  login={
+    "username": "frontend-service-account",
+    "password": "<plaintext-aus-step-1>"
+  },
+  notes="Backend-API-Key für Hub-Frontend → Backend Service-Account-Auth (Issue #124). Scope: admin:printers"
+)
+```
+
+3. **CSRF-Key generieren + speichern:**
+
+```bash
+openssl rand -hex 32
+# → 64-hex-Zeichen-Secret
+```
+
+```
+mcp__vaultwarden__create_item(
+  name="Hub Frontend CSRF Key",
+  type=1,
+  login={ "password": "<secret-aus-rand>" },
+  notes="32-byte CSRF-Secret für Frontend gorilla/csrf (Issue #124)"
+)
+```
+
+4. **Stack-Env-Variablen ergänzen (Round-5/6 Stack-Env-Merge):**
+
+```python
+existing = mcp__dockhand__get_stack_env(environmentId=10, name="label-printer-hub")
+existing_vars = list(existing["variables"])
+existing_vars.append({
+    "key": "BACKEND_SERVICE_ACCOUNT_KEY",
+    "value": "<plaintext-aus-step-1>",
+    "isSecret": True,
+})
+existing_vars.append({
+    "key": "CSRF_KEY",
+    "value": "<secret-aus-step-3>",
+    "isSecret": True,
+})
+mcp__dockhand__update_stack_env(
+    environmentId=10, name="label-printer-hub", variables=existing_vars,
+)
+```
+
+5. **Compose-Update:** Frontend-Container bekommt `BACKEND_SERVICE_ACCOUNT_KEY` + `CSRF_KEY` in seine `env_file`. Compose nutzt schon `env_file: .env` → die neuen Env-Vars werden vererbt sobald sie in der Stack-Env-Tabelle sind.
+
+### Round-4-Sektion-Invalidierungen (M1)
+
+Folgende Round-4-Sektionen sind in Round-5/6 OBSOLET und werden durch die Round-5/6-Sektionen oben überschrieben:
+
+⚠ **OBSOLET in Round-6:** "Web-Routes (HTML)" — HTML-Routes leben im Frontend (Go), nicht im Backend (Python).
+⚠ **OBSOLET in Round-6:** "CSRF-Middleware H3 (Backend)" — Backend hat kein HTML, braucht keine CSRF. Frontend bekommt `gorilla/csrf`.
+⚠ **OBSOLET in Round-6:** Coverage-Schwellen für `app/api/routes/admin_printers_web.py`, `app/middleware/csrf.py`, `app/templates/admin_printers/*` — diese Module entstehen nicht im Backend.
+⚠ **OBSOLET in Round-6:** Akzeptanzkriterien betreffend Backend-HTML-Routes, Backend-CSRF, Backend-Templates.
+
+Implementer liest die Round-1-4-Sektionen NUR als Referenz für den Service-Layer (PrinterAdminService, audit_redaction, Pydantic-Schemas, Alembic-Migration, derive_printer_id) — diese Teile bleiben unverändert valid.
+
+### Coverage-Tabelle Round-6 (ersetzt Round-4-Coverage-Tabelle)
+
+| Modul | Schwelle | Bemerkung |
+|---|---|---|
+| **Backend:** `app/services/printer_admin_service.py` | 85 % | Mutation-Logic |
+| **Backend:** `app/services/printer_model_registry.py` | 75 % | Pure-Helper |
+| **Backend:** `app/services/printer_identity.py` | 85 % | Mutation (UUIDv5-Derivation) |
+| **Backend:** `app/services/audit_redaction.py` | 80 % | Secret-Handling |
+| **Backend:** `app/api/routes/admin_printers_api.py` | 80 % | JSON-API-Endpunkte |
+| **Backend:** `app/repositories/printers.py` (enabled-Filter) | 85 % | Mutation/Filter |
+| **Frontend:** `frontend/internal/handlers/admin_printers.go` | 80 % | Handler + Template-Smoke (Pattern: admin_api_keys.go) |
+| **Frontend:** `frontend/cmd/server/main.go` (CSRF-Wire-Up) | 70 % | Integration + Middleware-Test |
+| Global Backend `fail_under=80` | 80 % | pytest-cov gate |
+| Global Frontend (Go test -race + cover) | ≥80 % | go test -coverprofile + gocov |
+
+### Anhang Round-6 — LOWs
+
+**L1 (network):** Vault-Item "Pangolin Header Auth - Label Printer Hub" Notes-Feld zeigt "Site 4 (HHDOCKER02)" statt korrekt "Site 6 (HHDOCKER03)". Datenpunkt-Korrektur über Vaultwarden — kein Issue-#124-Block. Fix-Hinweis als Implementer-Sub-Task in Phase 0.
+
+**L2 (code-q):** Coverage-Tabelle Round-4 enthält obsolete Backend-Python-Pfade. Wurde mit neuer Coverage-Tabelle Round-6 oben ersetzt.
+
+**L3 (storage):** Host-Pfad der DB jetzt explizit dokumentiert: `/docker/stacks/label/label-printer-hub/data/printer-hub.db` (verifiziert via `${STACKS_BASE_HOMEDIR}=/docker/stacks/label` aus .env).
+
+---
+
+## Original Spec Round-1 bis Round-4 (Kern bleibt valid, HTML/CSRF-Sektionen OBSOLET)
 
 ---
 
