@@ -87,6 +87,18 @@ for row in conn.execute('SELECT slug, name, model, backend, connection, enabled 
 # Pangolin-Resource 123
 mcp__pangolin-api__resource_by_resourceId resourceId=123
 # Trace: niceId, fullDomain, sso, headerAuthId, headers (X-Pangolin-Token)
+# HINWEIS (Round-2-Fix): headerAuthId 8 ist NICHT im API-Response sichtbar
+# (Pangolin exponiert das Feld nicht). Stattdessen: Vault-Item-Smoke-Test
+# als Verifikation: curl -u claude-automation:<pw> https://labels.../api/printers
+
+# Stack-Env Baseline (für Phase 6.0 Merge-Check)
+mcp__dockhand__get_stack_env(environmentId=10, name="label-printer-hub")
+# Festhalten: Anzahl Variablen, alle Keys
+
+# Image-Digest beider Container vor Deploy (für Phase 8.5 Rollback)
+docker inspect label-printer-hub-backend --format '{{.Image}}'
+docker inspect label-printer-hub-frontend --format '{{.Image}}'
+# In phase0-live-state.md festhalten als ROLLBACK_BACKEND_IMAGE / ROLLBACK_FRONTEND_IMAGE
 
 # Backend Routes-Inventur (existing API)
 git show origin/main:backend/app/api/routes/admin_api_keys.py | grep -E "^router|@router"
@@ -321,31 +333,53 @@ Details: Spec Round-4 Sektion "JSON-API" + Round-5 Auth-Flow.
 
 **Pre-Check:** `phase0-live-state.md` → existing admin-api-keys Auth-Methode
 
-- [ ] **Step 1: Backend-API-Key direkt im Container erstellen (kein Pangolin-Bootstrap)**
+- [ ] **Step 1: Backend-API-Key direkt im Container erstellen (Round-6-Fix: echte Repo-API + echter Scope)**
+
+Code-Quality-Review Round-5 hat aufgezeigt:
+- `APIKeyService` existiert NICHT, Codebase nutzt Repository-Pattern: `app/repositories/api_keys.py::create(session, key)`
+- Scopes sind `read | print | admin` (3-stufige Hierarchie), NICHT `admin:printers`/`admin:read`
+
+Korrigiert: Bootstrap nutzt das echte Pattern aus `admin_api_keys_routes.py` (existing key-creation-Endpoint):
 
 ```bash
 ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
   "docker exec label-printer-hub-backend python -c \"
 import asyncio
+import secrets
+from datetime import datetime, timezone
+from uuid import uuid4
+import bcrypt
 from app.db.session import get_session_factory
-from app.services.api_key_service import APIKeyService
+from app.repositories import api_keys as api_keys_repo
+from app.models.api_key import ApiKey
 
 async def main():
+    plaintext = 'lh_' + secrets.token_urlsafe(32)
+    key_hash = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt()).decode()
+    key_prefix = plaintext[:11]
+    key = ApiKey(
+        id=uuid4(),
+        name='frontend-service-account',
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+        scopes=['admin'],   # 3-stufige Hierarchie, admin ist top
+        rate_limit_per_minute=600,
+        enabled=True,
+        created_at=datetime.now(timezone.utc),
+    )
     factory = get_session_factory()
     async with factory() as session:
-        svc = APIKeyService(session)
-        result = await svc.create_key(
-            name='frontend-service-account',
-            scopes=['admin:printers', 'admin:read'],
-            rate_limit_per_minute=600,
-        )
-        print(f'PLAINTEXT_KEY={result.plaintext}')
-        await session.commit()
+        await api_keys_repo.create(session, key)
+    print(f'PLAINTEXT_KEY={plaintext}')
 
 asyncio.run(main())\""
 ```
 
-(Implementer prüft existing APIKeyService-Interface; ggf. CLI-Aufruf statt Python-Inline)
+**Implementer-Verifikation vor Step 1:**
+```bash
+docker exec label-printer-hub-backend python -c "from app.models.api_key import ApiKey; import inspect; print(inspect.signature(ApiKey.__init__))"
+```
+Falls Konstruktor-Signatur abweicht: anpassen statt erfinden. Bei Unsicherheit: existing `admin_api_keys_routes.py::create_api_key` als Live-Vorbild lesen (auf `main`).
 
 - [ ] **Step 2: Plaintext in Vault speichern (Collection: Automation/Claude-Team)**
 
@@ -377,6 +411,32 @@ mcp__vaultwarden__create_item(
   notes="32 raw bytes (= 64 hex chars) fuer gorilla/csrf in Hub-Frontend (Issue #124)",
   collectionIds=["<Automation/Claude-Team UUID>"],
 )
+```
+
+- [ ] **Step 4b: Compose-Pass-Through für die neuen Secrets (M2-Round-5 ops, KRITISCH gegen Silent-Failure)**
+
+`update_stack_env` schreibt nur die Dockhand-DB-Tabelle. Damit der Container die Vars sieht, müssen sie in `compose.yaml` unter `environment:` als `${VAR}` deklariert sein. Sonst Silent-Failure: Vars sind in Dockhand-DB, Container sieht sie nie.
+
+Frontend-Container (Beispiel):
+```yaml
+services:
+  frontend:
+    image: ghcr.io/strausmann/label-printer-hub-frontend:${HUB_VERSION}
+    environment:
+      BACKEND_URL: http://backend:8000
+      BACKEND_SERVICE_ACCOUNT_KEY: ${BACKEND_SERVICE_ACCOUNT_KEY}
+      CSRF_KEY: ${CSRF_KEY}
+```
+
+Implementer-Pflicht:
+- `mcp__dockhand__get_stack_compose(environmentId=10, name="label-printer-hub")` aktuelles Compose holen
+- Frontend-Service-Block prüfen — fehlende `environment:` Einträge ergänzen
+- `mcp__dockhand__update_stack_compose(...)` mit erweitertem Compose
+
+Verifikation NACH Stack-Restart:
+```bash
+docker exec label-printer-hub-frontend env | grep -E "BACKEND_SERVICE_ACCOUNT_KEY|CSRF_KEY"
+# Beide Vars müssen erscheinen (nur Wert-Prefix sichtbar wegen Secret-Maskierung)
 ```
 
 - [ ] **Step 5: Stack-Env via Dockhand merge** (Pflicht: existing → filter → put)
@@ -621,6 +681,7 @@ mcp__dockhand__deploy_stack(environmentId=10, name="label-printer-hub")
 - [ ] DB Backfill verifiziert (`docker exec label-printer-hub-backend python -c "..."` mit live DB-Pfad)
 - [ ] Backend `GET /api/v1/admin/printers` mit claude-automation-Header-Auth → 200 + Liste
 - [ ] Frontend `https://labels.strausmann.cloud/admin/printers/` Browser-Test (via Playwright oder manual SSO)
+  - **Hinweis Pangolin Bug #3099:** Pangolin zeigt evtl Basic-Auth-Dialog statt SSO-Redirect. **Cancel im Dialog → SSO-Flow startet automatisch.** Nicht als Smoke-Fail markieren — bekannter Pangolin-Upstream-Bug, siehe `pangolin-resource-standard.md` R8.
 - [ ] Test-Drucker create/disable/enable via UI → Audit-Rows korrekt + redact_secrets greift
 - [ ] Hangar PrinterSync verifiziert (sieht nur enabled Drucker)
 - [ ] Watchtower wieder auf "any" für beide Container
