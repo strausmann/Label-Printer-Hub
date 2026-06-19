@@ -1,6 +1,8 @@
 # Hub Printers YAML → DB + Admin-UI Design
 
-> **Status:** DRAFT Round-6 — Round-5-Review-Findings adressiert (3 HIGH + 2 MED + 3 LOW), CSRF-Hardening eingerollt
+> **Status:** WORKING DRAFT (Round-6 mit known issues) — Plan-Strategie übernimmt Live-Verifikation
+>
+> **WICHTIG für Implementer:** Diese Spec hat dokumentierte known issues (siehe Anhang "Known Issues für Plan-Live-Verifikation" am Ende). **Spec-Werte sind Vorschläge — Live-Container-Werte sind die Wahrheit.** Der Implementation-Plan ist so konzipiert dass jede Phase mit einem Pre-Check-Step startet der Production-Werte aus dem laufenden Container zieht (Mount-Pfade, API-URLs, Volumes). Wenn ein Spec-Wert mit Live-Container kollidiert: Live-Container gewinnt.
 > **Issue:** [#124 — printers.yaml entfernen, Drucker in DB + Admin-UI](https://github.com/strausmann/Label-Printer-Hub/issues/124)
 > **PR:** [#125](https://github.com/strausmann/Label-Printer-Hub/pull/125)
 > **Related:** Hangar #110 (hardcoded Drucker-/Möbel-Spezifika entfernen)
@@ -461,6 +463,23 @@ Implementer liest die Round-1-4-Sektionen NUR als Referenz für den Service-Laye
 | **Frontend:** `frontend/cmd/server/main.go` (CSRF-Wire-Up) | 70 % | Integration + Middleware-Test |
 | Global Backend `fail_under=80` | 80 % | pytest-cov gate |
 | Global Frontend (Go test -race + cover) | ≥80 % | go test -coverprofile + gocov |
+
+### Anhang — Known Issues für Plan-Live-Verifikation (2026-06-19)
+
+Nach 6 Spec-Review-Runden wurde entschieden die Iteration zu beenden und stattdessen den **Plan robust gegen Spec-Annahmen-Fehler** zu machen. Folgende Werte sind live verifiziert und überschreiben falsche Spec-Stellen:
+
+| Spec-Annahme (möglicherweise falsch) | Live-verifizierte Wahrheit (2026-06-19) | Verifizierung |
+|---|---|---|
+| DB-Host-Pfad `/docker/stacks/label/label-printer-hub/data/printer-hub.db` | **`/docker/stacks/hangar-print-hub/data/hub/printer-hub.db`** | `docker inspect label-printer-hub-backend --format '{{range .Mounts}}{{.Source}}→{{.Destination}}{{println}}{{end}}'` |
+| printers.yaml-Host-Pfad | **`/docker/stacks/hangar-print-hub/config/printers.yaml`** | dito |
+| Mount-Map | `/docker/stacks/hangar-print-hub/data/hub → /data` + `/docker/stacks/hangar-print-hub/config/printers.yaml → /etc/hub/printers.yaml` | dito |
+| Backend-API-Prefix `/api/v1/admin/api-keys` | **`/api/admin/api-keys`** (KEIN v1-Prefix) | `git show origin/main:backend/app/api/routes/admin_api_keys.py \| grep prefix=` |
+| CSRF_KEY-Format "32-byte hex-string" | **Korrekt: `openssl rand -hex 32` gibt 64-Hex-Zeichen-String = 64 UTF-8-Bytes.** Validation muss `len(key) == 64` (Hex-Form) ODER `len(hex.Decode(key)) == 32` (Raw-Bytes-Form) prüfen. | siehe Plan-Phase 6.0 |
+| Bootstrap-curl via Pangolin Header-Auth-Bypass | **Funktioniert evtl nicht durch:** Backend's `/api/admin/api-keys` Auth-Pfad muss live verifiziert werden bevor curl-Bootstrap. Alternative: SSH-Direktaufruf auf hhdocker03 ins Backend-Container | siehe Plan-Phase 6.0 |
+| Stack-Name "label-printer-hub" als Watchtower-Scope | **Watchtower-Scope-Label ist `hangar-print-hub`** (vermutlich historisch) — Watchtower-Pause muss nach `containerName` filtern, nicht nach Scope | `docker inspect ... Config.Labels.com.centurylinklabs.watchtower.scope` |
+| Vault-Item-Collection für Phase 6.0 Items | **`Automation/Claude-Team`** (analog Pangolin-Resource-Standard) | pangolin-resource-standard.md |
+| Vault-Notes für headerAuthId 8 zeigt "Site 4" | **Soll "Site 6" (HHDOCKER03)** sein | network-Review Round-5 |
+| `env_file: .env` + Dockhand Stack-Env | Stack-Env-Variablen kommen via Docker-ENV in Container an, **NICHT** automatisch in .env-Datei. Implementer muss mit `down_stack`/`start_stack` nach Env-Änderung neu starten | network-Review Round-6 |
 
 ### Anhang Round-6 — LOWs
 
