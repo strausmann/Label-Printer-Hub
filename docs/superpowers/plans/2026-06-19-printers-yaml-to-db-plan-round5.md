@@ -4,7 +4,7 @@
 
 **Goal:** Backend (Python/FastAPI) verlagert Drucker-Verwaltung von `printers.yaml` in DB-Tabelle mit JSON-Admin-API; Frontend (Go + chi + html/template + HTMX) bekommt `/admin/printers/` UI; CSRF-Hardening (gorilla/csrf) wird in selber Migration für existing Admin-Routes nachgerüstet.
 
-**Architektur:** Two-Container: `label-printer-hub-backend` (Python, Port 8000, JSON-only) + `label-printer-hub-frontend` (Go, Port 8080, HTML+Reverse-Proxy). Pangolin-Resource 123 `labels.strausmann.cloud` mit headerAuthId 8 (claude-automation).
+**Architektur:** Two-Container: `label-printer-hub-backend` (Python, Port 8000, JSON-only) + `label-printer-hub-frontend` (Go, Port 8080, HTML+Reverse-Proxy). Pangolin-Resource 123 `labels.example.test` mit headerAuthId 8 (claude-automation).
 
 **Tech-Stack:** Backend: Python 3.12 + FastAPI + SQLAlchemy 2 async + aiosqlite + Pydantic v2 + Alembic + pytest. Frontend: Go 1.24 + chi v5 + html/template + HTMX 2.0.4 + Tailwind v4 + gorilla/csrf + oapi-codegen.
 
@@ -138,7 +138,7 @@ Inhalt von `phase0-live-state.md`:
 ## Pangolin
 - Resource-ID: 123
 - niceId: label-printer-hub
-- fullDomain: labels.strausmann.cloud
+- fullDomain: labels.example.test
 - sso: true
 - headerAuthId: 8 (vault-item: "Pangolin Header Auth - Label Printer Hub", user: claude-automation)
 - targets[0].port: 8080 (frontend)
@@ -341,28 +341,27 @@ Code-Quality-Review Round-5 hat aufgezeigt:
 
 Korrigiert: Bootstrap nutzt das echte Pattern aus `admin_api_keys_routes.py` (existing key-creation-Endpoint):
 
+Code-Quality-Review Round-6 hat aufgezeigt: existing Helper `generate_api_key()` aus `app/auth/key_generator.py` MUSS genutzt werden, nicht manual key-generation. Sonst falsches Format (`lh_` statt `lh_pat_`, 11-char statt 16-char Prefix) → stille 401-Fehler bei jeder Authentifizierung.
+
 ```bash
-ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
+ssh -i ~/.ssh/id_ed25519_homelab_nodes root@docker-prod-node \
   "docker exec label-printer-hub-backend python -c \"
 import asyncio
-import secrets
 from datetime import datetime, timezone
 from uuid import uuid4
-import bcrypt
+from app.auth.key_generator import generate_api_key
 from app.db.session import get_session_factory
 from app.repositories import api_keys as api_keys_repo
 from app.models.api_key import ApiKey
 
 async def main():
-    plaintext = 'lh_' + secrets.token_urlsafe(32)
-    key_hash = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt()).decode()
-    key_prefix = plaintext[:11]
+    plaintext, prefix, key_hash = generate_api_key()
     key = ApiKey(
         id=uuid4(),
         name='frontend-service-account',
         key_hash=key_hash,
-        key_prefix=key_prefix,
-        scopes=['admin'],   # 3-stufige Hierarchie, admin ist top
+        key_prefix=prefix,
+        scopes=['admin'],
         rate_limit_per_minute=600,
         enabled=True,
         created_at=datetime.now(timezone.utc),
@@ -377,6 +376,8 @@ asyncio.run(main())\""
 
 **Implementer-Verifikation vor Step 1:**
 ```bash
+docker exec label-printer-hub-backend python -c "from app.auth.key_generator import generate_api_key; import inspect; print(inspect.signature(generate_api_key))"
+# Erwartet: () -> tuple[str, str, str] (plaintext, prefix, hashed)
 docker exec label-printer-hub-backend python -c "from app.models.api_key import ApiKey; import inspect; print(inspect.signature(ApiKey.__init__))"
 ```
 Falls Konstruktor-Signatur abweicht: anpassen statt erfinden. Bei Unsicherheit: existing `admin_api_keys_routes.py::create_api_key` als Live-Vorbild lesen (auf `main`).
@@ -389,7 +390,7 @@ mcp__vaultwarden__create_item(
   type=1,
   login={"username": "frontend-service-account",
          "password": "<plaintext>"},
-  notes="Backend-API-Key fuer Hub-Frontend → Backend Service-Account-Auth. Scope: admin:printers (Issue #124)",
+  notes="Backend-API-Key fuer Hub-Frontend → Backend Service-Account-Auth. Scope: admin (3-stufige Hierarchie admin ⊇ print ⊇ read) (Issue #124)",
   collectionIds=["<Automation/Claude-Team UUID>"],
 )
 ```
@@ -552,22 +553,30 @@ r.Route("/admin", func(r chi.Router) {
 
 **Files:** `backend/openapi.json` (re-generieren) + `frontend/internal/api/<generated>.go`
 
-**Pre-Check:** Backend Tasks 1-6 müssen abgeschlossen sein (neue Endpoints für gen-client verfügbar)
+**Pre-Check:** Backend Tasks 1-6 müssen abgeschlossen sein. **`make gen-client` ruft das laufende Backend per `curl` ab** — Backend MUSS lokal oder remote erreichbar sein (siehe Makefile-Target). Phase-0 Pre-Check sollte `frontend/Makefile` Target-Details aufnehmen.
 
-- [ ] **Step 1: Backend OpenAPI-Schema generieren**
+- [ ] **Step 1: Backend lokal starten oder Remote-URL setzen**
 
-```bash
-cd backend
-# Backend exportiert openapi.json beim Start oder via CLI
-python -c "from app.main import create_app; import json; print(json.dumps(create_app().openapi(), indent=2))" > openapi.json
-```
+Option A — Lokal: `cd backend && uvicorn app.main:create_app --factory --reload`
+Option B — Remote: `BACKEND_URL=https://labels.example.test make -C frontend gen-client` (über Pangolin Header-Auth-Bypass)
 
 - [ ] **Step 2: oapi-codegen für Frontend**
 
 ```bash
 cd frontend
 make gen-client
+# Prüft openapi.json + generiert frontend/internal/api/<generated>.go
 ```
+
+Das Makefile-Target nutzt typischerweise:
+```makefile
+gen-client:
+	curl -sS $(BACKEND_URL)/openapi.json > openapi.json
+	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen \
+		-config oapi-codegen.yaml openapi.json
+```
+
+Verifikation: `frontend/openapi.json` sollte die 6 neuen `/api/v1/admin/printers/*` Endpoints enthalten.
 
 - [ ] **Step 3: Generated client tests bestehen**
 
@@ -652,7 +661,7 @@ for container in ["label-printer-hub-backend", "label-printer-hub-frontend"]:
 - [ ] **Step 2: SQLite-Backup via docker cp (LIVE-VERIFIZIERTE Pfade!)**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
+ssh -i ~/.ssh/id_ed25519_homelab_nodes root@docker-prod-node \
   "mkdir -p /docker/stacks/hangar-print-hub/backups && \
    docker stop label-printer-hub-backend && \
    cp /docker/stacks/hangar-print-hub/data/hub/printer-hub.db \
@@ -680,7 +689,7 @@ mcp__dockhand__deploy_stack(environmentId=10, name="label-printer-hub")
 - [ ] Backend `GET /healthz` 200
 - [ ] DB Backfill verifiziert (`docker exec label-printer-hub-backend python -c "..."` mit live DB-Pfad)
 - [ ] Backend `GET /api/v1/admin/printers` mit claude-automation-Header-Auth → 200 + Liste
-- [ ] Frontend `https://labels.strausmann.cloud/admin/printers/` Browser-Test (via Playwright oder manual SSO)
+- [ ] Frontend `https://labels.example.test/admin/printers/` Browser-Test (via Playwright oder manual SSO)
   - **Hinweis Pangolin Bug #3099:** Pangolin zeigt evtl Basic-Auth-Dialog statt SSO-Redirect. **Cancel im Dialog → SSO-Flow startet automatisch.** Nicht als Smoke-Fail markieren — bekannter Pangolin-Upstream-Bug, siehe `pangolin-resource-standard.md` R8.
 - [ ] Test-Drucker create/disable/enable via UI → Audit-Rows korrekt + redact_secrets greift
 - [ ] Hangar PrinterSync verifiziert (sieht nur enabled Drucker)

@@ -25,7 +25,7 @@ Nach 4 Round-Approvals der Spec hat die Implementation-Vorbereitung (Plan-Phase 
 |---|---|---|
 | Single-Container `print-hub-1` | **Two-Container:** `label-printer-hub-backend` (Python/FastAPI, Port 8000) + `label-printer-hub-frontend` (Go + chi + html/template + HTMX, Port 8080) | Backend bleibt JSON-only, Admin-UI verschiebt sich ins Frontend |
 | Stack `hangar-print-hub` | Stack `label-printer-hub` (Pfad `/docker/stacks/label-printer-hub/`) | Stack-Pfad anpassen |
-| Domain `print-hub.strausmann.cloud` | Domain `labels.strausmann.cloud` (Pangolin Resource `resourceId: 123`, `niceId: label-printer-hub`) | URL anpassen |
+| Domain `print-hub.example.test` | Domain `labels.example.test` (Pangolin Resource `resourceId: 123`, `niceId: label-printer-hub`) | URL anpassen |
 | Pangolin-Resource muss erstellt werden | Resource **existiert bereits vollständig** mit `headerAuthId: 8`, `sso: true`, `x-pangolin-token`-Trust-Header | Phase 0 verifiziert Bestand statt Resource neu zu erstellen |
 | printers.yaml-Pfad `/etc/printer-hub/printers.yaml` | Production-Pfad **`/etc/hub/printers.yaml`** (verifiziert via `docker exec label-printer-hub-backend env`) | Pfad korrigieren |
 | Watchtower-Pause für 1 Container | Watchtower-Pause für **beide** Container (backend + frontend) | Phase 8 anpassen |
@@ -36,7 +36,7 @@ Nach 4 Round-Approvals der Spec hat die Implementation-Vorbereitung (Plan-Phase 
 
 ```
 Browser
-  → Pangolin labels.strausmann.cloud (resourceId 123, SSO + Header-Auth-Bypass via headerAuthId 8)
+  → Pangolin labels.example.test (resourceId 123, SSO + Header-Auth-Bypass via headerAuthId 8)
   → Frontend (label-printer-hub-frontend:8080, Go/chi)
     → Liest Remote-User, X-Pangolin-Token aus Request
     → Reverse-Proxy für /api/*
@@ -59,7 +59,7 @@ Browser
 |---|---|---|
 | Stack-Pfad `label-printer-hub` | ✅ Sektion "Production Live-State" + Migration-Sektion |
 | Container `label-printer-hub-backend` / `-frontend` | ✅ Architektur-Diagramm Round-5 unten + Migration |
-| Domain `labels.strausmann.cloud` | ✅ Architektur-Diagramm + Authentifizierung |
+| Domain `labels.example.test` | ✅ Architektur-Diagramm + Authentifizierung |
 | `printers.yaml` Pfad `/etc/hub/printers.yaml` | ✅ Migration Phase 2 |
 | Pangolin Resource 123 bereits konfiguriert | ✅ Phase 6.1 wird Verifikation statt Anlage; Phase 6.2 ergänzt nur fehlende Labels |
 | Backend bleibt JSON-only | ✅ HTML-Routes-Sektion aus Round-4 wird in Round-5 ins Frontend verschoben |
@@ -73,7 +73,7 @@ Browser
 ```
                   ┌──────────────────────────────────────┐
                   │ Operator (Browser)                   │
-                  │   labels.strausmann.cloud            │
+                  │   labels.example.test            │
                   └──────────────┬───────────────────────┘
                                  │ HTTPS
                   ┌──────────────▼───────────────────────┐
@@ -229,7 +229,7 @@ req.Header.Set("X-Remote-User", remoteUser) // aus Pangolin Remote-User Header
 **Live-State-Bezug (NEU):**
 - Working-Branch von `origin/main` (Branch-Verifikation Phase 0)
 - Stack `label-printer-hub`, Container `label-printer-hub-backend` + `label-printer-hub-frontend`
-- Domain `labels.strausmann.cloud`
+- Domain `labels.example.test`
 - `/etc/hub/printers.yaml` Pfad (NICHT `/etc/printer-hub/printers.yaml`)
 - Pangolin Resource 123 (`niceId: label-printer-hub`) — Bestand-Verifikation, kein Neu-Anlegen
 - `headerAuthId 8` — Vault-Item-Name verifizieren, ggf. zu `Pangolin Header Auth - Label Printer Hub` umbenennen
@@ -293,7 +293,7 @@ mcp__dockhand__stop_container(environmentId=10, name="label-printer-hub-backend"
 # Alternativ: Container ist gestoppt → kein WAL-Replay nötig
 
 # Schritt 3: DB-Datei + WAL + SHM auf Host kopieren (alle 3 für sauberen Restore)
-ssh -i ~/.ssh/id_ed25519_homelab_nodes root@hhdocker03 \
+ssh -i ~/.ssh/id_ed25519_homelab_nodes root@docker-prod-node \
   "cp /docker/stacks/label/label-printer-hub/data/printer-hub.db \
       /docker/stacks/label/label-printer-hub/backups/printer-hub.db.bak-pre-124 && \
    cp /docker/stacks/label/label-printer-hub/data/printer-hub.db-wal \
@@ -375,7 +375,7 @@ r.Route("/admin", func(r chi.Router) {
 
 ```bash
 # Per Pangolin Header-Auth-Bypass (claude-automation)
-curl -X POST https://labels.strausmann.cloud/api/v1/admin/api-keys \
+curl -X POST https://labels.example.test/api/v1/admin/api-keys \
   -u "claude-automation:$(mcp__vaultwarden__get object=password id='Pangolin Header Auth - Label Printer Hub')" \
   -H "Content-Type: application/json" \
   -d '{
@@ -475,7 +475,7 @@ Nach 6 Spec-Review-Runden wurde entschieden die Iteration zu beenden und stattde
 | Mount-Map | `/docker/stacks/hangar-print-hub/data/hub → /data` + `/docker/stacks/hangar-print-hub/config/printers.yaml → /etc/hub/printers.yaml` | dito |
 | Backend-API-Prefix `/api/v1/admin/api-keys` | **`/api/admin/api-keys`** (KEIN v1-Prefix) | `git show origin/main:backend/app/api/routes/admin_api_keys.py \| grep prefix=` |
 | CSRF_KEY-Format "32-byte hex-string" | **Korrekt: `openssl rand -hex 32` gibt 64-Hex-Zeichen-String = 64 UTF-8-Bytes.** Validation muss `len(key) == 64` (Hex-Form) ODER `len(hex.Decode(key)) == 32` (Raw-Bytes-Form) prüfen. | siehe Plan-Phase 6.0 |
-| Bootstrap-curl via Pangolin Header-Auth-Bypass | **Funktioniert evtl nicht durch:** Backend's `/api/admin/api-keys` Auth-Pfad muss live verifiziert werden bevor curl-Bootstrap. Alternative: SSH-Direktaufruf auf hhdocker03 ins Backend-Container | siehe Plan-Phase 6.0 |
+| Bootstrap-curl via Pangolin Header-Auth-Bypass | **Funktioniert evtl nicht durch:** Backend's `/api/admin/api-keys` Auth-Pfad muss live verifiziert werden bevor curl-Bootstrap. Alternative: SSH-Direktaufruf auf docker-prod-node ins Backend-Container | siehe Plan-Phase 6.0 |
 | Stack-Name "label-printer-hub" als Watchtower-Scope | **Watchtower-Scope-Label ist `hangar-print-hub`** (vermutlich historisch) — Watchtower-Pause muss nach `containerName` filtern, nicht nach Scope | `docker inspect ... Config.Labels.com.centurylinklabs.watchtower.scope` |
 | Vault-Item-Collection für Phase 6.0 Items | **`Automation/Claude-Team`** (analog Pangolin-Resource-Standard) | pangolin-resource-standard.md |
 | Vault-Notes für headerAuthId 8 zeigt "Site 4" | **Soll "Site 6" (HHDOCKER03)** sein | network-Review Round-5 |
@@ -607,7 +607,7 @@ Hub nutzt bereits `app/auth/dependencies.py` mit konfigurierbaren Headers:
 
 ### JSON-API Auth-Pfad (C2-Entscheidung: selbe Pangolin-Resource)
 
-Die JSON-API `/api/v1/admin/printers` läuft **hinter derselben Pangolin-Resource** wie die HTML-UI (`print-hub.strausmann.cloud`).
+Die JSON-API `/api/v1/admin/printers` läuft **hinter derselben Pangolin-Resource** wie die HTML-UI (`print-hub.example.test`).
 
 Drei Auth-Pfade durch dieselbe Resource:
 
@@ -623,7 +623,7 @@ Header-Auth-Bypass wird **per Compose-Label** auf der Hub-Resource gesetzt (Pang
 labels:
   # Identität
   - "pangolin.public-resources.print-hub.name=Print Hub"
-  - "pangolin.public-resources.print-hub.full-domain=print-hub.strausmann.cloud"
+  - "pangolin.public-resources.print-hub.full-domain=print-hub.example.test"
   # Routing
   - "pangolin.public-resources.print-hub.protocol=http"
   - "pangolin.public-resources.print-hub.ssl=true"
@@ -648,7 +648,7 @@ labels:
 - Password: das 64-hex Secret (gleicher Wert wie im Compose-Label)
 - Collection: `Automation/Claude-Team`
 
-**Migration-Schritt:** Bestandsresource `print-hub.strausmann.cloud` muss vor Implementation auf diesen Standard gebracht werden — siehe `pangolin-resource-standard.md`. Bei der Implementierung ist zu prüfen, ob die Labels bereits gesetzt sind:
+**Migration-Schritt:** Bestandsresource `print-hub.example.test` muss vor Implementation auf diesen Standard gebracht werden — siehe `pangolin-resource-standard.md`. Bei der Implementierung ist zu prüfen, ob die Labels bereits gesetzt sind:
 
 ```python
 # Phase-0-Live-Check
@@ -1221,12 +1221,12 @@ Bei **leerer `printers`-Tabelle** (Fresh-Install): keinerlei Action. Hub startet
 
 ```bash
 # 1. SQLite-Backup (M1)
-ssh root@hhdocker03 \
+ssh root@docker-prod-node \
   "docker exec hangar-print-hub-print-hub-1 sqlite3 /data/printer-hub.db \
      '.backup /data/printer-hub.db.bak-pre-124'"
 
 # 2. Lokale Kopie ziehen (PBS sichert das verzeichnis sowieso, aber explizit)
-ssh root@hhdocker03 \
+ssh root@docker-prod-node \
   "docker cp hangar-print-hub-print-hub-1:/data/printer-hub.db.bak-pre-124 \
      /docker/stacks/hangar-print-hub/backups/"
 
@@ -1352,7 +1352,7 @@ Anschließend `printers.yaml` aus `/docker/stacks/hangar-print-hub/config/` lös
 
 ```bash
 # 1. SQLite Restore aus Backup
-ssh root@hhdocker03 \
+ssh root@docker-prod-node \
   "docker cp /docker/stacks/hangar-print-hub/backups/printer-hub.db.bak-pre-124 \
      hangar-print-hub-print-hub-1:/data/printer-hub.db"
 
@@ -1437,7 +1437,7 @@ CI-Gate per `pyproject.toml` Section `[tool.coverage.report]`:
 
 1. PR merge → CI green
 2. Phase-1+2 Migration (siehe oben)
-3. `curl -fsS https://print-hub.strausmann.cloud/healthz` → 200
+3. `curl -fsS https://print-hub.example.test/healthz` → 200
 4. Browser: `/admin/printers` → Liste der 2 Bestandsdrucker (brother-p750w, brother-ql820nwb)
 5. Edit `brother-p750w` Name testweise → Save → Reload → Wert übernommen
 6. Rollback Name-Edit
@@ -1474,7 +1474,7 @@ CI-Gate per `pyproject.toml` Section `[tool.coverage.report]`:
 - [ ] `derive_printer_id` ist 4-arg (timezone-aware created_at_utc); naive datetime → ValueError; 3-arg-Aufrufer im Code = 0 (`grep` verifiziert)
 - [ ] `/admin/printers/` erreichbar, SSO-protected via Pangolin, CSRF-protected (4 Test-Fälle grün)
 - [ ] Create/Edit/Disable/Enable funktionieren via Browser (HTML-Forms) + JSON-API (`/api/v1/admin/printers`, Basic-Auth `claude-automation`)
-- [ ] Pangolin-Resource `print-hub.strausmann.cloud` hat **alle Pflicht-Blueprint-Labels** (name, full-domain, protocol, ssl, target+healthcheck, auth.sso-enabled, auth.basic-auth) und Vault-Item `Pangolin Header Auth - Print Hub` mit `claude-automation`-Credentials
+- [ ] Pangolin-Resource `print-hub.example.test` hat **alle Pflicht-Blueprint-Labels** (name, full-domain, protocol, ssl, target+healthcheck, auth.sso-enabled, auth.basic-auth) und Vault-Item `Pangolin Header Auth - Print Hub` mit `claude-automation`-Credentials
 - [ ] **Bestand-Backfill verifiziert (H8b):** alle Bestandsdrucker haben `snmp.discover=false`, `snmp.community="public"`, `queue_timeout_s=30`, `cut_defaults_half_cut=0`
 - [ ] **PrintService enabled-Check (M8):** `submit_print_job` mit disabled-Drucker → `PrinterDisabledError`/409 + Test-Cases grün
 - [ ] **redact_secrets im eigenen Modul `app/services/audit_redaction.py`** (M9) mit ≥80% Coverage und 4 Test-Fällen
