@@ -1,6 +1,6 @@
 # Hub Printers YAML → DB + Admin-UI Design
 
-> **Status:** DRAFT Round-4 — Round-1 + Round-2 + Round-3-Review-Findings adressiert
+> **Status:** DRAFT Round-5 — Live-State-Reset (Two-Container) auf approved Round-4-Spec angewandt
 > **Issue:** [#124 — printers.yaml entfernen, Drucker in DB + Admin-UI](https://github.com/strausmann/Label-Printer-Hub/issues/124)
 > **PR:** [#125](https://github.com/strausmann/Label-Printer-Hub/pull/125)
 > **Related:** Hangar #110 (hardcoded Drucker-/Möbel-Spezifika entfernen)
@@ -10,6 +10,244 @@
 > - Round-1: ops, network, storage, code-quality (alle 4 NEEDS_FIXES)
 > - Round-2: ops APPROVE, network/storage/code-quality NEEDS_FIXES (3 HIGH + 4 MED + 4 LOW)
 > - Round-3: ops/network/storage APPROVE, code-quality NEEDS_FIXES (2 MED + 1 LOW: M11 LabelHubException, M12 Flattening, Engine-Snippet)
+> - Round-4: alle 4 Teams APPROVE
+> - **Round-5: Live-State-Reset auf approved Round-4-Spec angewandt (Two-Container-Architektur)**
+
+## Round-5 — Live-State-Reset (2026-06-19)
+
+Nach 4 Round-Approvals der Spec hat die Implementation-Vorbereitung (Plan-Phase 0 Live-Check) fundamentale Live-State-Diskrepanzen aufgedeckt. **Der Kern der Spec (YAML→DB Migration) bleibt korrekt.** Geändert wird ausschließlich der Live-State-Kontext (Stack-Name, Container, Domain, Admin-UI-Layer).
+
+### Production Live-State (Hub Image revision `2ff51d2c`, Branch `main`, verifiziert 2026-06-19)
+
+| Spec Round-1-4 Annahme | Production Live-State | Round-5 Anpassung |
+|---|---|---|
+| Single-Container `print-hub-1` | **Two-Container:** `label-printer-hub-backend` (Python/FastAPI, Port 8000) + `label-printer-hub-frontend` (Go + chi + html/template + HTMX, Port 8080) | Backend bleibt JSON-only, Admin-UI verschiebt sich ins Frontend |
+| Stack `hangar-print-hub` | Stack `label-printer-hub` (Pfad `/docker/stacks/label-printer-hub/`) | Stack-Pfad anpassen |
+| Domain `print-hub.strausmann.cloud` | Domain `labels.strausmann.cloud` (Pangolin Resource `resourceId: 123`, `niceId: label-printer-hub`) | URL anpassen |
+| Pangolin-Resource muss erstellt werden | Resource **existiert bereits vollständig** mit `headerAuthId: 8`, `sso: true`, `x-pangolin-token`-Trust-Header | Phase 0 verifiziert Bestand statt Resource neu zu erstellen |
+| printers.yaml-Pfad `/etc/printer-hub/printers.yaml` | Production-Pfad **`/etc/hub/printers.yaml`** (verifiziert via `docker exec label-printer-hub-backend env`) | Pfad korrigieren |
+| Watchtower-Pause für 1 Container | Watchtower-Pause für **beide** Container (backend + frontend) | Phase 8 anpassen |
+| Backend serviert HTML-Routes `/admin/printers/` mit Jinja2 + CSRF | **Backend serviert nur JSON.** HTML-Templates leben im **Frontend (Go)** unter `frontend/web/templates/`. Pattern verifiziert: `admin_api_keys.html` + `frontend/internal/handlers/admin_api_keys.go` existieren auf `main`. | Phase 3 wird Go-Frontend-Tasks: `admin_printers.go` Handler + 3 `admin_printers*.html` Templates analog API-Keys-Pattern |
+| CSRF-Middleware im Backend (Starlette-CSRF) | Backend hat KEIN HTML → braucht keine CSRF-Middleware. Frontend (Go) hat eigenen CSRF-Stack (`gorilla/csrf` o.ä. — Pattern aus existierenden Admin-Routes übernehmen) | CSRF-Tasks komplett ins Frontend verschieben |
+
+### Production-Auth-Flow (verifiziert)
+
+```
+Browser
+  → Pangolin labels.strausmann.cloud (resourceId 123, SSO + Header-Auth-Bypass via headerAuthId 8)
+  → Frontend (label-printer-hub-frontend:8080, Go/chi)
+    → Liest Remote-User, X-Pangolin-Token aus Request
+    → Reverse-Proxy für /api/*
+    → HTML-Templates für /, /printers/{id}, /jobs, /templates, /lookup, /admin/api-keys/
+  → Backend (label-printer-hub-backend:8000, FastAPI)
+    → JSON-API only
+    → Akzeptiert Service-Account-API-Key vom Frontend
+    → Akzeptiert Pangolin-SSO-Headers (Remote-User, X-Pangolin-Token-Trust)
+```
+
+### Auth-Konzept für /admin/printers (Round-5)
+
+- **Browser → Frontend:** Pangolin SSO (Remote-User + X-Pangolin-Token), Frontend-CSRF für POST-Forms.
+- **Frontend → Backend:** Service-Account-API-Key (Backend's existing `admin_api_keys` System) als `Authorization: Bearer` plus `X-Remote-User` Header mit dem Browser-User (für `updated_by` im Audit).
+- **Direct API-Tooling → Backend:** Pangolin Header-Auth-Bypass (`claude-automation`-Credentials aus `headerAuthId 8`-Vault-Item) ODER direkter Backend-API-Key.
+
+### Round-5 Findings Verarbeitung
+
+| Round-5 Aspekt | Status | Wo adressiert |
+|---|---|---|
+| Stack-Pfad `label-printer-hub` | ✅ Sektion "Production Live-State" + Migration-Sektion |
+| Container `label-printer-hub-backend` / `-frontend` | ✅ Architektur-Diagramm Round-5 unten + Migration |
+| Domain `labels.strausmann.cloud` | ✅ Architektur-Diagramm + Authentifizierung |
+| `printers.yaml` Pfad `/etc/hub/printers.yaml` | ✅ Migration Phase 2 |
+| Pangolin Resource 123 bereits konfiguriert | ✅ Phase 6.1 wird Verifikation statt Anlage; Phase 6.2 ergänzt nur fehlende Labels |
+| Backend bleibt JSON-only | ✅ HTML-Routes-Sektion aus Round-4 wird in Round-5 ins Frontend verschoben |
+| Frontend (Go) bekommt `admin_printers.go` + 3 Templates | ✅ Neue Sektion "Frontend (Go) Round-5" |
+| Backend CSRF-Middleware ENTFÄLLT | ✅ CSRF-Tasks aus Plan-Phase 3 in Plan-Phase 3-Frontend verschieben |
+| Watchtower-Pause für beide Container | ✅ Migration Phase A.2 |
+| Branch-Strategie | ✅ Working-Branch von `origin/main` (Production) statt `main`-Fork |
+
+### Round-5 Konzept-Korrektur — Architektur-Diagramm
+
+```
+                  ┌──────────────────────────────────────┐
+                  │ Operator (Browser)                   │
+                  │   labels.strausmann.cloud            │
+                  └──────────────┬───────────────────────┘
+                                 │ HTTPS
+                  ┌──────────────▼───────────────────────┐
+                  │ Pangolin Edge (resourceId 123)       │
+                  │   SSO: Remote-User                   │
+                  │   X-Pangolin-Token Trust-Header      │
+                  │   Header-Auth-Bypass: headerAuthId 8 │
+                  └──────────────┬───────────────────────┘
+                                 │
+                  ┌──────────────▼───────────────────────┐
+                  │ Frontend                             │
+                  │   label-printer-hub-frontend:8080    │
+                  │   Go 1.24 + chi v5 + html/template   │
+                  │   + HTMX + Tailwind                  │
+                  │                                      │
+                  │   NEUE HTML-Routes (Issue #124):     │
+                  │     GET  /admin/printers/            │
+                  │     GET  /admin/printers/new         │
+                  │     POST /admin/printers             │
+                  │     GET  /admin/printers/{slug}/edit │
+                  │     POST /admin/printers/{slug}      │
+                  │     GET  /admin/printers/{slug}/disable │
+                  │     POST /admin/printers/{slug}/disable │
+                  │     POST /admin/printers/{slug}/enable  │
+                  │                                      │
+                  │   NEUE Templates (frontend/web/templates/): │
+                  │     admin_printers.html              │
+                  │     admin_printers_form.html         │
+                  │     admin_printers_confirm_disable.html │
+                  │                                      │
+                  │   NEUE Go-Handler (frontend/internal/handlers/): │
+                  │     admin_printers.go (analog admin_api_keys.go) │
+                  │   CSRF: gorilla/csrf-Wrapper analog existing Admin-Routes │
+                  └──────────────┬───────────────────────┘
+                                 │ HTTP intern (BACKEND_URL=http://backend:8000)
+                                 │ Authorization: Bearer <service-account-key>
+                                 │ X-Remote-User: <browser-sso-user>
+                  ┌──────────────▼───────────────────────┐
+                  │ Backend                              │
+                  │   label-printer-hub-backend:8000     │
+                  │   Python 3.12 + FastAPI              │
+                  │   JSON-ONLY (kein HTML, kein CSRF)   │
+                  │                                      │
+                  │   Existing Endpoints unverändert:    │
+                  │     GET /api/printers (NEUER FILTER) │
+                  │     /api/printers/{id}/{status,...}  │
+                  │     /api/admin/api-keys/...          │
+                  │                                      │
+                  │   NEUE JSON-API (Issue #124):        │
+                  │     GET    /api/v1/admin/printers    │
+                  │     POST   /api/v1/admin/printers    │
+                  │     GET    /api/v1/admin/printers/{slug}│
+                  │     PUT    /api/v1/admin/printers/{slug}│
+                  │     POST   /api/v1/admin/printers/{slug}/disable│
+                  │     POST   /api/v1/admin/printers/{slug}/enable │
+                  │                                      │
+                  │   `updated_by`-Quelle: X-Remote-User │
+                  │   (gesetzt vom Frontend), Fallback   │
+                  │   auf Auth-Subject (API-Key Owner)   │
+                  └──────────────┬───────────────────────┘
+                                 │
+                  ┌──────────────▼───────────────────────┐
+                  │ SQLite /data/printer-hub.db (WAL)    │
+                  │   printers       (erweitert)         │
+                  │   printers_audit (neu)               │
+                  └──────────────────────────────────────┘
+```
+
+### Was unverändert aus Round-4 bleibt
+
+Der gesamte technische Kern bleibt valid:
+- PrinterAdminService + CRUD + Soft-Delete
+- Pydantic-Schemas mit verschachteltem SNMP
+- Audit-Tabelle + Redaction (`audit_redaction.py`)
+- `derive_printer_id` 4-arg mit timezone-aware created_at_utc
+- PrinterDisabledError aus PrinterError abgeleitet, 409-Mapping
+- Alembic-Migration: Schema-Erweiterung + Backfill
+- SQLite SERIALIZABLE + WAL Engine-Setup
+- Flattening-Helper `_payload_to_row` / `_apply_update_patch` / `_row_to_audit_view`
+- `GET /api/printers` enabled-Filter
+- 5 Test-Files Removal
+
+### Was sich konkret ändert (Sub-Verweise auf Sektionen unten)
+
+1. **Sektion "Authentifizierung":** Stack-Name + Domain + Container-Namen korrigiert, CSRF-Mechanismus verschoben ins Frontend.
+2. **Sektion "Architektur":** ASCII-Diagramm wird durch obiges Round-5-Diagramm ersetzt (s.o.).
+3. **Sektion "Web-Routes (HTML)" + "Templates":** verschoben in neuen Frontend-Abschnitt (siehe unten).
+4. **Sektion "Migration für Bestand":** Stack-Name `label-printer-hub`, Container-Name `label-printer-hub-backend`, printers.yaml-Pfad `/etc/hub/printers.yaml`, Watchtower-Pause für beide Container.
+5. **Sektion "Pangolin-Resource":** Phase 6.1 Vault-Item-Verifikation statt Neuanlage; Phase 6.2 ergänzt nur fehlende Labels (Healthcheck.hostname wenn nicht gesetzt).
+6. **Sektion "Akzeptanzkriterien":** ergänzt um Frontend-Tasks, Backend-HTML-Tasks entfallen.
+
+### Frontend (Go) Round-5 — Neue Komponenten
+
+Pattern verifiziert anhand `frontend/internal/handlers/admin_api_keys.go` auf Branch `main`:
+
+**Dateien (neu):**
+
+- `frontend/internal/handlers/admin_printers.go` — 8 Handler analog AdminAPIKeysList/Create/Detail
+- `frontend/web/templates/admin_printers.html` — Liste-Template (Pattern: `admin_api_keys.html`)
+- `frontend/web/templates/admin_printers_form.html` — Create/Edit-Form (Pattern: `admin_api_keys_create.html`)
+- `frontend/web/templates/admin_printers_confirm_disable.html` — Disable-Confirm-Page
+- `frontend/internal/handlers/admin_printers_test.go` — Go-Tests mit `httptest`
+
+**Routing in `cmd/server/main.go`:**
+
+```go
+r.Route("/admin/printers", func(r chi.Router) {
+    r.Use(csrfMW)                                    // existing CSRF-Middleware
+    r.Get("/", h.AdminPrintersList)
+    r.Get("/new", h.AdminPrintersNewForm)
+    r.Post("/", h.AdminPrintersCreate)
+    r.Get("/{slug}/edit", h.AdminPrintersEditForm)
+    r.Post("/{slug}", h.AdminPrintersUpdate)
+    r.Get("/{slug}/disable", h.AdminPrintersDisableConfirm)
+    r.Post("/{slug}/disable", h.AdminPrintersDisable)
+    r.Post("/{slug}/enable", h.AdminPrintersEnable)
+})
+```
+
+**oapi-codegen Re-Generation:**
+
+Backend exportiert `openapi.json`. Nach Backend-Implementation der neuen `/api/v1/admin/printers` Endpoints muss Frontend `make gen-client` ausführen damit der typed Go-Client die neuen Methoden enthält. Implementer-Reihenfolge: **Backend zuerst**, dann Frontend.
+
+**Frontend → Backend Auth:**
+
+```go
+// frontend/internal/handlers/admin_printers.go
+req.Header.Set("Authorization", "Bearer " + h.config.BackendServiceAccountKey)
+req.Header.Set("X-Remote-User", remoteUser) // aus Pangolin Remote-User Header
+```
+
+`BackendServiceAccountKey` ist eine neue Env-Variable im Frontend-Container — Wert ist ein Admin-Scope-API-Key aus dem Backend's `admin_api_keys` System. Setup in Phase 6.0.
+
+### Branch-Strategie Round-5
+
+- **Working-Branch von `origin/main`** ausgehend (nicht `feat/first-print` — das ist ein Skeleton-Branch ohne Bezug zu Production).
+- **Branch-Name:** `feat/issue-124-printers-yaml-to-db` (von `main` aus geforked).
+- **PR-Strategie:** Nach Round-5-Approval neuen PR gegen `main`. PR #125 (mit Spec/Plan-Commits) bleibt bestehen oder wird gemerged-into-main, je nach Workflow-Wunsch.
+
+### Akzeptanzkriterien-Diff Round-5
+
+**Backend-Bezug:**
+- "Backend bleibt JSON-only" — keine HTML-Routes, keine Jinja2-Templates, keine CSRF-Middleware
+- Backend exportiert aktualisiertes `openapi.json` mit den 6 neuen Admin-Endpoints
+
+**Frontend-Bezug (NEU):**
+- 3 Templates erstellt (`admin_printers.html`, `admin_printers_form.html`, `admin_printers_confirm_disable.html`)
+- 8 Go-Handler in `admin_printers.go` (Pattern: `admin_api_keys.go`)
+- Chi-Router-Routes für `/admin/printers/*` registriert mit existing CSRF-Middleware
+- `make gen-client` aktualisiert oapi-codegen-Client nach Backend-Update
+- Go-Tests: Handler + Template-Smoke-Tests, Coverage ≥80%
+
+**Live-State-Bezug (NEU):**
+- Working-Branch von `origin/main` (Branch-Verifikation Phase 0)
+- Stack `label-printer-hub`, Container `label-printer-hub-backend` + `label-printer-hub-frontend`
+- Domain `labels.strausmann.cloud`
+- `/etc/hub/printers.yaml` Pfad (NICHT `/etc/printer-hub/printers.yaml`)
+- Pangolin Resource 123 (`niceId: label-printer-hub`) — Bestand-Verifikation, kein Neu-Anlegen
+- `headerAuthId 8` — Vault-Item-Name verifizieren, ggf. zu `Pangolin Header Auth - Label Printer Hub` umbenennen
+- Watchtower-Pause für BEIDE Container (backend + frontend) vor Deploy
+
+### Auswirkung auf Plan
+
+Der Plan (Round-4 final) muss in Round-5 angepasst werden:
+- **Phase 3 (Backend HTML-Routes + Templates)** → **gestrichen**, ersetzt durch neue **Phase 3-Frontend (Go-Handler + Templates + Routing)**
+- **Task 3.1 CSRF-Middleware** → **gestrichen**, Frontend hat existing CSRF
+- **Phase 8** angepasst für Stack-Namen + beide Container Watchtower-Pause
+- **Akzeptanzkriterien-Liste** auf 24+ Punkte erweitert (Backend bleibt; Frontend kommt dazu)
+
+Plan-Round-5 wird nach Spec-Round-5-Approval geschrieben.
+
+---
+
+## Original Spec Round-1 bis Round-4 (Kern bleibt valid)
+
+
 
 ## Round-2-Findings Verarbeitung (NEU)
 

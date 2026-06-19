@@ -1,6 +1,18 @@
 # Hub Printers ENV → DB + Admin-UI Design (Live-State-Reset)
 
-> **Status:** DRAFT Round-1 — Spec-Reset basierend auf Live-State
+> **⚠ STATUS: VERWORFEN (2026-06-19 nachmittags)**
+>
+> Diese Spec war auf einer Fehl-Annahme basierend: ich habe aus einer **verwaisten alten `.env`-Datei** auf `/docker/stacks/label-printer-hub/.env` geschlossen dass das Backend ENV-VARS für Drucker liest. **Tatsächlich liest Production aus `printers.yaml`** unter `/etc/hub/printers.yaml` im Container. Die `.env`-Einträge `PRINTER_HUB_PT750W_HOST` etc. sind tote Reste aus einem vorherigen Refactor; das aktuelle Backend ignoriert sie komplett.
+>
+> Verifikation: `docker exec label-printer-hub-backend env | grep PRINTER` zeigt `PRINTER_HUB_PRINTERS_CONFIG=/etc/hub/printers.yaml` — kein `PRINTER_HUB_PT750W_HOST`.
+>
+> Production-Code: Image `revision: 2ff51d2c61dcea87b89d94762aaa680ddac61909` (Branch `main`), Commit-Message: "Drucker werden jetzt über printers.yaml konfiguriert."
+>
+> **Korrekte Spec:** [2026-06-14-printers-yaml-to-db-design.md](2026-06-14-printers-yaml-to-db-design.md) **Round-5** (YAML→DB-Kern bleibt, Live-State auf Two-Container angepasst).
+>
+> Diese Datei bleibt im Repo als Lehrstück: aus alter `.env` schliessen ohne Live-Verifikation am laufenden Container ist eine Falle.
+
+> **Status:** ~~DRAFT Round-1 — Spec-Reset basierend auf Live-State~~ → **VERWORFEN, siehe Hinweis oben**
 > **Issue:** [#124 — printers.yaml entfernen, Drucker in DB + Admin-UI](https://github.com/strausmann/Label-Printer-Hub/issues/124)
 > **Vorgänger:** [2026-06-14-printers-yaml-to-db-design.md](2026-06-14-printers-yaml-to-db-design.md) — **obsolet** (auf toter Architektur-Annahme basierend)
 > **PR:** [#125](https://github.com/strausmann/Label-Printer-Hub/pull/125)
