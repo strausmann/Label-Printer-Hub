@@ -169,44 +169,22 @@ async def api_client_with_broken_db(tmp_path):
     await eng.dispose()
 
 
-# Minimale printers.yaml-Konfiguration für Integration-Tests.
-# Wird als _PrinterConfigLoaderResult in _mock_backend_env gepatcht.
-_INTEGRATION_TEST_PRINTER_CONFIG_YAML = """\
-schema_version: 1
-printers:
-  - slug: mock-pt-p750w
-    name: Mock PT-P750W
-    backend: ptouch
-    model: PT-P750W
-    host: ''
-    port: 9100
-    snmp:
-      discover: false
-      community: public
-    cut_defaults:
-      half_cut: false
-      cut_at_end: true
-"""
-
-
 @pytest.fixture(autouse=True)
-def _mock_backend_env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+def _mock_backend_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure integration tests use the mock backend and a known model.
 
-    Phase 1i H (Task 7b): _build_backend_from_config wurde entfernt.
-    BackendRouter._build_one() wird jetzt gepatcht um MockPrinterBackend
-    zurückzugeben — leerem Host würde PTouchBackend ValueError werfen.
+    Phase 5 (#124): printers.yaml und PRINTER_HUB_PRINTERS_CONFIG entfernt.
+    Der Lifespan lädt Drucker jetzt aus der DB — die _temp_db_engine-Fixture
+    sorgt für eine leere SQLite-DB (kein Printer-Row). BackendRouter._build_one
+    wird auf MockPrinterBackend gepatcht damit Tests die BackendRouter mocken
+    weiterhin funktionieren.
 
-    Eine minimale printers.yaml wird in tmp_path geschrieben und
-    PRINTER_HUB_PRINTERS_CONFIG darauf gesetzt.
+    Phase 1i H (Task 7b): _build_backend_from_config wurde entfernt.
+    BackendRouter._build_one() wird gepatcht um MockPrinterBackend
+    zurückzugeben — leerem Host würde PTouchBackend ValueError werfen.
     """
     from app.printer_backends.mock_backend import MockPrinterBackend
     from app.services.backend_router import BackendRouter
-
-    # printers.yaml in tmp_path schreiben
-    _mock_printers_yaml = tmp_path / "printers.yaml"
-    _mock_printers_yaml.write_text(_INTEGRATION_TEST_PRINTER_CONFIG_YAML)
-    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", str(_mock_printers_yaml))
 
     # BackendRouter._build_one auf Mock-Backend patchen (leerem Host
     # würde PTouchBackend ValueError werfen).

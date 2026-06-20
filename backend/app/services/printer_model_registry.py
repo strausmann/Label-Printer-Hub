@@ -17,6 +17,7 @@ Discovery-Strategie (brother_ql):
   1. brother_ql.models.MODELS (dict) — Spec-Pfad, noch nicht in brother_ql 0.9.4
   2. brother_ql.models.ALL_MODELS (list[Model]) — stabiler API-Pfad in 0.9.4
 """
+
 from __future__ import annotations
 
 import inspect

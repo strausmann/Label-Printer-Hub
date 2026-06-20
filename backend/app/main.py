@@ -94,7 +94,6 @@ from app.db.engine import async_session, engine
 from app.db.lifespan import (
     ensure_printer_state,
     run_migrations,
-    upsert_runtime_printers,
     verify_alembic_at_head,
 )
 from app.db.session import get_session
@@ -102,9 +101,8 @@ from app.integrations.registry import IntegrationRegistry
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
-from app.schemas.printer_config import PrinterYAMLConfig
 from app.schemas.readiness import ReadinessResponse
-from app.services.backend_router import BackendRouter
+from app.services.backend_router import BackendRouter, PrinterYAMLConfig
 from app.services.cleanup_task import CleanupTask
 from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
@@ -112,7 +110,6 @@ from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue
 from app.services.print_service import PrintService
-from app.services.printer_config_loader import PrinterConfigLoader
 from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.status_probe_producer import StatusProbeProducer
 from app.services.producers.tape_change_producer import TapeChangeProducer
@@ -184,6 +181,45 @@ def _pinned_openapi_schema(app: FastAPI) -> Any:
     return app.openapi_schema
 
 
+def _build_configs_from_db(
+    db_printers: list[Any],
+) -> list[PrinterYAMLConfig]:
+    """Konvertiert DB-Printer-Rows in PrinterYAMLConfig-Laufzeitobjekte.
+
+    Phase 5 (#124): Ersetzt PrinterConfigLoader.load_file() + .all().
+    Die DB ist nun alleinige Source of Truth für Drucker-Konfiguration.
+    Drucker mit fehlendem/leerem connection-JSON werden mit Defaults gebaut.
+    """
+    from app.services.backend_router import CutDefaults, QueueConfig, SNMPConfig
+
+    configs: list[PrinterYAMLConfig] = []
+    for p in db_printers:
+        conn: dict[str, Any] = p.connection or {}
+        snmp_raw: dict[str, Any] = conn.get("snmp", {})
+        snmp = SNMPConfig(
+            discover=snmp_raw.get("discover", False),
+            community=snmp_raw.get("community", "public"),
+        )
+        queue = QueueConfig(timeout_s=getattr(p, "queue_timeout_s", 30))
+        cut = CutDefaults(
+            half_cut=getattr(p, "cut_defaults_half_cut", False),
+            cut_at_end=True,
+        )
+        cfg = PrinterYAMLConfig.model_construct(
+            slug=p.slug,
+            name=p.name,
+            backend=p.backend,
+            model=p.model,
+            host=conn.get("host", ""),
+            port=int(conn.get("port", 9100)),
+            snmp=snmp,
+            queue=queue,
+            cut_defaults=cut,
+        )
+        configs.append(cfg)
+    return configs
+
+
 async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
     """SNMP discovery first, fall back to printer_cfg.model on failure.
 
@@ -243,17 +279,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
 
-    # Phase 1i CA-1: Drucker-Konfiguration aus printers.yaml laden.
-    # Dies ersetzt die entfernten Settings-Felder (printer_model, pt750w_host, …).
-    # Der Loader ist ein Klassenattribut-Cache — load_file() befüllt ihn atomic.
-    _printers_config_path = Path(settings.printers_config)
-    PrinterConfigLoader.load_file(_printers_config_path)
-    _printer_configs = PrinterConfigLoader.all()
-    if not _printer_configs:
-        raise RuntimeError(
-            f"printers.yaml unter {_printers_config_path} enthält keine Drucker. "
-            "Mindestens ein Drucker-Eintrag ist erforderlich."
-        )
     # --- DB startup: migrations first, then in-memory state, then DB writes ---
     await run_migrations()
     await verify_alembic_at_head(settings)
@@ -272,12 +297,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await asyncio.to_thread(ModelRegistry.ensure_discovered)
 
     # 3. DB-bound init — plugin registry is populated.
+    # Phase 5 (#124): Drucker werden aus der DB geladen (nicht mehr aus printers.yaml).
+    # Beim ersten Start (leere printers-Tabelle) ist _printer_configs leer und der
+    # Hub startet ohne Drucker-Wiring (Operator legt Drucker via Admin-API an).
     async with async_session() as s:
-        # Phase 2: recover_inflight_jobs() entfernt (Spec R1-C1) —
-        # PrintQueue.start() übernimmt Recovery mit korrekter QUEUED/PRINTING-Differenzierung.
-        db_printer_ids = await upsert_runtime_printers(s, _printer_configs)
+        from sqlalchemy import select as _select
+
+        from app.models.printer import Printer as _Printer
+
+        from sqlmodel import col as _col
+
+        _db_printers = list(
+            (await s.execute(_select(_Printer).where(_col(_Printer.enabled).is_(True)))).scalars()
+        )
+        _printer_configs = _build_configs_from_db(_db_printers)
+        db_printer_ids = [p.id for p in _db_printers]
         await ensure_printer_state(s)
-        # upsert_runtime_printers already commits; ensure_printer_state may need commit
         await s.commit()
     # -------------------------------------------------------------------------
 
@@ -395,12 +430,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Backward-Compat: app.state.print_service und app.state.printer_id zeigen
     # auf den ersten konfigurierten Drucker — für Pfade die noch nicht auf
     # service_for() migriert sind (z.B. POST /print Einzel-Druck-Route).
-    first_cfg = _printer_configs[0]
-    first_printer_id = slug_to_printer_id[first_cfg.slug]
-    app.state.printer_id = first_printer_id
-    app.state.printer_host = first_cfg.host or ""
-    app.state.printer_snmp_community = first_cfg.snmp.community
-    app.state.print_service = backend_router.service_for(first_cfg.slug)
+    # Phase 5 (#124): leere printers-Tabelle (Fresh-Install) → kein Printer-Wiring.
+    # Hub startet sauber; GET /api/printers liefert [] bis Operator Drucker anlegt.
+    if _printer_configs:
+        first_cfg = _printer_configs[0]
+        first_printer_id = slug_to_printer_id[first_cfg.slug]
+        app.state.printer_id = first_printer_id
+        app.state.printer_host = first_cfg.host or ""
+        app.state.printer_snmp_community = first_cfg.snmp.community
+        app.state.print_service = backend_router.service_for(first_cfg.slug)
+    else:
+        app.state.printer_id = None
+        app.state.printer_host = ""
+        app.state.printer_snmp_community = "public"
+        app.state.print_service = None
 
     try:
         yield

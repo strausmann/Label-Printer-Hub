@@ -3,8 +3,12 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from app.schemas.printer_config import CutDefaults, PrinterYAMLConfig
-from app.services.backend_router import BackendRouter, UnknownBackendError
+from app.services.backend_router import (
+    BackendRouter,
+    CutDefaults,
+    PrinterYAMLConfig,
+    UnknownBackendError,
+)
 
 
 def _pt(slug: str = "brother-p750w") -> PrinterYAMLConfig:

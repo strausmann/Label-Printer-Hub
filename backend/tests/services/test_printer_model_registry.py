@@ -8,6 +8,7 @@ Strategie:
 - Fallback-Verhalten wird über Monkeypatching isoliert getestet.
 - PrinterModel ist ein frozen dataclass — Mutation muss FrozenInstanceError werfen.
 """
+
 from __future__ import annotations
 
 import sys

@@ -6,7 +6,6 @@ Alle IPs aus RFC-5737 Bereich (192.0.2.x) — Repo-Konvention.
 
 from __future__ import annotations
 
-import pathlib
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -14,9 +13,6 @@ from uuid import UUID, uuid4
 import app.models  # noqa: F401 — registriert alle Models mit SQLModel.metadata
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlmodel import SQLModel
-
 from app.schemas.printer_admin import (
     PrinterConnection,
     PrinterCreatePayload,
@@ -36,7 +32,8 @@ from app.services.printer_admin_service import (
     _payload_to_row,
     _row_to_audit_view,
 )
-
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlmodel import SQLModel
 
 # ---------------------------------------------------------------------------
 # Test-Fixtures
@@ -105,7 +102,12 @@ def _make_row(
         "slug": slug,
         "model": model,
         "backend": backend,
-        "connection": connection or {"host": "192.0.2.10", "port": 9100, "snmp": {"discover": False, "community": "public"}},
+        "connection": connection
+        or {
+            "host": "192.0.2.10",
+            "port": 9100,
+            "snmp": {"discover": False, "community": "public"},
+        },
         "queue_timeout_s": queue_timeout_s,
         "cut_defaults_half_cut": cut_defaults_half_cut,
         "enabled": enabled,
@@ -161,7 +163,9 @@ class TestPayloadToRow:
         assert row["id"] == printer_id
 
     def test_core_fields_preserved(self) -> None:
-        payload = _make_payload(name="Mein Drucker", slug="mein-drucker", model="QL-800", backend="brother_ql")
+        payload = _make_payload(
+            name="Mein Drucker", slug="mein-drucker", model="QL-800", backend="brother_ql"
+        )
         printer_id = uuid4()
         created_at = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
         row = _payload_to_row(payload, printer_id, created_at)
@@ -187,7 +191,13 @@ class TestApplyUpdatePatch:
         assert changes == {}
 
     def test_connection_replaced_atomically(self) -> None:
-        row = _make_row(connection={"host": "192.0.2.1", "port": 9100, "snmp": {"discover": False, "community": "old"}})
+        row = _make_row(
+            connection={
+                "host": "192.0.2.1",
+                "port": 9100,
+                "snmp": {"discover": False, "community": "old"},
+            }
+        )
         new_connection = PrinterConnection(
             host="192.0.2.2",
             port=9200,
@@ -283,8 +293,8 @@ class TestCreatePrinter:
         assert printer.name == "Test Drucker"
 
     async def test_happy_path_creates_audit_row(self, db_session) -> None:
-        from sqlmodel import select
         from app.models.printer import PrinterAudit
+        from sqlmodel import select
 
         svc = PrinterAdminService(db_session, audit_user="testuser")
         payload = _make_payload()
@@ -339,8 +349,8 @@ class TestUpdatePrinter:
         assert updated.name == "Neuer Name"
 
     async def test_update_creates_audit_row(self, db_session) -> None:
-        from sqlmodel import select
         from app.models.printer import PrinterAudit
+        from sqlmodel import select
 
         svc = PrinterAdminService(db_session, audit_user="testuser")
         printer = await svc.create_printer(_make_payload(slug="audited-update"))
@@ -391,8 +401,8 @@ class TestDisablePrinter:
         assert disabled.enabled is False
 
     async def test_happy_path_creates_audit(self, db_session) -> None:
-        from sqlmodel import select
         from app.models.printer import PrinterAudit
+        from sqlmodel import select
 
         svc = PrinterAdminService(db_session, audit_user="testuser")
         printer = await svc.create_printer(_make_payload(slug="disable-audit"))
@@ -429,8 +439,8 @@ class TestEnablePrinter:
         assert enabled.enabled is True
 
     async def test_enable_creates_audit(self, db_session) -> None:
-        from sqlmodel import select
         from app.models.printer import PrinterAudit
+        from sqlmodel import select
 
         svc = PrinterAdminService(db_session, audit_user="testuser")
         printer = await svc.create_printer(_make_payload(slug="enable-audit"))

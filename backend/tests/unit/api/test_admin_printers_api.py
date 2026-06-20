@@ -13,18 +13,16 @@ from uuid import uuid4
 
 import app.models  # noqa: F401 — registriert alle Models mit SQLModel.metadata
 import pytest
-from app.api.routes.admin_printers_api import router as admin_printers_router  # noqa: F401
+from app.api.routes.admin_printers_api import router as admin_printers_router
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_admin
+from app.db.engine import _apply_pragmas
+from app.db.session import get_session
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
-
-from app.auth.dependencies import AuthContext
-from app.auth.scope_deps import require_admin
-from app.db.engine import _apply_pragmas
-from app.db.session import get_session
-
 
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen
