@@ -174,7 +174,7 @@ git commit -m "docs(#124): Phase 0 Live-State sammeln (alle Werte als ground tru
 
 - [ ] Step 1: failing-Test schreiben (PRAGMA `journal_mode=WAL` + `foreign_keys=1`)
 - [ ] Step 2: Tests laufen — FAIL
-- [ ] Step 3: `engine.py` anpassen: `isolation_level="SERIALIZABLE"` + `@event.listens_for("connect")` Listener
+- [ ] Step 3: `engine.py` anpassen — **NUR `isolation_level="SERIALIZABLE"` an `create_async_engine()` ergänzen**. Existing `_apply_pragmas`-Connect-Listener setzt bereits `journal_mode=WAL` + `synchronous=NORMAL` + `foreign_keys=ON` + `busy_timeout=5000`. **KEINEN zweiten Listener erfinden** — sonst doppelte DB-Calls pro Connection (Gemini-Round-8-Finding). Bei Bedarf einen fehlenden PRAGMA in den existing `_apply_pragmas` aufnehmen.
 - [ ] Step 4: Tests grün
 - [ ] Step 5: Volle Test-Suite — keine Regressions
 - [ ] Step 6: Commit `feat(#124): SQLite SERIALIZABLE + WAL Connect-Listener`
@@ -344,7 +344,7 @@ Korrigiert: Bootstrap nutzt das echte Pattern aus `admin_api_keys_routes.py` (ex
 Code-Quality-Review Round-6 hat aufgezeigt: existing Helper `generate_api_key()` aus `app/auth/key_generator.py` MUSS genutzt werden, nicht manual key-generation. Sonst falsches Format (`lh_` statt `lh_pat_`, 11-char statt 16-char Prefix) → stille 401-Fehler bei jeder Authentifizierung.
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_homelab_nodes root@docker-prod-node \
+ssh -i ~/.ssh/id_ed25519_placeholder root@prod-node.example.test \
   "docker exec label-printer-hub-backend python -c \"
 import asyncio
 from datetime import datetime, timezone
@@ -661,7 +661,7 @@ for container in ["label-printer-hub-backend", "label-printer-hub-frontend"]:
 - [ ] **Step 2: SQLite-Backup via docker cp (LIVE-VERIFIZIERTE Pfade!)**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519_homelab_nodes root@docker-prod-node \
+ssh -i ~/.ssh/id_ed25519_placeholder root@prod-node.example.test \
   "mkdir -p /docker/stacks/hangar-print-hub/backups && \
    docker stop label-printer-hub-backend && \
    cp /docker/stacks/hangar-print-hub/data/hub/printer-hub.db \

@@ -293,7 +293,7 @@ mcp__dockhand__stop_container(environmentId=10, name="label-printer-hub-backend"
 # Alternativ: Container ist gestoppt → kein WAL-Replay nötig
 
 # Schritt 3: DB-Datei + WAL + SHM auf Host kopieren (alle 3 für sauberen Restore)
-ssh -i ~/.ssh/id_ed25519_homelab_nodes root@docker-prod-node \
+ssh -i ~/.ssh/id_ed25519_placeholder root@prod-node.example.test \
   "cp /docker/stacks/label/label-printer-hub/data/printer-hub.db \
       /docker/stacks/label/label-printer-hub/backups/printer-hub.db.bak-pre-124 && \
    cp /docker/stacks/label/label-printer-hub/data/printer-hub.db-wal \
@@ -331,7 +331,7 @@ import "github.com/gorilla/csrf"
 
 // In main():
 csrfKey := []byte(os.Getenv("CSRF_KEY"))  // 32-byte hex-string, neu in Frontend-ENV
-if len(csrfKey) != 32 {
+if len(csrfKey) != 64 { // 32 raw bytes = 64 hex chars
     log.Fatal("CSRF_KEY env-var must be 32 bytes")
 }
 csrfMW := csrf.Protect(
@@ -475,7 +475,7 @@ Nach 6 Spec-Review-Runden wurde entschieden die Iteration zu beenden und stattde
 | Mount-Map | `/docker/stacks/hangar-print-hub/data/hub → /data` + `/docker/stacks/hangar-print-hub/config/printers.yaml → /etc/hub/printers.yaml` | dito |
 | Backend-API-Prefix `/api/v1/admin/api-keys` | **`/api/admin/api-keys`** (KEIN v1-Prefix) | `git show origin/main:backend/app/api/routes/admin_api_keys.py \| grep prefix=` |
 | CSRF_KEY-Format "32-byte hex-string" | **Korrekt: `openssl rand -hex 32` gibt 64-Hex-Zeichen-String = 64 UTF-8-Bytes.** Validation muss `len(key) == 64` (Hex-Form) ODER `len(hex.Decode(key)) == 32` (Raw-Bytes-Form) prüfen. | siehe Plan-Phase 6.0 |
-| Bootstrap-curl via Pangolin Header-Auth-Bypass | **Funktioniert evtl nicht durch:** Backend's `/api/admin/api-keys` Auth-Pfad muss live verifiziert werden bevor curl-Bootstrap. Alternative: SSH-Direktaufruf auf docker-prod-node ins Backend-Container | siehe Plan-Phase 6.0 |
+| Bootstrap-curl via Pangolin Header-Auth-Bypass | **Funktioniert evtl nicht durch:** Backend's `/api/admin/api-keys` Auth-Pfad muss live verifiziert werden bevor curl-Bootstrap. Alternative: SSH-Direktaufruf auf prod-node.example.test ins Backend-Container | siehe Plan-Phase 6.0 |
 | Stack-Name "label-printer-hub" als Watchtower-Scope | **Watchtower-Scope-Label ist `hangar-print-hub`** (vermutlich historisch) — Watchtower-Pause muss nach `containerName` filtern, nicht nach Scope | `docker inspect ... Config.Labels.com.centurylinklabs.watchtower.scope` |
 | Vault-Item-Collection für Phase 6.0 Items | **`Automation/Claude-Team`** (analog Pangolin-Resource-Standard) | pangolin-resource-standard.md |
 | Vault-Notes für headerAuthId 8 zeigt "Site 4" | **Soll "Site 6" (HHDOCKER03)** sein | network-Review Round-5 |
@@ -1221,12 +1221,12 @@ Bei **leerer `printers`-Tabelle** (Fresh-Install): keinerlei Action. Hub startet
 
 ```bash
 # 1. SQLite-Backup (M1)
-ssh root@docker-prod-node \
+ssh root@prod-node.example.test \
   "docker exec hangar-print-hub-print-hub-1 sqlite3 /data/printer-hub.db \
      '.backup /data/printer-hub.db.bak-pre-124'"
 
 # 2. Lokale Kopie ziehen (PBS sichert das verzeichnis sowieso, aber explizit)
-ssh root@docker-prod-node \
+ssh root@prod-node.example.test \
   "docker cp hangar-print-hub-print-hub-1:/data/printer-hub.db.bak-pre-124 \
      /docker/stacks/hangar-print-hub/backups/"
 
@@ -1352,7 +1352,7 @@ Anschließend `printers.yaml` aus `/docker/stacks/hangar-print-hub/config/` lös
 
 ```bash
 # 1. SQLite Restore aus Backup
-ssh root@docker-prod-node \
+ssh root@prod-node.example.test \
   "docker cp /docker/stacks/hangar-print-hub/backups/printer-hub.db.bak-pre-124 \
      hangar-print-hub-print-hub-1:/data/printer-hub.db"
 
