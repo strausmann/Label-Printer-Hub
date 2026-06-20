@@ -27,6 +27,7 @@ R4-M-4/M-5-Fix: alte Funktion referenzierte entfernte Settings-Felder.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -180,8 +181,14 @@ async def upsert_runtime_printers(
     """Materialisiert eine DB-Zeile pro Drucker-Eintrag aus printers.yaml.
 
     M-H2-Fix: Multi-Printer-Loop.
-    MA-2-Fix: derive_printer_id(model, host, port) bleibt deterministisch —
-              model in printers.yaml MUSS exakt der bisherigen Env-Var entsprechen.
+    Issue #124 (Phase 5-Übergang): derive_printer_id nutzt jetzt 4-arg-Signatur
+              (model, host, port, created_at_utc). Der Übergang funktioniert so:
+              - Für NEUE Drucker (noch kein Row in der DB): created_at_utc = now_utc
+                wird erzeugt und zusammen mit der UUID in den Row geschrieben.
+              - Für BESTEHENDE Drucker (Lookup per Slug): created_at_utc wird aus
+                dem vorhandenen Row gelesen → UUID bleibt über Neustarts stabil.
+              - Echte Slug-Collision (anderer model/host/port): neuer Row mit
+                frischem now_utc (WARNING geloggt).
     R4-M-4/M-5-Fix: Alte upsert_runtime_printer (Settings-abhängig) gelöscht —
                     referenzierte entfernte Felder und würde AttributeError geben.
     PR#98-Gemini: session.flush() statt session.commit() innerhalb der Schleife —
@@ -196,31 +203,33 @@ async def upsert_runtime_printers(
     """
     ids: list[UUID] = []
     for cfg in configs:
-        printer_id = derive_printer_id(cfg.model, cfg.host, cfg.port)
-        existing = await session.get(Printer, printer_id)
-        if existing is None:
-            # Slug-Collision-Check: gibt es einen Row mit gleicher slug aber anderer UUID?
-            # Das passiert wenn model/host/port sich geändert haben (neue deterministische UUID)
-            # aber slug/name gleich geblieben sind.
-            collision_result = await session.execute(
-                select(Printer).where(col(Printer.slug) == cfg.slug)
-            )
-            colliding = collision_result.scalar_one_or_none()
-            if colliding is not None and colliding.id != printer_id:
+        # Slug-Lookup zuerst: bestehenden Row finden und dessen created_at übernehmen.
+        # Das sichert UUID-Stabilität über Neustarts (Issue #124, Phase 5-Übergang).
+        slug_result = await session.execute(select(Printer).where(col(Printer.slug) == cfg.slug))
+        existing_by_slug = slug_result.scalar_one_or_none()
+
+        if existing_by_slug is not None:
+            # Bestandsdrucker: created_at aus DB lesen → stabile UUID.
+            existing_created_at = existing_by_slug.created_at
+            if existing_created_at.tzinfo is None:
+                # Naive DB-Werte (SQLite ohne TZ-Info) als UTC interpretieren.
+                existing_created_at = existing_created_at.replace(tzinfo=UTC)
+            printer_id = derive_printer_id(cfg.model, cfg.host, cfg.port, existing_created_at)
+            if existing_by_slug.id != printer_id:
+                # Echter Slug-Conflict: model/host/port haben sich geändert.
+                # Alter Row muss durch neuen mit neuer UUID ersetzt werden.
                 _logger.warning(
                     "upsert_runtime_printers: slug=%r already owned by printer_id=%s "
                     "(different from new deterministic id=%s). "
                     "Treating as migration — updating existing row to new UUID.",
                     cfg.slug,
-                    colliding.id,
+                    existing_by_slug.id,
                     printer_id,
                 )
-                # Migration: bestehenden Row auf neue UUID aktualisieren.
-                # Wir löschen den alten Row und fügen einen neuen ein, weil
-                # PRIMARY KEY Updates via SQLModel/SQLAlchemy nicht zuverlässig
-                # mit async sessions funktionieren.
-                await session.delete(colliding)
+                await session.delete(existing_by_slug)
                 await session.flush()
+                now_utc = datetime.now(UTC)
+                printer_id = derive_printer_id(cfg.model, cfg.host, cfg.port, now_utc)
                 session.add(
                     Printer(
                         id=printer_id,
@@ -230,25 +239,30 @@ async def upsert_runtime_printers(
                         backend=cfg.backend,
                         connection={"host": cfg.host, "port": cfg.port},
                         enabled=True,
+                        created_at=now_utc,
                     )
                 )
             else:
-                session.add(
-                    Printer(
-                        id=printer_id,
-                        slug=cfg.slug,
-                        name=cfg.name,
-                        model=cfg.model.lower(),
-                        backend=cfg.backend,
-                        connection={"host": cfg.host, "port": cfg.port},
-                        enabled=True,
-                    )
-                )
+                # Normaler Update-Pfad: slug/name/backend refreshen, UUID stabil.
+                existing_by_slug.name = cfg.name
+                existing_by_slug.backend = cfg.backend
+                # host/port/model bleiben stabil (UUID-Basis)
         else:
-            existing.slug = cfg.slug
-            existing.name = cfg.name
-            existing.backend = cfg.backend
-            # host/port/model bleiben stabil (UUID-Basis)
+            # Neuer Drucker: created_at_utc zum Einfüge-Zeitpunkt erzeugen.
+            now_utc = datetime.now(UTC)
+            printer_id = derive_printer_id(cfg.model, cfg.host, cfg.port, now_utc)
+            session.add(
+                Printer(
+                    id=printer_id,
+                    slug=cfg.slug,
+                    name=cfg.name,
+                    model=cfg.model.lower(),
+                    backend=cfg.backend,
+                    connection={"host": cfg.host, "port": cfg.port},
+                    enabled=True,
+                    created_at=now_utc,
+                )
+            )
         # flush() statt commit() hier: hält alle Änderungen in derselben Transaktion
         # bis der finale commit() am Ende der Schleife alles atomar abschließt.
         await session.flush()
