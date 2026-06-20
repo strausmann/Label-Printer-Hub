@@ -207,12 +207,12 @@ async def test_backfill_snmp(tmp_path: pathlib.Path) -> None:
 
     # Row A: hat host → snmp wird eingefügt
     pid_a = str(uuid.uuid4())
-    _insert(sync_conn, pid_a, {"host": "192.168.1.10", "port": 9100})
+    _insert(sync_conn, pid_a, {"host": "192.0.2.10", "port": 9100})
 
     # Row B: hat bereits snmp → bleibt unverändert
     pid_b = str(uuid.uuid4())
     existing_snmp = {"discover": True, "community": "private"}
-    _insert(sync_conn, pid_b, {"host": "192.168.1.11", "snmp": existing_snmp})
+    _insert(sync_conn, pid_b, {"host": "192.0.2.11", "snmp": existing_snmp})
 
     # Row C: NULL connection → wird übersprungen
     pid_c = str(uuid.uuid4())
@@ -246,7 +246,7 @@ async def test_backfill_snmp(tmp_path: pathlib.Path) -> None:
         f"Row A: snmp-Wert inkorrekt, got {conn_a['snmp']}"
     )
     # host bleibt erhalten
-    assert conn_a.get("host") == "192.168.1.10"
+    assert conn_a.get("host") == "192.0.2.10"
 
     conn_b = _get_conn(pid_b)
     assert conn_b["snmp"] == existing_snmp, (
