@@ -11,10 +11,16 @@ from sqlmodel import col
 from app.models.printer import Printer
 
 
-async def list_all(session: AsyncSession) -> list[Printer]:
-    result = await session.execute(
-        select(Printer).order_by(col(Printer.created_at))  # col() gives proper Column typing
-    )
+async def list_all(session: AsyncSession, *, include_disabled: bool = False) -> list[Printer]:
+    """Liste aller Drucker, sortiert nach created_at.
+
+    Default schließt deaktivierte Drucker aus (Soft-Delete-Filter).
+    Admin-UI ruft mit include_disabled=True auf um die vollständige Liste zu sehen.
+    """
+    stmt = select(Printer).order_by(col(Printer.created_at))
+    if not include_disabled:
+        stmt = stmt.where(col(Printer.enabled).is_(True))
+    result = await session.execute(stmt)
     return list(result.scalars())
 
 
