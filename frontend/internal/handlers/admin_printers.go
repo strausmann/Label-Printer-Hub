@@ -239,6 +239,22 @@ func (h *PageHandler) EditPrinterPageWithSlug(w http.ResponseWriter, r *http.Req
 		halfCut, _ = cd.(bool)
 	}
 
+	// SNMP-Felder aus dem verschachtelten Connection-Objekt extrahieren.
+	// Ohne diesen Prefill würde ein Edit-Submit ohne Eingabe die SNMP-Konfig
+	// auf discover=false, community="" überschreiben (silent data loss).
+	snmpDiscover := false
+	snmpCommunity := ""
+	if snmpRaw, ok := printer.Connection["snmp"]; ok {
+		if snmpMap, ok := snmpRaw.(map[string]interface{}); ok {
+			if d, ok := snmpMap["discover"]; ok {
+				snmpDiscover, _ = d.(bool)
+			}
+			if c, ok := snmpMap["community"]; ok {
+				snmpCommunity, _ = c.(string)
+			}
+		}
+	}
+
 	h.renderPage(w, r, "admin_printers_form", AdminPrinterFormData{
 		TemplateData:           h.baseData(r, "admin"),
 		Printer:                printer,
@@ -251,6 +267,8 @@ func (h *PageHandler) EditPrinterPageWithSlug(w http.ResponseWriter, r *http.Req
 		FormPort:               portStr,
 		FormQueueTimeoutS:      timeoutStr,
 		FormCutDefaultsHalfCut: halfCut,
+		FormSnmpDiscover:       snmpDiscover,
+		FormSnmpCommunity:      snmpCommunity,
 	})
 }
 

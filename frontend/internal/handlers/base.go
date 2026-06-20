@@ -223,7 +223,7 @@ var stubPageContent = map[string]string{
 	"admin_printers": `{{define "content"}}<div id="printers-list"></div>{{end}}
 {{define "admin_printers-content"}}<div id="printers-list">{{range .Printers}}<span>{{.Name}}</span>{{end}}</div>{{end}}`,
 	"admin_printers_form": `{{define "content"}}<div id="printer-form"></div>{{end}}
-{{define "admin_printers_form-content"}}<div id="printer-form">{{if .IsEdit}}edit{{else}}new{{end}}{{if .Error}}<span class="error">{{.Error}}</span>{{end}}</div>{{end}}`,
+{{define "admin_printers_form-content"}}<div id="printer-form">{{if .IsEdit}}edit{{else}}new{{end}}{{if .Error}}<span class="error">{{.Error}}</span>{{end}}<input name="snmp_community" value="{{.FormSnmpCommunity}}"><input type="checkbox" name="snmp_discover"{{if .FormSnmpDiscover}} checked{{end}}><input name="host" value="{{.FormHost}}"><input name="port" value="{{.FormPort}}"></div>{{end}}`,
 	"admin_printers_detail": `{{define "content"}}<div id="printer-detail-admin"></div>{{end}}
 {{define "admin_printers_detail-content"}}<div id="printer-detail-admin">{{.Printer.Name}}</div>{{end}}`,
 	"admin_printers_confirm_disable": `{{define "content"}}<div id="printer-confirm-disable"></div>{{end}}

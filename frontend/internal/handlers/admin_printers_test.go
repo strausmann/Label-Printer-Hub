@@ -382,6 +382,64 @@ func TestEditPrinterPage_NotFound(t *testing.T) {
 	}
 }
 
+// TestEditPrinterPageWithSlug_PrefillsSnmpFields prüft dass die SNMP-Felder
+// (discover, community) aus dem geladenen Drucker in das Formular vorbefüllt
+// werden. Ohne Prefill würde ein Edit-Submit ohne SNMP-Eingabe die SNMP-Konfig
+// auf discover=false, community="" überschreiben (silent data loss).
+func TestEditPrinterPageWithSlug_PrefillsSnmpFields(t *testing.T) {
+	t.Parallel()
+
+	// Mock-Backend mit Drucker der discover=true, community="public" liefert.
+	const printerMitSnmp = `{
+		"id": "00000000-0000-0000-0000-000000000003",
+		"name": "Drucker mit SNMP",
+		"slug": "snmp-drucker",
+		"model": "QL-810W",
+		"backend": "brother_ql",
+		"connection": {
+			"host": "192.0.2.20",
+			"port": 9100,
+			"snmp": {"discover": true, "community": "public"}
+		},
+		"queue": {"timeout_s": 30},
+		"cut_defaults": {"half_cut": false},
+		"enabled": true,
+		"created_at": "2026-01-01T00:00:00",
+		"updated_at": "2026-01-01T00:00:00"
+	}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v1/admin/printers/snmp-drucker" && r.Method == http.MethodGet {
+			fmt.Fprint(w, printerMitSnmp)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	ph := handlers.NewPageHandlerFromURL(t, srv.URL)
+	req := httptest.NewRequest(http.MethodGet, "/admin/printers/snmp-drucker/edit", nil)
+	// HX-Request → Fragment-Render mit Zugriff auf page-spezifische Felder
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	ph.EditPrinterPageWithSlug(w, req, "snmp-drucker")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("EditPrinterPageWithSlug: Status %d, erwartet 200; body: %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+	// Community muss als value="public" gerendert sein
+	if !strings.Contains(body, `value="public"`) {
+		t.Errorf("SNMP-Community-Prefill fehlt: erwarte value=\"public\" im Body, got: %s", body)
+	}
+	// Discover-Checkbox muss "checked" sein
+	if !strings.Contains(body, "checked") {
+		t.Errorf("SNMP-Discover-Prefill fehlt: erwarte 'checked' im Body, got: %s", body)
+	}
+}
+
 // TestEditPrinterPage_HappyPath prüft dass GET /admin/printers/{id}/edit 200 liefert.
 func TestEditPrinterPage_HappyPath(t *testing.T) {
 	t.Parallel()
