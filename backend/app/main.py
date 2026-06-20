@@ -302,10 +302,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Hub startet ohne Drucker-Wiring (Operator legt Drucker via Admin-API an).
     async with async_session() as s:
         from sqlalchemy import select as _select
+        from sqlmodel import col as _col
 
         from app.models.printer import Printer as _Printer
-
-        from sqlmodel import col as _col
 
         _db_printers = list(
             (await s.execute(_select(_Printer).where(_col(_Printer.enabled).is_(True)))).scalars()

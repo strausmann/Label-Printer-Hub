@@ -60,7 +60,7 @@ def test_payload_without_snmp_block_unchanged() -> None:
     payload = {
         "slug": "zebra-zpl",
         "connection": {
-            "host": "10.0.0.5",
+            "host": "192.0.2.5",
             "port": 9100,
         },
     }
