@@ -70,6 +70,10 @@ var pageNames = []string{
 	"admin_api_keys",
 	"admin_api_keys_create",
 	"admin_api_keys_detail",
+	"admin_printers",
+	"admin_printers_form",
+	"admin_printers_detail",
+	"admin_printers_confirm_disable",
 	"dashboard",
 	"printer",
 	"jobs",
@@ -216,6 +220,14 @@ var stubPageContent = map[string]string{
 {{define "admin_api_keys_create-content"}}<div id="api-key-create">{{.Plaintext}}</div>{{end}}`,
 	"admin_api_keys_detail": `{{define "content"}}<div id="api-key-detail"></div>{{end}}
 {{define "admin_api_keys_detail-content"}}<div id="api-key-detail">{{.Key.Name}}</div>{{end}}`,
+	"admin_printers": `{{define "content"}}<div id="printers-list"></div>{{end}}
+{{define "admin_printers-content"}}<div id="printers-list">{{range .Printers}}<span>{{.Name}}</span>{{end}}</div>{{end}}`,
+	"admin_printers_form": `{{define "content"}}<div id="printer-form"></div>{{end}}
+{{define "admin_printers_form-content"}}<div id="printer-form">{{if .IsEdit}}edit{{else}}new{{end}}{{if .Error}}<span class="error">{{.Error}}</span>{{end}}</div>{{end}}`,
+	"admin_printers_detail": `{{define "content"}}<div id="printer-detail-admin"></div>{{end}}
+{{define "admin_printers_detail-content"}}<div id="printer-detail-admin">{{.Printer.Name}}</div>{{end}}`,
+	"admin_printers_confirm_disable": `{{define "content"}}<div id="printer-confirm-disable"></div>{{end}}
+{{define "admin_printers_confirm_disable-content"}}<div id="printer-confirm-disable">{{.Printer.Name}}</div>{{end}}`,
 }
 
 // newStubPageHandler builds a PageHandler backed by minimal stub templates for

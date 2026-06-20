@@ -1,0 +1,136 @@
+{{define "title"}}{{if .IsEdit}}Drucker bearbeiten{{else}}Neuer Drucker{{end}} — Label Printer Hub{{end}}
+
+{{define "content"}}
+<div class="max-w-2xl space-y-6">
+  <div class="flex items-center gap-4">
+    <a href="{{if .IsEdit}}/admin/printers/{{.Slug}}{{else}}/admin/printers{{end}}"
+       class="text-content-secondary hover:text-content-primary">&larr;</a>
+    <h1 class="text-2xl font-semibold text-content-primary">
+      {{if .IsEdit}}Drucker bearbeiten{{else}}Neuer Drucker{{end}}
+    </h1>
+  </div>
+
+  {{if .Error}}
+  <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+    {{.Error}}
+  </div>
+  {{end}}
+
+  <form method="POST"
+        action="{{if .IsEdit}}/admin/printers/{{.Slug}}/edit{{else}}/admin/printers/new{{end}}"
+        class="space-y-6 bg-surface-raised rounded-lg border border-surface-border p-6">
+    {{.CSRFField}}
+
+    <!-- Basis-Felder (bei Edit nicht änderbar) -->
+    <fieldset class="space-y-4">
+      <legend class="text-sm font-semibold text-content-primary mb-2">Allgemein</legend>
+
+      <div>
+        <label class="block text-sm font-medium text-content-primary mb-1">Name <span class="text-red-500">*</span></label>
+        <input type="text" name="name" required
+               value="{{.FormName}}"
+               placeholder="z.&nbsp;B. Bürodrucker Nord"
+               class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"/>
+      </div>
+
+      {{if not .IsEdit}}
+      <div>
+        <label class="block text-sm font-medium text-content-primary mb-1">Slug <span class="text-red-500">*</span></label>
+        <input type="text" name="slug" required
+               value="{{.FormSlug}}"
+               placeholder="z.&nbsp;B. buero-nord"
+               pattern="^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"
+               class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"/>
+        <p class="text-xs text-content-secondary mt-1">Kleinbuchstaben, Ziffern und Bindestriche. Wird nach dem Anlegen nicht mehr geändert.</p>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-content-primary mb-1">Modell <span class="text-red-500">*</span></label>
+        <input type="text" name="model" required
+               value="{{.FormModel}}"
+               placeholder="z.&nbsp;B. QL-810W"
+               class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"/>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-content-primary mb-1">Backend <span class="text-red-500">*</span></label>
+        <select name="backend" required
+                class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary">
+          <option value="">— bitte wählen —</option>
+          <option value="brother_ql" {{if eq .FormBackend "brother_ql"}}selected{{end}}>brother_ql</option>
+          <option value="ptouch"     {{if eq .FormBackend "ptouch"}}selected{{end}}>ptouch</option>
+        </select>
+      </div>
+      {{end}}{{/* not .IsEdit */}}
+    </fieldset>
+
+    <!-- Verbindung -->
+    <fieldset class="space-y-4 border-t border-surface-border pt-4">
+      <legend class="text-sm font-semibold text-content-primary mb-2">Verbindung</legend>
+
+      <div class="grid grid-cols-3 gap-4">
+        <div class="col-span-2">
+          <label class="block text-sm font-medium text-content-primary mb-1">Host <span class="text-red-500">*</span></label>
+          <input type="text" name="host" required
+                 value="{{.FormHost}}"
+                 placeholder="192.168.1.100"
+                 class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-content-primary mb-1">Port <span class="text-red-500">*</span></label>
+          <input type="number" name="port" required min="1" max="65535"
+                 value="{{.FormPort}}"
+                 placeholder="9100"
+                 class="w-full rounded-lg border border-surface-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"/>
+        </div>
+      </div>
+
+      <!-- SNMP -->
+      <div class="space-y-2">
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" name="snmp_discover" value="on"
+                 {{if .FormSnmpDiscover}}checked{{end}}>
+          SNMP Discovery aktivieren
+        </label>
+        <div>
+          <label class="block text-sm font-medium text-content-primary mb-1">SNMP Community</label>
+          <input type="text" name="snmp_community"
+                 value="{{if .FormSnmpCommunity}}{{.FormSnmpCommunity}}{{else}}public{{end}}"
+                 placeholder="public"
+                 class="w-48 rounded-lg border border-surface-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary"/>
+        </div>
+      </div>
+    </fieldset>
+
+    <!-- Warteschlange & Schnitt -->
+    <fieldset class="space-y-4 border-t border-surface-border pt-4">
+      <legend class="text-sm font-semibold text-content-primary mb-2">Erweitert</legend>
+
+      <div>
+        <label class="block text-sm font-medium text-content-primary mb-1">Queue-Timeout (Sekunden)</label>
+        <input type="number" name="queue_timeout_s" min="1" max="3600"
+               value="{{if .FormQueueTimeoutS}}{{.FormQueueTimeoutS}}{{else}}30{{end}}"
+               class="w-32 rounded-lg border border-surface-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"/>
+        <p class="text-xs text-content-secondary mt-1">1–3600 Sekunden. Standard: 30 s.</p>
+      </div>
+
+      <label class="flex items-center gap-2 text-sm cursor-pointer">
+        <input type="checkbox" name="cut_defaults_half_cut" value="on"
+               {{if .FormCutDefaultsHalfCut}}checked{{end}}>
+        Standard-Halbschnitt aktivieren
+      </label>
+    </fieldset>
+
+    <div class="flex gap-3 border-t border-surface-border pt-4">
+      <button type="submit"
+              class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 text-sm font-medium">
+        {{if .IsEdit}}Änderungen speichern{{else}}Drucker anlegen{{end}}
+      </button>
+      <a href="{{if .IsEdit}}/admin/printers/{{.Slug}}{{else}}/admin/printers{{end}}"
+         class="px-4 py-2 border border-surface-border rounded-lg text-sm text-content-secondary hover:text-content-primary hover:bg-surface-raised">
+        Abbrechen
+      </a>
+    </div>
+  </form>
+</div>
+{{end}}

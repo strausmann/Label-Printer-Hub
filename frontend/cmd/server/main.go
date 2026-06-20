@@ -139,7 +139,7 @@ func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS, cs
 	r.Get("/templates/{id}", ph.TemplateDetail)
 	r.Get("/lookup/{app}/{id}", ph.LookupDisplay)
 
-	// Admin: API-Key-Verwaltung — mit CSRF-Schutz für alle POST-Endpunkte.
+	// Admin: API-Key-Verwaltung und Drucker-Verwaltung — mit CSRF-Schutz für alle POST-Endpunkte.
 	// csrfMW ist gorilla/csrf; bei nil (Tests ohne echten Key) wird direkt gemountet.
 	r.Route("/admin", func(r chi.Router) {
 		if csrfMW != nil {
@@ -150,6 +150,17 @@ func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS, cs
 		r.Post("/api-keys/new", ph.AdminAPIKeysCreate)
 		r.Get("/api-keys/{id}", ph.AdminAPIKeyDetail)
 		r.Post("/api-keys/{id}/revoke", ph.AdminAPIKeyRevoke)
+
+		// Drucker-Verwaltung (Task 7.3 + 7.4)
+		r.Get("/printers", ph.ListPrintersPage)
+		r.Get("/printers/new", ph.NewPrinterPage)
+		r.Post("/printers/new", ph.CreatePrinter)
+		r.Get("/printers/{id}", ph.PrinterDetailPage)
+		r.Get("/printers/{id}/edit", ph.EditPrinterPage)
+		r.Post("/printers/{id}/edit", ph.UpdatePrinter)
+		r.Get("/printers/{id}/disable", ph.DisablePrinterConfirmPage)
+		r.Post("/printers/{id}/disable", ph.DisablePrinter)
+		r.Post("/printers/{id}/enable", ph.EnablePrinter)
 	})
 
 	// Reverse proxy: /api/* and QR-landing paths → backend container.
