@@ -4,6 +4,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,124 @@ import (
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+const (
+	APIKeyHeaderScopes aPIKeyHeaderContextKey = "APIKeyHeader.Scopes"
+)
+
+// Defines values for CheckStatusStatus.
+const (
+	Fail    CheckStatusStatus = "fail"
+	Ok      CheckStatusStatus = "ok"
+	Skipped CheckStatusStatus = "skipped"
+	Stale   CheckStatusStatus = "stale"
+)
+
+// Valid indicates whether the value is a known member of the CheckStatusStatus enum.
+func (e CheckStatusStatus) Valid() bool {
+	switch e {
+	case Fail:
+		return true
+	case Ok:
+		return true
+	case Skipped:
+		return true
+	case Stale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ContentType.
+const (
+	QrOneLine     ContentType = "qr_one_line"
+	QrOnly        ContentType = "qr_only"
+	QrThreeLines  ContentType = "qr_three_lines"
+	QrTwoLines    ContentType = "qr_two_lines"
+	QrWithListing ContentType = "qr_with_listing"
+	TextOneLine   ContentType = "text_one_line"
+	TextTwoLines  ContentType = "text_two_lines"
+)
+
+// Valid indicates whether the value is a known member of the ContentType enum.
+func (e ContentType) Valid() bool {
+	switch e {
+	case QrOneLine:
+		return true
+	case QrOnly:
+		return true
+	case QrThreeLines:
+		return true
+	case QrTwoLines:
+		return true
+	case QrWithListing:
+		return true
+	case TextOneLine:
+		return true
+	case TextTwoLines:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for JobState.
+const (
+	JobStateCancelled JobState = "cancelled"
+	JobStateCompleted JobState = "completed"
+	JobStateFailed    JobState = "failed"
+	JobStatePaused    JobState = "paused"
+	JobStatePrinting  JobState = "printing"
+	JobStateQueued    JobState = "queued"
+)
+
+// Valid indicates whether the value is a known member of the JobState enum.
+func (e JobState) Valid() bool {
+	switch e {
+	case JobStateCancelled:
+		return true
+	case JobStateCompleted:
+		return true
+	case JobStateFailed:
+		return true
+	case JobStatePaused:
+		return true
+	case JobStatePrinting:
+		return true
+	case JobStateQueued:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LiveStatusHrPrinterStatus.
+const (
+	LiveStatusHrPrinterStatusIdle     LiveStatusHrPrinterStatus = "idle"
+	LiveStatusHrPrinterStatusOther    LiveStatusHrPrinterStatus = "other"
+	LiveStatusHrPrinterStatusPrinting LiveStatusHrPrinterStatus = "printing"
+	LiveStatusHrPrinterStatusUnknown  LiveStatusHrPrinterStatus = "unknown"
+	LiveStatusHrPrinterStatusWarmup   LiveStatusHrPrinterStatus = "warmup"
+)
+
+// Valid indicates whether the value is a known member of the LiveStatusHrPrinterStatus enum.
+func (e LiveStatusHrPrinterStatus) Valid() bool {
+	switch e {
+	case LiveStatusHrPrinterStatusIdle:
+		return true
+	case LiveStatusHrPrinterStatusOther:
+		return true
+	case LiveStatusHrPrinterStatusPrinting:
+		return true
+	case LiveStatusHrPrinterStatusUnknown:
+		return true
+	case LiveStatusHrPrinterStatusWarmup:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for LookupResultApp.
 const (
@@ -32,6 +151,45 @@ func (e LookupResultApp) Valid() bool {
 	case LookupResultAppSnipeit:
 		return true
 	case LookupResultAppSpoolman:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PrinterCreatePayloadBackend.
+const (
+	BrotherQl PrinterCreatePayloadBackend = "brother_ql"
+	Ptouch    PrinterCreatePayloadBackend = "ptouch"
+)
+
+// Valid indicates whether the value is a known member of the PrinterCreatePayloadBackend enum.
+func (e PrinterCreatePayloadBackend) Valid() bool {
+	switch e {
+	case BrotherQl:
+		return true
+	case Ptouch:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReadinessResponseStatus.
+const (
+	Degraded ReadinessResponseStatus = "degraded"
+	NotReady ReadinessResponseStatus = "not-ready"
+	Ready    ReadinessResponseStatus = "ready"
+)
+
+// Valid indicates whether the value is a known member of the ReadinessResponseStatus enum.
+func (e ReadinessResponseStatus) Valid() bool {
+	switch e {
+	case Degraded:
+		return true
+	case NotReady:
+		return true
+	case Ready:
 		return true
 	default:
 		return false
@@ -59,25 +217,179 @@ func (e LookupApiLookupAppEntityIdGetParamsApp) Valid() bool {
 	}
 }
 
+// ApiKeyCreate defines model for ApiKeyCreate.
+type ApiKeyCreate struct {
+	AllowedPrinterIds  *[]string  `json:"allowed_printer_ids,omitempty"`
+	ExpiresAt          *time.Time `json:"expires_at,omitempty"`
+	Name               string     `json:"name"`
+	Notes              *string    `json:"notes,omitempty"`
+	RateLimitPerMinute *int       `json:"rate_limit_per_minute,omitempty"`
+	Scopes             []string   `json:"scopes"`
+}
+
+// ApiKeyCreateResponse Returned ONCE on creation — includes plaintext. Never return again.
+type ApiKeyCreateResponse struct {
+	KeyId     openapi_types.UUID `json:"key_id"`
+	Name      string             `json:"name"`
+	Plaintext string             `json:"plaintext"`
+	Prefix    string             `json:"prefix"`
+	Scopes    []string           `json:"scopes"`
+}
+
+// ApiKeyPatch defines model for ApiKeyPatch.
+type ApiKeyPatch struct {
+	AllowedPrinterIds  *[]string `json:"allowed_printer_ids,omitempty"`
+	Enabled            *bool     `json:"enabled,omitempty"`
+	Notes              *string   `json:"notes,omitempty"`
+	RateLimitPerMinute *int      `json:"rate_limit_per_minute,omitempty"`
+}
+
+// ApiKeyRead Metadata-only view — no key_hash, no plaintext.
+type ApiKeyRead struct {
+	AllowedPrinterIds  []string           `json:"allowed_printer_ids"`
+	CreatedAt          string             `json:"created_at"`
+	Enabled            bool               `json:"enabled"`
+	ExpiresAt          *string            `json:"expires_at"`
+	Id                 openapi_types.UUID `json:"id"`
+	KeyPrefix          string             `json:"key_prefix"`
+	LastUsedAt         *string            `json:"last_used_at"`
+	LastUsedIp         *string            `json:"last_used_ip"`
+	Name               string             `json:"name"`
+	Notes              *string            `json:"notes"`
+	RateLimitPerMinute int                `json:"rate_limit_per_minute"`
+	Scopes             []string           `json:"scopes"`
+}
+
+// BatchRead defines model for BatchRead.
+type BatchRead struct {
+	CreatedAt string             `json:"created_at"`
+	CreatedBy *string            `json:"created_by"`
+	Id        openapi_types.UUID `json:"id"`
+	Jobs      []JobRead          `json:"jobs"`
+	PrinterId openapi_types.UUID `json:"printer_id"`
+
+	// Summary Aggregierte Zähler über alle Jobs eines Batches.
+	//
+	// all_terminal wird aus queued + printing berechnet — kein DB-Round-trip nötig.
+	// Hangar's Result-Page nutzt all_terminal um zu entscheiden, ob ein
+	// SSE-Stream für Live-Updates geöffnet werden muss.
+	Summary BatchSummary `json:"summary"`
+}
+
+// BatchRequest Top-level POST /api/print/{slug_or_uuid}/batch body.
+type BatchRequest struct {
+	// HalfCutOverride Override half_cut for all items in this batch. If the printer backend does not support half_cut (e.g. QL-Series), the value is forced to False and a warning is logged.
+	HalfCutOverride *bool          `json:"half_cut_override,omitempty"`
+	Items           []PrintRequest `json:"items"`
+
+	// PrinterSlug Optional: Slug des Ziel-Druckers (muss mit URL-Path übereinstimmen).
+	PrinterSlug *string `json:"printer_slug,omitempty"`
+}
+
+// BatchResponse 202 Response für erfolgreich akzeptierte Batch (auch wenn 0 Items queued).
+type BatchResponse struct {
+	BatchId   openapi_types.UUID `json:"batch_id"`
+	JobIds    []string           `json:"job_ids"`
+	PrinterId openapi_types.UUID `json:"printer_id"`
+	QueuedAt  string             `json:"queued_at"`
+}
+
+// BatchSummary Aggregierte Zähler über alle Jobs eines Batches.
+//
+// all_terminal wird aus queued + printing berechnet — kein DB-Round-trip nötig.
+// Hangar's Result-Page nutzt all_terminal um zu entscheiden, ob ein
+// SSE-Stream für Live-Updates geöffnet werden muss.
+type BatchSummary struct {
+	AllTerminal *bool `json:"all_terminal,omitempty"`
+	Cancelled   int   `json:"cancelled"`
+	Done        int   `json:"done"`
+	Failed      int   `json:"failed"`
+	Printing    int   `json:"printing"`
+	Queued      int   `json:"queued"`
+	Total       int   `json:"total"`
+}
+
+// CheckStatus defines model for CheckStatus.
+type CheckStatus struct {
+	Detail *string                 `json:"detail,omitempty"`
+	Metric *map[string]interface{} `json:"metric,omitempty"`
+	Status CheckStatusStatus       `json:"status"`
+}
+
+// CheckStatusStatus defines model for CheckStatus.Status.
+type CheckStatusStatus string
+
+// ContentType Tape-independent semantic content types for label rendering.
+type ContentType string
+
+// GrocyWebhookPayload Event payload emitted by Grocy when a product stock event occurs.
+type GrocyWebhookPayload struct {
+	// ProductId Grocy product identifier
+	ProductId string `json:"product_id"`
+
+	// Quantity Optional stock quantity delta (surfaced in the printed label when present)
+	Quantity *float32 `json:"quantity,omitempty"`
+
+	// Type Event type string (e.g. 'stock_added', 'stock_removed')
+	Type string `json:"type"`
+}
+
 // HTTPValidationError defines model for HTTPValidationError.
 type HTTPValidationError struct {
 	Detail *[]ValidationError `json:"detail,omitempty"`
 }
 
+// Healthz Response body of /healthz.
+//
+// Intentionally minimal — no dependencies, no configuration, no PII.
+// Container orchestrators check the HTTP status and read the JSON for
+// a quick version sanity-check; ops use the build-info fields to confirm
+// which image is running without digging through “docker inspect“.
+//
+// Frozen so callers can't accidentally mutate the response model in-place
+// (the same immutability discipline we apply to dataclasses — see
+// “docs/learnings/code-review-patterns.md“).
+type Healthz struct {
+	BuildDate            string `json:"build_date"`
+	Repository           string `json:"repository"`
+	Revision             string `json:"revision"`
+	SseActiveSubscribers *int   `json:"sse_active_subscribers,omitempty"`
+	Status               string `json:"status"`
+	Version              string `json:"version"`
+}
+
 // JobRead Serialised view of a Job DB row.
 type JobRead struct {
-	CreatedAt   time.Time               `json:"created_at"`
+	CreatedAt   string                  `json:"created_at"`
 	Error       *string                 `json:"error"`
-	FinishedAt  *time.Time              `json:"finished_at"`
+	FinishedAt  *string                 `json:"finished_at"`
 	Id          openapi_types.UUID      `json:"id"`
 	Payload     map[string]interface{}  `json:"payload"`
 	PrinterId   openapi_types.UUID      `json:"printer_id"`
 	Result      *map[string]interface{} `json:"result"`
-	StartedAt   *time.Time              `json:"started_at"`
+	StartedAt   *string                 `json:"started_at"`
 	State       string                  `json:"state"`
-	TemplateKey string                  `json:"template_key"`
-	UpdatedAt   time.Time               `json:"updated_at"`
+	TemplateKey *string                 `json:"template_key"`
+	UpdatedAt   string                  `json:"updated_at"`
 }
+
+// JobState defines model for JobState.
+type JobState string
+
+// LabelDataItem One row in a qr_with_listing label (e.g. Kallax-Regal-Uebersicht).
+type LabelDataItem struct {
+	Item      string  `json:"item"`
+	QrPayload *string `json:"qr_payload,omitempty"`
+}
+
+// LiveStatus Live phase + error flags read from SNMP during a print.
+type LiveStatus struct {
+	ErrorFlags      *[]string                 `json:"error_flags,omitempty"`
+	HrPrinterStatus LiveStatusHrPrinterStatus `json:"hr_printer_status"`
+}
+
+// LiveStatusHrPrinterStatus defines model for LiveStatus.HrPrinterStatus.
+type LiveStatusHrPrinterStatus string
 
 // LookupResult REST view of a resolved integration entity.
 type LookupResult struct {
@@ -91,51 +403,167 @@ type LookupResult struct {
 	Id string `json:"id"`
 
 	// Name Human-readable display name of the entity
-	Name string `json:"name"`
+	Name *string `json:"name,omitempty"`
 
 	// Url Deep-link URL to the entity in the integration's web UI (e.g. Snipe-IT asset page, Grocy product page, Spoolman spool page)
-	Url string `json:"url"`
+	Url *string `json:"url,omitempty"`
 }
 
 // LookupResultApp Integration app that resolved this entity
 type LookupResultApp string
 
-// PrinterRead Full representation of a Printer row, augmented with the paused flag.
-//
-// “paused“ is joined from the “printer_state“ table; it defaults to
-// “False“ for printers whose state row was not yet created (safe — the
-// DB lifespan helper creates state rows at startup, so this only matters
-// in tests or during the very first boot).
-type PrinterRead struct {
-	Backend    string                 `json:"backend"`
-	Connection map[string]interface{} `json:"connection"`
-	CreatedAt  time.Time              `json:"created_at"`
-	Enabled    bool                   `json:"enabled"`
-	Id         openapi_types.UUID     `json:"id"`
-	Model      string                 `json:"model"`
-	Name       string                 `json:"name"`
-	Paused     bool                   `json:"paused"`
-	UpdatedAt  time.Time              `json:"updated_at"`
+// PrintJobResponse POST /print 202 body — queue accepted.
+type PrintJobResponse struct {
+	JobId  string `json:"job_id"`
+	Status string `json:"status"`
 }
 
-// PrinterStatus Live status result from a fresh ESC i S probe + cache write-back.
+// PrintJobStatusResponse GET /jobs/{job_id} body.
+type PrintJobStatusResponse struct {
+	CreatedAt    time.Time               `json:"created_at"`
+	ErrorCode    *string                 `json:"error_code,omitempty"`
+	ErrorDetail  *map[string]interface{} `json:"error_detail,omitempty"`
+	ErrorMessage *string                 `json:"error_message,omitempty"`
+	FinishedAt   *time.Time              `json:"finished_at,omitempty"`
+	JobId        string                  `json:"job_id"`
+
+	// Live Live phase + error flags read from SNMP during a print.
+	Live      *LiveStatus `json:"live,omitempty"`
+	StartedAt *time.Time  `json:"started_at,omitempty"`
+	Status    JobState    `json:"status"`
+}
+
+// PrintLookupRequest Resolve label data via an integration plugin.
+type PrintLookupRequest struct {
+	App        string `json:"app"`
+	Identifier string `json:"identifier"`
+}
+
+// PrintOptions Per-print options — copies, cut behaviour, resolution.
+type PrintOptions struct {
+	AutoCut        *bool `json:"auto_cut,omitempty"`
+	Copies         *int  `json:"copies,omitempty"`
+	HalfCut        *bool `json:"half_cut,omitempty"`
+	HighResolution *bool `json:"high_resolution,omitempty"`
+	LastPage       *bool `json:"last_page,omitempty"`
+}
+
+// PrintRequest POST /api/print body.
+//
+// Either `data` (RawLabelData) or `lookup` (PrintLookupRequest) is provided.
+// Exactly one of the two must be present.
+type PrintRequest struct {
+	// ContentType Tape-independent semantic content types for label rendering.
+	ContentType ContentType `json:"content_type"`
+
+	// Data Raw label payload accepted when the client supplies data directly.
+	//
+	// Mirrors LabelData minus `source_app` (set server-side to 'manual').
+	// All content fields are optional — ContentType-specific validation
+	// happens in LayoutEngine._validate_data.
+	Data *RawLabelData `json:"data,omitempty"`
+
+	// Lookup Resolve label data via an integration plugin.
+	Lookup *PrintLookupRequest `json:"lookup,omitempty"`
+
+	// Options Per-print options — copies, cut behaviour, resolution.
+	Options *PrintOptions `json:"options,omitempty"`
+}
+
+// PrinterConnection Verbindungsparameter für einen Drucker.
+type PrinterConnection struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+
+	// Snmp Verschachtelt — konsistent mit altem YAML-Schema.
+	Snmp *SNMPConfig `json:"snmp,omitempty"`
+}
+
+// PrinterCreatePayload Payload für das Anlegen eines neuen Druckers via Admin-API.
+type PrinterCreatePayload struct {
+	Backend PrinterCreatePayloadBackend `json:"backend"`
+
+	// Connection Verbindungsparameter für einen Drucker.
+	Connection PrinterConnection `json:"connection"`
+
+	// CutDefaults Standard-Schnitteinstellungen für einen Drucker.
+	CutDefaults *PrinterCutDefaults `json:"cut_defaults,omitempty"`
+	Enabled     *bool               `json:"enabled,omitempty"`
+	Model       string              `json:"model"`
+	Name        string              `json:"name"`
+
+	// Queue Warteschlangen-Einstellungen für einen Drucker.
+	Queue *PrinterQueueSettings `json:"queue,omitempty"`
+	Slug  string                `json:"slug"`
+}
+
+// PrinterCreatePayloadBackend defines model for PrinterCreatePayload.Backend.
+type PrinterCreatePayloadBackend string
+
+// PrinterCutDefaults Standard-Schnitteinstellungen für einen Drucker.
+type PrinterCutDefaults struct {
+	HalfCut *bool `json:"half_cut,omitempty"`
+}
+
+// PrinterQueueSettings Warteschlangen-Einstellungen für einen Drucker.
+type PrinterQueueSettings struct {
+	TimeoutS *int `json:"timeout_s,omitempty"`
+}
+
+// PrinterStatus Printer status sourced from the printer_status_cache table.
+//
+// The endpoint reads the cache row written by StatusProbeProducer instead
+// of doing a synchronous SNMP probe inline.  This makes the response fast
+// (<10 ms) even when the printer is offline.
 //
 // “tape_loaded“ is a human-readable string such as
 // “"12mm laminated black/clear"“ or “None“ when no tape is inserted.
 // “error_state“ mirrors the active PrinterError flags as a string, or
 // “None“ when the printer is ready.
-// “captured_at“ is the UTC timestamp of the probe that produced this
-// block.
+// “captured_at“ is the UTC timestamp of the probe that last updated the
+// cache row.  “None“ means no probe has completed yet.
+// “last_probe_age_s“ is the age of the cached reading in seconds.
+// “last_error“ is the exception message from the most recent failed probe.
+// “note“ carries a human-readable hint (e.g. "No probe yet").
 type PrinterStatus struct {
-	CapturedAt time.Time `json:"captured_at"`
+	// CapturedAt UTC timestamp of the probe that produced this reading; None if no probe yet
+	CapturedAt *string `json:"captured_at,omitempty"`
 
 	// ErrorState Active error flags as a string; None when printer is ready
-	ErrorState *string            `json:"error_state,omitempty"`
-	Online     bool               `json:"online"`
-	PrinterId  openapi_types.UUID `json:"printer_id"`
+	ErrorState *string `json:"error_state,omitempty"`
+
+	// LastError Exception message from the most recent failed probe
+	LastError *string `json:"last_error,omitempty"`
+
+	// LastProbeAgeS Age of the cached reading in seconds
+	LastProbeAgeS *int `json:"last_probe_age_s,omitempty"`
+
+	// Note Human-readable hint, e.g. 'No probe yet'
+	Note *string `json:"note,omitempty"`
+
+	// Online True when the printer responded to the last SNMP probe; None = no probe yet
+	Online    *bool              `json:"online,omitempty"`
+	PrinterId openapi_types.UUID `json:"printer_id"`
 
 	// TapeLoaded e.g. "12mm laminated black/clear"; None when no tape is loaded
 	TapeLoaded *string `json:"tape_loaded,omitempty"`
+}
+
+// PrinterUpdatePayload Payload für das Aktualisieren eines bestehenden Druckers via Admin-API.
+//
+// Der Service ignoriert stillschweigend: slug, model, backend, id.
+// Alle Felder sind optional — ein leerer Body ist ein gültiger PATCH.
+type PrinterUpdatePayload struct {
+	// Connection Verbindungsparameter für einen Drucker.
+	Connection *PrinterConnection `json:"connection,omitempty"`
+
+	// CutDefaults Standard-Schnitteinstellungen für einen Drucker.
+	CutDefaults *PrinterCutDefaults `json:"cut_defaults,omitempty"`
+	Enabled     *bool               `json:"enabled,omitempty"`
+	Name        *string             `json:"name,omitempty"`
+
+	// Queue Warteschlangen-Einstellungen für einen Drucker.
+	Queue *PrinterQueueSettings `json:"queue,omitempty"`
 }
 
 // ProblemDetail RFC 7807 Problem Details object.
@@ -163,19 +591,46 @@ type ProblemDetail struct {
 	Type *string `json:"type,omitempty"`
 }
 
-// TemplateRead Serialised view of a Template DB row.
-type TemplateRead struct {
-	App           *string                `json:"app"`
-	CreatedAt     time.Time              `json:"created_at"`
-	Definition    map[string]interface{} `json:"definition"`
-	Id            openapi_types.UUID     `json:"id"`
-	Key           string                 `json:"key"`
-	Name          string                 `json:"name"`
-	PrinterModel  string                 `json:"printer_model"`
-	SchemaVersion int                    `json:"schema_version"`
-	Source        string                 `json:"source"`
-	TapeWidthMm   int                    `json:"tape_width_mm"`
-	UpdatedAt     time.Time              `json:"updated_at"`
+// RawLabelData Raw label payload accepted when the client supplies data directly.
+//
+// Mirrors LabelData minus `source_app` (set server-side to 'manual').
+// All content fields are optional — ContentType-specific validation
+// happens in LayoutEngine._validate_data.
+type RawLabelData struct {
+	Items     *[]LabelDataItem `json:"items,omitempty"`
+	PrimaryId *string          `json:"primary_id,omitempty"`
+	QrPayload *string          `json:"qr_payload,omitempty"`
+	Secondary *[]string        `json:"secondary,omitempty"`
+	Title     *string          `json:"title,omitempty"`
+}
+
+// ReadinessResponse defines model for ReadinessResponse.
+type ReadinessResponse struct {
+	Checks   map[string]CheckStatus  `json:"checks"`
+	Revision string                  `json:"revision"`
+	Status   ReadinessResponseStatus `json:"status"`
+	Version  string                  `json:"version"`
+}
+
+// ReadinessResponseStatus defines model for ReadinessResponse.Status.
+type ReadinessResponseStatus string
+
+// SNMPConfig Verschachtelt — konsistent mit altem YAML-Schema.
+type SNMPConfig struct {
+	Community *string `json:"community,omitempty"`
+	Discover  *bool   `json:"discover,omitempty"`
+}
+
+// SpoolmanWebhookPayload Event payload emitted by Spoolman when a spool is updated.
+type SpoolmanWebhookPayload struct {
+	// Quantity Optional remaining filament in grams (surfaced in the printed label)
+	Quantity *float32 `json:"quantity,omitempty"`
+
+	// SpoolId Spoolman spool identifier (as a string to accept both int and str JSON input)
+	SpoolId string `json:"spool_id"`
+
+	// Type Event type string (e.g. 'updated', 'created', 'consumed')
+	Type string `json:"type"`
 }
 
 // ValidationError defines model for ValidationError.
@@ -197,6 +652,84 @@ type ValidationErrorLoc1 = int
 type ValidationError_Loc_Item struct {
 	union json.RawMessage
 }
+
+// WebhookAcceptedResponse 202 Accepted response body for both webhook endpoints.
+type WebhookAcceptedResponse struct {
+	// JobId UUID of the newly-created print job; poll GET /api/jobs/{job_id} for status
+	JobId openapi_types.UUID `json:"job_id"`
+}
+
+// UnderscorePreviewRequest Request body for POST /render/preview.
+//
+// Phase 1k.1a (Task 25): render-only endpoint — no printer, no queue, no DB.
+type UnderscorePreviewRequest struct {
+	// ContentType Tape-independent semantic content types for label rendering.
+	ContentType ContentType `json:"content_type"`
+
+	// Data Raw label payload accepted when the client supplies data directly.
+	//
+	// Mirrors LabelData minus `source_app` (set server-side to 'manual').
+	// All content fields are optional — ContentType-specific validation
+	// happens in LayoutEngine._validate_data.
+	Data   RawLabelData `json:"data"`
+	TapeMm *int         `json:"tape_mm,omitempty"`
+}
+
+// UnderscorePrinterResumeResponse 200 response body for POST /printer/resume.
+type UnderscorePrinterResumeResponse struct {
+	PrinterId PrinterResumeResponse_PrinterId `json:"printer_id"`
+	State     string                          `json:"state"`
+}
+
+// PrinterResumeResponsePrinterId0 defines model for .
+type PrinterResumeResponsePrinterId0 = openapi_types.UUID
+
+// PrinterResumeResponsePrinterId1 defines model for .
+type PrinterResumeResponsePrinterId1 = string
+
+// PrinterResumeResponse_PrinterId defines model for PrinterResumeResponse.PrinterId.
+type PrinterResumeResponse_PrinterId struct {
+	union json.RawMessage
+}
+
+// AppApiRoutesAdminPrintersApiPrinterRead Lesbare Darstellung eines Druckers.
+//
+// Enthält alle DB-Felder — keine internen Implementierungsdetails.
+type AppApiRoutesAdminPrintersApiPrinterRead struct {
+	Backend     string                 `json:"backend"`
+	Connection  map[string]interface{} `json:"connection"`
+	CreatedAt   string                 `json:"created_at"`
+	CutDefaults map[string]interface{} `json:"cut_defaults"`
+	Enabled     bool                   `json:"enabled"`
+	Id          openapi_types.UUID     `json:"id"`
+	Model       string                 `json:"model"`
+	Name        string                 `json:"name"`
+	Queue       map[string]interface{} `json:"queue"`
+	Slug        string                 `json:"slug"`
+	UpdatedAt   string                 `json:"updated_at"`
+}
+
+// AppSchemasPrinterPrinterRead Full representation of a Printer row, augmented with the paused flag.
+//
+// “paused“ is joined from the “printer_state“ table; it defaults to
+// “False“ for printers whose state row was not yet created (safe — the
+// DB lifespan helper creates state rows at startup, so this only matters
+// in tests or during the very first boot).
+type AppSchemasPrinterPrinterRead struct {
+	Backend    string                 `json:"backend"`
+	Connection map[string]interface{} `json:"connection"`
+	CreatedAt  string                 `json:"created_at"`
+	Enabled    bool                   `json:"enabled"`
+	Id         openapi_types.UUID     `json:"id"`
+	Model      string                 `json:"model"`
+	Name       string                 `json:"name"`
+	Paused     bool                   `json:"paused"`
+	Slug       *string                `json:"slug,omitempty"`
+	UpdatedAt  string                 `json:"updated_at"`
+}
+
+// aPIKeyHeaderContextKey is the context key for APIKeyHeader security scheme
+type aPIKeyHeaderContextKey string
 
 // SseEventsApiEventsGetParams defines parameters for SseEventsApiEventsGet.
 type SseEventsApiEventsGetParams struct {
@@ -221,17 +754,53 @@ type ListJobsApiJobsGetParams struct {
 // LookupApiLookupAppEntityIdGetParamsApp defines parameters for LookupApiLookupAppEntityIdGet.
 type LookupApiLookupAppEntityIdGetParamsApp string
 
-// RenderPreviewApiRenderPreviewPostParams defines parameters for RenderPreviewApiRenderPreviewPost.
-type RenderPreviewApiRenderPreviewPostParams struct {
-	// Key Template key, e.g. 'snipeit-12mm'
-	Key string `form:"key" json:"key"`
+// ListPrintersApiPrintersGetParams defines parameters for ListPrintersApiPrintersGet.
+type ListPrintersApiPrintersGetParams struct {
+	// Slug Filter by exact slug
+	Slug *string `form:"slug,omitempty" json:"slug,omitempty"`
 }
 
-// ListTemplatesApiTemplatesGetParams defines parameters for ListTemplatesApiTemplatesGet.
-type ListTemplatesApiTemplatesGetParams struct {
-	// App Filter by integration app (snipeit / grocy / spoolman / …)
-	App *string `form:"app,omitempty" json:"app,omitempty"`
+// ListPrintersApiV1AdminPrintersGetParams defines parameters for ListPrintersApiV1AdminPrintersGet.
+type ListPrintersApiV1AdminPrintersGetParams struct {
+	IncludeDisabled *bool `form:"include_disabled,omitempty" json:"include_disabled,omitempty"`
 }
+
+// GrocyWebhookApiWebhookGrocyPostParams defines parameters for GrocyWebhookApiWebhookGrocyPost.
+type GrocyWebhookApiWebhookGrocyPostParams struct {
+	XAPIKey string `json:"X-API-Key"`
+}
+
+// SpoolmanWebhookApiWebhookSpoolmanPostParams defines parameters for SpoolmanWebhookApiWebhookSpoolmanPost.
+type SpoolmanWebhookApiWebhookSpoolmanPostParams struct {
+	XAPIKey string `json:"X-API-Key"`
+}
+
+// CreateApiKeyApiAdminApiKeysPostJSONRequestBody defines body for CreateApiKeyApiAdminApiKeysPost for application/json ContentType.
+type CreateApiKeyApiAdminApiKeysPostJSONRequestBody = ApiKeyCreate
+
+// UpdateApiKeyApiAdminApiKeysKeyIdPatchJSONRequestBody defines body for UpdateApiKeyApiAdminApiKeysKeyIdPatch for application/json ContentType.
+type UpdateApiKeyApiAdminApiKeysKeyIdPatchJSONRequestBody = ApiKeyPatch
+
+// CreateBatchApiPrintPrinterKeyBatchPostJSONRequestBody defines body for CreateBatchApiPrintPrinterKeyBatchPost for application/json ContentType.
+type CreateBatchApiPrintPrinterKeyBatchPostJSONRequestBody = BatchRequest
+
+// RenderPreviewApiRenderPreviewPostJSONRequestBody defines body for RenderPreviewApiRenderPreviewPost for application/json ContentType.
+type RenderPreviewApiRenderPreviewPostJSONRequestBody = UnderscorePreviewRequest
+
+// CreatePrinterApiV1AdminPrintersPostJSONRequestBody defines body for CreatePrinterApiV1AdminPrintersPost for application/json ContentType.
+type CreatePrinterApiV1AdminPrintersPostJSONRequestBody = PrinterCreatePayload
+
+// UpdatePrinterApiV1AdminPrintersSlugPutJSONRequestBody defines body for UpdatePrinterApiV1AdminPrintersSlugPut for application/json ContentType.
+type UpdatePrinterApiV1AdminPrintersSlugPutJSONRequestBody = PrinterUpdatePayload
+
+// GrocyWebhookApiWebhookGrocyPostJSONRequestBody defines body for GrocyWebhookApiWebhookGrocyPost for application/json ContentType.
+type GrocyWebhookApiWebhookGrocyPostJSONRequestBody = GrocyWebhookPayload
+
+// SpoolmanWebhookApiWebhookSpoolmanPostJSONRequestBody defines body for SpoolmanWebhookApiWebhookSpoolmanPost for application/json ContentType.
+type SpoolmanWebhookApiWebhookSpoolmanPostJSONRequestBody = SpoolmanWebhookPayload
+
+// CreatePrintJobPrintPostJSONRequestBody defines body for CreatePrintJobPrintPost for application/json ContentType.
+type CreatePrintJobPrintPostJSONRequestBody = PrintRequest
 
 // AsValidationErrorLoc0 returns the union data inside the ValidationError_Loc_Item as a ValidationErrorLoc0
 func (t ValidationError_Loc_Item) AsValidationErrorLoc0() (ValidationErrorLoc0, error) {
@@ -291,6 +860,68 @@ func (t ValidationError_Loc_Item) MarshalJSON() ([]byte, error) {
 }
 
 func (t *ValidationError_Loc_Item) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsPrinterResumeResponsePrinterId0 returns the union data inside the PrinterResumeResponse_PrinterId as a PrinterResumeResponsePrinterId0
+func (t PrinterResumeResponse_PrinterId) AsPrinterResumeResponsePrinterId0() (PrinterResumeResponsePrinterId0, error) {
+	var body PrinterResumeResponsePrinterId0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromPrinterResumeResponsePrinterId0 overwrites any union data inside the PrinterResumeResponse_PrinterId as the provided PrinterResumeResponsePrinterId0
+func (t *PrinterResumeResponse_PrinterId) FromPrinterResumeResponsePrinterId0(v PrinterResumeResponsePrinterId0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergePrinterResumeResponsePrinterId0 performs a merge with any union data inside the PrinterResumeResponse_PrinterId, using the provided PrinterResumeResponsePrinterId0
+func (t *PrinterResumeResponse_PrinterId) MergePrinterResumeResponsePrinterId0(v PrinterResumeResponsePrinterId0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsPrinterResumeResponsePrinterId1 returns the union data inside the PrinterResumeResponse_PrinterId as a PrinterResumeResponsePrinterId1
+func (t PrinterResumeResponse_PrinterId) AsPrinterResumeResponsePrinterId1() (PrinterResumeResponsePrinterId1, error) {
+	var body PrinterResumeResponsePrinterId1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromPrinterResumeResponsePrinterId1 overwrites any union data inside the PrinterResumeResponse_PrinterId as the provided PrinterResumeResponsePrinterId1
+func (t *PrinterResumeResponse_PrinterId) FromPrinterResumeResponsePrinterId1(v PrinterResumeResponsePrinterId1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergePrinterResumeResponsePrinterId1 performs a merge with any union data inside the PrinterResumeResponse_PrinterId, using the provided PrinterResumeResponsePrinterId1
+func (t *PrinterResumeResponse_PrinterId) MergePrinterResumeResponsePrinterId1(v PrinterResumeResponsePrinterId1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t PrinterResumeResponse_PrinterId) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *PrinterResumeResponse_PrinterId) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -368,6 +999,28 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// ListApiKeysApiAdminApiKeysGet request
+	ListApiKeysApiAdminApiKeysGet(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateApiKeyApiAdminApiKeysPostWithBody request with any body
+	CreateApiKeyApiAdminApiKeysPostWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateApiKeyApiAdminApiKeysPost(ctx context.Context, body CreateApiKeyApiAdminApiKeysPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeApiKeyApiAdminApiKeysKeyIdDelete request
+	RevokeApiKeyApiAdminApiKeysKeyIdDelete(ctx context.Context, keyId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApiKeyApiAdminApiKeysKeyIdGet request
+	GetApiKeyApiAdminApiKeysKeyIdGet(ctx context.Context, keyId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateApiKeyApiAdminApiKeysKeyIdPatchWithBody request with any body
+	UpdateApiKeyApiAdminApiKeysKeyIdPatchWithBody(ctx context.Context, keyId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateApiKeyApiAdminApiKeysKeyIdPatch(ctx context.Context, keyId openapi_types.UUID, body UpdateApiKeyApiAdminApiKeysKeyIdPatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetBatchApiBatchesBatchIdGet request
+	GetBatchApiBatchesBatchIdGet(ctx context.Context, batchId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// SseEventsApiEventsGet request
 	SseEventsApiEventsGet(ctx context.Context, params *SseEventsApiEventsGetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -392,8 +1045,13 @@ type ClientInterface interface {
 	// LookupApiLookupAppEntityIdGet request
 	LookupApiLookupAppEntityIdGet(ctx context.Context, app LookupApiLookupAppEntityIdGetParamsApp, entityId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CreateBatchApiPrintPrinterKeyBatchPostWithBody request with any body
+	CreateBatchApiPrintPrinterKeyBatchPostWithBody(ctx context.Context, printerKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateBatchApiPrintPrinterKeyBatchPost(ctx context.Context, printerKey string, body CreateBatchApiPrintPrinterKeyBatchPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListPrintersApiPrintersGet request
-	ListPrintersApiPrintersGet(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListPrintersApiPrintersGet(ctx context.Context, params *ListPrintersApiPrintersGetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetPrinterApiPrintersPrinterIdGet request
 	GetPrinterApiPrintersPrinterIdGet(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -416,11 +1074,170 @@ type ClientInterface interface {
 	// GetPrinterTapeApiPrintersPrinterIdTapeGet request
 	GetPrinterTapeApiPrintersPrinterIdTapeGet(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// RenderPreviewApiRenderPreviewPost request
-	RenderPreviewApiRenderPreviewPost(ctx context.Context, params *RenderPreviewApiRenderPreviewPostParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// RenderPreviewApiRenderPreviewPostWithBody request with any body
+	RenderPreviewApiRenderPreviewPostWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListTemplatesApiTemplatesGet request
-	ListTemplatesApiTemplatesGet(ctx context.Context, params *ListTemplatesApiTemplatesGetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	RenderPreviewApiRenderPreviewPost(ctx context.Context, body RenderPreviewApiRenderPreviewPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPrintersApiV1AdminPrintersGet request
+	ListPrintersApiV1AdminPrintersGet(ctx context.Context, params *ListPrintersApiV1AdminPrintersGetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePrinterApiV1AdminPrintersPostWithBody request with any body
+	CreatePrinterApiV1AdminPrintersPostWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreatePrinterApiV1AdminPrintersPost(ctx context.Context, body CreatePrinterApiV1AdminPrintersPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPrinterApiV1AdminPrintersSlugGet request
+	GetPrinterApiV1AdminPrintersSlugGet(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdatePrinterApiV1AdminPrintersSlugPutWithBody request with any body
+	UpdatePrinterApiV1AdminPrintersSlugPutWithBody(ctx context.Context, slug string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdatePrinterApiV1AdminPrintersSlugPut(ctx context.Context, slug string, body UpdatePrinterApiV1AdminPrintersSlugPutJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DisablePrinterApiV1AdminPrintersSlugDisablePost request
+	DisablePrinterApiV1AdminPrintersSlugDisablePost(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EnablePrinterApiV1AdminPrintersSlugEnablePost request
+	EnablePrinterApiV1AdminPrintersSlugEnablePost(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GrocyWebhookApiWebhookGrocyPostWithBody request with any body
+	GrocyWebhookApiWebhookGrocyPostWithBody(ctx context.Context, params *GrocyWebhookApiWebhookGrocyPostParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	GrocyWebhookApiWebhookGrocyPost(ctx context.Context, params *GrocyWebhookApiWebhookGrocyPostParams, body GrocyWebhookApiWebhookGrocyPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SpoolmanWebhookApiWebhookSpoolmanPostWithBody request with any body
+	SpoolmanWebhookApiWebhookSpoolmanPostWithBody(ctx context.Context, params *SpoolmanWebhookApiWebhookSpoolmanPostParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SpoolmanWebhookApiWebhookSpoolmanPost(ctx context.Context, params *SpoolmanWebhookApiWebhookSpoolmanPostParams, body SpoolmanWebhookApiWebhookSpoolmanPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AssetLandingAssetEntityIdGet request
+	AssetLandingAssetEntityIdGet(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// HealthzHealthzGet request
+	HealthzHealthzGet(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetJobStatusJobsJobIdGet request
+	GetJobStatusJobsJobIdGet(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResumeJobJobsJobIdResumePost request
+	ResumeJobJobsJobIdResumePost(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LocLandingLocEntityIdGet request
+	LocLandingLocEntityIdGet(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreatePrintJobPrintPostWithBody request with any body
+	CreatePrintJobPrintPostWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreatePrintJobPrintPost(ctx context.Context, body CreatePrintJobPrintPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResumePrinterPrinterResumePost request
+	ResumePrinterPrinterResumePost(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProductLandingProductEntityIdGet request
+	ProductLandingProductEntityIdGet(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReadinessReadinessGet request
+	ReadinessReadinessGet(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SpoolLandingSpoolEntityIdGet request
+	SpoolLandingSpoolEntityIdGet(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) ListApiKeysApiAdminApiKeysGet(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListApiKeysApiAdminApiKeysGetRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateApiKeyApiAdminApiKeysPostWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateApiKeyApiAdminApiKeysPostRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateApiKeyApiAdminApiKeysPost(ctx context.Context, body CreateApiKeyApiAdminApiKeysPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateApiKeyApiAdminApiKeysPostRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RevokeApiKeyApiAdminApiKeysKeyIdDelete(ctx context.Context, keyId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeApiKeyApiAdminApiKeysKeyIdDeleteRequest(c.Server, keyId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetApiKeyApiAdminApiKeysKeyIdGet(ctx context.Context, keyId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApiKeyApiAdminApiKeysKeyIdGetRequest(c.Server, keyId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateApiKeyApiAdminApiKeysKeyIdPatchWithBody(ctx context.Context, keyId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateApiKeyApiAdminApiKeysKeyIdPatchRequestWithBody(c.Server, keyId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateApiKeyApiAdminApiKeysKeyIdPatch(ctx context.Context, keyId openapi_types.UUID, body UpdateApiKeyApiAdminApiKeysKeyIdPatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateApiKeyApiAdminApiKeysKeyIdPatchRequest(c.Server, keyId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetBatchApiBatchesBatchIdGet(ctx context.Context, batchId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetBatchApiBatchesBatchIdGetRequest(c.Server, batchId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) SseEventsApiEventsGet(ctx context.Context, params *SseEventsApiEventsGetParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -519,8 +1336,32 @@ func (c *Client) LookupApiLookupAppEntityIdGet(ctx context.Context, app LookupAp
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListPrintersApiPrintersGet(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListPrintersApiPrintersGetRequest(c.Server)
+func (c *Client) CreateBatchApiPrintPrinterKeyBatchPostWithBody(ctx context.Context, printerKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateBatchApiPrintPrinterKeyBatchPostRequestWithBody(c.Server, printerKey, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateBatchApiPrintPrinterKeyBatchPost(ctx context.Context, printerKey string, body CreateBatchApiPrintPrinterKeyBatchPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateBatchApiPrintPrinterKeyBatchPostRequest(c.Server, printerKey, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListPrintersApiPrintersGet(ctx context.Context, params *ListPrintersApiPrintersGetParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPrintersApiPrintersGetRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -615,8 +1456,8 @@ func (c *Client) GetPrinterTapeApiPrintersPrinterIdTapeGet(ctx context.Context, 
 	return c.Client.Do(req)
 }
 
-func (c *Client) RenderPreviewApiRenderPreviewPost(ctx context.Context, params *RenderPreviewApiRenderPreviewPostParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewRenderPreviewApiRenderPreviewPostRequest(c.Server, params)
+func (c *Client) RenderPreviewApiRenderPreviewPostWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenderPreviewApiRenderPreviewPostRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -627,8 +1468,8 @@ func (c *Client) RenderPreviewApiRenderPreviewPost(ctx context.Context, params *
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListTemplatesApiTemplatesGet(ctx context.Context, params *ListTemplatesApiTemplatesGetParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListTemplatesApiTemplatesGetRequest(c.Server, params)
+func (c *Client) RenderPreviewApiRenderPreviewPost(ctx context.Context, body RenderPreviewApiRenderPreviewPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenderPreviewApiRenderPreviewPostRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -637,6 +1478,498 @@ func (c *Client) ListTemplatesApiTemplatesGet(ctx context.Context, params *ListT
 		return nil, err
 	}
 	return c.Client.Do(req)
+}
+
+func (c *Client) ListPrintersApiV1AdminPrintersGet(ctx context.Context, params *ListPrintersApiV1AdminPrintersGetParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPrintersApiV1AdminPrintersGetRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePrinterApiV1AdminPrintersPostWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePrinterApiV1AdminPrintersPostRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePrinterApiV1AdminPrintersPost(ctx context.Context, body CreatePrinterApiV1AdminPrintersPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePrinterApiV1AdminPrintersPostRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetPrinterApiV1AdminPrintersSlugGet(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPrinterApiV1AdminPrintersSlugGetRequest(c.Server, slug)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdatePrinterApiV1AdminPrintersSlugPutWithBody(ctx context.Context, slug string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdatePrinterApiV1AdminPrintersSlugPutRequestWithBody(c.Server, slug, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdatePrinterApiV1AdminPrintersSlugPut(ctx context.Context, slug string, body UpdatePrinterApiV1AdminPrintersSlugPutJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdatePrinterApiV1AdminPrintersSlugPutRequest(c.Server, slug, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DisablePrinterApiV1AdminPrintersSlugDisablePost(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDisablePrinterApiV1AdminPrintersSlugDisablePostRequest(c.Server, slug)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) EnablePrinterApiV1AdminPrintersSlugEnablePost(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEnablePrinterApiV1AdminPrintersSlugEnablePostRequest(c.Server, slug)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GrocyWebhookApiWebhookGrocyPostWithBody(ctx context.Context, params *GrocyWebhookApiWebhookGrocyPostParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGrocyWebhookApiWebhookGrocyPostRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GrocyWebhookApiWebhookGrocyPost(ctx context.Context, params *GrocyWebhookApiWebhookGrocyPostParams, body GrocyWebhookApiWebhookGrocyPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGrocyWebhookApiWebhookGrocyPostRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SpoolmanWebhookApiWebhookSpoolmanPostWithBody(ctx context.Context, params *SpoolmanWebhookApiWebhookSpoolmanPostParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSpoolmanWebhookApiWebhookSpoolmanPostRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SpoolmanWebhookApiWebhookSpoolmanPost(ctx context.Context, params *SpoolmanWebhookApiWebhookSpoolmanPostParams, body SpoolmanWebhookApiWebhookSpoolmanPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSpoolmanWebhookApiWebhookSpoolmanPostRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AssetLandingAssetEntityIdGet(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAssetLandingAssetEntityIdGetRequest(c.Server, entityId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) HealthzHealthzGet(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewHealthzHealthzGetRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetJobStatusJobsJobIdGet(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetJobStatusJobsJobIdGetRequest(c.Server, jobId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResumeJobJobsJobIdResumePost(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResumeJobJobsJobIdResumePostRequest(c.Server, jobId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LocLandingLocEntityIdGet(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLocLandingLocEntityIdGetRequest(c.Server, entityId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePrintJobPrintPostWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePrintJobPrintPostRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreatePrintJobPrintPost(ctx context.Context, body CreatePrintJobPrintPostJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreatePrintJobPrintPostRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResumePrinterPrinterResumePost(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResumePrinterPrinterResumePostRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProductLandingProductEntityIdGet(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProductLandingProductEntityIdGetRequest(c.Server, entityId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReadinessReadinessGet(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReadinessReadinessGetRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SpoolLandingSpoolEntityIdGet(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSpoolLandingSpoolEntityIdGetRequest(c.Server, entityId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewListApiKeysApiAdminApiKeysGetRequest generates requests for ListApiKeysApiAdminApiKeysGet
+func NewListApiKeysApiAdminApiKeysGetRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/admin/api-keys")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateApiKeyApiAdminApiKeysPostRequest calls the generic CreateApiKeyApiAdminApiKeysPost builder with application/json body
+func NewCreateApiKeyApiAdminApiKeysPostRequest(server string, body CreateApiKeyApiAdminApiKeysPostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateApiKeyApiAdminApiKeysPostRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateApiKeyApiAdminApiKeysPostRequestWithBody generates requests for CreateApiKeyApiAdminApiKeysPost with any type of body
+func NewCreateApiKeyApiAdminApiKeysPostRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/admin/api-keys")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRevokeApiKeyApiAdminApiKeysKeyIdDeleteRequest generates requests for RevokeApiKeyApiAdminApiKeysKeyIdDelete
+func NewRevokeApiKeyApiAdminApiKeysKeyIdDeleteRequest(server string, keyId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "key_id", keyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/admin/api-keys/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApiKeyApiAdminApiKeysKeyIdGetRequest generates requests for GetApiKeyApiAdminApiKeysKeyIdGet
+func NewGetApiKeyApiAdminApiKeysKeyIdGetRequest(server string, keyId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "key_id", keyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/admin/api-keys/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateApiKeyApiAdminApiKeysKeyIdPatchRequest calls the generic UpdateApiKeyApiAdminApiKeysKeyIdPatch builder with application/json body
+func NewUpdateApiKeyApiAdminApiKeysKeyIdPatchRequest(server string, keyId openapi_types.UUID, body UpdateApiKeyApiAdminApiKeysKeyIdPatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateApiKeyApiAdminApiKeysKeyIdPatchRequestWithBody(server, keyId, "application/json", bodyReader)
+}
+
+// NewUpdateApiKeyApiAdminApiKeysKeyIdPatchRequestWithBody generates requests for UpdateApiKeyApiAdminApiKeysKeyIdPatch with any type of body
+func NewUpdateApiKeyApiAdminApiKeysKeyIdPatchRequestWithBody(server string, keyId openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "key_id", keyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/admin/api-keys/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetBatchApiBatchesBatchIdGetRequest generates requests for GetBatchApiBatchesBatchIdGet
+func NewGetBatchApiBatchesBatchIdGetRequest(server string, batchId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "batch_id", batchId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/batches/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
 // NewSseEventsApiEventsGetRequest generates requests for SseEventsApiEventsGet
@@ -990,8 +2323,55 @@ func NewLookupApiLookupAppEntityIdGetRequest(server string, app LookupApiLookupA
 	return req, nil
 }
 
+// NewCreateBatchApiPrintPrinterKeyBatchPostRequest calls the generic CreateBatchApiPrintPrinterKeyBatchPost builder with application/json body
+func NewCreateBatchApiPrintPrinterKeyBatchPostRequest(server string, printerKey string, body CreateBatchApiPrintPrinterKeyBatchPostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateBatchApiPrintPrinterKeyBatchPostRequestWithBody(server, printerKey, "application/json", bodyReader)
+}
+
+// NewCreateBatchApiPrintPrinterKeyBatchPostRequestWithBody generates requests for CreateBatchApiPrintPrinterKeyBatchPost with any type of body
+func NewCreateBatchApiPrintPrinterKeyBatchPostRequestWithBody(server string, printerKey string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "printer_key", printerKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/print/%s/batch", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListPrintersApiPrintersGetRequest generates requests for ListPrintersApiPrintersGet
-func NewListPrintersApiPrintersGetRequest(server string) (*http.Request, error) {
+func NewListPrintersApiPrintersGetRequest(server string, params *ListPrintersApiPrintersGetParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -1007,6 +2387,33 @@ func NewListPrintersApiPrintersGetRequest(server string) (*http.Request, error) 
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Slug != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "slug", *params.Slug, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -1255,8 +2662,19 @@ func NewGetPrinterTapeApiPrintersPrinterIdTapeGetRequest(server string, printerI
 	return req, nil
 }
 
-// NewRenderPreviewApiRenderPreviewPostRequest generates requests for RenderPreviewApiRenderPreviewPost
-func NewRenderPreviewApiRenderPreviewPostRequest(server string, params *RenderPreviewApiRenderPreviewPostParams) (*http.Request, error) {
+// NewRenderPreviewApiRenderPreviewPostRequest calls the generic RenderPreviewApiRenderPreviewPost builder with application/json body
+func NewRenderPreviewApiRenderPreviewPostRequest(server string, body RenderPreviewApiRenderPreviewPostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRenderPreviewApiRenderPreviewPostRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRenderPreviewApiRenderPreviewPostRequestWithBody generates requests for RenderPreviewApiRenderPreviewPost with any type of body
+func NewRenderPreviewApiRenderPreviewPostRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -1274,39 +2692,18 @@ func NewRenderPreviewApiRenderPreviewPostRequest(server string, params *RenderPr
 		return nil, err
 	}
 
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "key", params.Key, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-			return nil, err
-		} else {
-			for _, qp := range strings.Split(queryFrag, "&") {
-				rawQueryFragments = append(rawQueryFragments, qp)
-			}
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
 
+	req.Header.Add("Content-Type", contentType)
+
 	return req, nil
 }
 
-// NewListTemplatesApiTemplatesGetRequest generates requests for ListTemplatesApiTemplatesGet
-func NewListTemplatesApiTemplatesGetRequest(server string, params *ListTemplatesApiTemplatesGetParams) (*http.Request, error) {
+// NewListPrintersApiV1AdminPrintersGetRequest generates requests for ListPrintersApiV1AdminPrintersGet
+func NewListPrintersApiV1AdminPrintersGetRequest(server string, params *ListPrintersApiV1AdminPrintersGetParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -1314,7 +2711,7 @@ func NewListTemplatesApiTemplatesGetRequest(server string, params *ListTemplates
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/templates")
+	operationPath := fmt.Sprintf("/api/v1/admin/printers")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1333,9 +2730,9 @@ func NewListTemplatesApiTemplatesGetRequest(server string, params *ListTemplates
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
 
-		if params.App != nil {
+		if params.IncludeDisabled != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "app", *params.App, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "include_disabled", *params.IncludeDisabled, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -1349,6 +2746,626 @@ func NewListTemplatesApiTemplatesGetRequest(server string, params *ListTemplates
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
 		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreatePrinterApiV1AdminPrintersPostRequest calls the generic CreatePrinterApiV1AdminPrintersPost builder with application/json body
+func NewCreatePrinterApiV1AdminPrintersPostRequest(server string, body CreatePrinterApiV1AdminPrintersPostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePrinterApiV1AdminPrintersPostRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreatePrinterApiV1AdminPrintersPostRequestWithBody generates requests for CreatePrinterApiV1AdminPrintersPost with any type of body
+func NewCreatePrinterApiV1AdminPrintersPostRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/admin/printers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetPrinterApiV1AdminPrintersSlugGetRequest generates requests for GetPrinterApiV1AdminPrintersSlugGet
+func NewGetPrinterApiV1AdminPrintersSlugGetRequest(server string, slug string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "slug", slug, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/admin/printers/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdatePrinterApiV1AdminPrintersSlugPutRequest calls the generic UpdatePrinterApiV1AdminPrintersSlugPut builder with application/json body
+func NewUpdatePrinterApiV1AdminPrintersSlugPutRequest(server string, slug string, body UpdatePrinterApiV1AdminPrintersSlugPutJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdatePrinterApiV1AdminPrintersSlugPutRequestWithBody(server, slug, "application/json", bodyReader)
+}
+
+// NewUpdatePrinterApiV1AdminPrintersSlugPutRequestWithBody generates requests for UpdatePrinterApiV1AdminPrintersSlugPut with any type of body
+func NewUpdatePrinterApiV1AdminPrintersSlugPutRequestWithBody(server string, slug string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "slug", slug, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/admin/printers/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDisablePrinterApiV1AdminPrintersSlugDisablePostRequest generates requests for DisablePrinterApiV1AdminPrintersSlugDisablePost
+func NewDisablePrinterApiV1AdminPrintersSlugDisablePostRequest(server string, slug string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "slug", slug, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/admin/printers/%s/disable", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEnablePrinterApiV1AdminPrintersSlugEnablePostRequest generates requests for EnablePrinterApiV1AdminPrintersSlugEnablePost
+func NewEnablePrinterApiV1AdminPrintersSlugEnablePostRequest(server string, slug string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "slug", slug, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/admin/printers/%s/enable", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGrocyWebhookApiWebhookGrocyPostRequest calls the generic GrocyWebhookApiWebhookGrocyPost builder with application/json body
+func NewGrocyWebhookApiWebhookGrocyPostRequest(server string, params *GrocyWebhookApiWebhookGrocyPostParams, body GrocyWebhookApiWebhookGrocyPostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewGrocyWebhookApiWebhookGrocyPostRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewGrocyWebhookApiWebhookGrocyPostRequestWithBody generates requests for GrocyWebhookApiWebhookGrocyPost with any type of body
+func NewGrocyWebhookApiWebhookGrocyPostRequestWithBody(server string, params *GrocyWebhookApiWebhookGrocyPostParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/webhook/grocy")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-API-Key", params.XAPIKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-API-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewSpoolmanWebhookApiWebhookSpoolmanPostRequest calls the generic SpoolmanWebhookApiWebhookSpoolmanPost builder with application/json body
+func NewSpoolmanWebhookApiWebhookSpoolmanPostRequest(server string, params *SpoolmanWebhookApiWebhookSpoolmanPostParams, body SpoolmanWebhookApiWebhookSpoolmanPostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSpoolmanWebhookApiWebhookSpoolmanPostRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewSpoolmanWebhookApiWebhookSpoolmanPostRequestWithBody generates requests for SpoolmanWebhookApiWebhookSpoolmanPost with any type of body
+func NewSpoolmanWebhookApiWebhookSpoolmanPostRequestWithBody(server string, params *SpoolmanWebhookApiWebhookSpoolmanPostParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/webhook/spoolman")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-API-Key", params.XAPIKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-API-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewAssetLandingAssetEntityIdGetRequest generates requests for AssetLandingAssetEntityIdGet
+func NewAssetLandingAssetEntityIdGetRequest(server string, entityId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "entity_id", entityId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/asset/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewHealthzHealthzGetRequest generates requests for HealthzHealthzGet
+func NewHealthzHealthzGetRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/healthz")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetJobStatusJobsJobIdGetRequest generates requests for GetJobStatusJobsJobIdGet
+func NewGetJobStatusJobsJobIdGetRequest(server string, jobId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "job_id", jobId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/jobs/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewResumeJobJobsJobIdResumePostRequest generates requests for ResumeJobJobsJobIdResumePost
+func NewResumeJobJobsJobIdResumePostRequest(server string, jobId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "job_id", jobId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/jobs/%s/resume", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewLocLandingLocEntityIdGetRequest generates requests for LocLandingLocEntityIdGet
+func NewLocLandingLocEntityIdGetRequest(server string, entityId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "entity_id", entityId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/loc/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreatePrintJobPrintPostRequest calls the generic CreatePrintJobPrintPost builder with application/json body
+func NewCreatePrintJobPrintPostRequest(server string, body CreatePrintJobPrintPostJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreatePrintJobPrintPostRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreatePrintJobPrintPostRequestWithBody generates requests for CreatePrintJobPrintPost with any type of body
+func NewCreatePrintJobPrintPostRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/print")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewResumePrinterPrinterResumePostRequest generates requests for ResumePrinterPrinterResumePost
+func NewResumePrinterPrinterResumePostRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/printer/resume")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewProductLandingProductEntityIdGetRequest generates requests for ProductLandingProductEntityIdGet
+func NewProductLandingProductEntityIdGetRequest(server string, entityId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "entity_id", entityId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/product/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewReadinessReadinessGetRequest generates requests for ReadinessReadinessGet
+func NewReadinessReadinessGetRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/readiness")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSpoolLandingSpoolEntityIdGetRequest generates requests for SpoolLandingSpoolEntityIdGet
+func NewSpoolLandingSpoolEntityIdGetRequest(server string, entityId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "entity_id", entityId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/spool/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -1402,6 +3419,28 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// ListApiKeysApiAdminApiKeysGetWithResponse request
+	ListApiKeysApiAdminApiKeysGetWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListApiKeysApiAdminApiKeysGetResponse, error)
+
+	// CreateApiKeyApiAdminApiKeysPostWithBodyWithResponse request with any body
+	CreateApiKeyApiAdminApiKeysPostWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateApiKeyApiAdminApiKeysPostResponse, error)
+
+	CreateApiKeyApiAdminApiKeysPostWithResponse(ctx context.Context, body CreateApiKeyApiAdminApiKeysPostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateApiKeyApiAdminApiKeysPostResponse, error)
+
+	// RevokeApiKeyApiAdminApiKeysKeyIdDeleteWithResponse request
+	RevokeApiKeyApiAdminApiKeysKeyIdDeleteWithResponse(ctx context.Context, keyId openapi_types.UUID, reqEditors ...RequestEditorFn) (*RevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse, error)
+
+	// GetApiKeyApiAdminApiKeysKeyIdGetWithResponse request
+	GetApiKeyApiAdminApiKeysKeyIdGetWithResponse(ctx context.Context, keyId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetApiKeyApiAdminApiKeysKeyIdGetResponse, error)
+
+	// UpdateApiKeyApiAdminApiKeysKeyIdPatchWithBodyWithResponse request with any body
+	UpdateApiKeyApiAdminApiKeysKeyIdPatchWithBodyWithResponse(ctx context.Context, keyId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse, error)
+
+	UpdateApiKeyApiAdminApiKeysKeyIdPatchWithResponse(ctx context.Context, keyId openapi_types.UUID, body UpdateApiKeyApiAdminApiKeysKeyIdPatchJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse, error)
+
+	// GetBatchApiBatchesBatchIdGetWithResponse request
+	GetBatchApiBatchesBatchIdGetWithResponse(ctx context.Context, batchId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetBatchApiBatchesBatchIdGetResponse, error)
+
 	// SseEventsApiEventsGetWithResponse request
 	SseEventsApiEventsGetWithResponse(ctx context.Context, params *SseEventsApiEventsGetParams, reqEditors ...RequestEditorFn) (*SseEventsApiEventsGetResponse, error)
 
@@ -1426,8 +3465,13 @@ type ClientWithResponsesInterface interface {
 	// LookupApiLookupAppEntityIdGetWithResponse request
 	LookupApiLookupAppEntityIdGetWithResponse(ctx context.Context, app LookupApiLookupAppEntityIdGetParamsApp, entityId string, reqEditors ...RequestEditorFn) (*LookupApiLookupAppEntityIdGetResponse, error)
 
+	// CreateBatchApiPrintPrinterKeyBatchPostWithBodyWithResponse request with any body
+	CreateBatchApiPrintPrinterKeyBatchPostWithBodyWithResponse(ctx context.Context, printerKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateBatchApiPrintPrinterKeyBatchPostResponse, error)
+
+	CreateBatchApiPrintPrinterKeyBatchPostWithResponse(ctx context.Context, printerKey string, body CreateBatchApiPrintPrinterKeyBatchPostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateBatchApiPrintPrinterKeyBatchPostResponse, error)
+
 	// ListPrintersApiPrintersGetWithResponse request
-	ListPrintersApiPrintersGetWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPrintersApiPrintersGetResponse, error)
+	ListPrintersApiPrintersGetWithResponse(ctx context.Context, params *ListPrintersApiPrintersGetParams, reqEditors ...RequestEditorFn) (*ListPrintersApiPrintersGetResponse, error)
 
 	// GetPrinterApiPrintersPrinterIdGetWithResponse request
 	GetPrinterApiPrintersPrinterIdGetWithResponse(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetPrinterApiPrintersPrinterIdGetResponse, error)
@@ -1450,11 +3494,258 @@ type ClientWithResponsesInterface interface {
 	// GetPrinterTapeApiPrintersPrinterIdTapeGetWithResponse request
 	GetPrinterTapeApiPrintersPrinterIdTapeGetWithResponse(ctx context.Context, printerId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetPrinterTapeApiPrintersPrinterIdTapeGetResponse, error)
 
-	// RenderPreviewApiRenderPreviewPostWithResponse request
-	RenderPreviewApiRenderPreviewPostWithResponse(ctx context.Context, params *RenderPreviewApiRenderPreviewPostParams, reqEditors ...RequestEditorFn) (*RenderPreviewApiRenderPreviewPostResponse, error)
+	// RenderPreviewApiRenderPreviewPostWithBodyWithResponse request with any body
+	RenderPreviewApiRenderPreviewPostWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenderPreviewApiRenderPreviewPostResponse, error)
 
-	// ListTemplatesApiTemplatesGetWithResponse request
-	ListTemplatesApiTemplatesGetWithResponse(ctx context.Context, params *ListTemplatesApiTemplatesGetParams, reqEditors ...RequestEditorFn) (*ListTemplatesApiTemplatesGetResponse, error)
+	RenderPreviewApiRenderPreviewPostWithResponse(ctx context.Context, body RenderPreviewApiRenderPreviewPostJSONRequestBody, reqEditors ...RequestEditorFn) (*RenderPreviewApiRenderPreviewPostResponse, error)
+
+	// ListPrintersApiV1AdminPrintersGetWithResponse request
+	ListPrintersApiV1AdminPrintersGetWithResponse(ctx context.Context, params *ListPrintersApiV1AdminPrintersGetParams, reqEditors ...RequestEditorFn) (*ListPrintersApiV1AdminPrintersGetResponse, error)
+
+	// CreatePrinterApiV1AdminPrintersPostWithBodyWithResponse request with any body
+	CreatePrinterApiV1AdminPrintersPostWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePrinterApiV1AdminPrintersPostResponse, error)
+
+	CreatePrinterApiV1AdminPrintersPostWithResponse(ctx context.Context, body CreatePrinterApiV1AdminPrintersPostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePrinterApiV1AdminPrintersPostResponse, error)
+
+	// GetPrinterApiV1AdminPrintersSlugGetWithResponse request
+	GetPrinterApiV1AdminPrintersSlugGetWithResponse(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*GetPrinterApiV1AdminPrintersSlugGetResponse, error)
+
+	// UpdatePrinterApiV1AdminPrintersSlugPutWithBodyWithResponse request with any body
+	UpdatePrinterApiV1AdminPrintersSlugPutWithBodyWithResponse(ctx context.Context, slug string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdatePrinterApiV1AdminPrintersSlugPutResponse, error)
+
+	UpdatePrinterApiV1AdminPrintersSlugPutWithResponse(ctx context.Context, slug string, body UpdatePrinterApiV1AdminPrintersSlugPutJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePrinterApiV1AdminPrintersSlugPutResponse, error)
+
+	// DisablePrinterApiV1AdminPrintersSlugDisablePostWithResponse request
+	DisablePrinterApiV1AdminPrintersSlugDisablePostWithResponse(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*DisablePrinterApiV1AdminPrintersSlugDisablePostResponse, error)
+
+	// EnablePrinterApiV1AdminPrintersSlugEnablePostWithResponse request
+	EnablePrinterApiV1AdminPrintersSlugEnablePostWithResponse(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*EnablePrinterApiV1AdminPrintersSlugEnablePostResponse, error)
+
+	// GrocyWebhookApiWebhookGrocyPostWithBodyWithResponse request with any body
+	GrocyWebhookApiWebhookGrocyPostWithBodyWithResponse(ctx context.Context, params *GrocyWebhookApiWebhookGrocyPostParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GrocyWebhookApiWebhookGrocyPostResponse, error)
+
+	GrocyWebhookApiWebhookGrocyPostWithResponse(ctx context.Context, params *GrocyWebhookApiWebhookGrocyPostParams, body GrocyWebhookApiWebhookGrocyPostJSONRequestBody, reqEditors ...RequestEditorFn) (*GrocyWebhookApiWebhookGrocyPostResponse, error)
+
+	// SpoolmanWebhookApiWebhookSpoolmanPostWithBodyWithResponse request with any body
+	SpoolmanWebhookApiWebhookSpoolmanPostWithBodyWithResponse(ctx context.Context, params *SpoolmanWebhookApiWebhookSpoolmanPostParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SpoolmanWebhookApiWebhookSpoolmanPostResponse, error)
+
+	SpoolmanWebhookApiWebhookSpoolmanPostWithResponse(ctx context.Context, params *SpoolmanWebhookApiWebhookSpoolmanPostParams, body SpoolmanWebhookApiWebhookSpoolmanPostJSONRequestBody, reqEditors ...RequestEditorFn) (*SpoolmanWebhookApiWebhookSpoolmanPostResponse, error)
+
+	// AssetLandingAssetEntityIdGetWithResponse request
+	AssetLandingAssetEntityIdGetWithResponse(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*AssetLandingAssetEntityIdGetResponse, error)
+
+	// HealthzHealthzGetWithResponse request
+	HealthzHealthzGetWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthzHealthzGetResponse, error)
+
+	// GetJobStatusJobsJobIdGetWithResponse request
+	GetJobStatusJobsJobIdGetWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*GetJobStatusJobsJobIdGetResponse, error)
+
+	// ResumeJobJobsJobIdResumePostWithResponse request
+	ResumeJobJobsJobIdResumePostWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*ResumeJobJobsJobIdResumePostResponse, error)
+
+	// LocLandingLocEntityIdGetWithResponse request
+	LocLandingLocEntityIdGetWithResponse(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*LocLandingLocEntityIdGetResponse, error)
+
+	// CreatePrintJobPrintPostWithBodyWithResponse request with any body
+	CreatePrintJobPrintPostWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePrintJobPrintPostResponse, error)
+
+	CreatePrintJobPrintPostWithResponse(ctx context.Context, body CreatePrintJobPrintPostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePrintJobPrintPostResponse, error)
+
+	// ResumePrinterPrinterResumePostWithResponse request
+	ResumePrinterPrinterResumePostWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ResumePrinterPrinterResumePostResponse, error)
+
+	// ProductLandingProductEntityIdGetWithResponse request
+	ProductLandingProductEntityIdGetWithResponse(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*ProductLandingProductEntityIdGetResponse, error)
+
+	// ReadinessReadinessGetWithResponse request
+	ReadinessReadinessGetWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ReadinessReadinessGetResponse, error)
+
+	// SpoolLandingSpoolEntityIdGetWithResponse request
+	SpoolLandingSpoolEntityIdGetWithResponse(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*SpoolLandingSpoolEntityIdGetResponse, error)
+}
+
+type ListApiKeysApiAdminApiKeysGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]ApiKeyRead
+}
+
+// Status returns HTTPResponse.Status
+func (r ListApiKeysApiAdminApiKeysGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListApiKeysApiAdminApiKeysGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListApiKeysApiAdminApiKeysGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateApiKeyApiAdminApiKeysPostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *ApiKeyCreateResponse
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateApiKeyApiAdminApiKeysPostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateApiKeyApiAdminApiKeysPostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateApiKeyApiAdminApiKeysPostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetApiKeyApiAdminApiKeysKeyIdGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ApiKeyRead
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApiKeyApiAdminApiKeysKeyIdGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApiKeyApiAdminApiKeysKeyIdGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApiKeyApiAdminApiKeysKeyIdGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ApiKeyRead
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetBatchApiBatchesBatchIdGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BatchRead
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetBatchApiBatchesBatchIdGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetBatchApiBatchesBatchIdGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetBatchApiBatchesBatchIdGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
 }
 
 type SseEventsApiEventsGetResponse struct {
@@ -1704,10 +3995,42 @@ func (r LookupApiLookupAppEntityIdGetResponse) ContentType() string {
 	return ""
 }
 
+type CreateBatchApiPrintPrinterKeyBatchPostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *BatchResponse
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateBatchApiPrintPrinterKeyBatchPostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateBatchApiPrintPrinterKeyBatchPostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateBatchApiPrintPrinterKeyBatchPostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListPrintersApiPrintersGetResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]PrinterRead
+	JSON200      *[]AppSchemasPrinterPrinterRead
+	JSON422      *HTTPValidationError
 }
 
 // Status returns HTTPResponse.Status
@@ -1737,7 +4060,7 @@ func (r ListPrintersApiPrintersGetResponse) ContentType() string {
 type GetPrinterApiPrintersPrinterIdGetResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *PrinterRead
+	JSON200      *AppSchemasPrinterPrinterRead
 	JSON422      *HTTPValidationError
 }
 
@@ -1951,7 +4274,6 @@ func (r GetPrinterTapeApiPrintersPrinterIdTapeGetResponse) ContentType() string 
 type RenderPreviewApiRenderPreviewPostResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON422      *HTTPValidationError
 }
 
 // Status returns HTTPResponse.Status
@@ -1978,15 +4300,15 @@ func (r RenderPreviewApiRenderPreviewPostResponse) ContentType() string {
 	return ""
 }
 
-type ListTemplatesApiTemplatesGetResponse struct {
+type ListPrintersApiV1AdminPrintersGetResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]TemplateRead
+	JSON200      *[]AppApiRoutesAdminPrintersApiPrinterRead
 	JSON422      *HTTPValidationError
 }
 
 // Status returns HTTPResponse.Status
-func (r ListTemplatesApiTemplatesGetResponse) Status() string {
+func (r ListPrintersApiV1AdminPrintersGetResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1994,7 +4316,7 @@ func (r ListTemplatesApiTemplatesGetResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r ListTemplatesApiTemplatesGetResponse) StatusCode() int {
+func (r ListPrintersApiV1AdminPrintersGetResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2002,11 +4324,602 @@ func (r ListTemplatesApiTemplatesGetResponse) StatusCode() int {
 }
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListTemplatesApiTemplatesGetResponse) ContentType() string {
+func (r ListPrintersApiV1AdminPrintersGetResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
 	return ""
+}
+
+type CreatePrinterApiV1AdminPrintersPostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *AppApiRoutesAdminPrintersApiPrinterRead
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePrinterApiV1AdminPrintersPostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePrinterApiV1AdminPrintersPostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreatePrinterApiV1AdminPrintersPostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPrinterApiV1AdminPrintersSlugGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AppApiRoutesAdminPrintersApiPrinterRead
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPrinterApiV1AdminPrintersSlugGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPrinterApiV1AdminPrintersSlugGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPrinterApiV1AdminPrintersSlugGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdatePrinterApiV1AdminPrintersSlugPutResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AppApiRoutesAdminPrintersApiPrinterRead
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdatePrinterApiV1AdminPrintersSlugPutResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdatePrinterApiV1AdminPrintersSlugPutResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdatePrinterApiV1AdminPrintersSlugPutResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DisablePrinterApiV1AdminPrintersSlugDisablePostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AppApiRoutesAdminPrintersApiPrinterRead
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r DisablePrinterApiV1AdminPrintersSlugDisablePostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DisablePrinterApiV1AdminPrintersSlugDisablePostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DisablePrinterApiV1AdminPrintersSlugDisablePostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type EnablePrinterApiV1AdminPrintersSlugEnablePostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AppApiRoutesAdminPrintersApiPrinterRead
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r EnablePrinterApiV1AdminPrintersSlugEnablePostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EnablePrinterApiV1AdminPrintersSlugEnablePostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r EnablePrinterApiV1AdminPrintersSlugEnablePostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GrocyWebhookApiWebhookGrocyPostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *WebhookAcceptedResponse
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r GrocyWebhookApiWebhookGrocyPostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GrocyWebhookApiWebhookGrocyPostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GrocyWebhookApiWebhookGrocyPostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SpoolmanWebhookApiWebhookSpoolmanPostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *WebhookAcceptedResponse
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r SpoolmanWebhookApiWebhookSpoolmanPostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SpoolmanWebhookApiWebhookSpoolmanPostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SpoolmanWebhookApiWebhookSpoolmanPostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AssetLandingAssetEntityIdGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r AssetLandingAssetEntityIdGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AssetLandingAssetEntityIdGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AssetLandingAssetEntityIdGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type HealthzHealthzGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *Healthz
+}
+
+// Status returns HTTPResponse.Status
+func (r HealthzHealthzGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r HealthzHealthzGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r HealthzHealthzGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetJobStatusJobsJobIdGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PrintJobStatusResponse
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetJobStatusJobsJobIdGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetJobStatusJobsJobIdGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetJobStatusJobsJobIdGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ResumeJobJobsJobIdResumePostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *PrintJobStatusResponse
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r ResumeJobJobsJobIdResumePostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResumeJobJobsJobIdResumePostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ResumeJobJobsJobIdResumePostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type LocLandingLocEntityIdGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r LocLandingLocEntityIdGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LocLandingLocEntityIdGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r LocLandingLocEntityIdGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreatePrintJobPrintPostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON202      *PrintJobResponse
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreatePrintJobPrintPostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreatePrintJobPrintPostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreatePrintJobPrintPostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ResumePrinterPrinterResumePostResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *UnderscorePrinterResumeResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r ResumePrinterPrinterResumePostResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResumePrinterPrinterResumePostResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ResumePrinterPrinterResumePostResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ProductLandingProductEntityIdGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r ProductLandingProductEntityIdGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProductLandingProductEntityIdGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ProductLandingProductEntityIdGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ReadinessReadinessGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ReadinessResponse
+	JSON503      *ReadinessResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r ReadinessReadinessGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReadinessReadinessGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReadinessReadinessGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SpoolLandingSpoolEntityIdGetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON422      *HTTPValidationError
+}
+
+// Status returns HTTPResponse.Status
+func (r SpoolLandingSpoolEntityIdGetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SpoolLandingSpoolEntityIdGetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SpoolLandingSpoolEntityIdGetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// ListApiKeysApiAdminApiKeysGetWithResponse request returning *ListApiKeysApiAdminApiKeysGetResponse
+func (c *ClientWithResponses) ListApiKeysApiAdminApiKeysGetWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListApiKeysApiAdminApiKeysGetResponse, error) {
+	rsp, err := c.ListApiKeysApiAdminApiKeysGet(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListApiKeysApiAdminApiKeysGetResponse(rsp)
+}
+
+// CreateApiKeyApiAdminApiKeysPostWithBodyWithResponse request with arbitrary body returning *CreateApiKeyApiAdminApiKeysPostResponse
+func (c *ClientWithResponses) CreateApiKeyApiAdminApiKeysPostWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateApiKeyApiAdminApiKeysPostResponse, error) {
+	rsp, err := c.CreateApiKeyApiAdminApiKeysPostWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateApiKeyApiAdminApiKeysPostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateApiKeyApiAdminApiKeysPostWithResponse(ctx context.Context, body CreateApiKeyApiAdminApiKeysPostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateApiKeyApiAdminApiKeysPostResponse, error) {
+	rsp, err := c.CreateApiKeyApiAdminApiKeysPost(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateApiKeyApiAdminApiKeysPostResponse(rsp)
+}
+
+// RevokeApiKeyApiAdminApiKeysKeyIdDeleteWithResponse request returning *RevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse
+func (c *ClientWithResponses) RevokeApiKeyApiAdminApiKeysKeyIdDeleteWithResponse(ctx context.Context, keyId openapi_types.UUID, reqEditors ...RequestEditorFn) (*RevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse, error) {
+	rsp, err := c.RevokeApiKeyApiAdminApiKeysKeyIdDelete(ctx, keyId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse(rsp)
+}
+
+// GetApiKeyApiAdminApiKeysKeyIdGetWithResponse request returning *GetApiKeyApiAdminApiKeysKeyIdGetResponse
+func (c *ClientWithResponses) GetApiKeyApiAdminApiKeysKeyIdGetWithResponse(ctx context.Context, keyId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetApiKeyApiAdminApiKeysKeyIdGetResponse, error) {
+	rsp, err := c.GetApiKeyApiAdminApiKeysKeyIdGet(ctx, keyId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApiKeyApiAdminApiKeysKeyIdGetResponse(rsp)
+}
+
+// UpdateApiKeyApiAdminApiKeysKeyIdPatchWithBodyWithResponse request with arbitrary body returning *UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse
+func (c *ClientWithResponses) UpdateApiKeyApiAdminApiKeysKeyIdPatchWithBodyWithResponse(ctx context.Context, keyId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse, error) {
+	rsp, err := c.UpdateApiKeyApiAdminApiKeysKeyIdPatchWithBody(ctx, keyId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateApiKeyApiAdminApiKeysKeyIdPatchResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateApiKeyApiAdminApiKeysKeyIdPatchWithResponse(ctx context.Context, keyId openapi_types.UUID, body UpdateApiKeyApiAdminApiKeysKeyIdPatchJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse, error) {
+	rsp, err := c.UpdateApiKeyApiAdminApiKeysKeyIdPatch(ctx, keyId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateApiKeyApiAdminApiKeysKeyIdPatchResponse(rsp)
+}
+
+// GetBatchApiBatchesBatchIdGetWithResponse request returning *GetBatchApiBatchesBatchIdGetResponse
+func (c *ClientWithResponses) GetBatchApiBatchesBatchIdGetWithResponse(ctx context.Context, batchId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetBatchApiBatchesBatchIdGetResponse, error) {
+	rsp, err := c.GetBatchApiBatchesBatchIdGet(ctx, batchId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetBatchApiBatchesBatchIdGetResponse(rsp)
 }
 
 // SseEventsApiEventsGetWithResponse request returning *SseEventsApiEventsGetResponse
@@ -2081,9 +4994,26 @@ func (c *ClientWithResponses) LookupApiLookupAppEntityIdGetWithResponse(ctx cont
 	return ParseLookupApiLookupAppEntityIdGetResponse(rsp)
 }
 
+// CreateBatchApiPrintPrinterKeyBatchPostWithBodyWithResponse request with arbitrary body returning *CreateBatchApiPrintPrinterKeyBatchPostResponse
+func (c *ClientWithResponses) CreateBatchApiPrintPrinterKeyBatchPostWithBodyWithResponse(ctx context.Context, printerKey string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateBatchApiPrintPrinterKeyBatchPostResponse, error) {
+	rsp, err := c.CreateBatchApiPrintPrinterKeyBatchPostWithBody(ctx, printerKey, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateBatchApiPrintPrinterKeyBatchPostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateBatchApiPrintPrinterKeyBatchPostWithResponse(ctx context.Context, printerKey string, body CreateBatchApiPrintPrinterKeyBatchPostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateBatchApiPrintPrinterKeyBatchPostResponse, error) {
+	rsp, err := c.CreateBatchApiPrintPrinterKeyBatchPost(ctx, printerKey, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateBatchApiPrintPrinterKeyBatchPostResponse(rsp)
+}
+
 // ListPrintersApiPrintersGetWithResponse request returning *ListPrintersApiPrintersGetResponse
-func (c *ClientWithResponses) ListPrintersApiPrintersGetWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPrintersApiPrintersGetResponse, error) {
-	rsp, err := c.ListPrintersApiPrintersGet(ctx, reqEditors...)
+func (c *ClientWithResponses) ListPrintersApiPrintersGetWithResponse(ctx context.Context, params *ListPrintersApiPrintersGetParams, reqEditors ...RequestEditorFn) (*ListPrintersApiPrintersGetResponse, error) {
+	rsp, err := c.ListPrintersApiPrintersGet(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -2153,22 +5083,407 @@ func (c *ClientWithResponses) GetPrinterTapeApiPrintersPrinterIdTapeGetWithRespo
 	return ParseGetPrinterTapeApiPrintersPrinterIdTapeGetResponse(rsp)
 }
 
-// RenderPreviewApiRenderPreviewPostWithResponse request returning *RenderPreviewApiRenderPreviewPostResponse
-func (c *ClientWithResponses) RenderPreviewApiRenderPreviewPostWithResponse(ctx context.Context, params *RenderPreviewApiRenderPreviewPostParams, reqEditors ...RequestEditorFn) (*RenderPreviewApiRenderPreviewPostResponse, error) {
-	rsp, err := c.RenderPreviewApiRenderPreviewPost(ctx, params, reqEditors...)
+// RenderPreviewApiRenderPreviewPostWithBodyWithResponse request with arbitrary body returning *RenderPreviewApiRenderPreviewPostResponse
+func (c *ClientWithResponses) RenderPreviewApiRenderPreviewPostWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenderPreviewApiRenderPreviewPostResponse, error) {
+	rsp, err := c.RenderPreviewApiRenderPreviewPostWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseRenderPreviewApiRenderPreviewPostResponse(rsp)
 }
 
-// ListTemplatesApiTemplatesGetWithResponse request returning *ListTemplatesApiTemplatesGetResponse
-func (c *ClientWithResponses) ListTemplatesApiTemplatesGetWithResponse(ctx context.Context, params *ListTemplatesApiTemplatesGetParams, reqEditors ...RequestEditorFn) (*ListTemplatesApiTemplatesGetResponse, error) {
-	rsp, err := c.ListTemplatesApiTemplatesGet(ctx, params, reqEditors...)
+func (c *ClientWithResponses) RenderPreviewApiRenderPreviewPostWithResponse(ctx context.Context, body RenderPreviewApiRenderPreviewPostJSONRequestBody, reqEditors ...RequestEditorFn) (*RenderPreviewApiRenderPreviewPostResponse, error) {
+	rsp, err := c.RenderPreviewApiRenderPreviewPost(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseListTemplatesApiTemplatesGetResponse(rsp)
+	return ParseRenderPreviewApiRenderPreviewPostResponse(rsp)
+}
+
+// ListPrintersApiV1AdminPrintersGetWithResponse request returning *ListPrintersApiV1AdminPrintersGetResponse
+func (c *ClientWithResponses) ListPrintersApiV1AdminPrintersGetWithResponse(ctx context.Context, params *ListPrintersApiV1AdminPrintersGetParams, reqEditors ...RequestEditorFn) (*ListPrintersApiV1AdminPrintersGetResponse, error) {
+	rsp, err := c.ListPrintersApiV1AdminPrintersGet(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPrintersApiV1AdminPrintersGetResponse(rsp)
+}
+
+// CreatePrinterApiV1AdminPrintersPostWithBodyWithResponse request with arbitrary body returning *CreatePrinterApiV1AdminPrintersPostResponse
+func (c *ClientWithResponses) CreatePrinterApiV1AdminPrintersPostWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePrinterApiV1AdminPrintersPostResponse, error) {
+	rsp, err := c.CreatePrinterApiV1AdminPrintersPostWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePrinterApiV1AdminPrintersPostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreatePrinterApiV1AdminPrintersPostWithResponse(ctx context.Context, body CreatePrinterApiV1AdminPrintersPostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePrinterApiV1AdminPrintersPostResponse, error) {
+	rsp, err := c.CreatePrinterApiV1AdminPrintersPost(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePrinterApiV1AdminPrintersPostResponse(rsp)
+}
+
+// GetPrinterApiV1AdminPrintersSlugGetWithResponse request returning *GetPrinterApiV1AdminPrintersSlugGetResponse
+func (c *ClientWithResponses) GetPrinterApiV1AdminPrintersSlugGetWithResponse(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*GetPrinterApiV1AdminPrintersSlugGetResponse, error) {
+	rsp, err := c.GetPrinterApiV1AdminPrintersSlugGet(ctx, slug, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPrinterApiV1AdminPrintersSlugGetResponse(rsp)
+}
+
+// UpdatePrinterApiV1AdminPrintersSlugPutWithBodyWithResponse request with arbitrary body returning *UpdatePrinterApiV1AdminPrintersSlugPutResponse
+func (c *ClientWithResponses) UpdatePrinterApiV1AdminPrintersSlugPutWithBodyWithResponse(ctx context.Context, slug string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdatePrinterApiV1AdminPrintersSlugPutResponse, error) {
+	rsp, err := c.UpdatePrinterApiV1AdminPrintersSlugPutWithBody(ctx, slug, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdatePrinterApiV1AdminPrintersSlugPutResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdatePrinterApiV1AdminPrintersSlugPutWithResponse(ctx context.Context, slug string, body UpdatePrinterApiV1AdminPrintersSlugPutJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdatePrinterApiV1AdminPrintersSlugPutResponse, error) {
+	rsp, err := c.UpdatePrinterApiV1AdminPrintersSlugPut(ctx, slug, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdatePrinterApiV1AdminPrintersSlugPutResponse(rsp)
+}
+
+// DisablePrinterApiV1AdminPrintersSlugDisablePostWithResponse request returning *DisablePrinterApiV1AdminPrintersSlugDisablePostResponse
+func (c *ClientWithResponses) DisablePrinterApiV1AdminPrintersSlugDisablePostWithResponse(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*DisablePrinterApiV1AdminPrintersSlugDisablePostResponse, error) {
+	rsp, err := c.DisablePrinterApiV1AdminPrintersSlugDisablePost(ctx, slug, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDisablePrinterApiV1AdminPrintersSlugDisablePostResponse(rsp)
+}
+
+// EnablePrinterApiV1AdminPrintersSlugEnablePostWithResponse request returning *EnablePrinterApiV1AdminPrintersSlugEnablePostResponse
+func (c *ClientWithResponses) EnablePrinterApiV1AdminPrintersSlugEnablePostWithResponse(ctx context.Context, slug string, reqEditors ...RequestEditorFn) (*EnablePrinterApiV1AdminPrintersSlugEnablePostResponse, error) {
+	rsp, err := c.EnablePrinterApiV1AdminPrintersSlugEnablePost(ctx, slug, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEnablePrinterApiV1AdminPrintersSlugEnablePostResponse(rsp)
+}
+
+// GrocyWebhookApiWebhookGrocyPostWithBodyWithResponse request with arbitrary body returning *GrocyWebhookApiWebhookGrocyPostResponse
+func (c *ClientWithResponses) GrocyWebhookApiWebhookGrocyPostWithBodyWithResponse(ctx context.Context, params *GrocyWebhookApiWebhookGrocyPostParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*GrocyWebhookApiWebhookGrocyPostResponse, error) {
+	rsp, err := c.GrocyWebhookApiWebhookGrocyPostWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGrocyWebhookApiWebhookGrocyPostResponse(rsp)
+}
+
+func (c *ClientWithResponses) GrocyWebhookApiWebhookGrocyPostWithResponse(ctx context.Context, params *GrocyWebhookApiWebhookGrocyPostParams, body GrocyWebhookApiWebhookGrocyPostJSONRequestBody, reqEditors ...RequestEditorFn) (*GrocyWebhookApiWebhookGrocyPostResponse, error) {
+	rsp, err := c.GrocyWebhookApiWebhookGrocyPost(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGrocyWebhookApiWebhookGrocyPostResponse(rsp)
+}
+
+// SpoolmanWebhookApiWebhookSpoolmanPostWithBodyWithResponse request with arbitrary body returning *SpoolmanWebhookApiWebhookSpoolmanPostResponse
+func (c *ClientWithResponses) SpoolmanWebhookApiWebhookSpoolmanPostWithBodyWithResponse(ctx context.Context, params *SpoolmanWebhookApiWebhookSpoolmanPostParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SpoolmanWebhookApiWebhookSpoolmanPostResponse, error) {
+	rsp, err := c.SpoolmanWebhookApiWebhookSpoolmanPostWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSpoolmanWebhookApiWebhookSpoolmanPostResponse(rsp)
+}
+
+func (c *ClientWithResponses) SpoolmanWebhookApiWebhookSpoolmanPostWithResponse(ctx context.Context, params *SpoolmanWebhookApiWebhookSpoolmanPostParams, body SpoolmanWebhookApiWebhookSpoolmanPostJSONRequestBody, reqEditors ...RequestEditorFn) (*SpoolmanWebhookApiWebhookSpoolmanPostResponse, error) {
+	rsp, err := c.SpoolmanWebhookApiWebhookSpoolmanPost(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSpoolmanWebhookApiWebhookSpoolmanPostResponse(rsp)
+}
+
+// AssetLandingAssetEntityIdGetWithResponse request returning *AssetLandingAssetEntityIdGetResponse
+func (c *ClientWithResponses) AssetLandingAssetEntityIdGetWithResponse(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*AssetLandingAssetEntityIdGetResponse, error) {
+	rsp, err := c.AssetLandingAssetEntityIdGet(ctx, entityId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAssetLandingAssetEntityIdGetResponse(rsp)
+}
+
+// HealthzHealthzGetWithResponse request returning *HealthzHealthzGetResponse
+func (c *ClientWithResponses) HealthzHealthzGetWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthzHealthzGetResponse, error) {
+	rsp, err := c.HealthzHealthzGet(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseHealthzHealthzGetResponse(rsp)
+}
+
+// GetJobStatusJobsJobIdGetWithResponse request returning *GetJobStatusJobsJobIdGetResponse
+func (c *ClientWithResponses) GetJobStatusJobsJobIdGetWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*GetJobStatusJobsJobIdGetResponse, error) {
+	rsp, err := c.GetJobStatusJobsJobIdGet(ctx, jobId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetJobStatusJobsJobIdGetResponse(rsp)
+}
+
+// ResumeJobJobsJobIdResumePostWithResponse request returning *ResumeJobJobsJobIdResumePostResponse
+func (c *ClientWithResponses) ResumeJobJobsJobIdResumePostWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*ResumeJobJobsJobIdResumePostResponse, error) {
+	rsp, err := c.ResumeJobJobsJobIdResumePost(ctx, jobId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResumeJobJobsJobIdResumePostResponse(rsp)
+}
+
+// LocLandingLocEntityIdGetWithResponse request returning *LocLandingLocEntityIdGetResponse
+func (c *ClientWithResponses) LocLandingLocEntityIdGetWithResponse(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*LocLandingLocEntityIdGetResponse, error) {
+	rsp, err := c.LocLandingLocEntityIdGet(ctx, entityId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLocLandingLocEntityIdGetResponse(rsp)
+}
+
+// CreatePrintJobPrintPostWithBodyWithResponse request with arbitrary body returning *CreatePrintJobPrintPostResponse
+func (c *ClientWithResponses) CreatePrintJobPrintPostWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreatePrintJobPrintPostResponse, error) {
+	rsp, err := c.CreatePrintJobPrintPostWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePrintJobPrintPostResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreatePrintJobPrintPostWithResponse(ctx context.Context, body CreatePrintJobPrintPostJSONRequestBody, reqEditors ...RequestEditorFn) (*CreatePrintJobPrintPostResponse, error) {
+	rsp, err := c.CreatePrintJobPrintPost(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreatePrintJobPrintPostResponse(rsp)
+}
+
+// ResumePrinterPrinterResumePostWithResponse request returning *ResumePrinterPrinterResumePostResponse
+func (c *ClientWithResponses) ResumePrinterPrinterResumePostWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ResumePrinterPrinterResumePostResponse, error) {
+	rsp, err := c.ResumePrinterPrinterResumePost(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResumePrinterPrinterResumePostResponse(rsp)
+}
+
+// ProductLandingProductEntityIdGetWithResponse request returning *ProductLandingProductEntityIdGetResponse
+func (c *ClientWithResponses) ProductLandingProductEntityIdGetWithResponse(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*ProductLandingProductEntityIdGetResponse, error) {
+	rsp, err := c.ProductLandingProductEntityIdGet(ctx, entityId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProductLandingProductEntityIdGetResponse(rsp)
+}
+
+// ReadinessReadinessGetWithResponse request returning *ReadinessReadinessGetResponse
+func (c *ClientWithResponses) ReadinessReadinessGetWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ReadinessReadinessGetResponse, error) {
+	rsp, err := c.ReadinessReadinessGet(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReadinessReadinessGetResponse(rsp)
+}
+
+// SpoolLandingSpoolEntityIdGetWithResponse request returning *SpoolLandingSpoolEntityIdGetResponse
+func (c *ClientWithResponses) SpoolLandingSpoolEntityIdGetWithResponse(ctx context.Context, entityId string, reqEditors ...RequestEditorFn) (*SpoolLandingSpoolEntityIdGetResponse, error) {
+	rsp, err := c.SpoolLandingSpoolEntityIdGet(ctx, entityId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSpoolLandingSpoolEntityIdGetResponse(rsp)
+}
+
+// ParseListApiKeysApiAdminApiKeysGetResponse parses an HTTP response from a ListApiKeysApiAdminApiKeysGetWithResponse call
+func ParseListApiKeysApiAdminApiKeysGetResponse(rsp *http.Response) (*ListApiKeysApiAdminApiKeysGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListApiKeysApiAdminApiKeysGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []ApiKeyRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateApiKeyApiAdminApiKeysPostResponse parses an HTTP response from a CreateApiKeyApiAdminApiKeysPostWithResponse call
+func ParseCreateApiKeyApiAdminApiKeysPostResponse(rsp *http.Response) (*CreateApiKeyApiAdminApiKeysPostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateApiKeyApiAdminApiKeysPostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ApiKeyCreateResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse parses an HTTP response from a RevokeApiKeyApiAdminApiKeysKeyIdDeleteWithResponse call
+func ParseRevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse(rsp *http.Response) (*RevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeApiKeyApiAdminApiKeysKeyIdDeleteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetApiKeyApiAdminApiKeysKeyIdGetResponse parses an HTTP response from a GetApiKeyApiAdminApiKeysKeyIdGetWithResponse call
+func ParseGetApiKeyApiAdminApiKeysKeyIdGetResponse(rsp *http.Response) (*GetApiKeyApiAdminApiKeysKeyIdGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApiKeyApiAdminApiKeysKeyIdGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ApiKeyRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateApiKeyApiAdminApiKeysKeyIdPatchResponse parses an HTTP response from a UpdateApiKeyApiAdminApiKeysKeyIdPatchWithResponse call
+func ParseUpdateApiKeyApiAdminApiKeysKeyIdPatchResponse(rsp *http.Response) (*UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateApiKeyApiAdminApiKeysKeyIdPatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ApiKeyRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetBatchApiBatchesBatchIdGetResponse parses an HTTP response from a GetBatchApiBatchesBatchIdGetWithResponse call
+func ParseGetBatchApiBatchesBatchIdGetResponse(rsp *http.Response) (*GetBatchApiBatchesBatchIdGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetBatchApiBatchesBatchIdGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BatchRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseSseEventsApiEventsGetResponse parses an HTTP response from a SseEventsApiEventsGetWithResponse call
@@ -2428,6 +5743,39 @@ func ParseLookupApiLookupAppEntityIdGetResponse(rsp *http.Response) (*LookupApiL
 	return response, nil
 }
 
+// ParseCreateBatchApiPrintPrinterKeyBatchPostResponse parses an HTTP response from a CreateBatchApiPrintPrinterKeyBatchPostWithResponse call
+func ParseCreateBatchApiPrintPrinterKeyBatchPostResponse(rsp *http.Response) (*CreateBatchApiPrintPrinterKeyBatchPostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateBatchApiPrintPrinterKeyBatchPostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest BatchResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListPrintersApiPrintersGetResponse parses an HTTP response from a ListPrintersApiPrintersGetWithResponse call
 func ParseListPrintersApiPrintersGetResponse(rsp *http.Response) (*ListPrintersApiPrintersGetResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2443,11 +5791,18 @@ func ParseListPrintersApiPrintersGetResponse(rsp *http.Response) (*ListPrintersA
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []PrinterRead
+		var dest []AppSchemasPrinterPrinterRead
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
 
 	}
 
@@ -2469,7 +5824,7 @@ func ParseGetPrinterApiPrintersPrinterIdGetResponse(rsp *http.Response) (*GetPri
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest PrinterRead
+		var dest AppSchemasPrinterPrinterRead
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -2677,6 +6032,286 @@ func ParseRenderPreviewApiRenderPreviewPostResponse(rsp *http.Response) (*Render
 		HTTPResponse: rsp,
 	}
 
+	return response, nil
+}
+
+// ParseListPrintersApiV1AdminPrintersGetResponse parses an HTTP response from a ListPrintersApiV1AdminPrintersGetWithResponse call
+func ParseListPrintersApiV1AdminPrintersGetResponse(rsp *http.Response) (*ListPrintersApiV1AdminPrintersGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPrintersApiV1AdminPrintersGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []AppApiRoutesAdminPrintersApiPrinterRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreatePrinterApiV1AdminPrintersPostResponse parses an HTTP response from a CreatePrinterApiV1AdminPrintersPostWithResponse call
+func ParseCreatePrinterApiV1AdminPrintersPostResponse(rsp *http.Response) (*CreatePrinterApiV1AdminPrintersPostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePrinterApiV1AdminPrintersPostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest AppApiRoutesAdminPrintersApiPrinterRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPrinterApiV1AdminPrintersSlugGetResponse parses an HTTP response from a GetPrinterApiV1AdminPrintersSlugGetWithResponse call
+func ParseGetPrinterApiV1AdminPrintersSlugGetResponse(rsp *http.Response) (*GetPrinterApiV1AdminPrintersSlugGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPrinterApiV1AdminPrintersSlugGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AppApiRoutesAdminPrintersApiPrinterRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdatePrinterApiV1AdminPrintersSlugPutResponse parses an HTTP response from a UpdatePrinterApiV1AdminPrintersSlugPutWithResponse call
+func ParseUpdatePrinterApiV1AdminPrintersSlugPutResponse(rsp *http.Response) (*UpdatePrinterApiV1AdminPrintersSlugPutResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdatePrinterApiV1AdminPrintersSlugPutResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AppApiRoutesAdminPrintersApiPrinterRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDisablePrinterApiV1AdminPrintersSlugDisablePostResponse parses an HTTP response from a DisablePrinterApiV1AdminPrintersSlugDisablePostWithResponse call
+func ParseDisablePrinterApiV1AdminPrintersSlugDisablePostResponse(rsp *http.Response) (*DisablePrinterApiV1AdminPrintersSlugDisablePostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DisablePrinterApiV1AdminPrintersSlugDisablePostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AppApiRoutesAdminPrintersApiPrinterRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEnablePrinterApiV1AdminPrintersSlugEnablePostResponse parses an HTTP response from a EnablePrinterApiV1AdminPrintersSlugEnablePostWithResponse call
+func ParseEnablePrinterApiV1AdminPrintersSlugEnablePostResponse(rsp *http.Response) (*EnablePrinterApiV1AdminPrintersSlugEnablePostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EnablePrinterApiV1AdminPrintersSlugEnablePostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AppApiRoutesAdminPrintersApiPrinterRead
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGrocyWebhookApiWebhookGrocyPostResponse parses an HTTP response from a GrocyWebhookApiWebhookGrocyPostWithResponse call
+func ParseGrocyWebhookApiWebhookGrocyPostResponse(rsp *http.Response) (*GrocyWebhookApiWebhookGrocyPostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GrocyWebhookApiWebhookGrocyPostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest WebhookAcceptedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSpoolmanWebhookApiWebhookSpoolmanPostResponse parses an HTTP response from a SpoolmanWebhookApiWebhookSpoolmanPostWithResponse call
+func ParseSpoolmanWebhookApiWebhookSpoolmanPostResponse(rsp *http.Response) (*SpoolmanWebhookApiWebhookSpoolmanPostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SpoolmanWebhookApiWebhookSpoolmanPostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest WebhookAcceptedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAssetLandingAssetEntityIdGetResponse parses an HTTP response from a AssetLandingAssetEntityIdGetWithResponse call
+func ParseAssetLandingAssetEntityIdGetResponse(rsp *http.Response) (*AssetLandingAssetEntityIdGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AssetLandingAssetEntityIdGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
 		var dest HTTPValidationError
@@ -2690,27 +6325,256 @@ func ParseRenderPreviewApiRenderPreviewPostResponse(rsp *http.Response) (*Render
 	return response, nil
 }
 
-// ParseListTemplatesApiTemplatesGetResponse parses an HTTP response from a ListTemplatesApiTemplatesGetWithResponse call
-func ParseListTemplatesApiTemplatesGetResponse(rsp *http.Response) (*ListTemplatesApiTemplatesGetResponse, error) {
+// ParseHealthzHealthzGetResponse parses an HTTP response from a HealthzHealthzGetWithResponse call
+func ParseHealthzHealthzGetResponse(rsp *http.Response) (*HealthzHealthzGetResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ListTemplatesApiTemplatesGetResponse{
+	response := &HealthzHealthzGetResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []TemplateRead
+		var dest Healthz
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseGetJobStatusJobsJobIdGetResponse parses an HTTP response from a GetJobStatusJobsJobIdGetWithResponse call
+func ParseGetJobStatusJobsJobIdGetResponse(rsp *http.Response) (*GetJobStatusJobsJobIdGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetJobStatusJobsJobIdGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PrintJobStatusResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResumeJobJobsJobIdResumePostResponse parses an HTTP response from a ResumeJobJobsJobIdResumePostWithResponse call
+func ParseResumeJobJobsJobIdResumePostResponse(rsp *http.Response) (*ResumeJobJobsJobIdResumePostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResumeJobJobsJobIdResumePostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PrintJobStatusResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLocLandingLocEntityIdGetResponse parses an HTTP response from a LocLandingLocEntityIdGetWithResponse call
+func ParseLocLandingLocEntityIdGetResponse(rsp *http.Response) (*LocLandingLocEntityIdGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LocLandingLocEntityIdGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreatePrintJobPrintPostResponse parses an HTTP response from a CreatePrintJobPrintPostWithResponse call
+func ParseCreatePrintJobPrintPostResponse(rsp *http.Response) (*CreatePrintJobPrintPostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreatePrintJobPrintPostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest PrintJobResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResumePrinterPrinterResumePostResponse parses an HTTP response from a ResumePrinterPrinterResumePostWithResponse call
+func ParseResumePrinterPrinterResumePostResponse(rsp *http.Response) (*ResumePrinterPrinterResumePostResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResumePrinterPrinterResumePostResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest UnderscorePrinterResumeResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseProductLandingProductEntityIdGetResponse parses an HTTP response from a ProductLandingProductEntityIdGetWithResponse call
+func ParseProductLandingProductEntityIdGetResponse(rsp *http.Response) (*ProductLandingProductEntityIdGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProductLandingProductEntityIdGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest HTTPValidationError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReadinessReadinessGetResponse parses an HTTP response from a ReadinessReadinessGetWithResponse call
+func ParseReadinessReadinessGetResponse(rsp *http.Response) (*ReadinessReadinessGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReadinessReadinessGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ReadinessResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ReadinessResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSpoolLandingSpoolEntityIdGetResponse parses an HTTP response from a SpoolLandingSpoolEntityIdGetWithResponse call
+func ParseSpoolLandingSpoolEntityIdGetResponse(rsp *http.Response) (*SpoolLandingSpoolEntityIdGetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SpoolLandingSpoolEntityIdGetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
 		var dest HTTPValidationError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {

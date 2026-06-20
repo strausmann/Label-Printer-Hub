@@ -438,14 +438,17 @@ func TestProxyMountsLegacyFirstPrintRoutes(t *testing.T) {
 // Go's html/template resolves the last definition, so every call to
 // ExecuteTemplate(w, "layout", data) produces the content of the last-parsed
 // page. This test catches that regression: it expects the dashboard to produce
-// "printer-grid" and the templates list to produce "templates-grid".
+// "printer-grid" (not "templates-grid" from a different page).
+//
+// The /templates sub-test now expects 503 because GET /api/templates was
+// removed from the backend in Phase 1k.1a (Issue #103). The route still exists
+// in the frontend so it can be removed in a follow-up; the stub always returns
+// ErrNotImplemented which maps to 503.
 func TestRealTemplatesPerPageContent(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/printers":
-			fmt.Fprint(w, `[]`)
-		case "/api/templates":
 			fmt.Fprint(w, `[]`)
 		case "/healthz":
 			fmt.Fprint(w, `{"status":"ok"}`)
@@ -484,16 +487,14 @@ func TestRealTemplatesPerPageContent(t *testing.T) {
 		}
 	})
 
-	t.Run("templates_page_renders_templates_grid", func(t *testing.T) {
+	t.Run("templates_page_returns_503_endpoint_removed", func(t *testing.T) {
+		// GET /api/templates was removed in Phase 1k.1a (Issue #103).
+		// The frontend stub returns ErrNotImplemented → handler returns 503.
 		req := httptest.NewRequest(http.MethodGet, "/templates", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Fatalf("status %d, body: %s", w.Code, w.Body.String())
-		}
-		if !strings.Contains(w.Body.String(), "templates-grid") {
-			t.Errorf("templates page must contain 'templates-grid'; got: %q",
-				w.Body.String()[:min(400, w.Body.Len())])
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("status %d, want 503 (templates endpoint removed, Issue #103)", w.Code)
 		}
 	})
 }
