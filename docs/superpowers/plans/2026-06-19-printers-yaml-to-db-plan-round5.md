@@ -698,7 +698,7 @@ mcp__dockhand__deploy_stack(environmentId=10, name="label-printer-hub")
 ### Task 8.5: Rollback-Pfad (nur bei Smoke-Fail)
 
 - [ ] `mcp__dockhand__stop_container("label-printer-hub-backend")`
-- [ ] DB-Restore: `rm db-wal db-shm; cp .bak ./printer-hub.db`
+- [ ] DB-Restore (absolute Pfade, LIVE-verifiziert): `rm -f /docker/stacks/hangar-print-hub/data/hub/printer-hub.db-wal /docker/stacks/hangar-print-hub/data/hub/printer-hub.db-shm && cp /docker/stacks/hangar-print-hub/backups/printer-hub.db.bak-pre-124 /docker/stacks/hangar-print-hub/data/hub/printer-hub.db`
 - [ ] Frontend-Image-Rollback via Dockhand
 - [ ] `start_container` + Health-Check
 

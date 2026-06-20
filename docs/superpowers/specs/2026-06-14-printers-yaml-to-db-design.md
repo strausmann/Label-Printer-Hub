@@ -293,6 +293,7 @@ mcp__dockhand__stop_container(environmentId=10, name="label-printer-hub-backend"
 # Alternativ: Container ist gestoppt → kein WAL-Replay nötig
 
 # Schritt 3: DB-Datei + WAL + SHM auf Host kopieren (alle 3 für sauberen Restore)
+⚠ **OBSOLET in Round-6:** dieser Backup-Block nutzt den falschen Pfad `/docker/stacks/label/...` aus Round-1-4. Aktueller Live-Pfad ist `/docker/stacks/hangar-print-hub/data/hub/` (siehe Round-6 Migration Phase A.1 + Known-Issues-Tabelle). NICHT diesen Block kopieren!
 ssh -i ~/.ssh/id_ed25519_placeholder root@prod-node.example.test \
   "cp /docker/stacks/label/label-printer-hub/data/printer-hub.db \
       /docker/stacks/label/label-printer-hub/backups/printer-hub.db.bak-pre-124 && \
@@ -487,7 +488,7 @@ Nach 6 Spec-Review-Runden wurde entschieden die Iteration zu beenden und stattde
 
 **L2 (code-q):** Coverage-Tabelle Round-4 enthält obsolete Backend-Python-Pfade. Wurde mit neuer Coverage-Tabelle Round-6 oben ersetzt.
 
-**L3 (storage):** Host-Pfad der DB jetzt explizit dokumentiert: `/docker/stacks/label/label-printer-hub/data/printer-hub.db` (verifiziert via `${STACKS_BASE_HOMEDIR}=/docker/stacks/label` aus .env).
+**L3 (storage):** Host-Pfad der DB jetzt explizit dokumentiert: `/docker/stacks/hangar-print-hub/data/hub/printer-hub.db` (live-verifiziert via docker inspect; das per `${STACKS_BASE_HOMEDIR}` abgeleitete `/docker/stacks/label/...` aus der `.env` stimmt NICHT mit dem aktuellen Volume-Mount überein).
 
 ---
 
