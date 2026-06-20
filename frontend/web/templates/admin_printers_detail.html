@@ -1,0 +1,79 @@
+{{define "title"}}{{.Printer.Name}} — Drucker — Label Printer Hub{{end}}
+
+{{define "content"}}
+<div class="max-w-2xl space-y-6">
+  <div class="flex items-center gap-4">
+    <a href="/admin/printers" class="text-content-secondary hover:text-content-primary">&larr;</a>
+    <h1 class="text-2xl font-semibold text-content-primary">{{.Printer.Name}}</h1>
+    {{if .Printer.Enabled}}
+    <span class="text-xs text-green-600 font-medium px-2 py-1 bg-green-50 rounded">aktiv</span>
+    {{else}}
+    <span class="text-xs text-red-500 font-medium px-2 py-1 bg-red-50 rounded">deaktiviert</span>
+    {{end}}
+  </div>
+
+  <!-- Metadaten -->
+  <div class="bg-surface-raised rounded-lg border border-surface-border p-4 space-y-3 text-sm">
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-36">Slug</span>
+      <code class="font-mono text-xs">{{.Printer.Slug}}</code>
+    </div>
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-36">Modell</span>
+      <span>{{.Printer.Model}}</span>
+    </div>
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-36">Backend</span>
+      <span>{{.Printer.Backend}}</span>
+    </div>
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-36">Verbindung</span>
+      <code class="font-mono text-xs">
+        {{if index .Printer.Connection "host"}}{{index .Printer.Connection "host"}}:{{index .Printer.Connection "port"}}{{else}}&mdash;{{end}}
+      </code>
+    </div>
+    {{if index .Printer.Queue "timeout_s"}}
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-36">Queue-Timeout</span>
+      <span>{{index .Printer.Queue "timeout_s"}} s</span>
+    </div>
+    {{end}}
+    {{if index .Printer.CutDefaults "half_cut"}}
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-36">Halbschnitt</span>
+      <span>aktiv</span>
+    </div>
+    {{end}}
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-36">Angelegt</span>
+      <span class="text-xs">{{.Printer.CreatedAt}}</span>
+    </div>
+    <div class="flex gap-4">
+      <span class="text-content-secondary w-36">Aktualisiert</span>
+      <span class="text-xs">{{.Printer.UpdatedAt}}</span>
+    </div>
+  </div>
+
+  <!-- Aktionen -->
+  <div class="flex gap-3">
+    <a href="/admin/printers/{{.Printer.Slug}}/edit"
+       class="px-4 py-2 border border-surface-border rounded-lg text-sm text-content-secondary hover:text-content-primary hover:bg-surface-raised">
+      Bearbeiten
+    </a>
+    {{if .Printer.Enabled}}
+    <a href="/admin/printers/{{.Printer.Slug}}/disable"
+       class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
+      Drucker deaktivieren
+    </a>
+    {{else}}
+    <form method="POST" action="/admin/printers/{{.Printer.Slug}}/enable">
+      {{.CSRFField}}
+      <button type="submit"
+              class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
+        Drucker aktivieren
+      </button>
+    </form>
+    {{end}}
+  </div>
+</div>
+{{end}}

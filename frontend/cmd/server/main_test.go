@@ -54,6 +54,7 @@ func minimalBackend(t *testing.T) *httptest.Server {
 // testRouterWithBackend builds a minimal router for unit tests that need to
 // hit route handlers. It uses the handlers package stub templates to avoid
 // parsing the full web/templates set in each test.
+// csrfMW ist nil — Tests verwenden keinen echten CSRF-Key.
 func testRouterWithBackend(t *testing.T, backendURL string) http.Handler {
 	t.Helper()
 	initBuildInfoForTests(t)
@@ -63,7 +64,7 @@ func testRouterWithBackend(t *testing.T, backendURL string) http.Handler {
 	if err != nil {
 		t.Fatalf("fs.Sub: %v", err)
 	}
-	return newRouter(ph, prx, sub)
+	return newRouter(ph, prx, sub, nil)
 }
 
 func TestHealthz_ReturnsOK(t *testing.T) {
@@ -287,7 +288,7 @@ func TestRoutesDashboard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fs.Sub: %v", err)
 	}
-	r := newRouter(ph, prx, sub)
+	r := newRouter(ph, prx, sub, nil)
 
 	tests := []struct {
 		method string
@@ -356,7 +357,7 @@ func TestProxyMountsBackendDocRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fs.Sub: %v", err)
 	}
-	r := newRouter(ph, prx, sub)
+	r := newRouter(ph, prx, sub, nil)
 
 	for path, want := range map[string]string{
 		"/docs":         "Swagger UI",
@@ -437,14 +438,17 @@ func TestProxyMountsLegacyFirstPrintRoutes(t *testing.T) {
 // Go's html/template resolves the last definition, so every call to
 // ExecuteTemplate(w, "layout", data) produces the content of the last-parsed
 // page. This test catches that regression: it expects the dashboard to produce
-// "printer-grid" and the templates list to produce "templates-grid".
+// "printer-grid" (not "templates-grid" from a different page).
+//
+// The /templates sub-test now expects 503 because GET /api/templates was
+// removed from the backend in Phase 1k.1a (Issue #103). The route still exists
+// in the frontend so it can be removed in a follow-up; the stub always returns
+// ErrNotImplemented which maps to 503.
 func TestRealTemplatesPerPageContent(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/printers":
-			fmt.Fprint(w, `[]`)
-		case "/api/templates":
 			fmt.Fprint(w, `[]`)
 		case "/healthz":
 			fmt.Fprint(w, `{"status":"ok"}`)
@@ -465,7 +469,7 @@ func TestRealTemplatesPerPageContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fs.Sub: %v", err)
 	}
-	r := newRouter(ph, prx, sub)
+	r := newRouter(ph, prx, sub, nil)
 
 	t.Run("dashboard_renders_printer_grid", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -483,16 +487,14 @@ func TestRealTemplatesPerPageContent(t *testing.T) {
 		}
 	})
 
-	t.Run("templates_page_renders_templates_grid", func(t *testing.T) {
+	t.Run("templates_page_returns_503_endpoint_removed", func(t *testing.T) {
+		// GET /api/templates was removed in Phase 1k.1a (Issue #103).
+		// The frontend stub returns ErrNotImplemented → handler returns 503.
 		req := httptest.NewRequest(http.MethodGet, "/templates", nil)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Fatalf("status %d, body: %s", w.Code, w.Body.String())
-		}
-		if !strings.Contains(w.Body.String(), "templates-grid") {
-			t.Errorf("templates page must contain 'templates-grid'; got: %q",
-				w.Body.String()[:min(400, w.Body.Len())])
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("status %d, want 503 (templates endpoint removed, Issue #103)", w.Code)
 		}
 	})
 }

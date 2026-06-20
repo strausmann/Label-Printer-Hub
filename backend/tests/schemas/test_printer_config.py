@@ -1,9 +1,16 @@
+"""Tests für PrinterYAMLConfig-Laufzeitkonfiguration.
+
+Phase 5 (#124): Importpfad von app.schemas.printer_config →
+app.services.backend_router (Klassen dorthin verschoben).
+PrintersFile und test_duplicate_slugs_rejected entfernt — PrintersFile
+existiert nicht mehr (YAML-Parser-Ebene zusammen mit PrinterConfigLoader entfernt).
+"""
+
 from __future__ import annotations
 
 import pytest
-from app.schemas.printer_config import (
+from app.services.backend_router import (
     CutDefaults,
-    PrintersFile,
     PrinterYAMLConfig,
 )
 from pydantic import ValidationError
@@ -67,16 +74,6 @@ def test_half_cut_true_on_brother_ql_rejected():
     assert "half_cut" in str(exc_info.value).lower()
 
 
-def test_duplicate_slugs_rejected():
-    with pytest.raises(ValidationError):
-        PrintersFile(
-            schema_version=1,
-            printers=[
-                PrinterYAMLConfig(
-                    slug="a", name="A", backend="ptouch", model="PT-P750W", host="1.1.1.1"
-                ),
-                PrinterYAMLConfig(
-                    slug="a", name="B", backend="ptouch", model="PT-P750W", host="2.2.2.2"
-                ),
-            ],
-        )
+# test_duplicate_slugs_rejected entfernt — PrintersFile (YAML-Datei-Schema)
+# wurde in Phase 5 (#124) zusammen mit PrinterConfigLoader gelöscht.
+# Duplikat-Slug-Prüfung erfolgt nun via DB UNIQUE-Constraint (Admin-API).

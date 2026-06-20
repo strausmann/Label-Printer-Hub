@@ -244,6 +244,32 @@ async def test_post_print_tape_empty_is_409(fake_service, fake_queue) -> None:
     assert r.json()["error_code"] == "tape_empty"
 
 
+# ---------------------------------------------------------------------------
+# Phase 4 — PrinterDisabledError → 409
+# ---------------------------------------------------------------------------
+
+
+async def test_post_print_printer_disabled_is_409(fake_service, fake_queue) -> None:
+    """POST /print mit deaktiviertem Drucker → 409 mit printer_disabled Body."""
+    from app.printer_backends.exceptions import PrinterDisabledError
+
+    fake_service.submit_print_job.side_effect = PrinterDisabledError(
+        printer_id=_PRINTER_ID, slug="brother-p750w"
+    )
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post(
+            "/print",
+            json={
+                "content_type": "qr_two_lines",
+                "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
+            },
+        )
+    assert r.status_code == 409
+    body = r.json()
+    assert body["error"] == "printer_disabled"
+    assert body["slug"] == "brother-p750w"
+
+
 async def test_post_print_cover_open_is_409(fake_service, fake_queue) -> None:
     from app.printer_backends.exceptions import PrinterCoverOpenError
 

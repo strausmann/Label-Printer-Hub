@@ -969,3 +969,56 @@ async def test_get_printer_queue_direct_returns_active_jobs(session) -> None:
     assert str(job_q.id) in ids
     assert str(job_p.id) in ids
     assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# Task 2.7 — GET /api/printers filtert deaktivierte Drucker heraus
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_printers_excludes_disabled_by_default(session) -> None:
+    """GET /api/printers gibt nur aktivierte Drucker zurück (enabled=True Default-Filter).
+
+    Setup: 1 aktivierter + 1 deaktivierter Drucker in der DB.
+    Erwartet: Response enthält nur den aktivierten Drucker.
+    """
+    await _make_printer(session, name="drucker-aktiv", slug="drucker-aktiv", enabled=True)
+    await _make_printer(
+        session, name="drucker-deaktiviert", slug="drucker-deaktiviert", enabled=False
+    )
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.get("/api/printers")
+
+    assert r.status_code == 200
+    body = r.json()
+    names = [p["name"] for p in body]
+    assert "drucker-aktiv" in names
+    assert "drucker-deaktiviert" not in names
+    assert len(body) == 1
+
+
+@pytest.mark.asyncio
+async def test_list_printers_include_disabled_query_param_ignored(session) -> None:
+    """GET /api/printers?include_disabled=true wird ignoriert — Public-API filtert immer.
+
+    Die Route hat keinen include_disabled Query-Param. FastAPI ignoriert unbekannte
+    Query-Parameter. Der Filter bleibt aktiv unabhängig vom URL-Parameter.
+    """
+    await _make_printer(session, name="drucker-aktiv", slug="drucker-aktiv", enabled=True)
+    await _make_printer(
+        session, name="drucker-deaktiviert", slug="drucker-deaktiviert", enabled=False
+    )
+
+    app = _build_app(session)
+    client = TestClient(app, raise_server_exceptions=True)
+    r = client.get("/api/printers?include_disabled=true")
+
+    assert r.status_code == 200
+    body = r.json()
+    names = [p["name"] for p in body]
+    assert "drucker-aktiv" in names
+    assert "drucker-deaktiviert" not in names
+    assert len(body) == 1

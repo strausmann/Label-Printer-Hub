@@ -1,29 +1,518 @@
 {
-  "openapi": "3.0.3",
+  "openapi": "3.1.0",
   "info": {
     "title": "Label Printer Hub \u2014 backend",
-    "version": "0.0.0-dev"
+    "description": "REST + SSE API for the Label Printer Hub backend. The Go frontend consumes the OpenAPI spec at /openapi.json via oapi-codegen; humans browse the interactive docs at /docs (Swagger UI) or /redoc.",
+    "version": "0.0.0.dev0"
   },
   "paths": {
-    "/api/printers": {
+    "/healthz": {
       "get": {
         "tags": [
-          "printers"
+          "meta"
         ],
-        "summary": "List all printers",
-        "description": "Returns every registered printer.  The ``paused`` flag is joined from ``printer_state``; it is ``false`` when no state row exists yet.",
-        "operationId": "list_printers_api_printers_get",
+        "summary": "Liveness probe",
+        "description": "Returns 200 OK with a fixed shape. No authentication required. Used by Docker, Kubernetes, and reverse proxies to decide whether the backend is up. Has zero dependencies \u2014 does not touch the database, the printer queue, SNMP, or any integration. ``sse_active_subscribers`` reflects the current EventBus subscriber count; zero means no live SSE clients or the bus is uninitialised.",
+        "operationId": "healthz_healthz_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PrinterRead"
-                  },
+                  "$ref": "#/components/schemas/Healthz"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readiness": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "Readiness probe",
+        "description": "Deep readiness check: database connectivity, alembic migration state, printer wiring, SNMP probe recency, print-queue liveness, and SSE subscriber capacity. Returns 200 with status in {ready, degraded} when all critical checks pass; 503 with status=not-ready when any critical check (database / alembic) fails.",
+        "operationId": "readiness_readiness_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/print": {
+      "post": {
+        "tags": [
+          "print"
+        ],
+        "summary": "Submit a print job",
+        "description": "Submit a label-print job.  The job is queued and dispatched asynchronously by the queue worker.  Returns 202 with the new job's UUID and state ``queued``.  Returns 4xx/5xx on printer errors (tape mismatch, offline, cover open, etc.).",
+        "operationId": "create_print_job_print_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrintRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "print"
+        ],
+        "summary": "Get print job status",
+        "description": "Return the current status and metadata for a print job submitted via ``POST /print``.  When the job is actively printing, the response includes live SNMP status from the printer.  Returns 404 when the job is not found.",
+        "operationId": "get_job_status_jobs__job_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintJobStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/printer/resume": {
+      "post": {
+        "tags": [
+          "print"
+        ],
+        "summary": "Resume the printer queue",
+        "description": "Resume the printer queue after a recoverable error halted it (tape empty, cover open, tape mismatch, printer offline).  Returns 200 with the printer ID and state ``active``.  Returns 404 when no printer is configured.  Returns 409 when the printer is already active.",
+        "operationId": "resume_printer_printer_resume_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/_PrinterResumeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/jobs/{job_id}/resume": {
+      "post": {
+        "tags": [
+          "print"
+        ],
+        "summary": "Resume a paused print job",
+        "description": "Resume a print job that is in ``PAUSED`` state (waiting for a tape change after a tape-mismatch error with ``on_tape_mismatch=queue``).  Transitions the job from ``PAUSED`` to ``QUEUED`` so the worker picks it up again.  Returns 200 with the updated status.  Returns 404 when the job is not found.  Returns 409 when the job is not in ``PAUSED`` state.",
+        "operationId": "resume_job_jobs__job_id__resume_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrintJobStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/render/preview": {
+      "post": {
+        "tags": [
+          "print"
+        ],
+        "summary": "Render a label preview as PNG",
+        "description": "Render a label using the LayoutEngine and return the result as a PNG image (no printer interaction, no job created).  Useful for UI preview and debugging.  Returns 422 when ``data`` is missing fields required by ``content_type``.  Returns 409 when ``tape_mm`` is not a supported tape width.",
+        "operationId": "render_preview_api_render_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_PreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "PNG label bitmap",
+            "content": {
+              "image/png": {}
+            }
+          },
+          "409": {
+            "description": "Unsupported tape width"
+          },
+          "422": {
+            "description": "Data missing required fields for content_type"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/print/{printer_key}/batch": {
+      "post": {
+        "tags": [
+          "print"
+        ],
+        "summary": "Submit a batch of print jobs",
+        "description": "Atomic batch print. Validates all items and enqueues the entire batch as a unit \u2014 no per-item errors are returned. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code.",
+        "operationId": "create_batch_api_print__printer_key__batch_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "printer_key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Printer slug or UUID",
+              "title": "Printer Key"
+            },
+            "description": "Printer slug or UUID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/batches/{batch_id}": {
+      "get": {
+        "tags": [
+          "batches"
+        ],
+        "summary": "Get Batch",
+        "description": "Snapshot eines Batches + aller aktuellen Job-States.\n\nWird von Hangar's /admin/print/result/{batch_id} f\u00fcr das initiale\nRendering genutzt. summary.all_terminal == False bedeutet, dass Hangar\neinen SSE-Stream zu /api/events?batch_id=... \u00f6ffnen sollte f\u00fcr\nLive-Updates.",
+        "operationId": "get_batch_api_batches__batch_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Batch Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events": {
+      "get": {
+        "tags": [
+          "events",
+          "events"
+        ],
+        "summary": "Server-Sent Events stream for a printer",
+        "description": "Returns a ``text/event-stream`` response. Publishes ``job.state_changed``, ``printer.status``, and ``printer.tape_changed`` events as they occur. A keepalive comment is sent every PRINTER_HUB_SSE_HEARTBEAT_S seconds (default 30 s) when no events flow. Closes automatically after PRINTER_HUB_SSE_IDLE_TIMEOUT_S seconds of inactivity (default 300 s). On reconnect the stream starts fresh \u2014 ``Last-Event-ID`` is observed but replay is deferred to Phase 7. Returns 404 if ``printer_id`` does not exist in the database. Returns 429 if the per-printer subscriber limit (PRINTER_HUB_SSE_MAX_SUBSCRIBERS, default 100) is reached.",
+        "operationId": "sse_events_api_events_get",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/printers": {
+      "get": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "List all printers",
+        "description": "Returns every registered printer.  The ``paused`` flag is joined from ``printer_state``; it is ``false`` when no state row exists yet.  Pass ``?slug=<slug>`` to filter to a single printer by exact slug match (returns 404 when no printer with that slug exists).",
+        "operationId": "list_printers_api_printers_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true,
+              "description": "Filter by exact slug",
+              "title": "Slug"
+            },
+            "description": "Filter by exact slug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
                   "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/app__schemas__printer__PrinterRead"
+                  },
                   "title": "Response List Printers Api Printers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/printers/{printer_id}": {
+      "get": {
+        "tags": [
+          "printers"
+        ],
+        "summary": "Get printer detail",
+        "description": "Returns full metadata for a single printer, including the ``paused`` flag joined from ``printer_state``. Returns 404 when the printer is not registered.",
+        "operationId": "get_printer_api_printers__printer_id__get",
+        "parameters": [
+          {
+            "name": "printer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Printer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__schemas__printer__PrinterRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -36,9 +525,14 @@
         "tags": [
           "printers"
         ],
-        "summary": "Force a fresh printer status probe",
-        "description": "Sends an ESC i S command to the printer over TCP/9100.  The result is written back to ``printer_status_cache`` and returned. Returns 503 when the printer is unreachable.",
+        "summary": "Return the latest cached printer status",
+        "description": "Returns the most recent status written by the background SNMP probe worker. The response is served from ``printer_status_cache`` \u2014 no synchronous SNMP probe is performed, so the response always returns in <10 ms. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Returns 404 when the printer is not registered.",
         "operationId": "get_printer_status_api_printers__printer_id__status_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "printer_id",
@@ -83,6 +577,11 @@
         "summary": "Get the current tape spec",
         "description": "Returns the tape specification for the tape currently loaded in the printer, derived from the cached status block.  Returns 404 if the printer has no cached status or no tape is loaded.",
         "operationId": "get_printer_tape_api_printers__printer_id__tape_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "printer_id",
@@ -129,6 +628,11 @@
         "summary": "Get the active job queue for a printer",
         "description": "Returns all jobs in ``queued`` or ``printing`` state for this printer, ordered by creation time.",
         "operationId": "get_printer_queue_api_printers__printer_id__queue_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "printer_id",
@@ -178,6 +682,11 @@
         "summary": "Pause job dispatch for a printer",
         "description": "Sets ``printer_state.paused = true`` for this printer.  New jobs can still be queued but the worker will not dispatch them until the printer is resumed.  Idempotent \u2014 pausing an already-paused printer returns 204 without error.",
         "operationId": "pause_printer_api_printers__printer_id__pause_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "printer_id",
@@ -215,6 +724,11 @@
         "summary": "Resume job dispatch for a printer",
         "description": "Sets ``printer_state.paused = false``.  Idempotent \u2014 resuming an already-active printer returns 204 without error.",
         "operationId": "resume_printer_api_printers__printer_id__resume_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "printer_id",
@@ -252,6 +766,11 @@
         "summary": "Cancel all queued jobs for a printer",
         "description": "Bulk-cancels every job in ``queued`` state for this printer.  Jobs in ``printing`` state are intentionally **not** cancelled \u2014 a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Returns 204 even when there are no queued jobs.",
         "operationId": "clear_printer_queue_api_printers__printer_id__queue_clear_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "printer_id",
@@ -281,56 +800,6 @@
         }
       }
     },
-    "/api/templates": {
-      "get": {
-        "tags": [
-          "templates"
-        ],
-        "summary": "List all templates",
-        "description": "Returns every registered template (seed + user).  Pass ``?app=<name>`` to filter to a specific integration (e.g. ``snipeit``, ``grocy``, ``spoolman``).  When the query parameter is absent all templates are returned.",
-        "operationId": "list_templates_api_templates_get",
-        "parameters": [
-          {
-            "name": "app",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "description": "Filter by integration app (snipeit / grocy / spoolman / \u2026)",
-              "title": "App",
-              "type": "string",
-              "nullable": true
-            },
-            "description": "Filter by integration app (snipeit / grocy / spoolman / \u2026)"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TemplateRead"
-                  },
-                  "title": "Response List Templates Api Templates Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/jobs": {
       "get": {
         "tags": [
@@ -339,16 +808,21 @@
         "summary": "List jobs",
         "description": "Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).",
         "operationId": "list_jobs_api_jobs_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "state",
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Filter by job state (queued / printing / done / failed / \u2026)",
-              "title": "State",
               "type": "string",
-              "nullable": true
+              "nullable": true,
+              "description": "Filter by job state (queued / printing / done / failed / \u2026)",
+              "title": "State"
             },
             "description": "Filter by job state (queued / printing / done / failed / \u2026)"
           },
@@ -357,11 +831,11 @@
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Filter by printer UUID",
-              "title": "Printer Id",
               "type": "string",
               "format": "uuid",
-              "nullable": true
+              "nullable": true,
+              "description": "Filter by printer UUID",
+              "title": "Printer Id"
             },
             "description": "Filter by printer UUID"
           },
@@ -370,11 +844,11 @@
             "in": "query",
             "required": false,
             "schema": {
-              "description": "Return only jobs created at or after this ISO-8601 datetime",
-              "title": "Since",
               "type": "string",
               "format": "date-time",
-              "nullable": true
+              "nullable": true,
+              "description": "Return only jobs created at or after this ISO-8601 datetime",
+              "title": "Since"
             },
             "description": "Return only jobs created at or after this ISO-8601 datetime"
           },
@@ -429,6 +903,11 @@
         "summary": "Get a single job",
         "description": "Return the full job record for the given UUID.  Returns 404 if not found.",
         "operationId": "get_job_api_jobs__job_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "job_id",
@@ -473,6 +952,11 @@
         "summary": "Cancel a queued job",
         "description": "Cancels a job that is in ``queued`` state.  Returns 409 ProblemDetail when the job is in ``printing`` (or any other non-QUEUED) state \u2014 mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.",
         "operationId": "cancel_job_api_jobs__job_id__cancel_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
             "name": "job_id",
@@ -698,29 +1182,491 @@
         }
       }
     },
-    "/api/events": {
-      "get": {
+    "/api/webhook/spoolman": {
+      "post": {
         "tags": [
-          "events",
-          "events"
+          "webhooks"
         ],
-        "summary": "Server-Sent Events stream for a printer",
-        "description": "Returns a ``text/event-stream`` response. Publishes ``job.state_changed``, ``printer.status``, and ``printer.tape_changed`` events as they occur. A keepalive comment is sent every 30 s when no events flow. Closes automatically after 5 minutes of inactivity. On reconnect the stream starts fresh \u2014 ``Last-Event-ID`` is observed but replay is deferred to Phase 7. Returns 404 if ``printer_id`` does not exist in the database. Returns 429 if the per-printer subscriber limit is reached.",
-        "operationId": "sse_events_api_events_get",
+        "summary": "Accept a Spoolman spool event and enqueue a print job",
+        "description": "Receives a Spoolman webhook event for a spool update.  Requires the ``X-API-Key`` header \u2014 returns 503 when the key is not configured, 401 when the key is wrong, and 422 when required payload fields are missing.  On success returns 202 with the new job's UUID; the print is dispatched asynchronously by the queue worker.",
+        "operationId": "spoolman_webhook_api_webhook_spoolman_post",
         "parameters": [
           {
-            "name": "printer_id",
-            "in": "query",
+            "name": "X-API-Key",
+            "in": "header",
             "required": true,
             "schema": {
               "type": "string",
-              "format": "uuid",
-              "title": "Printer Id"
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpoolmanWebhookPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAcceptedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhook/grocy": {
+      "post": {
+        "tags": [
+          "webhooks"
+        ],
+        "summary": "Accept a Grocy product event and enqueue a print job",
+        "description": "Receives a Grocy webhook event for a product stock change.  Requires the ``X-API-Key`` header \u2014 returns 503 when the key is not configured, 401 when the key is wrong, and 422 when required payload fields are missing.  On success returns 202 with the new job's UUID; the print is dispatched asynchronously by the queue worker.",
+        "operationId": "grocy_webhook_api_webhook_grocy_post",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrocyWebhookPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAcceptedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/loc/{entity_id}": {
+      "get": {
+        "tags": [
+          "qr-landing"
+        ],
+        "summary": "QR landing page \u2014 Snipe-IT location",
+        "description": "Renders a minimal HTML detail page for the Snipe-IT location identified by ``entity_id``.  Intended as the QR-code payload on printed location labels.  Returns 404 HTML when the location is not found (rather than JSON, so it renders cleanly on a phone browser).",
+        "operationId": "loc_landing_loc__entity_id__get",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
             }
           }
         ],
         "responses": {
           "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/asset/{entity_id}": {
+      "get": {
+        "tags": [
+          "qr-landing"
+        ],
+        "summary": "QR landing page \u2014 Snipe-IT asset",
+        "description": "Renders a minimal HTML detail page for the Snipe-IT asset identified by ``entity_id`` (asset tag).  Intended as the QR-code payload on printed asset labels.  Returns 404 HTML when the asset is not found.",
+        "operationId": "asset_landing_asset__entity_id__get",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spool/{entity_id}": {
+      "get": {
+        "tags": [
+          "qr-landing"
+        ],
+        "summary": "QR landing page \u2014 Spoolman filament spool",
+        "description": "Renders a minimal HTML detail page for the Spoolman filament spool identified by ``entity_id``.  Intended as the QR-code payload on printed spool labels.  Returns 404 HTML when the spool is not found.",
+        "operationId": "spool_landing_spool__entity_id__get",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/product/{entity_id}": {
+      "get": {
+        "tags": [
+          "qr-landing"
+        ],
+        "summary": "QR landing page \u2014 Grocy product",
+        "description": "Renders a minimal HTML detail page for the Grocy product identified by ``entity_id``.  Intended as the QR-code payload on printed product labels.  Returns 404 HTML when the product is not found.",
+        "operationId": "product_landing_product__entity_id__get",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Entity Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/api-keys": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List all API keys",
+        "description": "Returns metadata for all API keys. key_hash and plaintext are never included.",
+        "operationId": "list_api_keys_api_admin_api_keys_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ApiKeyRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Api Keys Api Admin Api Keys Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create a new API key",
+        "description": "Creates a new API key. The ``plaintext`` field in the response is the full key \u2014 it is shown ONCE and never stored. Copy it before closing this response. Subsequent GETs return only the prefix.",
+        "operationId": "create_api_key_api_admin_api_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/admin/api-keys/{key_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get API key metadata",
+        "description": "Returns metadata for a single API key. key_hash and plaintext are never included.",
+        "operationId": "get_api_key_api_admin_api_keys__key_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update API key metadata",
+        "description": "Update ``enabled``, ``rate_limit_per_minute``, ``notes``, or ``allowed_printer_ids``. Cannot change scopes or the key value itself \u2014 revoke and recreate for that.",
+        "operationId": "update_api_key_api_admin_api_keys__key_id__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Revoke an API key",
+        "description": "Sets ``enabled = False``. The key will be rejected on next use. The row is kept for audit purposes (jobs referencing this key_id remain intact).",
+        "operationId": "revoke_api_key_api_admin_api_keys__key_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
             "description": "Successful Response"
           },
           "422": {
@@ -736,23 +1682,28 @@
         }
       }
     },
-    "/api/printers/{printer_id}": {
+    "/api/v1/admin/printers": {
       "get": {
         "tags": [
-          "printers"
+          "admin"
         ],
-        "summary": "Get printer detail",
-        "description": "Returns full metadata for a single printer, including the ``paused`` flag joined from ``printer_state``. Returns 404 when the printer is not registered.",
-        "operationId": "get_printer_api_printers__printer_id__get",
+        "summary": "Alle Drucker auflisten",
+        "description": "Gibt alle Drucker zur\u00fcck. Deaktivierte Drucker werden standardm\u00e4\u00dfig ausgeblendet. Mit ``?include_disabled=true`` werden auch deaktivierte Drucker zur\u00fcckgegeben.",
+        "operationId": "list_printers_api_v1_admin_printers_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
-            "name": "printer_id",
-            "in": "path",
-            "required": true,
+            "name": "include_disabled",
+            "in": "query",
+            "required": false,
             "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Printer Id"
+              "type": "boolean",
+              "default": false,
+              "title": "Include Disabled"
             }
           }
         ],
@@ -762,7 +1713,56 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PrinterRead"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/app__api__routes__admin_printers_api__PrinterRead"
+                  },
+                  "title": "Response List Printers Api V1 Admin Printers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Neuen Drucker anlegen",
+        "description": "Legt einen neuen Drucker an. Slug und Name m\u00fcssen eindeutig sein. Gibt 409 zur\u00fcck wenn Slug oder Name bereits vergeben ist.",
+        "operationId": "create_printer_api_v1_admin_printers_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrinterCreatePayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__api__routes__admin_printers_api__PrinterRead"
                 }
               }
             }
@@ -780,41 +1780,192 @@
         }
       }
     },
-    "/api/render/preview": {
-      "post": {
+    "/api/v1/admin/printers/{slug}": {
+      "get": {
         "tags": [
-          "templates"
+          "admin"
         ],
-        "summary": "Render a template preview as PNG",
-        "description": "Renders the named template with the sample values declared in the template's own ``preview_sample`` block and returns a PNG image. Returns 404 if the template key is not registered. Returns 422 if the template has no ``preview_sample`` block.",
-        "operationId": "render_preview_api_render_preview_post",
+        "summary": "Einzelnen Drucker abrufen",
+        "description": "Gibt einen Drucker per Slug zur\u00fcck. 404 wenn kein Drucker mit diesem Slug existiert.",
+        "operationId": "get_printer_api_v1_admin_printers__slug__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
         "parameters": [
           {
-            "name": "key",
-            "in": "query",
+            "name": "slug",
+            "in": "path",
             "required": true,
             "schema": {
-              "description": "Template key, e.g. 'snipeit-12mm'",
-              "title": "Key",
-              "type": "string"
-            },
-            "description": "Template key, e.g. 'snipeit-12mm'"
+              "type": "string",
+              "title": "Slug"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "PNG image of the rendered sample label",
+            "description": "Successful Response",
             "content": {
-              "image/png": {
+              "application/json": {
                 "schema": {
-                  "type": "string",
-                  "format": "binary"
+                  "$ref": "#/components/schemas/app__api__routes__admin_printers_api__PrinterRead"
                 }
               }
             }
           },
-          "404": {
-            "description": "Template not found"
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Drucker aktualisieren",
+        "description": "Aktualisiert einen Drucker per PATCH-Semantik (nur ge\u00e4nderte Felder). Slug und ID k\u00f6nnen nicht ge\u00e4ndert werden. Gibt 404 zur\u00fcck wenn kein Drucker mit diesem Slug existiert.",
+        "operationId": "update_printer_api_v1_admin_printers__slug__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrinterUpdatePayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__api__routes__admin_printers_api__PrinterRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/printers/{slug}/disable": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Drucker deaktivieren",
+        "description": "Deaktiviert einen Drucker (Soft-Delete). Gibt 404 zur\u00fcck wenn kein Drucker mit diesem Slug existiert. Gibt 409 zur\u00fcck wenn der Drucker bereits deaktiviert ist.",
+        "operationId": "disable_printer_api_v1_admin_printers__slug__disable_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__api__routes__admin_printers_api__PrinterRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/printers/{slug}/enable": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Drucker aktivieren",
+        "description": "Aktiviert einen deaktivierten Drucker. Gibt 404 zur\u00fcck wenn kein Drucker mit diesem Slug existiert. Gibt 409 zur\u00fcck wenn der Drucker bereits aktiv ist.",
+        "operationId": "enable_printer_api_v1_admin_printers__slug__enable_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__api__routes__admin_printers_api__PrinterRead"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -832,6 +1983,424 @@
   },
   "components": {
     "schemas": {
+      "ApiKeyCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "allowed_printer_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Printer Ids"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Rate Limit Per Minute",
+            "default": 60
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "title": "Notes"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "scopes"
+        ],
+        "title": "ApiKeyCreate"
+      },
+      "ApiKeyCreateResponse": {
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Key Id"
+          },
+          "plaintext": {
+            "type": "string",
+            "title": "Plaintext"
+          },
+          "prefix": {
+            "type": "string",
+            "title": "Prefix"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key_id",
+          "plaintext",
+          "prefix",
+          "name",
+          "scopes"
+        ],
+        "title": "ApiKeyCreateResponse",
+        "description": "Returned ONCE on creation \u2014 includes plaintext. Never return again."
+      },
+      "ApiKeyPatch": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "nullable": true,
+            "title": "Enabled"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "nullable": true,
+            "title": "Rate Limit Per Minute"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "title": "Notes"
+          },
+          "allowed_printer_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "nullable": true,
+            "title": "Allowed Printer Ids"
+          }
+        },
+        "type": "object",
+        "title": "ApiKeyPatch"
+      },
+      "ApiKeyRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "key_prefix": {
+            "type": "string",
+            "title": "Key Prefix"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "allowed_printer_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Printer Ids"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "title": "Rate Limit Per Minute"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "last_used_at": {
+            "type": "string",
+            "nullable": true,
+            "title": "Last Used At"
+          },
+          "last_used_ip": {
+            "type": "string",
+            "nullable": true,
+            "title": "Last Used Ip"
+          },
+          "expires_at": {
+            "type": "string",
+            "nullable": true,
+            "title": "Expires At"
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true,
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "key_prefix",
+          "scopes",
+          "allowed_printer_ids",
+          "rate_limit_per_minute",
+          "enabled",
+          "created_at",
+          "last_used_at",
+          "last_used_ip",
+          "expires_at",
+          "notes"
+        ],
+        "title": "ApiKeyRead",
+        "description": "Metadata-only view \u2014 no key_hash, no plaintext."
+      },
+      "BatchRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "printer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Printer Id"
+          },
+          "created_by": {
+            "type": "string",
+            "nullable": true,
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobRead"
+            },
+            "type": "array",
+            "title": "Jobs"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/BatchSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "printer_id",
+          "created_by",
+          "created_at",
+          "jobs",
+          "summary"
+        ],
+        "title": "BatchRead"
+      },
+      "BatchRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PrintRequest"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Items"
+          },
+          "printer_slug": {
+            "type": "string",
+            "nullable": true,
+            "title": "Printer Slug",
+            "description": "Optional: Slug des Ziel-Druckers (muss mit URL-Path \u00fcbereinstimmen)."
+          },
+          "half_cut_override": {
+            "type": "boolean",
+            "nullable": true,
+            "title": "Half Cut Override",
+            "description": "Override half_cut for all items in this batch. If the printer backend does not support half_cut (e.g. QL-Series), the value is forced to False and a warning is logged."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "BatchRequest",
+        "description": "Top-level POST /api/print/{slug_or_uuid}/batch body."
+      },
+      "BatchResponse": {
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Batch Id"
+          },
+          "printer_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Printer Id"
+          },
+          "queued_at": {
+            "type": "string",
+            "title": "Queued At"
+          },
+          "job_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Job Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "batch_id",
+          "printer_id",
+          "queued_at",
+          "job_ids"
+        ],
+        "title": "BatchResponse",
+        "description": "202 Response f\u00fcr erfolgreich akzeptierte Batch (auch wenn 0 Items queued)."
+      },
+      "BatchSummary": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "queued": {
+            "type": "integer",
+            "title": "Queued"
+          },
+          "printing": {
+            "type": "integer",
+            "title": "Printing"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          },
+          "all_terminal": {
+            "type": "boolean",
+            "title": "All Terminal",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "queued",
+          "printing",
+          "done",
+          "failed",
+          "cancelled"
+        ],
+        "title": "BatchSummary",
+        "description": "Aggregierte Z\u00e4hler \u00fcber alle Jobs eines Batches.\n\nall_terminal wird aus queued + printing berechnet \u2014 kein DB-Round-trip n\u00f6tig.\nHangar's Result-Page nutzt all_terminal um zu entscheiden, ob ein\nSSE-Stream f\u00fcr Live-Updates ge\u00f6ffnet werden muss."
+      },
+      "CheckStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "fail",
+              "skipped",
+              "stale"
+            ],
+            "title": "Status"
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true,
+            "title": "Detail"
+          },
+          "metric": {
+            "additionalProperties": true,
+            "type": "object",
+            "nullable": true,
+            "title": "Metric"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "CheckStatus"
+      },
+      "ContentType": {
+        "type": "string",
+        "enum": [
+          "qr_only",
+          "qr_one_line",
+          "qr_two_lines",
+          "qr_three_lines",
+          "text_one_line",
+          "text_two_lines",
+          "qr_with_listing"
+        ],
+        "title": "ContentType",
+        "description": "Tape-independent semantic content types for label rendering."
+      },
+      "GrocyWebhookPayload": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "title": "Product Id",
+            "description": "Grocy product identifier"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Event type string (e.g. 'stock_added', 'stock_removed')"
+          },
+          "quantity": {
+            "type": "number",
+            "nullable": true,
+            "title": "Quantity",
+            "description": "Optional stock quantity delta (surfaced in the printed label when present)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "type"
+        ],
+        "title": "GrocyWebhookPayload",
+        "description": "Event payload emitted by Grocy when a product stock event occurs."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -844,6 +2413,45 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "Healthz": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "revision": {
+            "type": "string",
+            "title": "Revision"
+          },
+          "build_date": {
+            "type": "string",
+            "title": "Build Date"
+          },
+          "repository": {
+            "type": "string",
+            "title": "Repository"
+          },
+          "sse_active_subscribers": {
+            "type": "integer",
+            "title": "Sse Active Subscribers",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version",
+          "revision",
+          "build_date",
+          "repository"
+        ],
+        "title": "Healthz",
+        "description": "Response body of /healthz.\n\nIntentionally minimal \u2014 no dependencies, no configuration, no PII.\nContainer orchestrators check the HTTP status and read the JSON for\na quick version sanity-check; ops use the build-info fields to confirm\nwhich image is running without digging through ``docker inspect``.\n\nFrozen so callers can't accidentally mutate the response model in-place\n(the same immutability discipline we apply to dataclasses \u2014 see\n``docs/learnings/code-review-patterns.md``)."
       },
       "JobRead": {
         "properties": {
@@ -859,6 +2467,7 @@
           },
           "template_key": {
             "type": "string",
+            "nullable": true,
             "title": "Template Key"
           },
           "state": {
@@ -871,37 +2480,33 @@
             "title": "Payload"
           },
           "result": {
-            "title": "Result",
             "additionalProperties": true,
             "type": "object",
-            "nullable": true
+            "nullable": true,
+            "title": "Result"
           },
           "error": {
-            "title": "Error",
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "title": "Error"
           },
           "created_at": {
             "type": "string",
-            "format": "date-time",
             "title": "Created At"
           },
           "updated_at": {
             "type": "string",
-            "format": "date-time",
             "title": "Updated At"
           },
           "started_at": {
-            "title": "Started At",
             "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "nullable": true,
+            "title": "Started At"
           },
           "finished_at": {
-            "title": "Finished At",
             "type": "string",
-            "format": "date-time",
-            "nullable": true
+            "nullable": true,
+            "title": "Finished At"
           }
         },
         "type": "object",
@@ -920,6 +2525,66 @@
         ],
         "title": "JobRead",
         "description": "Serialised view of a Job DB row."
+      },
+      "JobState": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "paused",
+          "printing",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "JobState"
+      },
+      "LabelDataItem": {
+        "properties": {
+          "item": {
+            "type": "string",
+            "title": "Item"
+          },
+          "qr_payload": {
+            "type": "string",
+            "nullable": true,
+            "title": "Qr Payload"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item"
+        ],
+        "title": "LabelDataItem",
+        "description": "One row in a qr_with_listing label (e.g. Kallax-Regal-Uebersicht)."
+      },
+      "LiveStatus": {
+        "properties": {
+          "hr_printer_status": {
+            "type": "string",
+            "enum": [
+              "other",
+              "unknown",
+              "idle",
+              "printing",
+              "warmup"
+            ],
+            "title": "Hr Printer Status"
+          },
+          "error_flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Error Flags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hr_printer_status"
+        ],
+        "title": "LiveStatus",
+        "description": "Live phase + error flags read from SNMP during a print."
       },
       "LookupResult": {
         "properties": {
@@ -940,11 +2605,13 @@
           },
           "name": {
             "type": "string",
+            "nullable": true,
             "title": "Name",
             "description": "Human-readable display name of the entity"
           },
           "url": {
             "type": "string",
+            "nullable": true,
             "title": "Url",
             "description": "Deep-link URL to the entity in the integration's web UI (e.g. Snipe-IT asset page, Grocy product page, Spoolman spool page)"
           },
@@ -958,70 +2625,278 @@
         "type": "object",
         "required": [
           "app",
-          "id",
-          "name",
-          "url"
+          "id"
         ],
         "title": "LookupResult",
         "description": "REST view of a resolved integration entity."
       },
-      "PrinterRead": {
+      "PrintJobResponse": {
         "properties": {
-          "id": {
+          "job_id": {
             "type": "string",
-            "format": "uuid",
-            "title": "Id"
+            "title": "Job Id"
           },
-          "name": {
+          "status": {
             "type": "string",
-            "title": "Name"
-          },
-          "model": {
+            "const": "queued",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "PrintJobResponse",
+        "description": "POST /print 202 body \u2014 queue accepted."
+      },
+      "PrintJobStatusResponse": {
+        "properties": {
+          "job_id": {
             "type": "string",
-            "title": "Model"
+            "title": "Job Id"
           },
-          "backend": {
+          "status": {
+            "$ref": "#/components/schemas/JobState"
+          },
+          "error_code": {
             "type": "string",
-            "title": "Backend"
+            "nullable": true,
+            "title": "Error Code"
           },
-          "connection": {
+          "error_message": {
+            "type": "string",
+            "nullable": true,
+            "title": "Error Message"
+          },
+          "error_detail": {
             "additionalProperties": true,
             "type": "object",
-            "title": "Connection"
-          },
-          "enabled": {
-            "type": "boolean",
-            "title": "Enabled"
-          },
-          "paused": {
-            "type": "boolean",
-            "title": "Paused"
+            "nullable": true,
+            "title": "Error Detail"
           },
           "created_at": {
             "type": "string",
             "format": "date-time",
             "title": "Created At"
           },
-          "updated_at": {
+          "started_at": {
             "type": "string",
             "format": "date-time",
-            "title": "Updated At"
+            "nullable": true,
+            "title": "Started At"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "title": "Finished At"
+          },
+          "live": {
+            "$ref": "#/components/schemas/LiveStatus",
+            "nullable": true
           }
         },
         "type": "object",
         "required": [
-          "id",
+          "job_id",
+          "status",
+          "created_at"
+        ],
+        "title": "PrintJobStatusResponse",
+        "description": "GET /jobs/{job_id} body."
+      },
+      "PrintLookupRequest": {
+        "properties": {
+          "app": {
+            "type": "string",
+            "title": "App"
+          },
+          "identifier": {
+            "type": "string",
+            "title": "Identifier"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "app",
+          "identifier"
+        ],
+        "title": "PrintLookupRequest",
+        "description": "Resolve label data via an integration plugin."
+      },
+      "PrintOptions": {
+        "properties": {
+          "copies": {
+            "type": "integer",
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Copies",
+            "default": 1
+          },
+          "auto_cut": {
+            "type": "boolean",
+            "title": "Auto Cut",
+            "default": true
+          },
+          "high_resolution": {
+            "type": "boolean",
+            "title": "High Resolution",
+            "default": false
+          },
+          "half_cut": {
+            "type": "boolean",
+            "title": "Half Cut",
+            "default": false
+          },
+          "last_page": {
+            "type": "boolean",
+            "title": "Last Page",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PrintOptions",
+        "description": "Per-print options \u2014 copies, cut behaviour, resolution."
+      },
+      "PrintRequest": {
+        "properties": {
+          "content_type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "options": {
+            "$ref": "#/components/schemas/PrintOptions",
+            "default": {
+              "copies": 1,
+              "auto_cut": true,
+              "high_resolution": false,
+              "half_cut": false,
+              "last_page": true
+            }
+          },
+          "data": {
+            "$ref": "#/components/schemas/RawLabelData",
+            "nullable": true
+          },
+          "lookup": {
+            "$ref": "#/components/schemas/PrintLookupRequest",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "content_type"
+        ],
+        "title": "PrintRequest",
+        "description": "POST /api/print body.\n\nEither `data` (RawLabelData) or `lookup` (PrintLookupRequest) is provided.\nExactly one of the two must be present."
+      },
+      "PrinterConnection": {
+        "properties": {
+          "host": {
+            "type": "string",
+            "maxLength": 253,
+            "minLength": 1,
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port"
+          },
+          "snmp": {
+            "$ref": "#/components/schemas/SNMPConfig"
+          }
+        },
+        "type": "object",
+        "required": [
+          "host",
+          "port"
+        ],
+        "title": "PrinterConnection",
+        "description": "Verbindungsparameter f\u00fcr einen Drucker."
+      },
+      "PrinterCreatePayload": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "title": "Slug"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model"
+          },
+          "backend": {
+            "type": "string",
+            "enum": [
+              "ptouch",
+              "brother_ql"
+            ],
+            "title": "Backend"
+          },
+          "connection": {
+            "$ref": "#/components/schemas/PrinterConnection"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/PrinterQueueSettings"
+          },
+          "cut_defaults": {
+            "$ref": "#/components/schemas/PrinterCutDefaults"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
           "name",
+          "slug",
           "model",
           "backend",
-          "connection",
-          "enabled",
-          "created_at",
-          "updated_at",
-          "paused"
+          "connection"
         ],
-        "title": "PrinterRead",
-        "description": "Full representation of a Printer row, augmented with the paused flag.\n\n``paused`` is joined from the ``printer_state`` table; it defaults to\n``False`` for printers whose state row was not yet created (safe \u2014 the\nDB lifespan helper creates state rows at startup, so this only matters\nin tests or during the very first boot)."
+        "title": "PrinterCreatePayload",
+        "description": "Payload f\u00fcr das Anlegen eines neuen Druckers via Admin-API."
+      },
+      "PrinterCutDefaults": {
+        "properties": {
+          "half_cut": {
+            "type": "boolean",
+            "title": "Half Cut",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "PrinterCutDefaults",
+        "description": "Standard-Schnitteinstellungen f\u00fcr einen Drucker."
+      },
+      "PrinterQueueSettings": {
+        "properties": {
+          "timeout_s": {
+            "type": "integer",
+            "maximum": 600.0,
+            "minimum": 1.0,
+            "title": "Timeout S",
+            "default": 30
+          }
+        },
+        "type": "object",
+        "title": "PrinterQueueSettings",
+        "description": "Warteschlangen-Einstellungen f\u00fcr einen Drucker."
       },
       "PrinterStatus": {
         "properties": {
@@ -1032,34 +2907,82 @@
           },
           "online": {
             "type": "boolean",
-            "title": "Online"
+            "nullable": true,
+            "title": "Online",
+            "description": "True when the printer responded to the last SNMP probe; None = no probe yet"
           },
           "tape_loaded": {
-            "title": "Tape Loaded",
-            "description": "e.g. \"12mm laminated black/clear\"; None when no tape is loaded",
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "title": "Tape Loaded",
+            "description": "e.g. \"12mm laminated black/clear\"; None when no tape is loaded"
           },
           "error_state": {
-            "title": "Error State",
-            "description": "Active error flags as a string; None when printer is ready",
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "title": "Error State",
+            "description": "Active error flags as a string; None when printer is ready"
           },
           "captured_at": {
             "type": "string",
-            "format": "date-time",
-            "title": "Captured At"
+            "nullable": true,
+            "title": "Captured At",
+            "description": "UTC timestamp of the probe that produced this reading; None if no probe yet"
+          },
+          "last_probe_age_s": {
+            "type": "integer",
+            "nullable": true,
+            "title": "Last Probe Age S",
+            "description": "Age of the cached reading in seconds"
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true,
+            "title": "Last Error",
+            "description": "Exception message from the most recent failed probe"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true,
+            "title": "Note",
+            "description": "Human-readable hint, e.g. 'No probe yet'"
           }
         },
         "type": "object",
         "required": [
-          "printer_id",
-          "online",
-          "captured_at"
+          "printer_id"
         ],
         "title": "PrinterStatus",
-        "description": "Live status result from a fresh ESC i S probe + cache write-back.\n\n``tape_loaded`` is a human-readable string such as\n``\"12mm laminated black/clear\"`` or ``None`` when no tape is inserted.\n``error_state`` mirrors the active PrinterError flags as a string, or\n``None`` when the printer is ready.\n``captured_at`` is the UTC timestamp of the probe that produced this\nblock."
+        "description": "Printer status sourced from the printer_status_cache table.\n\nThe endpoint reads the cache row written by StatusProbeProducer instead\nof doing a synchronous SNMP probe inline.  This makes the response fast\n(<10 ms) even when the printer is offline.\n\n``tape_loaded`` is a human-readable string such as\n``\"12mm laminated black/clear\"`` or ``None`` when no tape is inserted.\n``error_state`` mirrors the active PrinterError flags as a string, or\n``None`` when the printer is ready.\n``captured_at`` is the UTC timestamp of the probe that last updated the\ncache row.  ``None`` means no probe has completed yet.\n``last_probe_age_s`` is the age of the cached reading in seconds.\n``last_error`` is the exception message from the most recent failed probe.\n``note`` carries a human-readable hint (e.g. \"No probe yet\")."
+      },
+      "PrinterUpdatePayload": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "title": "Name"
+          },
+          "connection": {
+            "$ref": "#/components/schemas/PrinterConnection",
+            "nullable": true
+          },
+          "queue": {
+            "$ref": "#/components/schemas/PrinterQueueSettings",
+            "nullable": true
+          },
+          "cut_defaults": {
+            "$ref": "#/components/schemas/PrinterCutDefaults",
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "nullable": true,
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "title": "PrinterUpdatePayload",
+        "description": "Payload f\u00fcr das Aktualisieren eines bestehenden Druckers via Admin-API.\n\nDer Service ignoriert stillschweigend: slug, model, backend, id.\nAlle Felder sind optional \u2014 ein leerer Body ist ein g\u00fcltiger PATCH."
       },
       "ProblemDetail": {
         "properties": {
@@ -1080,16 +3003,16 @@
             "description": "HTTP status code"
           },
           "detail": {
-            "title": "Detail",
-            "description": "Human-readable explanation specific to this occurrence",
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "title": "Detail",
+            "description": "Human-readable explanation specific to this occurrence"
           },
           "instance": {
-            "title": "Instance",
-            "description": "URI reference identifying this specific occurrence",
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "title": "Instance",
+            "description": "URI reference identifying this specific occurrence"
           },
           "extensions": {
             "additionalProperties": true,
@@ -1106,74 +3029,126 @@
         "title": "ProblemDetail",
         "description": "RFC 7807 Problem Details object.\n\nAll fields are optional except ``type``, ``title``, and ``status``.\nThe ``extensions`` field carries additional problem-type-specific\ncontext (e.g. ``expected_mm`` / ``loaded_mm`` for tape mismatches)."
       },
-      "TemplateRead": {
+      "RawLabelData": {
         "properties": {
-          "id": {
+          "title": {
             "type": "string",
-            "format": "uuid",
-            "title": "Id"
+            "nullable": true,
+            "title": "Title"
           },
-          "key": {
+          "primary_id": {
             "type": "string",
-            "title": "Key"
+            "nullable": true,
+            "title": "Primary Id"
           },
-          "name": {
+          "qr_payload": {
             "type": "string",
-            "title": "Name"
+            "nullable": true,
+            "title": "Qr Payload"
           },
-          "app": {
-            "title": "App",
+          "secondary": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Secondary",
+            "default": []
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LabelDataItem"
+            },
+            "type": "array",
+            "title": "Items",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RawLabelData",
+        "description": "Raw label payload accepted when the client supplies data directly.\n\nMirrors LabelData minus `source_app` (set server-side to 'manual').\nAll content fields are optional \u2014 ContentType-specific validation\nhappens in LayoutEngine._validate_data."
+      },
+      "ReadinessResponse": {
+        "properties": {
+          "status": {
             "type": "string",
-            "nullable": true
+            "enum": [
+              "ready",
+              "degraded",
+              "not-ready"
+            ],
+            "title": "Status"
           },
-          "printer_model": {
-            "type": "string",
-            "title": "Printer Model"
-          },
-          "tape_width_mm": {
-            "type": "integer",
-            "title": "Tape Width Mm"
-          },
-          "schema_version": {
-            "type": "integer",
-            "title": "Schema Version"
-          },
-          "definition": {
-            "additionalProperties": true,
+          "checks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CheckStatus"
+            },
             "type": "object",
-            "title": "Definition"
+            "title": "Checks"
           },
-          "source": {
+          "version": {
             "type": "string",
-            "title": "Source"
+            "title": "Version"
           },
-          "created_at": {
+          "revision": {
             "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
+            "title": "Revision"
           }
         },
         "type": "object",
         "required": [
-          "id",
-          "key",
-          "name",
-          "app",
-          "printer_model",
-          "tape_width_mm",
-          "schema_version",
-          "definition",
-          "source",
-          "created_at",
-          "updated_at"
+          "status",
+          "checks",
+          "version",
+          "revision"
         ],
-        "title": "TemplateRead",
-        "description": "Serialised view of a Template DB row."
+        "title": "ReadinessResponse"
+      },
+      "SNMPConfig": {
+        "properties": {
+          "discover": {
+            "type": "boolean",
+            "title": "Discover",
+            "default": false
+          },
+          "community": {
+            "type": "string",
+            "maxLength": 64,
+            "nullable": true,
+            "title": "Community",
+            "default": "public"
+          }
+        },
+        "type": "object",
+        "title": "SNMPConfig",
+        "description": "Verschachtelt \u2014 konsistent mit altem YAML-Schema."
+      },
+      "SpoolmanWebhookPayload": {
+        "properties": {
+          "spool_id": {
+            "type": "string",
+            "title": "Spool Id",
+            "description": "Spoolman spool identifier (as a string to accept both int and str JSON input)"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "Event type string (e.g. 'updated', 'created', 'consumed')"
+          },
+          "quantity": {
+            "type": "number",
+            "nullable": true,
+            "title": "Quantity",
+            "description": "Optional remaining filament in grams (surfaced in the printed label)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "spool_id",
+          "type"
+        ],
+        "title": "SpoolmanWebhookPayload",
+        "description": "Event payload emitted by Spoolman when a spool is updated."
       },
       "ValidationError": {
         "properties": {
@@ -1214,6 +3189,207 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WebhookAcceptedResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Job Id",
+            "description": "UUID of the newly-created print job; poll GET /api/jobs/{job_id} for status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id"
+        ],
+        "title": "WebhookAcceptedResponse",
+        "description": "202 Accepted response body for both webhook endpoints."
+      },
+      "_PreviewRequest": {
+        "properties": {
+          "content_type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "data": {
+            "$ref": "#/components/schemas/RawLabelData"
+          },
+          "tape_mm": {
+            "type": "integer",
+            "title": "Tape Mm",
+            "default": 12
+          }
+        },
+        "type": "object",
+        "required": [
+          "content_type",
+          "data"
+        ],
+        "title": "_PreviewRequest",
+        "description": "Request body for POST /render/preview.\n\nPhase 1k.1a (Task 25): render-only endpoint \u2014 no printer, no queue, no DB."
+      },
+      "_PrinterResumeResponse": {
+        "properties": {
+          "printer_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Printer Id"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "printer_id",
+          "state"
+        ],
+        "title": "_PrinterResumeResponse",
+        "description": "200 response body for POST /printer/resume."
+      },
+      "app__api__routes__admin_printers_api__PrinterRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "backend": {
+            "type": "string",
+            "title": "Backend"
+          },
+          "connection": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Connection"
+          },
+          "queue": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Queue"
+          },
+          "cut_defaults": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Cut Defaults"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "model",
+          "backend",
+          "connection",
+          "queue",
+          "cut_defaults",
+          "enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PrinterRead",
+        "description": "Lesbare Darstellung eines Druckers.\n\nEnth\u00e4lt alle DB-Felder \u2014 keine internen Implementierungsdetails."
+      },
+      "app__schemas__printer__PrinterRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug",
+            "default": ""
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "backend": {
+            "type": "string",
+            "title": "Backend"
+          },
+          "connection": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Connection"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "paused": {
+            "type": "boolean",
+            "title": "Paused"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "model",
+          "backend",
+          "connection",
+          "enabled",
+          "paused",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PrinterRead",
+        "description": "Full representation of a Printer row, augmented with the paused flag.\n\n``paused`` is joined from the ``printer_state`` table; it defaults to\n``False`` for printers whose state row was not yet created (safe \u2014 the\nDB lifespan helper creates state rows at startup, so this only matters\nin tests or during the very first boot)."
+      }
+    },
+    "securitySchemes": {
+      "APIKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Label-Hub-Key"
       }
     }
   }

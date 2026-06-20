@@ -9,36 +9,18 @@ Call order in main.py lifespan:
     1. run_migrations()           — apply pending Alembic revisions
     1b. verify_alembic_at_head()  — assert DB revision == script head (fail fast)
     2. _discover_plugins()        — register integration + model plugins (idempotent)
-    3. TemplateLoader.load_dir()  — populate in-memory template cache (Cluster 1a)
-    4. recover_inflight_jobs()    — mark stale QUEUED/PRINTING jobs as failed_restart
-    5. seed_templates()           — YAML → DB upsert (defensive check on cache)
-    6. upsert_runtime_printers()  — printers.yaml → DB Printer rows (Cluster 1b, M-H2-Fix)
-    7. ensure_printer_state()     — create missing printer_state rows per Printer
+    3. recover_inflight_jobs()    — mark stale QUEUED/PRINTING jobs as failed_restart
+    4. ensure_printer_state()     — create missing printer_state rows per Printer
 
-Note: steps 2 and 3 must precede step 5 — TemplateLoader.load_dir() validates
-templates against IntegrationRegistry (populated in step 2), and seed_templates()
-reads from the cache that load_dir() populates in step 3.
-
-Phase 1i CA-1: upsert_runtime_printer (Settings-abhängig) entfernt.
-Ersetzt durch upsert_runtime_printers (PrinterYAMLConfig-List).
-R4-M-4/M-5-Fix: alte Funktion referenzierte entfernte Settings-Felder.
+Phase 5 (#124): upsert_runtime_printers und YAML→DB-Sync-Pfad entfernt.
+Drucker-Verwaltung erfolgt ausschließlich über die Admin-API.
 """
 
 from __future__ import annotations
 
-import logging
-from uuid import UUID
-
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import col
 
 from app.config import Settings
-from app.models.printer import Printer
-from app.schemas.printer_config import PrinterYAMLConfig
-from app.services.printer_identity import derive_printer_id
-
-_logger = logging.getLogger(__name__)
 
 
 async def run_migrations() -> None:
@@ -171,87 +153,3 @@ async def ensure_printer_state(session: AsyncSession) -> int:
         await session.commit()
 
     return created
-
-
-async def upsert_runtime_printers(
-    session: AsyncSession,
-    configs: list[PrinterYAMLConfig],
-) -> list[UUID]:
-    """Materialisiert eine DB-Zeile pro Drucker-Eintrag aus printers.yaml.
-
-    M-H2-Fix: Multi-Printer-Loop.
-    MA-2-Fix: derive_printer_id(model, host, port) bleibt deterministisch —
-              model in printers.yaml MUSS exakt der bisherigen Env-Var entsprechen.
-    R4-M-4/M-5-Fix: Alte upsert_runtime_printer (Settings-abhängig) gelöscht —
-                    referenzierte entfernte Felder und würde AttributeError geben.
-    PR#98-Gemini: session.flush() statt session.commit() innerhalb der Schleife —
-              commit() midloop bricht Transaktions-Atomizität. Einziger commit() am Ende.
-    PR#98-Copilot: Slug-Collision-Detection — wenn ein alter Row dieselbe slug/name
-              aber eine andere UUID trägt (z.B. nach model/host/port Änderung in YAML),
-              wird der alte Row auf die neue deterministische UUID migriert und ein
-              WARNING geloggt. Ohne diese Prüfung würde ein INSERT mit IntegrityError
-              abstürzen statt sauber zu migrieren.
-
-    Returns: Liste der printer_id UUIDs (für lifespan-Wiring).
-    """
-    ids: list[UUID] = []
-    for cfg in configs:
-        printer_id = derive_printer_id(cfg.model, cfg.host, cfg.port)
-        existing = await session.get(Printer, printer_id)
-        if existing is None:
-            # Slug-Collision-Check: gibt es einen Row mit gleicher slug aber anderer UUID?
-            # Das passiert wenn model/host/port sich geändert haben (neue deterministische UUID)
-            # aber slug/name gleich geblieben sind.
-            collision_result = await session.execute(
-                select(Printer).where(col(Printer.slug) == cfg.slug)
-            )
-            colliding = collision_result.scalar_one_or_none()
-            if colliding is not None and colliding.id != printer_id:
-                _logger.warning(
-                    "upsert_runtime_printers: slug=%r already owned by printer_id=%s "
-                    "(different from new deterministic id=%s). "
-                    "Treating as migration — updating existing row to new UUID.",
-                    cfg.slug,
-                    colliding.id,
-                    printer_id,
-                )
-                # Migration: bestehenden Row auf neue UUID aktualisieren.
-                # Wir löschen den alten Row und fügen einen neuen ein, weil
-                # PRIMARY KEY Updates via SQLModel/SQLAlchemy nicht zuverlässig
-                # mit async sessions funktionieren.
-                await session.delete(colliding)
-                await session.flush()
-                session.add(
-                    Printer(
-                        id=printer_id,
-                        slug=cfg.slug,
-                        name=cfg.name,
-                        model=cfg.model.lower(),
-                        backend=cfg.backend,
-                        connection={"host": cfg.host, "port": cfg.port},
-                        enabled=True,
-                    )
-                )
-            else:
-                session.add(
-                    Printer(
-                        id=printer_id,
-                        slug=cfg.slug,
-                        name=cfg.name,
-                        model=cfg.model.lower(),
-                        backend=cfg.backend,
-                        connection={"host": cfg.host, "port": cfg.port},
-                        enabled=True,
-                    )
-                )
-        else:
-            existing.slug = cfg.slug
-            existing.name = cfg.name
-            existing.backend = cfg.backend
-            # host/port/model bleiben stabil (UUID-Basis)
-        # flush() statt commit() hier: hält alle Änderungen in derselben Transaktion
-        # bis der finale commit() am Ende der Schleife alles atomar abschließt.
-        await session.flush()
-        ids.append(printer_id)
-    await session.commit()
-    return ids

@@ -47,6 +47,7 @@
 
   {{if .Key.Enabled}}
   <form method="POST" action="/admin/api-keys/{{.Key.Id}}/revoke">
+    {{.CSRFField}}
     <button type="submit"
             class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
             onclick="return confirm('Revoke this key? It cannot be undone.')">

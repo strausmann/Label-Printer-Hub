@@ -20,6 +20,7 @@
   </div>
   {{else}}
   <form method="POST" action="/admin/api-keys/new" class="space-y-4 bg-surface-raised rounded-lg border border-surface-border p-6">
+    {{.CSRFField}}
     <div>
       <label class="block text-sm font-medium text-content-primary mb-1">Name</label>
       <input type="text" name="name" required

@@ -21,7 +21,7 @@ from uuid import UUID, uuid4
 from PIL import Image
 
 from app.models.job import Job
-from app.printer_backends.exceptions import NoTapeLoadedError
+from app.printer_backends.exceptions import NoTapeLoadedError, PrinterDisabledError
 from app.schemas.label_data import LabelData
 from app.schemas.print_request import PrintRequest
 from app.services.layout_engine import LayoutEngine
@@ -36,6 +36,8 @@ class PrintService:
         self,
         *,
         printer_id: UUID,
+        printer_slug: str = "",
+        printer_enabled: bool = True,
         backend: Any,  # PrinterBackend protocol
         queue: Any,  # PrintQueue protocol
         store: Any,  # JobStore protocol
@@ -43,6 +45,8 @@ class PrintService:
         lookup_service: Any = None,  # optional LookupService protocol
     ) -> None:
         self._printer_id = printer_id
+        self._printer_slug = printer_slug
+        self._printer_enabled = printer_enabled
         self._backend = backend
         self._queue = queue
         self._store = store
@@ -53,10 +57,14 @@ class PrintService:
         """Submit a print job: preflight → render → persist → queue.
 
         Raises:
+            PrinterDisabledError (409): Drucker ist deaktiviert (enabled=False).
             NoTapeLoadedError (409): preflight returned loaded_tape_mm=None.
             UnsupportedTapeError (409): tape_mm not in TAPE_GEOMETRY.
             ContentTypeDataMismatchError (422): data missing required fields.
         """
+        if not self._printer_enabled:
+            raise PrinterDisabledError(self._printer_id, self._printer_slug)
+
         preflight = await self._backend.preflight_check()
         if preflight.loaded_tape_mm is None:
             raise NoTapeLoadedError()

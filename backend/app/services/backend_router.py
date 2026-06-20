@@ -1,21 +1,81 @@
 """Phase 1i Sub-Task H (CA-2): BackendRouter.
 
 Map printer_slug -> Backend-Instanz + PrintService-Instanz.
-Wird in lifespan nach PrinterConfigLoader.load_file() instanziert.
 batch_dispatch ruft router.service_for(slug) auf (R4-A-C2-Fix: Volle Multi-Printer).
+
+Phase 5 (#124): PrinterYAMLConfig und verwandte Klassen hierher verschoben —
+PrinterConfigLoader (YAML-Parser) und printer_config.py (Schema-Datei) entfernt.
+BackendRouter ist nun einziger Konsument dieser Laufzeit-Konfiguration.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.printer_backends.base import PrinterBackend
 from app.printer_backends.brother_ql_backend import BrotherQLBackend
 from app.printer_backends.ptouch_backend import PTouchBackend
-from app.schemas.printer_config import PrinterYAMLConfig
 
 if TYPE_CHECKING:
     from app.services.print_service import PrintService
+
+
+# ---------------------------------------------------------------------------
+# Laufzeit-Konfigurationsmodelle (verschoben aus app/schemas/printer_config.py)
+# ---------------------------------------------------------------------------
+
+
+class PrinterConfigValidationError(ValueError):
+    """Semantisch ungültige Drucker-Konfigurationswerte."""
+
+
+class SNMPConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    discover: bool = True
+    community: str = "public"
+
+
+class QueueConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    timeout_s: int = 30
+
+
+class CutDefaults(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    half_cut: bool = True
+    cut_at_end: bool = True
+
+
+class PrinterYAMLConfig(BaseModel):
+    """Laufzeit-Drucker-Konfiguration.
+
+    Ursprünglich aus printers.yaml geladen (Phase 1i). Ab Phase 5 (#124)
+    wird diese Klasse aus DB-Printer-Rows gebaut — printers.yaml entfällt.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
+    name: str
+    backend: Literal["ptouch", "brother_ql"]
+    model: str
+    host: str
+    port: int = 9100
+    snmp: SNMPConfig = Field(default_factory=SNMPConfig)
+    queue: QueueConfig = Field(default_factory=QueueConfig)
+    cut_defaults: CutDefaults = Field(default_factory=CutDefaults)
+
+    @model_validator(mode="after")
+    def validate_cut_defaults_vs_backend(self) -> PrinterYAMLConfig:
+        if self.cut_defaults.half_cut and self.backend == "brother_ql":
+            raise PrinterConfigValidationError(
+                f"PrinterYAMLConfig '{self.slug}': cut_defaults.half_cut=True erfordert "
+                f"half_cut_supported=True (nur PT-Series). Setze cut_defaults.half_cut=false "
+                f"für QL-Drucker."
+            )
+        return self
 
 
 class UnknownBackendError(ValueError):

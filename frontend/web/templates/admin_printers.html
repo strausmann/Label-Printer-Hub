@@ -1,0 +1,84 @@
+{{define "title"}}Drucker — Label Printer Hub{{end}}
+
+{{define "content"}}
+<div class="space-y-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-2xl font-semibold text-content-primary">Drucker</h1>
+    <a href="/admin/printers/new"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 text-sm font-medium">
+      + Neuer Drucker
+    </a>
+  </div>
+
+  <!-- Filter: deaktivierte Drucker einblenden -->
+  <form method="GET" action="/admin/printers" class="flex items-center gap-2 text-sm">
+    <label class="flex items-center gap-2 text-content-secondary cursor-pointer">
+      <input type="checkbox" name="include_disabled" value="true"
+             {{if .IncludeDisabled}}checked{{end}}
+             onchange="this.form.submit()">
+      Deaktivierte Drucker anzeigen
+    </label>
+  </form>
+
+  {{if .Printers}}
+  <div class="overflow-x-auto rounded-lg border border-surface-border">
+    <table class="min-w-full divide-y divide-surface-border text-sm">
+      <thead class="bg-surface-raised text-content-secondary uppercase text-xs tracking-wide">
+        <tr>
+          <th class="px-4 py-3 text-left">Name</th>
+          <th class="px-4 py-3 text-left">Slug</th>
+          <th class="px-4 py-3 text-left">Modell</th>
+          <th class="px-4 py-3 text-left">Backend</th>
+          <th class="px-4 py-3 text-left">Verbindung</th>
+          <th class="px-4 py-3 text-left">Status</th>
+          <th class="px-4 py-3 text-right">Aktionen</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-surface-border bg-surface">
+        {{range .Printers}}
+        <tr class="{{if not .Enabled}}opacity-60{{end}}">
+          <td class="px-4 py-3 font-medium text-content-primary">{{.Name}}</td>
+          <td class="px-4 py-3 font-mono text-content-secondary text-xs">{{.Slug}}</td>
+          <td class="px-4 py-3 text-content-secondary">{{.Model}}</td>
+          <td class="px-4 py-3 text-content-secondary">{{.Backend}}</td>
+          <td class="px-4 py-3 text-content-secondary text-xs font-mono">
+            {{if index .Connection "host"}}{{index .Connection "host"}}:{{index .Connection "port"}}{{else}}&mdash;{{end}}
+          </td>
+          <td class="px-4 py-3">
+            {{if .Enabled}}
+            <span class="text-xs text-green-600 font-medium">aktiv</span>
+            {{else}}
+            <span class="text-xs text-red-500 font-medium">deaktiviert</span>
+            {{end}}
+          </td>
+          <td class="px-4 py-3 text-right space-x-2">
+            <a href="/admin/printers/{{.Slug}}"
+               class="text-xs text-primary hover:underline">Details</a>
+            <a href="/admin/printers/{{.Slug}}/edit"
+               class="text-xs text-content-secondary hover:underline">Bearbeiten</a>
+            {{if .Enabled}}
+            <a href="/admin/printers/{{.Slug}}/disable"
+               class="text-xs text-red-500 hover:underline">Deaktivieren</a>
+            {{else}}
+            <form method="POST" action="/admin/printers/{{.Slug}}/enable" class="inline">
+              {{$.CSRFField}}
+              <button type="submit"
+                      class="text-xs text-green-600 hover:underline">
+                Aktivieren
+              </button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <div class="text-center py-12 text-content-secondary">
+    <p class="text-lg mb-2">Keine Drucker vorhanden.</p>
+    <p class="text-sm">Legen Sie den ersten Drucker an um loszulegen.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}

@@ -57,9 +57,11 @@ func (h *PageHandler) JobsList(w http.ResponseWriter, r *http.Request) {
 
 	// Cursor pagination: if we received a full page, the last job's
 	// created_at becomes the ?since= cursor for the next page.
+	// JobRead.CreatedAt is a plain string (RFC3339 from the backend); no
+	// time.Time conversion is needed — pass it through directly as the cursor.
 	var nextCursor string
 	if len(jobs) == pageSize {
-		nextCursor = jobs[len(jobs)-1].CreatedAt.UTC().Format(time.RFC3339)
+		nextCursor = jobs[len(jobs)-1].CreatedAt
 	}
 
 	h.renderPage(w, r, "jobs", JobsListData{

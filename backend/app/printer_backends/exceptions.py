@@ -5,6 +5,8 @@ PrinterError is the root; HTTP-mapping is done in app.api.routes.print.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 
 class PrinterError(Exception):
     """Base class for any backend / hardware failure."""
@@ -91,6 +93,19 @@ class NoTapeLoadedError(PrinterError):
 
     def __init__(self) -> None:
         super().__init__("No tape loaded — insert a Brother TZe or DK cartridge.")
+
+
+class PrinterDisabledError(PrinterError):
+    """Drucker existiert in DB, ist aber deaktiviert (Soft-Delete-Status).
+
+    Mappt in der HTTP-Schicht auf 409 (nicht 404), weil der Drucker
+    semantisch existiert — er ist nur vorübergehend nicht verwendbar.
+    """
+
+    def __init__(self, printer_id: UUID, slug: str) -> None:
+        self.printer_id = printer_id
+        self.slug = slug
+        super().__init__(f"Printer {slug} ({printer_id}) is disabled")
 
 
 class ContentTypeDataMismatchError(Exception):

@@ -82,3 +82,30 @@ class TestContentTypeDataMismatchError:
         assert exc.content_type == "qr_two_lines"
         assert exc.missing_fields == ("primary_id", "title")
         assert "primary_id" in str(exc) and "title" in str(exc)
+
+
+from uuid import UUID  # noqa: E402
+
+from app.printer_backends.exceptions import PrinterDisabledError  # noqa: E402
+
+_PRINTER_ID = UUID("12345678-1234-5678-1234-567812345678")
+_SLUG = "brother-ql-820nwb"
+
+
+class TestPrinterDisabledError:
+    def test_subclasses_printer_error(self) -> None:
+        """Hierarchie: PrinterDisabledError ist ein PrinterError."""
+        assert issubclass(PrinterDisabledError, PrinterError)
+
+    def test_stores_printer_id_and_slug(self) -> None:
+        """Konstruktor speichert printer_id und slug als Instanzattribute."""
+        exc = PrinterDisabledError(_PRINTER_ID, _SLUG)
+        assert exc.printer_id == _PRINTER_ID
+        assert exc.slug == _SLUG
+
+    def test_str_contains_slug_and_printer_id(self) -> None:
+        """str(exc) enthält sowohl slug als auch die UUID des Druckers."""
+        exc = PrinterDisabledError(_PRINTER_ID, _SLUG)
+        msg = str(exc)
+        assert _SLUG in msg
+        assert str(_PRINTER_ID) in msg

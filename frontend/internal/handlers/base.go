@@ -38,15 +38,17 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/gorilla/csrf"
 	"github.com/strausmann/label-printer-hub/frontend/internal/api"
 )
 
 // TemplateData is the base type embedded by all page-specific data structs.
 // Every page template receives at minimum these fields.
 type TemplateData struct {
-	Version   string // build version from env (e.g. "1.2.3")
-	ActiveNav string // "dashboard" | "jobs" | "templates" | ""
-	Error     string // non-empty on error pages
+	Version   string        // Build-Version aus Env (z.B. "1.2.3")
+	ActiveNav string        // "dashboard" | "jobs" | "templates" | ""
+	Error     string        // Nicht-leer bei Fehlerseiten
+	CSRFField template.HTML // gorilla/csrf Hidden-Input für POST-Forms; leer auf GET-only-Seiten
 }
 
 // PageHandler holds shared state for all page handlers.
@@ -68,6 +70,10 @@ var pageNames = []string{
 	"admin_api_keys",
 	"admin_api_keys_create",
 	"admin_api_keys_detail",
+	"admin_printers",
+	"admin_printers_form",
+	"admin_printers_detail",
+	"admin_printers_confirm_disable",
 	"dashboard",
 	"printer",
 	"jobs",
@@ -108,6 +114,17 @@ func ParsePageTemplates(tmplFS fs.FS) (map[string]*template.Template, *template.
 // map (from ParsePageTemplates) and a real backend client.
 func NewPageHandler(pages map[string]*template.Template, errTmpl *template.Template, client *api.HubClient, version string) *PageHandler {
 	return &PageHandler{pages: pages, errTmpl: errTmpl, client: client, version: version}
+}
+
+// baseData erstellt TemplateData mit CSRF-Feld aus dem aktuellen Request-Kontext.
+// Auf Routen ohne CSRF-Middleware (z.B. GET-only-Seiten außerhalb /admin) ist
+// csrf.TemplateField(r) ein leeres template.HTML — das ist kein Fehler.
+func (h *PageHandler) baseData(r *http.Request, activeNav string) TemplateData {
+	return TemplateData{
+		Version:   h.version,
+		ActiveNav: activeNav,
+		CSRFField: csrf.TemplateField(r),
+	}
 }
 
 // renderPage writes a full-page or fragment response.
@@ -203,6 +220,14 @@ var stubPageContent = map[string]string{
 {{define "admin_api_keys_create-content"}}<div id="api-key-create">{{.Plaintext}}</div>{{end}}`,
 	"admin_api_keys_detail": `{{define "content"}}<div id="api-key-detail"></div>{{end}}
 {{define "admin_api_keys_detail-content"}}<div id="api-key-detail">{{.Key.Name}}</div>{{end}}`,
+	"admin_printers": `{{define "content"}}<div id="printers-list"></div>{{end}}
+{{define "admin_printers-content"}}<div id="printers-list">{{range .Printers}}<span>{{.Name}}</span>{{end}}</div>{{end}}`,
+	"admin_printers_form": `{{define "content"}}<div id="printer-form"></div>{{end}}
+{{define "admin_printers_form-content"}}<div id="printer-form">{{if .IsEdit}}edit{{else}}new{{end}}{{if .Error}}<span class="error">{{.Error}}</span>{{end}}<input name="snmp_community" value="{{.FormSnmpCommunity}}"><input type="checkbox" name="snmp_discover"{{if .FormSnmpDiscover}} checked{{end}}><input name="host" value="{{.FormHost}}"><input name="port" value="{{.FormPort}}"></div>{{end}}`,
+	"admin_printers_detail": `{{define "content"}}<div id="printer-detail-admin"></div>{{end}}
+{{define "admin_printers_detail-content"}}<div id="printer-detail-admin">{{.Printer.Name}}</div>{{end}}`,
+	"admin_printers_confirm_disable": `{{define "content"}}<div id="printer-confirm-disable"></div>{{end}}
+{{define "admin_printers_confirm_disable-content"}}<div id="printer-confirm-disable">{{.Printer.Name}}</div>{{end}}`,
 }
 
 // newStubPageHandler builds a PageHandler backed by minimal stub templates for

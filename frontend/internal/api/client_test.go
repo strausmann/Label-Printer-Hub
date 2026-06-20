@@ -96,31 +96,16 @@ func TestGetJobReturnsErrNotFound(t *testing.T) {
 	}
 }
 
-func TestListTemplatesFiltersByApp(t *testing.T) {
+// TestListTemplatesReturnsErrNotImplemented verifies that ListTemplates returns
+// ErrNotImplemented now that GET /api/templates has been removed from the
+// backend in Phase 1k.1a (Issue #103). A follow-up task will remove the
+// template routes and handler code entirely.
+func TestListTemplatesReturnsErrNotImplemented(t *testing.T) {
 	t.Parallel()
-	now := time.Now().Format(time.RFC3339)
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/templates" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]map[string]any{
-				{"id": "cccccccc-0000-0000-0000-000000000001", "key": "snipeit_asset",
-					"name": "Asset Label", "app": "snipeit", "printer_model": "pt_series",
-					"tape_width_mm": 12, "schema_version": 1,
-					"definition": map[string]any{}, "source": "",
-					"created_at": now, "updated_at": now},
-			})
-		} else {
-			http.NotFound(w, r)
-		}
-	}))
-	defer backend.Close()
-
-	templates, err := api.NewHubClient(backend.URL).ListTemplates(context.Background(), "snipeit")
-	if err != nil {
-		t.Fatalf("ListTemplates: %v", err)
-	}
-	if len(templates) != 1 || templates[0].Name != "Asset Label" {
-		t.Errorf("unexpected result: %+v", templates)
+	// No backend needed — the stub returns immediately without any HTTP call.
+	_, err := api.NewHubClient("http://localhost:0").ListTemplates(context.Background(), "snipeit")
+	if err != api.ErrNotImplemented {
+		t.Errorf("ListTemplates err = %v, want ErrNotImplemented", err)
 	}
 }
 

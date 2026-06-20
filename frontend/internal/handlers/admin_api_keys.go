@@ -47,7 +47,7 @@ type APIKeyMeta struct {
 	Notes              *string
 }
 
-// AdminAPIKeysList handles GET /admin/api-keys — list all keys.
+// AdminAPIKeysList handles GET /admin/api-keys — Auflistung aller Keys.
 func (h *PageHandler) AdminAPIKeysList(w http.ResponseWriter, r *http.Request) {
 	keys, err := h.listAPIKeys(r)
 	if err != nil {
@@ -55,19 +55,20 @@ func (h *PageHandler) AdminAPIKeysList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, r, "admin_api_keys", AdminAPIKeyListData{
-		TemplateData: TemplateData{Version: h.version, ActiveNav: "admin"},
+		TemplateData: h.baseData(r, "admin"),
 		Keys:         keys,
 	})
 }
 
-// AdminAPIKeysNew handles GET /admin/api-keys/new — show create form.
+// AdminAPIKeysNew handles GET /admin/api-keys/new — Erstell-Formular anzeigen.
 func (h *PageHandler) AdminAPIKeysNew(w http.ResponseWriter, r *http.Request) {
 	h.renderPage(w, r, "admin_api_keys_create", AdminAPIKeyCreateData{
-		TemplateData: TemplateData{Version: h.version, ActiveNav: "admin"},
+		TemplateData: h.baseData(r, "admin"),
 	})
 }
 
-// AdminAPIKeysCreate handles POST /admin/api-keys/new — create a new key.
+// AdminAPIKeysCreate handles POST /admin/api-keys/new — neuen Key erstellen.
+// CSRF-Token wird von gorilla/csrf vor dem Handler-Aufruf validiert.
 func (h *PageHandler) AdminAPIKeysCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		h.renderError(w, r, http.StatusBadRequest, "Bad Request", err.Error())
@@ -88,9 +89,9 @@ func (h *PageHandler) AdminAPIKeysCreate(w http.ResponseWriter, r *http.Request)
 	}
 
 	payload := map[string]interface{}{
-		"name":                 name,
-		"scopes":               scopes,
-		"allowed_printer_ids":  []string{},
+		"name":                  name,
+		"scopes":                scopes,
+		"allowed_printer_ids":   []string{},
 		"rate_limit_per_minute": rateLimit,
 	}
 	if notes != "" {
@@ -100,20 +101,20 @@ func (h *PageHandler) AdminAPIKeysCreate(w http.ResponseWriter, r *http.Request)
 	plaintext, prefix, apiErr := h.createAPIKey(r, payload)
 	if apiErr != nil {
 		h.renderPage(w, r, "admin_api_keys_create", AdminAPIKeyCreateData{
-			TemplateData: TemplateData{Version: h.version, ActiveNav: "admin"},
+			TemplateData: h.baseData(r, "admin"),
 			Error:        apiErr.Error(),
 		})
 		return
 	}
 
 	h.renderPage(w, r, "admin_api_keys_create", AdminAPIKeyCreateData{
-		TemplateData: TemplateData{Version: h.version, ActiveNav: "admin"},
+		TemplateData: h.baseData(r, "admin"),
 		Plaintext:    plaintext,
 		Prefix:       prefix,
 	})
 }
 
-// AdminAPIKeyDetail handles GET /admin/api-keys/{id} — show key detail.
+// AdminAPIKeyDetail handles GET /admin/api-keys/{id} — Key-Detailansicht.
 func (h *PageHandler) AdminAPIKeyDetail(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	key, err := h.getAPIKey(r, id)
@@ -122,12 +123,13 @@ func (h *PageHandler) AdminAPIKeyDetail(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.renderPage(w, r, "admin_api_keys_detail", AdminAPIKeyDetailData{
-		TemplateData: TemplateData{Version: h.version, ActiveNav: "admin"},
+		TemplateData: h.baseData(r, "admin"),
 		Key:          *key,
 	})
 }
 
-// AdminAPIKeyRevoke handles POST /admin/api-keys/{id}/revoke — revoke a key.
+// AdminAPIKeyRevoke handles POST /admin/api-keys/{id}/revoke — Key widerrufen.
+// CSRF-Token wird von gorilla/csrf vor dem Handler-Aufruf validiert.
 func (h *PageHandler) AdminAPIKeyRevoke(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if err := h.revokeAPIKey(r, id); err != nil {

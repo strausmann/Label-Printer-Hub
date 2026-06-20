@@ -13,10 +13,12 @@
 //	HUB_REVISION     git commit SHA   — baked in by Dockerfile build arg
 //	HUB_BUILD_DATE   ISO-8601 UTC     — baked in by Dockerfile build arg
 //	HUB_REPO_URL     project repo URL — baked in by Dockerfile build arg
+//	CSRF_KEY         64 Hex-Zeichen (= 32 Bytes) für gorilla/csrf — PFLICHT in Produktion
 package main
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"io/fs"
 	"log/slog"
@@ -28,6 +30,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/gorilla/csrf"
 	frontend "github.com/strausmann/label-printer-hub/frontend"
 	"github.com/strausmann/label-printer-hub/frontend/internal/api"
 	"github.com/strausmann/label-printer-hub/frontend/internal/handlers"
@@ -109,7 +112,9 @@ func slogRequestLogger(next http.Handler) http.Handler {
 // ph is the shared PageHandler that handles all UI routes including /healthz.
 // prx is the pre-built reverse proxy to the backend (FlushInterval=-1 for SSE).
 // staticSubFS is an fs.FS rooted at web/static — pass fs.Sub(staticFS, "web/static").
-func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS) *chi.Mux {
+// csrfMW ist die gorilla/csrf-Middleware; in Tests kann nil übergeben werden
+// (dann wird kein CSRF-Schutz auf Admin-Routen angewendet).
+func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS, csrfMW func(http.Handler) http.Handler) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
@@ -117,9 +122,9 @@ func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS) *c
 	r.Use(slogRequestLogger)
 
 	// Static assets embedded in the binary (Tailwind CSS, HTMX JS, icons).
-	// Served at /static/*. staticSubFS is already rooted at web/static so a
-	// request for /static/app.css → strips /static/ prefix → looks up app.css
-	// directly in the sub-FS.
+	// Served at /static/*. staticSubFS ist bereits auf web/static gewurzelt, so dass
+	// eine Anfrage für /static/app.css → /static/-Prefix entfernt → app.css direkt in
+	// der Sub-FS nachschlägt.
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticSubFS))))
 
 	// All page routes and /healthz are handled by the shared PageHandler.
@@ -134,12 +139,29 @@ func newRouter(ph *handlers.PageHandler, prx http.Handler, staticSubFS fs.FS) *c
 	r.Get("/templates/{id}", ph.TemplateDetail)
 	r.Get("/lookup/{app}/{id}", ph.LookupDisplay)
 
-	// Admin: API key management
-	r.Get("/admin/api-keys", ph.AdminAPIKeysList)
-	r.Get("/admin/api-keys/new", ph.AdminAPIKeysNew)
-	r.Post("/admin/api-keys/new", ph.AdminAPIKeysCreate)
-	r.Get("/admin/api-keys/{id}", ph.AdminAPIKeyDetail)
-	r.Post("/admin/api-keys/{id}/revoke", ph.AdminAPIKeyRevoke)
+	// Admin: API-Key-Verwaltung und Drucker-Verwaltung — mit CSRF-Schutz für alle POST-Endpunkte.
+	// csrfMW ist gorilla/csrf; bei nil (Tests ohne echten Key) wird direkt gemountet.
+	r.Route("/admin", func(r chi.Router) {
+		if csrfMW != nil {
+			r.Use(csrfMW)
+		}
+		r.Get("/api-keys", ph.AdminAPIKeysList)
+		r.Get("/api-keys/new", ph.AdminAPIKeysNew)
+		r.Post("/api-keys/new", ph.AdminAPIKeysCreate)
+		r.Get("/api-keys/{id}", ph.AdminAPIKeyDetail)
+		r.Post("/api-keys/{id}/revoke", ph.AdminAPIKeyRevoke)
+
+		// Drucker-Verwaltung (Task 7.3 + 7.4)
+		r.Get("/printers", ph.ListPrintersPage)
+		r.Get("/printers/new", ph.NewPrinterPage)
+		r.Post("/printers/new", ph.CreatePrinter)
+		r.Get("/printers/{id}", ph.PrinterDetailPage)
+		r.Get("/printers/{id}/edit", ph.EditPrinterPage)
+		r.Post("/printers/{id}/edit", ph.UpdatePrinter)
+		r.Get("/printers/{id}/disable", ph.DisablePrinterConfirmPage)
+		r.Post("/printers/{id}/disable", ph.DisablePrinter)
+		r.Post("/printers/{id}/enable", ph.EnablePrinter)
+	})
 
 	// Reverse proxy: /api/* and QR-landing paths → backend container.
 	// FlushInterval=-1 (set inside proxy.New) ensures SSE frames are forwarded
@@ -180,6 +202,35 @@ func envDefault(key, fallback string) string {
 	return fallback
 }
 
+// buildCSRFMiddleware liest CSRF_KEY aus der Umgebung und erstellt die
+// gorilla/csrf-Middleware. Der Key muss genau 64 Hex-Zeichen (32 Raw-Bytes)
+// sein. Gibt einen Fehler zurück wenn der Key fehlt oder ungültig ist.
+//
+// Konfiguration:
+//   - Secure=true          — Cookie nur über HTTPS (Pangolin TLS-Termination)
+//   - SameSiteStrictMode   — Kein Cross-Site-Senden des Cookies
+//   - CookieName="__Host-csrf" — __Host-Prefix erzwingt Secure+Path=/+keine Domain
+//   - RequestHeader="X-CSRF-Token" — Alternativer Header für AJAX/HTMX-Requests
+//   - FieldName="csrf_token" — Formularfeld-Name für {{ .csrfField }} in Templates
+func buildCSRFMiddleware() (func(http.Handler) http.Handler, error) {
+	csrfKey := os.Getenv("CSRF_KEY")
+	if len(csrfKey) != 64 {
+		return nil, errors.New("CSRF_KEY muss genau 64 Hex-Zeichen (32 Raw-Bytes) sein")
+	}
+	csrfBytes, err := hex.DecodeString(csrfKey)
+	if err != nil || len(csrfBytes) != 32 {
+		return nil, errors.New("CSRF_KEY muss 64 gültige Hex-Zeichen sein (dekodiert zu 32 Bytes)")
+	}
+	return csrf.Protect(
+		csrfBytes,
+		csrf.Secure(true),
+		csrf.SameSite(csrf.SameSiteStrictMode),
+		csrf.CookieName("__Host-csrf"),
+		csrf.RequestHeader("X-CSRF-Token"),
+		csrf.FieldName("csrf_token"),
+	), nil
+}
+
 func main() {
 	buildInfo = loadBuildInfo()
 
@@ -202,13 +253,21 @@ func main() {
 	client := api.NewHubClient(backendURL)
 	ph := handlers.NewPageHandler(pages, errTmpl, client, buildInfo.Version)
 
+	// CSRF-Schutz: CSRF_KEY muss exakt 64 Hex-Zeichen (= 32 Raw-Bytes) sein.
+	// In Produktion wird der Key über Stack-Env gesetzt (Phase 6.0).
+	csrfMW, err := buildCSRFMiddleware()
+	if err != nil {
+		slog.Error("CSRF-Konfiguration fehlerhaft", "err", err)
+		os.Exit(1)
+	}
+
 	prx := proxy.New(backendURL)
 	staticSubFS, err := fs.Sub(staticFS, "web/static")
 	if err != nil {
 		slog.Error("static embed misconfigured", "err", err)
 		os.Exit(1)
 	}
-	r := newRouter(ph, prx, staticSubFS)
+	r := newRouter(ph, prx, staticSubFS, csrfMW)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           r,
