@@ -46,6 +46,7 @@ _ensure_data_dir(DATABASE_URL)
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
+    isolation_level="SERIALIZABLE",
     connect_args={"check_same_thread": False},
 )
 
