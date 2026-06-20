@@ -13,6 +13,7 @@ import pytest
 from app.printer_backends.exceptions import (
     NoTapeLoadedError,
     PrinterCoverOpenError,
+    PrinterDisabledError,
     PrinterOfflineError,
     TapeEmptyError,
 )
@@ -387,3 +388,92 @@ class TestLookupPath:
         )
         await svc.submit_print_job(request)
         lookup_svc.resolve.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — PrinterDisabledError (enabled-Check)
+# ---------------------------------------------------------------------------
+
+
+def _make_disabled_service() -> tuple[PrintService, MagicMock, MagicMock]:
+    """Hilfsfunktion: PrintService mit printer_enabled=False."""
+    backend = AsyncMock()
+    backend.preflight_check = AsyncMock(return_value=_preflight(12))
+
+    queue = MagicMock()
+    queue.submit_with_id = AsyncMock()
+
+    store = MagicMock()
+    store.save_queued = AsyncMock()
+
+    svc = PrintService(
+        printer_id=_PRINTER_ID,
+        printer_slug="brother-p750w",
+        printer_enabled=False,
+        backend=backend,
+        queue=queue,
+        store=store,
+        engine=LayoutEngine(),
+    )
+    return svc, queue, store
+
+
+class TestPrinterDisabledCheck:
+    """PrintService wirft PrinterDisabledError bei deaktiviertem Drucker."""
+
+    @pytest.mark.asyncio
+    async def test_disabled_printer_raises_printer_disabled_error(self) -> None:
+        """submit_print_job mit disabled Drucker → PrinterDisabledError."""
+        svc, _queue, _store = _make_disabled_service()
+        request = PrintRequest(
+            content_type=ContentType.QR_ONE_LINE,
+            data=RawLabelData(
+                primary_id="K01",
+                title="Regal",
+                qr_payload="https://example.com/k01",
+            ),
+        )
+        with pytest.raises(PrinterDisabledError) as exc_info:
+            await svc.submit_print_job(request)
+        assert exc_info.value.slug == "brother-p750w"
+        assert exc_info.value.printer_id == _PRINTER_ID
+
+    @pytest.mark.asyncio
+    async def test_disabled_printer_queue_never_called(self) -> None:
+        """Bei disabled Drucker wird queue.submit_with_id NICHT aufgerufen."""
+        svc, queue, _store = _make_disabled_service()
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        with pytest.raises(PrinterDisabledError):
+            await svc.submit_print_job(request)
+        queue.submit_with_id.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_disabled_printer_store_never_called(self) -> None:
+        """Bei disabled Drucker wird store.save_queued NICHT aufgerufen."""
+        svc, _queue, store = _make_disabled_service()
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+        )
+        with pytest.raises(PrinterDisabledError):
+            await svc.submit_print_job(request)
+        store.save_queued.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_enabled_printer_succeeds(self, make_service) -> None:
+        """printer_enabled=True (Default) — kein Fehler, Job wird eingereicht."""
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=12)
+        request = PrintRequest(
+            content_type=ContentType.QR_ONE_LINE,
+            data=RawLabelData(
+                primary_id="K02",
+                title="Lager",
+                qr_payload="https://example.com/k02",
+            ),
+        )
+        job_id = await svc.submit_print_job(request)
+        assert isinstance(job_id, UUID)
+        queue.submit_with_id.assert_awaited_once()

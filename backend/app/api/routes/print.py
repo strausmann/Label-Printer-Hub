@@ -18,6 +18,7 @@ from app.printer_backends.exceptions import (
     ContentTypeDataMismatchError,
     NoTapeLoadedError,
     PrinterCoverOpenError,
+    PrinterDisabledError,
     PrinterOfflineError,
     SnmpQueryError,
     TapeEmptyError,
@@ -53,6 +54,7 @@ class _PrinterResumeResponse(BaseModel):
 
 _SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     LookupFailedError: (502, "integration_lookup_failed"),
+    PrinterDisabledError: (409, "printer_disabled"),
     TapeMismatchError: (409, "tape_mismatch"),
     TapeEmptyError: (409, "tape_empty"),
     NoTapeLoadedError: (409, "no_tape_loaded"),
@@ -86,6 +88,13 @@ async def create_print_job(
         job_id = await service.submit_print_job(request)
     except tuple(_SYNC_ERROR_MAP) as exc:
         http_status, code = _SYNC_ERROR_MAP[type(exc)]
+        if isinstance(exc, PrinterDisabledError):
+            # Spec Phase 4: abweichendes Body-Format für printer_disabled
+            # ({"error": ..., "slug": ...} statt {"error_code": ...})
+            return JSONResponse(
+                status_code=http_status,
+                content={"error": code, "slug": exc.slug},
+            )
         body: dict[str, object] = {"error_code": code, "error_message": str(exc)}
         if isinstance(exc, TapeMismatchError):
             body["error_detail"] = {
