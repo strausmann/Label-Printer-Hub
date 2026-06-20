@@ -31,6 +31,34 @@ target_metadata = SQLModel.metadata
 # ... etc.
 
 
+def _include_object(
+    obj: object,
+    name: str | None,  # noqa: ARG001
+    type_: str,
+    reflected: bool,  # noqa: ARG001
+    compare_to: object,  # noqa: ARG001
+) -> bool:
+    """Filter expression-based indexes from autogenerate comparison.
+
+    SQLite cannot reflect text-expression indexes (e.g. ``created_at DESC``)
+    back from the database, so Alembic always sees a diff between the in-memory
+    model (which uses ``text("created_at DESC")``) and the reflected schema
+    (which returns the plain column name).  We exclude any ``Index`` whose
+    expressions contain a SQLAlchemy ``TextClause`` from autogenerate so that
+    ``alembic check`` stays green on SQLite dev/CI while the migration itself
+    still creates the correct expression index at upgrade time.
+    """
+    if type_ == "index":
+        from sqlalchemy import Index as _Index
+        from sqlalchemy.sql.elements import TextClause
+
+        if isinstance(obj, _Index):
+            for col in obj.expressions:
+                if isinstance(col, TextClause):
+                    return False
+    return True
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -49,6 +77,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=_include_object,
     )
 
     with context.begin_transaction():
@@ -56,7 +85,11 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=_include_object,
+    )
 
     with context.begin_transaction():
         context.run_migrations()

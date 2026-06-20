@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String
+from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, text
 from sqlmodel import Column, Field, SQLModel
 
 
@@ -61,7 +61,7 @@ class PrinterAudit(SQLModel, table=True):
     __tablename__ = "printers_audit"
     __table_args__ = (
         Index("idx_printers_audit_printer_id", "printer_id"),
-        Index("idx_printers_audit_created_at_desc", "created_at"),
+        Index("idx_printers_audit_created_at_desc", text("created_at DESC")),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
