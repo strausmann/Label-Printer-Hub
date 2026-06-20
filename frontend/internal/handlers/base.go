@@ -38,15 +38,17 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/gorilla/csrf"
 	"github.com/strausmann/label-printer-hub/frontend/internal/api"
 )
 
 // TemplateData is the base type embedded by all page-specific data structs.
 // Every page template receives at minimum these fields.
 type TemplateData struct {
-	Version   string // build version from env (e.g. "1.2.3")
-	ActiveNav string // "dashboard" | "jobs" | "templates" | ""
-	Error     string // non-empty on error pages
+	Version   string        // Build-Version aus Env (z.B. "1.2.3")
+	ActiveNav string        // "dashboard" | "jobs" | "templates" | ""
+	Error     string        // Nicht-leer bei Fehlerseiten
+	CSRFField template.HTML // gorilla/csrf Hidden-Input für POST-Forms; leer auf GET-only-Seiten
 }
 
 // PageHandler holds shared state for all page handlers.
@@ -108,6 +110,17 @@ func ParsePageTemplates(tmplFS fs.FS) (map[string]*template.Template, *template.
 // map (from ParsePageTemplates) and a real backend client.
 func NewPageHandler(pages map[string]*template.Template, errTmpl *template.Template, client *api.HubClient, version string) *PageHandler {
 	return &PageHandler{pages: pages, errTmpl: errTmpl, client: client, version: version}
+}
+
+// baseData erstellt TemplateData mit CSRF-Feld aus dem aktuellen Request-Kontext.
+// Auf Routen ohne CSRF-Middleware (z.B. GET-only-Seiten außerhalb /admin) ist
+// csrf.TemplateField(r) ein leeres template.HTML — das ist kein Fehler.
+func (h *PageHandler) baseData(r *http.Request, activeNav string) TemplateData {
+	return TemplateData{
+		Version:   h.version,
+		ActiveNav: activeNav,
+		CSRFField: csrf.TemplateField(r),
+	}
 }
 
 // renderPage writes a full-page or fragment response.

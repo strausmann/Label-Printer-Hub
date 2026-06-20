@@ -54,6 +54,7 @@ func minimalBackend(t *testing.T) *httptest.Server {
 // testRouterWithBackend builds a minimal router for unit tests that need to
 // hit route handlers. It uses the handlers package stub templates to avoid
 // parsing the full web/templates set in each test.
+// csrfMW ist nil — Tests verwenden keinen echten CSRF-Key.
 func testRouterWithBackend(t *testing.T, backendURL string) http.Handler {
 	t.Helper()
 	initBuildInfoForTests(t)
@@ -63,7 +64,7 @@ func testRouterWithBackend(t *testing.T, backendURL string) http.Handler {
 	if err != nil {
 		t.Fatalf("fs.Sub: %v", err)
 	}
-	return newRouter(ph, prx, sub)
+	return newRouter(ph, prx, sub, nil)
 }
 
 func TestHealthz_ReturnsOK(t *testing.T) {
@@ -287,7 +288,7 @@ func TestRoutesDashboard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fs.Sub: %v", err)
 	}
-	r := newRouter(ph, prx, sub)
+	r := newRouter(ph, prx, sub, nil)
 
 	tests := []struct {
 		method string
@@ -356,7 +357,7 @@ func TestProxyMountsBackendDocRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fs.Sub: %v", err)
 	}
-	r := newRouter(ph, prx, sub)
+	r := newRouter(ph, prx, sub, nil)
 
 	for path, want := range map[string]string{
 		"/docs":         "Swagger UI",
@@ -465,7 +466,7 @@ func TestRealTemplatesPerPageContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fs.Sub: %v", err)
 	}
-	r := newRouter(ph, prx, sub)
+	r := newRouter(ph, prx, sub, nil)
 
 	t.Run("dashboard_renders_printer_grid", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
