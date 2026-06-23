@@ -46,7 +46,7 @@ import (
 // Every page template receives at minimum these fields.
 type TemplateData struct {
 	Version   string        // Build-Version aus Env (z.B. "1.2.3")
-	ActiveNav string        // "dashboard" | "jobs" | "templates" | ""
+	ActiveNav string        // "dashboard" | "jobs" | "templates" | "admin-printers" | "admin-api-keys" | ""
 	Error     string        // Nicht-leer bei Fehlerseiten
 	CSRFField template.HTML // gorilla/csrf Hidden-Input für POST-Forms; leer auf GET-only-Seiten
 }

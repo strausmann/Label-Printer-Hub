@@ -84,7 +84,7 @@ func (h *PageHandler) ListPrintersPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, r, "admin_printers", AdminPrinterListData{
-		TemplateData:    h.baseData(r, "admin"),
+		TemplateData:    h.baseData(r, "admin-printers"),
 		Printers:        printers,
 		IncludeDisabled: includeDisabled,
 	})
@@ -97,7 +97,7 @@ func (h *PageHandler) ListPrintersPage(w http.ResponseWriter, r *http.Request) {
 // NewPrinterPage behandelt GET /admin/printers/new — leeres Erstell-Formular.
 func (h *PageHandler) NewPrinterPage(w http.ResponseWriter, r *http.Request) {
 	h.renderPage(w, r, "admin_printers_form", AdminPrinterFormData{
-		TemplateData: h.baseData(r, "admin"),
+		TemplateData: h.baseData(r, "admin-printers"),
 		IsEdit:       false,
 	})
 }
@@ -123,7 +123,7 @@ func (h *PageHandler) CreatePrinter(w http.ResponseWriter, r *http.Request) {
 
 	// Formular-Daten für Rerender bei Fehler
 	formData := AdminPrinterFormData{
-		TemplateData:           h.baseData(r, "admin"),
+		TemplateData:           h.baseData(r, "admin-printers"),
 		IsEdit:                 false,
 		FormName:               name,
 		FormSlug:               slug,
@@ -190,7 +190,7 @@ func (h *PageHandler) PrinterDetailPageWithSlug(w http.ResponseWriter, r *http.R
 		return
 	}
 	h.renderPage(w, r, "admin_printers_detail", AdminPrinterDetailData{
-		TemplateData: h.baseData(r, "admin"),
+		TemplateData: h.baseData(r, "admin-printers"),
 		Printer:      *printer,
 	})
 }
@@ -256,7 +256,7 @@ func (h *PageHandler) EditPrinterPageWithSlug(w http.ResponseWriter, r *http.Req
 	}
 
 	h.renderPage(w, r, "admin_printers_form", AdminPrinterFormData{
-		TemplateData:           h.baseData(r, "admin"),
+		TemplateData:           h.baseData(r, "admin-printers"),
 		Printer:                printer,
 		IsEdit:                 true,
 		Slug:                   slug,
@@ -294,7 +294,7 @@ func (h *PageHandler) UpdatePrinterWithSlug(w http.ResponseWriter, r *http.Reque
 	snmpCommunity := r.FormValue("snmp_community")
 
 	formData := AdminPrinterFormData{
-		TemplateData:           h.baseData(r, "admin"),
+		TemplateData:           h.baseData(r, "admin-printers"),
 		IsEdit:                 true,
 		Slug:                   slug,
 		FormName:               name,
@@ -353,7 +353,7 @@ func (h *PageHandler) DisablePrinterConfirmPageWithSlug(w http.ResponseWriter, r
 		return
 	}
 	h.renderPage(w, r, "admin_printers_confirm_disable", AdminPrinterConfirmData{
-		TemplateData: h.baseData(r, "admin"),
+		TemplateData: h.baseData(r, "admin-printers"),
 		Printer:      *printer,
 	})
 }
