@@ -113,8 +113,9 @@ async def delete_preset(preset_id: UUID, session: SessionDep, _auth: WriteAuthDe
 
 @router.get(
     "/{preset_id}/preview.png",
+    response_class=Response,
     responses={
-        200: {"content": {"image/png": {}}},
+        200: {"content": {"image/png": {}}, "description": "PNG-Vorschau des Presets"},
         404: {"description": "Preset nicht gefunden"},
         409: {"description": "Tape-Breite nicht unterstützt"},
         422: {"description": "field_values deckt content_type nicht ab"},

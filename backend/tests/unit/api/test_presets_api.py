@@ -194,3 +194,18 @@ async def test_preview_png_missing_returns_404(session):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
         r = await ac.get(f"/api/v1/presets/{uuid4()}/preview.png")
         assert r.status_code == 404
+
+
+def test_presets_router_registered_in_app():
+    """Smoke-Test: presets-Router ist in der echten App registriert.
+
+    create_app() liefert einen _LifespanManager-Wrapper; die FastAPI-Instanz
+    liegt in ._app (Unwrap-Muster aus tests/api/test_openapi_completeness.py).
+    """
+    from app.main import create_app
+
+    # _LifespanManager-Wrapper aufschalten → innere FastAPI-Instanz
+    inner_app = create_app()._app  # type: ignore[attr-defined]
+    paths = {r.path for r in inner_app.routes}
+    assert "/api/v1/presets" in paths
+    assert "/api/v1/presets/{preset_id}/preview.png" in paths
