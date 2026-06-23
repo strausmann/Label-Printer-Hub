@@ -265,3 +265,44 @@ func TestWithAuthFromForwardsPangolinTokenHeader(t *testing.T) {
 		t.Errorf("X-Pangolin-Token forwarded as %q, want %q", receivedToken, "pangolin-trust-token-abc123")
 	}
 }
+
+// TestWithAuthFromForwardsRemoteUserHeader verifies that WithAuthFrom
+// propagates the Remote-User header (Pangolin Standard-SSO User-Identity)
+// to the backend. The backend's SSO-trust path requires BOTH X-Pangolin-Token
+// (trust signal) AND Remote-User (identity) — forwarding only one of them
+// triggers a 401. Without forwarding Remote-User, browser users with active
+// Pangolin SSO session still see 503 on every UI route that needs backend
+// data, because the backend cannot identify them.
+func TestWithAuthFromForwardsRemoteUserHeader(t *testing.T) {
+	t.Parallel()
+	var receivedUser string
+	now := time.Now().Format(time.RFC3339)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/printers" {
+			receivedUser = r.Header.Get("Remote-User")
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]map[string]any{
+				{"id": "aaaaaaaa-0000-0000-0000-000000000001", "name": "PT-P750W",
+					"model": "pt_series", "backend": "tcp",
+					"connection": map[string]any{"host": "198.51.100.10", "port": 9100},
+					"enabled": true, "paused": false,
+					"created_at": now, "updated_at": now},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer backend.Close()
+
+	incomingReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	incomingReq.Header.Set("Remote-User", "strausmann")
+
+	client := api.NewHubClient(backend.URL).WithAuthFrom(incomingReq)
+	_, err := client.ListPrinters(context.Background())
+	if err != nil {
+		t.Fatalf("ListPrinters: %v", err)
+	}
+	if receivedUser != "strausmann" {
+		t.Errorf("Remote-User forwarded as %q, want %q", receivedUser, "strausmann")
+	}
+}
