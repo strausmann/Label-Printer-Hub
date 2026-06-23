@@ -25,3 +25,11 @@ async def test_defaults_applied(session):
     created = await preset_repo.create(session, Preset(name="Default-Preset"))
     assert created.content_type == "qr_three_lines"
     assert created.tape_mm == 12
+
+
+@pytest.mark.asyncio
+async def test_get_by_name_case_insensitive(session):
+    await preset_repo.create(session, Preset(name="Schublade A"))
+    assert await preset_repo.get_by_name(session, "schublade a") is not None
+    assert await preset_repo.get_by_name(session, "SCHUBLADE A") is not None
+    assert await preset_repo.get_by_name(session, "anderer") is None
