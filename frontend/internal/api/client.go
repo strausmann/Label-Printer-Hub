@@ -115,8 +115,9 @@ func (c *HubClient) BaseURL() string {
 //
 // The headers forwarded are:
 //   - X-Label-Hub-Key   — API-key auth (Phase 7c)
-//   - X-Pangolin-User   — Pangolin SSO session header (Legacy / Standard SSO)
+//   - X-Pangolin-User   — Pangolin SSO session header (Legacy)
 //   - X-Pangolin-Token  — Pangolin Resource custom upstream header (Trust-Token)
+//   - Remote-User       — Pangolin Standard-SSO User-Identity (sso_user_header)
 //   - Authorization     — Pangolin Basic-Auth bypass (claude-automation)
 //
 // This is required because the frontend-to-backend calls are internal
@@ -126,15 +127,17 @@ func (c *HubClient) BaseURL() string {
 // X-Pangolin-Token is the static trust-token that a Pangolin Resource can
 // inject into every upstream request via its Header-Auth configuration. The
 // backend's sso_trust_header mechanism accepts it as a SSO-equivalent signal,
-// which is what allows browser users without an active SSO session to still
-// reach the UI.
+// but only when paired with Remote-User (the user identity from Pangolin's
+// standard SSO header). Forwarding only one of the two triggers a 401 — both
+// must be forwarded together for browser users with active Pangolin SSO
+// sessions to reach the UI.
 //
 // The original HubClient is not mutated; the returned copy shares the same
 // underlying http.Client and gen client but adds a RequestEditorFn that
 // injects the auth headers.
 func (c *HubClient) WithAuthFrom(r *http.Request) *HubClient {
-	headers := make(map[string]string, 4)
-	for _, h := range []string{"X-Label-Hub-Key", "X-Pangolin-User", "X-Pangolin-Token", "Authorization"} {
+	headers := make(map[string]string, 5)
+	for _, h := range []string{"X-Label-Hub-Key", "X-Pangolin-User", "X-Pangolin-Token", "Remote-User", "Authorization"} {
 		if v := r.Header.Get(h); v != "" {
 			headers[h] = v
 		}
