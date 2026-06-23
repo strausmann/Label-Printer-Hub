@@ -14,10 +14,11 @@
   <nav class="bg-surface-raised border-b border-surface-border">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center h-14 gap-6">
       <a href="/" class="font-semibold text-primary">Label Printer Hub</a>
-      <a href="/"          class="nav-link {{if eq .ActiveNav "dashboard"}}nav-link-active{{end}}">Dashboard</a>
-      <a href="/jobs"      class="nav-link {{if eq .ActiveNav "jobs"}}nav-link-active{{end}}">Jobs</a>
-      <a href="/templates" class="nav-link {{if eq .ActiveNav "templates"}}nav-link-active{{end}}">Templates</a>
-      <a href="/admin/api-keys" class="nav-link {{if eq .ActiveNav "admin"}}nav-link-active{{end}}">API Keys</a>
+      <a href="/"               class="nav-link {{if eq .ActiveNav "dashboard"}}nav-link-active{{end}}">Dashboard</a>
+      <a href="/jobs"           class="nav-link {{if eq .ActiveNav "jobs"}}nav-link-active{{end}}">Jobs</a>
+      <a href="/templates"      class="nav-link {{if eq .ActiveNav "templates"}}nav-link-active{{end}}">Templates</a>
+      <a href="/admin/printers" class="nav-link {{if eq .ActiveNav "admin-printers"}}nav-link-active{{end}}">Drucker</a>
+      <a href="/admin/api-keys" class="nav-link {{if eq .ActiveNav "admin-api-keys"}}nav-link-active{{end}}">API Keys</a>
     </div>
   </nav>
   <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-6 sm:px-6 lg:px-8">

@@ -55,7 +55,7 @@ func (h *PageHandler) AdminAPIKeysList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, r, "admin_api_keys", AdminAPIKeyListData{
-		TemplateData: h.baseData(r, "admin"),
+		TemplateData: h.baseData(r, "admin-api-keys"),
 		Keys:         keys,
 	})
 }
@@ -63,7 +63,7 @@ func (h *PageHandler) AdminAPIKeysList(w http.ResponseWriter, r *http.Request) {
 // AdminAPIKeysNew handles GET /admin/api-keys/new — Erstell-Formular anzeigen.
 func (h *PageHandler) AdminAPIKeysNew(w http.ResponseWriter, r *http.Request) {
 	h.renderPage(w, r, "admin_api_keys_create", AdminAPIKeyCreateData{
-		TemplateData: h.baseData(r, "admin"),
+		TemplateData: h.baseData(r, "admin-api-keys"),
 	})
 }
 
@@ -101,14 +101,14 @@ func (h *PageHandler) AdminAPIKeysCreate(w http.ResponseWriter, r *http.Request)
 	plaintext, prefix, apiErr := h.createAPIKey(r, payload)
 	if apiErr != nil {
 		h.renderPage(w, r, "admin_api_keys_create", AdminAPIKeyCreateData{
-			TemplateData: h.baseData(r, "admin"),
+			TemplateData: h.baseData(r, "admin-api-keys"),
 			Error:        apiErr.Error(),
 		})
 		return
 	}
 
 	h.renderPage(w, r, "admin_api_keys_create", AdminAPIKeyCreateData{
-		TemplateData: h.baseData(r, "admin"),
+		TemplateData: h.baseData(r, "admin-api-keys"),
 		Plaintext:    plaintext,
 		Prefix:       prefix,
 	})
@@ -123,7 +123,7 @@ func (h *PageHandler) AdminAPIKeyDetail(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	h.renderPage(w, r, "admin_api_keys_detail", AdminAPIKeyDetailData{
-		TemplateData: h.baseData(r, "admin"),
+		TemplateData: h.baseData(r, "admin-api-keys"),
 		Key:          *key,
 	})
 }
