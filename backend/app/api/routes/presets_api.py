@@ -91,7 +91,7 @@ async def update_preset(
     session: SessionDep,
     _auth: WriteAuthDep,
 ) -> PresetResponse:
-    """Preset per PATCH-Semantik aktualisieren — nur gesetzte Felder werden übernommen."""
+    """Preset aktualisieren (PUT mit optionalen Feldern — nur gesetzte Felder werden übernommen)."""
     try:
         preset = await PresetService(session).update(preset_id, payload)
     except PresetNotFoundError as exc:

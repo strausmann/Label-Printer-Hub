@@ -156,3 +156,22 @@ async def test_write_requires_print_scope(session):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
         r = await ac.post("/api/v1/presets", json=_payload())
         assert r.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_update_unsupported_tape_returns_422(session):
+    app = _build_app(session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+        pid = (await ac.post("/api/v1/presets", json=_payload())).json()["id"]
+        r = await ac.put(f"/api/v1/presets/{pid}", json={"tape_mm": 999})
+        assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_duplicate_name_returns_409(session):
+    app = _build_app(session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+        await ac.post("/api/v1/presets", json=_payload(name="Erstes"))
+        pid2 = (await ac.post("/api/v1/presets", json=_payload(name="Zweites"))).json()["id"]
+        r = await ac.put(f"/api/v1/presets/{pid2}", json={"name": "erstes"})
+        assert r.status_code == 409
