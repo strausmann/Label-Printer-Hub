@@ -316,8 +316,15 @@ async def test_pangolin_sso_allows_read_scope():
 
 
 @pytest.mark.asyncio
-async def test_pangolin_sso_blocked_on_print_scope():
-    """Pangolin-SSO on print scope endpoint → 401 (SSO only grants read)."""
+@pytest.mark.parametrize("required_scope", ["print", "admin"])
+async def test_pangolin_sso_allows_print_and_admin_scopes(required_scope: str):
+    """Pangolin-SSO grants the required scope on print/admin endpoints (ADR 0014).
+
+    Pangolin Resource Policy already gates which users can reach the upstream;
+    an SSO-authenticated request is therefore trusted for any scope. The
+    multi-scope system remains intact on X-Label-Hub-Key API keys for fine-
+    grained per-integration restrictions.
+    """
     import app.models
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -337,8 +344,8 @@ async def test_pangolin_sso_blocked_on_print_scope():
     app = FastAPI()
 
     @app.post("/test")
-    async def ep(ctx=Depends(require_scope("print", settings=settings))):
-        return {}
+    async def ep(ctx=Depends(require_scope(required_scope, settings=settings))):
+        return {"source": ctx.source, "scope": ctx.scope}
 
     async def _session():
         async with factory() as s:
@@ -349,7 +356,10 @@ async def test_pangolin_sso_blocked_on_print_scope():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
         resp = await client.post("/test", headers={"X-Pangolin-User": "testuser@example.com"})
 
-    assert resp.status_code == 401
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "pangolin-sso"
+    assert body["scope"] == required_scope
     await eng.dispose()
 
 
