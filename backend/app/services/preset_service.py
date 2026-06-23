@@ -8,6 +8,7 @@ HTTP-Statuscodes gemappt.
 
 from __future__ import annotations
 
+import io
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,7 @@ from app.printer_backends.exceptions import (
 )
 from app.repositories import presets as preset_repo
 from app.schemas.content_type import ContentType
+from app.schemas.label_data import LabelData
 from app.schemas.preset import PresetCreatePayload, PresetUpdatePayload
 from app.schemas.tape_geometry import TAPE_GEOMETRY
 from app.services.layout_engine import LayoutEngine
@@ -46,8 +48,7 @@ def _validate_layout(
     missing = [
         f
         for f in required
-        if (v := field_values.get(f)) is None
-        or (hasattr(v, "__len__") and len(v) == 0)
+        if (v := field_values.get(f)) is None or (hasattr(v, "__len__") and len(v) == 0)
     ]
     if missing:
         raise ContentTypeDataMismatchError(
@@ -90,9 +91,7 @@ class PresetService:
         )
         merged_tape = payload.tape_mm if payload.tape_mm is not None else existing.tape_mm
         merged_fields = (
-            payload.field_values
-            if payload.field_values is not None
-            else existing.field_values
+            payload.field_values if payload.field_values is not None else existing.field_values
         )
         _validate_layout(merged_ct, merged_tape, merged_fields)
         if payload.name is not None and payload.name.lower() != existing.name.lower():
@@ -119,3 +118,26 @@ class PresetService:
         ok = await preset_repo.delete(self._session, preset_id)
         if not ok:
             raise PresetNotFoundError(preset_id)
+
+    async def render_preview_png(self, preset_id: UUID) -> bytes:
+        """Rendert ein Preset als PNG-Bytes. Nutzt die bestehende LayoutEngine.
+
+        Wirft PresetNotFoundError wenn das Preset nicht existiert.
+        Propagiert UnsupportedTapeError und ContentTypeDataMismatchError
+        aus dem Render-Pfad unverändert an den Aufrufer.
+        """
+        preset = await self.get(preset_id)
+        fv = preset.field_values
+        label = LabelData(
+            primary_id=fv.get("primary_id"),
+            title=fv.get("title"),
+            qr_payload=fv.get("qr_payload"),
+            source_app="preview",
+            secondary=tuple(fv.get("secondary", ()) or ()),
+            items=tuple(fv.get("items", ()) or ()),
+        )
+        engine = LayoutEngine()
+        image = engine.render(preset.tape_mm, ContentType(preset.content_type), label)
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        return buf.getvalue()

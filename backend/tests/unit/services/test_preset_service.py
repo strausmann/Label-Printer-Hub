@@ -166,3 +166,25 @@ async def test_update_rejects_duplicate_name_case_insensitive(session):
         tape_mm=12, field_values={"qr_payload": "x"}))
     with pytest.raises(DuplicatePresetNameError):
         await svc.update(other.id, PresetUpdatePayload(name="bestehend"))
+
+
+# ---------------------------------------------------------------------------
+# Preview-Rendering-Tests (TDD Phase 1k.3, Task 6 — Refs #104)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_render_preview_png_returns_png_bytes(session):
+    svc = PresetService(session)
+    created = await svc.create(PresetCreatePayload(
+        name="Preview", content_type=ContentType.QR_THREE_LINES,
+        tape_mm=12, field_values=_valid_three_line_fields()))
+    png = await svc.render_preview_png(created.id)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"  # PNG-Magic
+
+
+@pytest.mark.asyncio
+async def test_render_preview_missing_raises_not_found(session):
+    svc = PresetService(session)
+    with pytest.raises(PresetNotFoundError):
+        await svc.render_preview_png(uuid4())
