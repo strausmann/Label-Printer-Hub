@@ -175,3 +175,22 @@ async def test_update_duplicate_name_returns_409(session):
         pid2 = (await ac.post("/api/v1/presets", json=_payload(name="Zweites"))).json()["id"]
         r = await ac.put(f"/api/v1/presets/{pid2}", json={"name": "erstes"})
         assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_preview_png_ok(session):
+    app = _build_app(session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+        pid = (await ac.post("/api/v1/presets", json=_payload())).json()["id"]
+        r = await ac.get(f"/api/v1/presets/{pid}/preview.png")
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "image/png"
+        assert r.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+@pytest.mark.asyncio
+async def test_preview_png_missing_returns_404(session):
+    app = _build_app(session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+        r = await ac.get(f"/api/v1/presets/{uuid4()}/preview.png")
+        assert r.status_code == 404

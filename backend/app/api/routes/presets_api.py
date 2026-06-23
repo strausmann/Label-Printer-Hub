@@ -109,3 +109,28 @@ async def delete_preset(preset_id: UUID, session: SessionDep, _auth: WriteAuthDe
     except PresetNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/{preset_id}/preview.png",
+    responses={
+        200: {"content": {"image/png": {}}},
+        404: {"description": "Preset nicht gefunden"},
+        409: {"description": "Tape-Breite nicht unterstützt"},
+        422: {"description": "field_values deckt content_type nicht ab"},
+    },
+)
+async def preview_preset_png(preset_id: UUID, session: SessionDep, _auth: ReadAuthDep) -> Response:
+    """Preset als PNG-Vorschau rendern.
+
+    200 image/png, 404 nicht gefunden, 409 Band nicht unterstützt, 422 fehlende Felder.
+    """
+    try:
+        png = await PresetService(session).render_preview_png(preset_id)
+    except PresetNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except UnsupportedTapeError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ContentTypeDataMismatchError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    return Response(content=png, media_type="image/png")
