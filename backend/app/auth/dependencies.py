@@ -293,14 +293,23 @@ def require_scope(
         settings: Override settings (for testing). Defaults to get_settings().
 
     The dependency resolves through four paths (in priority order):
-      1. X-Label-Hub-Key API key header
-      2. Pangolin-SSO (Remote-User + X-Pangolin-Token Trust-Token) — read scope only
-      2b. Pangolin-SSO Legacy (X-Pangolin-User) — read scope only (Rückwärtskompatibilität)
-      3. Pangolin-bypass (claude-automation Basic Auth) — read scope only
+      1. X-Label-Hub-Key API key header — scope from the key's stored scope
+      2. Pangolin-SSO (Remote-User + X-Pangolin-Token Trust-Token) — trusted for
+         all scopes (the Pangolin Resource Policy already gates who reaches us)
+      2b. Pangolin-SSO Legacy (X-Pangolin-User) — trusted for all scopes
+      3. Pangolin-bypass (claude-automation Basic Auth) — trusted for all scopes
+         (the bypass-secret is treated as an admin-equivalent credential; rotate
+         it via Vault if it leaks)
 
     Returns a callable that FastAPI injects as ``Depends(require_scope("read"))``.
+
+    See ADR 0014 for the rationale behind treating SSO/Bypass as fully-trusted
+    (Single-Owner-Operator HomeLab + small-team workflow; multi-tier scoping is
+    retained on API keys for per-integration restrictions but not for the
+    Pangolin-fronted UI sessions).
     """
     effective_settings = settings or get_settings()
+    _ = effective_settings.pangolin_bypass_scope_downgrade  # kept for backward-compat env
 
     async def _check(
         request: Request,
@@ -313,35 +322,25 @@ def require_scope(
         if key_header:
             return await _validate_api_key(session, key_header, required, client_ip)
 
-        # Path 2: Pangolin-SSO (browser session) — Standard-Headers + Legacy
-        if _has_pangolin_sso_session(request, effective_settings) and required == "read":
+        # Path 2: Pangolin-SSO (browser session) — Standard-Headers + Legacy.
+        # Trusted for all scopes (Pangolin Resource Policy gates access).
+        if _has_pangolin_sso_session(request, effective_settings):
             return AuthContext(
                 source="pangolin-sso",
-                scope="read",
+                scope=required,
                 api_key_id=None,
                 ip=client_ip,
             )
 
-        # Path 3: Pangolin-bypass (claude-automation) — read-only
+        # Path 3: Pangolin-bypass (claude-automation Basic Auth) — trusted for
+        # all scopes. The bypass-secret lives in Vault and is treated as an
+        # admin-equivalent credential. Rotate via Vault on suspected leak.
         if _is_pangolin_bypass(request):
-            # After Phase 7c, bypass is downgraded to read-only.
-            # The feature flag controls when the downgrade is enforced.
-            if required == "read" or not effective_settings.pangolin_bypass_scope_downgrade:
-                return AuthContext(
-                    source="pangolin-bypass",
-                    scope="read",
-                    api_key_id=None,
-                    ip=client_ip,
-                )
-            # Downgrade enforced: bypass cannot satisfy print/admin
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "error_code": "bypass_scope_downgraded",
-                    "error_message": (
-                        "Pangolin bypass is read-only. Use X-Label-Hub-Key for write operations."
-                    ),
-                },
+            return AuthContext(
+                source="pangolin-bypass",
+                scope=required,
+                api_key_id=None,
+                ip=client_ip,
             )
 
         raise HTTPException(
