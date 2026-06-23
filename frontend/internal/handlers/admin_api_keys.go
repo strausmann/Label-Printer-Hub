@@ -236,11 +236,29 @@ func (h *PageHandler) revokeAPIKey(r *http.Request, id string) error {
 	return nil
 }
 
-// forwardAuth copies auth-related headers from the incoming request to the
-// outgoing backend request. This ensures Pangolin SSO tokens and API keys
-// are forwarded to the backend for authentication.
+// forwardAuth copies auth-related headers from the incoming browser request
+// to the outgoing backend request, so that the backend's auth middleware sees
+// the same credentials the Pangolin-edge handed us.
+//
+// Forwarded headers (must stay in sync with api.HubClient.WithAuthFrom):
+//   - X-Label-Hub-Key   — App-side API key
+//   - X-Pangolin-User   — Legacy Pangolin SSO identity header
+//   - X-Pangolin-Token  — Pangolin Resource custom upstream trust token
+//   - Remote-User       — Standard Pangolin SSO identity header
+//   - Authorization     — Pangolin Basic-Auth bypass (claude-automation)
+//
+// The X-Pangolin-Token / Remote-User pair is what makes the SSO-trust path
+// work for browser users without an API key. Forgetting one of them means
+// every /admin/* route returns 503 because the backend rejects the call as
+// unauthenticated.
 func (h *PageHandler) forwardAuth(from *http.Request, to *http.Request) {
-	for _, hdr := range []string{"X-Label-Hub-Key", "X-Pangolin-User", "Authorization"} {
+	for _, hdr := range []string{
+		"X-Label-Hub-Key",
+		"X-Pangolin-User",
+		"X-Pangolin-Token",
+		"Remote-User",
+		"Authorization",
+	} {
 		if v := from.Header.Get(hdr); v != "" {
 			to.Header.Set(hdr, v)
 		}

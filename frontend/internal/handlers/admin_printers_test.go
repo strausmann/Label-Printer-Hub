@@ -700,3 +700,44 @@ func TestEnablePrinter_CallsBackendUndRedirectZuDetail(t *testing.T) {
 		t.Errorf("EnablePrinter Redirect: %q enthält nicht 'lager-sued'", loc)
 	}
 }
+
+// TestListPrintersPage_ForwardetPangolinSSOHeaders prüft dass forwardAuth
+// X-Pangolin-Token + Remote-User an das Backend weitergibt — sonst kann der
+// SSO-Trust-Pfad nicht greifen und das Backend lehnt mit 401 ab, was zu 503
+// im Frontend führt.
+//
+// Regression-Test für die Lücke die PR #130/#132 (WithAuthFrom) zwar im
+// oapi-Client gefixt haben, aber forwardAuth blieb auf der alten 3-Header-
+// Liste hängen.
+func TestListPrintersPage_ForwardetPangolinSSOHeaders(t *testing.T) {
+	t.Parallel()
+	var receivedToken, receivedRemoteUser string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/admin/printers" {
+			receivedToken = r.Header.Get("X-Pangolin-Token")
+			receivedRemoteUser = r.Header.Get("Remote-User")
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `[]`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	ph := handlers.NewPageHandlerFromURL(t, srv.URL)
+	req := httptest.NewRequest(http.MethodGet, "/admin/printers", nil)
+	req.Header.Set("X-Pangolin-Token", "trust-token-abc123")
+	req.Header.Set("Remote-User", "strausmann")
+	w := httptest.NewRecorder()
+	ph.ListPrintersPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("ListPrintersPage: Status %d, erwartet 200", w.Code)
+	}
+	if receivedToken != "trust-token-abc123" {
+		t.Errorf("X-Pangolin-Token forwarded als %q, erwartet %q", receivedToken, "trust-token-abc123")
+	}
+	if receivedRemoteUser != "strausmann" {
+		t.Errorf("Remote-User forwarded als %q, erwartet %q", receivedRemoteUser, "strausmann")
+	}
+}
