@@ -142,3 +142,27 @@ async def test_delete_removes(session):
     await svc.delete(created.id)
     with pytest.raises(PresetNotFoundError):
         await svc.get(created.id)
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_incompatible_content_type_change(session):
+    svc = PresetService(session)
+    created = await svc.create(PresetCreatePayload(
+        name="Only QR", content_type=ContentType.QR_ONLY,
+        tape_mm=12, field_values={"qr_payload": "x"}))
+    with pytest.raises(ContentTypeDataMismatchError):
+        await svc.update(created.id, PresetUpdatePayload(
+            content_type=ContentType.QR_THREE_LINES))
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_duplicate_name_case_insensitive(session):
+    svc = PresetService(session)
+    await svc.create(PresetCreatePayload(
+        name="Bestehend", content_type=ContentType.QR_ONLY,
+        tape_mm=12, field_values={"qr_payload": "x"}))
+    other = await svc.create(PresetCreatePayload(
+        name="Anderer", content_type=ContentType.QR_ONLY,
+        tape_mm=12, field_values={"qr_payload": "x"}))
+    with pytest.raises(DuplicatePresetNameError):
+        await svc.update(other.id, PresetUpdatePayload(name="bestehend"))

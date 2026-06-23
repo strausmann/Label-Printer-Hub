@@ -83,7 +83,11 @@ class PresetService:
 
     async def update(self, preset_id: UUID, payload: PresetUpdatePayload) -> Preset:
         existing = await self.get(preset_id)
-        merged_ct = payload.content_type or ContentType(existing.content_type)
+        merged_ct = (
+            payload.content_type
+            if payload.content_type is not None
+            else ContentType(existing.content_type)
+        )
         merged_tape = payload.tape_mm if payload.tape_mm is not None else existing.tape_mm
         merged_fields = (
             payload.field_values
