@@ -35,6 +35,7 @@ from app.services.preset_service import (
     DuplicatePresetNameError,
     PresetNotFoundError,
     PresetService,
+    UnsupportedContentTypeError,
 )
 
 router = APIRouter(prefix="/api/v1/presets", tags=["presets"])
@@ -45,13 +46,28 @@ WriteAuthDep = Annotated[AuthContext, Depends(require_print)]
 
 
 def _map_validation_error(exc: Exception) -> HTTPException:
-    """Domain-Fehler auf HTTP-Statuscodes mappen."""
+    """Domain-Fehler auf HTTP-Statuscodes mappen.
+
+    Feste, sichere Fehlermeldungen — kein str(exc) (CWE-209: interne Details
+    nicht an Clients weitergeben).
+    """
     if isinstance(exc, UnsupportedTapeError):
-        return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
+        return HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Tape-Breite nicht unterstützt",
+        )
     if isinstance(exc, ContentTypeDataMismatchError):
-        return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
+        return HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="field_values deckt content_type nicht ab",
+        )
+    if isinstance(exc, UnsupportedContentTypeError):
+        return HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="content_type wird in Presets noch nicht unterstützt",
+        )
     if isinstance(exc, DuplicatePresetNameError):
-        return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
+        return HTTPException(status.HTTP_409_CONFLICT, detail="Preset-Name bereits vergeben")
     raise exc  # pragma: no cover — unerwarteter Typ
 
 
@@ -69,7 +85,12 @@ async def create_preset(
     """Neues Preset anlegen — validiert Tape + ContentType-Pflichtfelder."""
     try:
         preset = await PresetService(session).create(payload)
-    except (UnsupportedTapeError, ContentTypeDataMismatchError, DuplicatePresetNameError) as exc:
+    except (
+        UnsupportedTapeError,
+        ContentTypeDataMismatchError,
+        UnsupportedContentTypeError,
+        DuplicatePresetNameError,
+    ) as exc:
         raise _map_validation_error(exc) from exc
     return PresetResponse.model_validate(preset)
 
@@ -80,7 +101,7 @@ async def get_preset(preset_id: UUID, session: SessionDep, _auth: ReadAuthDep) -
     try:
         preset = await PresetService(session).get(preset_id)
     except PresetNotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Preset nicht gefunden") from exc
     return PresetResponse.model_validate(preset)
 
 
@@ -95,8 +116,13 @@ async def update_preset(
     try:
         preset = await PresetService(session).update(preset_id, payload)
     except PresetNotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except (UnsupportedTapeError, ContentTypeDataMismatchError, DuplicatePresetNameError) as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Preset nicht gefunden") from exc
+    except (
+        UnsupportedTapeError,
+        ContentTypeDataMismatchError,
+        UnsupportedContentTypeError,
+        DuplicatePresetNameError,
+    ) as exc:
         raise _map_validation_error(exc) from exc
     return PresetResponse.model_validate(preset)
 
@@ -107,7 +133,7 @@ async def delete_preset(preset_id: UUID, session: SessionDep, _auth: WriteAuthDe
     try:
         await PresetService(session).delete(preset_id)
     except PresetNotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Preset nicht gefunden") from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -129,9 +155,15 @@ async def preview_preset_png(preset_id: UUID, session: SessionDep, _auth: ReadAu
     try:
         png = await PresetService(session).render_preview_png(preset_id)
     except PresetNotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Preset nicht gefunden") from exc
     except UnsupportedTapeError as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="Tape-Breite nicht unterstützt",
+        ) from exc
     except ContentTypeDataMismatchError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="field_values deckt content_type nicht ab",
+        ) from exc
     return Response(content=png, media_type="image/png")

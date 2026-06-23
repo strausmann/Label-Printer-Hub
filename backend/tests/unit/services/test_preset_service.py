@@ -18,6 +18,7 @@ from app.services.preset_service import (
     DuplicatePresetNameError,
     PresetNotFoundError,
     PresetService,
+    UnsupportedContentTypeError,
 )
 from pydantic import ValidationError
 from sqlalchemy import event
@@ -188,3 +189,21 @@ async def test_render_preview_missing_raises_not_found(session):
     svc = PresetService(session)
     with pytest.raises(PresetNotFoundError):
         await svc.render_preview_png(uuid4())
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: qr_with_listing wird abgelehnt (Refs #104)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_rejects_qr_with_listing(session):
+    """qr_with_listing-Presets werden mit UnsupportedContentTypeError abgelehnt (Fix 1)."""
+    svc = PresetService(session)
+    with pytest.raises(UnsupportedContentTypeError):
+        await svc.create(PresetCreatePayload(
+            name="Listing Preset",
+            content_type=ContentType.QR_WITH_LISTING,
+            tape_mm=12,
+            field_values={"qr_payload": "x", "primary_id": "A1", "items": ["item1"]},
+        ))

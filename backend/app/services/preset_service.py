@@ -8,6 +8,7 @@ HTTP-Statuscodes gemappt.
 
 from __future__ import annotations
 
+import asyncio
 import io
 from uuid import UUID
 
@@ -38,10 +39,18 @@ class DuplicatePresetNameError(Exception):
         super().__init__(f"Preset-Name {name!r} bereits vergeben")
 
 
+class UnsupportedContentTypeError(Exception):
+    def __init__(self, content_type: str) -> None:
+        self.content_type = content_type
+        super().__init__(f"content_type {content_type!r} wird in Presets noch nicht unterstützt")
+
+
 def _validate_layout(
     content_type: ContentType, tape_mm: int, field_values: dict[str, object]
 ) -> None:
     """Tape + ContentType-Pflichtfelder prüfen. Wirft Domain-Errors bei Verstoß."""
+    if content_type == ContentType.QR_WITH_LISTING:
+        raise UnsupportedContentTypeError(str(content_type))
     if tape_mm not in TAPE_GEOMETRY:
         raise UnsupportedTapeError(tape_mm=tape_mm)
     required = LayoutEngine.required_fields(content_type)
@@ -137,7 +146,16 @@ class PresetService:
             items=tuple(fv.get("items", ()) or ()),
         )
         engine = LayoutEngine()
-        image = engine.render(preset.tape_mm, ContentType(preset.content_type), label)
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        return buf.getvalue()
+        tape_mm = preset.tape_mm
+        content_type = ContentType(preset.content_type)
+
+        def _render() -> bytes:
+            image = engine.render(tape_mm, content_type, label)
+            buf = io.BytesIO()
+            image.save(buf, format="PNG")
+            return buf.getvalue()
+
+        # asyncio.to_thread: render() + image.save() sind CPU-gebunden (QR-Generierung,
+        # Font-Rendering, PNG-Enkodierung). Auslagerung in den Thread-Pool verhindert
+        # das Blockieren des Event-Loops bei aufwändigem Rendering.
+        return await asyncio.to_thread(_render)

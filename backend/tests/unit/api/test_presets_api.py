@@ -196,6 +196,21 @@ async def test_preview_png_missing_returns_404(session):
         assert r.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_create_qr_with_listing_returns_422(session):
+    """POST mit qr_with_listing muss 422 liefern — nicht 500 (Fix 1)."""
+    app = _build_app(session)
+    payload = {
+        "name": "Listing Preset",
+        "content_type": "qr_with_listing",
+        "tape_mm": 12,
+        "field_values": {"qr_payload": "x", "primary_id": "A1", "items": ["item1"]},
+    }
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+        r = await ac.post("/api/v1/presets", json=payload)
+        assert r.status_code == 422
+
+
 def test_presets_router_registered_in_app():
     """Smoke-Test: presets-Router ist in der echten App registriert.
 
