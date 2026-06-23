@@ -48,6 +48,11 @@ class LayoutEngine:
     complete missing-fields list (one 422 instead of multiple round-trips).
     """
 
+    @classmethod
+    def required_fields(cls, content_type: ContentType) -> tuple[str, ...]:
+        """Öffentlicher Accessor auf die Pflichtfelder eines ContentType."""
+        return cls._REQUIRED_FIELDS[content_type]
+
     def render(
         self,
         tape_mm: int,
