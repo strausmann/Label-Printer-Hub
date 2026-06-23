@@ -115,19 +115,26 @@ func (c *HubClient) BaseURL() string {
 //
 // The headers forwarded are:
 //   - X-Label-Hub-Key   — API-key auth (Phase 7c)
-//   - X-Pangolin-User   — Pangolin SSO session token
+//   - X-Pangolin-User   — Pangolin SSO session header (Legacy / Standard SSO)
+//   - X-Pangolin-Token  — Pangolin Resource custom upstream header (Trust-Token)
 //   - Authorization     — Pangolin Basic-Auth bypass (claude-automation)
 //
 // This is required because the frontend-to-backend calls are internal
 // (Docker-network, no Pangolin in between) and the backend's Phase 7c auth
 // middleware rejects requests that carry none of these headers with 401.
 //
+// X-Pangolin-Token is the static trust-token that a Pangolin Resource can
+// inject into every upstream request via its Header-Auth configuration. The
+// backend's sso_trust_header mechanism accepts it as a SSO-equivalent signal,
+// which is what allows browser users without an active SSO session to still
+// reach the UI.
+//
 // The original HubClient is not mutated; the returned copy shares the same
 // underlying http.Client and gen client but adds a RequestEditorFn that
 // injects the auth headers.
 func (c *HubClient) WithAuthFrom(r *http.Request) *HubClient {
-	headers := make(map[string]string, 3)
-	for _, h := range []string{"X-Label-Hub-Key", "X-Pangolin-User", "Authorization"} {
+	headers := make(map[string]string, 4)
+	for _, h := range []string{"X-Label-Hub-Key", "X-Pangolin-User", "X-Pangolin-Token", "Authorization"} {
 		if v := r.Header.Get(h); v != "" {
 			headers[h] = v
 		}

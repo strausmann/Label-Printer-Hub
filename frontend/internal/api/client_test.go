@@ -223,3 +223,45 @@ func TestWithAuthFromForwardsAPIKeyHeader(t *testing.T) {
 		t.Errorf("X-Label-Hub-Key forwarded as %q, want %q", receivedKey, "lh_testapikey1234567890")
 	}
 }
+
+// TestWithAuthFromForwardsPangolinTokenHeader verifies that WithAuthFrom
+// propagates the X-Pangolin-Token header from the incoming browser request
+// to the backend. Pangolin Resources can be configured with a custom upstream
+// header (via Pangolin Header-Auth) that injects a static trust token into
+// every request reaching the frontend container. The backend accepts this
+// token as a Phase 7c SSO-trust signal (sso_trust_header). Without this
+// forwarding, browser users without an SSO session see a 503 on every route
+// that needs backend data (Dashboard, Jobs, Templates, /admin/*).
+func TestWithAuthFromForwardsPangolinTokenHeader(t *testing.T) {
+	t.Parallel()
+	var receivedToken string
+	now := time.Now().Format(time.RFC3339)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/printers" {
+			receivedToken = r.Header.Get("X-Pangolin-Token")
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]map[string]any{
+				{"id": "aaaaaaaa-0000-0000-0000-000000000001", "name": "PT-P750W",
+					"model": "pt_series", "backend": "tcp",
+					"connection": map[string]any{"host": "198.51.100.10", "port": 9100},
+					"enabled": true, "paused": false,
+					"created_at": now, "updated_at": now},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer backend.Close()
+
+	incomingReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	incomingReq.Header.Set("X-Pangolin-Token", "pangolin-trust-token-abc123")
+
+	client := api.NewHubClient(backend.URL).WithAuthFrom(incomingReq)
+	_, err := client.ListPrinters(context.Background())
+	if err != nil {
+		t.Fatalf("ListPrinters: %v", err)
+	}
+	if receivedToken != "pangolin-trust-token-abc123" {
+		t.Errorf("X-Pangolin-Token forwarded as %q, want %q", receivedToken, "pangolin-trust-token-abc123")
+	}
+}
