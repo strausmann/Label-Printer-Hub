@@ -18,7 +18,7 @@ jobs:
     name: Python — lint, type, test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Detect Python project
         id: pyproject
@@ -122,7 +122,7 @@ jobs:
     name: Go — vet, test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check for Go module
         id: go-check
@@ -154,7 +154,7 @@ jobs:
     name: Check oapi-codegen output is up to date
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check for Go module
         id: go-check
@@ -189,7 +189,7 @@ jobs:
     name: Docker — build smoke test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -217,7 +217,7 @@ jobs:
     name: Privacy / secret scan
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
