@@ -21,6 +21,14 @@ class Preset(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str
+    content_type: str = Field(
+        default="qr_three_lines",
+        description="Semantischer ContentType (siehe app.schemas.content_type.ContentType).",
+    )
+    tape_mm: int = Field(
+        default=12,
+        description="Ziel-Bandbreite in mm (muss in TAPE_GEOMETRY existieren).",
+    )
     printer_id: UUID | None = Field(default=None, foreign_key="printers.id")
     field_values: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(
