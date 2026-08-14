@@ -207,6 +207,7 @@ async def cancel_job(
 async def pause_job(
     job_id: UUID,
     session: SessionDep,
+    _auth: PrintAuthDep,
 ) -> ProblemDetail:
     """Return 501 — pause is not yet implemented."""
     # Verify the job exists so we return 404 rather than 501 for unknown jobs
@@ -241,6 +242,7 @@ async def pause_job(
 async def resume_job(
     job_id: UUID,
     session: SessionDep,
+    _auth: PrintAuthDep,
 ) -> ProblemDetail:
     """Return 501 — resume is not yet implemented."""
     # Verify the job exists so we return 404 rather than 501 for unknown jobs
@@ -276,6 +278,7 @@ async def resume_job(
 async def retry_job(
     job_id: UUID,
     session: SessionDep,
+    _auth: PrintAuthDep,
 ) -> JobRead:
     """Clone a terminal job into a fresh QUEUED job."""
     job = await _get_job_or_404(session, job_id)

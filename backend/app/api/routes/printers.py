@@ -143,6 +143,7 @@ async def list_printers(
 async def get_printer(
     printer_id: UUID,
     session: SessionDep,
+    _auth: ReadAuthDep,
 ) -> PrinterRead:
     """Return full printer metadata for a single printer."""
     printer = await _get_printer_or_404(session, printer_id)

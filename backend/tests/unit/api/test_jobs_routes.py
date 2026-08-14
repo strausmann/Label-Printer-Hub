@@ -545,7 +545,8 @@ async def test_retry_job_direct_returns_new_queued_job(session) -> None:
     printer = await _make_printer(session)
     original = await _make_job(session, printer.id, state=JobState.FAILED.value)
 
-    result = await retry_job(job_id=original.id, session=session)
+    fake_auth = AuthContext(source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1")
+    result = await retry_job(job_id=original.id, session=session, _auth=fake_auth)
 
     assert str(result.id) != str(original.id)
     assert result.state == JobState.QUEUED.value
