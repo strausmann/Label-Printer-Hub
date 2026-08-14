@@ -147,6 +147,8 @@ async def get_printer(
 ) -> PrinterRead:
     """Return full printer metadata for a single printer."""
     printer = await _get_printer_or_404(session, printer_id)
+    if _auth is not None:
+        check_printer_access(_auth, printer_id)
     state = await printer_state_repo.get(session, printer_id)
     return PrinterRead(
         id=printer.id,
