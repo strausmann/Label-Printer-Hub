@@ -117,3 +117,54 @@ async def test_key_restricted_to_printer_a_allowed_on_printer_a(api_client_with_
     assert resp.status_code in (204, 404), (
         f"Expected 204 or 404, got {resp.status_code}: {resp.text}"
     )
+
+
+@pytest.mark.asyncio
+async def test_get_printer_detail_restricted_to_printer_a_blocked_on_printer_b(
+    api_client_with_seed,
+):
+    """2026-08-14 follow-up: GET /api/printers/{id} (single-printer detail)
+    now requires auth but was missing the per-printer ACL check that every
+    sibling endpoint (get_printer_status/pause_printer/resume_printer/
+    clear_printer_queue) enforces via check_printer_access(). A read-key
+    scoped to printer A must not be able to read printer B's metadata
+    (including its connection dict — host/port/SNMP config).
+
+    Analogous to test_key_restricted_to_printer_a_blocked_on_printer_b above,
+    but seeds its own printer B directly instead of relying on
+    api_client_with_seed's (frequently empty, skip-on-empty) default seed
+    data — this test must actually run, not skip, to be a real regression
+    guard.
+    """
+    import app.db.engine as _engine_module
+    from app.models.printer import Printer
+
+    factory = _engine_module.async_session
+
+    async with factory() as s:
+        printer_b = Printer(
+            name="acl-test-printer-b",
+            slug="acl-test-printer-b",
+            model="PT-P750W",
+            backend="ptouch",
+            connection={"host": "192.0.2.20", "port": 9100},
+        )
+        s.add(printer_b)
+        await s.commit()
+        await s.refresh(printer_b)
+
+    printer_a_id = str(uuid4())  # some other printer the key IS allowed for
+
+    plaintext = await _insert_restricted_key(
+        factory,
+        allowed_printer_ids=[printer_a_id],
+        scopes=["read"],
+    )
+
+    resp = await api_client_with_seed.get(
+        f"/api/printers/{printer_b.id}",
+        headers={"X-Label-Hub-Key": plaintext},
+    )
+    assert resp.status_code == 403, (
+        f"Expected 403 for restricted key on wrong printer, got {resp.status_code}: {resp.text}"
+    )
