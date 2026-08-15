@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## <small>0.11.1 (2026-08-15)</small>
+
+* fix(security): require auth on printer detail GET and job retry (#145) ([23f4c70](https://github.com/strausmann/label-printer-hub/commit/23f4c70)), closes [#145](https://github.com/strausmann/label-printer-hub/issues/145)
+
 ## 0.11.0 (2026-06-24)
 
 * feat(auth): Pangolin-SSO + Bypass für alle Scopes trusted (ADR 0014) (#133) ([4fe1a91](https://github.com/strausmann/label-printer-hub/commit/4fe1a91)), closes [#133](https://github.com/strausmann/label-printer-hub/issues/133) [#78](https://github.com/strausmann/label-printer-hub/issues/78) [130/#132](https://github.com/strausmann/label-printer-hub/issues/132)
