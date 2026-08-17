@@ -12,9 +12,9 @@ jobs:
     name: Validate PR title (Conventional Commits)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: lts/*
       - name: Install commitlint
