@@ -18,7 +18,7 @@ jobs:
     name: Python — lint, type, test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Detect Python project
         id: pyproject
@@ -35,7 +35,7 @@ jobs:
 
       - name: Set up Python (with cache)
         if: steps.pyproject.outputs.exists == 'true'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -43,7 +43,7 @@ jobs:
 
       - name: Set up Python (without cache, no pyproject.toml yet)
         if: steps.pyproject.outputs.exists != 'true'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -122,7 +122,7 @@ jobs:
     name: Go — vet, test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check for Go module
         id: go-check
@@ -135,7 +135,7 @@ jobs:
 
       - name: Set up Go
         if: steps.go-check.outputs.exists == 'true'
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: stable
           cache-dependency-path: frontend/go.sum
@@ -154,7 +154,7 @@ jobs:
     name: Check oapi-codegen output is up to date
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check for Go module
         id: go-check
@@ -167,7 +167,7 @@ jobs:
 
       - name: Set up Go
         if: steps.go-check.outputs.exists == 'true'
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: stable
           cache-dependency-path: frontend/go.sum
@@ -189,7 +189,7 @@ jobs:
     name: Docker — build smoke test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -217,7 +217,7 @@ jobs:
     name: Privacy / secret scan
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
