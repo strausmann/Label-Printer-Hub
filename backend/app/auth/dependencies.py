@@ -357,7 +357,10 @@ def _session_context(
 
 
 def require_scope(
-    required: str, *, settings: Settings | None = None, own_session: bool = False
+    required: Literal["read", "print", "admin"],
+    *,
+    settings: Settings | None = None,
+    own_session: bool = False,
 ) -> Callable[..., Coroutine[Any, Any, AuthContext]]:
     """Return a FastAPI dependency that enforces the required scope.
 
@@ -375,7 +378,7 @@ def require_scope(
     """
     if required not in _SCOPE_HIERARCHY:
         raise ValueError(f"Unknown scope: {required!r}")
-    required_scope = cast(Scope, required)
+    required_scope: Scope = required
 
     async def _authenticate(
         request: Request, key_header: str | None, session: AsyncSession
