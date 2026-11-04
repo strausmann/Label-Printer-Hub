@@ -45,6 +45,9 @@ import { useSession } from "./session";
 export function safeRedirect(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return undefined;
+  // Browsers drop tabs and newlines inside a URL, so "/\t/host" would become "//host".
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(value)) return undefined;
   if (value === "/sign-in" || value.startsWith("/sign-in?")) return undefined;
   return value;
 }
