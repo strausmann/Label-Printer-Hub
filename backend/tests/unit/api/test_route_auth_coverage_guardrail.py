@@ -59,8 +59,6 @@ _PUBLIC_BY_DESIGN: dict[tuple[str, str], str] = {
     # them, so they don't need (and can't take) an allowlist entry here.
     # /readiness is intentionally NOT allowlisted: it declares its own
     # Depends(require_read) and is correctly picked up as authenticated.
-    ("GET", "/api/lookup/{app}/{entity_id}"): "read-only integration-entity lookup "
-    "backing the public QR landing pages (lookup.py); same trust class as qr.py",
     ("GET", "/loc/{entity_id}"): "QR landing path — serves only the static app shell, "
     "documented public-by-design (qr.py: 'printed as QR payloads on physical labels')",
     ("GET", "/asset/{entity_id}"): "QR landing page — see qr.py module docstring",

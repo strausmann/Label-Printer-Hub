@@ -80,7 +80,9 @@ Existing installations keep their API keys; sign in with one of them.
 - **The HTML event stream `/api/events` is removed.** It delivered HTML fragments for the HTMX frontend. Use the JSON stream `GET /api/v1/events` (optional `?printer_id=<uuid>`), which authenticates like any other read route. Frames are documented in [`architecture/sse.md`](../architecture/sse.md). Reverse-proxy buffering rules are unchanged: turn buffering off for the event path.
 - **Removed pages:** `/templates` and `/templates/{id}` (they were already non-functional). The admin pages `/admin/api-keys` and `/admin/printers` are now Settings > Access and keys and Settings > Printers.
 - **QR label paths keep working.** `/loc`, `/asset`, `/spool` and `/product` are served by the backend, so labels you printed earlier still open the right item.
-- **Session sign-in:** browsers sign in with an API key (or SSO) and get a session cookie with CSRF protection. API clients keep using their key header.
+- **Session sign-in:** browsers sign in with an API key (or SSO) and get a session cookie with CSRF protection. API clients keep using their key header. The sign-in route allows 10 attempts per minute per client address, keyed on the direct peer: behind a reverse proxy all clients share that one bucket.
+- **`GET /api/lookup/{app}/{entity_id}` now needs a key or a signed-in session** (read scope). It used to be anonymous because server-rendered QR pages called it; those pages are gone, and the lookup returns data from your connected apps. Scanning a label therefore asks anonymous visitors to sign in first. Scripts that call the lookup without credentials must send a key.
+- **Third-party integration plugins** must implement `bind(store)`, `is_configured()` and `async reconfigure()`; they are required members of the plugin protocol now (live configuration from the UI). A plugin without them is rejected at registration.
 
 ## What clients must change
 

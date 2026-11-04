@@ -10,8 +10,9 @@ GET /product/{entity_id} - Grocy product
 The server no longer renders HTML. Each path answers with the web app shell
 and the app reads the item through ``GET /api/lookup/{app}/{entity_id}``. The
 paths are public by design: they are printed on physical labels and the shell
-carries no data; the lookup endpoint behind them does its own checks. When no
-web app is mounted (API-only mode) they return a JSON 404.
+carries no data. The lookup endpoint behind them requires sign-in (read scope), as does every
+client route of the web app. When no web app is mounted (API-only mode) they return a
+JSON 404.
 """
 
 from __future__ import annotations

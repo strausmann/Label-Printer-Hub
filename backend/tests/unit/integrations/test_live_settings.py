@@ -11,6 +11,7 @@ import respx
 from app.api.dependencies.webhook_auth import require_webhook_key
 from app.api.error_handlers import register_error_handlers
 from app.api.routes.lookup import router as lookup_router
+from app.auth.scope_deps import require_read
 from app.config import get_settings
 from app.integrations.grocy.plugin import GrocyPlugin
 from app.integrations.registry import IntegrationRegistry
@@ -119,6 +120,7 @@ def test_unconfigured_lookup_returns_503_problem(store) -> None:
     try:
         app = FastAPI()
         app.include_router(lookup_router)
+        app.dependency_overrides[require_read] = lambda: None
         register_error_handlers(app)
         r = TestClient(app, raise_server_exceptions=False).get("/api/lookup/grocy/1")
     finally:
