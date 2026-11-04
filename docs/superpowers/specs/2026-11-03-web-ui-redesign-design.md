@@ -67,7 +67,7 @@ One token file, three layers: primitive values → semantic roles → component 
 | Token | Value |
 |---|---|
 | paper-50 / 100 / 200 / 300 | `#F6F4EF` / `#EFEBE3` / `#E3DED3` / `#CFC8BA` |
-| ink-900 / 700 / 500 | `#1F1D1A` / `#4A463F` / `#777166` |
+| ink-900 / 700 / 500 | `#1F1D1A` / `#4A463F` / `#6B655A` (changed from `#777166` on 2026-11-04: the old value reached only 4.40:1 on `bg` and 4.07:1 on `sunken`) |
 | amber-500 / 600 / 100 | `#D4912A` / `#B8771A` / `#F6E6C8` |
 | stamp-600 / 100 | `#2F4E8F` / `#DDE5F3` |
 | green-600, orange-600, red-600 | `#2E7A4E`, `#B5651B`, `#B0352B` |
@@ -185,7 +185,7 @@ Decided with the maintainer: what makes sense for deployments **without** SSO.
 
 - `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` is a **one-time** key. It only works while no admin key exists. Signing in with it leads straight to creating the first real admin key (shown once); from then on the bootstrap key is rejected, and the UI shows a hint to remove the variable.
 - **Recovery** when every admin key is lost is a command inside the container, not a permanent backdoor in the environment: e.g. `docker compose exec backend printer-hub admin create-key --scope admin`. Whoever can run commands in the container already controls the hub, so this adds no new attack surface, unlike a long-lived key in an environment variable.
-- Behind Pangolin SSO nothing changes: the proxy's headers identify the user; the bypass stays read-only unless configured otherwise (`PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE`, ADR 0014).
+- **Only the trust token makes SSO headers trustworthy** (decided by the maintainer 2026-11-04). A browser session and admin rights from proxy headers require `sso_user_header` **plus** a matching `sso_trust_header` value. The legacy `X-Pangolin-User` header without a token and the `Authorization: Basic` bypass are accepted only when explicitly enabled (`PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER`, `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS`, both default off; the Pangolin example sets what it needs). `PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE`, a no-op today, becomes effective. This supersedes ADR 0014; without it, any client in front of a proxy that doesn't strip these headers could claim admin.
 
 ### 8.3 Live events for the UI
 
@@ -211,6 +211,7 @@ Settings changed in the UI apply immediately: the integrations and the queue rea
 - New ADR: React + TypeScript web UI. **Supersedes 0003** (Go + Tailwind + HTMX + PWA). PWA progressive enhancement (0010) stays and is restated for the new stack.
 - New ADR: settings in the database, env overrides and locks; secrets encrypted with a master key.
 - New ADR: decision register.
+- New ADR: proxy headers are trusted only with the trust token; legacy header and Basic bypass are opt-in. **Supersedes 0014.**
 - ADR 0013 (browse + cart) stays valid and is implemented in the new UI.
 
 ## 10. Backend changes the foundation needs
