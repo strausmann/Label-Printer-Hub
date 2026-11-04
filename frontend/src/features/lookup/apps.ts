@@ -1,4 +1,7 @@
-import { useLingui } from "@lingui/react/macro";
+import { i18n } from "@lingui/core";
+import { msg } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react";
+import { useLingui as useMacroLingui } from "@lingui/react/macro";
 import type { ContentType, LookupApp } from "./cart";
 
 export const LOOKUP_APPS: readonly LookupApp[] = ["snipeit", "grocy", "spoolman"];
@@ -18,13 +21,18 @@ export const LOOKUP_CONTENT_TYPES: readonly ContentType[] = [
 ];
 export const DEFAULT_CONTENT_TYPE: ContentType = "qr_two_lines";
 
+const APP_NAMES = { snipeit: msg`Snipe-IT`, grocy: msg`Grocy`, spoolman: msg`Spoolman` };
+
+/** For code outside React (search sources); components use `useAppName`. */
+export const appNameOf = (app: LookupApp): string => i18n._(APP_NAMES[app]);
+
 export function useAppName(): (app: LookupApp) => string {
-  const { t } = useLingui();
-  return (app) => ({ snipeit: t`Snipe-IT`, grocy: t`Grocy`, spoolman: t`Spoolman` })[app];
+  const { _ } = useLingui();
+  return (app) => _(APP_NAMES[app]);
 }
 
 export function useContentTypeLabel(): (type: ContentType) => string {
-  const { t } = useLingui();
+  const { t } = useMacroLingui();
   return (type) => {
     switch (type) {
       case "qr_two_lines":

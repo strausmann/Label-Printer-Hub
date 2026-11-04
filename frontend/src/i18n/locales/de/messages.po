@@ -12,6 +12,10 @@ msgstr ""
 msgid "{0} mm"
 msgstr "{0} mm"
 
+#: src/features/integrations/IntegrationPage.tsx
+msgid "{appName} is not set up yet, so there is nothing to look up."
+msgstr "{appName} ist noch nicht eingerichtet, deshalb gibt es nichts nachzuschlagen."
+
 #: src/features/jobs/JobDetail.tsx
 msgid "{copyNo} of {copyTotal}"
 msgstr "{copyNo} von {copyTotal}"
@@ -36,6 +40,10 @@ msgstr "{tapeMm} mm"
 msgid "Add to cart"
 msgstr "In den Warenkorb"
 
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Added to the cart: {added}"
+msgstr "In den Warenkorb gelegt: {added}"
+
 #: src/features/jobs/JobsPage.tsx
 msgid "All"
 msgstr "Alle"
@@ -43,6 +51,18 @@ msgstr "Alle"
 #: src/shell/SignIn.tsx
 msgid "API key"
 msgstr "API-Schlüssel"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Ask an admin to set it up."
+msgstr "Bitten Sie einen Admin, es einzurichten."
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Asset"
+msgstr "Gerät"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Asset tag (for example AT-0042), numeric ID (42) or a printed label link. Locations need the loc: prefix, for example loc:17."
+msgstr "Inventarnummer (zum Beispiel AT-0042), numerische ID (42) oder ein gedruckter Etikettenlink. Standorte brauchen das Präfix loc:, zum Beispiel loc:17."
 
 #: src/features/jobs/JobDetail.tsx
 msgid "Back to the jobs"
@@ -96,6 +116,7 @@ msgstr "Abgebrochen"
 msgid "Cart"
 msgstr "Warenkorb"
 
+#: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/ItemView.tsx
 msgid "Cart ({inCart})"
 msgstr "Warenkorb ({inCart})"
@@ -119,6 +140,11 @@ msgstr "Nur Code, ohne QR-Code"
 #: src/features/printers/TapeSwatch.tsx
 msgid "Colour not reported"
 msgstr "Farbe nicht gemeldet"
+
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/integrations/IntegrationTiles.tsx
+msgid "Connected"
+msgstr "Verbunden"
 
 #. placeholder {0}: info.data.version
 #: src/shell/Sidebar.tsx
@@ -205,6 +231,18 @@ msgstr "Fehlgeschlagen"
 msgid "Filter by state"
 msgstr "Nach Status filtern"
 
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Find a product"
+msgstr "Produkt suchen"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Find a spool"
+msgstr "Spule suchen"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Find an asset or location"
+msgstr "Gerät oder Standort suchen"
+
 #: src/features/printers/model.ts
 msgid "Green"
 msgstr "Grün"
@@ -225,6 +263,8 @@ msgstr "Host"
 msgid "Idle"
 msgstr "Ruhend"
 
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/integrations/IntegrationTiles.tsx
 #: src/shell/labels.ts
 msgid "Integrations"
 msgstr "Integrationen"
@@ -238,6 +278,10 @@ msgstr "Durch Neustart unterbrochen"
 msgid "Jobs"
 msgstr "Aufträge"
 
+#: src/features/integrations/IntegrationPage.tsx
+msgid "just now"
+msgstr "gerade eben"
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "Keep them"
 msgstr "Behalten"
@@ -246,6 +290,10 @@ msgstr "Behalten"
 #: src/shell/labels.ts
 msgid "Kept / Hangar / Grocy"
 msgstr "Kept / Hangar / Grocy"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Kept only in this browser. Print adds the label to the cart."
+msgstr "Nur in diesem Browser gespeichert. „Drucken“ legt das Etikett in den Warenkorb."
 
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
@@ -291,6 +339,18 @@ msgstr "Live-Updates pausiert"
 #: src/i18n/messages.ts
 msgid "Loading…"
 msgstr "Wird geladen …"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Location"
+msgstr "Standort"
+
+#: src/features/search/lookupSource.ts
+msgid "Look up {query} in {name}"
+msgstr "{query} in {name} nachschlagen"
+
+#: src/features/search/lookupSource.ts
+msgid "Look up in an integration"
+msgstr "In einer Integration nachschlagen"
 
 #: src/shell/Sidebar.tsx
 msgid "Main"
@@ -351,6 +411,12 @@ msgstr "Nicht gefunden"
 msgid "Not found in {name}"
 msgstr "Nicht gefunden in {name}"
 
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/integrations/IntegrationTiles.tsx
+#: src/shell/IntegrationNav.tsx
+msgid "Not set up"
+msgstr "Nicht eingerichtet"
+
 #: src/features/overview/OverviewPage.tsx
 msgid "Nothing is printing."
 msgstr "Es wird nichts gedruckt."
@@ -363,6 +429,10 @@ msgstr "Es wartet nichts."
 msgid "Nothing needs attention."
 msgstr "Nichts braucht Aufmerksamkeit."
 
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Nothing opened yet."
+msgstr "Noch nichts geöffnet."
+
 #: src/features/printers/model.ts
 msgid "Offline"
 msgstr "Offline"
@@ -371,10 +441,24 @@ msgstr "Offline"
 msgid "OK"
 msgstr "OK"
 
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Open"
+msgstr "Öffnen"
+
+#. placeholder {0}: label.id
+#: src/features/search/lookupSource.ts
+msgid "Open {0} in {name}"
+msgstr "{0} in {name} öffnen"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Open {appName}"
+msgstr "{appName} öffnen"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Open in {appName}"
 msgstr "In {appName} öffnen"
 
+#: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/ItemView.tsx
 msgid "Open Settings › Integrations"
 msgstr "Einstellungen › Integrationen öffnen"
@@ -413,10 +497,16 @@ msgstr "Port"
 msgid "Preview"
 msgstr "Vorschau"
 
+#: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/CartPage.tsx
 #: src/features/lookup/ItemView.tsx
 msgid "Print"
 msgstr "Drucken"
+
+#. placeholder {0}: item.name
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Print {0}"
+msgstr "{0} drucken"
 
 #: src/features/lookup/ItemView.tsx
 msgid "Print now"
@@ -452,6 +542,14 @@ msgstr "Druckt gerade"
 msgid "Problem"
 msgstr "Problem"
 
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Product"
+msgstr "Produkt"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Product ID or barcode."
+msgstr "Produkt-ID oder Barcode."
+
 #: src/features/lookup/apps.ts
 msgid "QR code and code"
 msgstr "QR-Code und Code"
@@ -486,6 +584,10 @@ msgstr "Bereit"
 msgid "Recent jobs"
 msgstr "Letzte Aufträge"
 
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Recently opened"
+msgstr "Zuletzt geöffnet"
+
 #: src/shell/LiveStatus.tsx
 msgid "Reconnect"
 msgstr "Neu verbinden"
@@ -518,15 +620,24 @@ msgstr "Fortsetzen"
 msgid "Retry"
 msgstr "Wiederholen"
 
+#: src/features/integrations/IntegrationPage.tsx
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
 #: src/shell/TopBar.tsx
 msgid "Scan"
 msgstr "Scannen"
 
-#: src/shell/TopBar.tsx
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Scan barcode"
+msgstr "Barcode scannen"
+
+#: src/features/search/GlobalSearch.tsx
 msgid "Search"
 msgstr "Suchen"
+
+#: src/features/search/GlobalSearch.tsx
+msgid "Search results"
+msgstr "Suchergebnisse"
 
 #: src/features/lookup/CartPage.tsx
 msgid "See the jobs"
@@ -539,6 +650,14 @@ msgstr "An {printerName} gesendet."
 #: src/shell/Sidebar.tsx
 msgid "Server unreachable"
 msgstr "Server nicht erreichbar"
+
+#: src/features/integrations/IntegrationTiles.tsx
+msgid "Set up"
+msgstr "Einrichten"
+
+#: src/features/integrations/IntegrationTiles.tsx
+msgid "Set up {name}"
+msgstr "{name} einrichten"
 
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
@@ -587,6 +706,14 @@ msgstr "Etwas ist schiefgelaufen."
 #: src/features/jobs/JobDetail.tsx
 msgid "Source"
 msgstr "Quelle"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Spool"
+msgstr "Spule"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Spool ID."
+msgstr "Spulen-ID."
 
 #: src/features/lookup/apps.ts
 msgid "Spoolman"

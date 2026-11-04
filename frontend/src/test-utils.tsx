@@ -15,6 +15,11 @@ export const INFO: InfoData = {
   display_name: "Label Printer Hub",
   auth: { sso_configured: false, bootstrap_open: false },
   features: { jobs: true, lookup: true, scan: true, sheets: false, calibration: false, asn: false, kept: false },
+  integrations: [
+    { name: "snipeit", configured: true },
+    { name: "grocy", configured: true },
+    { name: "spoolman", configured: true },
+  ],
 };
 
 export const SIGNED_IN: SessionData = {

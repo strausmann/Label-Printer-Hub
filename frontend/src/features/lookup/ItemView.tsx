@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { PRIMARY_BUTTON, FIELD } from "../../shell/SignIn";
@@ -17,6 +17,8 @@ import {
 } from "./apps";
 import { useLookup, usePreviewImage, usePrintNow, type LookupResult } from "./api";
 import { MAX_COPIES, useCart, type ContentType, type LookupApp } from "./cart";
+import { lookupIdFromQrPath } from "./labelUrl";
+import { recordRecent } from "./recent";
 import { PrinterPicker, usePrinterChoice, usePrintErrorText } from "./PrinterPicker";
 
 const lookupRoute = getRouteApi("/lookup/$app/$id");
@@ -33,7 +35,7 @@ const spoolApi = getRouteApi("/spool/$id");
 const productApi = getRouteApi("/product/$id");
 
 /** The paths printed in QR codes (same mapping as `backend/app/api/routes/qr.py`). */
-export const LocPage = () => <ItemRoute app={QR_PATH_APP.loc} id={locApi.useParams().id} />;
+export const LocPage = () => <ItemRoute app={QR_PATH_APP.loc} id={lookupIdFromQrPath("loc", locApi.useParams().id)} />;
 export const AssetPage = () => <ItemRoute app={QR_PATH_APP.asset} id={assetApi.useParams().id} />;
 export const SpoolPage = () => <ItemRoute app={QR_PATH_APP.spool} id={spoolApi.useParams().id} />;
 export const ProductPage = () => <ItemRoute app={QR_PATH_APP.product} id={productApi.useParams().id} />;
@@ -63,6 +65,11 @@ function Item({ app, id }: { app: LookupApp; id: string }) {
   const appNames = useAppName();
   const name = appNames(app);
   const lookup = useLookup(app, id);
+  const found = lookup.data;
+  // An item that was shown goes on the start page's "Recently opened"; a failed lookup does not.
+  useEffect(() => {
+    if (found) recordRecent(app, { id, name: found.name ?? id });
+  }, [app, id, found]);
 
   if (lookup.isPending) return <p role="status" className="text-ink-2">{t`Loading…`}</p>;
   if (lookup.isError) {

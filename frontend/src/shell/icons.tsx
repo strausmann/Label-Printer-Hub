@@ -130,3 +130,25 @@ export const SignOutIcon = (p: IconProps) => (
     <path d="M14 8l4 4-4 4M18 12H9.5" />
   </Icon>
 );
+
+export const AssetIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7a1 1 0 0 1 .7.3l7.3 7.3a1 1 0 0 1 0 1.4l-7.7 7.7a1 1 0 0 1-1.4 0l-6.9-6.9a1 1 0 0 1-.7-.7Z" />
+    <circle cx="8" cy="8" r="1.4" />
+  </Icon>
+);
+
+export const ProductIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3.5 9h17l-1.7 10a1.5 1.5 0 0 1-1.5 1.2H6.7A1.5 1.5 0 0 1 5.2 19L3.5 9Z" />
+    <path d="m8 9 3-5M16 9l-3-5" />
+  </Icon>
+);
+
+export const SpoolIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 3.5v5M12 15.5v5" />
+  </Icon>
+);

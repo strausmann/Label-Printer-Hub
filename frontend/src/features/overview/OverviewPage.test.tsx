@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderApp } from "../../test-utils";
+import { renderApp, SIGNED_IN } from "../../test-utils";
 import { job, mockApi, PRINTER_A, PRINTER_B, status } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -106,5 +106,48 @@ describe("Overview", () => {
     mockApi({ "GET /api/jobs": [] });
     await renderApp({ path: "/" });
     expect(await screen.findByText("The printers could not be loaded.")).toBeVisible();
+  });
+
+  describe("integration tiles (phone)", () => {
+    const set = (snipeit: boolean, grocy: boolean, spoolman: boolean) => [
+      { name: "snipeit" as const, configured: snipeit },
+      { name: "grocy" as const, configured: grocy },
+      { name: "spoolman" as const, configured: spoolman },
+    ];
+
+    it("shows a tile with the status for each configured integration, after the three questions", async () => {
+      mockApi(base());
+      await renderApp({ path: "/", info: { integrations: set(true, true, false) } });
+      const section = await screen.findByRole("region", { name: "Integrations" });
+      const snipe = within(section).getByRole("link", { name: /Snipe-IT/ });
+      expect(snipe).toHaveAttribute("href", "/integrations/snipeit");
+      expect(within(snipe).getByText("Connected")).toBeVisible();
+      const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
+      expect(headings.slice(0, 3)).toEqual(["Printing now", "Needs attention", "Material"]);
+    });
+
+    it("an admin gets Not set up with a Set up link for the rest", async () => {
+      mockApi(base());
+      await renderApp({ path: "/", info: { integrations: set(true, true, false) } });
+      const section = await screen.findByRole("region", { name: "Integrations" });
+      expect(within(section).getByText(/Spoolman/)).toBeVisible();
+      expect(within(section).getByText(/Not set up/)).toBeVisible();
+      expect(within(section).getByRole("link", { name: "Set up Spoolman" })).toHaveAttribute("href", "/settings/integrations");
+    });
+
+    it("a non-admin sees only what works; with nothing configured the section is gone", async () => {
+      mockApi(base());
+      await renderApp({ path: "/", info: { integrations: set(true, false, false) }, session: { ...SIGNED_IN, scope: "print" } });
+      const section = await screen.findByRole("region", { name: "Integrations" });
+      expect(within(section).queryByText(/Grocy/)).toBeNull();
+      expect(within(section).getAllByRole("link")).toHaveLength(1);
+    });
+
+    it("no tiles and no heading when nothing is visible", async () => {
+      mockApi(base());
+      await renderApp({ path: "/", info: { integrations: set(false, false, false) }, session: { ...SIGNED_IN, scope: "read" } });
+      await screen.findByRole("heading", { level: 2, name: "Printing now" });
+      expect(screen.queryByRole("region", { name: "Integrations" })).toBeNull();
+    });
   });
 });

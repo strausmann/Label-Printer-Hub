@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { StatusBadge } from "../../shell/StatusBadge";
+import { IntegrationTiles } from "../integrations/IntegrationTiles";
 import { PANEL, SECTION_HEADING } from "../ui";
 import { usePrinters, usePrinterStatuses, useRecentJobs, type Job, type Printer, type PrinterStatus } from "../printers/api";
 import { describePrinter, isFailed, useJobStateBadge, useKindLabel } from "../printers/model";
@@ -112,6 +113,8 @@ export function OverviewPage() {
           )}
         </Block>
       </div>
+
+      <IntegrationTiles />
 
       <section aria-labelledby="printers-h" className="flex flex-col gap-3">
         <h2 id="printers-h" className={SECTION_HEADING}>{t`Printers`}</h2>

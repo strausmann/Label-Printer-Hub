@@ -23,6 +23,7 @@ import {
   SheetArchivePage,
   SheetsPage,
 } from "../pages/placeholders";
+import { IntegrationPage } from "../features/integrations/IntegrationPage";
 import { JobPage } from "../features/jobs/JobDetail";
 import { JobsPage } from "../features/jobs/JobsPage";
 import { CartPage } from "../features/lookup/CartPage";
@@ -147,6 +148,7 @@ const routeTree = rootRoute.addChildren([
   page("/printers/$printerId", PrinterPage),
   page("/jobs", JobsPage),
   page("/jobs/$jobId", JobPage),
+  page("/integrations/$app", IntegrationPage),
   page("/lookup/$app/$id", LookupPage),
   // The paths printed in QR codes: they open the item view too.
   page("/loc/$id", LocPage),

@@ -1,16 +1,25 @@
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { useInfo } from "../app/session";
-import { visibleGroups } from "./features";
+import { IntegrationNavEntries } from "./IntegrationNav";
+import { NAV_GROUPS, visibleGroups, type NavGroup } from "./features";
 import { useNavLabels } from "./labels";
 import { StatusBadge } from "./StatusBadge";
+import { useVisibleIntegrations } from "../features/integrations/api";
 
 /** Desktop navigation (>= 1024 px): groups as in spec 5.3, hidden entries removed. */
 export function Sidebar() {
   const { t } = useLingui();
   const info = useInfo();
   const labels = useNavLabels();
-  const groups = visibleGroups((feature) => info.data?.features[feature] ?? false);
+  const integrations = useVisibleIntegrations();
+  const shown = visibleGroups((feature) => info.data?.features[feature] ?? false);
+  // The integrations come from `/api/info`, not from `NAV_GROUPS`: the group exists as soon as one is visible.
+  const groups = NAV_GROUPS.flatMap((g): NavGroup[] => {
+    const entry = shown.find((v) => v.id === g.id);
+    if (entry) return [entry];
+    return g.id === "integrations" && integrations.length > 0 ? [{ ...g, entries: [] }] : [];
+  });
 
   const status = info.data
     ? { state: "ok" as const, label: t`Connected · v${info.data.version}` }
@@ -37,6 +46,7 @@ export function Sidebar() {
                 </p>
               ) : null}
               <ul aria-labelledby={heading ? headingId : undefined} className="flex flex-col gap-0.5">
+                {group.id === "integrations" && <IntegrationNavEntries integrations={integrations} />}
                 {group.entries.map((entry) => (
                   <li key={entry.id}>
                     <Link

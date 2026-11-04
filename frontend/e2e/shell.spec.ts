@@ -11,13 +11,13 @@ test.describe("shell", () => {
     const sidebar = page.getByRole("navigation", { name: "Main" });
     await expect(sidebar).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Tabs" })).toBeHidden();
-    for (const name of ["Overview", "Printers", "Jobs", "Settings"]) {
+    for (const name of ["Overview", "Printers", "Jobs", "Snipe-IT", "Grocy", "Spoolman", "Settings"]) {
       await expect(sidebar.getByRole("link", { name })).toBeVisible();
     }
     // Entries of modules that have not shipped stay hidden (features from /api/info).
     await expect(sidebar.getByRole("link", { name: "Sheets" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Scan" }).first()).toBeVisible();
-    await expect(page.getByRole("searchbox", { name: "Search" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Search" })).toBeVisible();
     if (SHOTS) {
       mkdirSync(SHOTS, { recursive: true });
       await page.screenshot({ path: resolve(SHOTS, "task-9-desktop.png") });
@@ -45,7 +45,7 @@ test.describe("shell", () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const sidebar = page.getByRole("navigation", { name: "Main" });
     const names = await sidebar.getByRole("link").allInnerTexts();
-    expect(names.map((n) => n.trim())).toEqual(["Overview", "Printers", "Jobs", "Settings"]);
+    expect(names.map((n) => n.trim())).toEqual(["Overview", "Printers", "Jobs", "Snipe-IT", "Grocy", "Spoolman", "Settings"]);
 
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     const reached = new Set<string>();

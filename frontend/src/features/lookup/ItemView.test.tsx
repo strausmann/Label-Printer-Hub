@@ -52,7 +52,7 @@ describe("ItemView", () => {
 
   it.each([
     ["/asset/42", "snipeit", "42"],
-    ["/loc/5", "snipeit", "5"],
+    ["/loc/5", "snipeit", "loc%3A5"],
     ["/spool/7", "spoolman", "7"],
     ["/product/3", "grocy", "3"],
     ["/lookup/grocy/11", "grocy", "11"],

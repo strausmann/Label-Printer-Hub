@@ -1,8 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { Button, Input, SearchField } from "react-aria-components";
+import { Button } from "react-aria-components";
 import { useSession } from "../app/session";
-import { ScanIcon, SearchIcon, SignOutIcon } from "./icons";
+import { GlobalSearch } from "../features/search";
+import { ScanIcon, SignOutIcon } from "./icons";
 import { ThemeSwitch } from "./ThemeSwitch";
 
 const ICON_BUTTON =
@@ -15,14 +16,7 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-10 flex h-16 items-center gap-2 border-b border-line bg-surface px-4 lg:gap-3 lg:px-8">
-      {/* Global search (printers, jobs, sheet IDs, ASNs, label codes) is wired by the modules that own those. */}
-      <SearchField aria-label={t`Search`} className="group relative min-w-0 flex-1 lg:max-w-md lg:flex-none lg:basis-96">
-        <SearchIcon width={18} height={18} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-3" />
-        <Input
-          placeholder={t`Search`}
-          className="h-11 w-full rounded-r2 border border-line-strong bg-sunken pr-3 pl-10 text-ink placeholder:text-ink-3 data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-link"
-        />
-      </SearchField>
+      <GlobalSearch />
 
       <Link
         to="/scan"
