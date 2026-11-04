@@ -25,16 +25,21 @@ async def list_by_filter(
     printer_id: UUID | None = None,
     since: datetime | None = None,
     limit: int = 50,
+    allowed_printer_ids: list[UUID] | None = None,
 ) -> list[Job]:
     """Return jobs matching the optional filters, ordered by creation time.
 
     All filters are ANDed. ``limit`` caps the result set (default 50).
+    ``allowed_printer_ids`` restricts to those printers (``None`` or empty = no
+    restriction); it is applied in SQL so ``limit`` counts only visible jobs.
     """
     stmt = select(Job)
     if state is not None:
         stmt = stmt.where(col(Job.state) == state)
     if printer_id is not None:
         stmt = stmt.where(col(Job.printer_id) == printer_id)
+    if allowed_printer_ids:
+        stmt = stmt.where(col(Job.printer_id).in_(allowed_printer_ids))
     if since is not None:
         stmt = stmt.where(col(Job.created_at) >= since)
     stmt = stmt.order_by(col(Job.created_at)).limit(limit)

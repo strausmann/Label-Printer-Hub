@@ -27,11 +27,11 @@ def _fake_settings_env() -> None:
 
 def main() -> int:
     _fake_settings_env()
-    from app.main import create_app  # noqa: PLC0415 — after the environment is prepared
+    from app.main import create_app  # after the environment is prepared
 
     # create_app() wraps the FastAPI app; the wrapper keeps it in ``_app``.
     wrapper = create_app()
-    schema = wrapper._app.openapi()  # noqa: SLF001
+    schema = wrapper._app.openapi()
     json.dump(schema, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0

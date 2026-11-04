@@ -37,6 +37,15 @@ async def get_batch(
     Live-Updates.
     """
     batch = await batches_repo.get(session, batch_id)
+    # Per-printer ACL: a batch of a foreign printer is indistinguishable from a
+    # missing one (404).  Empty allowed list = all printers.
+    if (
+        batch is not None
+        and _auth is not None
+        and _auth.allowed_printer_ids
+        and str(batch.printer_id) not in _auth.allowed_printer_ids
+    ):
+        batch = None
     if batch is None:
         raise HTTPException(status_code=404, detail="Batch not found")
 
