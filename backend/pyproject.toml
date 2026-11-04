@@ -38,6 +38,8 @@ dependencies = [
     # Phase 7c — API key authentication
     "bcrypt>=4.0",
     "cachetools>=5.0",
+    # AES-GCM for encrypted settings secrets (Apache-2.0 / BSD)
+    "cryptography>=43",
 ]
 
 [project.optional-dependencies]

@@ -5,8 +5,6 @@ printer_backend, printer_model, printer_discover_via_snmp,
 printer_snmp_community, printer_queue_timeout_s) wurden aus Settings entfernt.
 Diese Datei dokumentiert dass sie NICHT mehr vorhanden sind.
 
-Aktive Tests für den Nachfolger (printers_config) sind in test_config.py.
-
 Hinweis zu extra="forbid" in pydantic-settings:
   extra="forbid" verhindert das direkte Übergeben alter Felder als Kwargs
   (z.B. Settings(pt750w_host="x") → ValidationError). Unbekannte Env-Vars
@@ -51,16 +49,3 @@ def test_removed_fields_not_on_settings_object(monkeypatch: pytest.MonkeyPatch) 
     assert not hasattr(s, "pt750w_host"), "pt750w_host darf nicht auf Settings existieren"
     assert not hasattr(s, "printer_backend"), "printer_backend darf nicht auf Settings existieren"
     assert not hasattr(s, "printer_model"), "printer_model darf nicht auf Settings existieren"
-
-
-def test_printers_config_field_exists() -> None:
-    """CA-1 Nachfolger: printers_config ist jetzt in Settings."""
-    s = Settings(_env_file=None)
-    assert s.printers_config == "/etc/hub/printers.yaml"
-
-
-def test_printers_config_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CA-1: PRINTER_HUB_PRINTERS_CONFIG überschreibt den Default."""
-    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", "/tmp/my-printers.yaml")
-    s = Settings(_env_file=None)
-    assert s.printers_config == "/tmp/my-printers.yaml"

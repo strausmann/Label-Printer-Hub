@@ -19,13 +19,13 @@ services:
     environment:
       - PORT=${BACKEND_PORT:-8000}
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-*}
-      - PRINTER_HUB_PRINTERS_CONFIG=${PRINTER_HUB_PRINTERS_CONFIG:-/etc/hub/printers.yaml}
+      - PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY}
+      - PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL}
       - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
       - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY}
       - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data
-      - ./printers.yaml:/etc/hub/printers.yaml:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:${BACKEND_PORT:-8000}/healthz"]

@@ -25,8 +25,8 @@ _FAKE_AUTH = AuthContext(source="api-key", scope="admin", api_key_id=uuid4(), ip
 @pytest.fixture(autouse=True)
 def fresh_state(monkeypatch: pytest.MonkeyPatch):
     # Phase 1i CA-1: Die alten Env-Vars sind entfernt.
-    # _mock_backend_env (autouse, conftest.py) setzt bereits PRINTER_HUB_PRINTERS_CONFIG
-    # und patcht _build_backend_from_config auf MockPrinterBackend.
+    # _mock_backend_env (autouse, conftest.py) patcht
+    # _build_backend_from_config auf MockPrinterBackend.
     # Hier nur Registry-Reset + cache clear.
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False

@@ -235,7 +235,7 @@ async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
         if not model_fallback:
             raise ValueError(
                 "printer_cfg.model ist leer und SNMP-Discovery ist deaktiviert. "
-                "Setze 'model' in printers.yaml oder aktiviere snmp.discover."
+                "Setze 'model' am Drucker oder aktiviere snmp.discover."
             )
         return model_fallback
 
@@ -297,7 +297,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await asyncio.to_thread(ModelRegistry.ensure_discovered)
 
     # 3. DB-bound init — plugin registry is populated.
-    # Phase 5 (#124): Drucker werden aus der DB geladen (nicht mehr aus printers.yaml).
+    # Phase 5 (#124): Drucker werden aus der DB geladen (keine Konfigurationsdatei).
     # Beim ersten Start (leere printers-Tabelle) ist _printer_configs leer und der
     # Hub startet ohne Drucker-Wiring (Operator legt Drucker via Admin-API an).
     async with async_session() as s:

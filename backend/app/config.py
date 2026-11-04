@@ -5,10 +5,8 @@ All settings are read from environment variables prefixed with ``PRINTER_HUB_``
 loaded automatically when present; values from the environment always take
 precedence over ``.env`` values.
 
-Phase 1i CA-1: Die 9 drucker-spezifischen Einzelfelder (ql820_host, ql820_port,
-pt750w_host, pt750w_port, printer_backend, printer_model,
-printer_discover_via_snmp, printer_snmp_community, printer_queue_timeout_s)
-wurden entfernt. Drucker werden jetzt über printers.yaml konfiguriert.
+Printers are managed in the database (UI/API); there is no printer configuration
+file and no printer-specific setting here.
 
 ``extra="forbid"`` rejects unknown CONSTRUCTOR KWARGS at instantiation time —
 NOT unknown environment variables. pydantic-settings silently ignores unknown
@@ -21,7 +19,7 @@ Usage::
     from app.config import get_settings
 
     settings = get_settings()
-    print(settings.printers_config)
+    print(settings.server_port)
 
 :func:`get_settings` is cached with :func:`functools.lru_cache` so that
 settings are only parsed once per process. Tests that instantiate
@@ -33,10 +31,13 @@ local ``.env`` file, pass ``_env_file=None`` when constructing
 
 from __future__ import annotations
 
+import base64
+import binascii
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -59,9 +60,22 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite+aiosqlite:////data/printer-hub.db"
 
-    # Phase 1i Sub-Task H: Pfad zur printers.yaml (Multi-Printer-Config).
-    # CA-1-Fix: Ersetzt die 9 entfernten drucker-spezifischen Felder.
-    printers_config: str = "/etc/hub/printers.yaml"
+    # D5: key for secrets stored in the database (base64url of exactly 32 bytes).
+    secret_key: SecretStr
+
+    # Public base URL of the hub (used for links and cookie scope).
+    public_url: AnyHttpUrl
+
+    # D7: one-time bootstrap key; empty disables bootstrap, otherwise >= 32 chars.
+    bootstrap_admin_key: SecretStr = SecretStr("")
+
+    # D1: directory with the built web UI served by this process.
+    web_dist_dir: Path = Path("/opt/app/web")
+
+    # Paperless integration (optional)
+    paperless_url: str = ""
+    paperless_token: SecretStr = SecretStr("")
+    paperless_timeout: float = 5.0
 
     # Webhook authentication
     webhook_api_key: SecretStr = SecretStr("")
@@ -133,6 +147,31 @@ class Settings(BaseSettings):
         ),
     )
 
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, v: SecretStr) -> SecretStr:
+        """Require base64url text that decodes to exactly 32 bytes (AES-256)."""
+        text = v.get_secret_value().strip()
+        try:
+            raw = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("PRINTER_HUB_SECRET_KEY must be base64url text") from exc
+        if len(raw) != 32:
+            raise ValueError(
+                "PRINTER_HUB_SECRET_KEY must decode to exactly 32 bytes "
+                "(generate with: python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
+            )
+        return SecretStr(text)
+
+    @field_validator("bootstrap_admin_key")
+    @classmethod
+    def validate_bootstrap_key(cls, v: SecretStr) -> SecretStr:
+        """Empty disables bootstrap; otherwise at least 32 non-whitespace characters."""
+        value = v.get_secret_value().strip()
+        if value and len(value) < 32:
+            raise ValueError("bootstrap_admin_key must be empty or at least 32 characters")
+        return SecretStr(value)
+
     @field_validator("webhook_api_key")
     @classmethod
     def validate_api_key_length(cls, v: SecretStr) -> SecretStr:
@@ -171,4 +210,4 @@ def get_settings() -> Settings:
     Call ``get_settings.cache_clear()`` in tests that need a fresh read after
     mutating environment variables.
     """
-    return Settings()
+    return Settings()  # type: ignore[call-arg]  # required fields come from the environment

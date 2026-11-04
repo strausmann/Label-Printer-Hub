@@ -51,8 +51,7 @@ class CutDefaults(BaseModel):
 class PrinterYAMLConfig(BaseModel):
     """Laufzeit-Drucker-Konfiguration.
 
-    Ursprünglich aus printers.yaml geladen (Phase 1i). Ab Phase 5 (#124)
-    wird diese Klasse aus DB-Printer-Rows gebaut — printers.yaml entfällt.
+    Wird aus DB-Printer-Rows gebaut (ab Phase 5, #124).
     """
 
     model_config = ConfigDict(extra="forbid")

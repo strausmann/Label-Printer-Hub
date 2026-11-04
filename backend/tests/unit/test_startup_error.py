@@ -36,13 +36,14 @@ def _run_import(
     Only the overrides + minimal PATH are passed so test isolation is
     strict and no local .env can interfere.
     """
-    # Phase 1i CA-1: PRINTER_HUB_PRINTERS_CONFIG statt entfernte Printer-Felder.
-    # Ein nicht-existierender Pfad ist OK für den Import-Check — Settings-Validierung
-    # schlägt nicht fehl weil printers_config nur ein String ist (keine Datei-Existenz-Prüfung).
+    # The required settings are passed explicitly so a failure in a test is
+    # caused by the override under test, not by a missing required variable.
     env = {
         "PATH": os.environ.get("PATH", ""),
         "HOME": os.environ.get("HOME", ""),
         "PYTHONPATH": str(BACKEND_DIR),
+        "PRINTER_HUB_SECRET_KEY": "dGVzdC1zZWNyZXQta2V5LTAxMjM0NTY3ODlhYmNkZWY=",
+        "PRINTER_HUB_PUBLIC_URL": "http://localhost:8000",
         **env_overrides,
     }
     return subprocess.run(

@@ -5,12 +5,19 @@ Hardware tests are skipped by default — pass `--hardware` to opt in.
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
+
+# app.main and app.db.engine call get_settings() at import time, so the required
+# settings must exist before any test module is imported (a fixture is too late).
+# Obviously fake values; base64url of the 32 bytes b"test-secret-key-0123456789abcdef".
+os.environ.setdefault("PRINTER_HUB_SECRET_KEY", "dGVzdC1zZWNyZXQta2V5LTAxMjM0NTY3ODlhYmNkZWY=")
+os.environ.setdefault("PRINTER_HUB_PUBLIC_URL", "http://localhost:8000")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
