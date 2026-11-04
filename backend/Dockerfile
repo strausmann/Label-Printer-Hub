@@ -173,6 +173,8 @@ COPY --from=builder --chown=hub:hub /opt/venv /opt/venv
 
 # The built web app; settings.web_dist_dir defaults to this path (D1).
 COPY --from=web --chown=hub:hub /dist /opt/app/web
+# Licence notices for what the image redistributes (fonts and barcode reader texts are in web/licenses).
+COPY --chown=hub:hub THIRD_PARTY_NOTICES.md /opt/app/THIRD_PARTY_NOTICES.md
 
 # Alembic runtime configuration and migration scripts.
 #

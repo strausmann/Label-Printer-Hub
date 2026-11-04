@@ -263,3 +263,11 @@ def test_create_key_instructions_carry_the_required_flags_and_no_log_claim() -> 
             if "printer-hub admin create-key" in line and "docker" in line:
                 assert "--scope" in line and "--name" in line, f"{path.name}: {line.strip()}"
             assert "printed in the container log" not in line, f"{path.name}: false log claim"
+
+
+def test_image_ships_third_party_notices() -> None:
+    dockerfile = (REPO / "backend" / "Dockerfile").read_text()
+    assert "THIRD_PARTY_NOTICES.md" in dockerfile
+    notices = (REPO / "THIRD_PARTY_NOTICES.md").read_text()
+    for needle in ("cryptography", "greenlet", "OFL-1.1", "zxing"):
+        assert needle in notices

@@ -34,6 +34,22 @@ describe.skipIf(!required && !existsSync(dist))("built output", () => {
     expect(fonts.some((f) => /atkinson-hyperlegible-latin/.test(f) && !/mono/.test(f))).toBe(true);
   });
 
+  it("ships the licence notices the bundled fonts and the code reader require", () => {
+    const read = (name: string) => readFileSync(join(dist, "licenses", name), "utf8");
+    for (const [name, holder] of [
+      ["atkinson-hyperlegible-OFL-1.1.txt", "Braille Institute of America"],
+      ["atkinson-hyperlegible-mono-OFL-1.1.txt", "Atkinson Hyperlegible Mono Project Authors"],
+    ] as const) {
+      const text = read(name);
+      expect(text).toContain(holder);
+      expect(text).toContain("SIL OPEN FONT LICENSE Version 1.1");
+    }
+    const zxing = read("zxing-cpp-Apache-2.0.txt");
+    expect(zxing).toContain("Nu-book Inc.");
+    expect(zxing).toContain("Apache License");
+    expect(zxing).toContain("END OF TERMS AND CONDITIONS");
+  });
+
   it("pwa: the generated service worker never caches /api", () => {
     const sw = readFileSync(join(dist, "sw.js"), "utf8");
     // The only route is the navigation fallback, and it skips the API, docs and OpenAPI document.
