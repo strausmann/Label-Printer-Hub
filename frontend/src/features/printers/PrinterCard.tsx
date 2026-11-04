@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { StatusBadge } from "../../shell/StatusBadge";
 import type { Printer, PrinterStatus } from "./api";
+import { PauseReason } from "./PauseReason";
 import { describePrinter, useKindLabel } from "./model";
 import { TapeSwatch } from "./TapeSwatch";
 
@@ -28,6 +29,7 @@ export function PrinterCard({
       </span>
       <StatusBadge state={view.badge} label={kinds[view.kind]} />
       {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
+      {view.kind === "paused" && <PauseReason pause={printer.pause} />}
       <span className="mt-auto text-small">
         <TapeSwatch tapeLoaded={status?.tape_loaded} probed={status?.captured_at != null} />
       </span>

@@ -167,6 +167,10 @@ msgstr "Der Drucker konnte nicht pausiert werden."
 msgid "Could not resume the printer."
 msgstr "Der Drucker konnte nicht fortgesetzt werden."
 
+#: src/features/printers/PauseReason.tsx
+msgid "Cover is open"
+msgstr "Die Abdeckung ist offen"
+
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Create admin key"
 msgstr "Admin-Schlüssel erstellen"
@@ -397,6 +401,10 @@ msgstr "Pausieren"
 msgid "Paused"
 msgstr "Pausiert"
 
+#: src/features/printers/PauseReason.tsx
+msgid "Paused by user"
+msgstr "Von Hand pausiert"
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "Port"
 msgstr "Port"
@@ -418,6 +426,10 @@ msgstr "Jetzt drucken"
 #: src/features/lookup/PrinterPicker.tsx
 msgid "Printer"
 msgstr "Drucker"
+
+#: src/features/printers/PauseReason.tsx
+msgid "Printer is offline"
+msgstr "Der Drucker ist offline"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrintersPage.tsx
@@ -596,6 +608,10 @@ msgstr "Tabs"
 msgid "Tape"
 msgstr "Band"
 
+#: src/features/printers/PauseReason.tsx
+msgid "Tape is empty"
+msgstr "Das Band ist leer"
+
 #: src/features/printers/TapeSwatch.tsx
 msgid "Tape not known yet"
 msgstr "Band noch nicht bekannt"
@@ -727,6 +743,10 @@ msgstr "Was schiefgelaufen ist"
 #: src/features/printers/model.ts
 msgid "White"
 msgstr "Weiß"
+
+#: src/features/printers/PauseReason.tsx
+msgid "Wrong tape loaded"
+msgstr "Falsches Band eingelegt"
 
 #: src/features/printers/model.ts
 msgid "Yellow"

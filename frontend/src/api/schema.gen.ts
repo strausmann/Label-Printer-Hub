@@ -309,7 +309,7 @@ export interface paths {
         put?: never;
         /**
          * Pause job dispatch for a printer
-         * @description Sets ``printer_state.paused = true`` for this printer.  New jobs can still be queued but the worker will not dispatch them until the printer is resumed.  Idempotent — pausing an already-paused printer returns 204 without error.
+         * @description Sets ``printer_state.paused = true`` and pauses the queue worker.  New jobs can still be queued but the worker will not dispatch them until the printer is resumed.  Idempotent — pausing an already-paused printer returns 204 without error.
          */
         post: operations["pause_printer_api_printers__printer_id__pause_post"];
         delete?: never;
@@ -369,7 +369,7 @@ export interface paths {
         put?: never;
         /**
          * Resume job dispatch for a printer
-         * @description Sets ``printer_state.paused = false``.  Idempotent — resuming an already-active printer returns 204 without error.
+         * @description Sets ``printer_state.paused = false`` and releases the queue worker, including an automatic pause after a printer error.  Idempotent — resuming an already-active printer returns 204 without error.
          */
         post: operations["resume_printer_api_printers__printer_id__resume_post"];
         delete?: never;
@@ -1204,6 +1204,21 @@ export interface components {
             url?: string | null;
         };
         /**
+         * PauseRead
+         * @description Why a printer is paused: ``user`` (manual) or ``printer_error`` (automatic).
+         */
+        PauseRead: {
+            /** Reason Code */
+            reason_code: string;
+            /** Since */
+            since: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "user" | "printer_error";
+        };
+        /**
          * PrintJobResponse
          * @description POST /print 202 body — queue accepted.
          */
@@ -1734,6 +1749,7 @@ export interface components {
             model: string;
             /** Name */
             name: string;
+            pause?: components["schemas"]["PauseRead"] | null;
             /** Paused */
             paused: boolean;
             /**

@@ -13,7 +13,7 @@ export interface PrinterView {
 
 /**
  * What the operator can act on wins: a paused printer says Paused even when it is also
- * offline. The API has no reason text for a pause, so none is shown.
+ * offline. The reason for a pause comes from `printer.pause` (see PauseReason).
  */
 export function describePrinter(printer: Printer, status: PrinterStatus | undefined, printing: boolean): PrinterView {
   if (printer.paused) return { kind: "paused", badge: "warn", detail: null };

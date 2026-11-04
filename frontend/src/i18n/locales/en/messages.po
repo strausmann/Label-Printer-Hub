@@ -167,6 +167,10 @@ msgstr "Could not pause the printer."
 msgid "Could not resume the printer."
 msgstr "Could not resume the printer."
 
+#: src/features/printers/PauseReason.tsx
+msgid "Cover is open"
+msgstr "Cover is open"
+
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Create admin key"
 msgstr "Create admin key"
@@ -397,6 +401,10 @@ msgstr "Pause"
 msgid "Paused"
 msgstr "Paused"
 
+#: src/features/printers/PauseReason.tsx
+msgid "Paused by user"
+msgstr "Paused by user"
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "Port"
 msgstr "Port"
@@ -418,6 +426,10 @@ msgstr "Print now"
 #: src/features/lookup/PrinterPicker.tsx
 msgid "Printer"
 msgstr "Printer"
+
+#: src/features/printers/PauseReason.tsx
+msgid "Printer is offline"
+msgstr "Printer is offline"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrintersPage.tsx
@@ -596,6 +608,10 @@ msgstr "Tabs"
 msgid "Tape"
 msgstr "Tape"
 
+#: src/features/printers/PauseReason.tsx
+msgid "Tape is empty"
+msgstr "Tape is empty"
+
 #: src/features/printers/TapeSwatch.tsx
 msgid "Tape not known yet"
 msgstr "Tape not known yet"
@@ -727,6 +743,10 @@ msgstr "What went wrong"
 #: src/features/printers/model.ts
 msgid "White"
 msgstr "White"
+
+#: src/features/printers/PauseReason.tsx
+msgid "Wrong tape loaded"
+msgstr "Wrong tape loaded"
 
 #: src/features/printers/model.ts
 msgid "Yellow"

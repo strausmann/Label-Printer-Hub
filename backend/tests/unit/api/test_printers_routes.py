@@ -705,7 +705,10 @@ async def test_list_printers_returns_printer_with_state(session) -> None:
     await session.commit()
 
     # Simulate the session dependency by passing the session directly.
-    result = await list_printers(session=session, _auth=None)
+    from types import SimpleNamespace
+
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))  # no print_queue
+    result = await list_printers(request=request, session=session, _auth=None)  # type: ignore[arg-type]
 
     assert len(result) == 1
     assert result[0].id == printer.id

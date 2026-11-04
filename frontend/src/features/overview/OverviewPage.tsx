@@ -5,6 +5,7 @@ import { StatusBadge } from "../../shell/StatusBadge";
 import { PANEL, SECTION_HEADING } from "../ui";
 import { usePrinters, usePrinterStatuses, useRecentJobs, type Job, type Printer, type PrinterStatus } from "../printers/api";
 import { describePrinter, isFailed, useJobStateBadge, useKindLabel } from "../printers/model";
+import { PauseReason } from "../printers/PauseReason";
 import { PauseResumeButton } from "../printers/PauseResumeButton";
 import { PrinterGrid } from "../printers/PrinterGrid";
 import { TapeSwatch } from "../printers/TapeSwatch";
@@ -78,6 +79,7 @@ export function OverviewPage() {
                   <span className="font-bold">{printer.name}</span>
                   <StatusBadge state={view.badge} label={kinds[view.kind]} />
                   {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
+                  {view.kind === "paused" && <PauseReason pause={printer.pause} />}
                   {view.kind === "paused" && <PauseResumeButton printer={printer} named />}
                 </li>
               ))}

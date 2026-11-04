@@ -7,6 +7,7 @@ import { useFeature } from "../../app/session";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, type Printer, type QueueJob } from "./api";
+import { PauseReason } from "./PauseReason";
 import { describePrinter, useJobStateBadge, useKindLabel } from "./model";
 import { PauseResumeButton } from "./PauseResumeButton";
 import { TapeSwatch } from "./TapeSwatch";
@@ -49,6 +50,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           <h1 className="text-title font-bold">{printer.name}</h1>
           <StatusBadge state={view.badge} label={kinds[view.kind]} />
           {view.detail && <p className="text-small text-ink-2">{view.detail}</p>}
+          {view.kind === "paused" && <PauseReason pause={printer.pause} />}
         </div>
         <PauseResumeButton printer={printer} />
       </header>

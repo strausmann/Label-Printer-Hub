@@ -48,6 +48,32 @@ describe("Overview", () => {
     expect(within(section).queryByText("Old jam")).toBeNull();
   });
 
+  it("shows why a printer was paused automatically", async () => {
+    const pause = { source: "printer_error", reason_code: "tape_empty", since: "2026-11-04T10:00:00Z" };
+    mockApi({ ...base(), "GET /api/printers": [PRINTER_A, { ...PRINTER_B, pause }] });
+    await renderApp({ path: "/" });
+    const section = await screen.findByRole("region", { name: "Needs attention" });
+    expect(await within(section).findByText("Tape is empty")).toBeVisible();
+    expect(within(section).getByText("Paused")).toBeVisible();
+  });
+
+  it("shows an unknown pause code verbatim", async () => {
+    const pause = { source: "printer_error", reason_code: "flux_capacitor", since: "2026-11-04T10:00:00Z" };
+    mockApi({ ...base(), "GET /api/printers": [PRINTER_A, { ...PRINTER_B, pause }] });
+    await renderApp({ path: "/" });
+    const section = await screen.findByRole("region", { name: "Needs attention" });
+    const code = await within(section).findByText("flux_capacitor");
+    expect(code.tagName).toBe("CODE");
+  });
+
+  it("says a manual pause was made by the user", async () => {
+    const pause = { source: "user", reason_code: "user", since: "2026-11-04T10:00:00Z" };
+    mockApi({ ...base(), "GET /api/printers": [PRINTER_A, { ...PRINTER_B, pause }] });
+    await renderApp({ path: "/" });
+    const section = await screen.findByRole("region", { name: "Needs attention" });
+    expect(await within(section).findByText("Paused by user")).toBeVisible();
+  });
+
   it("paused printer shows Resume", async () => {
     const { calls } = mockApi({ ...base(), [`POST /api/printers/${PRINTER_B.id}/resume`]: null });
     await renderApp({ path: "/" });

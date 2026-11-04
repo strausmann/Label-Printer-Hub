@@ -20,10 +20,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from io import BytesIO
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
 from PIL import Image
@@ -117,6 +119,22 @@ class PrinterWorkerState(StrEnum):
     PAUSED = "paused"
 
 
+PauseSource = Literal["user", "printer_error"]
+
+
+@dataclass(frozen=True)
+class PauseInfo:
+    """Why a printer worker is paused (``user`` = manual, else hardware error)."""
+
+    source: PauseSource
+    reason_code: str
+    since: datetime
+
+
+# Called with (printer_id, info) after a pause and (printer_id, None) after a resume.
+_PauseChangeCallback = Callable[[UUID, "PauseInfo | None"], None]
+
+
 @runtime_checkable
 class _PrinterLike(Protocol):
     """Minimal printer contract this queue depends on.
@@ -164,6 +182,7 @@ class PrintQueue:
         on_state_change: _StateChangeCallback | None = None,
         store: JobStore | None = None,
         engine: LayoutEngine | None = None,
+        on_pause_change: _PauseChangeCallback | None = None,
     ) -> None:
         """Konstruktor.
 
@@ -182,6 +201,8 @@ class PrintQueue:
                 als Singleton.
         """
         self._on_state_change = on_state_change
+        self._on_pause_change = on_pause_change
+        self._pause_info: dict[UUID, PauseInfo] = {}
         self._store: JobStore = store if store is not None else MemoryJobStore()
         self._engine: LayoutEngine = engine if engine is not None else LayoutEngine()
         self._printers: dict[UUID, _PrinterLike] = {p.id: p for p in printers}
@@ -591,13 +612,51 @@ class PrintQueue:
 
     # --- per-printer control -----------------------------------------------
 
-    async def pause_printer(self, printer_id: UUID, reason: str = "") -> None:
-        """Pause the worker for a printer. Any in-flight job completes first."""
+    async def pause_printer(
+        self,
+        printer_id: UUID,
+        reason: str = "",
+        source: PauseSource = "printer_error",
+    ) -> None:
+        """Pause the worker for a printer. Any in-flight job completes first.
+
+        *source* records who paused (``user`` for the API, ``printer_error`` for
+        the automatic pause after a recoverable hardware error); *reason* is the
+        machine-readable code shown in the UI.  A user pause replaces an
+        automatic one; repeating the same source keeps the original timestamp.
+        """
         if printer_id not in self._worker_states:
             raise KeyError(f"Unknown printer: {printer_id}")
         self._worker_states[printer_id] = PrinterWorkerState.PAUSED
         self._worker_resume_events[printer_id].clear()
+        previous = self._pause_info.get(printer_id)
+        if previous is None or previous.source != source:
+            info = PauseInfo(
+                source=source,
+                reason_code="user" if source == "user" else (reason or "unknown"),
+                since=datetime.now(UTC),
+            )
+            self._pause_info[printer_id] = info
+            self._notify_pause_change(printer_id, info)
         logger.info("Printer %s paused: %s", printer_id, reason)
+
+    def pause_info(self, printer_id: UUID) -> PauseInfo | None:
+        """Pause details while the worker is paused, else ``None``."""
+        if self._worker_states.get(printer_id) != PrinterWorkerState.PAUSED:
+            return None
+        return self._pause_info.get(printer_id)
+
+    def is_paused(self, printer_id: UUID) -> bool:
+        """True while the worker for *printer_id* is paused."""
+        return self._worker_states.get(printer_id) == PrinterWorkerState.PAUSED
+
+    def _notify_pause_change(self, printer_id: UUID, info: PauseInfo | None) -> None:
+        if self._on_pause_change is None:
+            return
+        try:
+            self._on_pause_change(printer_id, info)
+        except Exception:
+            logger.exception("on_pause_change callback failed for %s", printer_id)
 
     async def resume_printer(self, printer_id: UUID) -> None:
         """Resume a paused printer worker.
@@ -613,7 +672,9 @@ class PrintQueue:
         if self._worker_states[printer_id] == PrinterWorkerState.ACTIVE:
             raise PrinterAlreadyActiveError(printer_id)
         self._worker_states[printer_id] = PrinterWorkerState.ACTIVE
+        self._pause_info.pop(printer_id, None)
         self._worker_resume_events[printer_id].set()
+        self._notify_pause_change(printer_id, None)
         logger.info("Printer %s resumed", printer_id)
 
     def _queue_depth(self, printer_id: UUID) -> int:

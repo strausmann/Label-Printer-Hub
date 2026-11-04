@@ -9,7 +9,7 @@ afterEach(() => vi.unstubAllGlobals());
 const Q = "bbbbbbbb-0000-4000-8000-000000000001";
 const R = "bbbbbbbb-0000-4000-8000-000000000002";
 
-function routes(printer = PRINTER_A, extra: Record<string, unknown> = {}) {
+function routes(printer: Record<string, unknown> & { id: string } = PRINTER_A, extra: Record<string, unknown> = {}) {
   return {
     [`GET /api/printers/${printer.id}`]: printer,
     [`GET /api/printers/${printer.id}/status`]: status(printer.id),
@@ -55,6 +55,13 @@ describe("PrinterDetail", () => {
     expect(await screen.findByRole("button", { name: "Resume" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
     expect(screen.getAllByText("Paused").length).toBeGreaterThan(0);
+  });
+
+  it("shows the reason next to the Paused badge", async () => {
+    const pause = { source: "printer_error", reason_code: "tape_mismatch", since: "2026-11-04T10:00:00Z" };
+    mockApi(routes({ ...PRINTER_B, pause }));
+    await renderApp({ path: `/printers/${PRINTER_B.id}` });
+    expect(await screen.findByText("Wrong tape loaded")).toBeVisible();
   });
 
   it("shows the connection exactly as stored", async () => {

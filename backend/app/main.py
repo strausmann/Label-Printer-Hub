@@ -115,6 +115,7 @@ from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue
 from app.services.print_service import PrintService
 from app.services.producers.print_queue_producer import PrintQueueProducer
+from app.services.producers.printer_pause_producer import PrinterPauseProducer
 from app.services.producers.status_probe_producer import StatusProbeProducer
 from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.readiness import build_readiness_response
@@ -376,11 +377,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine = shared_engine
 
     pq_producer = PrintQueueProducer(bus=event_bus)
+    pause_producer = PrinterPauseProducer(bus=event_bus)
     queue = PrintQueue(
         printers=queue_printers,
         on_state_change=pq_producer.handle_transition,
         store=job_store,
         engine=shared_engine,
+        on_pause_change=pause_producer.handle_change,
     )
     await queue.start()
 
