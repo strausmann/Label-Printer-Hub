@@ -85,6 +85,7 @@ from app.api.routes import qr as qr_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.admin_printers_api import router as admin_printers_api_router
+from app.api.routes.presets_api import router as presets_api_router
 from app.api.routes.print import render_router
 from app.api.routes.print import router as print_router
 from app.auth.dependencies import AuthContext
@@ -713,6 +714,7 @@ def create_app() -> _LifespanManager:
     app.include_router(qr_routes.router)
     app.include_router(admin_api_keys_router)
     app.include_router(admin_printers_api_router)
+    app.include_router(presets_api_router)
 
     _static_dir = Path(__file__).parent / "static"
     if _static_dir.exists():

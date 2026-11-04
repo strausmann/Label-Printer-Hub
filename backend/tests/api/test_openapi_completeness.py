@@ -140,29 +140,31 @@ def test_json_responses_have_schemas(openapi_schema: dict[str, Any]) -> None:
 
 
 def test_endpoint_count_in_range(openapi_schema: dict[str, Any]) -> None:
-    """Operation count must be between 28 and 45.
+    """Operation count must be between 28 und 55.
 
-    Expected breakdown:
+    Erwartete Aufschlüsselung:
       printers (7) + templates (1) + jobs (6) + lookup (1) + webhooks (2)
-      + qr-landing (4) = 21 new Phase-6a endpoints
-      + existing /print (1) + /jobs/{id} (1) + /printer/resume (1)
-        + /jobs/{id}/resume (1) = 4 legacy print.py endpoints
-      + /healthz (1) = 1 meta endpoint
-      + /api/events (1) = 1 Phase-6b SSE endpoint
+      + qr-landing (4) = 21 neue Phase-6a-Endpunkte
+      + bestehend /print (1) + /jobs/{id} (1) + /printer/resume (1)
+        + /jobs/{id}/resume (1) = 4 Legacy-Endpunkte aus print.py
+      + /healthz (1) = 1 Meta-Endpunkt
+      + /api/events (1) = 1 Phase-6b SSE-Endpunkt
       + /api/templates/{key}/preview-png (1) = Phase-1i A
       + /api/templates/{key}/preview-svg (1) = Phase-1i D
-      Total = 29+
+      + /api/v1/presets (2: GET list + POST create) = Phase-1k.3
+      + /api/v1/presets/{id} (3: GET + PUT + DELETE) = Phase-1k.3
+      + /api/v1/presets/{id}/preview.png (1: GET) = Phase-1k.3
+      Gesamt = 35+
 
-    The range 28-45 is intentionally wide to tolerate minor additions
-    (e.g. a future ``/healthz/db`` probe) without requiring this test to be
-    updated.  It will still catch the case where an entire router is
-    accidentally unregistered (count drops below 28) or a rogue batch of
-    undocumented endpoints lands (count exceeds 45).
+    Die Spanne 28-55 ist bewusst weit, um kleine Erweiterungen (z.B. einen
+    künftigen ``/healthz/db``-Endpunkt) ohne Test-Update zu tolerieren.
+    Sie erkennt aber einen versehentlich entfernten Router (< 28) oder
+    einen unerwarteten Massen-Commit nicht dokumentierter Endpunkte (> 55).
     """
     count = sum(1 for _ in _iter_operations(openapi_schema))
-    assert 28 <= count <= 45, (
-        f"Operation count {count} is outside the expected 28-45 range.  "
-        "If you intentionally added or removed endpoints, update this test."
+    assert 28 <= count <= 55, (
+        f"Endpoint-Anzahl {count} außerhalb des erwarteten Bereichs 28-55.  "
+        "Bei bewussten Additions/Deletionen diesen Test anpassen."
     )
 
 
@@ -202,10 +204,11 @@ def test_path_segments_are_lowercase(openapi_schema: dict[str, Any]) -> None:
     non-standard characters in static segments indicate a naming convention
     violation.
 
-    Allowed pattern: ``[a-z][a-z0-9_-]*`` — starts with a letter, followed
-    by lowercase letters, digits, underscores, or hyphens.
+    Allowed pattern: ``[a-z][a-z0-9_.-]*`` — starts with a letter, followed
+    by lowercase letters, digits, underscores, hyphens, or dots.
+    Dots are permitted for file-extension segments like ``preview.png``.
     """
-    segment_re = re.compile(r"^[a-z][a-z0-9_-]*$")
+    segment_re = re.compile(r"^[a-z][a-z0-9_.\-]*$")
     violations: list[str] = []
     for path in openapi_schema["paths"]:
         for segment in path.split("/"):

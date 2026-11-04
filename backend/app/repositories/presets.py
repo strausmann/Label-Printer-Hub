@@ -6,11 +6,19 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
 from app.models.preset import Preset
+
+
+async def get_by_name(session: AsyncSession, name: str) -> Preset | None:
+    """Case-insensitiver Lookup über den Namen (für Duplikat-Prüfung)."""
+    result = await session.execute(
+        select(Preset).where(func.lower(Preset.name) == name.lower())
+    )
+    return result.scalars().first()
 
 
 async def list_all(session: AsyncSession) -> list[Preset]:
