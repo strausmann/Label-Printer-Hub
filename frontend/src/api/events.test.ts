@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { emitSessionConfirmed, setOnUnauthorized } from "./client";
+import { emitSessionConfirmed, setOnUnauthorized, setSessionUnknown } from "./client";
 import { useHubEvents } from "./events";
 
 class FakeEventSource {
@@ -160,6 +160,26 @@ describe("useHubEvents", () => {
     await act(async () => last().emit("auth.expired", null));
     act(() => void vi.advanceTimersByTime(60_000));
     expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it("neither the error backoff nor the Reconnect button open a stream while the session is unverified", () => {
+    const { result } = setup();
+    act(() => last().open());
+    setSessionUnknown(true);
+    try {
+      act(() => last().fail());
+      act(() => void vi.advanceTimersByTime(60_000));
+      expect(FakeEventSource.instances).toHaveLength(1);
+      act(() => result.current.reconnect());
+      expect(FakeEventSource.instances).toHaveLength(1);
+      expect(result.current.connecting).toBe(false);
+      setSessionUnknown(false);
+      act(() => emitSessionConfirmed());
+      act(() => void vi.advanceTimersByTime(30_000));
+      expect(FakeEventSource.instances).toHaveLength(2);
+    } finally {
+      setSessionUnknown(false);
+    }
   });
 
   it("reconnects after an error and resets the backoff once open", () => {

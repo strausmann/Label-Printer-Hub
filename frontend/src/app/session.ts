@@ -68,11 +68,37 @@ function endSession(queryClient: QueryClient): void {
   queryClient.setQueryData(SESSION_KEY, SIGNED_OUT);
 }
 
+/** Another person (or another role) behind the same cookie must not inherit the cached data. */
+function sameIdentity(a: SessionData | undefined, b: SessionData): boolean {
+  return !!a && a.signed_in && a.user === b.user && a.source === b.source && a.scope === b.scope && a.bootstrap === b.bootstrap;
+}
+
+/**
+ * Every session answer from the server goes through here before it is stored: a signed-out
+ * answer, or a different identity than the one the cache was filled for, drops the previous
+ * user's data and recent lookups first (focus refetch, 401 revalidation and the stream alike).
+ */
+function checkIdentity(queryClient: QueryClient, next: SessionData): void {
+  const previous = queryClient.getQueryData<SessionData>(SESSION_KEY);
+  if (!next.signed_in) {
+    setCsrfToken(null);
+    resetUserData(queryClient);
+    clearRecent();
+  } else if (previous?.signed_in && !sameIdentity(previous, next)) {
+    resetUserData(queryClient);
+    clearRecent();
+  }
+}
+
 export function useSession(): Session {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: SESSION_KEY,
-    queryFn: () => apiFetch<SessionData>("/api/v1/auth/session"),
+    queryFn: async () => {
+      const next = await apiFetch<SessionData>("/api/v1/auth/session");
+      checkIdentity(queryClient, next);
+      return next;
+    },
     staleTime: 30_000,
   });
   const data = query.data;
@@ -130,11 +156,6 @@ let retryDelay = RETRY_START_MS;
 const REFETCH_COOLDOWN_MS = 10_000;
 let lastRefetchAt = 0;
 
-/** Another person (or another role) behind the same cookie must not inherit the cached data. */
-function sameIdentity(a: SessionData | undefined, b: SessionData): boolean {
-  return !!a && a.signed_in && a.user === b.user && a.source === b.source && a.scope === b.scope && a.bootstrap === b.bootstrap;
-}
-
 function stopRetrying(): void {
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = null;
@@ -161,10 +182,7 @@ function settle(queryClient: QueryClient, verdict: SessionVerdict, next?: Sessio
     endSession(queryClient);
     return;
   }
-  if (!sameIdentity(queryClient.getQueryData<SessionData>(SESSION_KEY), next)) {
-    resetUserData(queryClient);
-    clearRecent();
-  }
+  checkIdentity(queryClient, next);
   queryClient.setQueryData(SESSION_KEY, next);
   if (Date.now() - lastRefetchAt >= REFETCH_COOLDOWN_MS) {
     lastRefetchAt = Date.now();

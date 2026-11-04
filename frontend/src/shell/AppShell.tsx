@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { useHubEvents } from "../api/events";
 import { LiveStatus } from "./LiveStatus";
+import { SessionStatus } from "./SessionStatus";
 import { Sidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
 import { TopBar } from "./TopBar";
@@ -28,6 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <TopBar />
         <main id="content" tabIndex={-1} className="flex-1 p-4 pb-32 outline-none lg:p-8 lg:pb-8">
           <UpdatePrompt />
+          <SessionStatus />
           <LiveStatus connected={connected} connecting={connecting} onReconnect={reconnect} />
           {children}
         </main>

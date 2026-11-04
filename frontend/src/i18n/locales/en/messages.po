@@ -179,6 +179,10 @@ msgstr "Cart"
 msgid "Cart ({inCart})"
 msgstr "Cart ({inCart})"
 
+#: src/shell/SessionStatus.tsx
+msgid "Checking your session…"
+msgstr "Checking your session…"
+
 #: src/features/settings/System.tsx
 msgid "Checking…"
 msgstr "Checking…"

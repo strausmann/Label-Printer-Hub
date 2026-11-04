@@ -37,6 +37,57 @@ describe("session", () => {
     expect(queryClient.getQueryData(SESSION_KEY)).toMatchObject({ signed_in: false });
   });
 
+  describe("every session answer is checked for identity", () => {
+    const seed = (queryClient: { setQueryData: (k: readonly unknown[], v: unknown) => void }) => {
+      localStorage.setItem("lph.recent.snipeit", JSON.stringify([{ id: "1", name: "A", kind: "asset", at: 1 }]));
+      queryClient.setQueryData(["jobs"], [{ id: "a-job" }]);
+    };
+
+    it("a focus refetch that returns another user clears the previous user's data first", async () => {
+      const { queryClient } = await renderApp({ path: "/jobs", session: { ...SIGNED_IN, user: "user-a" } });
+      seed(queryClient);
+      stubFetch((url) => (url === "/api/v1/auth/session" ? json({ ...SIGNED_IN, user: "user-b" }) : json([])));
+      await act(async () => {
+        await queryClient.refetchQueries({ queryKey: SESSION_KEY });
+      });
+      expect(queryClient.getQueryData(SESSION_KEY)).toMatchObject({ user: "user-b" });
+      expect(queryClient.getQueryData(["jobs"])).toBeUndefined();
+      expect(localStorage.getItem("lph.recent.snipeit")).toBeNull();
+    });
+
+    it("a focus refetch that returns signed_out clears data and recent lookups, then shows sign-in", async () => {
+      const { queryClient, router } = await renderApp({ path: "/jobs" });
+      seed(queryClient);
+      stubFetch((url) => (url === "/api/v1/auth/session" ? json(SIGNED_OUT) : json([])));
+      await act(async () => {
+        await queryClient.refetchQueries({ queryKey: SESSION_KEY });
+      });
+      await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
+      expect(queryClient.getQueryData(["jobs"])).toBeUndefined();
+      expect(localStorage.getItem("lph.recent.snipeit")).toBeNull();
+    });
+
+    it("the same user keeps data and recent lookups across a refetch", async () => {
+      const { queryClient } = await renderApp({ path: "/jobs" });
+      seed(queryClient);
+      stubFetch((url) => (url === "/api/v1/auth/session" ? json({ ...SIGNED_IN, csrf_token: "next" }) : json([])));
+      await act(async () => {
+        await queryClient.refetchQueries({ queryKey: SESSION_KEY });
+      });
+      expect(queryClient.getQueryData(["jobs"])).toBeDefined();
+      expect(localStorage.getItem("lph.recent.snipeit")).not.toBeNull();
+    });
+  });
+
+  it("shows a small status note while the session is unverified", async () => {
+    await renderApp({ path: "/jobs" });
+    expect(screen.queryByText("Checking your session…")).not.toBeInTheDocument();
+    act(() => setSessionUnknown(true));
+    expect(await screen.findByText("Checking your session…")).toBeInTheDocument();
+    act(() => setSessionUnknown(false));
+    await waitFor(() => expect(screen.queryByText("Checking your session…")).not.toBeInTheDocument());
+  });
+
   describe("a 401 asks the server before it ends the session", () => {
     const fresh = { ...SIGNED_IN, csrf_token: "fresh-csrf-token" };
 

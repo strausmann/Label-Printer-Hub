@@ -179,6 +179,10 @@ msgstr "Warenkorb"
 msgid "Cart ({inCart})"
 msgstr "Warenkorb ({inCart})"
 
+#: src/shell/SessionStatus.tsx
+msgid "Checking your session…"
+msgstr "Sitzung wird geprüft…"
+
 #: src/features/settings/System.tsx
 msgid "Checking…"
 msgstr "Wird geprüft…"

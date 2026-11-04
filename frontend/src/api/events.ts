@@ -1,6 +1,6 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { notifyUnauthorized, onSessionConfirmed } from "./client";
+import { isSessionUnknown, notifyUnauthorized, onSessionConfirmed } from "./client";
 
 const EVENTS_URL = "/api/v1/events";
 const BACKOFF_START_MS = 1_000;
@@ -81,8 +81,31 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
       }
     };
 
+    // While the session is unverified no stream is opened: wait for a definitive answer.
+    const waitForConfirmation = () => {
+      stopWaiting?.();
+      stopWaiting = onSessionConfirmed(() => {
+        stopWaiting?.();
+        stopWaiting = null;
+        resume();
+      });
+    };
+
+    const resume = () => {
+      if (disposed) return;
+      stopped = false;
+      timer = setTimeout(open, delay);
+      delay = Math.min(delay * 2, BACKOFF_MAX_MS);
+    };
+
     const open = () => {
       close();
+      if (isSessionUnknown()) {
+        setConnected(false);
+        setConnecting(false);
+        waitForConfirmation();
+        return;
+      }
       const es = new EventSource(EVENTS_URL, { withCredentials: true });
       source = es;
       es.onopen = () => {
@@ -108,22 +131,11 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
             if (timer) clearTimeout(timer);
             timer = null;
             stopped = true;
-            const resume = () => {
-              if (disposed) return;
-              stopped = false;
-              timer = setTimeout(open, delay);
-              delay = Math.min(delay * 2, BACKOFF_MAX_MS);
-            };
             void notifyUnauthorized().then((verdict) => {
               if (disposed || verdict === "signed_out") return;
               if (verdict === "valid") return resume();
               // No definitive answer: stay down until a later check confirms the session.
-              stopWaiting?.();
-              stopWaiting = onSessionConfirmed(() => {
-                stopWaiting?.();
-                stopWaiting = null;
-                resume();
-              });
+              waitForConfirmation();
             });
             return;
           }
@@ -141,8 +153,8 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
       delay = BACKOFF_START_MS;
       setConnecting(true);
       open();
-      // The stream may stay down; the visible data still refreshes.
-      void queryClient.invalidateQueries();
+      // The stream may stay down; the visible data still refreshes (not while the session is unverified).
+      if (!isSessionUnknown()) void queryClient.invalidateQueries();
     };
 
     open();
