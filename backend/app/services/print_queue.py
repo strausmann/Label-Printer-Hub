@@ -29,8 +29,12 @@ from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
 from PIL import Image
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 
 from app.models.job import JobState as DbJobState
+from app.models.printer_state import PrinterState
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterError,
@@ -617,6 +621,7 @@ class PrintQueue:
         printer_id: UUID,
         reason: str = "",
         source: PauseSource = "printer_error",
+        since: datetime | None = None,
     ) -> None:
         """Pause the worker for a printer. Any in-flight job completes first.
 
@@ -634,7 +639,7 @@ class PrintQueue:
             info = PauseInfo(
                 source=source,
                 reason_code="user" if source == "user" else (reason or "unknown"),
-                since=datetime.now(UTC),
+                since=since or datetime.now(UTC),
             )
             self._pause_info[printer_id] = info
             self._notify_pause_change(printer_id, info)
@@ -1056,3 +1061,25 @@ class PrintQueue:
                 printer_id,
                 len(active_jobs),
             )
+
+
+async def restore_manual_pauses(queue: PrintQueue, session: AsyncSession) -> int:
+    """Re-pause workers whose ``printer_state.paused`` flag survived a restart.
+
+    A fresh queue starts every worker ACTIVE; without this a printer the user
+    stopped would print again after a restart while the UI still says Paused.
+    Returns the number of printers paused.
+    """
+    result = await session.execute(select(PrinterState).where(col(PrinterState.paused).is_(True)))
+    rows = result.scalars().all()
+    restored = 0
+    for row in rows:
+        since = row.updated_at
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=UTC)
+        try:
+            await queue.pause_printer(row.printer_id, reason="user", source="user", since=since)
+        except KeyError:
+            continue  # state row of a printer this queue does not run
+        restored += 1
+    return restored

@@ -11,9 +11,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
+from app.db.session import get_session
 from app.printer_backends.exceptions import (
     ContentTypeDataMismatchError,
     NoTapeLoadedError,
@@ -26,6 +28,7 @@ from app.printer_backends.exceptions import (
     UnsupportedTapeError,
 )
 from app.printer_backends.snmp_helper import LiveStatus, query_live_status
+from app.repositories import printer_state as printer_state_repo
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.print_request import PrintRequest, RawLabelData
@@ -190,6 +193,7 @@ async def get_job_status(
 )
 async def resume_printer(
     http: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
     _auth: Annotated[AuthContext, Depends(require_print)],
 ) -> _PrinterResumeResponse | JSONResponse:
     """Resume the printer queue after a recoverable error halted it.
@@ -207,6 +211,8 @@ async def resume_printer(
     printer_id = getattr(http.app.state, "printer_id", None)
     if printer_id is None:
         raise HTTPException(status_code=404, detail="no printer configured")
+    # Same effect as POST /api/printers/{id}/resume: clear the persisted flag too.
+    await printer_state_repo.set_paused(session, printer_id, False)
     try:
         await queue.resume_printer(printer_id)
     except KeyError as exc:

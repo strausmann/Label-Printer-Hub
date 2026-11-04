@@ -17,6 +17,7 @@ import pytest
 from app.api.routes.print import router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
+from app.db.session import get_session
 from app.printer_backends.exceptions import PrinterOfflineError, SnmpQueryError
 from app.printer_backends.snmp_helper import LiveStatus
 from app.services.job_lifecycle import Job, JobState
@@ -45,6 +46,14 @@ def _app(service, queue):
     app.state.print_service = service
     app.state.print_queue = queue
     app.include_router(router)
+
+    async def _fake_session():  # legacy resume also clears the DB pause flag
+        s = MagicMock()
+        s.get = AsyncMock()
+        s.commit = AsyncMock()
+        yield s
+
+    app.dependency_overrides[get_session] = _fake_session
     _fake_ctx = AuthContext(source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1")
     for _dep in (require_read, require_print):
         app.dependency_overrides[_dep] = lambda _c=_fake_ctx: _c

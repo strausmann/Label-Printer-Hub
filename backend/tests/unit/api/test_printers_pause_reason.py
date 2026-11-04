@@ -6,6 +6,7 @@ API resume must release an auto-paused worker, otherwise the two notions drift.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID
@@ -207,3 +208,74 @@ async def test_without_queue_falls_back_to_db_flag(session) -> None:
     row = client.get(f"/api/printers/{printer.id}").json()
     assert row["paused"] is True
     assert row["pause"] is None
+
+
+def _legacy_app(session: AsyncSession, queue: PrintQueue, printer_id: UUID) -> FastAPI:
+    from app.api.routes.print import router as legacy_router
+
+    app = _app(session, queue)
+    app.include_router(legacy_router)
+    app.state.printer_id = printer_id
+    return app
+
+
+@pytest.mark.asyncio
+async def test_legacy_resume_clears_db_flag_and_worker_dispatches(session) -> None:
+    printer, backend, queue, _sub = await _setup(session, TapeEmptyError())
+    backend.fail = False
+    try:
+        client = TestClient(_legacy_app(session, queue, printer.id))
+        assert client.post(f"/api/printers/{printer.id}/pause").status_code == 204
+        assert client.post("/printer/resume").status_code == 200
+
+        row = client.get(f"/api/printers/{printer.id}").json()
+        assert row["paused"] is False
+        assert row["pause"] is None
+        job_id = await queue.submit(printer.id, Image.new("1", (200, 128)), tape_mm=12)
+        job = await queue.wait_for_job(job_id, timeout_s=2.0)
+        assert job.state.value == "completed"
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+@pytest.mark.asyncio
+async def test_restart_restores_manual_pause(session) -> None:
+    """Pause via API, then rebuild the queue from the DB as the lifespan does."""
+    from app.services.print_queue import restore_manual_pauses
+
+    printer, backend, queue, _sub = await _setup(session, TapeEmptyError())
+    backend.fail = False
+    client = TestClient(_app(session, queue))
+    assert client.post(f"/api/printers/{printer.id}/pause").status_code == 204
+    await queue.stop(timeout_s=2.0)
+
+    queue2 = PrintQueue([backend])  # fresh process: every worker ACTIVE
+    await queue2.start()
+    try:
+        assert await restore_manual_pauses(queue2, session) == 1
+        job_id = await queue2.submit(printer.id, Image.new("1", (200, 128)), tape_mm=12)
+        await asyncio.sleep(0.3)
+        assert backend.printed == 0  # queued job is not dispatched
+        assert (await queue2.get(job_id)).state.value == "queued"
+
+        row = TestClient(_app(session, queue2)).get(f"/api/printers/{printer.id}").json()
+        assert row["paused"] is True
+        assert row["pause"]["source"] == "user"
+        assert row["pause"]["reason_code"] == "user"
+    finally:
+        await queue2.stop(timeout_s=2.0)
+
+
+@pytest.mark.asyncio
+async def test_restore_skips_unpaused_and_unknown_printers(session) -> None:
+    from app.services.print_queue import restore_manual_pauses
+
+    printer = await _printer(session)  # state paused=False
+    other = Printer(name="o", slug="other", model="m", backend="b", connection={})
+    session.add(other)
+    await session.commit()
+    session.add(PrinterState(printer_id=other.id, paused=True))  # not known to the queue
+    await session.commit()
+    queue = PrintQueue([_Backend(printer.id, TapeEmptyError())])
+    assert await restore_manual_pauses(queue, session) == 0
+    assert queue.is_paused(printer.id) is False

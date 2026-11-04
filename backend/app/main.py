@@ -112,7 +112,7 @@ from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
-from app.services.print_queue import PrintQueue
+from app.services.print_queue import PrintQueue, restore_manual_pauses
 from app.services.print_service import PrintService
 from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.printer_pause_producer import PrinterPauseProducer
@@ -386,6 +386,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         on_pause_change=pause_producer.handle_change,
     )
     await queue.start()
+    async with async_session() as _pause_session:
+        _restored = await restore_manual_pauses(queue, _pause_session)
+    if _restored:
+        _log.info("Restored %d manual printer pause(s) from the database", _restored)
 
     # StatusProbeProducer pro Drucker — R4-MA1-Fix Degraded-Start:
     # Probe-Fehler werden geloggt, Hub startet trotzdem.
