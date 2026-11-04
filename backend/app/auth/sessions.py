@@ -244,6 +244,17 @@ async def load_valid(db: AsyncSession, token: str, settings: Settings) -> ValidS
     )
 
 
+async def usable_key_printer_ids(db: AsyncSession, key_id: UUID) -> list[str] | None:
+    """The key's current ``allowed_printer_ids`` while it is enabled and unexpired, else ``None``.
+
+    Lets long-lived connections (the event stream) re-check an API key without a full sign-in.
+    """
+    key = await db.get(ApiKey, key_id)
+    if key is None or not _key_is_usable(key, _now()):
+        return None
+    return list(key.allowed_printer_ids or [])
+
+
 async def revoke(db: AsyncSession, session_id: UUID) -> None:
     await db.execute(
         update(UiSession)

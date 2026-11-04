@@ -129,3 +129,34 @@ curl -sI "https://<host>/api/events?printer_id=<printer-id>" | grep -i buffering
 
 If the header is missing, check that the backend container is reachable and
 that the proxy is forwarding headers from the upstream response.
+
+---
+
+## Web UI stream: `GET /api/v1/events`
+
+The web UI opens **one** `EventSource` on `/api/v1/events` (optional
+`?printer_id=<uuid>`). It authenticates like every `read` route, so the session
+cookie of a signed-in browser is enough. The proxy settings above apply unchanged.
+
+| Frame | Meaning |
+|-------|---------|
+| `: connected` | subscriptions are in place |
+| `id: 0` + snapshot events | current state per visible printer (`printer.status`, `printer.tape_changed`, active `job.state_changed`) |
+| `id: N` / `event: <type>` / `data: <json>` | live event; `N` counts per channel |
+| `: keepalive` | every `PRINTER_HUB_SSE_HEARTBEAT_S` seconds |
+| `event: auth.expired` | the session or key is no longer valid (or its printer restriction changed); the stream closes |
+
+`data` is always `{"channel": str, "printer_id": str | null, "type": str, "ts": ISO-8601, "data": {...}}`.
+
+The stream subscribes to the `hub` channel and to `printer:{id}:{queue,state,tape}` of every
+enabled printer the credentials may see. Printers outside `allowed_printer_ids` are never
+subscribed. Without a `printer_id` filter, printers that are created or enabled later are
+picked up on the fly.
+
+`hub.printers_changed` (channel `hub`) is published by the admin printer API with
+`{"printer_id": str, "change": "created" | "updated" | "disabled" | "enabled"}`.
+
+On every heartbeat the stream re-checks its credentials in a short database session (it holds
+none for its lifetime). The cap `PRINTER_HUB_SSE_MAX_SUBSCRIBERS` applies to the number of open
+event streams; one more gets `429`. Replay via `Last-Event-ID` is not implemented: after a
+reconnect the client gets a fresh snapshot.

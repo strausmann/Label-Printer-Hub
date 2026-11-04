@@ -1,0 +1,497 @@
+"""Global JSON event stream GET /api/v1/events (web UI foundation, Task 6).
+
+All keys and tokens are obviously fake test values. The stream never ends on its
+own, so these tests drive the ASGI app directly and read the body chunk by chunk.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+from datetime import UTC, datetime
+from typing import Any
+from uuid import UUID
+
+import app.models  # noqa: F401
+import pytest
+import pytest_asyncio
+from app.models.ui_session import UiSession
+from app.services.event_bus import BusEvent, EventBus
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import update
+
+from tests.integration.api.test_auth_session import (
+    _factory,
+    _insert_key,
+    _insert_printer,
+    _set_env,
+    _sign_in,
+)
+
+STREAM_PATH = "/api/v1/events"
+FRAME_TIMEOUT_S = 3.0
+
+
+@pytest_asyncio.fixture
+async def hub_app():
+    """The full app (lifespan runs on the first request) plus an HTTP client."""
+    import app.db.engine as _engine_module
+    import app.db.session as _session_module
+    from app.integrations import (  # type: ignore[attr-defined]
+        IntegrationRegistry,
+        _discover_plugins,
+    )
+    from app.main import create_app
+
+    _session_module.async_session = _engine_module.async_session
+    if not IntegrationRegistry.names():
+        _discover_plugins()
+    app = create_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+        assert (await client.get("/healthz")).status_code == 200  # starts the lifespan
+        yield app, client
+
+
+def _bus(app) -> EventBus:
+    bus = app._app.state.event_bus
+    assert isinstance(bus, EventBus)
+    return bus
+
+
+class Stream:
+    """One open GET against the ASGI app, read chunk by chunk."""
+
+    def __init__(self, app, path: str, headers: dict[str, str]) -> None:
+        self.status: int | None = None
+        self.headers: dict[str, str] = {}
+        self._chunks: asyncio.Queue[bytes | None] = asyncio.Queue()
+        self._buffer = ""
+        self._disconnect = asyncio.Event()
+        self._started = asyncio.Event()
+        path_only, _, query = path.partition("?")
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0", "spec_version": "2.3"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": path_only,
+            "raw_path": path_only.encode(),
+            "query_string": query.encode(),
+            "root_path": "",
+            "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+            "client": ("192.0.2.1", 50000),
+            "server": ("t", 80),
+        }
+        sent_request = False
+
+        async def receive() -> dict[str, Any]:
+            nonlocal sent_request
+            if not sent_request:
+                sent_request = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+            await self._disconnect.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.start":
+                self.status = message["status"]
+                self.headers = {k.decode().lower(): v.decode() for k, v in message["headers"]}
+                self._started.set()
+            elif message["type"] == "http.response.body":
+                body = message.get("body", b"")
+                if body:
+                    await self._chunks.put(body)
+                if not message.get("more_body", False):
+                    await self._chunks.put(None)
+
+        self._task = asyncio.create_task(app(scope, receive, send))
+
+    async def wait_started(self) -> int:
+        await asyncio.wait_for(self._started.wait(), FRAME_TIMEOUT_S)
+        assert self.status is not None
+        return self.status
+
+    async def frame(self, timeout: float = FRAME_TIMEOUT_S) -> str | None:
+        """Next complete frame (text before a blank line), ``None`` when the stream ended."""
+        while "\n\n" not in self._buffer:
+            chunk = await asyncio.wait_for(self._chunks.get(), timeout)
+            if chunk is None:
+                return None
+            self._buffer += chunk.decode()
+        frame, _, self._buffer = self._buffer.partition("\n\n")
+        return frame
+
+    async def body(self) -> str:
+        """Everything up to the end of a finite response."""
+        text = self._buffer
+        while (chunk := await asyncio.wait_for(self._chunks.get(), FRAME_TIMEOUT_S)) is not None:
+            text += chunk.decode()
+        return text
+
+    async def event(self, timeout: float = FRAME_TIMEOUT_S) -> dict[str, Any] | None:
+        """Next data frame as ``{"event", "id", "payload"}``; comment frames are skipped."""
+        while True:
+            frame = await self.frame(timeout)
+            if frame is None:
+                return None
+            if frame.startswith(":"):
+                continue
+            fields = dict(line.split(": ", 1) for line in frame.split("\n"))
+            return {
+                "event": fields["event"],
+                "id": fields["id"],
+                "payload": json.loads(fields["data"]),
+            }
+
+    async def event_of_type(self, event_type: str) -> dict[str, Any]:
+        while True:
+            ev = await self.event()
+            assert ev is not None, f"stream ended before {event_type}"
+            if ev["event"] == event_type:
+                return ev
+
+    async def close(self) -> None:
+        self._disconnect.set()
+        self._task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await self._task
+
+
+async def _open(app, headers: dict[str, str], query: str = "") -> Stream:
+    return Stream(app, STREAM_PATH + (f"?{query}" if query else ""), headers)
+
+
+def _job_event(bus: EventBus, printer_id: UUID, to_state: str = "printing") -> None:
+    channel = f"printer:{printer_id}:queue"
+    bus.publish(
+        channel,
+        BusEvent(
+            channel=channel,
+            event_id=bus.next_event_id(channel),
+            event_type="job.state_changed",
+            timestamp=datetime.now(UTC),
+            data={
+                "job_id": "job-1",
+                "from_state": "queued",
+                "to_state": to_state,
+                "queue_depth": 0,
+                "error_code": None,
+            },
+        ),
+    )
+
+
+async def _connected(stream: Stream) -> None:
+    assert await stream.wait_started() == 200
+    assert await stream.frame() == ": connected"
+
+
+def _key_header(key: str) -> dict[str, str]:
+    return {"X-Label-Hub-Key": key}
+
+
+def _printer_body(slug: str) -> dict[str, Any]:
+    return {
+        "name": f"Printer {slug}",
+        "slug": slug,
+        "model": "PT-P750W",
+        "backend": "ptouch",
+        "connection": {"host": "192.0.2.40", "port": 9100},
+    }
+
+
+@pytest.mark.asyncio
+async def test_stream_requires_auth(hub_app):
+    _, client = hub_app
+    resp = await client.get(STREAM_PATH)
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_stream_json_frames(hub_app):
+    app, _ = hub_app
+    key, _ = await _insert_key(["read"])
+    printer_id = await _insert_printer("alpha")
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        assert stream.headers["content-type"].startswith("text/event-stream")
+        _job_event(_bus(app), printer_id)
+        ev = await stream.event_of_type("job.state_changed")
+        payload = ev["payload"]
+        assert payload["type"] == "job.state_changed"
+        assert payload["channel"] == f"printer:{printer_id}:queue"
+        assert payload["printer_id"] == str(printer_id)
+        assert payload["data"]["to_state"] == "printing"
+        assert datetime.fromisoformat(payload["ts"]).tzinfo is not None
+        assert set(payload) == {"channel", "printer_id", "type", "ts", "data"}
+        assert int(ev["id"]) >= 1
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_stream_without_printer_filter_gets_all_printers(hub_app):
+    app, _ = hub_app
+    key, _ = await _insert_key(["read"])
+    first = await _insert_printer("alpha")
+    second = await _insert_printer("beta")
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        _job_event(_bus(app), first)
+        _job_event(_bus(app), second)
+        seen = {
+            (await stream.event_of_type("job.state_changed"))["payload"]["printer_id"]
+            for _ in range(2)
+        }
+        assert seen == {str(first), str(second)}
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_printer_filter_limits_the_stream(hub_app):
+    app, _ = hub_app
+    key, _ = await _insert_key(["read"])
+    first = await _insert_printer("alpha")
+    second = await _insert_printer("beta")
+    stream = await _open(app, _key_header(key), f"printer_id={first}")
+    try:
+        await _connected(stream)
+        _job_event(_bus(app), second)
+        _job_event(_bus(app), first)
+        ev = await stream.event_of_type("job.state_changed")
+        assert ev["payload"]["printer_id"] == str(first)
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_unknown_printer_filter_is_404(hub_app):
+    app, _ = hub_app
+    key, _ = await _insert_key(["read"])
+    stream = await _open(app, _key_header(key), "printer_id=00000000-0000-0000-0000-000000000000")
+    try:
+        assert await stream.wait_started() == 404
+        body = json.loads(await stream.body())
+        assert body["detail"]["error_code"] == "printer_not_found"
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_snapshot_is_emitted_per_printer(hub_app):
+    app, _ = hub_app
+    key, _ = await _insert_key(["read"])
+    printer_id = await _insert_printer("alpha")
+    from app.repositories import printer_status_cache as status_cache_repo
+
+    async with _factory()() as db:
+        await status_cache_repo.upsert(
+            db,
+            printer_id,
+            raw_block=b"\x00",
+            parsed={"hr_printer_status": "idle", "online": True, "loaded_tape_mm": 12},
+            captured_at=datetime.now(UTC),
+        )
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        status_ev = await stream.event_of_type("printer.status")
+        tape_ev = await stream.event_of_type("printer.tape_changed")
+        assert status_ev["id"] == "0"
+        assert status_ev["payload"]["printer_id"] == str(printer_id)
+        assert status_ev["payload"]["data"]["online"] is True
+        assert tape_ev["payload"]["data"]["to_mm"] == 12
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_printer_created_emits_hub_event(hub_app):
+    app, client = hub_app
+    key, _ = await _insert_key(["admin"])
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        resp = await client.post(
+            "/api/v1/admin/printers", json=_printer_body("gamma"), headers=_key_header(key)
+        )
+        assert resp.status_code == 201, resp.text
+        ev = await stream.event_of_type("hub.printers_changed")
+        assert ev["payload"]["channel"] == "hub"
+        assert ev["payload"]["printer_id"] is None
+        assert ev["payload"]["data"] == {"printer_id": resp.json()["id"], "change": "created"}
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_printer_update_disable_enable_emit_hub_events(hub_app):
+    app, client = hub_app
+    key, _ = await _insert_key(["admin"])
+    headers = _key_header(key)
+    created = await client.post(
+        "/api/v1/admin/printers", json=_printer_body("delta"), headers=headers
+    )
+    assert created.status_code == 201, created.text
+    stream = await _open(app, headers)
+    try:
+        await _connected(stream)
+        assert (
+            await client.put(
+                "/api/v1/admin/printers/delta", json={"name": "Renamed"}, headers=headers
+            )
+        ).status_code == 200
+        assert (
+            await client.post("/api/v1/admin/printers/delta/disable", headers=headers)
+        ).status_code == 200
+        assert (
+            await client.post("/api/v1/admin/printers/delta/enable", headers=headers)
+        ).status_code == 200
+        changes = [
+            (await stream.event_of_type("hub.printers_changed"))["payload"]["data"]["change"]
+            for _ in range(3)
+        ]
+        assert changes == ["updated", "disabled", "enabled"]
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_new_printer_events_reach_an_open_stream(hub_app):
+    app, client = hub_app
+    key, _ = await _insert_key(["admin"])
+    headers = _key_header(key)
+    stream = await _open(app, headers)
+    try:
+        await _connected(stream)
+        resp = await client.post(
+            "/api/v1/admin/printers", json=_printer_body("eps"), headers=headers
+        )
+        assert resp.status_code == 201, resp.text
+        await stream.event_of_type("hub.printers_changed")
+        _job_event(_bus(app), UUID(resp.json()["id"]))
+        ev = await stream.event_of_type("job.state_changed")
+        assert ev["payload"]["printer_id"] == resp.json()["id"]
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_revoked_session_gets_auth_expired(hub_app, monkeypatch):
+    app, client = hub_app
+    _set_env(monkeypatch, sse_heartbeat_s="0.05")
+    key, _ = await _insert_key(["print"])
+    assert (await _sign_in(client, key)).status_code == 204
+    cookie = f"lph_session={client.cookies.get('lph_session')}"
+    stream = await _open(app, {"Cookie": cookie})
+    try:
+        await _connected(stream)
+        async with _factory()() as db:
+            await db.execute(update(UiSession).values(revoked_at=datetime.now(UTC)))
+            await db.commit()
+        ev = await stream.event_of_type("auth.expired")
+        assert ev["payload"]["type"] == "auth.expired"
+        assert await stream.frame() is None  # the stream is closed
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_disabled_key_gets_auth_expired(hub_app, monkeypatch):
+    app, _ = hub_app
+    _set_env(monkeypatch, sse_heartbeat_s="0.05")
+    key, key_id = await _insert_key(["read"])
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        from app.models.api_key import ApiKey
+
+        async with _factory()() as db:
+            await db.execute(update(ApiKey).where(ApiKey.id == key_id).values(enabled=False))  # type: ignore[arg-type]
+            await db.commit()
+        await stream.event_of_type("auth.expired")
+        assert await stream.frame() is None
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_valid_session_gets_keepalive_not_auth_expired(hub_app, monkeypatch):
+    app, _ = hub_app
+    _set_env(monkeypatch, sse_heartbeat_s="0.05")
+    key, _ = await _insert_key(["read"])
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        assert await stream.frame() == ": keepalive"
+        assert await stream.frame() == ": keepalive"
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_restricted_key_stream_excludes_other_printers(hub_app):
+    app, _ = hub_app
+    allowed = await _insert_printer("alpha")
+    other = await _insert_printer("beta")
+    key, _ = await _insert_key(["read"], allowed_printer_ids=[str(allowed)])
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        _job_event(_bus(app), other)
+        _job_event(_bus(app), allowed)
+        ev = await stream.event_of_type("job.state_changed")
+        assert ev["payload"]["printer_id"] == str(allowed)
+        # nothing of the other printer is subscribed at all
+        assert _bus(app).subscriber_count(f"printer:{other}:queue") == 0
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_restricted_key_cannot_ask_for_other_printer(hub_app):
+    app, _ = hub_app
+    allowed = await _insert_printer("alpha")
+    other = await _insert_printer("beta")
+    key, _ = await _insert_key(["read"], allowed_printer_ids=[str(allowed)])
+    stream = await _open(app, _key_header(key), f"printer_id={other}")
+    try:
+        assert await stream.wait_started() == 403
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_subscriber_cap_429(hub_app, monkeypatch):
+    app, _ = hub_app
+    _set_env(monkeypatch, sse_max_subscribers="1")
+    key, _ = await _insert_key(["read"])
+    first = await _open(app, _key_header(key))
+    second = None
+    try:
+        await _connected(first)
+        second = await _open(app, _key_header(key))
+        assert await second.wait_started() == 429
+    finally:
+        await first.close()
+        if second is not None:
+            await second.close()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_releases_subscriptions(hub_app):
+    app, _ = hub_app
+    key, _ = await _insert_key(["read"])
+    printer_id = await _insert_printer("alpha")
+    stream = await _open(app, _key_header(key))
+    await _connected(stream)
+    assert _bus(app).subscriber_count("hub") == 1
+    await stream.close()
+    await asyncio.sleep(0.1)
+    assert _bus(app).subscriber_count("hub") == 0
+    assert _bus(app).subscriber_count(f"printer:{printer_id}:queue") == 0
