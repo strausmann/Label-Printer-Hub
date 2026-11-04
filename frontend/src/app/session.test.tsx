@@ -35,6 +35,53 @@ describe("session", () => {
     expect(queryClient.getQueryData(SESSION_KEY)).toMatchObject({ signed_in: false });
   });
 
+  describe("a 401 asks the server before it ends the session", () => {
+    const fresh = { ...SIGNED_IN, csrf_token: "fresh-csrf-token", source: "pangolin-sso" as const };
+
+    it("keeps an SSO user signed in when the session endpoint answers with a new session", async () => {
+      localStorage.setItem("lph.recent.snipeit", JSON.stringify([{ id: "1", name: "A", kind: "asset", at: 1 }]));
+      const { queryClient, router } = await renderApp({ path: "/jobs" });
+      installUnauthorizedGuard(queryClient);
+      const fetchMock = stubFetch((url) =>
+        url === "/api/v1/auth/session" ? json(fresh) : json({ detail: "expired" }, 401),
+      );
+      await act(async () => {
+        await apiFetch("/api/v1/jobs").catch(() => undefined);
+      });
+      await waitFor(() => expect(queryClient.getQueryData(SESSION_KEY)).toMatchObject({ csrf_token: "fresh-csrf-token" }));
+      expect(router.state.location.pathname).toBe("/jobs");
+      expect(localStorage.getItem("lph.recent.snipeit")).not.toBeNull();
+      expect(fetchMock.mock.calls.filter(([u]) => String(u) === "/api/v1/auth/session")).toHaveLength(1);
+    });
+
+    it("signs out, forgets recent items and user data when the server says signed_out", async () => {
+      localStorage.setItem("lph.recent.snipeit", JSON.stringify([{ id: "1", name: "A", kind: "asset", at: 1 }]));
+      const { queryClient, router } = await renderApp({ path: "/jobs" });
+      installUnauthorizedGuard(queryClient);
+      queryClient.setQueryData(["printers"], [{ id: "p1" }]);
+      stubFetch((url) => (url === "/api/v1/auth/session" ? json(SIGNED_OUT) : json({ detail: "expired" }, 401)));
+      await act(async () => {
+        await apiFetch("/api/v1/jobs").catch(() => undefined);
+      });
+      await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
+      expect(queryClient.getQueryData(SESSION_KEY)).toMatchObject({ signed_in: false });
+      expect(queryClient.getQueryData(["printers"])).toBeUndefined();
+      expect(localStorage.getItem("lph.recent.snipeit")).toBeNull();
+    });
+
+    it("does not sign out when the session endpoint itself cannot be reached", async () => {
+      const { queryClient, router } = await renderApp({ path: "/jobs" });
+      installUnauthorizedGuard(queryClient);
+      stubFetch((url) => (url === "/api/v1/auth/session" ? json({ detail: "down" }, 503) : json({ detail: "expired" }, 401)));
+      await act(async () => {
+        await apiFetch("/api/v1/jobs").catch(() => undefined);
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(router.state.location.pathname).toBe("/jobs");
+      expect(queryClient.getQueryData(SESSION_KEY)).toMatchObject({ signed_in: true });
+    });
+  });
+
   it("sends a signed-out visitor of a client route to sign-in and back after signing in", async () => {
     const { router, queryClient } = await renderApp({ path: "/jobs/7f9c1c2e", session: SIGNED_OUT });
     await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
@@ -66,6 +113,9 @@ describe("safeRedirect", () => {
     ["/\\evil.example.invalid", undefined],
     ["https://evil.example.invalid/x", undefined],
     ["jobs", undefined],
+    ["/\t/evil.example.invalid", undefined],
+    ["/jobs\n/1", undefined],
+    ["/jobs\u0000", undefined],
     ["/sign-in", undefined],
     ["/sign-in?redirect=/jobs", undefined],
     [42, undefined],

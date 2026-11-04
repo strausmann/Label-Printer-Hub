@@ -131,6 +131,27 @@ describe("useHubEvents", () => {
     expect(FakeEventSource.instances).toHaveLength(1);
   });
 
+  it("auth.expired reconnects after a backoff when the server still knows the session", async () => {
+    // A restriction change or an SSO renewal ends the stream but not the session.
+    setOnUnauthorized(() => Promise.resolve(true));
+    const { invalidate } = setup();
+    const es = last();
+    await act(async () => es.emit("auth.expired", null));
+    expect(es.closed).toBe(true);
+    expect(FakeEventSource.instances).toHaveLength(1);
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it("auth.expired stays closed when the server says the session is gone", async () => {
+    setOnUnauthorized(() => Promise.resolve(false));
+    setup();
+    await act(async () => last().emit("auth.expired", null));
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
   it("reconnects after an error and resets the backoff once open", () => {
     const { result } = setup();
     act(() => last().open());

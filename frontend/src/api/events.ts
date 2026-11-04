@@ -69,6 +69,7 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
     let timer: ReturnType<typeof setTimeout> | null = null;
     let delay = BACKOFF_START_MS;
     let stopped = false;
+    let disposed = false;
 
     const close = () => {
       if (source) {
@@ -100,10 +101,19 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
       for (const type of EVENT_TYPES) {
         es.addEventListener(type, (frame) => {
           if (type === "auth.expired") {
-            stopped = true;
+            // The stream ended; the session may not have (SSO renews, a key's printers changed).
             close();
             setConnected(false);
-            notifyUnauthorized();
+            if (timer) clearTimeout(timer);
+            timer = null;
+            stopped = true;
+            void notifyUnauthorized().then((stillValid) => {
+              if (disposed || !stillValid) return;
+              stopped = false;
+              void queryClient.invalidateQueries();
+              timer = setTimeout(open, delay);
+              delay = Math.min(delay * 2, BACKOFF_MAX_MS);
+            });
             return;
           }
           invalidate(queryClient, type, printerIdOf(frame as MessageEvent));
@@ -126,6 +136,7 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
 
     open();
     return () => {
+      disposed = true;
       stopped = true;
       if (timer) clearTimeout(timer);
       close();

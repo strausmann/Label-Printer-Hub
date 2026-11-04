@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useCallback, useEffect } from "react";
-import { apiFetch, setCsrfToken, setOnUnauthorized } from "../api/client";
+import { ApiError, apiFetch, setCsrfToken, setOnUnauthorized } from "../api/client";
 import type { components } from "../api/schema.gen";
 import { clearRecent } from "../features/lookup/recent";
 
@@ -48,6 +48,14 @@ function resetUserData(queryClient: QueryClient): void {
   queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== INFO_KEY[0] && q.queryKey[0] !== SESSION_KEY[0] });
 }
 
+/** The session ended: drop everything the previous user could see (data, recent lookups, CSRF). */
+function endSession(queryClient: QueryClient): void {
+  setCsrfToken(null);
+  resetUserData(queryClient);
+  clearRecent();
+  queryClient.setQueryData(SESSION_KEY, SIGNED_OUT);
+}
+
 export function useSession(): Session {
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -76,12 +84,7 @@ export function useSession(): Session {
   const signOutMutation = useMutation({
     mutationFn: () => apiFetch<void>("/api/v1/auth/session", { method: "DELETE" }),
     // A failed sign-out (already expired, server gone) still ends the session here.
-    onSettled: () => {
-      setCsrfToken(null);
-      resetUserData(queryClient);
-      clearRecent();
-      queryClient.setQueryData(SESSION_KEY, SIGNED_OUT);
-    },
+    onSettled: () => endSession(queryClient),
   });
 
   const signIn = useCallback((key: string) => signInMutation.mutateAsync(key).then(() => undefined), [signInMutation]);
@@ -103,13 +106,39 @@ export function useSession(): Session {
 }
 
 /**
- * Any 401 means the session is gone: mark it signed out. The router then shows the
- * sign-in screen and remembers where the user was (the root layout does the redirect).
+ * Asks the server whether the session is really gone. A 401 or an `auth.expired` frame is not
+ * proof: a trusted SSO session is renewed by this very request, and a key whose printer
+ * restriction changed keeps its session. Only a `signed_in: false` answer (or a 401 on the
+ * session endpoint itself) ends it. An unreachable server proves nothing, so the user stays.
+ * Resolves to whether the session is still valid.
+ */
+let pendingCheck: Promise<boolean> | null = null;
+
+function revalidateSession(queryClient: QueryClient): Promise<boolean> {
+  pendingCheck ??= (async () => {
+    try {
+      const next = await apiFetch<SessionData>("/api/v1/auth/session", { skipUnauthorized: true });
+      if (next.signed_in) {
+        queryClient.setQueryData(SESSION_KEY, next);
+        return true;
+      }
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) return true;
+    }
+    endSession(queryClient);
+    return false;
+  })().finally(() => {
+    pendingCheck = null;
+  });
+  return pendingCheck;
+}
+
+/**
+ * Any 401 may mean the session is gone: the server is asked, and only a "signed out" answer
+ * marks it so. The router then shows the sign-in screen and remembers where the user was
+ * (the root layout does the redirect).
  */
 export function installUnauthorizedGuard(queryClient: QueryClient): () => void {
-  setOnUnauthorized(() => {
-    setCsrfToken(null);
-    queryClient.setQueryData(SESSION_KEY, SIGNED_OUT);
-  });
+  setOnUnauthorized(() => revalidateSession(queryClient));
   return () => setOnUnauthorized(null);
 }

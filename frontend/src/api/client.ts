@@ -24,7 +24,10 @@ export class ApiError extends Error {
 }
 
 let csrfToken: string | null = null;
-let onUnauthorized: (() => void) | null = null;
+/** Resolves to `true` when the server still knows the session (nothing proves it ended). */
+type UnauthorizedHandler = () => void | Promise<boolean>;
+
+let onUnauthorized: UnauthorizedHandler | null = null;
 
 /** The session state (Task 9) registers the CSRF token it got from `GET /api/v1/auth/session`. */
 export function setCsrfToken(token: string | null): void {
@@ -32,17 +35,27 @@ export function setCsrfToken(token: string | null): void {
 }
 
 /** Registers the handler for 401 responses (the shell sends the user to sign-in). */
-export function setOnUnauthorized(handler: (() => void) | null): void {
+export function setOnUnauthorized(handler: UnauthorizedHandler | null): void {
   onUnauthorized = handler;
 }
 
-/** Runs the registered 401 handler; the event stream calls it when the server ends the session. */
-export function notifyUnauthorized(): void {
-  onUnauthorized?.();
+/**
+ * Runs the registered 401 handler; the event stream calls it when the server ends the stream.
+ * The handler asks the server whether the session is really gone: resolves to `true` when it
+ * is not (an SSO session renews itself, a key's printers changed), `false` otherwise.
+ */
+export async function notifyUnauthorized(): Promise<boolean> {
+  if (!onUnauthorized) return false;
+  return (await onUnauthorized()) === true;
 }
 
 /** `as: "blob"` returns the body as a Blob (images); the default parses JSON. */
-export type ApiInit = RequestInit & { json?: unknown; as?: "json" | "blob" };
+export type ApiInit = RequestInit & {
+  json?: unknown;
+  as?: "json" | "blob";
+  /** A 401 is returned as an error without running the unauthorized handler (it asks this very question). */
+  skipUnauthorized?: boolean;
+};
 
 type Json = Record<string, unknown>;
 
@@ -80,7 +93,7 @@ async function readBody(response: Response): Promise<unknown> {
 }
 
 export async function apiFetch<T>(path: string, init: ApiInit = {}): Promise<T> {
-  const { json, as: bodyAs = "json", headers: initHeaders, ...rest } = init;
+  const { json, as: bodyAs = "json", skipUnauthorized = false, headers: initHeaders, ...rest } = init;
   const method = (rest.method ?? "GET").toUpperCase();
   const headers = new Headers(initHeaders);
   if (json !== undefined) headers.set("Content-Type", "application/json");
@@ -102,7 +115,7 @@ export async function apiFetch<T>(path: string, init: ApiInit = {}): Promise<T> 
 
   if (!response.ok) {
     const error = parseProblem(response.status, await readBody(response));
-    if (response.status === 401) onUnauthorized?.();
+    if (response.status === 401 && !skipUnauthorized) void onUnauthorized?.();
     throw error;
   }
   if (response.status === 204) return undefined as T;
