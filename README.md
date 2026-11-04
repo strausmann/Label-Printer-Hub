@@ -71,7 +71,7 @@ curl http://localhost:8000/healthz
 curl http://localhost:8000/api/info
 # Open http://localhost:8000/ and sign in. A fresh install has no admin key:
 # either set PRINTER_HUB_BOOTSTRAP_ADMIN_KEY (one-time key, 32+ characters) or run
-docker exec label-printer-hub-backend printer-hub admin create-key
+docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
 # then add your printers under Settings > Printers.
 ```
 

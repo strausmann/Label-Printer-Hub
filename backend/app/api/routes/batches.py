@@ -33,7 +33,7 @@ async def get_batch(
 
     Wird von Hangar's /admin/print/result/{batch_id} für das initiale
     Rendering genutzt. summary.all_terminal == False bedeutet, dass Hangar
-    einen SSE-Stream zu /api/events?batch_id=... öffnen sollte für
+    den JSON-Stream /api/v1/events verfolgen sollte für
     Live-Updates.
     """
     batch = await batches_repo.get(session, batch_id)

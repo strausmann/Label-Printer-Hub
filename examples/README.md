@@ -88,7 +88,7 @@ Printers are **not** configured here: add them in the UI under **Settings > Prin
 First sign-in: a fresh install has no admin key. Set `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` (32+ characters) for a one-time sign-in that leads to creating your first admin key, or create one inside the container:
 
 ```bash
-docker exec label-printer-hub-backend printer-hub admin create-key
+docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
 ```
 
 Optional:

@@ -70,7 +70,7 @@ Behind a proxy that is not Pangolin, leave all of this unset and use API keys or
 A fresh install no longer creates an admin API key for you (the old database migration that seeded one is gone). Choose one:
 
 - **Bootstrap key (D7):** set `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` (32 characters or more) before the first start. Sign in with it once; the UI leads straight to creating your first real admin key. The bootstrap key stops working as soon as an admin key exists. Remove the variable afterwards.
-- **Recovery command:** inside the running container, `docker exec label-printer-hub-backend printer-hub admin create-key` prints a new admin key once. Use it to bootstrap, or to regain access if every admin key is lost.
+- **Recovery command:** inside the running container, `docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin` prints a new admin key once. Use it to bootstrap, or to regain access if every admin key is lost.
 
 Existing installations keep their API keys; sign in with one of them.
 

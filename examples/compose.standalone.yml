@@ -2,8 +2,9 @@
 # Label Printer Hub — standalone (no reverse proxy)
 # One container: the backend serves the API and the web UI (ADR 0015).
 # Printers are added in the UI (Settings > Printers); no printer variables.
-# Use only on a trusted LAN. The first admin key is the one-time bootstrap key
-# printed in the container log, or: docker exec <container> printer-hub admin create-key
+# Use only on a trusted LAN. First admin access: set PRINTER_HUB_BOOTSTRAP_ADMIN_KEY
+# (32+ characters) for the first sign-in, or create a key inside the container:
+#   docker compose exec backend printer-hub admin create-key --scope admin --name first-admin
 # ============================================================================
 
 services:

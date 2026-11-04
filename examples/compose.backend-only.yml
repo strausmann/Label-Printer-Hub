@@ -20,7 +20,7 @@
 #
 # Add printers through the API (POST /api/v1/admin/printers with an admin key); create
 # the first key with:
-#   docker exec label-printer-hub-backend printer-hub admin create-key
+#   docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
 # ============================================================================
 
 services:

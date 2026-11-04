@@ -253,3 +253,13 @@ def test_every_section_6_page_has_an_e2e_spec(page: str) -> None:
     assert re.search(r"\btest\(\s*[\"'`][^\"'`]*" + title, spec), (
         f"no e2e test for '{page}' in {filename}"
     )
+
+
+def test_create_key_instructions_carry_the_required_flags_and_no_log_claim() -> None:
+    files = [*COMPOSE_FILES, EXAMPLES / "README.md", REPO / "README.md"]
+    files.append(REPO / "docs" / "migration" / "v-next-single-container.md")
+    for path in files:
+        for line in path.read_text().splitlines():
+            if "printer-hub admin create-key" in line and "docker" in line:
+                assert "--scope" in line and "--name" in line, f"{path.name}: {line.strip()}"
+            assert "printed in the container log" not in line, f"{path.name}: false log claim"

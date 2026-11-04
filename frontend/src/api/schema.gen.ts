@@ -69,7 +69,7 @@ export interface paths {
          *
          *     Wird von Hangar's /admin/print/result/{batch_id} für das initiale
          *     Rendering genutzt. summary.all_terminal == False bedeutet, dass Hangar
-         *     einen SSE-Stream zu /api/events?batch_id=... öffnen sollte für
+         *     den JSON-Stream /api/v1/events verfolgen sollte für
          *     Live-Updates.
          */
         get: operations["get_batch_api_batches__batch_id__get"];
