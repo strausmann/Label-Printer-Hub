@@ -5,31 +5,20 @@ Big-picture overview. For the **why** behind every decision, see [`decisions/`](
 ## High-level
 
 ```
-┌──────────────────────┐  HTTP/JSON  ┌──────────────────────┐  TCP/9100  ┌──────────┐
-│  Browser / PWA       │ ──────────► │ Backend (Python)     │ ─────────► │ Printer  │
-│  Tailwind, HTMX,     │             │ FastAPI, asyncio     │            │ Brother  │
-│  Service Worker      │             │ ptouch / brother_ql  │            │ PT / QL  │
-│  Notifications API   │             │ pysnmp, EventBus     │ ◄───────── │          │
-└──────────┬───────────┘             │ Print Queue + state  │  passive   └──────────┘
-           │                         │ machine              │  status
-           │  HTTP/JSON              │                      │
-           │  proxied SSE            │                      │  UDP/161 SNMP
-           │                         │                      │
-┌──────────▼───────────┐             │                      │
-│  Frontend (Go)       │ ───────────►│                      │
-│  chi/echo, html/     │   HTTP+SSE  │                      │
-│  template,           │   passthru  │                      │
-│  Tailwind static     │             │                      │
-│  PWA assets          │             │                      │
-│  oapi-codegen client │             │                      │
-└──────────────────────┘             └──────────────────────┘
+┌──────────────────────┐  HTTP/JSON  ┌──────────────────────────────┐  TCP/9100  ┌──────────┐
+│  Browser / PWA       │ ──────────► │ Hub (one Python process)     │ ─────────► │ Printer  │
+│  React + TypeScript  │   + SSE     │ FastAPI, asyncio             │            │ Brother  │
+│  Service Worker      │ ◄────────── │ serves API, /api/v1/events   │ ◄───────── │ PT / QL  │
+│  Camera scanning     │             │ and the built web UI         │  passive   └──────────┘
+└──────────────────────┘             │ Print Queue + state machine  │  status
+                                     │ SQLite, EventBus             │  UDP/161 SNMP
+                                     └──────────────────────────────┘
 ```
 
-Two containers (ADR [0001](decisions/0001-two-container-architecture.md)):
-- `label-printer-hub-backend` — Python/FastAPI; talks to printers, owns the print queue, exposes the JSON API and SSE
-- `label-printer-hub-frontend` — Go web server; serves UI + PWA, proxies API and SSE to the backend
+One container (ADR [0015](decisions/0015-single-process-deployment.md), which supersedes ADR [0001](decisions/0001-two-container-architecture.md)):
+- `label-printer-hub-backend` — Python/FastAPI; talks to printers, owns the print queue, exposes the JSON API, the JSON event stream and the static web UI (with a fallback to `index.html` for client routes)
 
-Both images version together. Only the frontend is exposed to the user via the deployer's reverse proxy (Traefik / Pangolin / Caddy / standalone — see [`../examples/`](../examples/)).
+The web UI is built from `frontend/` at image build time (multi-stage Dockerfile, build context = repository root) and copied into the image; there is no separate frontend process or image. The deployer's reverse proxy (Traefik / Pangolin / Caddy / standalone — see [`../examples/`](../examples/)) points straight at the hub on port 8000. Printers, integrations and keys are managed in the UI and stored in the database (ADR [0017](decisions/0017-settings-in-database-env-locks-encrypted-secrets.md)); secrets are encrypted with `PRINTER_HUB_SECRET_KEY`.
 
 ## Component map
 
@@ -57,37 +46,36 @@ backend/app/
 └── seed/                    # Default templates loaded at startup
 ```
 
-### Frontend ([ADR 0003](decisions/0003-go-tailwind-htmx-pwa-frontend.md))
+### Web UI ([ADR 0016](decisions/0016-react-typescript-web-ui.md), supersedes [0003](decisions/0003-go-tailwind-htmx-pwa-frontend.md))
 
 ```
 frontend/
-├── cmd/server/main.go       # Entry point (chi/echo router)
-├── internal/
-│   ├── api/                 # oapi-codegen output: types + client (ADR 0011)
-│   ├── handlers/            # HTTP handlers, SSE proxy
-│   └── templates/           # html/template files
-├── web/static/
-│   ├── tailwind.css         # Tailwind build output
-│   ├── htmx.min.js          # HTMX runtime + SSE extension
-│   ├── icons/               # PWA icons
-│   ├── manifest.webmanifest # PWA manifest
-│   └── sw.js                # Service Worker
-└── tests/
+├── src/
+│   ├── app/                 # router, session, query client, update prompt
+│   ├── api/                 # client, event stream, types generated from the OpenAPI contract (ADR 0011)
+│   ├── features/            # overview, printers, jobs, integrations, lookup, scan, search, settings
+│   ├── shell/, pages/       # app shell (sidebar / tab bar) and page frames
+│   ├── design/              # design tokens (spec 5.2)
+│   └── i18n/                # message catalogues (English default)
+├── public/                  # PWA icons, manifest
+└── e2e/                     # Playwright specs against the real backend (mock printers)
 ```
+
+Browsers sign in with an API key (or proxy SSO) and receive a session cookie with CSRF protection ([ADR 0019](decisions/0019-proxy-headers-need-trust-token.md) for the trust rules).
 
 ## Data flows
 
 ### Pull mode — user scans a barcode in the UI
 
-1. User opens `https://printerhub.example.com/` (frontend container)
+1. User opens `https://printerhub.example.com/` (served by the hub)
 2. Selects a printer tab (e.g. `pt750w`) and an app (e.g. Snipe-IT)
-3. Scans a barcode → frontend `GET /api/lookup/snipeit/<id>` (proxied to backend)
+3. Scans a barcode or opens a label link (`/asset/<id>`) → the UI calls `GET /api/lookup/snipeit/<id>`
 4. Backend fetches asset data from Snipe-IT, returns `LabelData`
-5. Frontend shows preview via `POST /api/render/preview` → PNG
-6. User clicks **Print** → frontend `POST /api/print/<printer>` → backend enqueues job, returns `202` + `job_id`
-7. Frontend opens an SSE connection (proxied to backend `/api/events?printer_id=<printer>`)
+5. The UI shows a preview rendered by the backend
+6. User clicks **Print** → `POST /print` → backend enqueues job, returns `202` + `job_id`
+7. The UI already holds one SSE connection to `/api/v1/events` for the whole tab
 8. Backend's PrintQueue worker picks up the job, opens TCP/9100 to the printer, sends raster bytes
-9. Backend pushes `job` and `status` events on the EventBus → SSE → frontend → browser DOM updates
+9. Backend pushes `job` and `status` events on the EventBus → SSE (JSON frames) → the UI updates its data in place
 10. Job completes; SSE event triggers a browser notification (if enabled — [ADR 0010](decisions/0010-pwa-progressive-enhancement.md))
 
 ### Push mode — Grocy webhook (only Grocy)
@@ -95,7 +83,7 @@ frontend/
 Among the three integrations, only **Grocy** can post webhooks to the hub (and only when `FEATURE_FLAG_LABEL_PRINTING=true` is set in Grocy's `data/config.php`). Snipe-IT and Spoolman do not have webhook-out functionality at the time of this document, so they're pull-only via the hub UI.
 
 1. Grocy posts to `https://printerhub.example.com/api/webhook/grocy`
-2. Reverse proxy routes the webhook subroute **without SSO** to the frontend, which proxies to backend
+2. Reverse proxy routes the webhook subroute **without SSO** to the hub
 3. Backend validates `X-API-Key`, picks the default layout for `(grocy, default_tape)` (or a `layout_id` override if the payload includes one), fetches label data, renders, enqueues job
 4. Returns `202` with job ID; webhook caller doesn't wait for print completion
 5. Backend prints; any active SSE consumer sees the live state changes
@@ -128,41 +116,44 @@ The backend's OpenAPI 3.1 spec is canonical:
 | `GET /docs` | Swagger UI for interactive try-it-now |
 | `GET /redoc` | ReDoc reference rendering |
 
-The Go frontend's typed client is generated from `backend/openapi.json` via `oapi-codegen` at build time. Schema drift is impossible.
+The web UI's API types are generated from the backend's OpenAPI document (`pnpm gen:api`), and CI fails when the generated client no longer matches the contract.
 
 ## Releases ([ADR 0008](decisions/0008-conventional-commits-and-semantic-release.md))
 
 - Conventional Commits drive version bumps via semantic-release
-- Push to `main` → release pipeline: tag → GitHub Release → Docker images on GHCR + Docker Hub
+- Push to `main` → release pipeline: tag → GitHub Release → Docker image on GHCR + Docker Hub
 - Tag scheme ([ADR 0007](decisions/0007-docker-image-tag-scheme.md)): every stable release publishes `1.0.0`, `1.0`, `1`, and `latest` — pre-releases get only the full version
 - Multi-arch: `linux/amd64` + `linux/arm64`
 
-## SSE EventBus (Phase 6b)
+## SSE EventBus
 
-The backend exposes `GET /api/events?printer_id=<uuid>` as a Server-Sent Events
-stream. Each printer has three channels (`queue`, `state`, `tape`). The
-`EventBus` singleton (on `app.state.event_bus`) fans out `BusEvent` instances
-from three producers to all connected SSE subscribers:
+The backend exposes `GET /api/v1/events[?printer_id=<uuid>]` as a Server-Sent Events
+stream of JSON frames. The `EventBus` singleton (on `app.state.event_bus`) fans out
+`BusEvent` instances from the producers to all connected subscribers:
 
 | Producer | Channel | Event type |
 |---|---|---|
 | `PrintQueueProducer` | `printer:{id}:queue` | `job.state_changed` |
 | `StatusProbeProducer` | `printer:{id}:state` | `printer.status` |
 | `TapeChangeProducer` | `printer:{id}:tape` | `printer.tape_changed` |
+| admin printer API | `hub` | `hub.printers_changed` |
 
-HTMX on the QR landing pages connects to the stream and applies each event as
-an HTML fragment via `sse-swap`. For reverse-proxy flush configuration required
-to make SSE work through Traefik, Caddy, Nginx, and Pangolin, see
-[`architecture/sse.md`](architecture/sse.md).
+The stream starts with a snapshot per visible printer, authenticates like every
+`read` route, and ends with `auth.expired` when the credentials stop being valid.
+Frame format and reverse-proxy flush configuration for Traefik, Caddy, Nginx and
+Pangolin: [`architecture/sse.md`](architecture/sse.md). The earlier HTML-fragment
+stream `/api/events` (for HTMX) no longer exists.
 
 ## Reverse-proxy expectations
 
-The frontend container exposes port `8080`. SSE requires response buffering disabled at the reverse proxy (see [`architecture/sse.md`](architecture/sse.md) for Traefik/Caddy/Nginx/Pangolin configuration, and [`../examples/`](../examples/) for full compose examples).
+The hub listens on port `8000` inside its container and serves the UI and the API on it. SSE requires response buffering disabled at the reverse proxy (see [`architecture/sse.md`](architecture/sse.md) for Traefik/Caddy/Nginx/Pangolin configuration, and [`../examples/`](../examples/) for full compose examples).
 
 For Pangolin specifically, the **Two-Resources pattern** is used:
 
-1. Main UI: SSO-protected, full domain
-2. Webhook subroute (`/api/webhook/`): SSO bypass, authenticated by `WEBHOOK_API_KEY`
+1. Main UI: SSO-protected, full domain; the resource injects the trust token header the hub requires (`PRINTER_HUB_SSO_TRUST_TOKEN`)
+2. Webhook subroute (`/api/webhook/`): SSO bypass, authenticated by `PRINTER_HUB_WEBHOOK_API_KEY`
+
+Upgrading from the two-container release: [`migration/v-next-single-container.md`](migration/v-next-single-container.md).
 
 ## Where things live
 

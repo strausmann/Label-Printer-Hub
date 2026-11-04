@@ -1,6 +1,6 @@
 # SSE Reverse-Proxy Compatibility
 
-The `/api/events` endpoint streams `text/event-stream` responses. All modern
+The `/api/v1/events` endpoint streams `text/event-stream` responses. The backend serves it directly to the browser (one process, ADR 0015), so these settings apply to the reverse proxy in front of the hub. All modern
 reverse proxies buffer responses by default — this breaks SSE because the
 client receives nothing until the buffer flushes or the connection closes.
 
@@ -36,7 +36,7 @@ a dedicated middleware:
 ```yaml
 # In Docker Compose labels or a static Traefik middleware file
 traefik.http.middlewares.sse-flush.headers.customResponseHeaders.X-Accel-Buffering=no
-traefik.http.routers.printer-hub-sse.rule=PathPrefix(`/api/events`)
+traefik.http.routers.printer-hub-sse.rule=PathPrefix(`/api/v1/events`)
 traefik.http.routers.printer-hub-sse.middlewares=sse-flush@docker
 ```
 
@@ -49,9 +49,9 @@ buffering.
 ## Caddy
 
 ```caddyfile
-@sse path /api/events*
+@sse path /api/v1/events*
 handle @sse {
-    reverse_proxy backend:8090 {
+    reverse_proxy backend:8000 {
         flush_interval -1
     }
 }
@@ -59,16 +59,16 @@ handle @sse {
 
 `flush_interval -1` instructs Caddy to flush on every write. The default
 `flush_interval 0` means Caddy chooses the interval, which may buffer small
-SSE events. The `examples/compose.caddy.yml` example file should use this
-block for the `/api/events` path.
+SSE events. `examples/compose.caddy.yml` sets `flush_interval -1` for the whole
+site, which covers the event path.
 
 ---
 
 ## Nginx / nginx-proxy
 
 ```nginx
-location /api/events {
-    proxy_pass http://backend:8090;
+location /api/v1/events {
+    proxy_pass http://backend:8000;
     proxy_buffering off;
     proxy_cache off;
     add_header X-Accel-Buffering no;
@@ -100,9 +100,8 @@ This pattern is verified to work with Gotify (also SSE-based) behind the same
 Pangolin + Traefik v3 stack. The header passes through the Pangolin newt client
 → Traefik → browser path unchanged.
 
-**Note for `examples/compose.pangolin.yml` maintainer:** document that SSE
-works without extra config when `X-Accel-Buffering: no` is set on the response,
-and remind operators to set their Pangolin idle-timeout above
+SSE works without extra Pangolin configuration while `X-Accel-Buffering: no` is
+set on the response. Set the Pangolin idle timeout above
 `PRINTER_HUB_SSE_IDLE_TIMEOUT_S`.
 
 ---
@@ -112,10 +111,14 @@ and remind operators to set their Pangolin idle-timeout above
 After deploying, verify SSE is working end-to-end:
 
 ```bash
-# Replace <host> and <printer-id> with real values
-curl -N -H "Accept: text/event-stream" \
-  "https://<host>/api/events?printer_id=<printer-id>"
-# You should see ": keepalive" comment lines every 30 seconds.
+# Replace <host> with the hub address; use any API key with read scope
+# (the key is read from the environment, never typed into the command line).
+curl -N -H "Accept: text/event-stream" -K - <<EOF2
+header = "X-Label-Hub-Key: $HUB_API_KEY"
+url = "https://<host>/api/v1/events"
+EOF2
+# You should see ": connected", a snapshot per printer, then ": keepalive"
+# comment lines every 30 seconds.
 ```
 
 If the connection returns immediately with no output, or only produces output
@@ -123,7 +126,10 @@ after a long delay, the proxy is buffering. Check the `X-Accel-Buffering`
 header in the response:
 
 ```bash
-curl -sI "https://<host>/api/events?printer_id=<printer-id>" | grep -i buffering
+curl -s -D - -o /dev/null -m 3 -K - <<EOF2 | grep -i buffering
+header = "X-Label-Hub-Key: $HUB_API_KEY"
+url = "https://<host>/api/v1/events"
+EOF2
 # Expected: X-Accel-Buffering: no
 ```
 

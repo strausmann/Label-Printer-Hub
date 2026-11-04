@@ -33,7 +33,7 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0006](0006-status-sources-by-phase.md) | Status sources by phase (ESC i S / passive / SNMP) | Accepted |
 | [0007](0007-docker-image-tag-scheme.md) | Docker image tag scheme | Accepted (single image, see 0015) |
 | [0008](0008-conventional-commits-and-semantic-release.md) | Conventional Commits + semantic-release | Accepted |
-| [0009](0009-server-sent-events-over-websockets.md) | Server-Sent Events instead of WebSockets | Accepted |
+| [0009](0009-server-sent-events-over-websockets.md) | Server-Sent Events instead of WebSockets | Accepted (JSON stream, see 0015/0016) |
 | [0010](0010-pwa-progressive-enhancement.md) | PWA with progressive enhancement | Accepted |
 | [0011](0011-openapi-as-api-contract.md) | OpenAPI as the canonical API contract (oapi-codegen + interactive docs) | Accepted |
 | [0012](0012-label-layout-management.md) | Label layouts are first-class, integration-scoped, multi-instance | Accepted |
