@@ -257,9 +257,8 @@ async def _event_stream(
                 if event.event_type == PRINTERS_CHANGED:
                     if not _hub_event_visible(event, only_printer, allowed):
                         continue
-                    if only_printer is None:
-                        async for frame in _follow_printer_change(subs, event, allowed):
-                            yield frame
+                    async for frame in _follow_printer_change(subs, event, allowed):
+                        yield frame
                 yield _event_frame(event)
     finally:
         subs.close()
@@ -270,19 +269,32 @@ async def _event_stream(
 async def _follow_printer_change(
     subs: _Subscriptions, event: BusEvent, allowed: list[str]
 ) -> AsyncGenerator[str, None]:
-    """Subscribe to a printer that appeared (or enabled), drop one that was disabled."""
+    """Make the printer's subscriptions match its persisted ``enabled`` state.
+
+    The event's ``change`` label is not trusted: a PUT can flip ``enabled`` while publishing
+    ``updated``, and a printer can be created disabled. The row decides: subscribe (with a
+    snapshot) when it is enabled and in the caller's scope, unsubscribe otherwise.
+    """
     pid = str(event.data.get("printer_id", ""))
-    change = event.data.get("change")
     if not pid or (allowed and pid not in allowed):
         return
-    if change in ("created", "enabled"):
-        subs.add(printer_channels(pid))
-        async with db_engine.async_session() as db:
-            items = await build_snapshot(db, uuid.UUID(pid))
-        for item in items:
-            yield _snapshot_frame(item)
-    elif change == "disabled":
+    try:
+        printer_uuid = uuid.UUID(pid)
+    except ValueError:
+        return
+    async with db_engine.async_session() as db:
+        printer = await printers_repo.get(db, printer_uuid)
+        enabled = printer is not None and printer.enabled
+        items: list[dict[str, Any]] = []
+        newly_subscribed = enabled and printer_channels(pid)[0] not in subs.queues
+        if newly_subscribed:
+            # Subscribe before the snapshot, as at connect, so nothing in between is lost.
+            subs.add(printer_channels(pid))
+            items = await build_snapshot(db, printer_uuid)
+    if not enabled:
         subs.drop(printer_channels(pid))
+    for item in items:
+        yield _snapshot_frame(item)
 
 
 @router.get(

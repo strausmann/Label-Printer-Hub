@@ -619,3 +619,101 @@ async def test_concurrent_opens_beyond_the_cap_get_429(hub_app, monkeypatch):
     finally:
         for stream in streams:
             await stream.close()
+
+
+def _queue_subscribers(app, printer_id: str) -> int:
+    return _bus(app).subscriber_count(f"printer:{printer_id}:queue")
+
+
+async def _next_hub_change(stream: Stream) -> str:
+    return (await stream.event_of_type("hub.printers_changed"))["payload"]["data"]["change"]
+
+
+@pytest.mark.asyncio
+async def test_put_enabled_false_unsubscribes_the_printer(hub_app):
+    app, client = hub_app
+    key, _ = await _insert_key(["admin"])
+    headers = _key_header(key)
+    created = await client.post(
+        "/api/v1/admin/printers", json=_printer_body("zeta"), headers=headers
+    )
+    assert created.status_code == 201, created.text
+    pid = created.json()["id"]
+    other = await _insert_printer("zeta-other")
+    stream = await _open(app, headers)
+    try:
+        await _connected(stream)
+        assert _queue_subscribers(app, pid) == 1
+        resp = await client.put(
+            "/api/v1/admin/printers/zeta", json={"enabled": False}, headers=headers
+        )
+        assert resp.status_code == 200, resp.text
+        assert await _next_hub_change(stream) == "updated"
+        assert _queue_subscribers(app, pid) == 0
+        _job_event(_bus(app), UUID(pid))
+        # Another printer's event proves the disabled one stays silent.
+        _job_event(_bus(app), other)
+        seen = await stream.event_of_type("job.state_changed")
+        assert seen["payload"]["printer_id"] != pid
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_printer_created_disabled_is_not_subscribed(hub_app):
+    app, client = hub_app
+    key, _ = await _insert_key(["admin"])
+    headers = _key_header(key)
+    stream = await _open(app, headers)
+    try:
+        await _connected(stream)
+        resp = await client.post(
+            "/api/v1/admin/printers",
+            json={**_printer_body("eta"), "enabled": False},
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text
+        pid = resp.json()["id"]
+        assert await _next_hub_change(stream) == "created"
+        assert _queue_subscribers(app, pid) == 0
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_put_enabled_true_subscribes_and_sends_a_snapshot(hub_app):
+    app, client = hub_app
+    key, _ = await _insert_key(["admin"])
+    headers = _key_header(key)
+    created = await client.post(
+        "/api/v1/admin/printers",
+        json={**_printer_body("theta"), "enabled": False},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    pid = created.json()["id"]
+    from app.repositories import printer_status_cache as status_cache_repo
+
+    async with _factory()() as db:
+        await status_cache_repo.upsert(
+            db,
+            UUID(pid),
+            raw_block=b"\x00",
+            parsed={"hr_printer_status": "idle", "online": True, "loaded_tape_mm": 12},
+            captured_at=datetime.now(UTC),
+        )
+    stream = await _open(app, headers)
+    try:
+        await _connected(stream)
+        assert _queue_subscribers(app, pid) == 0
+        resp = await client.put(
+            "/api/v1/admin/printers/theta", json={"enabled": True}, headers=headers
+        )
+        assert resp.status_code == 200, resp.text
+        # The snapshot precedes the hub frame that announced the change.
+        status_ev = await stream.event_of_type("printer.status")
+        assert status_ev["payload"]["printer_id"] == pid
+        assert await _next_hub_change(stream) == "updated"
+        assert _queue_subscribers(app, pid) == 1
+    finally:
+        await stream.close()

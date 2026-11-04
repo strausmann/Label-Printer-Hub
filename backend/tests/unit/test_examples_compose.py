@@ -73,6 +73,10 @@ def test_pangolin_example_passes_the_sso_trust_token() -> None:
     text = path.read_text()
     assert "${PRINTER_HUB_SSO_TRUST_TOKEN:?" in text
     assert "X-Pangolin-Token" in text
+    # ``headers`` is a deprecated alias of ``request-headers`` in Pangolin's blueprint schema.
+    assert ".request-headers[0].name=X-Pangolin-Token" in text
+    assert ".request-headers[0].value=${PRINTER_HUB_SSO_TRUST_TOKEN}" in text
+    assert ".headers[" not in text.replace(".request-headers[", "")
     assert "PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER" in text
     assert "PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS" in text
 

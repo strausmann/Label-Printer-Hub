@@ -610,3 +610,52 @@ async def test_basic_bypass_post_needs_origin(api_client_with_seed, monkeypatch)
         f"/api/printers/{printer_id}/pause", headers={**basic, "Origin": LOCAL_ORIGIN}
     )
     assert resp.status_code == 204, resp.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"name": "sneaky-print", "scopes": ["print"]},
+        {"name": "sneaky-read", "scopes": ["read"]},
+        {"name": "sneaky-empty", "scopes": []},
+        {"name": "restricted-admin", "scopes": ["admin"], "allowed_printer_ids": ["p-1"]},
+        {"name": "expired-admin", "scopes": ["admin"], "expires_at": "2000-01-01T00:00:00Z"},
+    ],
+)
+async def test_bootstrap_session_can_only_create_an_unrestricted_admin_key(
+    api_client_with_seed, monkeypatch, payload
+):
+    _set_env(monkeypatch, bootstrap_admin_key=FAKE_BOOTSTRAP_KEY)
+    client = api_client_with_seed
+    assert (await _sign_in(client, FAKE_BOOTSTRAP_KEY)).status_code == 204
+    resp = await client.post(
+        "/api/admin/api-keys",
+        json=payload,
+        headers={"X-CSRF-Token": client.cookies.get("lph_csrf")},
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"]["error_code"] == "bootstrap_admin_key_only"
+    async with _factory()() as s:
+        names = [k.name for k in (await s.execute(select(ApiKey))).scalars()]
+    assert payload["name"] not in names
+    # Bootstrap is still open: the refusal did not burn the session.
+    assert (await client.get("/api/v1/auth/session")).json()["source"] == "bootstrap"
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_admin_key_with_future_expiry_is_allowed_and_closes_bootstrap(
+    api_client_with_seed, monkeypatch
+):
+    _set_env(monkeypatch, bootstrap_admin_key=FAKE_BOOTSTRAP_KEY)
+    client = api_client_with_seed
+    assert (await _sign_in(client, FAKE_BOOTSTRAP_KEY)).status_code == 204
+    future = (datetime.now(UTC) + timedelta(days=30)).isoformat()
+    resp = await client.post(
+        "/api/admin/api-keys",
+        json={"name": "first-admin", "scopes": ["admin"], "expires_at": future},
+        headers={"X-CSRF-Token": client.cookies.get("lph_csrf")},
+    )
+    assert resp.status_code == 201, resp.text
+    assert (await client.get("/api/v1/auth/session")).json()["source"] is None
+    assert (await client.get("/api/printers")).status_code == 401

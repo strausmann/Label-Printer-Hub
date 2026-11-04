@@ -76,8 +76,8 @@ services:
       # Pangolin sets Remote-User after a successful SSO login. It also has to
       # inject the trust token the backend expects (PRINTER_HUB_SSO_TRUST_TOKEN)
       # as a custom request header, using the same value as the backend variable.
-      - "pangolin.public-resources.printerhub.headers[0].name=X-Pangolin-Token"
-      - "pangolin.public-resources.printerhub.headers[0].value=${PRINTER_HUB_SSO_TRUST_TOKEN}"
+      - "pangolin.public-resources.printerhub.request-headers[0].name=X-Pangolin-Token"
+      - "pangolin.public-resources.printerhub.request-headers[0].value=${PRINTER_HUB_SSO_TRUST_TOKEN}"
 
       # Webhook subroute — auth bypass (Two-Resources pattern)
       # Note: Two routes on the same full-domain are only possible with distinct
