@@ -1,6 +1,6 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { notifyUnauthorized } from "./client";
+import { notifyUnauthorized, onSessionConfirmed } from "./client";
 
 const EVENTS_URL = "/api/v1/events";
 const BACKOFF_START_MS = 1_000;
@@ -70,6 +70,7 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
     let delay = BACKOFF_START_MS;
     let stopped = false;
     let disposed = false;
+    let stopWaiting: (() => void) | null = null;
 
     const close = () => {
       if (source) {
@@ -107,12 +108,22 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
             if (timer) clearTimeout(timer);
             timer = null;
             stopped = true;
-            void notifyUnauthorized().then((stillValid) => {
-              if (disposed || !stillValid) return;
+            const resume = () => {
+              if (disposed) return;
               stopped = false;
-              void queryClient.invalidateQueries();
               timer = setTimeout(open, delay);
               delay = Math.min(delay * 2, BACKOFF_MAX_MS);
+            };
+            void notifyUnauthorized().then((verdict) => {
+              if (disposed || verdict === "signed_out") return;
+              if (verdict === "valid") return resume();
+              // No definitive answer: stay down until a later check confirms the session.
+              stopWaiting?.();
+              stopWaiting = onSessionConfirmed(() => {
+                stopWaiting?.();
+                stopWaiting = null;
+                resume();
+              });
             });
             return;
           }
@@ -138,6 +149,7 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
     return () => {
       disposed = true;
       stopped = true;
+      stopWaiting?.();
       if (timer) clearTimeout(timer);
       close();
     };

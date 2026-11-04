@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setOnUnauthorized } from "./client";
+import { emitSessionConfirmed, setOnUnauthorized } from "./client";
 import { useHubEvents } from "./events";
 
 class FakeEventSource {
@@ -133,19 +133,29 @@ describe("useHubEvents", () => {
 
   it("auth.expired reconnects after a backoff when the server still knows the session", async () => {
     // A restriction change or an SSO renewal ends the stream but not the session.
-    setOnUnauthorized(() => Promise.resolve(true));
-    const { invalidate } = setup();
+    setOnUnauthorized(() => Promise.resolve("valid"));
+    setup();
     const es = last();
     await act(async () => es.emit("auth.expired", null));
     expect(es.closed).toBe(true);
     expect(FakeEventSource.instances).toHaveLength(1);
     act(() => void vi.advanceTimersByTime(1000));
     expect(FakeEventSource.instances).toHaveLength(2);
-    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it("auth.expired without a definitive answer waits, then reconnects once the session is confirmed", async () => {
+    setOnUnauthorized(() => Promise.resolve("unknown"));
+    setup();
+    await act(async () => last().emit("auth.expired", null));
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(FakeEventSource.instances).toHaveLength(1);
+    act(() => emitSessionConfirmed());
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(FakeEventSource.instances).toHaveLength(2);
   });
 
   it("auth.expired stays closed when the server says the session is gone", async () => {
-    setOnUnauthorized(() => Promise.resolve(false));
+    setOnUnauthorized(() => Promise.resolve("signed_out"));
     setup();
     await act(async () => last().emit("auth.expired", null));
     act(() => void vi.advanceTimersByTime(60_000));

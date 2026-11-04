@@ -1,12 +1,14 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiFetch, setCsrfToken, setOnUnauthorized } from "../api/client";
+import { apiFetch, isSessionUnknown, setCsrfToken, setOnUnauthorized, setSessionUnknown } from "../api/client";
 import { installUnauthorizedGuard, SESSION_KEY } from "./session";
 import { renderApp, SIGNED_IN, SIGNED_OUT } from "../test-utils";
 
 afterEach(() => {
   setOnUnauthorized(null);
   setCsrfToken(null);
+  setSessionUnknown(false);
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -36,7 +38,7 @@ describe("session", () => {
   });
 
   describe("a 401 asks the server before it ends the session", () => {
-    const fresh = { ...SIGNED_IN, csrf_token: "fresh-csrf-token", source: "pangolin-sso" as const };
+    const fresh = { ...SIGNED_IN, csrf_token: "fresh-csrf-token" };
 
     it("keeps an SSO user signed in when the session endpoint answers with a new session", async () => {
       localStorage.setItem("lph.recent.snipeit", JSON.stringify([{ id: "1", name: "A", kind: "asset", at: 1 }]));
@@ -69,16 +71,69 @@ describe("session", () => {
       expect(localStorage.getItem("lph.recent.snipeit")).toBeNull();
     });
 
-    it("does not sign out when the session endpoint itself cannot be reached", async () => {
-      const { queryClient, router } = await renderApp({ path: "/jobs" });
+    it("drops the previous user's cached data when the session comes back as someone else", async () => {
+      localStorage.setItem("lph.recent.snipeit", JSON.stringify([{ id: "1", name: "A", kind: "asset", at: 1 }]));
+      const { queryClient } = await renderApp({ path: "/jobs", session: { ...SIGNED_IN, user: "user-a" } });
       installUnauthorizedGuard(queryClient);
-      stubFetch((url) => (url === "/api/v1/auth/session" ? json({ detail: "down" }, 503) : json({ detail: "expired" }, 401)));
+      queryClient.setQueryData(["jobs"], [{ id: "a-job" }]);
+      queryClient.setQueryData(["printers"], [{ id: "a-printer" }]);
+      stubFetch((url) =>
+        url === "/api/v1/auth/session" ? json({ ...SIGNED_IN, user: "user-b" }) : json({ detail: "expired" }, 401),
+      );
       await act(async () => {
         await apiFetch("/api/v1/jobs").catch(() => undefined);
       });
-      await new Promise((r) => setTimeout(r, 20));
+      await waitFor(() => expect(queryClient.getQueryData(SESSION_KEY)).toMatchObject({ user: "user-b" }));
+      expect(queryClient.getQueryData(["jobs"])).toBeUndefined();
+      expect(queryClient.getQueryData(["printers"])).toBeUndefined();
+      expect(localStorage.getItem("lph.recent.snipeit")).toBeNull();
+    });
+
+    it("keeps the screen but refuses writes when the server gives no definitive answer, and retries", async () => {
+      const { queryClient, router } = await renderApp({ path: "/jobs" });
+      installUnauthorizedGuard(queryClient);
+      vi.useFakeTimers();
+      let healthy = false;
+      const fetchMock = stubFetch((url) => {
+        if (url === "/api/v1/auth/session") return healthy ? json(SIGNED_IN) : json({ detail: "down" }, 503);
+        return json({ detail: "expired" }, 401);
+      });
+      await act(async () => {
+        await apiFetch("/api/v1/jobs").catch(() => undefined);
+      });
       expect(router.state.location.pathname).toBe("/jobs");
       expect(queryClient.getQueryData(SESSION_KEY)).toMatchObject({ signed_in: true });
+      expect(isSessionUnknown()).toBe(true);
+      // Reads still go out; a write does not leave the browser.
+      const before = fetchMock.mock.calls.length;
+      await expect(apiFetch("/api/v1/jobs/1/retry", { method: "POST" })).rejects.toMatchObject({ code: "session_unknown" });
+      expect(fetchMock.mock.calls.length).toBe(before);
+      // The check repeats with backoff; a definitive answer lifts the hold.
+      await act(async () => void (await vi.advanceTimersByTimeAsync(2000)));
+      expect(isSessionUnknown()).toBe(true);
+      healthy = true;
+      await act(async () => void (await vi.advanceTimersByTimeAsync(4000)));
+      expect(isSessionUnknown()).toBe(false);
+      expect(router.state.location.pathname).toBe("/jobs");
+    });
+
+    it("signs out when a later retry gets a definitive signed_out", async () => {
+      const { queryClient, router } = await renderApp({ path: "/jobs" });
+      installUnauthorizedGuard(queryClient);
+      vi.useFakeTimers();
+      let down = true;
+      stubFetch((url) => {
+        if (url === "/api/v1/auth/session") return down ? json({ detail: "down" }, 503) : json(SIGNED_OUT);
+        return json({ detail: "expired" }, 401);
+      });
+      await act(async () => {
+        await apiFetch("/api/v1/jobs").catch(() => undefined);
+      });
+      down = false;
+      await act(async () => void (await vi.advanceTimersByTimeAsync(2000)));
+      vi.useRealTimers();
+      await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
+      expect(isSessionUnknown()).toBe(false);
     });
   });
 

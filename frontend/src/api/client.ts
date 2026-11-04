@@ -24,10 +24,44 @@ export class ApiError extends Error {
 }
 
 let csrfToken: string | null = null;
-/** Resolves to `true` when the server still knows the session (nothing proves it ended). */
-type UnauthorizedHandler = () => void | Promise<boolean>;
+/**
+ * What the server said when asked whether the session is still there: `valid`, `signed_out`
+ * (definitive), or `unknown` (no definitive answer: network error, 5xx).
+ */
+export type SessionVerdict = "valid" | "signed_out" | "unknown";
+
+type UnauthorizedHandler = () => void | Promise<SessionVerdict>;
 
 let onUnauthorized: UnauthorizedHandler | null = null;
+let sessionUnknown = false;
+const unknownListeners = new Set<() => void>();
+const confirmedListeners = new Set<() => void>();
+
+/** While the session is unverified, requests that change state are refused (see `apiFetch`). */
+export function setSessionUnknown(value: boolean): void {
+  if (value === sessionUnknown) return;
+  sessionUnknown = value;
+  unknownListeners.forEach((l) => l());
+}
+
+export function isSessionUnknown(): boolean {
+  return sessionUnknown;
+}
+
+export function subscribeSessionUnknown(listener: () => void): () => void {
+  unknownListeners.add(listener);
+  return () => void unknownListeners.delete(listener);
+}
+
+/** Called once a revalidation after an `unknown` answer found the session valid again. */
+export function onSessionConfirmed(listener: () => void): () => void {
+  confirmedListeners.add(listener);
+  return () => void confirmedListeners.delete(listener);
+}
+
+export function emitSessionConfirmed(): void {
+  [...confirmedListeners].forEach((l) => l());
+}
 
 /** The session state (Task 9) registers the CSRF token it got from `GET /api/v1/auth/session`. */
 export function setCsrfToken(token: string | null): void {
@@ -41,12 +75,12 @@ export function setOnUnauthorized(handler: UnauthorizedHandler | null): void {
 
 /**
  * Runs the registered 401 handler; the event stream calls it when the server ends the stream.
- * The handler asks the server whether the session is really gone: resolves to `true` when it
- * is not (an SSO session renews itself, a key's printers changed), `false` otherwise.
+ * The handler asks the server whether the session is really gone (an SSO session renews itself,
+ * a key's printers changed): `valid`, `signed_out`, or `unknown` when no answer came.
  */
-export async function notifyUnauthorized(): Promise<boolean> {
-  if (!onUnauthorized) return false;
-  return (await onUnauthorized()) === true;
+export async function notifyUnauthorized(): Promise<SessionVerdict> {
+  if (!onUnauthorized) return "signed_out";
+  return (await onUnauthorized()) ?? "signed_out";
 }
 
 /** `as: "blob"` returns the body as a Blob (images); the default parses JSON. */
@@ -99,6 +133,12 @@ export async function apiFetch<T>(path: string, init: ApiInit = {}): Promise<T> 
   if (json !== undefined) headers.set("Content-Type", "application/json");
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
   if (UNSAFE_METHODS.has(method) && csrfToken) headers.set(CSRF_HEADER, csrfToken);
+
+  // No definitive answer about the session yet: do not send writes on a session that may be gone
+  // or may belong to someone else by now. Reads and the session endpoint itself still go out.
+  if (sessionUnknown && UNSAFE_METHODS.has(method) && !path.startsWith("/api/v1/auth/session")) {
+    throw new ApiError(0, "session_unknown", "Checking your session. Try again in a moment.");
+  }
 
   let response: Response;
   try {

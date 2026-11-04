@@ -1,6 +1,16 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { useCallback, useEffect } from "react";
-import { ApiError, apiFetch, setCsrfToken, setOnUnauthorized } from "../api/client";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
+import {
+  ApiError,
+  apiFetch,
+  emitSessionConfirmed,
+  isSessionUnknown,
+  setCsrfToken,
+  setOnUnauthorized,
+  setSessionUnknown,
+  subscribeSessionUnknown,
+  type SessionVerdict,
+} from "../api/client";
 import type { components } from "../api/schema.gen";
 import { clearRecent } from "../features/lookup/recent";
 
@@ -32,6 +42,8 @@ export interface Session {
   /** The session state could not be read at all (server down), as opposed to "signed out". */
   isError: boolean;
   signedIn: boolean;
+  /** The server could not confirm the session after a 401 (no definitive answer yet); writes wait. */
+  unverified: boolean;
   scope: SessionData["scope"];
   source: SessionData["source"];
   user: string | null;
@@ -64,6 +76,7 @@ export function useSession(): Session {
     staleTime: 30_000,
   });
   const data = query.data;
+  const unverified = useSyncExternalStore(subscribeSessionUnknown, isSessionUnknown);
   const csrfToken = data?.signed_in ? (data.csrf_token ?? null) : null;
 
   useEffect(() => {
@@ -94,6 +107,7 @@ export function useSession(): Session {
     isPending: query.isPending,
     isError: query.isError && !data,
     signedIn: data?.signed_in ?? false,
+    unverified,
     scope: data?.scope ?? null,
     source: data?.source ?? null,
     user: data?.user ?? null,
@@ -105,28 +119,80 @@ export function useSession(): Session {
   };
 }
 
+const RETRY_START_MS = 2_000;
+const RETRY_MAX_MS = 30_000;
+
+let pendingCheck: Promise<SessionVerdict> | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryDelay = RETRY_START_MS;
+// A server that keeps answering 401 to data requests while the session endpoint says "valid"
+// would make refetch -> 401 -> revalidate -> refetch loop forever; refetch at most once per window.
+const REFETCH_COOLDOWN_MS = 10_000;
+let lastRefetchAt = 0;
+
+/** Another person (or another role) behind the same cookie must not inherit the cached data. */
+function sameIdentity(a: SessionData | undefined, b: SessionData): boolean {
+  return !!a && a.signed_in && a.user === b.user && a.source === b.source && a.scope === b.scope && a.bootstrap === b.bootstrap;
+}
+
+function stopRetrying(): void {
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
+  retryDelay = RETRY_START_MS;
+}
+
+function settle(queryClient: QueryClient, verdict: SessionVerdict, next?: SessionData): void {
+  if (verdict === "unknown") {
+    // Keep what is on screen, but nothing is sent that changes state until the server answers.
+    setSessionUnknown(true);
+    if (!retryTimer) {
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void revalidateSession(queryClient);
+      }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
+    }
+    return;
+  }
+  const wasUnknown = isSessionUnknown();
+  stopRetrying();
+  setSessionUnknown(false);
+  if (verdict === "signed_out" || !next) {
+    endSession(queryClient);
+    return;
+  }
+  if (!sameIdentity(queryClient.getQueryData<SessionData>(SESSION_KEY), next)) {
+    resetUserData(queryClient);
+    clearRecent();
+  }
+  queryClient.setQueryData(SESSION_KEY, next);
+  if (Date.now() - lastRefetchAt >= REFETCH_COOLDOWN_MS) {
+    lastRefetchAt = Date.now();
+    void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] !== INFO_KEY[0] && q.queryKey[0] !== SESSION_KEY[0] });
+  }
+  if (wasUnknown) emitSessionConfirmed();
+}
+
 /**
  * Asks the server whether the session is really gone. A 401 or an `auth.expired` frame is not
  * proof: a trusted SSO session is renewed by this very request, and a key whose printer
  * restriction changed keeps its session. Only a `signed_in: false` answer (or a 401 on the
- * session endpoint itself) ends it. An unreachable server proves nothing, so the user stays.
- * Resolves to whether the session is still valid.
+ * session endpoint itself) ends it. When the server cannot be asked (network error, 5xx) the
+ * answer is `unknown`: the screen stays, writes wait, and the question is repeated with backoff.
+ * A session that comes back as another identity drops the previous user's cached data.
  */
-let pendingCheck: Promise<boolean> | null = null;
-
-function revalidateSession(queryClient: QueryClient): Promise<boolean> {
-  pendingCheck ??= (async () => {
+function revalidateSession(queryClient: QueryClient): Promise<SessionVerdict> {
+  pendingCheck ??= (async (): Promise<SessionVerdict> => {
+    let verdict: SessionVerdict;
+    let next: SessionData | undefined;
     try {
-      const next = await apiFetch<SessionData>("/api/v1/auth/session", { skipUnauthorized: true });
-      if (next.signed_in) {
-        queryClient.setQueryData(SESSION_KEY, next);
-        return true;
-      }
+      next = await apiFetch<SessionData>("/api/v1/auth/session", { skipUnauthorized: true });
+      verdict = next.signed_in ? "valid" : "signed_out";
     } catch (error) {
-      if (!(error instanceof ApiError && error.status === 401)) return true;
+      verdict = error instanceof ApiError && error.status === 401 ? "signed_out" : "unknown";
     }
-    endSession(queryClient);
-    return false;
+    settle(queryClient, verdict, next);
+    return verdict;
   })().finally(() => {
     pendingCheck = null;
   });
@@ -140,5 +206,10 @@ function revalidateSession(queryClient: QueryClient): Promise<boolean> {
  */
 export function installUnauthorizedGuard(queryClient: QueryClient): () => void {
   setOnUnauthorized(() => revalidateSession(queryClient));
-  return () => setOnUnauthorized(null);
+  return () => {
+    setOnUnauthorized(null);
+    lastRefetchAt = 0;
+    stopRetrying();
+    setSessionUnknown(false);
+  };
 }
