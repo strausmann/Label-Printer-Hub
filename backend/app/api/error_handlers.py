@@ -32,7 +32,7 @@ from app.printer_backends.exceptions import (
     TapeMismatchError,
 )
 from app.schemas.problem import ProblemDetail
-from app.services.errors import AppLookupNotFoundError
+from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
 
 # Mapping: exception class → (HTTP status code, problem-type slug)
 _MAPPING: dict[type[Exception], tuple[int, str]] = {
@@ -41,6 +41,7 @@ _MAPPING: dict[type[Exception], tuple[int, str]] = {
     TapeEmptyError: (409, "tape-empty"),
     PrinterCoverOpenError: (409, "printer-cover-open"),
     AppLookupNotFoundError: (404, "app-lookup-not-found"),
+    IntegrationNotConfiguredError: (503, "integration_not_configured"),
 }
 
 

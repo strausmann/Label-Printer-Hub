@@ -126,7 +126,7 @@ class PrintService:
             raise RuntimeError(msg)
         return cast(
             LabelData,
-            await self._lookup_service.resolve(
+            await self._lookup_service.lookup(
                 request.lookup.app,
                 request.lookup.identifier,
             ),
