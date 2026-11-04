@@ -5,15 +5,18 @@ required for Alembic autogenerate to detect schema changes.
 """
 
 from app.models.api_key import ApiKey
+from app.models.app_setting import AppSetting
 from app.models.job import Job, JobState
 from app.models.preset import Preset
 from app.models.print_batch import PrintBatch
 from app.models.printer import Printer, PrinterAudit
 from app.models.printer_state import PrinterState
 from app.models.printer_status_cache import PrinterStatusCache
+from app.models.ui_session import UiSession
 
 __all__ = [
     "ApiKey",
+    "AppSetting",
     "Job",
     "JobState",
     "Preset",
@@ -22,4 +25,5 @@ __all__ = [
     "PrinterAudit",
     "PrinterState",
     "PrinterStatusCache",
+    "UiSession",
 ]

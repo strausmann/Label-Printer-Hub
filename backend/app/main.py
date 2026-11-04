@@ -87,6 +87,7 @@ from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.admin_printers_api import router as admin_printers_api_router
 from app.api.routes.print import render_router
 from app.api.routes.print import router as print_router
+from app.api.routes.settings_api import router as settings_api_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
 from app.config import get_settings
@@ -115,6 +116,7 @@ from app.services.producers.status_probe_producer import StatusProbeProducer
 from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.readiness import build_readiness_response
 from app.services.tape_registry import TapeRegistry
+from app.settings_store import SettingsStore
 
 # Per ADR 0011 we pin the OpenAPI version explicitly rather than relying on
 # FastAPI's default, so a FastAPI upgrade can't drift the API contract version.
@@ -313,6 +315,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db_printer_ids = [p.id for p in _db_printers]
         await ensure_printer_state(s)
         await s.commit()
+        # D4/D5: runtime settings (env-locked values, encrypted secrets).
+        settings_store = SettingsStore()
+        await settings_store.load(s)
+        app.state.settings_store = settings_store
     # -------------------------------------------------------------------------
 
     # Phase 2: JobStore + CleanupTask
@@ -713,6 +719,7 @@ def create_app() -> _LifespanManager:
     app.include_router(qr_routes.router)
     app.include_router(admin_api_keys_router)
     app.include_router(admin_printers_api_router)
+    app.include_router(settings_api_router)
 
     _static_dir = Path(__file__).parent / "static"
     if _static_dir.exists():
