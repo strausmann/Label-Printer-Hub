@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import AuthContext
+from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
 from app.printer_backends.exceptions import (
@@ -41,6 +41,22 @@ from app.services.print_queue import PrinterAlreadyActiveError
 _log = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _check_default_printer(http: Request, auth: AuthContext) -> None:
+    """403 when the key may not use the default printer these legacy routes act on."""
+    printer_id = getattr(http.app.state, "printer_id", None)
+    if printer_id is not None:
+        check_printer_access(auth, UUID(str(printer_id)))
+
+
+def _job_or_404(job: Any, job_id: str, auth: AuthContext) -> Any:
+    """A job outside the caller's printer scope answers exactly like an unknown job."""
+    if auth.allowed_printer_ids and str(job.printer_id) not in auth.allowed_printer_ids:
+        raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+    return job
+
+
 # Separate router with /api prefix for the render/preview endpoint so that
 # the effective URL matches the approved spec: POST /api/render/preview.
 # The legacy /print, /jobs, /printer routes on `router` have no /api prefix
@@ -102,6 +118,7 @@ async def create_print_job(
     http: Request,
     _auth: Annotated[AuthContext, Depends(require_print)],
 ) -> Any:
+    _check_default_printer(http, _auth)
     service = http.app.state.print_service
     try:
         job_id = await service.submit_print_job(request)
@@ -147,7 +164,7 @@ async def get_job_status(
 ) -> PrintJobStatusResponse | Response:
     queue = http.app.state.print_queue
     try:
-        job = await queue.get(job_id)
+        job = _job_or_404(await queue.get(job_id), job_id, _auth)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"job not found: {job_id}") from exc
 
@@ -211,6 +228,7 @@ async def resume_printer(
     printer_id = getattr(http.app.state, "printer_id", None)
     if printer_id is None:
         raise HTTPException(status_code=404, detail="no printer configured")
+    check_printer_access(_auth, UUID(str(printer_id)))
     # Same effect as POST /api/printers/{id}/resume: clear the persisted flag too.
     await printer_state_repo.set_paused(session, printer_id, False)
     try:
@@ -261,7 +279,7 @@ async def resume_job(
     """
     queue = http.app.state.print_queue
     try:
-        job = await queue.get(job_id)
+        job = _job_or_404(await queue.get(job_id), job_id, _auth)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"job not found: {job_id}") from exc
 
