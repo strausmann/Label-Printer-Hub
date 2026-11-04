@@ -213,12 +213,15 @@ export function ModalDialog({
   isOpen,
   onClose,
   alert,
+  dismissable = !alert,
 }: {
   title: string;
   children: ReactNode;
   isOpen: boolean;
   onClose: () => void;
   alert?: boolean;
+  /** Escape and a click outside close it; off for a dialog that holds the only copy of something. */
+  dismissable?: boolean;
 }) {
   return (
     <ModalOverlay
@@ -226,7 +229,8 @@ export function ModalDialog({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      isDismissable={!alert}
+      isDismissable={dismissable}
+      isKeyboardDismissDisabled={!dismissable}
       className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4 data-[entering]:animate-[fadein_160ms_ease-out]"
     >
       <Modal className="w-full max-w-md rounded-r3 border border-line bg-surface p-6 data-[entering]:animate-[popin_180ms_cubic-bezier(0.23,1,0.32,1)]">

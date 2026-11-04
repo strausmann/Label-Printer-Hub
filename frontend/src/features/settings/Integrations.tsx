@@ -6,6 +6,7 @@ import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { useApiKeys, useSaveSettings, useTestIntegration, type ApiKey, type SettingView } from "./api";
+import { useInfo } from "../../app/session";
 import { sameUrl, useSettingsDraft } from "./draft";
 import { LastUsed } from "./LastUsed";
 import { SaveFeedback, useErrorText } from "./feedback";
@@ -23,6 +24,7 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   const draft = useSettingsDraft(views);
   const save = useSaveSettings();
   const test = useTestIntegration(name);
+  const info = useInfo().data?.integrations.find((i) => i.name === name);
   const [saved, setSaved] = useState(false);
 
   const urlKey = `integrations.${name}.url`;
@@ -39,7 +41,10 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
 
   const { values, invalid } = draft.payload(keys);
   const changed = Object.keys(values).length > 0;
-  const configured = urlView.is_set && (!secretView || secretView.is_set);
+  const savedInSettings = urlView.is_set && (!secretView || secretView.is_set);
+  // One source with the sidebar: /api/info says whether the integration is usable (Paperless has no entry there).
+  const configured = info ? info.configured : savedInSettings;
+  const savedButUnusable = !configured && (urlView.is_set || Boolean(secretView?.is_set));
   const label = (suffix: string) => ({ url: t`URL`, secret: SECRET_SUFFIX[name] === "token" ? t`Token` : t`API key`, timeout: t`Timeout (seconds)` })[suffix]!;
 
   const change = (key: string) => (value: string | boolean | null) => {
@@ -57,6 +62,11 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
         </h3>
         <StatusBadge state={configured ? "ok" : "idle"} label={configured ? t`Set up` : t`Not set up`} />
       </div>
+      {savedButUnusable ? (
+        <p className="max-w-xl text-small text-ink-2">
+          {t`Saved values exist, but this integration cannot be used yet. A secret may belong to another URL or may not be readable with the current secret key, or the URL is missing. Enter the secret again.`}
+        </p>
+      ) : null}
       <div className="grid max-w-xl gap-5">
         <SettingField view={urlView} label={label("url")} value={draft.valueOf(urlKey)} onChange={change(urlKey)} />
         {secretView && secretKey ? (

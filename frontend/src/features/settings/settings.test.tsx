@@ -303,3 +303,65 @@ describe("System", () => {
     expect(await screen.findByText("No warnings or errors recorded.")).toBeVisible();
   });
 });
+
+describe("fix round 1", () => {
+  const created = { key_id: KEY_KEPT.id, name: "Kept", plaintext: "lph_fake-plaintext-for-tests", prefix: "lph_kept", scopes: ["print"] };
+  const createKey = async (view: Awaited<ReturnType<typeof renderApp>>) => {
+    await userEvent.type(await screen.findByRole("textbox", { name: "Key name" }), "Kept");
+    await userEvent.click(screen.getByRole("button", { name: "Create key" }));
+    return view;
+  };
+
+  it("the new-key dialog survives Escape and only closes with Done", async () => {
+    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/admin/api-keys": [KEY_ADMIN], "POST /api/admin/api-keys": created });
+    await renderApp({ path: "/settings/access" });
+    await createKey({} as never);
+    const dialog = await screen.findByRole("dialog", { name: "Your new key" });
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "Your new key" })).toBeVisible();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("a generated webhook key disappears from the page once saved", async () => {
+    mockApi({
+      "GET /api/v1/settings": settingsList(),
+      "GET /api/admin/api-keys": [],
+      "PUT /api/v1/settings": settingsList({ "access.webhook_api_key": { is_set: true } }),
+    });
+    await renderApp({ path: "/settings/access" });
+    await userEvent.click(await screen.findByRole("button", { name: "Generate a key" }));
+    expect(screen.getByText(/Copy it now/)).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Save webhook key" }));
+    expect(await screen.findByText("Saved")).toBeVisible();
+    expect(screen.queryByText(/Copy it now/)).toBeNull();
+    expect(screen.queryByText(/^[0-9a-f]{48}$/)).toBeNull();
+  });
+
+  it("the integration card takes its state from /api/info, like the sidebar", async () => {
+    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/admin/api-keys": [] });
+    await renderApp({
+      path: "/settings/integrations",
+      info: { integrations: [{ name: "snipeit", configured: false }, { name: "grocy", configured: true }, { name: "spoolman", configured: true }] },
+    });
+    const snipe = await screen.findByRole("group", { name: "Snipe-IT" });
+    // Settings say url + key are saved, but the plugin does not accept them.
+    expect(within(snipe).getByText("Not set up")).toBeVisible();
+    expect(within(snipe).getByText(/cannot be used/i)).toBeVisible();
+    // Grocy has nothing saved in settings, yet the plugin is configured (environment).
+    const grocy = screen.getByRole("group", { name: "Grocy" });
+    expect(within(grocy).getByText("Set up")).toBeVisible();
+    expect(within(grocy).queryByText(/cannot be used/i)).toBeNull();
+  });
+
+  it("an undecryptable secret makes the card say so as well", async () => {
+    mockApi({
+      "GET /api/v1/settings": settingsList({ "integrations.snipeit.api_key": { is_set: true, state: "undecryptable" } }),
+      "GET /api/admin/api-keys": [],
+    });
+    await renderApp({ path: "/settings/integrations", info: { integrations: [{ name: "snipeit", configured: false }] } });
+    const snipe = await screen.findByRole("group", { name: "Snipe-IT" });
+    expect(within(snipe).getByText("Not set up")).toBeVisible();
+    expect(within(snipe).getByText(/cannot be used/i)).toBeVisible();
+  });
+});

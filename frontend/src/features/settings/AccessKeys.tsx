@@ -34,7 +34,7 @@ function NewKeyDialog({ plaintext, onClose }: { plaintext: string | null; onClos
     }
   }
   return (
-    <ModalDialog title={t`Your new key`} isOpen={plaintext !== null} onClose={onClose}>
+    <ModalDialog title={t`Your new key`} isOpen={plaintext !== null} onClose={onClose} dismissable={false}>
       <TextInput label={t`Key`} value={plaintext ?? ""} readOnly mono />
       <div className="flex items-center gap-3">
         <Button onPress={() => void copyKey()} className={SECONDARY_BUTTON}>
@@ -179,6 +179,9 @@ function WebhookForm({ views }: { views: SettingView[] }) {
         save.mutate(values, {
           onSuccess: () => {
             draft.clear([WEBHOOK_KEY]);
+            // "Cannot be shown again" has to be true: drop the generated key (it also lives
+            // in this component's state only, so leaving the page drops it as well).
+            setGenerated(null);
             setSaved(true);
           },
         });
