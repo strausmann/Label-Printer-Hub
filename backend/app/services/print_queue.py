@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -234,13 +234,22 @@ class PrintQueue:
 
     # --- lifecycle ----------------------------------------------------------
 
-    async def start(self) -> None:
+    async def start(self, initially_paused: Mapping[UUID, datetime] | None = None) -> None:
+        """Start the workers, recover persisted jobs.
+
+        *initially_paused* (printer id -> pause time) is applied BEFORE any worker
+        task exists, so a printer the user stopped never prints a recovered job.
+        """
         if self._running:
             return
         # I-1: Race-Guard — sofort setzen bevor erster await, damit ein zweiter
         # gleichzeitiger start()-Aufruf am Guard oben scheitert.
         self._running = True
         try:
+            for paused_id, since in (initially_paused or {}).items():
+                if paused_id in self._worker_states:
+                    # No real suspension here: state is set before any worker is created.
+                    await self.pause_printer(paused_id, reason="user", source="user", since=since)
             # Phase 2 Recovery: unterbrochene PRINTING-Jobs markieren + QUEUED re-enqueuen.
             # mark_interrupted MUSS vor list_pending aufgerufen werden, damit die alten
             # PRINTING-Jobs NICHT in list_pending zurückkommen.
@@ -1063,23 +1072,16 @@ class PrintQueue:
             )
 
 
-async def restore_manual_pauses(queue: PrintQueue, session: AsyncSession) -> int:
-    """Re-pause workers whose ``printer_state.paused`` flag survived a restart.
+async def load_manual_pauses(session: AsyncSession) -> dict[UUID, datetime]:
+    """Printers whose ``printer_state.paused`` flag is set, with the time it was set.
 
-    A fresh queue starts every worker ACTIVE; without this a printer the user
-    stopped would print again after a restart while the UI still says Paused.
-    Returns the number of printers paused.
+    Pass the result to ``PrintQueue.start(initially_paused=...)``: a fresh queue
+    starts every worker ACTIVE, so without it a printer the user stopped would
+    print recovered jobs again after a restart while the UI still says Paused.
     """
     result = await session.execute(select(PrinterState).where(col(PrinterState.paused).is_(True)))
-    rows = result.scalars().all()
-    restored = 0
-    for row in rows:
+    paused: dict[UUID, datetime] = {}
+    for row in result.scalars().all():
         since = row.updated_at
-        if since.tzinfo is None:
-            since = since.replace(tzinfo=UTC)
-        try:
-            await queue.pause_printer(row.printer_id, reason="user", source="user", since=since)
-        except KeyError:
-            continue  # state row of a printer this queue does not run
-        restored += 1
-    return restored
+        paused[row.printer_id] = since if since.tzinfo else since.replace(tzinfo=UTC)
+    return paused

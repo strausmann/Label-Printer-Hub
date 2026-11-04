@@ -238,44 +238,89 @@ async def test_legacy_resume_clears_db_flag_and_worker_dispatches(session) -> No
         await queue.stop(timeout_s=2.0)
 
 
+async def _startup(queue_printers, session, store=None, engine=None) -> PrintQueue:
+    """The lifespan sequence: load persisted pauses, then start the queue with them."""
+    from app.services.print_queue import load_manual_pauses
+
+    queue = PrintQueue(queue_printers, store=store, engine=engine)
+    await queue.start(initially_paused=await load_manual_pauses(session))
+    return queue
+
+
+def _recovered_queued_job(printer_id: UUID):
+    from app.models.job import Job as DbJob
+
+    return DbJob(
+        printer_id=printer_id,
+        state="queued",
+        payload={
+            "content_type": "qr_two_lines",
+            "rendered_tape_mm": 12,
+            "label_data": {
+                "source_app": "manual",
+                "primary_id": "A-1",
+                "title": "Shelf",
+                "qr_payload": "https://example.invalid/x",
+                "secondary": [],
+                "items": [],
+            },
+            "tape_mm": 12,
+        },
+    )
+
+
 @pytest.mark.asyncio
-async def test_restart_restores_manual_pause(session) -> None:
-    """Pause via API, then rebuild the queue from the DB as the lifespan does."""
-    from app.services.print_queue import restore_manual_pauses
+async def test_restart_keeps_recovered_job_queued_for_db_paused_printer(session) -> None:
+    """A recovered QUEUED job of a manually paused printer must not print on startup."""
+    from unittest.mock import MagicMock
+
+    from app.services.job_store import MemoryJobStore
 
     printer, backend, queue, _sub = await _setup(session, TapeEmptyError())
     backend.fail = False
-    client = TestClient(_app(session, queue))
-    assert client.post(f"/api/printers/{printer.id}/pause").status_code == 204
+    assert (
+        TestClient(_app(session, queue)).post(f"/api/printers/{printer.id}/pause").status_code
+        == 204
+    )
     await queue.stop(timeout_s=2.0)
 
-    queue2 = PrintQueue([backend])  # fresh process: every worker ACTIVE
-    await queue2.start()
-    try:
-        assert await restore_manual_pauses(queue2, session) == 1
-        job_id = await queue2.submit(printer.id, Image.new("1", (200, 128)), tape_mm=12)
-        await asyncio.sleep(0.3)
-        assert backend.printed == 0  # queued job is not dispatched
-        assert (await queue2.get(job_id)).state.value == "queued"
+    store = MemoryJobStore()
+    db_job = _recovered_queued_job(printer.id)
+    await store.save_queued(db_job)
+    engine = MagicMock()
+    engine.render.return_value = Image.new("1", (200, 128))
 
-        row = TestClient(_app(session, queue2)).get(f"/api/printers/{printer.id}").json()
+    queue2 = await _startup([backend], session, store=store, engine=engine)
+    try:
+        for _ in range(10):
+            await asyncio.sleep(0)
+        await asyncio.sleep(0.2)
+        assert backend.printed == 0
+        assert (await queue2.get(str(db_job.id))).state.value == "queued"
+
+        client = TestClient(_app(session, queue2))
+        row = client.get(f"/api/printers/{printer.id}").json()
         assert row["paused"] is True
         assert row["pause"]["source"] == "user"
-        assert row["pause"]["reason_code"] == "user"
+
+        assert client.post(f"/api/printers/{printer.id}/resume").status_code == 204
+        job = await queue2.wait_for_job(str(db_job.id), timeout_s=2.0)
+        assert job.state.value == "completed"
+        assert backend.printed == 1
     finally:
         await queue2.stop(timeout_s=2.0)
 
 
 @pytest.mark.asyncio
-async def test_restore_skips_unpaused_and_unknown_printers(session) -> None:
-    from app.services.print_queue import restore_manual_pauses
-
-    printer = await _printer(session)  # state paused=False
+async def test_start_ignores_initial_pause_for_unknown_printer(session) -> None:
+    printer = await _printer(session)
     other = Printer(name="o", slug="other", model="m", backend="b", connection={})
     session.add(other)
     await session.commit()
-    session.add(PrinterState(printer_id=other.id, paused=True))  # not known to the queue
+    session.add(PrinterState(printer_id=other.id, paused=True))  # not run by this queue
     await session.commit()
-    queue = PrintQueue([_Backend(printer.id, TapeEmptyError())])
-    assert await restore_manual_pauses(queue, session) == 0
-    assert queue.is_paused(printer.id) is False
+    queue = await _startup([_Backend(printer.id, TapeEmptyError())], session)
+    try:
+        assert queue.is_paused(printer.id) is False
+    finally:
+        await queue.stop(timeout_s=2.0)
