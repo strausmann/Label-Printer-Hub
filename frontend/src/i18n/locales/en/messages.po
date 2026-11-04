@@ -93,6 +93,10 @@ msgstr "Label Printer Hub"
 msgid "Light theme"
 msgstr "Light theme"
 
+#: src/shell/LiveStatus.tsx
+msgid "Live updates paused"
+msgstr "Live updates paused"
+
 #: src/app/router.tsx
 #: src/i18n/messages.ts
 msgid "Loading…"
@@ -136,6 +140,14 @@ msgstr "Printers"
 #: src/shell/StatusBadge.tsx
 msgid "Problem"
 msgstr "Problem"
+
+#: src/shell/LiveStatus.tsx
+msgid "Reconnect"
+msgstr "Reconnect"
+
+#: src/shell/LiveStatus.tsx
+msgid "Reconnecting…"
+msgstr "Reconnecting…"
 
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."

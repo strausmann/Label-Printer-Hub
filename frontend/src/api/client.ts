@@ -36,6 +36,11 @@ export function setOnUnauthorized(handler: (() => void) | null): void {
   onUnauthorized = handler;
 }
 
+/** Runs the registered 401 handler; the event stream calls it when the server ends the session. */
+export function notifyUnauthorized(): void {
+  onUnauthorized?.();
+}
+
 export type ApiInit = RequestInit & { json?: unknown };
 
 type Json = Record<string, unknown>;

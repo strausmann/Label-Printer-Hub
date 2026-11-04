@@ -1,5 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ReactNode } from "react";
+import { useHubEvents } from "../api/events";
+import { LiveStatus } from "./LiveStatus";
 import { Sidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
 import { TopBar } from "./TopBar";
@@ -7,6 +9,7 @@ import { TopBar } from "./TopBar";
 /** Sidebar on desktop, bottom tab bar on a phone (breakpoint 1024 px), search and Scan on top. */
 export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useLingui();
+  const { connected, connecting, reconnect } = useHubEvents();
   return (
     <div className="flex min-h-dvh">
       <a
@@ -23,6 +26,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <main id="content" tabIndex={-1} className="flex-1 p-4 pb-32 outline-none lg:p-8 lg:pb-8">
+          <LiveStatus connected={connected} connecting={connecting} onReconnect={reconnect} />
           {children}
         </main>
       </div>
