@@ -21,6 +21,7 @@ entry-points.
        def __init__(self) -> None:
            # Local import avoids a load-time cycle.
            from app.config import get_settings
+
            settings = get_settings()
            self._base_url = settings.myapp_url.rstrip("/")
 
