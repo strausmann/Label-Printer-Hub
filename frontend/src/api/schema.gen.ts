@@ -1068,6 +1068,8 @@ export interface components {
             features: {
                 [key: string]: boolean;
             };
+            /** Integrations */
+            integrations: components["schemas"]["InfoIntegration"][];
             /** Revision */
             revision: string;
             /** Version */
@@ -1079,6 +1081,19 @@ export interface components {
             bootstrap_open: boolean;
             /** Sso Configured */
             sso_configured: boolean;
+        };
+        /**
+         * InfoIntegration
+         * @description Whether an integration is set up. Never carries a URL or a key.
+         */
+        InfoIntegration: {
+            /** Configured */
+            configured: boolean;
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "snipeit" | "grocy" | "spoolman";
         };
         /** IntegrationTestResult */
         IntegrationTestResult: {

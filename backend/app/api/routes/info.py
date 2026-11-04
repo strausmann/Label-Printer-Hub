@@ -17,8 +17,9 @@ from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin
 from app.config import get_settings
 from app.db.session import get_session
+from app.integrations.registry import IntegrationRegistry
 from app.observability.log_buffer import LOG_BUFFER, LOG_BUFFER_CAPACITY
-from app.schemas.info import Info, InfoAuth, LogEntry
+from app.schemas.info import Info, InfoAuth, InfoIntegration, LogEntry
 
 router = APIRouter(tags=["info"])
 
@@ -36,6 +37,20 @@ FEATURES: dict[str, bool] = {
     "asn": False,
     "kept": False,
 }
+
+
+#: The integrations the web UI knows, in the order its navigation lists them.
+INTEGRATIONS: tuple[Literal["snipeit", "grocy", "spoolman"], ...] = ("snipeit", "grocy", "spoolman")
+
+
+def _integration_status() -> list[InfoIntegration]:
+    plugins = IntegrationRegistry.all()
+    return [
+        InfoIntegration(
+            name=name, configured=bool(name in plugins and plugins[name].is_configured())
+        )
+        for name in INTEGRATIONS
+    ]
 
 
 @router.get("/api/info", response_model=Info)
@@ -61,6 +76,7 @@ async def get_info(request: Request, db: SessionDep) -> Info:
             bootstrap_open=bootstrap_open,
         ),
         features=dict(FEATURES),
+        integrations=_integration_status(),
     )
 
 

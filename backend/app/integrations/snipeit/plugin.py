@@ -8,7 +8,8 @@ shape.
 
 from __future__ import annotations
 
-from typing import TypedDict
+import re
+from typing import Any, TypedDict
 from urllib.parse import quote
 
 from app.integrations.live_config import StoreBoundPlugin
@@ -33,7 +34,17 @@ class _SnipeITAssetResponse(TypedDict, total=False):
 
 
 class SnipeITNotFoundError(AppLookupNotFoundError):
-    """Raised when no Snipe-IT asset matches the given tag."""
+    """Raised when no Snipe-IT asset or location matches the given value."""
+
+
+#: ``loc:<id>`` addresses a location; every other value is an asset (tag or numeric id).
+LOCATION_PREFIX = "loc:"
+_DIGITS = re.compile(r"[0-9]+")
+
+
+def _is_error_payload(response_json: object) -> bool:
+    """Snipe-IT answers some unknown ids with 200 and ``{"status": "error", ...}``."""
+    return isinstance(response_json, dict) and response_json.get("status") == "error"
 
 
 class SnipeITPlugin(StoreBoundPlugin):
@@ -59,16 +70,28 @@ class SnipeITPlugin(StoreBoundPlugin):
     def __init__(self) -> None:
         self._init_live()
 
-    async def lookup(self, asset_tag: str) -> LabelData:
-        """Return LabelData for `asset_tag`, or raise SnipeITNotFoundError."""
-        self._require_configured()
-        encoded_tag = quote(asset_tag, safe="")
-        response, base = await self._get(
-            f"/api/v1/hardware/bytag/{encoded_tag}",
-            lambda key: {"Authorization": f"Bearer {key}", "Accept": "application/json"},
-        )
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {key}", "Accept": "application/json"}
 
-        if response.status_code == 404:
+    async def lookup(self, asset_tag: str) -> LabelData:
+        """Resolve ``loc:<id>`` to a location, anything else to an asset.
+
+        An asset is found by its tag; a purely numeric value that is no tag is tried
+        as the numeric asset id (the number in a printed ``/asset/<id>`` link).
+        Raises SnipeITNotFoundError when nothing matches.
+        """
+        self._require_configured()
+        if asset_tag.startswith(LOCATION_PREFIX):
+            return await self._lookup_location(asset_tag, asset_tag[len(LOCATION_PREFIX) :])
+        encoded_tag = quote(asset_tag, safe="")
+        response, base = await self._get(f"/api/v1/hardware/bytag/{encoded_tag}", self._headers)
+
+        if response.status_code == 404 or (
+            response.status_code == 200 and _is_error_payload(response.json())
+        ):
+            if _DIGITS.fullmatch(asset_tag):
+                return await self._lookup_asset_by_id(asset_tag)
             raise SnipeITNotFoundError(f"Asset {asset_tag!r} not found")
         # 401/403/5xx surface as httpx.HTTPStatusError — callers (AppLookupService)
         # decide whether to treat them as configuration errors vs transient failures.
@@ -76,6 +99,39 @@ class SnipeITPlugin(StoreBoundPlugin):
 
         payload: _SnipeITAssetResponse = response.json()
         return self._payload_to_label(payload, asset_tag, base)
+
+    async def _lookup_asset_by_id(self, asset_id: str) -> LabelData:
+        response, base = await self._get(f"/api/v1/hardware/{asset_id}", self._headers)
+        if response.status_code == 404 or (
+            response.status_code == 200 and _is_error_payload(response.json())
+        ):
+            raise SnipeITNotFoundError(f"Asset {asset_id!r} not found")
+        response.raise_for_status()
+        payload: _SnipeITAssetResponse = response.json()
+        return self._payload_to_label(payload, asset_id, base)
+
+    async def _lookup_location(self, value: str, location_id: str) -> LabelData:
+        # Only digits reach the URL: a malformed id is "not found" without a request.
+        if not _DIGITS.fullmatch(location_id):
+            raise SnipeITNotFoundError(f"Location {value!r} not found")
+        response, base = await self._get(f"/api/v1/locations/{location_id}", self._headers)
+        if response.status_code == 404 or (
+            response.status_code == 200 and _is_error_payload(response.json())
+        ):
+            raise SnipeITNotFoundError(f"Location {location_id!r} not found")
+        response.raise_for_status()
+        payload: dict[str, Any] = response.json()
+        loc_id = payload.get("id")
+        if loc_id is None:
+            raise ValueError(f"Snipe-IT response for {value!r} is missing required field 'id'")
+        address = payload.get("address")
+        return LabelData(
+            title=str(payload.get("name") or f"Location {loc_id}"),
+            primary_id=f"{LOCATION_PREFIX}{loc_id}",
+            qr_payload=f"{base}/locations/{loc_id}",
+            source_app="snipeit",
+            secondary=(str(address),) if address else (),
+        )
 
     def _payload_to_label(
         self, payload: _SnipeITAssetResponse, asset_tag: str, base: str | None = None

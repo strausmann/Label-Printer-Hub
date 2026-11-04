@@ -56,6 +56,7 @@ async def test_info_shape(api_client_with_seed) -> None:
         "display_name",
         "auth",
         "features",
+        "integrations",
     }
     assert set(body["auth"]) == {"sso_configured", "bootstrap_open"}
     assert set(body["features"]) == FEATURE_KEYS
@@ -141,3 +142,41 @@ async def test_system_logs_admin_only_and_capped(client, api_client_with_seed) -
     assert len(everything) == LOG_BUFFER_CAPACITY
     assert all(item["message"] != "below threshold" for item in everything)
     assert all(item["message"] != "first warning" for item in everything)  # evicted
+
+
+async def test_info_integrations_follow_is_configured(
+    api_client_with_seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.integrations.registry import IntegrationRegistry
+
+    # Nothing is bound in this app (no lifespan), so every integration reads as not set up.
+    body = (await api_client_with_seed.get("/api/info")).json()
+    assert body["integrations"] == [
+        {"name": "snipeit", "configured": False},
+        {"name": "grocy", "configured": False},
+        {"name": "spoolman", "configured": False},
+    ]
+
+    monkeypatch.setattr(IntegrationRegistry.get("grocy"), "is_configured", lambda: True)
+    body = (await api_client_with_seed.get("/api/info")).json()
+    assert {i["name"]: i["configured"] for i in body["integrations"]} == {
+        "snipeit": False,
+        "grocy": True,
+        "spoolman": False,
+    }
+
+
+async def test_info_integrations_leak_no_url_or_key(
+    api_client_with_seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.integrations.registry import IntegrationRegistry
+
+    url, key = "https://snipe-it.example.invalid", "fake-snipeit-key-for-tests-0123456789"
+    plugin = IntegrationRegistry.get("snipeit")
+    monkeypatch.setattr(plugin, "is_configured", lambda: True)
+    monkeypatch.setattr(plugin, "_base_url", url, raising=False)
+    monkeypatch.setattr(plugin, "_api_key", key, raising=False)
+    resp = await api_client_with_seed.get("/api/info")
+    assert {i["name"]: i["configured"] for i in resp.json()["integrations"]}["snipeit"] is True
+    assert url not in resp.text and "snipe-it.example" not in resp.text and key not in resp.text
+    assert all(set(i) == {"name", "configured"} for i in resp.json()["integrations"])

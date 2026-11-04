@@ -15,6 +15,15 @@ class InfoAuth(BaseModel):
     bootstrap_open: bool
 
 
+class InfoIntegration(BaseModel):
+    """Whether an integration is set up. Never carries a URL or a key."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: Literal["snipeit", "grocy", "spoolman"]
+    configured: bool
+
+
 class Info(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -25,6 +34,7 @@ class Info(BaseModel):
     display_name: str
     auth: InfoAuth
     features: dict[str, bool]
+    integrations: list[InfoIntegration]
 
 
 class LogEntry(BaseModel):

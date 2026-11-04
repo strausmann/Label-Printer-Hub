@@ -50,6 +50,10 @@ async def test_lookup_product_400_raises_not_found() -> None:
     respx.get("https://grocy.example/api/objects/products/999").mock(
         return_value=httpx.Response(400, json={"error_message": "No such product"})
     )
+    # A digits-only value is then tried as a barcode (E-INT); unknown there too.
+    respx.get("https://grocy.example/api/stock/products/by-barcode/999").mock(
+        return_value=httpx.Response(400, json={"error_message": "Unknown barcode"})
+    )
     client = bound(GrocyPlugin)
     with pytest.raises(GrocyNotFoundError, match="999"):
         await client.lookup("999")
@@ -60,6 +64,9 @@ async def test_lookup_product_400_raises_not_found() -> None:
 async def test_lookup_product_404_also_raises_not_found() -> None:
     """A future Grocy version returning a proper 404 must also map to GrocyNotFoundError."""
     respx.get("https://grocy.example/api/objects/products/999").mock(
+        return_value=httpx.Response(404)
+    )
+    respx.get("https://grocy.example/api/stock/products/by-barcode/999").mock(
         return_value=httpx.Response(404)
     )
     client = bound(GrocyPlugin)
@@ -85,8 +92,9 @@ async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.Mo
 @pytest.mark.asyncio
 @respx.mock
 async def test_lookup_url_encodes_product_id() -> None:
-    respx.get("https://grocy.example/api/objects/products/A%2F1").mock(
-        return_value=httpx.Response(200, json={"id": 1, "name": "Encoded"})
+    # A non-numeric value is a barcode (E-INT) and is percent-encoded the same way.
+    respx.get("https://grocy.example/api/stock/products/by-barcode/A%2F1").mock(
+        return_value=httpx.Response(200, json={"product": {"id": 1, "name": "Encoded"}})
     )
     client = bound(GrocyPlugin)
     data = await client.lookup("A/1")
@@ -170,3 +178,99 @@ async def test_lookup_reuses_http_client_across_calls() -> None:
         f"Expected exactly one AsyncClient to be created (connection pooling), "
         f"but {len(instances)} were created"
     )
+
+
+# ---------------------------------------------------------------------------
+# E-INT: barcode lookup (GET /api/stock/products/by-barcode/{barcode}; verified
+# against Grocy's own grocy.openapi.json: 200 ProductDetailsResponse, 400 Unknown barcode)
+# ---------------------------------------------------------------------------
+
+_DETAILS = {"product": {"id": 118, "name": "Oat flakes"}, "stock_amount": "2"}
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_non_numeric_value_is_a_barcode() -> None:
+    route = respx.get("https://grocy.example/api/stock/products/by-barcode/OFF-4001").mock(
+        return_value=httpx.Response(200, json=_DETAILS)
+    )
+    by_id = respx.get(url__regex=r"https://grocy\.example/api/objects/products/.*")
+    data = await bound(GrocyPlugin).lookup("OFF-4001")
+
+    assert route.called and not by_id.called
+    assert route.calls.last.request.headers["GROCY-API-KEY"] == "grocy-key"
+    assert data.title == "Oat flakes"
+    assert data.primary_id == "118"
+    assert data.qr_payload == "https://grocy.example/product/118"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_numeric_value_is_an_id_first() -> None:
+    by_id = respx.get("https://grocy.example/api/objects/products/118").mock(
+        return_value=httpx.Response(200, json={"id": 118, "name": "Oat flakes"})
+    )
+    barcode = respx.get(url__regex=r"https://grocy\.example/api/stock/products/by-barcode/.*")
+    data = await bound(GrocyPlugin).lookup("118")
+
+    assert by_id.called and not barcode.called
+    assert data.primary_id == "118"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_numeric_barcode_falls_back_after_an_unknown_id() -> None:
+    """An EAN is a pure integer too: no product has that id, so it is tried as a barcode."""
+    respx.get("https://grocy.example/api/objects/products/4001234567890").mock(
+        return_value=httpx.Response(400, json={"error_message": "No such product"})
+    )
+    route = respx.get("https://grocy.example/api/stock/products/by-barcode/4001234567890").mock(
+        return_value=httpx.Response(200, json=_DETAILS)
+    )
+    data = await bound(GrocyPlugin).lookup("4001234567890")
+
+    assert route.called
+    assert data.title == "Oat flakes"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_unknown_barcode_raises_not_found() -> None:
+    respx.get("https://grocy.example/api/stock/products/by-barcode/NOPE").mock(
+        return_value=httpx.Response(400, json={"error_message": "Unknown barcode"})
+    )
+    with pytest.raises(GrocyNotFoundError, match="NOPE"):
+        await bound(GrocyPlugin).lookup("NOPE")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_numeric_unknown_in_both_ways_raises_not_found() -> None:
+    respx.get("https://grocy.example/api/objects/products/777").mock(
+        return_value=httpx.Response(400)
+    )
+    respx.get("https://grocy.example/api/stock/products/by-barcode/777").mock(
+        return_value=httpx.Response(400)
+    )
+    with pytest.raises(GrocyNotFoundError, match="777"):
+        await bound(GrocyPlugin).lookup("777")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_barcode_is_url_encoded_and_5xx_surfaces() -> None:
+    respx.get("https://grocy.example/api/stock/products/by-barcode/A%2F1%20x").mock(
+        return_value=httpx.Response(500)
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        await bound(GrocyPlugin).lookup("A/1 x")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_barcode_response_without_a_product_id_fails_loudly() -> None:
+    respx.get("https://grocy.example/api/stock/products/by-barcode/X1").mock(
+        return_value=httpx.Response(200, json={"product": {"name": "No id"}})
+    )
+    with pytest.raises(ValueError, match="missing required field 'id'"):
+        await bound(GrocyPlugin).lookup("X1")

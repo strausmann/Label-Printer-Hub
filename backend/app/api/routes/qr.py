@@ -2,7 +2,7 @@
 
 Routes (no /api/ prefix - these are the URLs printed as QR payloads)
 -------------------------------------------------------------------
-GET /loc/{entity_id}     - Snipe-IT location
+GET /loc/{entity_id}     - Snipe-IT location (the item view asks for it as ``loc:<id>``)
 GET /asset/{entity_id}   - Snipe-IT asset
 GET /spool/{entity_id}   - Spoolman filament spool
 GET /product/{entity_id} - Grocy product
