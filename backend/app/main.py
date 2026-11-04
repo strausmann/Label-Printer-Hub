@@ -79,6 +79,7 @@ from app.api.routes import auth_session as auth_session_routes
 from app.api.routes import batch as batch_routes
 from app.api.routes import batches as batches_routes
 from app.api.routes import events as events_routes
+from app.api.routes import info as info_routes
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
 from app.api.routes import printers as printers_routes
@@ -102,6 +103,7 @@ from app.db.lifespan import (
 )
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
+from app.observability.log_buffer import install_log_buffer
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
@@ -640,6 +642,7 @@ class _LifespanManager:
 
 def create_app() -> _LifespanManager:
     """Build the FastAPI app. Kept as a factory so tests can re-instantiate."""
+    install_log_buffer()
     app = FastAPI(
         lifespan=lifespan,
         title="Label Printer Hub — backend",
@@ -732,6 +735,7 @@ def create_app() -> _LifespanManager:
     app.include_router(auth_session_routes.router)
     app.include_router(admin_printers_api_router)
     app.include_router(settings_api_router)
+    app.include_router(info_routes.router)
 
     _static_dir = Path(__file__).parent / "static"
     if _static_dir.exists():

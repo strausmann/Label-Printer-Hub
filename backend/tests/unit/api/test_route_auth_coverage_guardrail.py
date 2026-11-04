@@ -70,6 +70,8 @@ _PUBLIC_BY_DESIGN: dict[tuple[str, str], str] = {
     ("GET", "/product/{entity_id}"): "QR landing page — see qr.py module docstring",
     ("POST", "/api/v1/auth/session"): "the sign-in itself: exchanges an API key or the "
     "bootstrap key for a session (auth_session.py); rate limited per client IP",
+    ("GET", "/api/info"): "the web shell and sign-in screen need version, language and "
+    "auth hints before sign-in (info.py); returns no secrets, only booleans and build info",
     ("GET", "/api/v1/auth/session"): "reports whether the caller is signed in and mints a "
     "session from trusted SSO headers (auth_session.py); returns no data without a session",
 }
