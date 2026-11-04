@@ -52,18 +52,42 @@ describe.skipIf(!required && !existsSync(dist))("built output", () => {
     expect(readFileSync(worker[0]!, "utf8")).toMatch(/zxing_reader-[\w-]+\.wasm/);
   });
 
-  it("csp: the one inline style the UI library injects is allowed by its hash, and nothing broader", () => {
-    const main = walk(join(dist, "assets"), ".js").find((f) => /index-/.test(f))!;
-    const code = readFileSync(main, "utf8");
-    const at = code.indexOf("react-aria-pressable-style");
-    expect(at, "react-aria no longer injects its pressable style; drop the hash from backend/app/web/spa.py").toBeGreaterThan(-1);
-    // `t.textContent=`\n@layer { [${attr}] {...} }\n    `.trim()`: a template in the minified bundle.
-    const quoted = /textContent=`(\s*@layer \{[^`]*)`\.trim\(\)/.exec(code);
-    expect(quoted, "could not find the style text next to its id").not.toBeNull();
-    const text = quoted![1]!.replace(/\$\{[^}]+\}/, "data-react-aria-pressable").trim();
-    const hash = createHash("sha256").update(text).digest("base64");
+  it("csp: every inline style the bundle can inject is allowed by its hash, and nothing broader", () => {
     const csp = readFileSync(resolve(__dirname, "..", "..", "backend", "app", "web", "spa.py"), "utf8");
-    expect(csp).toContain(`'sha256-${hash}'`);
     expect(csp).not.toContain("unsafe-inline");
+    // react-aria injects its styles at runtime (a touch-action rule, an iOS scroll lock). They live
+    // in whichever chunk holds the component, so every script of the build is searched, not one.
+    const scripts = walk(join(dist, "assets"), ".js").map((file) => ({ file, code: readFileSync(file, "utf8") }));
+    const holders = scripts.filter(({ code }) => code.includes("react-aria-pressable-style"));
+    expect(holders.length, "react-aria no longer injects its pressable style; drop its hash from backend/app/web/spa.py").toBeGreaterThan(0);
+
+    const found: { file: string; text: string }[] = [];
+    const unaccounted: string[] = [];
+    for (const { file, code } of scripts) {
+      for (const m of code.matchAll(/createElement\(`style`\)/g)) {
+        const window = code.slice(m.index, m.index + 400);
+        // `x.textContent=`...`` (maybe followed by .trim()): a template in the minified bundle.
+        const quoted = /textContent=`([^`]*)`(\.trim\(\))?/.exec(window);
+        if (quoted) {
+          // `${name}` is a constant of the bundle (the attribute the rule targets): look its text up.
+          const filled = quoted[1]!.replace(/\$\{(\w+)\}/g, (_all, name: string) => {
+            const value = new RegExp(`\\b${name}=\`([^\`]*)\``).exec(code);
+            expect(value, `constant ${name} used in an inline style could not be resolved`).not.toBeNull();
+            return value![1]!;
+          });
+          found.push({ file, text: quoted[2] ? filled.trim() : filled });
+        } else if (!/data-precedence/.test(code.slice(Math.max(0, m.index - 300), m.index + 100))) {
+          // React DOM's own `<style precedence>` hoisting; the app renders none. Anything else is unknown.
+          unaccounted.push(`${file}@${m.index}`);
+        }
+      }
+    }
+    expect(unaccounted, "a style element is created without a visible text: add a hash or remove it").toEqual([]);
+    expect(found.length, "react-aria's two inline styles were expected").toBeGreaterThanOrEqual(2);
+    const missing = found
+      .map(({ file, text }) => ({ file, text, hash: createHash("sha256").update(text).digest("base64") }))
+      .filter(({ hash }) => !csp.includes(`'sha256-${hash}'`))
+      .map(({ file, text, hash }) => `${file}: sha256-${hash} for ${JSON.stringify(text)}`);
+    expect(missing, "inline style without a CSP hash in backend/app/web/spa.py").toEqual([]);
   });
 });

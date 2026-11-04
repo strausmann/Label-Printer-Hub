@@ -33,16 +33,21 @@ NO_CACHE = "no-cache"
 # Paths owned by the API; never answered with the app shell.
 _RESERVED_PREFIXES = ("api/", "docs", "redoc", "openapi.json")
 
-# react-aria injects one fixed `<style>` (id react-aria-pressable-style, a touch-action rule) at
-# runtime. It is allowed by its hash only, never by a blanket inline allowance.
-# `src/build.test.ts` recomputes the
-# hash from the built bundle, so a react-aria update that changes the text fails the build.
+# react-aria injects two fixed `<style>` elements at runtime: a touch-action rule
+# (id react-aria-pressable-style) and, while a modal is open on iOS, an overscroll-behavior
+# rule that makes the scroll lock work. Each is allowed by its hash only, never by a blanket
+# inline allowance. `src/build.test.ts` recomputes the hash of every inline style found in the
+# built bundle and fails when one is missing here, so a react-aria update that changes the text
+# fails the build.
 _REACT_ARIA_PRESSABLE_STYLE = "'sha256-38RhXrc7EdReTKsOm23ZPOCUgniTUUcjky8QOOrQx6o='"
+_REACT_ARIA_SCROLL_LOCK_STYLE = "'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='"
 
 SPA_CSP = (
     "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
     "img-src 'self' data: blob:; connect-src 'self'; style-src 'self' "
     + _REACT_ARIA_PRESSABLE_STYLE
+    + " "
+    + _REACT_ARIA_SCROLL_LOCK_STYLE
     + "; "
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
