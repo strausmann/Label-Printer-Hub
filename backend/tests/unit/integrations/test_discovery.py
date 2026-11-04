@@ -6,6 +6,8 @@ import pytest
 from app.integrations import _discover_plugins
 from app.integrations.registry import IntegrationRegistry
 
+from tests.unit.integrations._bound import NoopLive
+
 
 class _FakeEntryPoint:
     def __init__(self, name: str, plugin_cls: type) -> None:
@@ -17,7 +19,7 @@ class _FakeEntryPoint:
         return self._cls
 
 
-class _AlphaPlugin:
+class _AlphaPlugin(NoopLive):
     name = "alpha"
     display_name = "Alpha"
 
@@ -25,7 +27,7 @@ class _AlphaPlugin:
         raise NotImplementedError
 
 
-class _BetaPlugin:
+class _BetaPlugin(NoopLive):
     name = "beta"
     display_name = "Beta"
 
@@ -116,7 +118,7 @@ def test_discover_handles_duplicate_registration(
 ) -> None:
     """Two entry-points exporting plugins with the same name: log + skip the second."""
 
-    class _AlphaDup:
+    class _AlphaDup(NoopLive):
         name = "alpha"
         display_name = "Alpha Duplicate"
 
@@ -147,7 +149,7 @@ def test_discover_handles_non_string_name_typeerror(
     discovery must catch it and continue with the next plugin instead of
     aborting the loop."""
 
-    class _BadNamePlugin:
+    class _BadNamePlugin(NoopLive):
         name = 42  # int, not str — Registry rejects this
         display_name = "Bad"
 

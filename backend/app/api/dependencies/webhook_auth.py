@@ -35,14 +35,14 @@ from __future__ import annotations
 
 import hmac
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Header, HTTPException, Request, status
 
-from app.config import Settings, get_settings
+from app.settings_store import SettingsStore
 
 
 async def require_webhook_key(
+    request: Request,
     x_api_key: str = Header(..., alias="X-API-Key"),
-    settings: Settings = Depends(get_settings),  # noqa: B008
 ) -> None:
     """FastAPI dependency that validates the ``X-API-Key`` header.
 
@@ -53,7 +53,9 @@ async def require_webhook_key(
     HTTPException(401)
         When the supplied key does not match the configured key.
     """
-    expected = settings.webhook_api_key.get_secret_value()
+    # D4/D5: the key lives in the runtime settings store (env wins, otherwise encrypted in the DB).
+    store: SettingsStore = request.app.state.settings_store
+    expected = str(store.get("access.webhook_api_key"))
     if not expected:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

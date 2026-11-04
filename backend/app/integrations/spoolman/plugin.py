@@ -12,8 +12,7 @@ import math
 from typing import Any
 from urllib.parse import quote
 
-import httpx
-
+from app.integrations.live_config import StoreBoundPlugin
 from app.schemas.label_data import LabelData
 from app.services.errors import AppLookupNotFoundError
 
@@ -22,7 +21,7 @@ class SpoolmanNotFoundError(AppLookupNotFoundError):
     """Raised when no Spoolman spool matches the given id."""
 
 
-class SpoolmanPlugin:
+class SpoolmanPlugin(StoreBoundPlugin):
     """Spoolman integration plugin.
 
     Implements the IntegrationPlugin protocol — exposes `name`,
@@ -34,24 +33,14 @@ class SpoolmanPlugin:
     name = "spoolman"
     display_name = "Spoolman"
 
+    secret_suffix = None
+
     def __init__(self) -> None:
-        from app.config import get_settings
-
-        settings = get_settings()
-        self._base_url = settings.spoolman_url.rstrip("/")
-        self._timeout = settings.spoolman_timeout
-        self._client = httpx.AsyncClient(timeout=self._timeout)
-
-    async def aclose(self) -> None:
-        """Close the shared HTTP client and release its connection pool.
-
-        Must be called on application shutdown (e.g. from lifespan finally block).
-        Safe to call more than once.
-        """
-        await self._client.aclose()
+        self._init_live()
 
     async def lookup(self, spool_id: str) -> LabelData:
         """Return LabelData for `spool_id`, or raise SpoolmanNotFoundError."""
+        self._require_configured()
         encoded_id = quote(spool_id, safe="")
         url = f"{self._base_url}/api/v1/spool/{encoded_id}"
         response = await self._client.get(url, headers={"Accept": "application/json"})

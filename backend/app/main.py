@@ -319,6 +319,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings_store = SettingsStore()
         await settings_store.load(s)
         app.state.settings_store = settings_store
+    # D4: integrations read URL/key/timeout from the store and follow changes live.
+    for _plugin in IntegrationRegistry.all().values():
+        _bind = getattr(_plugin, "bind", None)
+        if callable(_bind):
+            _bind(settings_store)
     # -------------------------------------------------------------------------
 
     # Phase 2: JobStore + CleanupTask
@@ -327,7 +332,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     cleanup_task = CleanupTask(
         store=job_store,
-        retention_days=settings.job_retention_days,
+        retention_days=lambda: int(settings_store.get("jobs.retention_days")),
     )
     await cleanup_task.start()
     app.state.cleanup_task = cleanup_task

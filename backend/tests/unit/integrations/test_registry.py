@@ -7,8 +7,10 @@ from app.integrations.base import IntegrationPlugin
 from app.integrations.registry import IntegrationNotFoundError, IntegrationRegistry
 from app.schemas.label_data import LabelData
 
+from tests.unit.integrations._bound import NoopLive
 
-class _FakePlugin:
+
+class _FakePlugin(NoopLive):
     """Minimal IntegrationPlugin-shaped object for tests."""
 
     def __init__(self, name: str = "fake", display_name: str = "Fake") -> None:

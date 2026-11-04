@@ -11,8 +11,7 @@ from __future__ import annotations
 from typing import TypedDict
 from urllib.parse import quote
 
-import httpx
-
+from app.integrations.live_config import StoreBoundPlugin
 from app.schemas.label_data import LabelData
 from app.services.errors import AppLookupNotFoundError
 
@@ -37,7 +36,7 @@ class SnipeITNotFoundError(AppLookupNotFoundError):
     """Raised when no Snipe-IT asset matches the given tag."""
 
 
-class SnipeITPlugin:
+class SnipeITPlugin(StoreBoundPlugin):
     """Snipe-IT integration plugin.
 
     Implements the IntegrationPlugin protocol — exposes `name`,
@@ -55,25 +54,14 @@ class SnipeITPlugin:
     name = "snipeit"
     display_name = "Snipe-IT"
 
+    secret_suffix = "api_key"
+
     def __init__(self) -> None:
-        from app.config import get_settings
-
-        settings = get_settings()
-        self._base_url = settings.snipeit_url.rstrip("/")
-        self._api_key = settings.snipeit_api_key.get_secret_value()
-        self._timeout = settings.snipeit_timeout
-        self._client = httpx.AsyncClient(timeout=self._timeout)
-
-    async def aclose(self) -> None:
-        """Close the shared HTTP client and release its connection pool.
-
-        Must be called on application shutdown (e.g. from lifespan finally block).
-        Safe to call more than once.
-        """
-        await self._client.aclose()
+        self._init_live()
 
     async def lookup(self, asset_tag: str) -> LabelData:
         """Return LabelData for `asset_tag`, or raise SnipeITNotFoundError."""
+        self._require_configured()
         encoded_tag = quote(asset_tag, safe="")
         url = f"{self._base_url}/api/v1/hardware/bytag/{encoded_tag}"
         headers = {

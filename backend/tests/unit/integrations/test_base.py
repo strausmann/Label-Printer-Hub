@@ -4,11 +4,13 @@ from typing import get_type_hints
 
 from app.integrations.base import IntegrationPlugin
 
+from tests.unit.integrations._bound import NoopLive
+
 
 def test_protocol_is_runtime_checkable() -> None:
     """isinstance() must work — the registry uses it defensively."""
 
-    class _Fake:
+    class _Fake(NoopLive):
         name = "x"
         display_name = "X"
 

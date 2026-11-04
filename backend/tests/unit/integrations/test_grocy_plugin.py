@@ -5,6 +5,8 @@ import pytest
 import respx
 from app.integrations.grocy.plugin import GrocyNotFoundError, GrocyPlugin
 
+from tests.unit.integrations._bound import bound
+
 # ---------------------------------------------------------------------------
 # Settings fixture
 # ---------------------------------------------------------------------------
@@ -31,7 +33,7 @@ async def test_lookup_product_returns_label_data() -> None:
         )
     )
 
-    client = GrocyPlugin()
+    client = bound(GrocyPlugin)
     data = await client.lookup("42")
 
     assert data.title == "Milch 1L"
@@ -48,7 +50,7 @@ async def test_lookup_product_400_raises_not_found() -> None:
     respx.get("https://grocy.example/api/objects/products/999").mock(
         return_value=httpx.Response(400, json={"error_message": "No such product"})
     )
-    client = GrocyPlugin()
+    client = bound(GrocyPlugin)
     with pytest.raises(GrocyNotFoundError, match="999"):
         await client.lookup("999")
 
@@ -60,7 +62,7 @@ async def test_lookup_product_404_also_raises_not_found() -> None:
     respx.get("https://grocy.example/api/objects/products/999").mock(
         return_value=httpx.Response(404)
     )
-    client = GrocyPlugin()
+    client = bound(GrocyPlugin)
     with pytest.raises(GrocyNotFoundError):
         await client.lookup("999")
 
@@ -75,7 +77,7 @@ async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.Mo
 
     monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "https://grocy.example/")
     get_settings.cache_clear()
-    client = GrocyPlugin()
+    client = bound(GrocyPlugin)
     data = await client.lookup("7")
     assert data.qr_payload == "https://grocy.example/product/7"
 
@@ -86,7 +88,7 @@ async def test_lookup_url_encodes_product_id() -> None:
     respx.get("https://grocy.example/api/objects/products/A%2F1").mock(
         return_value=httpx.Response(200, json={"id": 1, "name": "Encoded"})
     )
-    client = GrocyPlugin()
+    client = bound(GrocyPlugin)
     data = await client.lookup("A/1")
     assert data.title == "Encoded"
 
@@ -95,7 +97,7 @@ async def test_lookup_url_encodes_product_id() -> None:
 @respx.mock
 async def test_lookup_5xx_raises_httpx_error() -> None:
     respx.get("https://grocy.example/api/objects/products/1").mock(return_value=httpx.Response(500))
-    client = GrocyPlugin()
+    client = bound(GrocyPlugin)
     with pytest.raises(httpx.HTTPStatusError):
         await client.lookup("1")
 
@@ -107,7 +109,7 @@ async def test_lookup_missing_id_raises_value_error() -> None:
     respx.get("https://grocy.example/api/objects/products/1").mock(
         return_value=httpx.Response(200, json={"name": "Broken"})  # no id
     )
-    client = GrocyPlugin()
+    client = bound(GrocyPlugin)
     with pytest.raises(ValueError, match="missing required field 'id'"):
         await client.lookup("1")
 
@@ -124,7 +126,7 @@ async def test_lookup_sends_grocy_api_key_header(monkeypatch: pytest.MonkeyPatch
     route = respx.get("https://grocy.example/api/objects/products/1").mock(
         return_value=httpx.Response(200, json={"id": 1, "name": "x"})
     )
-    client = GrocyPlugin()
+    client = bound(GrocyPlugin)
     await client.lookup("1")
 
     assert route.called
@@ -158,7 +160,7 @@ async def test_lookup_reuses_http_client_across_calls() -> None:
         instances.append(self)
 
     with patch.object(httpx.AsyncClient, "__init__", capturing_init):
-        plugin = GrocyPlugin()
+        plugin = bound(GrocyPlugin)
         await plugin.lookup("10")
         await plugin.lookup("11")
 

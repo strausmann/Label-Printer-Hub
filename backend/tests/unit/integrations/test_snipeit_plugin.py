@@ -5,6 +5,8 @@ import pytest
 import respx
 from app.integrations.snipeit.plugin import SnipeITNotFoundError, SnipeITPlugin
 
+from tests.unit.integrations._bound import bound
+
 # ---------------------------------------------------------------------------
 # Settings fixture — env vars are read by the plugin constructor via get_settings()
 # ---------------------------------------------------------------------------
@@ -51,7 +53,7 @@ async def test_lookup_asset_returns_label_data() -> None:
         )
     )
 
-    client = SnipeITPlugin()
+    client = bound(SnipeITPlugin)
     data = await client.lookup("ASSET-12345")
 
     assert data.title == "MacBook Pro 16"
@@ -68,7 +70,7 @@ async def test_lookup_asset_404_raises_not_found() -> None:
         return_value=httpx.Response(404)
     )
 
-    client = SnipeITPlugin()
+    client = bound(SnipeITPlugin)
 
     with pytest.raises(SnipeITNotFoundError, match="UNKNOWN"):
         await client.lookup("UNKNOWN")
@@ -85,7 +87,7 @@ async def test_lookup_asset_without_serial_has_no_secondary_line() -> None:
         )
     )
 
-    client = SnipeITPlugin()
+    client = bound(SnipeITPlugin)
     data = await client.lookup("A-1")
 
     assert data.secondary == ()
@@ -103,7 +105,7 @@ async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.Mo
 
     monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipe-it.example/")
     get_settings.cache_clear()
-    client = SnipeITPlugin()
+    client = bound(SnipeITPlugin)
     data = await client.lookup("A-1")
     assert data.qr_payload == "https://snipe-it.example/hardware/1"
 
@@ -121,7 +123,7 @@ async def test_lookup_missing_id_raises_value_error() -> None:
             json={"asset_tag": "A-1", "name": "Broken Asset"},  # no 'id'
         )
     )
-    client = SnipeITPlugin()
+    client = bound(SnipeITPlugin)
     with pytest.raises(ValueError, match="missing required field 'id'"):
         await client.lookup("A-1")
 
@@ -133,7 +135,7 @@ async def test_lookup_5xx_raises_httpx_error() -> None:
     respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(500)
     )
-    client = SnipeITPlugin()
+    client = bound(SnipeITPlugin)
     with pytest.raises(httpx.HTTPStatusError):
         await client.lookup("A-1")
 
@@ -148,7 +150,7 @@ async def test_lookup_url_encodes_asset_tag() -> None:
             json={"id": 1, "asset_tag": "A/1 test", "name": "Thing"},
         )
     )
-    client = SnipeITPlugin()
+    client = bound(SnipeITPlugin)
     data = await client.lookup("A/1 test")
     assert data.title == "Thing"
 
@@ -165,7 +167,7 @@ async def test_lookup_sends_bearer_auth_header(monkeypatch: pytest.MonkeyPatch) 
     route = respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
         return_value=httpx.Response(200, json={"id": 1, "asset_tag": "A-1", "name": "T"})
     )
-    client = SnipeITPlugin()
+    client = bound(SnipeITPlugin)
     await client.lookup("A-1")
 
     assert route.called
@@ -197,7 +199,7 @@ async def test_lookup_reuses_http_client_across_calls() -> None:
         instances.append(self)
 
     with patch.object(httpx.AsyncClient, "__init__", capturing_init):
-        plugin = SnipeITPlugin()
+        plugin = bound(SnipeITPlugin)
         await plugin.lookup("A-1")
         await plugin.lookup("A-2")
 

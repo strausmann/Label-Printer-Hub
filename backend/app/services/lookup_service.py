@@ -25,7 +25,7 @@ from app.integrations.registry import (
     IntegrationRegistry,
 )
 from app.schemas.label_data import LabelData
-from app.services.errors import AppLookupNotFoundError
+from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
 
 
 class LookupFailedError(Exception):
@@ -63,7 +63,7 @@ class AppLookupService:
             raise UnknownAppError(str(e)) from e
         try:
             return await plugin.lookup(identifier)
-        except (LookupFailedError, AppLookupNotFoundError):
+        except (LookupFailedError, AppLookupNotFoundError, IntegrationNotConfiguredError):
             raise
         except Exception as e:
             raise LookupFailedError(f"{source_app} lookup failed: {e}") from e

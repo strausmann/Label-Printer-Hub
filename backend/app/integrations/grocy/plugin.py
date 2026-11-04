@@ -10,8 +10,7 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote
 
-import httpx
-
+from app.integrations.live_config import StoreBoundPlugin
 from app.schemas.label_data import LabelData
 from app.services.errors import AppLookupNotFoundError
 
@@ -20,7 +19,7 @@ class GrocyNotFoundError(AppLookupNotFoundError):
     """Raised when no Grocy product matches the given id."""
 
 
-class GrocyPlugin:
+class GrocyPlugin(StoreBoundPlugin):
     """Grocy integration plugin.
 
     Implements the IntegrationPlugin protocol — exposes `name`,
@@ -32,25 +31,14 @@ class GrocyPlugin:
     name = "grocy"
     display_name = "Grocy"
 
+    secret_suffix = "api_key"
+
     def __init__(self) -> None:
-        from app.config import get_settings
-
-        settings = get_settings()
-        self._base_url = settings.grocy_url.rstrip("/")
-        self._api_key = settings.grocy_api_key.get_secret_value()
-        self._timeout = settings.grocy_timeout
-        self._client = httpx.AsyncClient(timeout=self._timeout)
-
-    async def aclose(self) -> None:
-        """Close the shared HTTP client and release its connection pool.
-
-        Must be called on application shutdown (e.g. from lifespan finally block).
-        Safe to call more than once.
-        """
-        await self._client.aclose()
+        self._init_live()
 
     async def lookup(self, product_id: str) -> LabelData:
         """Return LabelData for `product_id`, or raise GrocyNotFoundError."""
+        self._require_configured()
         encoded_id = quote(product_id, safe="")
         url = f"{self._base_url}/api/objects/products/{encoded_id}"
         headers = {

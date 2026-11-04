@@ -10,3 +10,7 @@ class AppLookupNotFoundError(Exception):
     SpoolmanNotFoundError) inherit from this base so callers can catch any
     client's not-found in a single ``except AppLookupNotFoundError`` clause.
     """
+
+
+class IntegrationNotConfiguredError(Exception):
+    """Raised when a lookup targets an integration without URL (or key) in the settings."""
