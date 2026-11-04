@@ -62,7 +62,7 @@ async def test_put_locked_key_returns_409_and_writes_nothing(client, monkeypatch
 
 
 async def test_secret_never_returned(client) -> None:
-    resp = await _put(client, {SECRET_KEY: FAKE_TOKEN})
+    resp = await _put(client, {URL_KEY: GROCY, SECRET_KEY: FAKE_TOKEN})
     assert resp.status_code == 200
     assert FAKE_TOKEN not in resp.text
     listed = await client.get("/api/v1/settings")
@@ -77,7 +77,7 @@ async def test_secret_never_returned(client) -> None:
 async def test_secret_stored_encrypted(client, db_session) -> None:
     from app.models.app_setting import AppSetting
 
-    await _put(client, {SECRET_KEY: FAKE_TOKEN})
+    await _put(client, {URL_KEY: GROCY, SECRET_KEY: FAKE_TOKEN})
     row = (
         await db_session.execute(select(AppSetting).where(AppSetting.key == SECRET_KEY))
     ).scalar_one()
@@ -251,7 +251,7 @@ async def test_integration_test_does_not_follow_redirects(client) -> None:
 async def test_settings_export_has_no_secrets(client, monkeypatch) -> None:
     monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipeit.example.invalid")
     get_settings.cache_clear()
-    await _put(client, {SECRET_KEY: FAKE_TOKEN, "general.display_name": "Hub 1"})
+    await _put(client, {URL_KEY: GROCY, SECRET_KEY: FAKE_TOKEN, "general.display_name": "Hub 1"})
     resp = await client.get("/api/v1/settings/export")
     assert resp.status_code == 200
     assert "attachment" in resp.headers["content-disposition"]
@@ -293,3 +293,49 @@ async def test_settings_routes_require_admin(api_client_with_seed) -> None:
             method, path, headers=headers, json={"values": {}}
         )
         assert resp.status_code == 403, (method, path, resp.status_code)
+
+
+async def test_secret_without_url_422(client) -> None:
+    resp = await _put(client, {SECRET_KEY: FAKE_TOKEN})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["error_code"] == "url_required_for_secret"
+    assert FAKE_TOKEN not in resp.text
+
+
+async def test_non_ascii_secret_422_and_probe_survives(client, monkeypatch) -> None:
+    resp = await _put(client, {URL_KEY: GROCY, SECRET_KEY: "tëst-token"})
+    assert resp.status_code == 422
+    assert "tëst" not in resp.text
+    # env secret with a non-ASCII value must not crash the probe (500)
+    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", GROCY)
+    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "tëst-token")
+    get_settings.cache_clear()
+    with respx.mock(assert_all_called=False):
+        test = await client.post("/api/v1/settings/integrations/grocy/test", json={})
+    assert test.status_code == 200
+    assert test.json()["ok"] is False and test.json()["status"] is None
+    assert "tëst" not in test.text
+
+
+async def test_env_secret_with_ui_url_sends_nothing(client, monkeypatch) -> None:
+    """S1: env secret + UI-changed URL -> no request leaves."""
+    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", FAKE_TOKEN)
+    get_settings.cache_clear()
+    assert (await _put(client, {URL_KEY: GROCY})).status_code == 200
+    item = _by_key(await client.get("/api/v1/settings"))[SECRET_KEY]
+    assert item["state"] == "env_secret_needs_env_url"
+    with respx.mock(assert_all_called=False) as router:
+        any_call = router.route().respond(200)
+        for body in ({}, {"values": {URL_KEY: "https://evil.example.invalid"}}):
+            resp = await client.post("/api/v1/settings/integrations/grocy/test", json=body)
+            assert resp.status_code == 422
+            assert resp.json()["detail"]["error_code"] == "secret_required_for_new_url"
+        assert any_call.call_count == 0
+
+
+async def test_env_url_userinfo_not_shown(client, monkeypatch) -> None:
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://user:pw-secret@snipeit.example.invalid")
+    get_settings.cache_clear()
+    resp = await client.get("/api/v1/settings")
+    assert "pw-secret" not in resp.text
+    assert _by_key(resp)["integrations.snipeit.url"]["value"] == "https://snipeit.example.invalid"

@@ -14,7 +14,7 @@ class SettingView(BaseModel):
     value: Any | None = None
     is_set: bool
     locked: bool
-    state: Literal["ok", "undecryptable"] = "ok"
+    state: Literal["ok", "undecryptable", "env_secret_needs_env_url"] = "ok"
     choices: list[str] = Field(default_factory=list)
 
 

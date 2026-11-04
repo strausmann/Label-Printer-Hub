@@ -25,6 +25,8 @@ async def probe_integration(
         # follow_redirects=False: never forward the secret to a redirect target.
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             resp = await client.get(url.rstrip("/") + path, headers=headers)
+    except UnicodeError:
+        return False, None, "invalid characters in the URL or secret"
     except httpx.TimeoutException:
         return False, None, "timeout"
     except httpx.HTTPError as exc:

@@ -8,6 +8,7 @@ from app.settings_store.store import (
     SettingsError,
     SettingsStore,
     UnknownSettingError,
+    UrlRequiredForSecretError,
 )
 
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     "SettingsError",
     "SettingsStore",
     "UnknownSettingError",
+    "UrlRequiredForSecretError",
 ]

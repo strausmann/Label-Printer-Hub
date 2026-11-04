@@ -16,12 +16,15 @@ from app.settings_store import (
     SettingLockedError,
     SettingsStore,
     UnknownSettingError,
+    UrlRequiredForSecretError,
 )
 from sqlalchemy import select
 
 KEY_A = b"test-secret-key-0123456789abcdef"
 KEY_B = b"other-secret-key-0123456789abcde"
 FAKE_TOKEN = "fake-token-value-for-tests"
+GROCY_URL = "https://grocy.example.invalid"
+WITH_URL = {"integrations.grocy.url": GROCY_URL}
 
 
 @pytest.fixture(autouse=True)
@@ -131,7 +134,7 @@ async def test_none_resets_to_default(store, async_session_factory) -> None:
 
 async def test_secret_stored_encrypted_and_never_described(store, async_session_factory) -> None:
     async with async_session_factory() as s:
-        await store.set_many(s, {"integrations.grocy.api_key": FAKE_TOKEN})
+        await store.set_many(s, {**WITH_URL, "integrations.grocy.api_key": FAKE_TOKEN})
     row = (await _raw_rows(async_session_factory))["integrations.grocy.api_key"]
     assert row.secret_token is not None
     assert FAKE_TOKEN not in row.secret_token
@@ -145,7 +148,7 @@ async def test_secret_stored_encrypted_and_never_described(store, async_session_
 
 async def test_secret_empty_string_clears(store, async_session_factory) -> None:
     async with async_session_factory() as s:
-        await store.set_many(s, {"integrations.grocy.api_key": FAKE_TOKEN})
+        await store.set_many(s, {**WITH_URL, "integrations.grocy.api_key": FAKE_TOKEN})
         await store.set_many(s, {"integrations.grocy.api_key": ""})
     assert store.get("integrations.grocy.api_key") == ""
     assert "integrations.grocy.api_key" not in await _raw_rows(async_session_factory)
@@ -155,7 +158,7 @@ async def test_secret_empty_string_clears(store, async_session_factory) -> None:
 
 async def test_undecryptable_secret_reported(store, async_session_factory) -> None:
     async with async_session_factory() as s:
-        await store.set_many(s, {"integrations.grocy.api_key": FAKE_TOKEN})
+        await store.set_many(s, {**WITH_URL, "integrations.grocy.api_key": FAKE_TOKEN})
     other = SettingsStore(SecretBox(KEY_B))
     async with async_session_factory() as s:
         await other.load(s)
@@ -167,7 +170,7 @@ async def test_undecryptable_secret_reported(store, async_session_factory) -> No
 
 async def test_secret_cannot_be_moved_to_another_key(store, async_session_factory) -> None:
     async with async_session_factory() as s:
-        await store.set_many(s, {"integrations.grocy.api_key": FAKE_TOKEN})
+        await store.set_many(s, {**WITH_URL, "integrations.grocy.api_key": FAKE_TOKEN})
         row = await s.get(AppSetting, "integrations.grocy.api_key")
         s.add(
             AppSetting(
@@ -319,18 +322,96 @@ def test_resolve_probe_rejects_foreign_keys(store) -> None:
         store.resolve_probe("grocy", {"integrations.snipeit.url": "https://x.example.invalid"})
 
 
-async def test_resolve_probe_locked_env_secret_not_sent_to_new_url(
+async def test_env_secret_with_ui_url_is_never_sent(
     monkeypatch, store, async_session_factory
 ) -> None:
+    """S1: an env secret must not follow a URL that the UI can change."""
     monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", FAKE_TOKEN)
     get_settings.cache_clear()
     async with async_session_factory() as s:
-        await store.set_many(s, {"integrations.grocy.url": "https://grocy.example.invalid"})
+        await store.set_many(s, WITH_URL)
+    assert store.get("integrations.grocy.api_key") == ""
+    view = next(v for v in store.describe() if v.key == "integrations.grocy.api_key")
+    assert view.state == "env_secret_needs_env_url" and view.is_set is True
+    for form in ({}, {"integrations.grocy.url": "https://evil.example.invalid"}):
+        with pytest.raises(SecretRequiredForNewUrlError):
+            store.resolve_probe("grocy", form)
+
+
+async def test_env_secret_with_env_url_is_usable(monkeypatch, store) -> None:
+    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", FAKE_TOKEN)
+    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", GROCY_URL)
+    get_settings.cache_clear()
     assert store.get("integrations.grocy.api_key") == FAKE_TOKEN
+    # the locked URL wins over a form URL, so the secret still only goes to the env URL
+    url, secret, _ = store.resolve_probe(
+        "grocy", {"integrations.grocy.url": "https://evil.example.invalid"}
+    )
+    assert (url, secret) == (GROCY_URL, FAKE_TOKEN)
+    view = next(v for v in store.describe() if v.key == "integrations.grocy.api_key")
+    assert view.state == "ok"
+
+
+async def test_secret_without_url_rejected(store, async_session_factory) -> None:
+    """S2: no secret can be saved while no URL is effective."""
+    async with async_session_factory() as s:
+        with pytest.raises(UrlRequiredForSecretError):
+            await store.set_many(s, {"integrations.grocy.api_key": FAKE_TOKEN})
+        with pytest.raises(UrlRequiredForSecretError):
+            await store.set_many(
+                s, {"integrations.grocy.url": "", "integrations.grocy.api_key": FAKE_TOKEN}
+            )
+    assert await _raw_rows(async_session_factory) == {}
+
+
+async def test_stored_secret_without_binding_is_denied(store, async_session_factory) -> None:
+    """A legacy row without a binding is never returned or probed."""
+    async with async_session_factory() as s:
+        await store.set_many(s, WITH_URL)
+        s.add(
+            AppSetting(
+                key="integrations.grocy.api_key",
+                secret_token=SecretBox(KEY_A).seal(FAKE_TOKEN, aad="integrations.grocy.api_key"),
+                value_json='{"bound_url": ""}',
+            )
+        )
+        await s.commit()
+    fresh = SettingsStore(SecretBox(KEY_A))
+    async with async_session_factory() as s:
+        await fresh.load(s)
+    assert fresh.get("integrations.grocy.api_key") == ""
     with pytest.raises(SecretRequiredForNewUrlError):
-        store.resolve_probe("grocy", {"integrations.grocy.url": "https://evil.example.invalid"})
-    url, secret, _ = store.resolve_probe("grocy", {})
-    assert (url, secret) == ("https://grocy.example.invalid", FAKE_TOKEN)
+        fresh.resolve_probe("grocy", {})
+
+
+async def test_secret_only_returned_for_its_bound_url(store, async_session_factory) -> None:
+    async with async_session_factory() as s:
+        await store.set_many(s, {**WITH_URL, "integrations.grocy.api_key": FAKE_TOKEN})
+        await store.set_many(s, {"integrations.grocy.url": ""})
+        assert store.get("integrations.grocy.api_key") == ""  # no URL: nothing is sent
+        with pytest.raises(SecretRequiredForNewUrlError):
+            await store.set_many(s, {"integrations.grocy.url": "https://other.example.invalid"})
+    async with async_session_factory() as s:
+        await store.set_many(s, WITH_URL)  # back to the bound URL: usable again
+    assert store.get("integrations.grocy.api_key") == FAKE_TOKEN
+
+
+@pytest.mark.parametrize("secret", ["tëst-token", "tok\u00e9n", "bad\ttab", "emoji-\U0001f600"])
+async def test_non_ascii_secret_rejected(store, async_session_factory, secret) -> None:
+    async with async_session_factory() as s:
+        with pytest.raises(InvalidSettingValueError) as ei:
+            await store.set_many(s, {**WITH_URL, "integrations.grocy.api_key": secret})
+    assert secret not in str(ei.value)
+
+
+async def test_describe_strips_userinfo_from_env_url(monkeypatch, store) -> None:
+    monkeypatch.setenv(
+        "PRINTER_HUB_SNIPEIT_URL", "https://user:pw-secret@snipeit.example.invalid:8443/x"
+    )
+    get_settings.cache_clear()
+    view = next(v for v in store.describe() if v.key == "integrations.snipeit.url")
+    assert view.value == "https://snipeit.example.invalid:8443/x"
+    assert "pw-secret" not in json.dumps([v.model_dump() for v in store.describe()])
 
 
 def test_key_constants_decode_to_32_bytes() -> None:

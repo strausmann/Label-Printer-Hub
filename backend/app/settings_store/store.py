@@ -60,12 +60,31 @@ class SettingLockedError(SettingsError):
     code = "setting_locked"
 
 
+class UrlRequiredForSecretError(SettingsError):
+    code = "url_required_for_secret"
+
+
 class SecretRequiredForNewUrlError(SettingsError):
     code = "secret_required_for_new_url"
 
 
 def _norm_url(url: str) -> str:
     return url.strip().rstrip("/")
+
+
+def _strip_userinfo(url: str) -> str:
+    """Remove ``user:pass@`` from a URL before it is shown anywhere."""
+    try:
+        parts = urlsplit(url)
+        if parts.username is None and parts.password is None:
+            return url
+        host = parts.hostname or ""
+        if ":" in host:
+            host = f"[{host}]"
+        netloc = host if parts.port is None else f"{host}:{parts.port}"
+        return parts._replace(netloc=netloc).geturl()
+    except ValueError:
+        return ""
 
 
 def _validate(d: SettingDef, value: Any) -> Any:
@@ -94,8 +113,9 @@ def _validate(d: SettingDef, value: Any) -> Any:
     if not isinstance(value, str):
         raise bad("expected a string")
     if kind == "secret":
-        if len(value) > 4096 or "\r" in value or "\n" in value:
-            raise bad("invalid secret")
+        # Printable ASCII only: the value ends up in an HTTP header.
+        if len(value) > 4096 or any(not 0x20 <= ord(c) <= 0x7E for c in value):
+            raise bad("must be printable ASCII")
         return value
     text = value.strip()
     if kind == "enum":
@@ -184,11 +204,28 @@ class SettingsStore:
 
     def get(self, key: str) -> Any:
         d = SETTINGS[key]
+        if d.kind == "secret":
+            return self._secret_value(key)
         if self.is_locked(key):
             return self._env_raw(d)
-        if d.kind == "secret":
-            return self._secrets.get(key, d.default)
         return self._values.get(key, d.default)
+
+    def _secret_value(self, key: str) -> str:
+        """Plaintext of a secret, only if it may be sent to the effective URL (S1/S2)."""
+        d = SETTINGS[key]
+        url_key = self._url_key_for(key)
+        if self.is_locked(key):
+            # An environment secret is only usable together with an environment URL.
+            if url_key is not None and not self.is_locked(url_key):
+                return ""
+            return str(self._env_raw(d))
+        plain = self._secrets.get(key, "")
+        if url_key is None or not plain:
+            return plain
+        bound = self._bound.get(key, "")
+        current = _norm_url(str(self.get(url_key)))
+        # Missing binding = deny.
+        return plain if bound and bound == current else ""
 
     def describe(self) -> list[SettingView]:
         views: list[SettingView] = []
@@ -200,6 +237,15 @@ class SettingsStore:
             else:
                 is_set = locked or key in self._values
                 value = self.get(key)
+                if d.kind == "url" and isinstance(value, str):
+                    value = _strip_userinfo(value)
+            state = "ok"
+            if key in self._undecryptable and not locked:
+                state = "undecryptable"
+            elif d.kind == "secret" and locked:
+                url_key = self._url_key_for(key)
+                if url_key is not None and not self.is_locked(url_key) and self._env_raw(d):
+                    state = "env_secret_needs_env_url"
             views.append(
                 SettingView(
                     key=key,
@@ -207,7 +253,7 @@ class SettingsStore:
                     value=value,
                     is_set=is_set,
                     locked=locked,
-                    state="undecryptable" if (key in self._undecryptable and not locked) else "ok",
+                    state=state,  # type: ignore[arg-type]
                     choices=list(d.choices),
                 )
             )
@@ -258,19 +304,14 @@ class SettingsStore:
     # -- secret / URL binding -----------------------------------------------
 
     def _bound_url_of(self, secret_key: str) -> str | None:
-        """URL the secret is paired with; None without a secret or pairing."""
-        d = SETTINGS[secret_key]
-        if self.is_locked(secret_key):
-            if not self._env_raw(d):
-                return None
-            url_key = self._url_key_for(secret_key)
-            bound = _norm_url(str(self.get(url_key))) if url_key else ""
-        elif secret_key not in self._secret_present:
+        """URL a stored secret is bound to; None when no stored secret exists.
+
+        An environment secret has no stored binding here: it is usable only with an
+        environment URL, see :meth:`_secret_value`.
+        """
+        if self.is_locked(secret_key) or secret_key not in self._secret_present:
             return None
-        else:
-            bound = self._bound.get(secret_key, "")
-        # A secret that was never paired with a URL has not been sent anywhere yet.
-        return bound or None
+        return self._bound.get(secret_key, "")
 
     @staticmethod
     def _url_key_for(secret_key: str) -> str | None:
@@ -313,6 +354,16 @@ class SettingsStore:
             if url_key in clean and sec_key and sec_key not in clean:
                 new_url = clean[url_key] or ""
                 self._check_binding(sec_key, new_url)
+
+        for key, value in clean.items():
+            pair_key = self._url_key_for(key)
+            if pair_key is not None and value not in ("", None):
+                effective = clean[pair_key] if pair_key in clean else self.get(pair_key)
+                if not _norm_url(str(effective or "")):
+                    raise UrlRequiredForSecretError(
+                        "set the integration URL first; a secret is bound to its URL",
+                        keys=[key],
+                    )
 
         now = datetime.now(UTC)
         sealed: dict[str, tuple[str, str]] = {}
@@ -410,7 +461,15 @@ class SettingsStore:
         if sec_key:
             if sec_key in form and not self.is_locked(sec_key):
                 secret = _validate(SETTINGS[sec_key], form[sec_key])
+            elif self.is_locked(sec_key):
+                if not self.is_locked(url_key):
+                    # Environment secret without an environment URL: unconfigured.
+                    raise SecretRequiredForNewUrlError(
+                        "the secret comes from the environment; set the URL there too",
+                        keys=[sec_key],
+                    )
+                secret = str(self._env_raw(SETTINGS[sec_key]))
             else:
                 self._check_binding(sec_key, url)
-                secret = str(self.get(sec_key) or "")
+                secret = self._secrets.get(sec_key, "")
         return url, secret, timeout
