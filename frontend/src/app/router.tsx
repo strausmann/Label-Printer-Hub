@@ -16,16 +16,17 @@ import type { components } from "../api/schema.gen";
 import {
   AsnPage,
   CalibrationPage,
-  JobPage,
-  JobsPage,
   KeptPage,
-  LookupPage,
   NotFoundPage,
   ScanPage,
   SettingsPage,
   SheetArchivePage,
   SheetsPage,
 } from "../pages/placeholders";
+import { JobPage } from "../features/jobs/JobDetail";
+import { JobsPage } from "../features/jobs/JobsPage";
+import { CartPage } from "../features/lookup/CartPage";
+import { AssetPage, LocPage, LookupPage, ProductPage, SpoolPage } from "../features/lookup/ItemView";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { PrinterPage } from "../features/printers/PrinterDetail";
 import { PrintersPage } from "../features/printers/PrintersPage";
@@ -148,10 +149,11 @@ const routeTree = rootRoute.addChildren([
   page("/jobs/$jobId", JobPage),
   page("/lookup/$app/$id", LookupPage),
   // The paths printed in QR codes: they open the item view too.
-  page("/loc/$id", LookupPage),
-  page("/asset/$id", LookupPage),
-  page("/spool/$id", LookupPage),
-  page("/product/$id", LookupPage),
+  page("/loc/$id", LocPage),
+  page("/asset/$id", AssetPage),
+  page("/spool/$id", SpoolPage),
+  page("/product/$id", ProductPage),
+  page("/cart", CartPage),
   page("/scan", ScanPage),
   page("/settings", SettingsPage),
   page("/settings/$", SettingsPage),

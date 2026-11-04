@@ -41,7 +41,8 @@ export function notifyUnauthorized(): void {
   onUnauthorized?.();
 }
 
-export type ApiInit = RequestInit & { json?: unknown };
+/** `as: "blob"` returns the body as a Blob (images); the default parses JSON. */
+export type ApiInit = RequestInit & { json?: unknown; as?: "json" | "blob" };
 
 type Json = Record<string, unknown>;
 
@@ -79,7 +80,7 @@ async function readBody(response: Response): Promise<unknown> {
 }
 
 export async function apiFetch<T>(path: string, init: ApiInit = {}): Promise<T> {
-  const { json, headers: initHeaders, ...rest } = init;
+  const { json, as: bodyAs = "json", headers: initHeaders, ...rest } = init;
   const method = (rest.method ?? "GET").toUpperCase();
   const headers = new Headers(initHeaders);
   if (json !== undefined) headers.set("Content-Type", "application/json");
@@ -105,5 +106,6 @@ export async function apiFetch<T>(path: string, init: ApiInit = {}): Promise<T> 
     throw error;
   }
   if (response.status === 204) return undefined as T;
+  if (bodyAs === "blob") return (await response.blob()) as T;
   return (await readBody(response)) as T;
 }

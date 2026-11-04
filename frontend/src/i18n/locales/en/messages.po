@@ -12,9 +12,41 @@ msgstr ""
 msgid "{0} mm"
 msgstr "{0} mm"
 
+#: src/features/jobs/JobDetail.tsx
+msgid "{copyNo} of {copyTotal}"
+msgstr "{copyNo} of {copyTotal}"
+
+#: src/features/lookup/CartPage.tsx
+msgid "{labels, plural, one {Print # label} other {Print # labels}}"
+msgstr "{labels, plural, one {Print # label} other {Print # labels}}"
+
+#: src/features/lookup/ItemView.tsx
+msgid "{name} is not set up yet, so this item cannot be shown."
+msgstr "{name} is not set up yet, so this item cannot be shown."
+
+#: src/features/lookup/CartPage.tsx
+msgid "{sentLabels, plural, one {# label sent to} other {# labels sent to}}"
+msgstr "{sentLabels, plural, one {# label sent to} other {# labels sent to}}"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "{tapeMm} mm"
+msgstr "{tapeMm} mm"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Add to cart"
+msgstr "Add to cart"
+
+#: src/features/jobs/JobsPage.tsx
+msgid "All"
+msgstr "All"
+
 #: src/shell/SignIn.tsx
 msgid "API key"
 msgstr "API key"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Back to the jobs"
+msgstr "Back to the jobs"
 
 #: src/pages/placeholders.tsx
 msgid "Back to the overview"
@@ -42,6 +74,7 @@ msgstr "Calibration"
 msgid "Calibration for this printer will appear here."
 msgstr "Calibration for this printer will appear here."
 
+#: src/features/jobs/JobDetail.tsx
 #: src/features/printers/PrinterDetail.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -54,13 +87,34 @@ msgstr "Cancel {label}"
 msgid "Cancel {queued} queued"
 msgstr "Cancel {queued} queued"
 
+#: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
 msgid "Cancelled"
 msgstr "Cancelled"
 
+#: src/features/lookup/CartPage.tsx
+msgid "Cart"
+msgstr "Cart"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Cart ({inCart})"
+msgstr "Cart ({inCart})"
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "Clear queue"
 msgstr "Clear queue"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Code"
+msgstr "Code"
+
+#: src/features/lookup/apps.ts
+msgid "Code and title, no QR code"
+msgstr "Code and title, no QR code"
+
+#: src/features/lookup/apps.ts
+msgid "Code only, no QR code"
+msgstr "Code only, no QR code"
 
 #: src/features/printers/TapeSwatch.tsx
 msgid "Colour not reported"
@@ -86,6 +140,16 @@ msgstr "Continue"
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Copied"
 msgstr "Copied"
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/lookup/CartPage.tsx
+#: src/features/lookup/ItemView.tsx
+msgid "Copies"
+msgstr "Copies"
+
+#: src/features/lookup/CartPage.tsx
+msgid "Copies of {itemName}"
+msgstr "Copies of {itemName}"
 
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Copy failed. Select the key and copy it by hand."
@@ -115,17 +179,39 @@ msgstr "Create the first admin key"
 msgid "Dark theme"
 msgstr "Dark theme"
 
+#: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
 msgid "Done"
 msgstr "Done"
 
+#: src/features/lookup/ItemView.tsx
+msgid "Drawing the label…"
+msgstr "Drawing the label…"
+
+#: src/features/lookup/CartPage.tsx
+msgid "Empty the cart"
+msgstr "Empty the cart"
+
+#: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
 msgid "Failed"
 msgstr "Failed"
 
+#: src/features/jobs/JobsPage.tsx
+msgid "Filter by state"
+msgstr "Filter by state"
+
 #: src/features/printers/model.ts
 msgid "Green"
 msgstr "Green"
+
+#: src/features/lookup/apps.ts
+msgid "Grocy"
+msgstr "Grocy"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "History"
+msgstr "History"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Host"
@@ -143,15 +229,7 @@ msgstr "Integrations"
 msgid "Interrupted by a restart"
 msgstr "Interrupted by a restart"
 
-#: src/pages/placeholders.tsx
-msgid "Item"
-msgstr "Item"
-
-#: src/pages/placeholders.tsx
-msgid "Job"
-msgstr "Job"
-
-#: src/pages/placeholders.tsx
+#: src/features/jobs/JobsPage.tsx
 #: src/shell/labels.ts
 msgid "Jobs"
 msgstr "Jobs"
@@ -165,10 +243,16 @@ msgstr "Keep them"
 msgid "Kept / Hangar / Grocy"
 msgstr "Kept / Hangar / Grocy"
 
+#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/JobsPage.tsx
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterDetail.tsx
 msgid "Label"
 msgstr "Label"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Label preview"
+msgstr "Label preview"
 
 #: src/i18n/messages.ts
 #: src/shell/Sidebar.tsx
@@ -180,6 +264,11 @@ msgstr "Label Printer Hub"
 msgid "Last status {age} s ago"
 msgstr "Last status {age} s ago"
 
+#: src/features/jobs/JobDetail.tsx
+#: src/features/lookup/ItemView.tsx
+msgid "Layout"
+msgstr "Layout"
+
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
 msgstr "Light theme"
@@ -189,6 +278,10 @@ msgid "Live updates paused"
 msgstr "Live updates paused"
 
 #: src/app/router.tsx
+#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/JobsPage.tsx
+#: src/features/lookup/ItemView.tsx
+#: src/features/lookup/PrinterPicker.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/printers/PrinterGrid.tsx
 #: src/i18n/messages.ts
@@ -213,9 +306,25 @@ msgstr "Model"
 msgid "Needs attention"
 msgstr "Needs attention"
 
+#: src/features/lookup/ItemView.tsx
+msgid "No item has this ID:"
+msgstr "No item has this ID:"
+
 #: src/features/overview/OverviewPage.tsx
 msgid "No jobs yet."
 msgstr "No jobs yet."
+
+#: src/features/jobs/JobsPage.tsx
+msgid "No jobs."
+msgstr "No jobs."
+
+#: src/features/lookup/ItemView.tsx
+msgid "No preview for this tape."
+msgstr "No preview for this tape."
+
+#: src/features/lookup/PrinterPicker.tsx
+msgid "No printer available"
+msgstr "No printer available"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterGrid.tsx
@@ -229,6 +338,14 @@ msgstr "No status yet"
 #: src/features/printers/TapeSwatch.tsx
 msgid "No tape loaded"
 msgstr "No tape loaded"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Not found"
+msgstr "Not found"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Not found in {name}"
+msgstr "Not found in {name}"
 
 #: src/features/overview/OverviewPage.tsx
 msgid "Nothing is printing."
@@ -249,6 +366,14 @@ msgstr "Offline"
 #: src/shell/StatusBadge.tsx
 msgid "OK"
 msgstr "OK"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Open in {appName}"
+msgstr "Open in {appName}"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Open Settings › Integrations"
+msgstr "Open Settings › Integrations"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/shell/labels.ts
@@ -276,9 +401,23 @@ msgstr "Paused"
 msgid "Port"
 msgstr "Port"
 
-#: src/pages/placeholders.tsx
-#~ msgid "Printer"
-#~ msgstr "Printer"
+#: src/features/lookup/ItemView.tsx
+msgid "Preview"
+msgstr "Preview"
+
+#: src/features/lookup/CartPage.tsx
+#: src/features/lookup/ItemView.tsx
+msgid "Print"
+msgstr "Print"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Print now"
+msgstr "Print now"
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/lookup/PrinterPicker.tsx
+msgid "Printer"
+msgstr "Printer"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrintersPage.tsx
@@ -286,6 +425,8 @@ msgstr "Port"
 msgid "Printers"
 msgstr "Printers"
 
+#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
 msgid "Printing"
 msgstr "Printing"
@@ -299,10 +440,28 @@ msgstr "Printing now"
 msgid "Problem"
 msgstr "Problem"
 
+#: src/features/lookup/apps.ts
+msgid "QR code and code"
+msgstr "QR code and code"
+
+#: src/features/lookup/apps.ts
+msgid "QR code only"
+msgstr "QR code only"
+
+#: src/features/lookup/apps.ts
+msgid "QR code, code and title"
+msgstr "QR code, code and title"
+
+#: src/features/lookup/apps.ts
+msgid "QR code, code, title and detail"
+msgstr "QR code, code, title and detail"
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "Queue"
 msgstr "Queue"
 
+#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
 msgid "Queued"
 msgstr "Queued"
@@ -327,6 +486,14 @@ msgstr "Reconnecting…"
 msgid "Red"
 msgstr "Red"
 
+#: src/features/lookup/CartPage.tsx
+msgid "Remove"
+msgstr "Remove"
+
+#: src/features/lookup/CartPage.tsx
+msgid "Remove {itemName}"
+msgstr "Remove {itemName}"
+
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
 msgstr "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
@@ -334,6 +501,10 @@ msgstr "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no 
 #: src/features/printers/PauseResumeButton.tsx
 msgid "Resume"
 msgstr "Resume"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Retry"
+msgstr "Retry"
 
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
@@ -344,6 +515,14 @@ msgstr "Scan"
 #: src/shell/TopBar.tsx
 msgid "Search"
 msgstr "Search"
+
+#: src/features/lookup/CartPage.tsx
+msgid "See the jobs"
+msgstr "See the jobs"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Sent to {printerName}."
+msgstr "Sent to {printerName}."
 
 #: src/shell/Sidebar.tsx
 msgid "Server unreachable"
@@ -384,10 +563,22 @@ msgstr "Signing in with the new key failed."
 msgid "Skip to content"
 msgstr "Skip to content"
 
+#: src/features/lookup/apps.ts
+msgid "Snipe-IT"
+msgstr "Snipe-IT"
+
 #: src/i18n/messages.ts
 #: src/shell/SignIn.tsx
 msgid "Something went wrong."
 msgstr "Something went wrong."
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Source"
+msgstr "Source"
+
+#: src/features/lookup/apps.ts
+msgid "Spoolman"
+msgstr "Spoolman"
 
 #: src/shell/labels.ts
 msgid "System"
@@ -401,6 +592,10 @@ msgstr "System theme"
 msgid "Tabs"
 msgstr "Tabs"
 
+#: src/features/jobs/JobDetail.tsx
+msgid "Tape"
+msgstr "Tape"
+
 #: src/features/printers/TapeSwatch.tsx
 msgid "Tape not known yet"
 msgstr "Tape not known yet"
@@ -413,10 +608,28 @@ msgstr "That key was not accepted."
 msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."
 msgstr "The bootstrap key no longer works because an admin key exists. Sign in with that key."
 
+#: src/features/lookup/CartPage.tsx
+msgid "The cart is empty."
+msgstr "The cart is empty."
+
+#: src/features/lookup/ItemView.tsx
+msgid "The item could not be loaded."
+msgstr "The item could not be loaded."
+
+#: src/features/jobs/JobDetail.tsx
 #: src/features/printers/PrinterDetail.tsx
 msgid "The job could not be cancelled."
 msgstr "The job could not be cancelled."
 
+#: src/features/jobs/JobDetail.tsx
+msgid "The job could not be loaded."
+msgstr "The job could not be loaded."
+
+#: src/features/jobs/JobDetail.tsx
+msgid "The job could not be retried."
+msgstr "The job could not be retried."
+
+#: src/features/jobs/JobsPage.tsx
 #: src/features/overview/OverviewPage.tsx
 msgid "The jobs could not be loaded."
 msgstr "The jobs could not be loaded."
@@ -424,6 +637,10 @@ msgstr "The jobs could not be loaded."
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "The key could not be created."
 msgstr "The key could not be created."
+
+#: src/features/lookup/PrinterPicker.tsx
+msgid "The labels could not be sent."
+msgstr "The labels could not be sent."
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "The printer could not be loaded."
@@ -438,6 +655,7 @@ msgid "The queue could not be loaded."
 msgstr "The queue could not be loaded."
 
 #: src/app/router.tsx
+#: src/features/lookup/PrinterPicker.tsx
 #: src/i18n/messages.ts
 #: src/shell/SignIn.tsx
 msgid "The server cannot be reached."
@@ -446,6 +664,14 @@ msgstr "The server cannot be reached."
 #: src/shell/ThemeSwitch.tsx
 msgid "Theme"
 msgstr "Theme"
+
+#: src/features/lookup/ItemView.tsx
+msgid "This item cannot be shown"
+msgstr "This item cannot be shown"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "This job does not exist."
+msgstr "This job does not exist."
 
 #: src/shell/SignIn.tsx
 msgid "This key can only read. Sign in with a key that has print or admin scope."
@@ -463,22 +689,40 @@ msgstr "This page is not available yet."
 msgid "This printer does not exist."
 msgstr "This printer does not exist."
 
+#: src/features/jobs/JobDetail.tsx
+msgid "Title"
+msgstr "Title"
+
 #: src/shell/SignIn.tsx
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Too many attempts. Wait a minute and try again."
 
 #: src/app/router.tsx
+#: src/features/lookup/ItemView.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Try again"
 
+#: src/features/jobs/JobsPage.tsx
 #: src/features/overview/OverviewPage.tsx
 msgid "Unknown printer"
 msgstr "Unknown printer"
 
+#: src/features/lookup/ItemView.tsx
+msgid "View the job"
+msgstr "View the job"
+
 #: src/shell/StatusBadge.tsx
 msgid "Warning"
 msgstr "Warning"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "What was printed"
+msgstr "What was printed"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "What went wrong"
+msgstr "What went wrong"
 
 #: src/features/printers/model.ts
 msgid "White"

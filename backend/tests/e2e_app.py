@@ -31,6 +31,8 @@ from typing import Any
 from starlette.types import ASGIApp
 
 E2E_ADMIN_KEY_NAME = "e2e admin key"
+E2E_FAILED_JOB_TITLE = "Failed cable label"
+E2E_FAILED_JOB_ERROR = "Printer reported: cover open"
 
 # Printers created through the admin service (the model ids are real driver ids).
 E2E_PRINTERS: tuple[dict[str, Any], ...] = (
@@ -111,6 +113,7 @@ async def _seed(database_url: str, *, with_admin_key: bool) -> str | None:
     """Create the two mock printers (and the admin key); returns the admin key plaintext."""
     from app.auth.key_generator import generate_api_key
     from app.models.api_key import ApiKey
+    from app.models.job import Job, JobState
     from app.repositories import api_keys as api_keys_repo
     from app.schemas.printer_admin import PrinterCreatePayload
     from app.services.printer_admin_service import PrinterAdminService
@@ -121,8 +124,32 @@ async def _seed(database_url: str, *, with_admin_key: bool) -> str | None:
         factory = async_sessionmaker(engine, expire_on_commit=False)
         async with factory() as session:
             service = PrinterAdminService(session, "e2e")
-            for printer in E2E_PRINTERS:
+            created = [
                 await service.create_printer(PrinterCreatePayload(**printer))
+                for printer in E2E_PRINTERS
+            ]
+            # One failed job, so the jobs page has something to retry.
+            session.add(
+                Job(
+                    printer_id=created[1].id,
+                    state=JobState.FAILED.value,
+                    error=E2E_FAILED_JOB_ERROR,
+                    payload={
+                        "content_type": "qr_two_lines",
+                        "tape_mm": 12,
+                        "options": {"copies": 1},
+                        "label_data": {
+                            "source_app": "snipeit",
+                            "title": E2E_FAILED_JOB_TITLE,
+                            "primary_id": "A-0001",
+                            "qr_payload": "https://example.invalid/snipeit/1",
+                            "secondary": [],
+                            "items": [],
+                        },
+                    },
+                )
+            )
+            await session.commit()
         if not with_admin_key:
             return None
         plaintext, prefix, hashed = generate_api_key()

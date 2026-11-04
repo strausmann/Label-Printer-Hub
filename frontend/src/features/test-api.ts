@@ -51,10 +51,19 @@ export const job = (id: string, printerId: string, state: string, over: Record<s
 });
 
 type Handler = (init: RequestInit) => unknown;
+
+/** A non-200 JSON answer for a mocked route (return it from a handler or use it as the route value). */
+export const respond = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+/** A PNG answer (a few bytes are enough: nothing decodes them in jsdom). */
+export const pngResponse = () => new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { "Content-Type": "image/png" } });
 export interface Call {
   method: string;
   path: string;
+  search: string;
   headers: Headers;
+  body: string | undefined;
 }
 
 /**
@@ -66,12 +75,13 @@ export function mockApi(routes: Record<string, Handler | unknown>) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = new URL(String(input), "http://localhost");
     const method = (init.method ?? "GET").toUpperCase();
-    calls.push({ method, path: url.pathname, headers: new Headers(init.headers) });
+    calls.push({ method, path: url.pathname, search: url.search, headers: new Headers(init.headers), body: typeof init.body === "string" ? init.body : undefined });
     const route = routes[`${method} ${url.pathname}`];
     if (route === undefined) {
       return new Response(JSON.stringify({ detail: "not mocked" }), { status: 404, headers: { "Content-Type": "application/json" } });
     }
     const body = typeof route === "function" ? (route as Handler)(init) : route;
+    if (body instanceof Response) return body;
     if (body === null) return new Response(null, { status: 204 });
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
   });
