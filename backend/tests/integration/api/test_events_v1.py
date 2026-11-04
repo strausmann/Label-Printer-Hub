@@ -7,7 +7,6 @@ own, so these tests drive the ASGI app directly and read the body chunk by chunk
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -155,8 +154,8 @@ class Stream:
     async def close(self) -> None:
         self._disconnect.set()
         self._task.cancel()
-        with contextlib.suppress(asyncio.CancelledError, Exception):
-            await self._task
+        # Bounded: a stream that does not end must fail the test, not hang the run.
+        await asyncio.wait({self._task}, timeout=2.0)
 
 
 async def _open(app, headers: dict[str, str], query: str = "") -> Stream:
@@ -495,3 +494,128 @@ async def test_disconnect_releases_subscriptions(hub_app):
     await asyncio.sleep(0.1)
     assert _bus(app).subscriber_count("hub") == 0
     assert _bus(app).subscriber_count(f"printer:{printer_id}:queue") == 0
+
+
+# --------------------------------------------------------------------------
+# Fix round 1
+# --------------------------------------------------------------------------
+
+
+def _hub_event(bus: EventBus, printer_id: UUID | str, change: str = "updated") -> None:
+    bus.publish(
+        "hub",
+        BusEvent(
+            channel="hub",
+            event_id=bus.next_event_id("hub"),
+            event_type="hub.printers_changed",
+            timestamp=datetime.now(UTC),
+            data={"printer_id": str(printer_id), "change": change},
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_restricted_key_gets_no_hub_events_of_other_printers(hub_app):
+    app, _ = hub_app
+    allowed = await _insert_printer("alpha")
+    other = await _insert_printer("beta")
+    key, _ = await _insert_key(["read"], allowed_printer_ids=[str(allowed)])
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        _hub_event(_bus(app), other, "disabled")
+        _hub_event(_bus(app), allowed, "updated")
+        ev = await stream.event_of_type("hub.printers_changed")
+        assert ev["payload"]["data"]["printer_id"] == str(allowed)
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_printer_filtered_stream_gets_no_hub_events_of_other_printers(hub_app):
+    app, _ = hub_app
+    first = await _insert_printer("alpha")
+    second = await _insert_printer("beta")
+    key, _ = await _insert_key(["read"])
+    stream = await _open(app, _key_header(key), f"printer_id={first}")
+    try:
+        await _connected(stream)
+        _hub_event(_bus(app), second, "created")
+        _hub_event(_bus(app), first, "updated")
+        ev = await stream.event_of_type("hub.printers_changed")
+        assert ev["payload"]["data"]["printer_id"] == str(first)
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_open_streams_do_not_pin_db_connections(hub_app):
+    import app.db.engine as _engine_module
+
+    app, client = hub_app
+    key, _ = await _insert_key(["read"])
+    await _insert_printer("alpha")
+    streams = [await _open(app, _key_header(key)) for _ in range(20)]
+    try:
+        for stream in streams:
+            await _connected(stream)
+        # Snapshot reads are short-lived; once they are done nothing may stay checked out.
+        pool = _engine_module.engine.pool  # type: ignore[attr-defined]
+        for _ in range(100):
+            if pool.checkedout() == 0:
+                break
+            await asyncio.sleep(0.05)
+        assert pool.checkedout() == 0
+        resp = await asyncio.wait_for(
+            client.get("/api/printers", headers=_key_header(key)), timeout=3.0
+        )
+        assert resp.status_code == 200
+    finally:
+        for stream in streams:
+            await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_revoked_session_is_noticed_on_a_busy_stream(hub_app, monkeypatch):
+    app, client = hub_app
+    _set_env(monkeypatch, sse_heartbeat_s="0.2")
+    key, _ = await _insert_key(["print"])
+    printer_id = await _insert_printer("alpha")
+    assert (await _sign_in(client, key)).status_code == 204
+    cookie = f"lph_session={client.cookies.get('lph_session')}"
+    stream = await _open(app, {"Cookie": cookie})
+
+    async def publisher() -> None:
+        while True:
+            _job_event(_bus(app), printer_id)
+            await asyncio.sleep(0.02)  # far more often than the heartbeat
+
+    async def scenario() -> None:
+        await _connected(stream)
+        await stream.event_of_type("job.state_changed")
+        async with _factory()() as db:
+            await db.execute(update(UiSession).values(revoked_at=datetime.now(UTC)))
+            await db.commit()
+        await stream.event_of_type("auth.expired")
+
+    pump = asyncio.create_task(publisher())
+    try:
+        # One budget for everything: a stream that never notices must fail, not hang.
+        await asyncio.wait_for(scenario(), timeout=8.0)
+    finally:
+        pump.cancel()
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_opens_beyond_the_cap_get_429(hub_app, monkeypatch):
+    app, _ = hub_app
+    _set_env(monkeypatch, sse_max_subscribers="2")
+    key, _ = await _insert_key(["read"])
+    streams = [await _open(app, _key_header(key)) for _ in range(6)]
+    try:
+        statuses = await asyncio.gather(*(s.wait_started() for s in streams))
+        assert sorted(statuses) == [200, 200, 429, 429, 429, 429]
+    finally:
+        for stream in streams:
+            await stream.close()

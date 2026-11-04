@@ -36,6 +36,8 @@ async def build_snapshot(session: AsyncSession, printer_id: uuid.UUID) -> list[d
     """
     snapshot: list[dict[str, Any]] = []
     now = datetime.now(UTC)
+    # Re-parsed so only the canonical UUID text is ever logged or used in a channel name.
+    printer_id = uuid.UUID(str(printer_id))
     pid = str(printer_id)
 
     try:
@@ -72,7 +74,7 @@ async def build_snapshot(session: AsyncSession, printer_id: uuid.UUID) -> list[d
                     }
                 )
     except Exception:
-        _log.debug("build_snapshot: status cache read failed for %s", pid)
+        _log.debug("build_snapshot: status cache read failed for %r", pid)
 
     try:
         # COUNT over all non-terminal states so queue_depth stays accurate beyond the list limit.
@@ -107,6 +109,6 @@ async def build_snapshot(session: AsyncSession, printer_id: uuid.UUID) -> list[d
                 }
             )
     except Exception:
-        _log.debug("build_snapshot: job query failed for %s", pid)
+        _log.debug("build_snapshot: job query failed for %r", pid)
 
     return snapshot

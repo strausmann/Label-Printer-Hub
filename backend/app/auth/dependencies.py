@@ -357,7 +357,7 @@ def _session_context(
 
 
 def require_scope(
-    required: str, *, settings: Settings | None = None
+    required: str, *, settings: Settings | None = None, own_session: bool = False
 ) -> Callable[..., Coroutine[Any, Any, AuthContext]]:
     """Return a FastAPI dependency that enforces the required scope.
 
@@ -365,6 +365,10 @@ def require_scope(
         required: One of "read", "print", "admin".
         settings: Override settings (for testing). Defaults to ``get_settings()``,
             read on every request so configuration changes in tests take effect.
+        own_session: Authenticate in a short-lived DB session that is closed before the
+            route runs. FastAPI keeps request-scoped ``Depends(get_session)`` sessions open
+            until a streaming response has ended, which would pin a pooled connection per
+            open stream; long-lived routes (the event stream) use this.
 
     Order: API key header → session cookie → SSO headers → Basic bypass → 401.
     See the module docstring for the trust rules of each path.
@@ -373,10 +377,8 @@ def require_scope(
         raise ValueError(f"Unknown scope: {required!r}")
     required_scope = cast(Scope, required)
 
-    async def _check(
-        request: Request,
-        key_header: str | None = Security(_api_key_header),
-        session: AsyncSession = Depends(get_session),  # noqa: B008
+    async def _authenticate(
+        request: Request, key_header: str | None, session: AsyncSession
     ) -> AuthContext:
         effective_settings = settings or get_settings()
         client_ip = request.client.host if request.client else "unknown"
@@ -439,7 +441,23 @@ def require_scope(
             },
         )
 
-    return _check
+    async def _check(
+        request: Request,
+        key_header: str | None = Security(_api_key_header),
+        session: AsyncSession = Depends(get_session),  # noqa: B008
+    ) -> AuthContext:
+        return await _authenticate(request, key_header, session)
+
+    async def _check_own_session(
+        request: Request,
+        key_header: str | None = Security(_api_key_header),
+    ) -> AuthContext:
+        import app.db.engine as db_engine  # attribute lookup at call time (test engines)
+
+        async with db_engine.async_session() as session:
+            return await _authenticate(request, key_header, session)
+
+    return _check_own_session if own_session else _check
 
 
 def check_printer_access(auth_context: AuthContext, printer_id: UUID) -> None:

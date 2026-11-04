@@ -20,7 +20,6 @@ picked up without reconnecting.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import uuid
@@ -30,14 +29,13 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 import app.db.engine as db_engine
 from app.auth import sessions as ui_sessions
 from app.auth.dependencies import AuthContext
-from app.auth.scope_deps import require_read
+from app.auth.scope_deps import require_read_stream
 from app.config import Settings, get_settings
-from app.db.session import get_session
 from app.observability.sse_metrics import (
     sse_active_subscribers,
     sse_connections_total,
@@ -53,9 +51,10 @@ _log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["events"])
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
-ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
+# Authenticates in its own short session: a request-scoped one would stay checked out of the
+# pool for as long as the stream is open.
+ReadAuthDep = Annotated[AuthContext, Depends(require_read_stream)]
 
 HUB_CHANNEL = "hub"
 PRINTERS_CHANGED = "hub.printers_changed"
@@ -162,9 +161,21 @@ class _Subscriptions:
         self.drop(list(self.queues))
 
 
+def _hub_event_visible(event: BusEvent, only_printer: str | None, allowed: list[str]) -> bool:
+    """A ``hub.printers_changed`` frame names a printer; show it only within the caller's scope."""
+    pid = str(event.data.get("printer_id", ""))
+    if not pid:
+        return False
+    if only_printer is not None and pid != only_printer:
+        return False
+    return not allowed or pid in allowed
+
+
 async def _event_stream(
     request: Request,
     bus: EventBus,
+    subs: _Subscriptions,
+    subscriber_id: str,
     *,
     auth: AuthContext,
     token: str,
@@ -173,25 +184,27 @@ async def _event_stream(
     only_printer: str | None,
     allowed: list[str],
 ) -> AsyncGenerator[str, None]:
-    subscriber_id = str(uuid.uuid4())
-    subs = _Subscriptions(bus, subscriber_id)
-    subs.add([HUB_CHANNEL])
-    for pid in printer_ids:
-        subs.add(printer_channels(pid))
     sse_connections_total.labels(printer_id=only_printer or "all").inc()
     sse_active_subscribers.inc()
     _log.info("SSE v1 connect: subscriber=%s printers=%d", subscriber_id, len(printer_ids))
     try:
+        for pid in printer_ids:
+            subs.add(printer_channels(pid))
         yield ": connected\n\n"
 
         # Subscriptions are in place before the snapshot, so nothing between the two is lost.
+        # Read everything first and yield after the session is closed: a slow client must
+        # not keep a pooled connection checked out.
+        snapshot: list[dict[str, Any]] = []
         async with db_engine.async_session() as db:
             for pid in printer_ids:
-                for item in await build_snapshot(db, uuid.UUID(pid)):
-                    yield _snapshot_frame(item)
+                snapshot.extend(await build_snapshot(db, uuid.UUID(pid)))
+        for item in snapshot:
+            yield _snapshot_frame(item)
 
         loop = asyncio.get_running_loop()
         last_activity = loop.time()
+        last_auth_check = loop.time()
         while True:
             if await request.is_disconnected():
                 break
@@ -204,19 +217,24 @@ async def _event_stream(
                 for task in tasks:
                     if not task.done():
                         task.cancel()
-                for task in tasks:
-                    with contextlib.suppress(asyncio.CancelledError, Exception):
-                        await task
+                # gather(return_exceptions) absorbs the getters' own cancellation but still
+                # lets a cancellation of this generator propagate.
+                await asyncio.gather(*tasks, return_exceptions=True)
 
             # A getter that finished between the wait and the cancel has consumed an event.
             done = {t for t in tasks if t.done() and not t.cancelled()}
-            if not done:
+
+            # Re-check the credentials every heartbeat, however busy the stream is.
+            if not done or loop.time() - last_auth_check >= settings.sse_heartbeat_s:
                 current = await _current_printer_ids(auth, token, settings)
+                last_auth_check = loop.time()
                 if current is None or set(current) != set(allowed):
                     # Gone, or the restriction changed: end the stream so the client
                     # reconnects (and, if the credentials are gone, signs in again).
                     yield _expired_frame()
                     break
+
+            if not done:
                 if loop.time() - last_activity > settings.sse_idle_timeout_s:
                     break
                 yield ": keepalive\n\n"
@@ -236,9 +254,12 @@ async def _event_stream(
                         channel=event.channel, subscriber_id=subscriber_id
                     ).inc(dropped)
                 sse_events_published_total.labels(channel=event.channel).inc()
-                if event.event_type == PRINTERS_CHANGED and only_printer is None:
-                    async for frame in _follow_printer_change(subs, event, allowed):
-                        yield frame
+                if event.event_type == PRINTERS_CHANGED:
+                    if not _hub_event_visible(event, only_printer, allowed):
+                        continue
+                    if only_printer is None:
+                        async for frame in _follow_printer_change(subs, event, allowed):
+                            yield frame
                 yield _event_frame(event)
     finally:
         subs.close()
@@ -257,8 +278,9 @@ async def _follow_printer_change(
     if change in ("created", "enabled"):
         subs.add(printer_channels(pid))
         async with db_engine.async_session() as db:
-            for item in await build_snapshot(db, uuid.UUID(pid)):
-                yield _snapshot_frame(item)
+            items = await build_snapshot(db, uuid.UUID(pid))
+        for item in items:
+            yield _snapshot_frame(item)
     elif change == "disabled":
         subs.drop(printer_channels(pid))
 
@@ -279,7 +301,6 @@ async def _follow_printer_change(
 )
 async def stream_events(
     request: Request,
-    session: SessionDep,
     settings: SettingsDep,
     auth: ReadAuthDep,
     printer_id: uuid.UUID | None = None,
@@ -287,8 +308,11 @@ async def stream_events(
     bus: EventBus = request.app.state.event_bus
     allowed = list(auth.allowed_printer_ids)
 
+    # Short-lived sessions only: nothing below keeps a pooled connection while streaming.
     if printer_id is not None:
-        if await printers_repo.get(session, printer_id) is None:
+        async with db_engine.async_session() as db:
+            known = await printers_repo.get(db, printer_id) is not None
+        if not known:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail={
@@ -306,16 +330,10 @@ async def stream_events(
                     ),
                 },
             )
-        printer_ids = [str(printer_id)]
-    else:
-        printer_ids = [
-            str(p.id)
-            for p in await printers_repo.list_all(session)
-            if not allowed or str(p.id) in allowed
-        ]
 
-    # Every stream of this kind is subscribed to ``hub``, so its subscriber count is the
-    # number of open connections. The 429 is returned before the response starts.
+    # Every stream of this kind is subscribed to ``hub``, so its subscriber count is the number
+    # of open connections. Check and reserve the slot with no await in between, so concurrent
+    # connects cannot slip past the cap; the 429 is returned before the response starts.
     max_subs = settings.sse_max_subscribers
     if bus.distinct_subscriber_count(channels=[HUB_CHANNEL]) >= max_subs:
         problem = ProblemDetail(
@@ -328,12 +346,31 @@ async def stream_events(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             content=problem.model_dump(exclude_none=True),
         )
+    subscriber_id = str(uuid.uuid4())
+    subs = _Subscriptions(bus, subscriber_id)
+    subs.add([HUB_CHANNEL])
+
+    try:
+        if printer_id is not None:
+            printer_ids = [str(printer_id)]
+        else:
+            async with db_engine.async_session() as db:
+                printer_ids = [
+                    str(p.id)
+                    for p in await printers_repo.list_all(db)
+                    if not allowed or str(p.id) in allowed
+                ]
+    except BaseException:
+        subs.close()
+        raise
 
     session_cookie, _ = ui_sessions.cookie_names(settings)
     return StreamingResponse(
         _event_stream(
             request,
             bus,
+            subs,
+            subscriber_id,
             auth=auth,
             token=request.cookies.get(session_cookie, ""),
             settings=settings,
@@ -347,4 +384,6 @@ async def stream_events(
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+        # The generator's finally releases the slot too; this covers a response that never starts.
+        background=BackgroundTask(subs.close),
     )

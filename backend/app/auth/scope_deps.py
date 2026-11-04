@@ -41,3 +41,6 @@ from app.auth.dependencies import require_scope
 require_read = require_scope("read")
 require_print = require_scope("print")
 require_admin = require_scope("admin")
+require_read_stream = require_scope(
+    "read", own_session=True
+)  # long-lived streams: no pinned DB session
