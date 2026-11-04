@@ -284,7 +284,7 @@ async def _validate_api_key(
 
 
 def require_scope(
-    required: str, *, settings: Settings | None = None
+    required: Literal["read", "print", "admin"], *, settings: Settings | None = None
 ) -> Callable[..., Coroutine[Any, Any, AuthContext]]:
     """Return a FastAPI dependency that enforces the required scope.
 

@@ -34,7 +34,7 @@ A wider context point: this project is deployed in HomeLab-sized installations t
 2. Pangolin-SSO (Standard headers or Legacy) — grants `required` directly
 3. Pangolin Bypass — grants `required` directly
 
-The defense-in-depth for SSO is now provided exclusively by Pangolin's Resource Policy: it decides who can reach `labels.strausmann.cloud` at all. Anyone who passes that gate is treated as a fully authenticated operator.
+The defense-in-depth for SSO is now provided exclusively by Pangolin's Resource Policy: it decides who can reach `labels.example.invalid` at all. Anyone who passes that gate is treated as a fully authenticated operator.
 
 The defense-in-depth for Bypass is now operational hygiene: the bypass-secret lives in Vault, is rotated on suspected leak, and is meant for ad-hoc curl and emergency operations — production integrations are expected to use scoped API keys.
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import types
 from importlib.metadata import entry_points
-from typing import ClassVar
+from typing import ClassVar, cast
 
 from app.printer_models.base import PrinterModel
 
@@ -159,7 +159,10 @@ class ModelRegistry:
                         and getattr(obj, "model_id", None) not in existing_ids
                     ):
                         try:
-                            cls.register(obj)
+                            # obj passed the duck-typed attribute checks above, so it
+                            # is a PrinterModel plugin class; getmembers() only types
+                            # it as ``object``.
+                            cls.register(cast("type[PrinterModel]", obj))
                             existing_ids.add(obj.model_id)
                         except (ValueError, TypeError, AttributeError):
                             log.exception(
