@@ -21,14 +21,14 @@ import {
   KeptPage,
   LookupPage,
   NotFoundPage,
-  OverviewPage,
-  PrinterPage,
-  PrintersPage,
   ScanPage,
   SettingsPage,
   SheetArchivePage,
   SheetsPage,
 } from "../pages/placeholders";
+import { OverviewPage } from "../features/overview/OverviewPage";
+import { PrinterPage } from "../features/printers/PrinterDetail";
+import { PrintersPage } from "../features/printers/PrintersPage";
 import { AppShell } from "../shell/AppShell";
 import { BootstrapKeyCreated } from "../shell/BootstrapKeyCreated";
 import { PRIMARY_BUTTON, SignIn } from "../shell/SignIn";

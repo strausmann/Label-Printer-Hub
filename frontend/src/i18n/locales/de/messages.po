@@ -7,6 +7,11 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: de\n"
 
+#. placeholder {0}: tape.widthMm
+#: src/features/printers/TapeSwatch.tsx
+msgid "{0} mm"
+msgstr "{0} mm"
+
 #: src/shell/SignIn.tsx
 msgid "API key"
 msgstr "API-Schlüssel"
@@ -15,10 +20,51 @@ msgstr "API-Schlüssel"
 msgid "Back to the overview"
 msgstr "Zurück zur Übersicht"
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "Back to the printers"
+msgstr "Zurück zu den Druckern"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Backend"
+msgstr "Backend"
+
+#: src/features/printers/model.ts
+msgid "Blue"
+msgstr "Blau"
+
+#: src/features/printers/PrinterDetail.tsx
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
 msgid "Calibration"
 msgstr "Kalibrierung"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Calibration for this printer will appear here."
+msgstr "Die Kalibrierung dieses Druckers erscheint hier."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Cancel"
+msgstr "Abbrechen"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Cancel {label}"
+msgstr "{label} abbrechen"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Cancel {queued} queued"
+msgstr "{queued} wartende abbrechen"
+
+#: src/features/printers/model.ts
+msgid "Cancelled"
+msgstr "Abgebrochen"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Clear queue"
+msgstr "Warteschlange leeren"
+
+#: src/features/printers/TapeSwatch.tsx
+msgid "Colour not reported"
+msgstr "Farbe nicht gemeldet"
 
 #. placeholder {0}: info.data.version
 #: src/shell/Sidebar.tsx
@@ -28,6 +74,10 @@ msgstr "Verbunden · v{0}"
 #: src/shell/Sidebar.tsx
 msgid "Connecting…"
 msgstr "Verbindung wird aufgebaut …"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Connection"
+msgstr "Verbindung"
 
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Continue"
@@ -45,6 +95,14 @@ msgstr "Kopieren fehlgeschlagen. Markiere den Schlüssel und kopiere ihn von Han
 msgid "Copy key"
 msgstr "Schlüssel kopieren"
 
+#: src/features/printers/PauseResumeButton.tsx
+msgid "Could not pause the printer."
+msgstr "Der Drucker konnte nicht pausiert werden."
+
+#: src/features/printers/PauseResumeButton.tsx
+msgid "Could not resume the printer."
+msgstr "Der Drucker konnte nicht fortgesetzt werden."
+
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Create admin key"
 msgstr "Admin-Schlüssel erstellen"
@@ -57,6 +115,22 @@ msgstr "Den ersten Admin-Schlüssel erstellen"
 msgid "Dark theme"
 msgstr "Dunkles Design"
 
+#: src/features/printers/model.ts
+msgid "Done"
+msgstr "Fertig"
+
+#: src/features/printers/model.ts
+msgid "Failed"
+msgstr "Fehlgeschlagen"
+
+#: src/features/printers/model.ts
+msgid "Green"
+msgstr "Grün"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Host"
+msgstr "Host"
+
 #: src/shell/StatusBadge.tsx
 msgid "Idle"
 msgstr "Ruhend"
@@ -64,6 +138,10 @@ msgstr "Ruhend"
 #: src/shell/labels.ts
 msgid "Integrations"
 msgstr "Integrationen"
+
+#: src/features/printers/model.ts
+msgid "Interrupted by a restart"
+msgstr "Durch Neustart unterbrochen"
 
 #: src/pages/placeholders.tsx
 msgid "Item"
@@ -78,16 +156,29 @@ msgstr "Auftrag"
 msgid "Jobs"
 msgstr "Aufträge"
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "Keep them"
+msgstr "Behalten"
+
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
 msgid "Kept / Hangar / Grocy"
 msgstr "Kept / Hangar / Grocy"
+
+#: src/features/overview/OverviewPage.tsx
+#: src/features/printers/PrinterDetail.tsx
+msgid "Label"
+msgstr "Etikett"
 
 #: src/i18n/messages.ts
 #: src/shell/Sidebar.tsx
 #: src/shell/SignIn.tsx
 msgid "Label Printer Hub"
 msgstr "Label Printer Hub"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Last status {age} s ago"
+msgstr "Letzter Status vor {age} s"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
@@ -98,6 +189,8 @@ msgid "Live updates paused"
 msgstr "Live-Updates pausiert"
 
 #: src/app/router.tsx
+#: src/features/printers/PrinterDetail.tsx
+#: src/features/printers/PrinterGrid.tsx
 #: src/i18n/messages.ts
 msgid "Loading…"
 msgstr "Wird geladen …"
@@ -106,15 +199,58 @@ msgstr "Wird geladen …"
 msgid "Main"
 msgstr "Hauptnavigation"
 
+#: src/features/overview/OverviewPage.tsx
+#: src/features/printers/PrinterDetail.tsx
 #: src/shell/labels.ts
 msgid "Material"
 msgstr "Material"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Model"
+msgstr "Modell"
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Needs attention"
+msgstr "Braucht Aufmerksamkeit"
+
+#: src/features/overview/OverviewPage.tsx
+msgid "No jobs yet."
+msgstr "Noch keine Aufträge."
+
+#: src/features/overview/OverviewPage.tsx
+#: src/features/printers/PrinterGrid.tsx
+msgid "No printers yet."
+msgstr "Noch keine Drucker."
+
+#: src/features/printers/model.ts
+msgid "No status yet"
+msgstr "Noch kein Status"
+
+#: src/features/printers/TapeSwatch.tsx
+msgid "No tape loaded"
+msgstr "Kein Band eingelegt"
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Nothing is printing."
+msgstr "Es wird nichts gedruckt."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Nothing is waiting."
+msgstr "Es wartet nichts."
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Nothing needs attention."
+msgstr "Nichts braucht Aufmerksamkeit."
+
+#: src/features/printers/model.ts
+msgid "Offline"
+msgstr "Offline"
 
 #: src/shell/StatusBadge.tsx
 msgid "OK"
 msgstr "OK"
 
-#: src/pages/placeholders.tsx
+#: src/features/overview/OverviewPage.tsx
 #: src/shell/labels.ts
 msgid "Overview"
 msgstr "Übersicht"
@@ -128,18 +264,56 @@ msgstr "Seite nicht gefunden"
 msgid "Paperless ASN"
 msgstr "Paperless-ASN"
 
-#: src/pages/placeholders.tsx
-msgid "Printer"
-msgstr "Drucker"
+#: src/features/printers/PauseResumeButton.tsx
+msgid "Pause"
+msgstr "Pausieren"
+
+#: src/features/printers/model.ts
+msgid "Paused"
+msgstr "Pausiert"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Port"
+msgstr "Port"
 
 #: src/pages/placeholders.tsx
+#~ msgid "Printer"
+#~ msgstr "Drucker"
+
+#: src/features/overview/OverviewPage.tsx
+#: src/features/printers/PrintersPage.tsx
 #: src/shell/labels.ts
 msgid "Printers"
 msgstr "Drucker"
 
+#: src/features/printers/model.ts
+msgid "Printing"
+msgstr "Druckt"
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Printing now"
+msgstr "Druckt gerade"
+
+#: src/features/printers/model.ts
 #: src/shell/StatusBadge.tsx
 msgid "Problem"
 msgstr "Problem"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Queue"
+msgstr "Warteschlange"
+
+#: src/features/printers/model.ts
+msgid "Queued"
+msgstr "Wartet"
+
+#: src/features/printers/model.ts
+msgid "Ready"
+msgstr "Bereit"
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Recent jobs"
+msgstr "Letzte Aufträge"
 
 #: src/shell/LiveStatus.tsx
 msgid "Reconnect"
@@ -149,9 +323,17 @@ msgstr "Neu verbinden"
 msgid "Reconnecting…"
 msgstr "Verbinde …"
 
+#: src/features/printers/model.ts
+msgid "Red"
+msgstr "Rot"
+
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
 msgstr "Entferne <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> aus dem Container; die Variable funktioniert nicht mehr, sobald dieser Schlüssel existiert."
+
+#: src/features/printers/PauseResumeButton.tsx
+msgid "Resume"
+msgstr "Fortsetzen"
 
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
@@ -219,6 +401,10 @@ msgstr "Systemdesign"
 msgid "Tabs"
 msgstr "Tabs"
 
+#: src/features/printers/TapeSwatch.tsx
+msgid "Tape not known yet"
+msgstr "Band noch nicht bekannt"
+
 #: src/shell/SignIn.tsx
 msgid "That key was not accepted."
 msgstr "Dieser Schlüssel wurde nicht akzeptiert."
@@ -227,9 +413,29 @@ msgstr "Dieser Schlüssel wurde nicht akzeptiert."
 msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."
 msgstr "Der Bootstrap-Schlüssel gilt nicht mehr, weil ein Admin-Schlüssel existiert. Melde dich mit diesem an."
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "The job could not be cancelled."
+msgstr "Der Auftrag konnte nicht abgebrochen werden."
+
+#: src/features/overview/OverviewPage.tsx
+msgid "The jobs could not be loaded."
+msgstr "Die Aufträge konnten nicht geladen werden."
+
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "The key could not be created."
 msgstr "Der Schlüssel konnte nicht erstellt werden."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "The printer could not be loaded."
+msgstr "Der Drucker konnte nicht geladen werden."
+
+#: src/features/printers/PrinterGrid.tsx
+msgid "The printers could not be loaded."
+msgstr "Die Drucker konnten nicht geladen werden."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "The queue could not be loaded."
+msgstr "Die Warteschlange konnte nicht geladen werden."
 
 #: src/app/router.tsx
 #: src/i18n/messages.ts
@@ -253,6 +459,10 @@ msgstr "Dieser Schlüssel wird nur einmal angezeigt. Speichere ihn in deinem Pas
 msgid "This page is not available yet."
 msgstr "Diese Seite ist noch nicht verfügbar."
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "This printer does not exist."
+msgstr "Diesen Drucker gibt es nicht."
+
 #: src/shell/SignIn.tsx
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Zu viele Versuche. Warte eine Minute und versuche es erneut."
@@ -262,9 +472,21 @@ msgstr "Zu viele Versuche. Warte eine Minute und versuche es erneut."
 msgid "Try again"
 msgstr "Erneut versuchen"
 
+#: src/features/overview/OverviewPage.tsx
+msgid "Unknown printer"
+msgstr "Unbekannter Drucker"
+
 #: src/shell/StatusBadge.tsx
 msgid "Warning"
 msgstr "Warnung"
+
+#: src/features/printers/model.ts
+msgid "White"
+msgstr "Weiß"
+
+#: src/features/printers/model.ts
+msgid "Yellow"
+msgstr "Gelb"
 
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "You signed in with the one-time bootstrap key. It can do one thing: create the first admin key."

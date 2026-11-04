@@ -15,18 +15,6 @@ function PagePlaceholder({ title }: { title: string }) {
   );
 }
 
-export function OverviewPage() {
-  const { t } = useLingui();
-  return <PagePlaceholder title={t`Overview`} />;
-}
-export function PrintersPage() {
-  const { t } = useLingui();
-  return <PagePlaceholder title={t`Printers`} />;
-}
-export function PrinterPage() {
-  const { t } = useLingui();
-  return <PagePlaceholder title={t`Printer`} />;
-}
 export function JobsPage() {
   const { t } = useLingui();
   return <PagePlaceholder title={t`Jobs`} />;

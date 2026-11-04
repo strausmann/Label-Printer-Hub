@@ -1,0 +1,84 @@
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderApp } from "../../test-utils";
+import { job, mockApi, PRINTER_A, PRINTER_B, status } from "../test-api";
+
+afterEach(() => vi.unstubAllGlobals());
+
+const base = (jobs: unknown[] = []) => ({
+  "GET /api/printers": [PRINTER_A, PRINTER_B],
+  [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
+  [`GET /api/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: null }),
+  "GET /api/jobs": jobs,
+});
+
+describe("Overview", () => {
+  it("answers its three questions in order", async () => {
+    mockApi(base());
+    await renderApp({ path: "/" });
+    const headings = await screen.findAllByRole("heading", { level: 2 });
+    expect(headings.slice(0, 3).map((h) => h.textContent)).toEqual(["Printing now", "Needs attention", "Material"]);
+  });
+
+  it("lists a running job under Printing now", async () => {
+    mockApi(base([job("aaaaaaaa-0000-4000-8000-000000000001", PRINTER_A.id, "printing", { template_key: "spool-label" })]));
+    await renderApp({ path: "/" });
+    const section = (await screen.findByRole("region", { name: "Printing now" }));
+    expect(await within(section).findByText(/spool-label/)).toBeVisible();
+    expect(within(section).getByText(/Workshop PT-P750W/)).toBeVisible();
+  });
+
+  it("lists a failed job under Needs attention with its reason", async () => {
+    mockApi(
+      base([job("aaaaaaaa-0000-4000-8000-000000000002", PRINTER_A.id, "failed", { error: "Cover open during print" })]),
+    );
+    await renderApp({ path: "/" });
+    const section = await screen.findByRole("region", { name: "Needs attention" });
+    expect(await within(section).findByText("Cover open during print")).toBeVisible();
+    expect(within(section).getByText("Failed")).toBeVisible();
+  });
+
+  it("ignores failures older than a day", async () => {
+    const old = "2026-01-01T00:00:00Z";
+    mockApi(base([job("aaaaaaaa-0000-4000-8000-000000000003", PRINTER_A.id, "failed", { error: "Old jam", updated_at: old })]));
+    await renderApp({ path: "/" });
+    const section = await screen.findByRole("region", { name: "Needs attention" });
+    await within(section).findByText("Office QL-820NWB");
+    expect(within(section).queryByText("Old jam")).toBeNull();
+  });
+
+  it("paused printer shows Resume", async () => {
+    const { calls } = mockApi({ ...base(), [`POST /api/printers/${PRINTER_B.id}/resume`]: null });
+    await renderApp({ path: "/" });
+    const section = await screen.findByRole("region", { name: "Needs attention" });
+    expect(await within(section).findByText("Office QL-820NWB")).toBeVisible();
+    expect(within(section).getByText("Paused")).toBeVisible();
+    await userEvent.click(within(section).getByRole("button", { name: "Resume Office QL-820NWB" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path.endsWith("/resume"))).toBe(true));
+  });
+
+  it("shows tape per printer: width, colour swatch with its name, and the empty state", async () => {
+    mockApi(base());
+    await renderApp({ path: "/" });
+    const material = await screen.findByRole("region", { name: "Material" });
+    const a = (await within(material).findByText("Workshop PT-P750W")).closest("li")!;
+    expect(within(a).getByText("12 mm")).toBeVisible();
+    expect(within(a).getByText("Blue")).toBeVisible();
+    const b = within(material).getByText("Office QL-820NWB").closest("li")!;
+    expect(within(b).getByText("No tape loaded")).toBeVisible();
+  });
+
+  it("shows printer cards linking to the detail page", async () => {
+    mockApi(base());
+    await renderApp({ path: "/" });
+    const link = await screen.findByRole("link", { name: /Workshop PT-P750W/ });
+    expect(link).toHaveAttribute("href", `/printers/${PRINTER_A.id}`);
+  });
+
+  it("says so when the printers cannot be loaded", async () => {
+    mockApi({ "GET /api/jobs": [] });
+    await renderApp({ path: "/" });
+    expect(await screen.findByText("The printers could not be loaded.")).toBeVisible();
+  });
+});
