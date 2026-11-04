@@ -1,4 +1,9 @@
-"""Phase 7c — api_keys table + audit columns on jobs + bootstrap-admin seed.
+"""Phase 7c — api_keys table + audit columns on jobs.
+
+D7: this migration used to seed an enabled ``bootstrap-admin`` key and print its
+plaintext to stdout. That is removed: the first admin key now comes from the
+one-time ``PRINTER_HUB_BOOTSTRAP_ADMIN_KEY`` sign-in or from
+``printer-hub admin create-key``. Existing installs keep their rows.
 
 Revision ID: 20260517_phase7c_api_keys
 Revises: 20260517_phase7b_datetime_tz
@@ -7,10 +12,6 @@ Create Date: 2026-05-17
 
 from __future__ import annotations
 
-import json
-import secrets
-
-import bcrypt
 import sqlalchemy as sa
 from alembic import op
 
@@ -18,16 +19,6 @@ revision = "20260517_phase7c_api_keys"
 down_revision = "20260517_phase7b_datetime_tz"
 branch_labels = None
 depends_on = None
-
-_BOOTSTRAP_KEY_NAME = "bootstrap-admin"
-
-
-def _generate_bootstrap_key() -> tuple[str, str, str]:
-    body = secrets.token_urlsafe(32)
-    plaintext = f"lh_pat_{body}"
-    prefix = plaintext[:16]
-    hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=12)).decode()
-    return plaintext, prefix, hashed
 
 
 def upgrade() -> None:
@@ -54,42 +45,6 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("api_key_id", sa.Uuid, nullable=True))
         batch_op.add_column(sa.Column("source_ip", sa.String, nullable=True))
     op.create_index("ix_jobs_api_key_id", "jobs", ["api_key_id"])
-
-    conn = op.get_bind()
-    count = conn.execute(sa.text("SELECT COUNT(*) FROM api_keys")).scalar()
-    if count == 0:
-        from datetime import UTC, datetime
-        from uuid import uuid4
-
-        plaintext, prefix, hashed = _generate_bootstrap_key()
-        key_id = str(uuid4())
-        now = datetime.now(UTC).isoformat()
-        conn.execute(
-            sa.text(
-                "INSERT INTO api_keys "
-                "(id, name, key_hash, key_prefix, scopes, allowed_printer_ids, "
-                " rate_limit_per_minute, enabled, created_at) "
-                "VALUES (:id, :name, :hash, :prefix, :scopes, :printers, "
-                "        :rate, :enabled, :now)"
-            ),
-            {
-                "id": key_id,
-                "name": _BOOTSTRAP_KEY_NAME,
-                "hash": hashed,
-                "prefix": prefix,
-                "scopes": json.dumps(["admin"]),
-                "printers": json.dumps([]),
-                "rate": 60,
-                "enabled": 1,
-                "now": now,
-            },
-        )
-        # Print to stdout (Alembic migration stdout only — NOT the application logger).
-        # This is the only time the plaintext key is visible; copy it before rotating.
-        print(
-            f"[label-printer-hub] BOOTSTRAP API KEY: {plaintext} (prefix: {prefix})"
-            " — rotate via /api/admin/api-keys after first login"
-        )
 
 
 def downgrade() -> None:

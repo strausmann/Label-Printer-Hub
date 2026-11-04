@@ -591,3 +591,22 @@ async def test_sso_session_stores_fingerprint_not_token(api_client_with_seed, mo
         ).scalar_one()
     assert row.sso_trust_fingerprint
     assert FAKE_TRUST_TOKEN not in row.sso_trust_fingerprint
+
+
+@pytest.mark.asyncio
+async def test_basic_bypass_post_needs_origin(api_client_with_seed, monkeypatch):
+    _set_env(monkeypatch, trust_pangolin_basic_bypass="true")
+    printer_id = await _insert_printer("bypass-origin-printer")
+    basic = {"Authorization": _basic("claude-automation")}
+    resp = await api_client_with_seed.post(f"/api/printers/{printer_id}/pause", headers=basic)
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error_code"] == "origin_mismatch"
+    resp = await api_client_with_seed.post(
+        f"/api/printers/{printer_id}/pause",
+        headers={**basic, "Origin": "https://evil.example.invalid"},
+    )
+    assert resp.status_code == 403
+    resp = await api_client_with_seed.post(
+        f"/api/printers/{printer_id}/pause", headers={**basic, "Origin": LOCAL_ORIGIN}
+    )
+    assert resp.status_code == 204, resp.text

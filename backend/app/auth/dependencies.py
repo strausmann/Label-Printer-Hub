@@ -303,11 +303,24 @@ async def _validate_api_key(
     )
 
 
+def _require_origin_for_writes(request: Request, settings: Settings) -> None:
+    """Cookie-less header auth (SSO headers, Basic bypass): writes need Origin == public_url."""
+    if request.method.upper() in csrf.UNSAFE_METHODS and not _origin_matches(request, settings):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "origin_mismatch",
+                "error_message": "State-changing requests need an Origin of public_url.",
+            },
+        )
+
+
 def _session_context(
     request: Request, valid: ui_sessions.ValidSession, required: Scope, client_ip: str
 ) -> AuthContext:
     row = valid.row
     is_bootstrap = row.source == "bootstrap"
+    # Limitation: matches the raw URL path, so a root_path prefix would break this check.
     if is_bootstrap and (request.method.upper(), request.url.path) not in _BOOTSTRAP_ALLOWED:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -384,16 +397,7 @@ def require_scope(
         # Path 3: SSO proxy headers (D10: trust token, legacy header only opt-in).
         sso_user = _sso_header_user(request, effective_settings)
         if sso_user:
-            if request.method.upper() in csrf.UNSAFE_METHODS and not _origin_matches(
-                request, effective_settings
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail={
-                        "error_code": "origin_mismatch",
-                        "error_message": "State-changing requests need an Origin of public_url.",
-                    },
-                )
+            _require_origin_for_writes(request, effective_settings)
             return AuthContext(
                 source="pangolin-sso",
                 scope=required_scope,
@@ -404,6 +408,8 @@ def require_scope(
 
         # Path 4: Pangolin Basic bypass — opt-in (D10), optionally read-only.
         if effective_settings.trust_pangolin_basic_bypass and _is_pangolin_bypass(request):
+            # Browsers can cache Basic credentials, so writes need the Origin rule too.
+            _require_origin_for_writes(request, effective_settings)
             bypass_scope: Scope = (
                 "read" if effective_settings.pangolin_bypass_scope_downgrade else required_scope
             )

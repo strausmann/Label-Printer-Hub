@@ -88,6 +88,7 @@ async def sign_in(
     body: SignInRequest, request: Request, response: Response, db: SessionDep
 ) -> None:
     settings = get_settings()
+    # Limitation: keyed by the direct peer; behind a reverse proxy all users share one bucket.
     client_ip = request.client.host if request.client else "unknown"
     allowed, retry_after = _sign_in_rate_limiter.check_and_consume_with_retry_after(
         client_ip, limit_per_minute=SIGN_IN_LIMIT_PER_MINUTE
