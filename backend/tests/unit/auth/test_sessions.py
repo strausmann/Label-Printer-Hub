@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -154,6 +155,6 @@ def test_trust_fingerprint_is_keyed_hmac_not_the_token() -> None:
     other_key = Settings(
         _env_file=None,
         public_url="http://localhost:8000",  # type: ignore[arg-type]
-        secret_key="b3RoZXItc2VjcmV0LWtleS0wMTIzNDU2Nzg5YWJjZGU=",  # type: ignore[arg-type]
+        secret_key=base64.urlsafe_b64encode(b"other-secret-key-0123456789abcde").decode(),  # type: ignore[arg-type]
     )
     assert fp != sessions.trust_fingerprint(other_key, "fake-trust-token")

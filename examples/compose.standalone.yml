@@ -20,6 +20,8 @@ services:
     environment:
       - PORT=${BACKEND_PORT:-8000}
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-*}
+      - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. https://printerhub.example.invalid}"
       - PRINTERS=${PRINTERS}
       - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///data/printer-hub.db}

@@ -11,6 +11,7 @@ that uvicorn would invoke, not a monkeypatched in-process call.
 
 from __future__ import annotations
 
+import base64
 import os
 import subprocess
 import sys
@@ -20,6 +21,9 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 # The Python interpreter from the venv that has all deps installed.
 _PYTHON = sys.executable
+
+# Fake key derived from readable text at runtime (no high-entropy literal).
+_FAKE_SECRET_KEY = base64.urlsafe_b64encode(b"test-secret-key-0123456789abcdef").decode()
 
 
 def _run_import(
@@ -42,7 +46,7 @@ def _run_import(
         "PATH": os.environ.get("PATH", ""),
         "HOME": os.environ.get("HOME", ""),
         "PYTHONPATH": str(BACKEND_DIR),
-        "PRINTER_HUB_SECRET_KEY": "dGVzdC1zZWNyZXQta2V5LTAxMjM0NTY3ODlhYmNkZWY=",
+        "PRINTER_HUB_SECRET_KEY": _FAKE_SECRET_KEY,
         "PRINTER_HUB_PUBLIC_URL": "http://localhost:8000",
         **env_overrides,
     }

@@ -19,8 +19,16 @@ services:
     environment:
       - PORT=${BACKEND_PORT:-8000}
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-*}
-      - PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY}
-      - PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL}
+      - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. https://printerhub.example.invalid}"
+      # D10: the hub trusts the Remote-User header only together with this shared
+      # token. The Pangolin resource below must inject the SAME value as the
+      # X-Pangolin-Token request header; without the token every request is
+      # treated as unauthenticated. Generate: openssl rand -hex 32
+      - "PRINTER_HUB_SSO_TRUST_TOKEN=${PRINTER_HUB_SSO_TRUST_TOKEN:?set PRINTER_HUB_SSO_TRUST_TOKEN - generate with: openssl rand -hex 32}"
+      # Opt-in only (off by default, D10). Enable ONLY if you rely on them:
+      #   PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER=true       legacy X-Pangolin-User header
+      #   PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS=true      Authorization: Basic bypass credential
       - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
       - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY}
       - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
@@ -65,6 +73,11 @@ services:
       - "pangolin.public-resources.printerhub.targets[0].port=${FRONTEND_PORT:-8080}"
       - "pangolin.public-resources.printerhub.targets[0].path-match=prefix"
       - "pangolin.public-resources.printerhub.auth.sso-enabled=true"
+      # Pangolin sets Remote-User after a successful SSO login. It also has to
+      # inject the trust token the backend expects (PRINTER_HUB_SSO_TRUST_TOKEN)
+      # as a custom request header, using the same value as the backend variable.
+      - "pangolin.public-resources.printerhub.headers[0].name=X-Pangolin-Token"
+      - "pangolin.public-resources.printerhub.headers[0].value=${PRINTER_HUB_SSO_TRUST_TOKEN}"
 
       # Webhook subroute — auth bypass (Two-Resources pattern)
       # Note: Two routes on the same full-domain are only possible with distinct

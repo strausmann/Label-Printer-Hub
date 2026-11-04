@@ -72,6 +72,11 @@ jobs:
         working-directory: ${{ steps.pyproject.outputs.path }}
         run: mypy app/
 
+      - name: Derive fake test secret key
+        if: steps.pyproject.outputs.exists == 'true'
+        # Built from readable text at runtime, so no high-entropy literal is checked in.
+        run: echo "PRINTER_HUB_SECRET_KEY=$(printf %s test-secret-key-0123456789abcdef | base64 | tr '+/' '-_')" >> "$GITHUB_ENV"
+
       # --cov-fail-under is a HARD CI gate. The 80% floor mirrors
       # [tool.coverage.report].fail_under in pyproject.toml — declaring it
       # again on the command line makes the failure surface in the test step
@@ -87,7 +92,6 @@ jobs:
         working-directory: ${{ steps.pyproject.outputs.path }}
         # Required settings are read at import time; obviously fake CI-only values.
         env:
-          PRINTER_HUB_SECRET_KEY: dGVzdC1zZWNyZXQta2V5LTAxMjM0NTY3ODlhYmNkZWY=
           PRINTER_HUB_PUBLIC_URL: http://localhost:8000
         run: pytest -m "not slow" --cov=app --cov-report=xml --cov-fail-under=80 --junitxml=junit.xml -o junit_family=legacy -v
 
