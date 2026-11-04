@@ -27,8 +27,8 @@ Each file is self-contained — copy the one you need plus `.env.example`.
 Other containers on the same Docker network call the hub directly at `http://<service>:8000` (for example `http://backend:8000`) and authenticate with an API key in the `X-Label-Hub-Key` header. No reverse proxy and no SSO are involved.
 
 - **Keys.** Create one per client in Settings > Access and keys. A key has a scope (`read`, `print`, `admin`) and can be restricted to specific printers. Calls authenticated by a key header are exempt from CSRF protection (CSRF only guards browser-session cookies).
-- **`PRINTER_HUB_PUBLIC_URL` is still required.** Set it to the address *people* use, not the internal name: it decides cookie security (`Secure` and `__Host-` prefix when it is `https`) and the allowed `Origin` for state-changing requests authenticated by proxy headers or the Basic bypass.
-- **Browsers use the public URL.** With an `https` public URL the session cookies are `Secure` and `__Host-` prefixed, so a browser will not send them to the plain-`http` internal name. Open the UI through the public address.
+- **`PRINTER_HUB_PUBLIC_URL` is still required, but any `http(s)` URL is accepted**, including internal ones such as `http://printer-hub:8000`, `http://localhost:8000` or a LAN IP. It decides cookie security (`Secure` and `__Host-` prefix when it is `https`) and the allowed `Origin` for state-changing requests authenticated by proxy headers or the Basic bypass. For API-only use inside a stack, a local address is fine.
+- **Browsers: set it to the address you open.** If people use the browser UI, set the variable to the address they type in. With an `https` value the session cookies are `Secure` and `__Host-` prefixed, so a browser will not send them to a plain-`http` internal name; a mismatched value also breaks sign-in cookies and the `Origin` check.
 - **Proxy headers.** `Remote-User` and similar headers count only together with `PRINTER_HUB_SSO_TRUST_TOKEN`, so a neighbouring container cannot pose as an SSO user. Leave the trust token unset if you use no SSO proxy.
 - **No published port is needed** for internal-only use; omit `ports:` (see `compose.backend-only.yml` for an API-only variant).
 
@@ -76,7 +76,7 @@ $EDITOR .env
 
 Required values:
 - `PRINTER_HUB_SECRET_KEY` — master key for secrets stored in the database. Generate: `openssl rand -base64 32 | tr '+/' '-_'`. Keep it: without it stored secrets cannot be read.
-- `PRINTER_HUB_PUBLIC_URL` — the address users open the hub at, e.g. `https://printerhub.example.com`
+- `PRINTER_HUB_PUBLIC_URL` — required; any `http(s)` URL, including a local one such as `http://printer-hub:8000`. For browser use, the address users open the hub at, e.g. `https://printerhub.example.com`
 - `PRINTERHUB_HOST` — your domain (only for reverse-proxy variants), e.g. `printerhub.example.com`
 - `PRINTER_HUB_SSO_TRUST_TOKEN` — Pangolin variant only; the same value is injected by the proxy as `X-Pangolin-Token`
 
