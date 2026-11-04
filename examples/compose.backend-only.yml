@@ -1,30 +1,36 @@
 # ============================================================================
-# Label Printer Hub — backend-only (no frontend, no reverse proxy)
+# Label Printer Hub — API only (no web UI, no reverse proxy)
 #
-# Minimal compose for testing the REST API directly via curl/Postman/etc.
-# Builds the backend image from source on the host that runs `docker compose`
-# — no pre-built image required, no GHCR pull. Designed for the early
-# development phase where the frontend container isn't ready yet.
+# For driving the REST API directly via curl/Postman/etc. Builds the image
+# from source on the host that runs `docker compose` (no GHCR pull) with
+# WEB_SOURCE=web-stub, i.e. WITHOUT the web UI. For the full hub (API and UI
+# in the same single container) use compose.standalone.yml.
 #
-# Usage on any docker host on the same LAN as the printer:
+# Usage on any docker host:
 #
-#   git clone --branch feat/first-print https://github.com/strausmann/Label-Printer-Hub.git
+#   git clone https://github.com/strausmann/Label-Printer-Hub.git
 #   cd Label-Printer-Hub
-#   cp backend/.env.example .env
-#   $EDITOR .env             # set PRINTER_HUB_PT750W_HOST, etc.
+#   cp examples/.env.example .env
+#   $EDITOR .env             # set PRINTER_HUB_SECRET_KEY and PRINTER_HUB_PUBLIC_URL
 #   docker compose -f examples/compose.backend-only.yml up -d --build
 #
 # Then:
 #   curl http://localhost:8090/healthz
-#   curl -X POST http://localhost:8090/print -H 'Content-Type: application/json' \
-#     -d '{"template_id":"qr-only-12mm","data":{"title":"T","primary_id":"X","qr_payload":"u"}}'
+#   curl http://localhost:8090/api/info
+#
+# Add printers through the API (POST /api/v1/admin/printers with an admin key); create
+# the first key with:
+#   docker exec label-printer-hub-backend printer-hub admin create-key
 # ============================================================================
 
 services:
   backend:
     build:
-      context: ../backend
-      dockerfile: Dockerfile
+      # The repository root: the Dockerfile also builds the web app from frontend/.
+      context: ..
+      dockerfile: backend/Dockerfile
+      args:
+        WEB_SOURCE: web-stub
     image: label-printer-hub-backend:dev
     container_name: label-printer-hub-backend
     user: "1000:1000"
@@ -51,6 +57,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-    # SNMP needs UDP/161 outbound to reach the printer; ptouch needs TCP/9100.
+    # SNMP needs UDP/161 outbound to reach the printer; the print protocol needs TCP/9100.
     # Default bridge networking handles both — no extra config needed as
     # long as the printer is reachable from the docker host's network namespace.

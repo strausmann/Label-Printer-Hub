@@ -1,7 +1,7 @@
 # ============================================================================
 # Label Printer Hub — Traefik
-# Two-container setup: only the frontend is exposed via Traefik. Backend stays
-# on an internal network and is reached by the frontend over docker DNS.
+# One container: the backend serves the API and the web UI (ADR 0015), so
+# Traefik routes straight to backend:8000. Printers are added in the UI.
 # Assumes a Traefik instance with HTTPS and a "letsencrypt" certresolver
 # is already running, attached to a docker network called "traefik".
 # ============================================================================
@@ -12,20 +12,18 @@ services:
     container_name: label-printer-hub-backend
     user: "1000:1000"
     networks:
-      - hub-internal
+      - traefik
     expose:
       - "${BACKEND_PORT:-8000}"
     environment:
       - PORT=${BACKEND_PORT:-8000}
+      # Reachable only through the proxy network, so its forwarded headers are accepted.
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-*}
       - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
       - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. https://printerhub.example.invalid}"
-      - PRINTERS=${PRINTERS}
-      - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/printer-hub.db}
-      - WEBHOOK_API_KEY=${WEBHOOK_API_KEY}
-      - UI_BASE_URL=https://${PRINTERHUB_HOST}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
+      - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY:-}
+      - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -35,30 +33,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
-  frontend:
-    image: ghcr.io/strausmann/label-printer-hub-frontend:${HUB_VERSION:-latest}
-    container_name: label-printer-hub-frontend
-    user: "1000:1000"
-    networks:
-      - traefik
-      - hub-internal
-    environment:
-      - PORT=${FRONTEND_PORT:-8080}
-      - BACKEND_URL=http://backend:${BACKEND_PORT:-8000}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:${FRONTEND_PORT:-8080}/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
 
       # Main UI (you may add a forward-auth middleware like Authelia here)
       - "traefik.http.routers.printerhub.rule=Host(`${PRINTERHUB_HOST}`)"
@@ -68,19 +45,17 @@ services:
       # Optional: enable an existing forward-auth middleware
       # - "traefik.http.routers.printerhub.middlewares=authelia@docker"
 
-      # Webhook subroute (no SSO/auth — uses WEBHOOK_API_KEY)
+      # Webhook subroute (no SSO/auth — uses PRINTER_HUB_WEBHOOK_API_KEY)
       - "traefik.http.routers.printerhub-webhooks.rule=Host(`${PRINTERHUB_HOST}`) && PathPrefix(`/api/webhook/`)"
       - "traefik.http.routers.printerhub-webhooks.entrypoints=websecure"
       - "traefik.http.routers.printerhub-webhooks.tls.certresolver=letsencrypt"
       - "traefik.http.routers.printerhub-webhooks.priority=20"
       - "traefik.http.routers.printerhub-webhooks.service=printerhub"
 
-      - "traefik.http.services.printerhub.loadbalancer.server.port=${FRONTEND_PORT:-8080}"
-      # SSE: disable buffering for live status updates (frontend proxies SSE from backend)
+      - "traefik.http.services.printerhub.loadbalancer.server.port=${BACKEND_PORT:-8000}"
+      # SSE: disable buffering for the live event stream (/api/v1/events)
       - "traefik.http.services.printerhub.loadbalancer.responseforwarding.flushinterval=100ms"
 
 networks:
   traefik:
     external: true
-  hub-internal:
-    driver: bridge

@@ -97,3 +97,159 @@ def test_no_private_addresses_or_real_domains(path: Path) -> None:
         assert host in ALLOWED_HOSTS or host.endswith(".example.invalid"), (
             f"{path.name}: host {host!r} is not example.invalid"
         )
+
+
+# --- Task 16: single container (D1), no removed variables, spec 6 e2e coverage -------------
+
+REPO = Path(__file__).resolve().parents[3]
+SMOKE = REPO / "dev" / "docker-compose.smoke.yml"
+ALL_COMPOSE = [*COMPOSE_FILES, SMOKE]
+# Variables of the removed Go frontend and of the retired env-configured printer (spec 7.1, 8).
+REMOVED_VARIABLES = (
+    "PRINTERS_CONFIG",
+    "PRINTER_BACKEND",
+    "PRINTER_MODEL",
+    "PRINTER_DISCOVER_VIA_SNMP",
+    "PRINTER_SNMP_COMMUNITY",
+    "PT750W_HOST",
+    "PT750W_PORT",
+    "BACKEND_URL",
+    "CSRF_KEY",
+    "FRONTEND_PORT",
+)
+
+
+def _load(path: Path) -> dict:
+    return yaml.safe_load(path.read_text())
+
+
+@pytest.mark.parametrize("path", ALL_COMPOSE, ids=lambda p: p.name)
+def test_examples_have_no_frontend_service(path: Path) -> None:
+    services = _load(path)["services"]
+    assert "frontend" not in services, f"{path.name}: the hub is one container (D1)"
+    for name, service in services.items():
+        image = str(service.get("image", ""))
+        assert "label-printer-hub-frontend" not in image, (
+            f"{path.name}: {name} uses the frontend image"
+        )
+        build = service.get("build")
+        context = build.get("context", "") if isinstance(build, dict) else str(build or "")
+        assert "frontend" not in str(context), f"{path.name}: {name} builds the frontend"
+
+
+@pytest.mark.parametrize("path", [*COMPOSE_FILES, SMOKE], ids=lambda p: p.name)
+def test_examples_do_not_use_removed_variables(path: Path) -> None:
+    text = path.read_text()
+    for name in REMOVED_VARIABLES:
+        assert not re.search(rf"(?<![A-Z_]){name}(?![A-Z_])", text), (
+            f"{path.name}: removed variable {name}"
+        )
+
+
+@pytest.mark.parametrize(
+    "path", [p for p in COMPOSE_FILES if p.name != "compose.backend-only.yml"], ids=lambda p: p.name
+)
+def test_example_variables_carry_the_settings_prefix(path: Path) -> None:
+    # Unprefixed names (DATABASE_URL, WEBHOOK_API_KEY, ...) are ignored by the backend.
+    allowed = {"PORT", "FORWARDED_ALLOW_IPS"}
+    for name in _backend_env(path):
+        assert name in allowed or name.startswith("PRINTER_HUB_"), (
+            f"{path.name}: {name} is not read"
+        )
+
+
+@pytest.mark.parametrize(
+    "name", ["compose.traefik.yml", "compose.caddy.yml", "compose.pangolin.yml"]
+)
+def test_proxy_examples_target_the_backend_on_8000(name: str) -> None:
+    text = (EXAMPLES / name).read_text()
+    assert "8080" not in text, f"{name}: the UI is served on the backend port, not 8080"
+    if name == "compose.traefik.yml":
+        assert "loadbalancer.server.port=8000" in text.replace("${BACKEND_PORT:-8000}", "8000")
+    if name == "compose.caddy.yml":
+        assert "upstreams ${BACKEND_PORT:-8000}" in text or "upstreams 8000" in text
+    if name == "compose.pangolin.yml":
+        assert "targets[0].port=${BACKEND_PORT:-8000}" in text
+
+
+def test_standalone_publishes_the_backend_port() -> None:
+    backend = _load(EXAMPLES / "compose.standalone.yml")["services"]["backend"]
+    assert any(
+        str(p).endswith(":8000") or ":" + "${BACKEND_PORT:-8000}" in str(p)
+        for p in backend["ports"]
+    )
+
+
+def test_smoke_compose_boots_one_container_with_required_settings() -> None:
+    data = _load(SMOKE)
+    assert list(data["services"]) == ["backend"]
+    env = _env_names(data["services"]["backend"])
+    assert {"PRINTER_HUB_SECRET_KEY", "PRINTER_HUB_PUBLIC_URL"} <= env
+
+
+def test_examples_readme_describes_one_container() -> None:
+    text = (EXAMPLES / "README.md").read_text()
+    assert "label-printer-hub-frontend" not in text
+    assert "Two-container" not in text and "two containers" not in text.lower()
+
+
+def test_readme_has_no_removed_printer_variables() -> None:
+    text = (REPO / "README.md").read_text()
+    for name in REMOVED_VARIABLES:
+        assert not re.search(rf"PRINTER_HUB_{name}\b", text), f"README.md: removed variable {name}"
+    assert "PRINTER_HUB_SECRET_KEY" in text and "PRINTER_HUB_PUBLIC_URL" in text
+
+
+def test_migration_note_covers_the_breaking_changes() -> None:
+    text = (REPO / "docs" / "migration" / "v-next-single-container.md").read_text()
+    for needle in (
+        "PRINTER_HUB_SECRET_KEY",
+        "PRINTER_HUB_PUBLIC_URL",
+        "PRINTER_HUB_SSO_TRUST_TOKEN",
+        "PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER",
+        "PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS",
+        "PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE",
+        "printer-hub admin create-key",
+        "/api/v1/events",
+        "label-printer-hub-backend",
+        "PRINTERS_CONFIG",
+    ):
+        assert needle in text, f"migration note does not mention {needle}"
+
+
+def test_architecture_docs_describe_the_single_process() -> None:
+    arch = (REPO / "docs" / "architecture.md").read_text()
+    assert "Go web server" not in arch and "oapi-codegen" not in arch
+    assert "ADR [0015]" in arch or "0015-single-process-deployment" in arch
+    sse = (REPO / "docs" / "architecture" / "sse.md").read_text()
+    assert "/api/v1/events" in sse
+    assert "backend:8090" not in sse and "HTMX" not in sse
+
+
+def test_privacy_policy_example_uses_documentation_addresses() -> None:
+    text = (REPO / "docs" / "policies" / "privacy.md").read_text()
+    text = re.sub(r"\d+\.\d+\.\d+\.\d+/\d+", "", text)  # CIDR ranges name a network, not a host
+    assert not PRIVATE_IP.search(text), "privacy.md quotes an address from a real network"
+
+
+# One e2e spec per row of spec section 6 (page -> spec file and a test title that names it).
+SECTION_6_E2E = {
+    "overview": ("printers.spec.ts", r"overview answers its three questions"),
+    "printer detail": ("printers.spec.ts", r"pausing a printer"),
+    "jobs list, detail, retry": ("jobs.spec.ts", r"retry a failed job"),
+    "integration item view": ("integrations.spec.ts", r"item view opens"),
+    "QR path": ("lookup.spec.ts", r"opening /asset/<id>"),
+    "settings: access and keys": ("settings.spec.ts", r"access and keys"),
+    "settings: printers": ("settings.spec.ts", r"printers: add, edit and disable"),
+    "sign-in": ("shell.spec.ts", r"sign-in rejects a wrong key"),
+    "bootstrap": ("shell.spec.ts", r"bootstrap flow creates first admin key"),
+}
+
+
+@pytest.mark.parametrize("page", sorted(SECTION_6_E2E))
+def test_every_section_6_page_has_an_e2e_spec(page: str) -> None:
+    filename, title = SECTION_6_E2E[page]
+    spec = (REPO / "frontend" / "e2e" / filename).read_text()
+    assert re.search(r"\btest\(\s*[\"'`][^\"'`]*" + title, spec), (
+        f"no e2e test for '{page}' in {filename}"
+    )

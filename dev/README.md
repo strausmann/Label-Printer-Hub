@@ -2,27 +2,32 @@
 
 This folder holds non-shipping dev artifacts: local smoke-test setups, helper
 configs, and scratch utilities. Nothing in here is referenced by the production
-container images — those are built from `backend/Dockerfile` and
-`frontend/Dockerfile` directly.
+container image — it is built from `backend/Dockerfile` (build context: the
+repository root; the web app in `frontend/` is built into it).
 
 ## `docker-compose.smoke.yml`
 
-Build and run the full stack (backend + frontend) from the local source tree
-with a mock printer. No real hardware, no GHCR pull, no external services.
+Build and run the hub (one container: API and web UI) from the local source
+tree. No GHCR pull, no external services, no printer: add printers in the UI.
 
 ```bash
 # From the repo root:
 docker compose -f dev/docker-compose.smoke.yml up --build
 ```
 
-After both containers report healthy:
+After the container reports healthy:
 
 | Endpoint | URL | Expected |
 |----------|-----|----------|
-| Frontend UI | http://localhost:8080/ | Dashboard rendered |
-| Frontend healthz | http://localhost:8080/healthz | `backend_reachable: true` |
-| Frontend pages | `/printers/<uuid>`, `/jobs`, `/templates`, `/lookup/<app>/<id>` | 200 + HTML |
-| Backend (via proxy) | http://localhost:8080/api/printers | JSON array |
+| Web UI | http://localhost:8000/ | Sign-in page |
+| Health | http://localhost:8000/healthz | `200` |
+| API info | http://localhost:8000/api/info | JSON with version and feature flags |
+| API docs | http://localhost:8000/docs | Swagger UI |
+
+The smoke stack sets a fake `PRINTER_HUB_SECRET_KEY` and a fake one-time
+`PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` (see the compose file) — sign in with the
+bootstrap key, create a real admin key, then add a printer under
+Settings > Printers. Do not reuse these values anywhere else.
 
 Stop and wipe the SQLite volume between runs:
 
@@ -33,16 +38,15 @@ docker compose -f dev/docker-compose.smoke.yml down -v
 ### What this smoke covers
 
 - Backend startup including Alembic migrations from the runtime image
-- Frontend → backend reverse proxy + SSE pass-through
-- All Phase 7a pages (Dashboard, Printer Detail, Jobs, Templates, Lookup)
+- The web UI built into the image and served by the backend
 - Settings validation (try shortening `PRINTER_HUB_WEBHOOK_API_KEY` to see the
   EX_CONFIG-friendly error from F3)
 
 ### What this does NOT cover
 
-- Real Brother PT/QL hardware — uses the mock printer backend
-- Pangolin SSO — the smoke stack is plain HTTP on `:8080`
-- Production tag scheme — both images build as `latest` locally
+- Real Brother PT/QL hardware
+- Pangolin SSO — the smoke stack is plain HTTP on `:8000`
+- Production tag scheme — the image builds as `latest` locally
 
 ## Next step: deploy to a node
 
