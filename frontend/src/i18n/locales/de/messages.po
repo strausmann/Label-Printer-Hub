@@ -7,25 +7,260 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: de\n"
 
+#: src/shell/SignIn.tsx
+msgid "API key"
+msgstr "API-Schlüssel"
+
+#: src/pages/placeholders.tsx
+msgid "Back to the overview"
+msgstr "Zurück zur Übersicht"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Calibration"
+msgstr "Kalibrierung"
+
+#. placeholder {0}: info.data.version
+#: src/shell/Sidebar.tsx
+msgid "Connected · v{0}"
+msgstr "Verbunden · v{0}"
+
+#: src/shell/Sidebar.tsx
+msgid "Connecting…"
+msgstr "Verbindung wird aufgebaut …"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Continue"
+msgstr "Weiter"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Copied"
+msgstr "Kopiert"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Copy failed. Select the key and copy it by hand."
+msgstr "Kopieren fehlgeschlagen. Markiere den Schlüssel und kopiere ihn von Hand."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Copy key"
+msgstr "Schlüssel kopieren"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Create admin key"
+msgstr "Admin-Schlüssel erstellen"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Create the first admin key"
+msgstr "Den ersten Admin-Schlüssel erstellen"
+
+#: src/shell/ThemeSwitch.tsx
+msgid "Dark theme"
+msgstr "Dunkles Design"
+
+#: src/shell/StatusBadge.tsx
+msgid "Idle"
+msgstr "Ruhend"
+
+#: src/shell/labels.ts
+msgid "Integrations"
+msgstr "Integrationen"
+
+#: src/pages/placeholders.tsx
+msgid "Item"
+msgstr "Eintrag"
+
+#: src/pages/placeholders.tsx
+msgid "Job"
+msgstr "Auftrag"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Jobs"
+msgstr "Aufträge"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Kept / Hangar / Grocy"
+msgstr "Kept / Hangar / Grocy"
+
 #: src/i18n/messages.ts
+#: src/shell/Sidebar.tsx
+#: src/shell/SignIn.tsx
 msgid "Label Printer Hub"
 msgstr "Label Printer Hub"
 
+#: src/shell/ThemeSwitch.tsx
+msgid "Light theme"
+msgstr "Helles Design"
+
+#: src/app/router.tsx
 #: src/i18n/messages.ts
 msgid "Loading…"
 msgstr "Wird geladen …"
 
+#: src/shell/Sidebar.tsx
+msgid "Main"
+msgstr "Hauptnavigation"
+
+#: src/shell/labels.ts
+msgid "Material"
+msgstr "Material"
+
+#: src/shell/StatusBadge.tsx
+msgid "OK"
+msgstr "OK"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Overview"
+msgstr "Übersicht"
+
+#: src/pages/placeholders.tsx
+msgid "Page not found"
+msgstr "Seite nicht gefunden"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Paperless ASN"
+msgstr "Paperless-ASN"
+
+#: src/pages/placeholders.tsx
+msgid "Printer"
+msgstr "Drucker"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Printers"
+msgstr "Drucker"
+
+#: src/shell/StatusBadge.tsx
+msgid "Problem"
+msgstr "Problem"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
+msgstr "Entferne <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> aus dem Container; die Variable funktioniert nicht mehr, sobald dieser Schlüssel existiert."
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+#: src/shell/TopBar.tsx
+msgid "Scan"
+msgstr "Scannen"
+
+#: src/shell/TopBar.tsx
+msgid "Search"
+msgstr "Suchen"
+
+#: src/shell/Sidebar.tsx
+msgid "Server unreachable"
+msgstr "Server nicht erreichbar"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Settings"
+msgstr "Einstellungen"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Sheet archive"
+msgstr "Bogenarchiv"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Sheets"
+msgstr "Bögen"
+
+#: src/shell/SignIn.tsx
+msgid "Sign in"
+msgstr "Anmelden"
+
+#: src/shell/SignIn.tsx
+msgid "Sign in with an API key that has print or admin scope."
+msgstr "Melde dich mit einem API-Schlüssel mit Druck- oder Admin-Berechtigung an."
+
+#: src/shell/TopBar.tsx
+msgid "Sign out"
+msgstr "Abmelden"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Signing in with the new key failed."
+msgstr "Die Anmeldung mit dem neuen Schlüssel ist fehlgeschlagen."
+
+#: src/shell/AppShell.tsx
+msgid "Skip to content"
+msgstr "Zum Inhalt springen"
+
 #: src/i18n/messages.ts
+#: src/shell/SignIn.tsx
 msgid "Something went wrong."
 msgstr "Etwas ist schiefgelaufen."
 
+#: src/shell/labels.ts
+msgid "System"
+msgstr "System"
+
+#: src/shell/ThemeSwitch.tsx
+msgid "System theme"
+msgstr "Systemdesign"
+
+#: src/shell/TabBar.tsx
+msgid "Tabs"
+msgstr "Tabs"
+
+#: src/shell/SignIn.tsx
+msgid "That key was not accepted."
+msgstr "Dieser Schlüssel wurde nicht akzeptiert."
+
+#: src/shell/SignIn.tsx
+msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."
+msgstr "Der Bootstrap-Schlüssel gilt nicht mehr, weil ein Admin-Schlüssel existiert. Melde dich mit diesem an."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "The key could not be created."
+msgstr "Der Schlüssel konnte nicht erstellt werden."
+
+#: src/app/router.tsx
 #: src/i18n/messages.ts
+#: src/shell/SignIn.tsx
 msgid "The server cannot be reached."
 msgstr "Der Server ist nicht erreichbar."
 
+#: src/shell/ThemeSwitch.tsx
+msgid "Theme"
+msgstr "Design"
+
+#: src/shell/SignIn.tsx
+msgid "This key can only read. Sign in with a key that has print or admin scope."
+msgstr "Dieser Schlüssel darf nur lesen. Melde dich mit einem Schlüssel mit Druck- oder Admin-Berechtigung an."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "This key is shown only once. Store it in your password manager before you continue."
+msgstr "Dieser Schlüssel wird nur einmal angezeigt. Speichere ihn in deinem Passwortmanager, bevor du weitermachst."
+
+#: src/pages/placeholders.tsx
+msgid "This page is not available yet."
+msgstr "Diese Seite ist noch nicht verfügbar."
+
+#: src/shell/SignIn.tsx
+msgid "Too many attempts. Wait a minute and try again."
+msgstr "Zu viele Versuche. Warte eine Minute und versuche es erneut."
+
+#: src/app/router.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Erneut versuchen"
+
+#: src/shell/StatusBadge.tsx
+msgid "Warning"
+msgstr "Warnung"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "You signed in with the one-time bootstrap key. It can do one thing: create the first admin key."
+msgstr "Du hast dich mit dem einmaligen Bootstrap-Schlüssel angemeldet. Er kann nur eines: den ersten Admin-Schlüssel erstellen."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Your new admin key"
+msgstr "Dein neuer Admin-Schlüssel"
 
 #: src/i18n/messages.ts
 msgid "Your session has expired. Sign in again."

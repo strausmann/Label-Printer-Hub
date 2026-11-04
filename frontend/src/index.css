@@ -54,10 +54,28 @@
     font-size: var(--text-body);
     line-height: 1.5;
     -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
   }
   body {
     margin: 0;
     min-height: 100dvh;
+  }
+  a,
+  button,
+  [role="button"],
+  [role="radio"] {
+    touch-action: manipulation;
+  }
+  button,
+  [role="button"] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea,
+  select {
+    font-size: 16px; /* iOS zooms into smaller fields */
   }
   :focus-visible {
     outline: var(--focus-ring);
@@ -77,5 +95,17 @@
       animation-duration: 0.01ms !important;
       transition-duration: 0.01ms !important;
     }
+  }
+}
+
+@layer components {
+  /* Press feedback on everything tappable: instant, small, ease-out. */
+  .press {
+    transition-property: transform, background-color, color;
+    transition-duration: 120ms;
+    transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .press:active {
+    transform: scale(0.97);
   }
 }

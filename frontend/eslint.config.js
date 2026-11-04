@@ -11,6 +11,11 @@ export default tseslint.config(
   jsxA11y.flatConfigs.recommended,
   reactHooks.configs.flat.recommended,
   {
+    // Playwright fixtures call their `use` callback; that is not a React hook.
+    files: ["e2e/**"],
+    rules: { "react-hooks/rules-of-hooks": "off" },
+  },
+  {
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     rules: {
       "@typescript-eslint/consistent-type-imports": "error",

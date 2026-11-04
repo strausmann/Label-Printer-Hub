@@ -7,3 +7,4 @@ test-results/
 openapi.json
 src/i18n/locales/*/messages.ts
 *.tsbuildinfo
+e2e/.tmp/

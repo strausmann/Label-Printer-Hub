@@ -7,25 +7,260 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: en\n"
 
+#: src/shell/SignIn.tsx
+msgid "API key"
+msgstr "API key"
+
+#: src/pages/placeholders.tsx
+msgid "Back to the overview"
+msgstr "Back to the overview"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Calibration"
+msgstr "Calibration"
+
+#. placeholder {0}: info.data.version
+#: src/shell/Sidebar.tsx
+msgid "Connected · v{0}"
+msgstr "Connected · v{0}"
+
+#: src/shell/Sidebar.tsx
+msgid "Connecting…"
+msgstr "Connecting…"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Continue"
+msgstr "Continue"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Copied"
+msgstr "Copied"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Copy failed. Select the key and copy it by hand."
+msgstr "Copy failed. Select the key and copy it by hand."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Copy key"
+msgstr "Copy key"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Create admin key"
+msgstr "Create admin key"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Create the first admin key"
+msgstr "Create the first admin key"
+
+#: src/shell/ThemeSwitch.tsx
+msgid "Dark theme"
+msgstr "Dark theme"
+
+#: src/shell/StatusBadge.tsx
+msgid "Idle"
+msgstr "Idle"
+
+#: src/shell/labels.ts
+msgid "Integrations"
+msgstr "Integrations"
+
+#: src/pages/placeholders.tsx
+msgid "Item"
+msgstr "Item"
+
+#: src/pages/placeholders.tsx
+msgid "Job"
+msgstr "Job"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Jobs"
+msgstr "Jobs"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Kept / Hangar / Grocy"
+msgstr "Kept / Hangar / Grocy"
+
 #: src/i18n/messages.ts
+#: src/shell/Sidebar.tsx
+#: src/shell/SignIn.tsx
 msgid "Label Printer Hub"
 msgstr "Label Printer Hub"
 
+#: src/shell/ThemeSwitch.tsx
+msgid "Light theme"
+msgstr "Light theme"
+
+#: src/app/router.tsx
 #: src/i18n/messages.ts
 msgid "Loading…"
 msgstr "Loading…"
 
+#: src/shell/Sidebar.tsx
+msgid "Main"
+msgstr "Main"
+
+#: src/shell/labels.ts
+msgid "Material"
+msgstr "Material"
+
+#: src/shell/StatusBadge.tsx
+msgid "OK"
+msgstr "OK"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Overview"
+msgstr "Overview"
+
+#: src/pages/placeholders.tsx
+msgid "Page not found"
+msgstr "Page not found"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Paperless ASN"
+msgstr "Paperless ASN"
+
+#: src/pages/placeholders.tsx
+msgid "Printer"
+msgstr "Printer"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Printers"
+msgstr "Printers"
+
+#: src/shell/StatusBadge.tsx
+msgid "Problem"
+msgstr "Problem"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
+msgstr "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+#: src/shell/TopBar.tsx
+msgid "Scan"
+msgstr "Scan"
+
+#: src/shell/TopBar.tsx
+msgid "Search"
+msgstr "Search"
+
+#: src/shell/Sidebar.tsx
+msgid "Server unreachable"
+msgstr "Server unreachable"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Settings"
+msgstr "Settings"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Sheet archive"
+msgstr "Sheet archive"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Sheets"
+msgstr "Sheets"
+
+#: src/shell/SignIn.tsx
+msgid "Sign in"
+msgstr "Sign in"
+
+#: src/shell/SignIn.tsx
+msgid "Sign in with an API key that has print or admin scope."
+msgstr "Sign in with an API key that has print or admin scope."
+
+#: src/shell/TopBar.tsx
+msgid "Sign out"
+msgstr "Sign out"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Signing in with the new key failed."
+msgstr "Signing in with the new key failed."
+
+#: src/shell/AppShell.tsx
+msgid "Skip to content"
+msgstr "Skip to content"
+
 #: src/i18n/messages.ts
+#: src/shell/SignIn.tsx
 msgid "Something went wrong."
 msgstr "Something went wrong."
 
+#: src/shell/labels.ts
+msgid "System"
+msgstr "System"
+
+#: src/shell/ThemeSwitch.tsx
+msgid "System theme"
+msgstr "System theme"
+
+#: src/shell/TabBar.tsx
+msgid "Tabs"
+msgstr "Tabs"
+
+#: src/shell/SignIn.tsx
+msgid "That key was not accepted."
+msgstr "That key was not accepted."
+
+#: src/shell/SignIn.tsx
+msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."
+msgstr "The bootstrap key no longer works because an admin key exists. Sign in with that key."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "The key could not be created."
+msgstr "The key could not be created."
+
+#: src/app/router.tsx
 #: src/i18n/messages.ts
+#: src/shell/SignIn.tsx
 msgid "The server cannot be reached."
 msgstr "The server cannot be reached."
 
+#: src/shell/ThemeSwitch.tsx
+msgid "Theme"
+msgstr "Theme"
+
+#: src/shell/SignIn.tsx
+msgid "This key can only read. Sign in with a key that has print or admin scope."
+msgstr "This key can only read. Sign in with a key that has print or admin scope."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "This key is shown only once. Store it in your password manager before you continue."
+msgstr "This key is shown only once. Store it in your password manager before you continue."
+
+#: src/pages/placeholders.tsx
+msgid "This page is not available yet."
+msgstr "This page is not available yet."
+
+#: src/shell/SignIn.tsx
+msgid "Too many attempts. Wait a minute and try again."
+msgstr "Too many attempts. Wait a minute and try again."
+
+#: src/app/router.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Try again"
+
+#: src/shell/StatusBadge.tsx
+msgid "Warning"
+msgstr "Warning"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "You signed in with the one-time bootstrap key. It can do one thing: create the first admin key."
+msgstr "You signed in with the one-time bootstrap key. It can do one thing: create the first admin key."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Your new admin key"
+msgstr "Your new admin key"
 
 #: src/i18n/messages.ts
 msgid "Your session has expired. Sign in again."
