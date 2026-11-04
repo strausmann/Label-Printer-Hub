@@ -126,6 +126,61 @@ jobs:
         if: steps.pyproject.outputs.exists != 'true'
         run: echo "No pyproject.toml found — skipping Python checks for this branch"
 
+  web:
+    name: Web — typecheck, lint, test, build
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests (coverage threshold 70)
+        run: pnpm test:coverage
+
+      # The API types are generated from the backend's OpenAPI; a stale file fails here.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install backend (for the OpenAPI export)
+        working-directory: backend
+        run: pip install -e .
+
+      - name: API types are up to date
+        run: |
+          pnpm gen:api
+          git diff --exit-code src/api/schema.gen.ts
+
+      - name: Build
+        run: pnpm build
+
+      - name: Built output has no external font URLs
+        env:
+          REQUIRE_DIST: "1"
+        run: pnpm exec vitest run src/build.test.ts
+
   docker-build:
     name: Docker — build smoke test
     runs-on: ubuntu-24.04

@@ -1,0 +1,10 @@
+/*
+ * Self-hosted fonts (OFL-1.1) — no third-party font CDN at runtime.
+ * UI text: Atkinson Hyperlegible. Every code (label codes, ASNs, sheet IDs, tape names):
+ * Atkinson Hyperlegible Mono, so 0/O, 1/l/I and 8/B stay distinct.
+ * Only the latin subset is bundled; it covers English and German.
+ */
+@import "@fontsource/atkinson-hyperlegible/latin-400.css";
+@import "@fontsource/atkinson-hyperlegible/latin-700.css";
+@import "@fontsource/atkinson-hyperlegible-mono/latin-400.css";
+@import "@fontsource/atkinson-hyperlegible-mono/latin-600.css";

@@ -1,0 +1,32 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-11-04 10:15+0000\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: de\n"
+
+#: src/i18n/messages.ts
+msgid "Label Printer Hub"
+msgstr "Label Printer Hub"
+
+#: src/i18n/messages.ts
+msgid "Loading…"
+msgstr "Wird geladen …"
+
+#: src/i18n/messages.ts
+msgid "Something went wrong."
+msgstr "Etwas ist schiefgelaufen."
+
+#: src/i18n/messages.ts
+msgid "The server cannot be reached."
+msgstr "Der Server ist nicht erreichbar."
+
+#: src/i18n/messages.ts
+msgid "Try again"
+msgstr "Erneut versuchen"
+
+#: src/i18n/messages.ts
+msgid "Your session has expired. Sign in again."
+msgstr "Ihre Sitzung ist abgelaufen. Bitte erneut anmelden."

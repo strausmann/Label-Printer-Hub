@@ -1,0 +1,100 @@
+/*
+ * Design tokens (D3), values from the web-UI spec section 5.2.
+ * Three layers: primitive values -> semantic roles -> use in components.
+ * `tokens.ts` mirrors these values; `tokens.test.ts` keeps both in step.
+ * Light is the default; dark follows `prefers-color-scheme` unless the user chose a
+ * theme explicitly via `data-theme` on <html>.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* primitives */
+  --paper-50: #F6F4EF;
+  --paper-100: #EFEBE3;
+  --paper-200: #E3DED3;
+  --paper-300: #CFC8BA;
+  --ink-900: #1F1D1A;
+  --ink-700: #4A463F;
+  --ink-500: #6B655A;
+  --amber-500: #D4912A;
+  --amber-600: #B8771A;
+  --amber-100: #F6E6C8;
+  --stamp-600: #2F4E8F;
+  --stamp-100: #DDE5F3;
+  --green-600: #2E7A4E;
+  --orange-600: #B5651B;
+  --red-600: #B0352B;
+
+  /* semantic roles — light */
+  --bg: var(--paper-50);
+  --surface: #FDFCF9;
+  --sunken: var(--paper-100);
+  --line: var(--paper-200);
+  --line-strong: var(--paper-300);
+  --ink: var(--ink-900);
+  --ink-2: var(--ink-700);
+  --ink-3: var(--ink-500);
+  --accent: var(--amber-500);
+  --accent-ink: #2B1D06;
+  --accent-soft: var(--amber-100);
+  --link: var(--stamp-600);
+  --ok: var(--green-600);
+  --warn: var(--orange-600);
+  --bad: var(--red-600);
+
+  /* tape colours: the loaded material, never state */
+  --tape-white: #FFFFFF;
+  --tape-yellow: #F2D23C;
+  --tape-green: #5FAE5A;
+  --tape-blue: #3D78C9;
+  --tape-red: #D2473B;
+
+  /* radii */
+  --r-1: 6px;
+  --r-2: 10px;
+  --r-3: 14px;
+
+  /* focus ring: 3 px in the link colour */
+  --focus-ring: 3px solid var(--link);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #171614;
+  --surface: #201E1B;
+  --sunken: #29261F;
+  --line: #35312A;
+  --line-strong: #4A443A;
+  --ink: #F1EEE7;
+  --ink-2: #C4BEB2;
+  --ink-3: #958E81;
+  --accent: #E2A445;
+  --accent-ink: #241703;
+  --accent-soft: #3A2D16;
+  --link: #8FAEE6;
+  --ok: #6CC58F;
+  --warn: #E39A4F;
+  --bad: #EE8579;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #171614;
+    --surface: #201E1B;
+    --sunken: #29261F;
+    --line: #35312A;
+    --line-strong: #4A443A;
+    --ink: #F1EEE7;
+    --ink-2: #C4BEB2;
+    --ink-3: #958E81;
+    --accent: #E2A445;
+    --accent-ink: #241703;
+    --accent-soft: #3A2D16;
+    --link: #8FAEE6;
+    --ok: #6CC58F;
+    --warn: #E39A4F;
+    --bad: #EE8579;
+  }
+}

@@ -1,0 +1,81 @@
+@import "tailwindcss";
+@import "./design/fonts.css";
+@import "./design/tokens.css";
+
+/* Tailwind v4 theme: utilities (bg-surface, text-ink-2, rounded-r2 …) read the tokens. */
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-link: var(--link);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-tape-white: var(--tape-white);
+  --color-tape-yellow: var(--tape-yellow);
+  --color-tape-green: var(--tape-green);
+  --color-tape-blue: var(--tape-blue);
+  --color-tape-red: var(--tape-red);
+
+  --radius-r1: var(--r-1);
+  --radius-r2: var(--r-2);
+  --radius-r3: var(--r-3);
+
+  --font-sans: "Atkinson Hyperlegible", system-ui, sans-serif;
+  --font-mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+
+  /* type scale: title 28/700, section 20/700, body 15/400, small 13/400, code 15/600 */
+  --text-title: 28px;
+  --text-section: 20px;
+  --text-body: 15px;
+  --text-small: 13px;
+  --text-code: 15px;
+
+  /* spacing is a 4 px grid */
+  --spacing: 4px;
+}
+
+@layer base {
+  html {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    min-height: 100dvh;
+  }
+  :focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 2px;
+  }
+  code,
+  kbd,
+  samp,
+  .code {
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

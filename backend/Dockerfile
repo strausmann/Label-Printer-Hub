@@ -13,9 +13,9 @@
 #   docker build -f backend/Dockerfile .
 # Cache-friendly layer order: deps first (rare changes), source code last.
 #
-# Until the web app exists the default WEB_SOURCE is the empty `web-stub`
-# stage: the image then runs API-only. Task 8 switches the default to
-# `web-builder`; override per build with --build-arg WEB_SOURCE=web-builder.
+# WEB_SOURCE picks the stage the web app is copied from. The default is
+# `web-builder` (the real Vite build); `--build-arg WEB_SOURCE=web-stub` builds
+# an API-only image.
 #
 # References:
 #   docs/decisions/0001-two-container-architecture.md  (superseded by D1)
@@ -24,7 +24,7 @@
 #   CLAUDE.md hard rules                               (non-root UID 1000)
 # =============================================================================
 
-ARG WEB_SOURCE=web-stub
+ARG WEB_SOURCE=web-builder
 
 # -----------------------------------------------------------------------------
 # Stage 0a: web-builder — the Vite build of the web app
