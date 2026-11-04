@@ -14,7 +14,7 @@
 
 - MIT project. Nothing copied from Kept (AGPL-3.0): no files, token values, components. Every new dependency's licence is checked and listed in the PR description.
 - Public repo: English prose everywhere; no private IPs, hostnames, domains, tokens in code, fixtures, docs or screenshots (`docs/policies/privacy.md`). Use `example.invalid`, `192.0.2.0/24`.
-- Conventional Commits; the release commit is `feat!` (major). No AI attribution trailers. Author `bjoern@strausmann.net`.
+- Conventional Commits; the release commit is `feat!` (major). No AI attribution trailers. Author is the configured git author.
 - TDD: every task writes the failing test first. Backend gates: `ruff check .`, `ruff format --check .`, `mypy app/` (strict), `pytest -m "not slow" --cov=app --cov-fail-under=80`, `alembic upgrade head && alembic check`. Frontend gates (added in Task 8): `pnpm typecheck`, `pnpm lint`, `pnpm test --coverage` (lines/functions/branches ≥ 70), `pnpm e2e`.
 - Every new route either uses `require_read/print/admin` or is added to `_PUBLIC_BY_DESIGN` in `backend/tests/unit/api/test_route_auth_coverage_guardrail.py` with a one-line reason.
 - Token values exactly as spec §5.2 — note `ink-500` is `#6B655A` (changed 2026-11-04 for AA contrast) — (paper/ink/amber/stamp/green/orange/red primitives, semantic light/dark roles, tape colours). State = shape + word; `warn` uses a diamond. Radii 6/10/14, 4 px grid, focus ring `link` 3 px. Type scale title 28/700, section 20/700, body 15/400, small 13/400, code 15/600. Atkinson Hyperlegible + Atkinson Hyperlegible Mono, self-hosted.

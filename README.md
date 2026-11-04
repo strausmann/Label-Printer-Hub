@@ -75,9 +75,10 @@ docker exec label-printer-hub-backend printer-hub admin create-key --scope admin
 # then add your printers under Settings > Printers.
 ```
 
-To build and run the hub from source without any printer hardware, use the smoke-test compose file (fake keys, one container, built from the local tree):
+To build and run the hub from source without any printer hardware, use the smoke-test compose file (throw-away keys, one container, built from the local tree):
 
 ```bash
+export PRINTER_HUB_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
 docker compose -f dev/docker-compose.smoke.yml up --build
 # UI and API on http://localhost:8000
 curl http://localhost:8000/healthz

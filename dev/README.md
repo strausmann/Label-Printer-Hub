@@ -11,7 +11,8 @@ Build and run the hub (one container: API and web UI) from the local source
 tree. No GHCR pull, no external services, no printer: add printers in the UI.
 
 ```bash
-# From the repo root:
+# From the repo root (generate a throw-away secret key first):
+export PRINTER_HUB_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
 docker compose -f dev/docker-compose.smoke.yml up --build
 ```
 
@@ -24,7 +25,7 @@ After the container reports healthy:
 | API info | http://localhost:8000/api/info | JSON with version and feature flags |
 | API docs | http://localhost:8000/docs | Swagger UI |
 
-The smoke stack sets a fake `PRINTER_HUB_SECRET_KEY` and a fake one-time
+The smoke stack reads `PRINTER_HUB_SECRET_KEY` from your shell and sets a fake one-time
 `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` (see the compose file) — sign in with the
 bootstrap key, create a real admin key, then add a printer under
 Settings > Printers. Do not reuse these values anywhere else.
