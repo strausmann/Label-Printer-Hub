@@ -158,3 +158,72 @@ async def test_webhook_key_from_store(store, async_session_factory) -> None:
     await _set(async_session_factory, store, {"access.webhook_api_key": FAKE_KEY})
     assert client.get("/guarded", headers={"X-API-Key": FAKE_KEY}).status_code == 200
     assert client.get("/guarded", headers={"X-API-Key": "x" * 32}).status_code == 401
+
+
+@respx.mock
+async def test_in_flight_lookup_survives_client_swap(store, async_session_factory) -> None:
+    import asyncio
+
+    gate = asyncio.Event()
+    started = asyncio.Event()
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        started.set()
+        await gate.wait()
+        return httpx.Response(200, json=SPOOL)
+
+    respx.get(f"{HOST_A}/api/v1/spool/1").mock(side_effect=slow)
+    plugin = SpoolmanPlugin()
+    plugin.bind(store)
+    await _set(async_session_factory, store, {"integrations.spoolman.url": HOST_A})
+
+    old = plugin._client
+    task = asyncio.create_task(plugin.lookup("1"))
+    await started.wait()
+
+    # URL and timeout change while the request is in flight.
+    await _set(
+        async_session_factory,
+        store,
+        {"integrations.spoolman.url": HOST_B, "integrations.spoolman.timeout": 17.0},
+    )
+    assert plugin._client is not old
+    await asyncio.sleep(0)
+    assert old.is_closed is False  # still serving the in-flight request
+
+    gate.set()
+    data = await task
+    assert data.qr_payload == f"{HOST_A}/spool/show/1"  # snapshot the lookup started with
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert old.is_closed is True  # retired client closed once the last user is done
+    await plugin.aclose()
+
+
+async def test_store_rejects_short_webhook_key_without_echo(store, async_session_factory) -> None:
+    from app.settings_store import InvalidSettingValueError
+
+    short = "short-key-" + "q" * 10
+    for value in (short, "  " + "a" * 31 + "  "):
+        with pytest.raises(InvalidSettingValueError) as exc:
+            await _set(async_session_factory, store, {"access.webhook_api_key": value})
+        assert value not in str(exc.value)
+    await _set(async_session_factory, store, {"access.webhook_api_key": FAKE_KEY})  # >= 32 ok
+
+
+def test_short_expected_webhook_key_is_not_configured() -> None:
+    class _Short:
+        def get(self, _key: str) -> str:
+            return "x" * 20
+
+    app = FastAPI()
+    app.state.settings_store = _Short()
+
+    @app.get("/guarded", dependencies=[Depends(require_webhook_key)])
+    async def guarded() -> dict[str, str]:
+        return {"ok": "true"}
+
+    r = TestClient(app, raise_server_exceptions=False).get(
+        "/guarded", headers={"X-API-Key": "x" * 20}
+    )
+    assert r.status_code == 503

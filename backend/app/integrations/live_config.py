@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import httpx
@@ -20,6 +21,19 @@ if TYPE_CHECKING:
     from app.settings_store import SettingsStore
 
 _log = logging.getLogger(__name__)
+
+
+class _ClientSlot:
+    """An ``httpx.AsyncClient`` plus the number of requests currently using it.
+
+    A retired slot closes its client only when the last user has released it,
+    so a settings change never cuts off a lookup that is already in flight.
+    """
+
+    def __init__(self, client: httpx.AsyncClient) -> None:
+        self.client = client
+        self.users = 0
+        self.retired = False
 
 
 class StoreBoundPlugin:
@@ -35,7 +49,7 @@ class StoreBoundPlugin:
         self._base_url = ""
         self._api_key = ""
         self._timeout = 5.0
-        self._client = httpx.AsyncClient(timeout=self._timeout)
+        self._slot = _ClientSlot(httpx.AsyncClient(timeout=self._timeout))
         self._closing: set[asyncio.Task[None]] = set()
 
     # -- binding ------------------------------------------------------------
@@ -60,9 +74,35 @@ class StoreBoundPlugin:
         timeout = float(store.get(self._key("timeout")))
         if timeout != self._timeout:
             self._timeout = timeout
-            old = self._client
-            self._client = httpx.AsyncClient(timeout=timeout)
-            self._schedule_close(old)
+            self._swap_client(timeout)
+
+    @property
+    def _client(self) -> httpx.AsyncClient:
+        return self._slot.client
+
+    def _swap_client(self, timeout: float) -> None:
+        old = self._slot
+        self._slot = _ClientSlot(httpx.AsyncClient(timeout=timeout))
+        old.retired = True
+        if old.users == 0:
+            self._schedule_close(old.client)
+
+    async def _get(
+        self, path: str, headers: Callable[[str], dict[str, str]]
+    ) -> tuple[httpx.Response, str]:
+        """GET ``path`` with the config snapshot taken now; returns (response, base_url).
+
+        The returned base URL is the one the request actually used, so callers
+        build deep links from it instead of re-reading ``self._base_url``.
+        """
+        slot, base, key = self._slot, self._base_url, self._api_key
+        slot.users += 1
+        try:
+            return await slot.client.get(f"{base}{path}", headers=headers(key)), base
+        finally:
+            slot.users -= 1
+            if slot.retired and slot.users == 0:
+                self._schedule_close(slot.client)
 
     def _schedule_close(self, client: httpx.AsyncClient) -> None:
         try:
@@ -79,11 +119,10 @@ class StoreBoundPlugin:
 
     async def reconfigure(self) -> None:
         """Re-read the store and recreate the HTTP client from the current values."""
-        old = self._client
+        old = self._slot
         self._refresh()
-        if self._client is old:
-            self._client = httpx.AsyncClient(timeout=self._timeout)
-            await old.aclose()
+        if self._slot is old:
+            self._swap_client(self._timeout)
 
     def is_configured(self) -> bool:
         if self._store is None or not self._base_url:

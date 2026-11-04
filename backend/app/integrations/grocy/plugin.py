@@ -40,12 +40,10 @@ class GrocyPlugin(StoreBoundPlugin):
         """Return LabelData for `product_id`, or raise GrocyNotFoundError."""
         self._require_configured()
         encoded_id = quote(product_id, safe="")
-        url = f"{self._base_url}/api/objects/products/{encoded_id}"
-        headers = {
-            "GROCY-API-KEY": self._api_key,
-            "Accept": "application/json",
-        }
-        response = await self._client.get(url, headers=headers)
+        response, base = await self._get(
+            f"/api/objects/products/{encoded_id}",
+            lambda key: {"GROCY-API-KEY": key, "Accept": "application/json"},
+        )
 
         # Grocy returns 400 with error_message for missing products, not 404.
         if response.status_code in (400, 404):
@@ -55,16 +53,18 @@ class GrocyPlugin(StoreBoundPlugin):
         response.raise_for_status()
 
         payload: dict[str, Any] = response.json()
-        return self._payload_to_label(payload, product_id)
+        return self._payload_to_label(payload, product_id, base)
 
-    def _payload_to_label(self, payload: dict[str, Any], product_id: str) -> LabelData:
+    def _payload_to_label(
+        self, payload: dict[str, Any], product_id: str, base: str | None = None
+    ) -> LabelData:
         grocy_id = payload.get("id")
         if grocy_id is None:
             raise ValueError(f"Grocy response for {product_id!r} is missing required field 'id'")
         return LabelData(
             title=str(payload.get("name") or f"Product {product_id}"),
             primary_id=str(grocy_id),
-            qr_payload=f"{self._base_url}/product/{grocy_id}",
+            qr_payload=f"{base if base is not None else self._base_url}/product/{grocy_id}",
             source_app="grocy",
             secondary=(),
         )

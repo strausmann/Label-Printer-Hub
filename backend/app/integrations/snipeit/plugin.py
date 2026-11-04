@@ -63,12 +63,10 @@ class SnipeITPlugin(StoreBoundPlugin):
         """Return LabelData for `asset_tag`, or raise SnipeITNotFoundError."""
         self._require_configured()
         encoded_tag = quote(asset_tag, safe="")
-        url = f"{self._base_url}/api/v1/hardware/bytag/{encoded_tag}"
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Accept": "application/json",
-        }
-        response = await self._client.get(url, headers=headers)
+        response, base = await self._get(
+            f"/api/v1/hardware/bytag/{encoded_tag}",
+            lambda key: {"Authorization": f"Bearer {key}", "Accept": "application/json"},
+        )
 
         if response.status_code == 404:
             raise SnipeITNotFoundError(f"Asset {asset_tag!r} not found")
@@ -77,9 +75,11 @@ class SnipeITPlugin(StoreBoundPlugin):
         response.raise_for_status()
 
         payload: _SnipeITAssetResponse = response.json()
-        return self._payload_to_label(payload, asset_tag)
+        return self._payload_to_label(payload, asset_tag, base)
 
-    def _payload_to_label(self, payload: _SnipeITAssetResponse, asset_tag: str) -> LabelData:
+    def _payload_to_label(
+        self, payload: _SnipeITAssetResponse, asset_tag: str, base: str | None = None
+    ) -> LabelData:
         asset_id = payload.get("id")
         if asset_id is None:
             raise ValueError(f"Snipe-IT response for {asset_tag!r} is missing required field 'id'")
@@ -90,7 +90,7 @@ class SnipeITPlugin(StoreBoundPlugin):
         return LabelData(
             title=str(payload.get("name") or asset_tag),
             primary_id=str(payload.get("asset_tag") or asset_tag),
-            qr_payload=f"{self._base_url}/hardware/{asset_id}",
+            qr_payload=f"{base if base is not None else self._base_url}/hardware/{asset_id}",
             source_app="snipeit",
             secondary=tuple(secondary),
         )

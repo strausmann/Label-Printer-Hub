@@ -42,8 +42,10 @@ class SpoolmanPlugin(StoreBoundPlugin):
         """Return LabelData for `spool_id`, or raise SpoolmanNotFoundError."""
         self._require_configured()
         encoded_id = quote(spool_id, safe="")
-        url = f"{self._base_url}/api/v1/spool/{encoded_id}"
-        response = await self._client.get(url, headers={"Accept": "application/json"})
+        response, base = await self._get(
+            f"/api/v1/spool/{encoded_id}",
+            lambda _key: {"Accept": "application/json"},
+        )
 
         if response.status_code == 404:
             raise SpoolmanNotFoundError(f"Spool {spool_id!r} not found")
@@ -52,9 +54,11 @@ class SpoolmanPlugin(StoreBoundPlugin):
         response.raise_for_status()
 
         payload: dict[str, Any] = response.json()
-        return self._payload_to_label(payload, spool_id)
+        return self._payload_to_label(payload, spool_id, base)
 
-    def _payload_to_label(self, payload: dict[str, Any], spool_id: str) -> LabelData:
+    def _payload_to_label(
+        self, payload: dict[str, Any], spool_id: str, base: str | None = None
+    ) -> LabelData:
         spoolman_id = payload.get("id")
         if spoolman_id is None:
             raise ValueError(f"Spoolman response for {spool_id!r} is missing required field 'id'")
@@ -74,7 +78,7 @@ class SpoolmanPlugin(StoreBoundPlugin):
         return LabelData(
             title=f"{vendor_name} {material}",
             primary_id=f"#{spoolman_id}",
-            qr_payload=f"{self._base_url}/spool/show/{spoolman_id}",
+            qr_payload=f"{base if base is not None else self._base_url}/spool/show/{spoolman_id}",
             source_app="spoolman",
             secondary=tuple(secondary_parts),
         )

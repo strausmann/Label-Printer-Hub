@@ -55,8 +55,9 @@ async def require_webhook_key(
     """
     # D4/D5: the key lives in the runtime settings store (env wins, otherwise encrypted in the DB).
     store: SettingsStore = request.app.state.settings_store
-    expected = str(store.get("access.webhook_api_key"))
-    if not expected:
+    expected = str(store.get("access.webhook_api_key")).strip()
+    # Same rule as the old Settings validator: a key under 32 characters counts as not configured.
+    if len(expected) < 32:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Webhook auth not configured (PRINTER_HUB_WEBHOOK_API_KEY missing)",

@@ -116,6 +116,10 @@ def _validate(d: SettingDef, value: Any) -> Any:
         # Printable ASCII only: the value ends up in an HTTP header.
         if len(value) > 4096 or any(not 0x20 <= ord(c) <= 0x7E for c in value):
             raise bad("must be printable ASCII")
+        if d.key == "access.webhook_api_key":
+            value = value.strip()
+            if value and len(value) < 32:
+                raise bad("must be empty or at least 32 characters")
         return value
     text = value.strip()
     if kind == "enum":
