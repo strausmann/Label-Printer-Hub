@@ -34,6 +34,10 @@ class UiSession(SQLModel, table=True):
         sa_column=Column(JSON, nullable=False),
     )
     user: str | None = Field(default=None, sa_column=Column(String, nullable=True))
+    # pangolin-sso only: HMAC-SHA256 (keyed with PRINTER_HUB_SECRET_KEY) of the trust token
+    # the session was minted with; never the token itself. A rotated or cleared token
+    # invalidates the session.
+    sso_trust_fingerprint: str | None = Field(default=None, sa_column=Column(String, nullable=True))
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(DateTime(timezone=True), nullable=False),

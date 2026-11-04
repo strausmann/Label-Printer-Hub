@@ -141,3 +141,19 @@ async def test_purge_removes_only_sessions_expired_over_a_day(async_session_fact
     async with async_session_factory() as db:
         left = set((await db.execute(select(UiSession.token_hash))).scalars())
     assert left == {"hash-recent", "hash-live"}
+
+
+def test_trust_fingerprint_is_keyed_hmac_not_the_token() -> None:
+    from app.auth import sessions
+
+    a = _settings("http://localhost:8000")
+    fp = sessions.trust_fingerprint(a, "fake-trust-token")
+    assert fp and "fake-trust-token" not in fp
+    assert fp == sessions.trust_fingerprint(a, "fake-trust-token")
+    assert fp != sessions.trust_fingerprint(a, "fake-other-token")
+    other_key = Settings(
+        _env_file=None,
+        public_url="http://localhost:8000",  # type: ignore[arg-type]
+        secret_key="b3RoZXItc2VjcmV0LWtleS0wMTIzNDU2Nzg5YWJjZGU=",  # type: ignore[arg-type]
+    )
+    assert fp != sessions.trust_fingerprint(other_key, "fake-trust-token")

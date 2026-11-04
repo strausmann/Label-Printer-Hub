@@ -158,6 +158,30 @@ def _is_pangolin_bypass(request: Request) -> bool:
         return False
 
 
+def _enforce_key_rate_limit(key_id: UUID, limit_per_minute: int, key_name: str) -> None:
+    """Consume one token of the key's per-minute bucket; 429 with Retry-After when empty.
+
+    Shared by the API key header and by browser sessions derived from a key, so a
+    session cannot be used to get around the key's limit.
+    """
+    allowed, retry_after = _rate_limiter.check_and_consume_with_retry_after(
+        key_id, limit_per_minute=limit_per_minute
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_code": "rate_limit_exceeded",
+                "error_message": (
+                    f"Key '{key_name}' exceeded {limit_per_minute}"
+                    f" prints/minute. Retry after {retry_after} seconds."
+                ),
+                "retry_after_seconds": retry_after,
+            },
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
 async def _validate_api_key(
     session: AsyncSession,
     key_header: str,
@@ -262,22 +286,7 @@ async def _validate_api_key(
         )
 
     # Rate limit check — after bcrypt verify to avoid info leak on exhaustion
-    allowed, retry_after = _rate_limiter.check_and_consume_with_retry_after(
-        key_row.id, limit_per_minute=key_row.rate_limit_per_minute
-    )
-    if not allowed:
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "error_code": "rate_limit_exceeded",
-                "error_message": (
-                    f"Key '{key_row.name}' exceeded {key_row.rate_limit_per_minute}"
-                    f" prints/minute. Retry after {retry_after} seconds."
-                ),
-                "retry_after_seconds": retry_after,
-            },
-            headers={"Retry-After": str(retry_after)},
-        )
+    _enforce_key_rate_limit(key_row.id, key_row.rate_limit_per_minute, key_row.name)
 
     # Best-effort last-used update (don't fail auth if this errors)
     try:
@@ -318,6 +327,10 @@ def _session_context(
                 "error_code": "insufficient_scope",
                 "error_message": f"Session has scope '{row.scope}' but '{required}' is required",
             },
+        )
+    if row.api_key_id is not None and valid.rate_limit_per_minute is not None:
+        _enforce_key_rate_limit(
+            row.api_key_id, valid.rate_limit_per_minute, valid.key_name or str(row.api_key_id)
         )
     return AuthContext(
         source="bootstrap" if is_bootstrap else "session",

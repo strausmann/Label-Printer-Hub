@@ -49,6 +49,7 @@ async def _insert_key(
     *,
     allowed_printer_ids: list[str] | None = None,
     expires_at: datetime | None = None,
+    rate_limit_per_minute: int = 60,
 ) -> tuple[str, UUID]:
     plaintext = f"lh_pat_{uuid4().hex}"
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
@@ -61,6 +62,7 @@ async def _insert_key(
             allowed_printer_ids=allowed_printer_ids or [],
             enabled=True,
             expires_at=expires_at,
+            rate_limit_per_minute=rate_limit_per_minute,
         )
         s.add(key)
         await s.commit()
@@ -534,3 +536,58 @@ async def test_sign_in_rate_limited(api_client_with_seed):
     resp = await _sign_in(api_client_with_seed, "lh_pat_wrong_key_attempt_last")
     assert resp.status_code == 429
     assert int(resp.headers["Retry-After"]) >= 1
+
+
+# --------------------------------------------------------------------------
+# Security review follow-ups
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_respects_key_rate_limit(api_client_with_seed):
+    # Sign-in consumes one token of the key's bucket, so 3/min leaves two requests.
+    key, _ = await _insert_key(["print"], rate_limit_per_minute=3)
+    assert (await _sign_in(api_client_with_seed, key)).status_code == 204
+    for _ in range(2):
+        assert (await api_client_with_seed.get("/api/printers")).status_code == 200
+    resp = await api_client_with_seed.get("/api/printers")
+    assert resp.status_code == 429, resp.text
+    assert resp.json()["detail"]["error_code"] == "rate_limit_exceeded"
+    assert int(resp.headers["Retry-After"]) >= 1
+
+
+async def _mint_sso_session(client) -> None:
+    resp = await client.get(
+        "/api/v1/auth/session",
+        headers={"Remote-User": "alice", "X-Pangolin-Token": FAKE_TRUST_TOKEN},
+    )
+    assert resp.json()["signed_in"] is True
+    assert (await client.get("/api/printers")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_sso_session_dies_when_trust_token_rotated(api_client_with_seed, monkeypatch):
+    _set_env(monkeypatch, sso_trust_token=FAKE_TRUST_TOKEN)
+    await _mint_sso_session(api_client_with_seed)
+    _set_env(monkeypatch, sso_trust_token="fake-rotated-trust-token-0123456789")
+    assert (await api_client_with_seed.get("/api/printers")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_sso_session_dies_when_trust_token_cleared(api_client_with_seed, monkeypatch):
+    _set_env(monkeypatch, sso_trust_token=FAKE_TRUST_TOKEN)
+    await _mint_sso_session(api_client_with_seed)
+    _set_env(monkeypatch, sso_trust_token="")
+    assert (await api_client_with_seed.get("/api/printers")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_sso_session_stores_fingerprint_not_token(api_client_with_seed, monkeypatch):
+    _set_env(monkeypatch, sso_trust_token=FAKE_TRUST_TOKEN)
+    await _mint_sso_session(api_client_with_seed)
+    async with _factory()() as s:
+        row = (
+            await s.execute(select(UiSession).where(UiSession.source == "pangolin-sso"))
+        ).scalar_one()
+    assert row.sso_trust_fingerprint
+    assert FAKE_TRUST_TOKEN not in row.sso_trust_fingerprint

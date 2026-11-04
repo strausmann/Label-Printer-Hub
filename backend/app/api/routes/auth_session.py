@@ -165,6 +165,7 @@ async def get_session_info(request: Request, response: Response, db: SessionDep)
             api_key_id=None,
             allowed_printer_ids=[],
             user=sso_user,
+            sso_trust_fingerprint=ui_sessions.trust_fingerprint(settings, settings.sso_trust_token),
         )
         ui_sessions.set_cookies(response, settings, new_token, row.csrf_token)
         return _info(row)

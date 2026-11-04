@@ -8,7 +8,9 @@ sessions — still no admin key in the database.
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import logging
 import secrets
 from collections.abc import Callable
@@ -49,6 +51,17 @@ def _aware(value: datetime) -> datetime:
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def trust_fingerprint(settings: Settings, trust_token: str) -> str:
+    """HMAC-SHA256 of the SSO trust token, keyed with the hub's secret key (D5, D10).
+
+    Stored on ``pangolin-sso`` sessions so a rotated or cleared token ends them,
+    without ever storing the token itself.
+    """
+    text = settings.secret_key.get_secret_value()
+    key = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+    return hmac.new(key, b"sso-trust-token:" + trust_token.encode(), hashlib.sha256).hexdigest()
 
 
 def is_secure(settings: Settings) -> bool:
@@ -132,6 +145,7 @@ async def create_session(
     api_key_id: UUID | None,
     allowed_printer_ids: list[str],
     user: str | None = None,
+    sso_trust_fingerprint: str | None = None,
 ) -> tuple[UiSession, str]:
     """Insert a session and return ``(row, cookie_token)``.
 
@@ -148,6 +162,7 @@ async def create_session(
         api_key_id=api_key_id,
         allowed_printer_ids=list(allowed_printer_ids),
         user=user,
+        sso_trust_fingerprint=sso_trust_fingerprint,
         created_at=now,
         expires_at=now + SESSION_TTL,
     )
@@ -177,6 +192,9 @@ async def create_session(
 class ValidSession:
     row: UiSession
     allowed_printer_ids: list[str]
+    # Set for sessions of an API key: the key's per-minute limit applies to the session too.
+    rate_limit_per_minute: int | None = None
+    key_name: str | None = None
 
 
 async def load_valid(db: AsyncSession, token: str, settings: Settings) -> ValidSession | None:
@@ -192,12 +210,28 @@ async def load_valid(db: AsyncSession, token: str, settings: Settings) -> ValidS
     if _aware(row.expires_at) <= now:
         return None
     allowed = list(row.allowed_printer_ids or [])
+    rate_limit: int | None = None
+    key_name: str | None = None
+    if row.source == "pangolin-sso":
+        # D10: the session lives only as long as the trust token it was minted with.
+        current = settings.sso_trust_token
+        stored = row.sso_trust_fingerprint or ""
+        if (
+            not current
+            or not stored
+            or not hmac.compare_digest(
+                stored.encode(), trust_fingerprint(settings, current).encode()
+            )
+        ):
+            return None
     if row.api_key_id is not None:
         key = await db.get(ApiKey, row.api_key_id)
         if key is None or not _key_is_usable(key, now):
             return None
         # The key's current restriction wins over the copy taken at sign-in.
         allowed = list(key.allowed_printer_ids or [])
+        rate_limit = key.rate_limit_per_minute
+        key_name = key.name
     if row.source == "bootstrap":
         # D7: the bootstrap session dies as soon as a real admin key exists
         # (or the variable has been removed).
@@ -205,7 +239,9 @@ async def load_valid(db: AsyncSession, token: str, settings: Settings) -> ValidS
             return None
         if await admin_key_exists(db):
             return None
-    return ValidSession(row=row, allowed_printer_ids=allowed)
+    return ValidSession(
+        row=row, allowed_printer_ids=allowed, rate_limit_per_minute=rate_limit, key_name=key_name
+    )
 
 
 async def revoke(db: AsyncSession, session_id: UUID) -> None:
