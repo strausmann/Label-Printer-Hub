@@ -1252,7 +1252,7 @@ async def test_snapshot_queue_depth_uses_count_not_list_length() -> None:
     # Also mock list_by_filter to return controlled data via the repo layer
     with (
         patch(
-            "app.api.routes.events.jobs_repo.list_by_filter",
+            "app.services.sse_snapshot.jobs_repo.list_by_filter",
             new_callable=AsyncMock,
             side_effect=[fake_jobs, []],  # QUEUED → 5 rows, PRINTING → 0 rows
         ),

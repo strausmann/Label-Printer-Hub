@@ -19,62 +19,30 @@ import contextlib
 import logging
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from prometheus_client import Counter, Gauge
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import col
 
 from app.config import Settings, get_settings
 from app.db.session import get_session
-from app.models.job import Job, JobState
-from app.repositories import jobs as jobs_repo
-from app.repositories import printer_status_cache as status_cache_repo
+from app.observability.sse_metrics import (
+    sse_active_subscribers,
+    sse_connections_total,
+    sse_events_dropped_total,
+    sse_events_published_total,
+)
 from app.repositories import printers as printers_repo
 from app.schemas.problem import ProblemDetail
 from app.services.event_bus import BusEvent, EventBus
+from app.services.sse_snapshot import build_snapshot
 
 _log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["events"])
-
-# ---------------------------------------------------------------------------
-# Prometheus metrics
-# ---------------------------------------------------------------------------
-
-sse_connections_total = Counter(
-    "printer_hub_sse_connections_total",
-    "Total SSE connections opened",
-    ["printer_id"],
-)
-
-sse_events_published_total = Counter(
-    "printer_hub_sse_events_published_total",
-    # Inkrementiert pro SSE-Subscriber, nicht pro publish()-Call: ein
-    # publish() mit N aktiven Clients erhoeht den Counter um N. Der
-    # Metric-Name ist aus historischen Gruenden behalten (Grafana-
-    # Dashboards) — semantisch ist es "delivered to subscriber",
-    # nicht "published once" (siehe Audit #67 Hinweis).
-    "Total SSE events delivered to subscribers (one increment per subscriber per publish)",
-    ["channel"],
-)
-
-sse_events_dropped_total = Counter(
-    "printer_hub_sse_events_dropped_total",
-    "Total events dropped due to slow subscribers",
-    ["channel", "subscriber_id"],
-)
-
-sse_active_subscribers = Gauge(
-    "printer_hub_sse_active_subscribers",
-    "Current number of active SSE subscribers",
-)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -127,111 +95,19 @@ async def _build_initial_snapshot(
     printer_id: uuid.UUID,
     session: AsyncSession | None,
 ) -> list[BusEvent]:
-    """Query DB/cache for current printer state and return synthetic BusEvents.
-
-    Emitted once on connect so the client immediately sees the current
-    status without waiting for the next state-change event (Finding F1).
-
-    Returns an empty list when ``session`` is ``None`` (test/compat path) or
-    when no cached data is available yet.
-
-    Event IDs use the sentinel value 0 to distinguish snapshot events from
-    live events (id: 0 means "initial snapshot, not a live transition").
-    """
+    """Legacy wrapper around :func:`app.services.sse_snapshot.build_snapshot` (id 0 = snapshot)."""
     if session is None:
         return []
-
-    snapshot: list[BusEvent] = []
-    now = datetime.now(UTC)
-    pid = str(printer_id)
-
-    # --- printer.status from PrinterStatusCache ---
-    try:
-        cache = await status_cache_repo.get(session, printer_id)
-        if cache is not None and cache.parsed:
-            parsed = cache.parsed
-            ts = cache.captured_at or now
-            snapshot.append(
-                BusEvent(
-                    channel=f"printer:{pid}:state",
-                    event_id=0,
-                    event_type="printer.status",
-                    timestamp=ts,
-                    data={
-                        "hr_printer_status": parsed.get("hr_printer_status", "unknown"),
-                        "error_flags": parsed.get("error_flags", []),
-                        "online": parsed.get("online", False),
-                    },
-                )
-            )
-            # --- printer.tape_changed from same cache row ---
-            # F4: only emit when loaded_tape_mm is present — a None value would
-            # render "No tape loaded" and overwrite the correct client DOM state.
-            loaded_tape_mm = parsed.get("loaded_tape_mm")
-            if loaded_tape_mm is not None:
-                snapshot.append(
-                    BusEvent(
-                        channel=f"printer:{pid}:tape",
-                        event_id=0,
-                        event_type="printer.tape_changed",
-                        timestamp=ts,
-                        data={
-                            "from_mm": None,
-                            "to_mm": loaded_tape_mm,
-                            "tape_label": f"{loaded_tape_mm}mm",
-                        },
-                    )
-                )
-    except Exception:
-        _log.debug("_build_initial_snapshot: status cache read failed for %s", pid)
-
-    # --- job.state_changed for each active (QUEUED|PRINTING) job ---
-    try:
-        # F5: Use a COUNT query over all non-terminal states so queue_depth is
-        # accurate even when the result set exceeds any list-query limit.
-        _non_terminal = (JobState.QUEUED.value, JobState.PRINTING.value)
-        count_stmt = (
-            select(func.count())
-            .select_from(Job)
-            .where(col(Job.printer_id) == printer_id)
-            .where(col(Job.state).in_(_non_terminal))
+    return [
+        BusEvent(
+            channel=item["channel"],
+            event_id=0,
+            event_type=item["type"],
+            timestamp=item["ts"],
+            data=item["data"],
         )
-        queue_depth_result = await session.execute(count_stmt)
-        queue_depth: int = queue_depth_result.scalar_one()
-
-        # Fetch up to 5 representative jobs for the snapshot frames
-        active_jobs = await jobs_repo.list_by_filter(
-            session,
-            printer_id=printer_id,
-            state=JobState.QUEUED.value,
-            limit=5,
-        )
-        active_jobs += await jobs_repo.list_by_filter(
-            session,
-            printer_id=printer_id,
-            state=JobState.PRINTING.value,
-            limit=5,
-        )
-        for job in active_jobs[:5]:  # cap snapshot at 5 jobs
-            snapshot.append(
-                BusEvent(
-                    channel=f"printer:{pid}:queue",
-                    event_id=0,
-                    event_type="job.state_changed",
-                    timestamp=job.created_at,
-                    data={
-                        "job_id": str(job.id),
-                        "from_state": job.state,
-                        "to_state": job.state,
-                        "queue_depth": queue_depth,
-                        "error_code": None,
-                    },
-                )
-            )
-    except Exception:
-        _log.debug("_build_initial_snapshot: job query failed for %s", pid)
-
-    return snapshot
+        for item in await build_snapshot(session, printer_id)
+    ]
 
 
 async def _sse_stream(
