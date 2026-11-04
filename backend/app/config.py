@@ -121,9 +121,13 @@ class Settings(BaseSettings):
     sse_probe_interval_s: float = Field(default=30.0, gt=0)
     """SNMP probe interval for StatusProbeProducer (seconds). Must be > 0."""
 
-    # Phase 7c: Pangolin-bypass scope downgrade feature flag.
-    # When True, the claude-automation Basic-Auth bypass is limited to read-only.
-    # Set to False during transition to avoid surprising existing automation.
+    # D10: proxy headers are trusted only with the SSO trust token. The two legacy
+    # paths below are opt-in (default off) and never mint a browser session.
+    # Legacy ``X-Pangolin-User`` header without a trust token.
+    trust_legacy_pangolin_user: bool = False
+    # Pangolin ``Authorization: Basic`` bypass (claude-automation credential).
+    trust_pangolin_basic_bypass: bool = False
+    # When True, the Basic bypass (if trusted at all) is limited to ``read`` scope.
     pangolin_bypass_scope_downgrade: bool = False
 
     # Pangolin-SSO Standard-Header-Konfiguration (analog Hangar).

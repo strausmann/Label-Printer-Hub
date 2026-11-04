@@ -53,6 +53,9 @@ dev = [
     "types-PyYAML>=6.0",
 ]
 
+[project.scripts]
+printer-hub = "app.cli:main"
+
 [project.entry-points."label_hub.integrations"]
 snipeit = "app.integrations.snipeit.plugin:SnipeITPlugin"
 spoolman = "app.integrations.spoolman.plugin:SpoolmanPlugin"

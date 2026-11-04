@@ -201,6 +201,9 @@ async def update_api_key(
         )
     if body.enabled is not None:
         key.enabled = body.enabled
+        if not body.enabled:
+            # A disabled key also ends its browser sessions (re-enabling does not revive them).
+            await api_keys_repo.revoke_sessions(session, key_id)
     if body.rate_limit_per_minute is not None:
         key.rate_limit_per_minute = body.rate_limit_per_minute
     if body.notes is not None:

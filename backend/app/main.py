@@ -75,6 +75,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
 from app.api.error_handlers import register_error_handlers
+from app.api.routes import auth_session as auth_session_routes
 from app.api.routes import batch as batch_routes
 from app.api.routes import batches as batches_routes
 from app.api.routes import events as events_routes
@@ -90,6 +91,8 @@ from app.api.routes.print import router as print_router
 from app.api.routes.settings_api import router as settings_api_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
+from app.auth.sessions import purge_expired as purge_expired_sessions
+from app.auth.sessions import warn_if_insecure as warn_if_insecure_cookies
 from app.config import get_settings
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
@@ -280,6 +283,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cancels remaining workers forcibly.
     """
     settings = get_settings()
+    warn_if_insecure_cookies(settings)
 
     # --- DB startup: migrations first, then in-memory state, then DB writes ---
     await run_migrations()
@@ -330,9 +334,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 'async_session' ist die async_sessionmaker aus app.db.engine (R2-M5)
     job_store = SQLiteJobStore(async_session)
 
+    # Browser sessions: purge those expired for more than a day on every cleanup run.
     cleanup_task = CleanupTask(
         store=job_store,
         retention_days=lambda: int(settings_store.get("jobs.retention_days")),
+        session_purge=lambda: purge_expired_sessions(async_session),
     )
     await cleanup_task.start()
     app.state.cleanup_task = cleanup_task
@@ -723,6 +729,7 @@ def create_app() -> _LifespanManager:
     app.include_router(webhooks_routes.router)
     app.include_router(qr_routes.router)
     app.include_router(admin_api_keys_router)
+    app.include_router(auth_session_routes.router)
     app.include_router(admin_printers_api_router)
     app.include_router(settings_api_router)
 

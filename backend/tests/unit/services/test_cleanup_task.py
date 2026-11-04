@@ -39,3 +39,30 @@ async def test_cleanup_fail_soft_on_exception() -> None:
     await task.start()
     await task.stop(timeout_s=1.0)
     # No exception propagated; loop survives
+
+
+@pytest.mark.asyncio
+async def test_cleanup_purges_expired_sessions() -> None:
+    store = AsyncMock()
+    store.evict_terminal_older_than.return_value = 0
+    purge = AsyncMock(return_value=2)
+    task = CleanupTask(
+        store=store, retention_days=30, interval=timedelta(seconds=99), session_purge=purge
+    )
+    await task.start()
+    await task.stop(timeout_s=1.0)
+    purge.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_session_purge_failure_does_not_stop_job_eviction() -> None:
+    store = AsyncMock()
+    store.evict_terminal_older_than.return_value = 0
+    purge = AsyncMock(side_effect=RuntimeError("boom"))
+    task = CleanupTask(
+        store=store, retention_days=30, interval=timedelta(seconds=99), session_purge=purge
+    )
+    await task.start()
+    await task.stop(timeout_s=1.0)
+    store.evict_terminal_older_than.assert_awaited()
+    purge.assert_awaited()

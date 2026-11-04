@@ -68,6 +68,10 @@ _PUBLIC_BY_DESIGN: dict[tuple[str, str], str] = {
     ("GET", "/asset/{entity_id}"): "QR landing page — see qr.py module docstring",
     ("GET", "/spool/{entity_id}"): "QR landing page — see qr.py module docstring",
     ("GET", "/product/{entity_id}"): "QR landing page — see qr.py module docstring",
+    ("POST", "/api/v1/auth/session"): "the sign-in itself: exchanges an API key or the "
+    "bootstrap key for a session (auth_session.py); rate limited per client IP",
+    ("GET", "/api/v1/auth/session"): "reports whether the caller is signed in and mints a "
+    "session from trusted SSO headers (auth_session.py); returns no data without a session",
 }
 
 # Dependency callables that count as "this route is authenticated". Matched

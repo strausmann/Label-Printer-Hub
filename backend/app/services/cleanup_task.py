@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
 from app.services.job_store import JobStore
@@ -36,6 +36,7 @@ class CleanupTask:
         store: JobStore,
         retention_days: int | Callable[[], int],
         interval: timedelta = _DEFAULT_INTERVAL,
+        session_purge: Callable[[], Awaitable[int]] | None = None,
     ) -> None:
         if isinstance(retention_days, int):
             if retention_days < 1:
@@ -47,6 +48,8 @@ class CleanupTask:
             self._retention_days = retention_days
         self._store = store
         self._interval = interval
+        # Browser sessions expired for more than a day are purged on the same schedule.
+        self._session_purge = session_purge
         self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
 
@@ -100,3 +103,10 @@ class CleanupTask:
                 )
         except Exception:
             logger.exception("CleanupTask: _run_once fehlgeschlagen")
+        if self._session_purge is not None:
+            try:
+                purged = await self._session_purge()
+                if purged > 0:
+                    logger.info("CleanupTask: %d expired browser sessions purged", purged)
+            except Exception:
+                logger.exception("CleanupTask: session purge failed")

@@ -1,46 +1,32 @@
-"""FastAPI authentication dependency — Phase 7c require_scope().
+"""FastAPI authentication dependency — ``require_scope()``.
 
-Four authentication paths (in priority order):
+Paths, in this order (spec 8.1, 8.2; D7, D10):
 
-1. API-Key header ``X-Label-Hub-Key: lh_...``
-   - Validated via bcrypt verify + LRU cache
-   - Full 3-level scope model (read/print/admin)
-   - Scope hierarchy: admin ⊇ print ⊇ read
+1. API key header ``X-Label-Hub-Key: lh_...`` — bcrypt-verified, scope from the key
+   (admin ⊇ print ⊇ read). CSRF-exempt: browsers never send it on their own.
+2. Browser session cookie — issued by ``/api/v1/auth/session``. Re-validated on
+   every use (``app.auth.sessions.load_valid``); state-changing methods need the
+   ``X-CSRF-Token`` header. Bootstrap sessions may only create the first admin key.
+3. SSO proxy headers — ``sso_user_header`` counts only together with
+   ``sso_trust_header`` matching a non-empty ``sso_trust_token`` (constant-time
+   compare). The legacy ``X-Pangolin-User`` header counts only with
+   ``trust_legacy_pangolin_user``. State-changing requests on this path need an
+   ``Origin`` equal to the origin of ``public_url``.
+4. Pangolin ``Authorization: Basic`` bypass — only with
+   ``trust_pangolin_basic_bypass``; limited to ``read`` when
+   ``pangolin_bypass_scope_downgrade`` is set.
 
-2. Pangolin-SSO browser session — Pangolin-Standard-Headers
-   - ``Remote-User`` (oder konfigurierbar via ``sso_user_header``) enthält
-     den eingeloggten Benutzernamen / die E-Mail-Adresse
-   - ``X-Pangolin-Token`` (oder konfigurierbar via ``sso_trust_header``) ist
-     ein statischer Trust-Token, den Pangolin beim Forwarding injiziert.
-     Pangolin-Resource → Header-Injection → Backend.
-   - Wird NUR akzeptiert wenn ``settings.sso_trust_token`` gesetzt ist UND
-     der Header-Wert exakt übereinstimmt. Leer = Pfad deaktiviert.
-   - Only grants ``read`` scope
-
-2b. Backwards-Compatibility: ``X-Pangolin-User`` header (Legacy-Pfad)
-   - Wird weiterhin akzeptiert, kein Trust-Token erforderlich
-   - Nur für interne Frontend-Aufrufe via PR #95 Forwarding
-   - Only grants ``read`` scope
-
-3. Pangolin-bypass claude-automation (``Authorization: Basic ...`` with
-   the claude-automation credential)
-   - Grants ``read`` scope only (after Phase 7c deployment)
-   - When ``settings.pangolin_bypass_scope_downgrade=True``, write operations
-     (print/admin) require an explicit API key
-   - Recovery pathway: if all app keys are lost, still allows diagnostics
-
-Scope hierarchy for key-based auth:
-  admin  → satisfies print, read
-  print  → satisfies read
-  read   → satisfies read only
+Only the trust-token path may mint a browser session (see auth_session.py).
+This supersedes ADR 0014.
 """
 
 from __future__ import annotations
 
 import base64
+import hmac
 import logging
 from collections.abc import Callable, Coroutine
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, Security, status
@@ -48,6 +34,8 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import csrf
+from app.auth import sessions as ui_sessions
 from app.auth.verifier import verify_api_key_async
 from app.config import Settings, get_settings
 from app.db.session import get_session
@@ -70,14 +58,30 @@ _SCOPE_HIERARCHY: dict[str, list[str]] = {
 _SCOPE_ORDER = ["read", "print", "admin"]
 
 
+Scope = Literal["read", "print", "admin"]
+
+# D7: the only routes a bootstrap session may use.
+_BOOTSTRAP_ALLOWED: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("POST", "/api/admin/api-keys"),
+        ("GET", "/api/v1/auth/session"),
+        ("DELETE", "/api/v1/auth/session"),
+    }
+)
+
+LEGACY_PANGOLIN_USER_HEADER = "X-Pangolin-User"
+
+
 class AuthContext(BaseModel):
     """Resolved authentication context passed to route handlers."""
 
-    source: Literal["api-key", "pangolin-sso", "pangolin-bypass"]
-    scope: Literal["read", "print", "admin"]
+    source: Literal["api-key", "pangolin-sso", "pangolin-bypass", "session", "bootstrap"]
+    scope: Scope
     api_key_id: UUID | None
     ip: str
     allowed_printer_ids: list[str] = []
+    user: str | None = None
+    session_id: UUID | None = None
 
 
 def _scope_satisfies(key_scope: str, required_scope: str) -> bool:
@@ -94,38 +98,45 @@ def _scope_satisfies(key_scope: str, required_scope: str) -> bool:
     return required_scope in _SCOPE_HIERARCHY[key_scope]
 
 
-def _has_pangolin_sso_session(request: Request, settings: Settings) -> bool:
-    """Return True when the Pangolin reverse proxy has set a trusted SSO user header.
+def trusted_sso_user(request: Request, settings: Settings) -> str | None:
+    """Return the SSO user when the trust token matches, else ``None`` (D10).
 
-    Zwei unterstützte Pfade (in Prioritätsreihenfolge):
-
-    1. **Pangolin-Standard-Headers** (bevorzugt, analog Hangar):
-       - ``Remote-User`` (oder konfigurierbar via ``settings.sso_user_header``)
-         enthält den authentifizierten Benutzernamen.
-       - ``X-Pangolin-Token`` (oder konfigurierbar via ``settings.sso_trust_header``)
-         ist ein statischer Trust-Token, den Pangolin beim Forwarding injiziert.
-       - Wird NUR akzeptiert wenn ``settings.sso_trust_token`` nicht leer ist
-         UND der Wert im Request-Header exakt mit dem konfigurierten Token
-         übereinstimmt. Leeres Token = dieser Pfad ist deaktiviert.
-
-    2. **Legacy ``X-Pangolin-User``** (Rückwärtskompatibilität):
-       - Wird weiterhin ohne Trust-Token akzeptiert.
-       - Für interne Frontend-Aufrufe via PR #95 Auth-Header-Forwarding.
-       - Kein Trust-Token erforderlich, da der Pfad ausschließlich über
-         das interne Tailscale-Netz erreichbar ist.
+    Requires a non-empty ``sso_trust_token``, a non-empty user header and a
+    trust header equal to the token (constant-time comparison). This is the only
+    header path that may mint a browser session.
     """
-    # Pfad 1: Pangolin-Standard mit konfiguriertem Trust-Token
-    trust_token = settings.sso_trust_token
-    if trust_token:
-        user_header = settings.sso_user_header
-        trust_header = settings.sso_trust_header
-        user_value = request.headers.get(user_header, "")
-        token_value = request.headers.get(trust_header, "")
-        if user_value and token_value == trust_token:
-            return True
+    expected = settings.sso_trust_token
+    if not expected:
+        return None
+    user = request.headers.get(settings.sso_user_header, "")
+    presented = request.headers.get(settings.sso_trust_header, "")
+    if not user or not presented:
+        return None
+    if not hmac.compare_digest(presented.encode(), expected.encode()):
+        return None
+    return user
 
-    # Pfad 2: Legacy X-Pangolin-User (Rückwärtskompatibilität)
-    return bool(request.headers.get("X-Pangolin-User"))
+
+def _sso_header_user(request: Request, settings: Settings) -> str | None:
+    """SSO user from trusted headers, or from the legacy header when opted in (D10)."""
+    user = trusted_sso_user(request, settings)
+    if user:
+        return user
+    if settings.trust_legacy_pangolin_user:
+        legacy = request.headers.get(LEGACY_PANGOLIN_USER_HEADER, "")
+        if legacy:
+            return legacy
+    return None
+
+
+def _has_pangolin_sso_session(request: Request, settings: Settings) -> bool:
+    """True when the request carries SSO headers this hub trusts (D10)."""
+    return _sso_header_user(request, settings) is not None
+
+
+def _origin_matches(request: Request, settings: Settings) -> bool:
+    origin = request.headers.get("origin", "").strip().rstrip("/").lower()
+    return bool(origin) and origin == ui_sessions.public_origin(settings)
 
 
 def _is_pangolin_bypass(request: Request) -> bool:
@@ -283,6 +294,42 @@ async def _validate_api_key(
     )
 
 
+def _session_context(
+    request: Request, valid: ui_sessions.ValidSession, required: Scope, client_ip: str
+) -> AuthContext:
+    row = valid.row
+    is_bootstrap = row.source == "bootstrap"
+    if is_bootstrap and (request.method.upper(), request.url.path) not in _BOOTSTRAP_ALLOWED:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "bootstrap_only",
+                "error_message": (
+                    "The bootstrap key can only create the first admin key. "
+                    "Create one and sign in with it."
+                ),
+            },
+        )
+    csrf.verify(request, row)
+    if row.scope not in _SCOPE_HIERARCHY or not _scope_satisfies(row.scope, required):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "insufficient_scope",
+                "error_message": f"Session has scope '{row.scope}' but '{required}' is required",
+            },
+        )
+    return AuthContext(
+        source="bootstrap" if is_bootstrap else "session",
+        scope=cast(Scope, row.scope),
+        api_key_id=row.api_key_id,
+        ip=client_ip,
+        allowed_printer_ids=valid.allowed_printer_ids,
+        user=row.user,
+        session_id=row.id,
+    )
+
+
 def require_scope(
     required: str, *, settings: Settings | None = None
 ) -> Callable[..., Coroutine[Any, Any, AuthContext]]:
@@ -290,55 +337,77 @@ def require_scope(
 
     Args:
         required: One of "read", "print", "admin".
-        settings: Override settings (for testing). Defaults to get_settings().
+        settings: Override settings (for testing). Defaults to ``get_settings()``,
+            read on every request so configuration changes in tests take effect.
 
-    The dependency resolves through four paths (in priority order):
-      1. X-Label-Hub-Key API key header — scope from the key's stored scope
-      2. Pangolin-SSO (Remote-User + X-Pangolin-Token Trust-Token) — trusted for
-         all scopes (the Pangolin Resource Policy already gates who reaches us)
-      2b. Pangolin-SSO Legacy (X-Pangolin-User) — trusted for all scopes
-      3. Pangolin-bypass (claude-automation Basic Auth) — trusted for all scopes
-         (the bypass-secret is treated as an admin-equivalent credential; rotate
-         it via Vault if it leaks)
-
-    Returns a callable that FastAPI injects as ``Depends(require_scope("read"))``.
-
-    See ADR 0014 for the rationale behind treating SSO/Bypass as fully-trusted
-    (Single-Owner-Operator HomeLab + small-team workflow; multi-tier scoping is
-    retained on API keys for per-integration restrictions but not for the
-    Pangolin-fronted UI sessions).
+    Order: API key header → session cookie → SSO headers → Basic bypass → 401.
+    See the module docstring for the trust rules of each path.
     """
-    effective_settings = settings or get_settings()
-    _ = effective_settings.pangolin_bypass_scope_downgrade  # kept for backward-compat env
+    if required not in _SCOPE_HIERARCHY:
+        raise ValueError(f"Unknown scope: {required!r}")
+    required_scope = cast(Scope, required)
 
     async def _check(
         request: Request,
         key_header: str | None = Security(_api_key_header),
         session: AsyncSession = Depends(get_session),  # noqa: B008
     ) -> AuthContext:
+        effective_settings = settings or get_settings()
         client_ip = request.client.host if request.client else "unknown"
 
-        # Path 1: API-Key header takes priority over SSO/bypass
+        # Path 1: API-Key header takes priority over every other path.
         if key_header:
-            return await _validate_api_key(session, key_header, required, client_ip)
+            return await _validate_api_key(session, key_header, required_scope, client_ip)
 
-        # Path 2: Pangolin-SSO (browser session) — Standard-Headers + Legacy.
-        # Trusted for all scopes (Pangolin Resource Policy gates access).
-        if _has_pangolin_sso_session(request, effective_settings):
+        # Path 2: browser session cookie. An unusable cookie falls through, so a
+        # browser behind SSO keeps working after its session expired.
+        session_cookie, _ = ui_sessions.cookie_names(effective_settings)
+        token = request.cookies.get(session_cookie, "")
+        if token:
+            valid = await ui_sessions.load_valid(session, token, effective_settings)
+            if valid is not None:
+                return _session_context(request, valid, required_scope, client_ip)
+
+        # Path 3: SSO proxy headers (D10: trust token, legacy header only opt-in).
+        sso_user = _sso_header_user(request, effective_settings)
+        if sso_user:
+            if request.method.upper() in csrf.UNSAFE_METHODS and not _origin_matches(
+                request, effective_settings
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "error_code": "origin_mismatch",
+                        "error_message": "State-changing requests need an Origin of public_url.",
+                    },
+                )
             return AuthContext(
                 source="pangolin-sso",
-                scope=required,
+                scope=required_scope,
                 api_key_id=None,
                 ip=client_ip,
+                user=sso_user,
             )
 
-        # Path 3: Pangolin-bypass (claude-automation Basic Auth) — trusted for
-        # all scopes. The bypass-secret lives in Vault and is treated as an
-        # admin-equivalent credential. Rotate via Vault on suspected leak.
-        if _is_pangolin_bypass(request):
+        # Path 4: Pangolin Basic bypass — opt-in (D10), optionally read-only.
+        if effective_settings.trust_pangolin_basic_bypass and _is_pangolin_bypass(request):
+            bypass_scope: Scope = (
+                "read" if effective_settings.pangolin_bypass_scope_downgrade else required_scope
+            )
+            if not _scope_satisfies(bypass_scope, required_scope):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "error_code": "insufficient_scope",
+                        "error_message": (
+                            "The Basic bypass is limited to 'read'; use an API key for "
+                            f"'{required_scope}'."
+                        ),
+                    },
+                )
             return AuthContext(
                 source="pangolin-bypass",
-                scope=required,
+                scope=bypass_scope,
                 api_key_id=None,
                 ip=client_ip,
             )
@@ -357,22 +426,18 @@ def require_scope(
 def check_printer_access(auth_context: AuthContext, printer_id: UUID) -> None:
     """Verify the AuthContext allows access to the given printer.
 
-    For api-key auth: checks allowed_printer_ids.
-    Empty list = all printers allowed. Non-empty = must contain printer_id.
-
-    For pangolin-sso / pangolin-bypass: unrestricted (single-user HomeLab).
+    API keys and browser sessions carry ``allowed_printer_ids`` (a session uses
+    its key's current list). Empty list = all printers allowed. SSO and bypass
+    contexts have an empty list and are therefore unrestricted.
 
     Raises:
-        HTTPException 403 if the key has a restricted list that excludes printer_id.
+        HTTPException 403 if the restricted list excludes printer_id.
     """
-    if auth_context.source != "api-key":
-        return  # SSO and bypass have unrestricted printer access
-
     if auth_context.allowed_printer_ids and str(printer_id) not in auth_context.allowed_printer_ids:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "error_code": "printer_not_allowed",
-                "error_message": (f"This API key is not authorised for printer {printer_id}."),
+                "error_message": f"These credentials are not authorised for printer {printer_id}.",
             },
         )
