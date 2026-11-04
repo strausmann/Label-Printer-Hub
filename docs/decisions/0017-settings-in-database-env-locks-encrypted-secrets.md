@@ -19,7 +19,7 @@ Runtime settings live in the database and are editable through the settings API 
 
 **Printers are managed in the UI (D6).** The `printers.yaml` file and the dead `printers_config` setting are removed.
 
-**Bootstrap key and recovery (D7).** Migrations no longer seed an admin API key. On first start with no admin key, the backend prints a one-time bootstrap key to the log; it works until a real key exists. If all admin access is lost, `printer-hub admin create-key` run inside the container creates a new admin key. Existing databases keep their rows.
+**Bootstrap key and recovery (D7).** Migrations no longer seed an admin API key. The operator supplies a bootstrap key through `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` (at least 32 characters; empty disables bootstrap). The backend never generates or prints one. It is accepted for sign-in only while no enabled admin key exists, and a bootstrap session may only create an unrestricted, unexpired admin key. Once an admin key exists the bootstrap key is refused (`bootstrap_disabled`) and the variable should be removed. If all admin access is lost, `printer-hub admin create-key` run inside the container creates a new admin key. Existing databases keep their rows.
 
 ## Options considered
 
@@ -39,7 +39,7 @@ Runtime settings live in the database and are editable through the settings API 
 
 - `PRINTER_HUB_SECRET_KEY` becomes a required variable; losing it makes stored secrets unreadable (they must be re-entered).
 - Secret rotation of the master key is not part of this decision and can follow.
-- Fresh installs have no default credential; operators use the bootstrap key or the recovery command.
+- Fresh installs have no default credential; operators set the bootstrap key variable or use the recovery command.
 
 ## References
 

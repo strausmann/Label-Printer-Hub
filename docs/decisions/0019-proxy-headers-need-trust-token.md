@@ -15,7 +15,7 @@ ADR 0014 made Pangolin SSO headers and the Basic-auth bypass trusted for all sco
 Identity headers from a reverse proxy are trusted only when the request also carries the SSO trust token, compared in constant time (`hmac.compare_digest`). Without a matching token the headers are ignored.
 
 - The legacy `X-Pangolin-User` header and the Pangolin Basic-auth bypass are no longer trusted by default. Each is opt-in: `PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER` and `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS`.
-- The bypass scope downgrade (`PANGOLIN_BYPASS_SCOPE_DOWNGRADE`) is effective again, so a leaked bypass secret does not grant admin by itself.
+- The Basic bypass is off by default. If an operator enables it, it grants the scope each endpoint requires, including admin. The scope downgrade is a separate opt-in (`PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE`, default false): when set, the bypass is limited to `read`. Without it a leaked bypass secret is as powerful as admin, so enable the bypass only knowingly and consider the downgrade.
 - SSO sessions are bound to an HMAC fingerprint of the trust token; rotating the token ends all SSO sessions.
 - Cookie-less, header-authenticated requests that change state must pass an Origin check, as must the opt-in Basic bypass, so a cross-site request cannot ride on ambient proxy authentication.
 
