@@ -9,12 +9,15 @@ on the printed label.
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
-from urllib.parse import quote
 
 from app.integrations.live_config import StoreBoundPlugin
 from app.schemas.label_data import LabelData
 from app.services.errors import AppLookupNotFoundError
+
+# Spool ids are integers. Anything else (dot-segments included) would change the request path.
+_SPOOL_ID = re.compile(r"[0-9]{1,20}")
 
 
 class SpoolmanNotFoundError(AppLookupNotFoundError):
@@ -41,9 +44,10 @@ class SpoolmanPlugin(StoreBoundPlugin):
     async def lookup(self, spool_id: str) -> LabelData:
         """Return LabelData for `spool_id`, or raise SpoolmanNotFoundError."""
         self._require_configured()
-        encoded_id = quote(spool_id, safe="")
+        if not _SPOOL_ID.fullmatch(spool_id):
+            raise SpoolmanNotFoundError(f"Spool {spool_id!r} not found")
         response, base = await self._get(
-            f"/api/v1/spool/{encoded_id}",
+            f"/api/v1/spool/{spool_id}",
             lambda _key: {"Accept": "application/json"},
         )
 
@@ -53,7 +57,9 @@ class SpoolmanPlugin(StoreBoundPlugin):
         # decide whether to treat them as configuration errors vs transient failures.
         response.raise_for_status()
 
-        payload: dict[str, Any] = response.json()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError(f"Spoolman response for {spool_id!r} is not an object")
         return self._payload_to_label(payload, spool_id, base)
 
     def _payload_to_label(

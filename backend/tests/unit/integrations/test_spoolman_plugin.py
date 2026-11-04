@@ -105,15 +105,15 @@ async def test_lookup_strips_trailing_slash(monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_lookup_url_encodes_spool_id() -> None:
-    respx.get("https://spoolman.example/api/v1/spool/A%2F1").mock(
+async def test_lookup_accepts_a_long_numeric_spool_id() -> None:
+    respx.get("https://spoolman.example/api/v1/spool/1234567890").mock(
         return_value=httpx.Response(
             200, json={"id": 1, "filament": {"vendor": {"name": "V"}, "name": "M"}}
         )
     )
     client = bound(SpoolmanPlugin)
-    data = await client.lookup("A/1")
-    # If encoding worked the mock matched and we got LabelData back.
+    data = await client.lookup("1234567890")
+    # The mock matched, so we got LabelData back.
     assert data.source_app == "spoolman"
     assert data.primary_id == "#1"
 
@@ -206,3 +206,27 @@ async def test_lookup_reuses_http_client_across_calls() -> None:
         f"Expected exactly one AsyncClient to be created (connection pooling), "
         f"but {len(instances)} were created"
     )
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    "bad", ["..", ".", "a/b", "%2e%2e", "A/1", "a b", "", " ", "1.5", "-1", "#5", "9" * 21, "é"]
+)
+async def test_lookup_rejects_non_numeric_ids_without_a_request(bad: str) -> None:
+    """Spool ids are integers: anything else (dot-segments included) never leaves the hub."""
+    anything = respx.route().mock(return_value=httpx.Response(200, json={"id": 1}))
+    with pytest.raises(SpoolmanNotFoundError):
+        await bound(SpoolmanPlugin).lookup(bad)
+    assert not anything.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("body", [[], "text", 5])
+async def test_lookup_non_object_response_is_a_clean_error(body: object) -> None:
+    respx.get("https://spoolman.example/api/v1/spool/1").mock(
+        return_value=httpx.Response(200, json=body)
+    )
+    with pytest.raises(ValueError, match="not an object"):
+        await bound(SpoolmanPlugin).lookup("1")

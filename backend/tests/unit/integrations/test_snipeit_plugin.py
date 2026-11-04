@@ -144,14 +144,14 @@ async def test_lookup_5xx_raises_httpx_error() -> None:
 @respx.mock
 async def test_lookup_url_encodes_asset_tag() -> None:
     """Asset tags with special chars (/, ?, space) must be percent-encoded."""
-    respx.get("https://snipe-it.example/api/v1/hardware/bytag/A%2F1%20test").mock(
+    respx.get("https://snipe-it.example/api/v1/hardware/bytag/A.1-test_x").mock(
         return_value=httpx.Response(
             200,
-            json={"id": 1, "asset_tag": "A/1 test", "name": "Thing"},
+            json={"id": 1, "asset_tag": "A.1-test_x", "name": "Thing"},
         )
     )
     client = bound(SnipeITPlugin)
-    data = await client.lookup("A/1 test")
+    data = await client.lookup("A.1-test_x")
     assert data.title == "Thing"
 
 
@@ -330,3 +330,54 @@ async def test_lookup_non_numeric_tag_never_tries_the_id_endpoint() -> None:
     with pytest.raises(SnipeITNotFoundError):
         await bound(SnipeITPlugin).lookup("NOPE")
     assert not by_id.called
+
+
+# ---------------------------------------------------------------------------
+# Identifier validation: dots survive quote() and httpx collapses dot-segments,
+# so ".." would reach /api/v1/hardware. Nothing unsafe may leave the hub.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "..", ".", "...", "a/b", "../x", "%2e%2e", "a%2Fb", "a?b", "a#b", "a b", " ", "",
+        "a\\b", "x" * 65, "é1", "A/1 test",
+        "loc:", "loc:abc", "loc:1/2", "loc:-4", "loc:..", "loc:" + "9" * 21, "loc:1.5",
+    ],
+)  # fmt: skip
+async def test_lookup_rejects_unsafe_identifiers_without_a_request(bad: str) -> None:
+    anything = respx.route().mock(return_value=httpx.Response(200, json={"id": 1}))
+    with pytest.raises(SnipeITNotFoundError):
+        await bound(SnipeITPlugin).lookup(bad)
+    assert not anything.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("tag", ["HH-AK0042", "A_1", "ab.cd", "x" * 64, "2024.001"])
+async def test_lookup_accepts_realistic_asset_tags(tag: str) -> None:
+    route = respx.get(f"https://snipe-it.example/api/v1/hardware/bytag/{tag}").mock(
+        return_value=httpx.Response(200, json={"id": 3, "asset_tag": tag, "name": "Thing"})
+    )
+    data = await bound(SnipeITPlugin).lookup(tag)
+    assert route.called
+    assert data.title == "Thing"
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("body", [[], "text", 5])
+async def test_lookup_non_object_responses_are_a_clean_error(body: object) -> None:
+    respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(
+        return_value=httpx.Response(200, json=body)
+    )
+    respx.get("https://snipe-it.example/api/v1/locations/4").mock(
+        return_value=httpx.Response(200, json=body)
+    )
+    with pytest.raises(ValueError, match="not an object"):
+        await bound(SnipeITPlugin).lookup("A-1")
+    with pytest.raises(ValueError, match="not an object"):
+        await bound(SnipeITPlugin).lookup("loc:4")
