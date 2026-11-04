@@ -632,6 +632,10 @@ msgstr "Braucht Aufmerksamkeit"
 msgid "Never used"
 msgstr "Nie benutzt"
 
+#: src/shell/UpdatePrompt.tsx
+msgid "New version available"
+msgstr "Neue Version verfügbar"
+
 #: src/features/scan/ScanScreen.tsx
 msgid "No camera"
 msgstr "Keine Kamera"
@@ -928,6 +932,10 @@ msgstr "Verbinde …"
 #: src/features/printers/model.ts
 msgid "Red"
 msgstr "Rot"
+
+#: src/shell/UpdatePrompt.tsx
+msgid "Reload"
+msgstr "Neu laden"
 
 #: src/features/scan/ScanScreen.tsx
 msgid "Reload the page and try again. If it keeps failing, the browser may block WebAssembly."

@@ -33,9 +33,17 @@ NO_CACHE = "no-cache"
 # Paths owned by the API; never answered with the app shell.
 _RESERVED_PREFIXES = ("api/", "docs", "redoc", "openapi.json")
 
+# react-aria injects one fixed `<style>` (id react-aria-pressable-style, a touch-action rule) at
+# runtime. It is allowed by its hash only, never by a blanket inline allowance.
+# `src/build.test.ts` recomputes the
+# hash from the built bundle, so a react-aria update that changes the text fails the build.
+_REACT_ARIA_PRESSABLE_STYLE = "'sha256-38RhXrc7EdReTKsOm23ZPOCUgniTUUcjky8QOOrQx6o='"
+
 SPA_CSP = (
     "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
-    "img-src 'self' data: blob:; connect-src 'self'; style-src 'self'; "
+    "img-src 'self' data: blob:; connect-src 'self'; style-src 'self' "
+    + _REACT_ARIA_PRESSABLE_STYLE
+    + "; "
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
 _SPA_SCOPE_KEY = "hub.spa_response"

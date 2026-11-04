@@ -23,6 +23,9 @@ describe("pwa", () => {
     }
     // No runtime route at all: the only things the worker ever serves are the precached shell files.
     expect(workbox.runtimeCaching ?? []).toEqual([]);
+    // A new worker waits for the person to reload instead of replacing files an open tab still loads.
+    expect(pwaOptions.registerType).toBe("prompt");
+    expect(workbox.skipWaiting).toBe(false);
     const precached = workbox.globPatterns ?? [];
     expect(precached.join(" ")).not.toMatch(/api/);
   });

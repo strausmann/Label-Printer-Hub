@@ -11,7 +11,9 @@ import type { VitePWAOptions } from "vite-plugin-pwa";
 export const pwaOptions: Partial<VitePWAOptions> = {
   // The manifest is a plain file in public/ and linked from index.html.
   manifest: false,
-  registerType: "autoUpdate",
+  // A new version waits until the person reloads (see src/app/updates.ts): forcing it on an open
+  // tab would leave that tab without the old hashed files it still loads lazily.
+  registerType: "prompt",
   injectRegister: false,
   workbox: {
     globPatterns: ["**/*.{js,css,html,woff2,svg,png,wasm,webmanifest}"],
@@ -20,7 +22,7 @@ export const pwaOptions: Partial<VitePWAOptions> = {
     runtimeCaching: [],
     cleanupOutdatedCaches: true,
     clientsClaim: true,
-    skipWaiting: true,
+    skipWaiting: false,
     // The reader's WebAssembly is the one big file; everything else is far below this.
     maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
   },

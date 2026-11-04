@@ -101,13 +101,21 @@ export function ScanScreen() {
   const [photoMiss, setPhotoMiss] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [round, setRound] = useState(0);
+  // A hidden tab keeps no camera: the light goes off and nothing reads a frozen picture.
+  const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
   const video = useRef<HTMLVideoElement>(null);
   const decoder = useRef<Decoder | null>(null);
-  const live = phase.kind === "scanning";
+  const live = phase.kind === "scanning" && !hidden;
 
-  // Opens the camera; leaving the screen (or a retry) stops it.
   useEffect(() => {
-    if (!secure) return;
+    const onChange = () => setHidden(document.hidden);
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
+
+  // Opens the camera; leaving the screen, hiding the tab or a retry stops it.
+  useEffect(() => {
+    if (!secure || hidden) return;
     let cancelled = false;
     let stream: MediaStream | null = null;
     const element = video.current;
@@ -126,7 +134,8 @@ export function ScanScreen() {
           element.srcObject = stream;
           await element.play?.();
         }
-        setPhase({ kind: "scanning" });
+        // A result already on screen stays; only a fresh start or a resume goes back to scanning.
+        setPhase((p) => (p.kind === "unknown" ? p : { kind: "scanning" }));
       } catch (error) {
         if (cancelled) return;
         const name = nameOf(error);
@@ -140,7 +149,7 @@ export function ScanScreen() {
       stream?.getTracks().forEach((track) => track.stop());
       if (element) element.srcObject = null;
     };
-  }, [secure, attempt]);
+  }, [secure, hidden, attempt]);
 
   useEffect(() => () => decoder.current?.close(), []);
 

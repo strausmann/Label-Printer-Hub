@@ -12,12 +12,19 @@ const shot = async (page: Page, name: string, fullPage = false) => {
 };
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 
-/** Everything the page logs or requests that would show the CSP or a CDN getting in the way. */
-function watch(page: Page) {
+/**
+ * Everything that would show the CSP or a CDN getting in the way: any `securitypolicyviolation`
+ * (with its directive, file and sample), page errors and requests to other origins. Call it
+ * before the first navigation so the page load is covered too.
+ */
+async function watch(page: Page) {
   const problems: string[] = [];
-  // Only the directives this feature depends on (the app's own inline `<style>` from a UI
-  // library is a separate, older finding and is not what these tests are about).
-  page.on("console", (m) => /content security policy/i.test(m.text()) && /script-src|worker-src|connect-src|wasm|default-src/i.test(m.text()) && problems.push(m.text()));
+  await page.exposeFunction("__reportCsp", (report: string) => problems.push(report));
+  await page.addInitScript(() => {
+    document.addEventListener("securitypolicyviolation", (e) =>
+      (window as unknown as { __reportCsp(r: string): void }).__reportCsp(`csp ${e.violatedDirective} ${e.sourceFile}:${e.lineNumber} ${e.blockedURI} ${e.sample}`),
+    );
+  });
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
   page.on("request", (r) => {
     if (!r.url().startsWith(MAIN.url) && !r.url().startsWith("data:") && !r.url().startsWith("blob:")) problems.push(`off-origin request: ${r.url()}`);
@@ -50,9 +57,9 @@ test.describe.serial("scan", () => {
       serviceWorkers: "block",
     });
     const cam = await context.newPage();
+    const problems = await watch(cam);
     await cam.goto("/");
     await expect(cam.getByRole("navigation", { name: "Tabs" })).toBeVisible();
-    const problems = watch(cam);
     // Hold the reader's WebAssembly back so the camera view can be looked at before the first read.
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -146,7 +153,7 @@ test.describe.serial("scan", () => {
   });
 
   test("@data-matrix zxing worker decodes a data-matrix image under the production CSP", async () => {
-    const problems = watch(page);
+    const problems = await watch(page);
     // Make sure the browser's own detector cannot be the one reading this.
     await page.addInitScript(() => Object.defineProperty(window, "BarcodeDetector", { value: undefined, configurable: true }));
     const wasm = page.waitForResponse((r) => /zxing_reader-.*\.wasm$/.test(r.url()));

@@ -16,6 +16,10 @@ const setSecure = (value: boolean) => Object.defineProperty(window, "isSecureCon
 
 const track = { stop: vi.fn() };
 const stream = { getTracks: () => [track] } as unknown as MediaStream;
+const setHidden = (hidden: boolean) => {
+  Object.defineProperty(document, "hidden", { value: hidden, configurable: true });
+  document.dispatchEvent(new Event("visibilitychange"));
+};
 
 function deps(hits: Array<ScanHit | null>, over: Partial<ScanDeps> = {}): ScanDeps {
   const queue = [...hits];
@@ -49,6 +53,7 @@ beforeEach(() => {
   HTMLMediaElement.prototype.play = vi.fn(async () => {});
   Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia: vi.fn(async () => stream) }, configurable: true });
   setSecure(true);
+  Object.defineProperty(document, "hidden", { value: false, configurable: true });
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -125,5 +130,39 @@ describe("ScanScreen", () => {
       await router.navigate({ to: "/jobs" });
     });
     await waitFor(() => expect(track.stop).toHaveBeenCalled());
+  });
+
+  it("releases the camera while the tab is hidden and takes it again when it is shown", async () => {
+    const decode = vi.fn(async () => null);
+    const router = await mount(
+      deps([], { createDecoder: async () => ({ engine: "native", decode, close: vi.fn() }) }),
+    );
+    await waitFor(() => expect(getUserMedia()).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(decode).toHaveBeenCalled());
+    expect(track.stop).not.toHaveBeenCalled();
+
+    await act(async () => setHidden(true));
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    // The read loop is quiet while hidden.
+    const reads = decode.mock.calls.length;
+    await new Promise((r) => setTimeout(r, 40));
+    expect(decode.mock.calls.length).toBe(reads);
+    expect(getUserMedia()).toHaveBeenCalledTimes(1);
+
+    await act(async () => setHidden(false));
+    await waitFor(() => expect(getUserMedia()).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(decode.mock.calls.length).toBeGreaterThan(reads));
+
+    await act(async () => {
+      await router.navigate({ to: "/jobs" });
+    });
+    await waitFor(() => expect(track.stop).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not open the camera when the screen is opened in a hidden tab", async () => {
+    Object.defineProperty(document, "hidden", { value: true, configurable: true });
+    await mount(deps([]));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(getUserMedia()).not.toHaveBeenCalled();
   });
 });

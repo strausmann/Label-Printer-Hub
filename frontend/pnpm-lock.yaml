@@ -67,7 +67,7 @@ importers:
         specifier: 14.6.8
         version: 14.6.8(@testing-library/dom@10.4.2)
       '@types/emscripten':
-        specifier: ^1.41.6
+        specifier: 1.41.6
         version: 1.41.6
       '@types/node':
         specifier: 22.20.5
@@ -121,6 +121,9 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@types/node@22.20.5)(@vitest/coverage-v8@5.1.0)(jsdom@30.1.3(@noble/hashes@2.4.0))(vite@8.3.5(@types/node@22.20.5)(jiti@2.7.0)(terser@5.51.2))
       workbox-build:
+        specifier: 7.4.1
+        version: 7.4.1
+      workbox-window:
         specifier: 7.4.1
         version: 7.4.1
 

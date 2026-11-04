@@ -21,7 +21,8 @@ from httpx import ASGITransport, AsyncClient
 INDEX_HTML = "<!doctype html><html><body>hub-app-shell</body></html>"
 CSP = (
     "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
-    "img-src 'self' data: blob:; connect-src 'self'; style-src 'self'; "
+    "img-src 'self' data: blob:; connect-src 'self'; "
+    "style-src 'self' 'sha256-38RhXrc7EdReTKsOm23ZPOCUgniTUUcjky8QOOrQx6o='; "
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
 

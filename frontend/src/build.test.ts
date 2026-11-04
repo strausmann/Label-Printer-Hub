@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -49,5 +50,20 @@ describe.skipIf(!required && !existsSync(dist))("built output", () => {
     expect(worker).toHaveLength(1);
     // The library's default points at a CDN; our override must be what the worker uses.
     expect(readFileSync(worker[0]!, "utf8")).toMatch(/zxing_reader-[\w-]+\.wasm/);
+  });
+
+  it("csp: the one inline style the UI library injects is allowed by its hash, and nothing broader", () => {
+    const main = walk(join(dist, "assets"), ".js").find((f) => /index-/.test(f))!;
+    const code = readFileSync(main, "utf8");
+    const at = code.indexOf("react-aria-pressable-style");
+    expect(at, "react-aria no longer injects its pressable style; drop the hash from backend/app/web/spa.py").toBeGreaterThan(-1);
+    // `t.textContent=`\n@layer { [${attr}] {...} }\n    `.trim()`: a template in the minified bundle.
+    const quoted = /textContent=`(\s*@layer \{[^`]*)`\.trim\(\)/.exec(code);
+    expect(quoted, "could not find the style text next to its id").not.toBeNull();
+    const text = quoted![1]!.replace(/\$\{[^}]+\}/, "data-react-aria-pressable").trim();
+    const hash = createHash("sha256").update(text).digest("base64");
+    const csp = readFileSync(resolve(__dirname, "..", "..", "backend", "app", "web", "spa.py"), "utf8");
+    expect(csp).toContain(`'sha256-${hash}'`);
+    expect(csp).not.toContain("unsafe-inline");
   });
 });
