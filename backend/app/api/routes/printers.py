@@ -104,6 +104,20 @@ async def list_printers(
         printers = [printer]
     else:
         printers = await printers_repo.list_all(session)
+    # Per-printer ACL (#146): an empty allowed list means all printers.  A
+    # foreign printer found by slug yields the same 404 as an unknown slug so
+    # its existence is not disclosed.
+    allowed = set(_auth.allowed_printer_ids) if _auth is not None else set()
+    if allowed:
+        printers = [p for p in printers if str(p.id) in allowed]
+        if slug is not None and not printers:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error_code": "printer_not_found",
+                    "error_message": f"slug={slug!r} not found",
+                },
+            )
     result: list[PrinterRead] = []
     for p in printers:
         state = await printer_state_repo.get(session, p.id)
@@ -298,6 +312,8 @@ async def get_printer_tape(
 ) -> dict[str, object]:
     """Return the current tape spec for a printer."""
     await _get_printer_or_404(session, printer_id)
+    if _auth is not None:
+        check_printer_access(_auth, printer_id)
 
     cache = await cache_repo.get(session, printer_id)
     if cache is None or cache.parsed is None:
@@ -351,6 +367,8 @@ async def get_printer_queue(
 ) -> list[dict[str, object]]:
     """Return queued and printing jobs for a printer."""
     await _get_printer_or_404(session, printer_id)
+    if _auth is not None:
+        check_printer_access(_auth, printer_id)
 
     active_jobs = await jobs_repo.list_active(session)
     printer_jobs = [j for j in active_jobs if j.printer_id == printer_id]
