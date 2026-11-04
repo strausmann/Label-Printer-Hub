@@ -55,6 +55,10 @@ networks:
   stack:
 ```
 
+## Reverse-proxy variants: set `PROXY_IP`
+
+The Traefik, Caddy and Pangolin examples trust `X-Forwarded-For` from exactly one peer, your proxy, via `PROXY_IP`. Give the proxy a fixed address on the shared network (`ipv4_address` in the proxy's own stack) and put that address in `.env`. Without it every client looks like the proxy and the per-IP sign-in limit becomes one bucket for everybody. Do not use `*` or a subnet.
+
 ## Prerequisites
 
 1. **Brother printer** on your network: PT-Series (PT-E550W/P710BT/P750W) or QL-Series (QL-800/810W/820NWB). USB-only models are out of scope at this stage.
