@@ -91,6 +91,8 @@ def _prepare_environment(workdir: Path) -> tuple[bool, Path | None]:
     ).decode()
     os.environ["PRINTER_HUB_PUBLIC_URL"] = f"http://localhost:{os.environ.get('E2E_PORT', '8765')}"
     os.environ["PRINTER_HUB_DATABASE_URL"] = f"sqlite+aiosqlite:///{workdir / 'e2e.db'}"
+    # Every spec signs in from 127.0.0.1; the production default (10/min) would trip.
+    os.environ["PRINTER_HUB_SIGN_IN_LIMIT_PER_MINUTE"] = "100000"
     os.environ.setdefault("PRINTER_HUB_WEB_DIST_DIR", "../frontend/dist")
     # One integration URL comes from the container, so the settings UI has a locked field (D4).
     os.environ["PRINTER_HUB_GROCY_URL"] = "http://grocy.example.invalid"

@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     (Issue #46). Ungültige Werte (Tippfehler, lowercase) erzeugen einen
     ValidationError beim Startup statt lautlos defaulten."""
 
+    sign_in_limit_per_minute: int = Field(default=10, gt=0)
+    """Browser sign-in attempts per minute and client address (default 10). Keep the default
+    in production; the browser-test harness raises it because every test signs in from one
+    address. Behind a proxy all clients share the proxy's address."""
+
     # SSE EventBus — configurable resource limits
     sse_queue_size: int = Field(default=32, gt=0)
     """Per-subscriber asyncio.Queue depth. Drop-oldest when full.

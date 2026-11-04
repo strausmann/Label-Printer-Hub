@@ -90,5 +90,5 @@ class RateLimiter:
 _rate_limiter = RateLimiter()
 
 # Separate bucket for the browser sign-in route, keyed by client IP (spec 8.1).
-SIGN_IN_LIMIT_PER_MINUTE = 10
+# The limit itself is ``Settings.sign_in_limit_per_minute`` (default 10).
 _sign_in_rate_limiter = RateLimiter()

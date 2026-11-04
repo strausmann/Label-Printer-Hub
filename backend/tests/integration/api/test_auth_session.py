@@ -538,6 +538,20 @@ async def test_sign_in_rate_limited(api_client_with_seed):
     assert int(resp.headers["Retry-After"]) >= 1
 
 
+@pytest.mark.asyncio
+async def test_sign_in_limit_is_configurable(api_client_with_seed, monkeypatch):
+    """The per-IP limit defaults to 10/min and can be raised (the e2e harness does)."""
+    from app.config import get_settings
+
+    assert get_settings().sign_in_limit_per_minute == 10
+    _set_env(monkeypatch, sign_in_limit_per_minute="25")
+    for attempt in range(25):
+        resp = await _sign_in(api_client_with_seed, f"lh_pat_wrong_key_attempt_{attempt:04d}")
+        assert resp.status_code == 401, (attempt, resp.text)
+    resp = await _sign_in(api_client_with_seed, "lh_pat_wrong_key_attempt_last")
+    assert resp.status_code == 429
+
+
 # --------------------------------------------------------------------------
 # Security review follow-ups
 # --------------------------------------------------------------------------
