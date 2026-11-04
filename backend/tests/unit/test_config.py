@@ -9,9 +9,8 @@ from app.config import Settings
 
 
 def test_settings_load_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Phase 1i CA-1: Drucker-spezifische Felder entfernt; printers_config hinzugefügt."""
+    """Settings are read from PRINTER_HUB_* environment variables."""
     monkeypatch.setenv("PRINTER_HUB_DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
-    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", "/tmp/test-printers.yaml")
     monkeypatch.setenv("PRINTER_HUB_WEBHOOK_API_KEY", "test-key-32-bytes-long-enough-here")
     monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipe-it.example")
     monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "snipeit-key")
@@ -22,7 +21,6 @@ def test_settings_load_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     settings = Settings(_env_file=None)
 
     assert settings.database_url == f"sqlite:///{tmp_path}/test.db"
-    assert settings.printers_config == "/tmp/test-printers.yaml"
     assert settings.webhook_api_key.get_secret_value() == "test-key-32-bytes-long-enough-here"
     assert settings.snipeit_url == "https://snipe-it.example"
     assert settings.snipeit_api_key.get_secret_value() == "snipeit-key"
@@ -128,7 +126,7 @@ def test_env_example_contains_all_sse_vars() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Phase 1i CA-1 — extra="forbid" + printers_config Feld
+# Phase 1i CA-1 — extra="forbid"
 # ---------------------------------------------------------------------------
 
 
@@ -150,19 +148,6 @@ def test_settings_extra_forbid_rejects_pt750w_host_kwarg() -> None:
 
     with pytest.raises(ValidationError, match="extra_forbidden"):
         Settings(pt750w_host="1.2.3.4", _env_file=None)  # type: ignore[call-arg]
-
-
-def test_settings_printers_config_default() -> None:
-    """CA-1: printers_config hat den korrekten Default."""
-    s = Settings(_env_file=None)
-    assert s.printers_config == "/etc/hub/printers.yaml"
-
-
-def test_settings_printers_config_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CA-1: PRINTER_HUB_PRINTERS_CONFIG überschreibt den Default."""
-    monkeypatch.setenv("PRINTER_HUB_PRINTERS_CONFIG", "/custom/path/printers.yaml")
-    s = Settings(_env_file=None)
-    assert s.printers_config == "/custom/path/printers.yaml"
 
 
 # ---------------------------------------------------------------------------

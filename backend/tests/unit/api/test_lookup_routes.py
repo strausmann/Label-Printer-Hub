@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from app.api.routes.lookup import router
+from app.auth.scope_deps import require_read
 from app.schemas.label_data import LabelData
 from app.services.errors import AppLookupNotFoundError
 from fastapi import FastAPI
@@ -26,6 +27,8 @@ def _build_app() -> FastAPI:
     """Return a FastAPI app with the lookup router and error handlers."""
     test_app = FastAPI()
     test_app.include_router(router)
+    # Authentication is covered in tests/integration/api/test_lookup_auth.py.
+    test_app.dependency_overrides[require_read] = lambda: None
 
     from app.api.error_handlers import register_error_handlers
 

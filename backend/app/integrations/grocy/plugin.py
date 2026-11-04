@@ -7,20 +7,26 @@ both quirks are explicit in the plugin's mapping logic.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import quote
 
-import httpx
-
+from app.integrations.live_config import StoreBoundPlugin
 from app.schemas.label_data import LabelData
 from app.services.errors import AppLookupNotFoundError
 
 
 class GrocyNotFoundError(AppLookupNotFoundError):
-    """Raised when no Grocy product matches the given id."""
+    """Raised when no Grocy product matches the given id or barcode."""
 
 
-class GrocyPlugin:
+_DIGITS = re.compile(r"[0-9]+")
+# A barcode goes into a URL path. quote() leaves dots alone and httpx collapses dot-segments,
+# so ".." would reach another authenticated Grocy endpoint: letters, digits, "-" and "_" only.
+_BARCODE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+class GrocyPlugin(StoreBoundPlugin):
     """Grocy integration plugin.
 
     Implements the IntegrationPlugin protocol — exposes `name`,
@@ -32,51 +38,66 @@ class GrocyPlugin:
     name = "grocy"
     display_name = "Grocy"
 
+    secret_suffix = "api_key"
+
     def __init__(self) -> None:
-        from app.config import get_settings
+        self._init_live()
 
-        settings = get_settings()
-        self._base_url = settings.grocy_url.rstrip("/")
-        self._api_key = settings.grocy_api_key.get_secret_value()
-        self._timeout = settings.grocy_timeout
-        self._client = httpx.AsyncClient(timeout=self._timeout)
-
-    async def aclose(self) -> None:
-        """Close the shared HTTP client and release its connection pool.
-
-        Must be called on application shutdown (e.g. from lifespan finally block).
-        Safe to call more than once.
-        """
-        await self._client.aclose()
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"GROCY-API-KEY": key, "Accept": "application/json"}
 
     async def lookup(self, product_id: str) -> LabelData:
-        """Return LabelData for `product_id`, or raise GrocyNotFoundError."""
+        """Resolve a product id or a barcode, or raise GrocyNotFoundError.
+
+        A pure integer is a product id first; a barcode (EAN) can be all digits too,
+        so a digits-only value no product has as id is then tried as a barcode.
+        Anything else is a barcode right away.
+        """
+        self._require_configured()
+        if not _DIGITS.fullmatch(product_id):
+            return await self._lookup_barcode(product_id)
         encoded_id = quote(product_id, safe="")
-        url = f"{self._base_url}/api/objects/products/{encoded_id}"
-        headers = {
-            "GROCY-API-KEY": self._api_key,
-            "Accept": "application/json",
-        }
-        response = await self._client.get(url, headers=headers)
+        response, base = await self._get(f"/api/objects/products/{encoded_id}", self._headers)
 
         # Grocy returns 400 with error_message for missing products, not 404.
         if response.status_code in (400, 404):
-            raise GrocyNotFoundError(f"Product {product_id!r} not found")
+            return await self._lookup_barcode(product_id)
         # 401/403/5xx surface as httpx.HTTPStatusError — callers (AppLookupService)
         # decide whether to treat them as configuration errors vs transient failures.
         response.raise_for_status()
 
         payload: dict[str, Any] = response.json()
-        return self._payload_to_label(payload, product_id)
+        return self._payload_to_label(payload, product_id, base)
 
-    def _payload_to_label(self, payload: dict[str, Any], product_id: str) -> LabelData:
+    async def _lookup_barcode(self, barcode: str) -> LabelData:
+        """``GET /api/stock/products/by-barcode/{barcode}`` (per Grocy's own OpenAPI file).
+
+        200 is a ProductDetailsResponse whose ``product`` is the product; 400 is
+        "Unknown barcode".
+        """
+        if not _BARCODE.fullmatch(barcode):
+            raise GrocyNotFoundError(f"Product {barcode!r} not found")
+        response, base = await self._get(f"/api/stock/products/by-barcode/{barcode}", self._headers)
+        if response.status_code in (400, 404):
+            raise GrocyNotFoundError(f"Product {barcode!r} not found")
+        response.raise_for_status()
+        details = response.json()
+        product = details.get("product") if isinstance(details, dict) else None
+        if not isinstance(product, dict):
+            raise ValueError(f"Grocy response for barcode {barcode!r} has no product object")
+        return self._payload_to_label(product, barcode, base)
+
+    def _payload_to_label(
+        self, payload: dict[str, Any], product_id: str, base: str | None = None
+    ) -> LabelData:
         grocy_id = payload.get("id")
         if grocy_id is None:
             raise ValueError(f"Grocy response for {product_id!r} is missing required field 'id'")
         return LabelData(
             title=str(payload.get("name") or f"Product {product_id}"),
             primary_id=str(grocy_id),
-            qr_payload=f"{self._base_url}/product/{grocy_id}",
+            qr_payload=f"{base if base is not None else self._base_url}/product/{grocy_id}",
             source_app="grocy",
             secondary=(),
         )

@@ -11,9 +11,12 @@ third-party plugins with a clear log message.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from app.schemas.label_data import LabelData
+
+if TYPE_CHECKING:
+    from app.settings_store import SettingsStore
 
 
 @runtime_checkable
@@ -29,3 +32,12 @@ class IntegrationPlugin(Protocol):
         Raises AppLookupNotFoundError (or a subclass) if the entity does not
         exist on the upstream app.
         """
+
+    def bind(self, store: SettingsStore) -> None:
+        """Attach the runtime settings store (called once in the lifespan after discovery)."""
+
+    async def reconfigure(self) -> None:
+        """Close and recreate the HTTP client from the current store values."""
+
+    def is_configured(self) -> bool:
+        """True when URL (and key, where needed) are set and usable. False before ``bind``."""

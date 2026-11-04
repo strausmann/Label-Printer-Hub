@@ -52,32 +52,44 @@ def test_upgrade_adds_audit_columns_to_jobs(tmp_path):
     eng.dispose()
 
 
-def test_upgrade_seeds_bootstrap_admin_key(tmp_path):
-    import json
+def test_upgrade_seeds_no_api_key_and_prints_none(tmp_path, capfd):
+    """D7: the bootstrap key and `printer-hub admin create-key` replace the old seed.
 
+    The migration used to insert an enabled admin key and print its plaintext to
+    stdout; that made the bootstrap key unusable and put a key in the container log.
+    """
     db = tmp_path / "p7c_seed.db"
     command.upgrade(_cfg(db), _PHASE_7C_REV)
+    out, err = capfd.readouterr()
+    assert "lh_" not in out + err
     eng = create_engine(f"sqlite:///{db}")
     with eng.connect() as conn:
-        rows = conn.execute(text("SELECT name, scopes, enabled FROM api_keys")).fetchall()
-    assert len(rows) == 1
-    assert rows[0][0] == "bootstrap-admin"
-    assert "admin" in json.loads(rows[0][1])
-    assert rows[0][2] == 1
+        count = conn.execute(text("SELECT COUNT(*) FROM api_keys")).scalar()
+    assert count == 0
     eng.dispose()
 
 
-def test_upgrade_idempotent_no_duplicate_seed(tmp_path):
-    db = tmp_path / "p7c_idem.db"
-    command.upgrade(_cfg(db), _PHASE_7C_REV)
+def test_upgrade_keeps_existing_key_rows(tmp_path):
+    """Existing installs keep their rows: re-running upgrade never touches api_keys."""
+    db = tmp_path / "p7c_keep.db"
     command.upgrade(_cfg(db), _PHASE_7C_REV)
     eng = create_engine(f"sqlite:///{db}")
-    with eng.connect() as conn:
-        count = conn.execute(
-            text("SELECT COUNT(*) FROM api_keys WHERE name='bootstrap-admin'")
-        ).scalar()
-    assert count == 1
+    with eng.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO api_keys (id, name, key_hash, key_prefix, scopes,"
+                " allowed_printer_ids, rate_limit_per_minute, enabled, created_at)"
+                " VALUES ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'kept', 'fake-hash',"
+                " 'lh_pat_fakepref', '[\"admin\"]', '[]', 60, 1, '2026-05-17T12:00:00+00:00')"
+            )
+        )
     eng.dispose()
+    command.upgrade(_cfg(db), "head")
+    eng2 = create_engine(f"sqlite:///{db}")
+    with eng2.connect() as conn:
+        names = [r[0] for r in conn.execute(text("SELECT name FROM api_keys")).fetchall()]
+    assert names == ["kept"]
+    eng2.dispose()
 
 
 def test_downgrade_removes_api_keys_table(tmp_path):

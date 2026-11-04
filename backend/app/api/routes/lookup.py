@@ -7,13 +7,18 @@ GET /api/lookup/{app}/{id} — resolve an integration entity and return LookupRe
 Design notes
 ------------
 This is a thin REST wrapper around ``AppLookupService.lookup()``.  The service
-already exists (used by the print pipeline and the QR landing pages) and does
+already exists (used by the print pipeline and the web app's item view) and does
 all the heavy lifting.  The route's job is:
 
 1. Validate ``app`` against the known-apps enum so FastAPI returns 422 for
    unsupported apps before even calling the service.
 2. Delegate to the service.
 3. Project the returned ``LabelData`` into a ``LookupResult``.
+
+Auth
+----
+Read scope (a key or a signed-in browser session). The endpoint answers with data from the
+connected apps, so it is not public; the QR landing paths only serve the app shell.
 
 Error mapping
 -------------
@@ -30,15 +35,19 @@ References:
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.auth.dependencies import AuthContext
+from app.auth.scope_deps import require_read
 from app.schemas.label_data import LabelData
 from app.schemas.lookup import LookupResult
 from app.services.lookup_service import AppLookupService
 
 router = APIRouter(prefix="/api/lookup", tags=["lookup"])
+
+ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
 
 # Dependency instance — shared across requests within a single process.
 # AppLookupService is stateless (reads settings once at construction);
@@ -80,6 +89,7 @@ def _label_data_to_result(app: AppLiteral, entity_id: str, data: LabelData) -> L
 async def lookup(
     app: AppLiteral,
     entity_id: str,
+    _auth: ReadAuthDep,
 ) -> LookupResult:
     """Resolve ``entity_id`` via the integration named ``app``."""
     # AppLookupNotFoundError propagates to the global handler → 404 ProblemDetail.

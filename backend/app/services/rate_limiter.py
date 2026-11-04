@@ -12,7 +12,7 @@ Algorithm: token bucket
 from __future__ import annotations
 
 import time
-from uuid import UUID
+from collections.abc import Hashable
 
 
 class _TokenBucket:
@@ -32,18 +32,18 @@ class _TokenBucket:
 
 
 class RateLimiter:
-    """Global in-memory rate limiter — one token bucket per API key."""
+    """Global in-memory rate limiter — one token bucket per key (API-key id, client IP)."""
 
     def __init__(self) -> None:
-        self._buckets: dict[UUID, _TokenBucket] = {}
+        self._buckets: dict[Hashable, _TokenBucket] = {}
 
-    def _get_bucket(self, key_id: UUID, limit_per_minute: int) -> _TokenBucket:
+    def _get_bucket(self, key_id: Hashable, limit_per_minute: int) -> _TokenBucket:
         """Return (and lazily create) the bucket for this key."""
         if key_id not in self._buckets:
             self._buckets[key_id] = _TokenBucket(limit_per_minute)
         return self._buckets[key_id]
 
-    def check_and_consume(self, key_id: UUID, *, limit_per_minute: int) -> bool:
+    def check_and_consume(self, key_id: Hashable, *, limit_per_minute: int) -> bool:
         """Check if the key is within its rate limit and consume one token.
 
         Returns True if the request is allowed (token consumed), False if
@@ -58,7 +58,7 @@ class RateLimiter:
         return False
 
     def check_and_consume_with_retry_after(
-        self, key_id: UUID, *, limit_per_minute: int
+        self, key_id: Hashable, *, limit_per_minute: int
     ) -> tuple[bool, int]:
         """Like check_and_consume but also returns retry_after_seconds.
 
@@ -77,10 +77,18 @@ class RateLimiter:
         retry_after = int(deficit / rate_per_second) + 1
         return False, retry_after
 
-    def reset(self, key_id: UUID) -> None:
+    def reset(self, key_id: Hashable) -> None:
         """Remove the bucket for a key (e.g. after key revocation)."""
         self._buckets.pop(key_id, None)
 
+    def clear(self) -> None:
+        """Drop every bucket (tests, or a full reset)."""
+        self._buckets.clear()
 
-# Module-level singleton — shared across all requests in the process
+
+# Module-level singleton — shared across all requests in the process, keyed by API-key id
 _rate_limiter = RateLimiter()
+
+# Separate bucket for the browser sign-in route, keyed by client IP (spec 8.1).
+# The limit itself is ``Settings.sign_in_limit_per_minute`` (default 10).
+_sign_in_rate_limiter = RateLimiter()

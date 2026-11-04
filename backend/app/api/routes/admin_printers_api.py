@@ -19,10 +19,11 @@ Pangolin-SSO und claude-automation-Bypass gewähren nur ``read`` — kein Zugrif
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from datetime import UTC, datetime
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +32,7 @@ from app.auth.scope_deps import require_admin
 from app.db.session import get_session
 from app.models.printer import Printer
 from app.schemas.printer_admin import PrinterCreatePayload, PrinterUpdatePayload
+from app.services.event_bus import BusEvent, EventBus
 from app.services.printer_admin_service import (
     DuplicateNameError,
     DuplicateSlugError,
@@ -87,6 +89,27 @@ def _row_to_read(printer: Printer) -> PrinterRead:
     )
 
 
+def _publish_changed(
+    request: Request,
+    printer: Printer,
+    change: Literal["created", "updated", "disabled", "enabled"],
+) -> None:
+    """Tell open event streams that the printer list changed (the service stays DB-only)."""
+    bus: EventBus | None = getattr(request.app.state, "event_bus", None)
+    if bus is None:
+        return
+    bus.publish(
+        "hub",
+        BusEvent(
+            channel="hub",
+            event_id=bus.next_event_id("hub"),
+            event_type="hub.printers_changed",
+            timestamp=datetime.now(UTC),
+            data={"printer_id": str(printer.id), "change": change},
+        ),
+    )
+
+
 def _audit_user(auth: AuthContext) -> str:
     """Leitet den Audit-User-String aus dem AuthContext ab."""
     if auth.api_key_id is not None:
@@ -131,6 +154,7 @@ async def list_printers(
 )
 async def create_printer(
     body: PrinterCreatePayload,
+    request: Request,
     session: SessionDep,
     _auth: AdminAuthDep,
 ) -> PrinterRead:
@@ -153,6 +177,7 @@ async def create_printer(
                 "error_message": f"Name {exc.name!r} ist bereits vergeben.",
             },
         ) from exc
+    _publish_changed(request, printer, "created")
     return _row_to_read(printer)
 
 
@@ -195,6 +220,7 @@ async def get_printer(
 async def update_printer(
     slug: str,
     body: PrinterUpdatePayload,
+    request: Request,
     session: SessionDep,
     _auth: AdminAuthDep,
 ) -> PrinterRead:
@@ -209,6 +235,7 @@ async def update_printer(
                 "error_message": f"Drucker mit Slug {slug!r} nicht gefunden.",
             },
         ) from exc
+    _publish_changed(request, printer, "updated")
     return _row_to_read(printer)
 
 
@@ -224,6 +251,7 @@ async def update_printer(
 )
 async def disable_printer(
     slug: str,
+    request: Request,
     session: SessionDep,
     _auth: AdminAuthDep,
 ) -> PrinterRead:
@@ -246,6 +274,7 @@ async def disable_printer(
                 "error_message": f"Drucker {slug!r} ist bereits deaktiviert.",
             },
         ) from exc
+    _publish_changed(request, printer, "disabled")
     return _row_to_read(printer)
 
 
@@ -261,6 +290,7 @@ async def disable_printer(
 )
 async def enable_printer(
     slug: str,
+    request: Request,
     session: SessionDep,
     _auth: AdminAuthDep,
 ) -> PrinterRead:
@@ -283,4 +313,5 @@ async def enable_printer(
                 "error_message": f"Drucker {slug!r} ist bereits aktiv.",
             },
         ) from exc
+    _publish_changed(request, printer, "enabled")
     return _row_to_read(printer)

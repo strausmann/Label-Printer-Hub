@@ -33,10 +33,19 @@ async def get_batch(
 
     Wird von Hangar's /admin/print/result/{batch_id} für das initiale
     Rendering genutzt. summary.all_terminal == False bedeutet, dass Hangar
-    einen SSE-Stream zu /api/events?batch_id=... öffnen sollte für
+    den JSON-Stream /api/v1/events verfolgen sollte für
     Live-Updates.
     """
     batch = await batches_repo.get(session, batch_id)
+    # Per-printer ACL: a batch of a foreign printer is indistinguishable from a
+    # missing one (404).  Empty allowed list = all printers.
+    if (
+        batch is not None
+        and _auth is not None
+        and _auth.allowed_printer_ids
+        and str(batch.printer_id) not in _auth.allowed_printer_ids
+    ):
+        batch = None
     if batch is None:
         raise HTTPException(status_code=404, detail="Batch not found")
 

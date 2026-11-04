@@ -11,6 +11,19 @@ from datetime import datetime
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _trust_legacy_pangolin_user(monkeypatch: pytest.MonkeyPatch):
+    """These tests authenticate with the legacy X-Pangolin-User header, which
+    counts only with the D10 opt-in (default off)."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER", "true")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 pytestmark = pytest.mark.asyncio
 
 

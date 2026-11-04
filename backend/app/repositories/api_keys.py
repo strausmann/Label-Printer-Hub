@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
 from app.models.api_key import ApiKey
+from app.models.ui_session import UiSession
 
 
 async def create(session: AsyncSession, key: ApiKey) -> ApiKey:
@@ -45,13 +46,24 @@ async def list_active(session: AsyncSession) -> list[ApiKey]:
     return list(result.scalars())
 
 
+async def revoke_sessions(session: AsyncSession, key_id: UUID) -> None:
+    """Mark every open browser session of ``key_id`` revoked. Does not commit."""
+    await session.execute(
+        update(UiSession)
+        .where(col(UiSession.api_key_id) == key_id, col(UiSession.revoked_at).is_(None))
+        .values(revoked_at=datetime.now(UTC))
+    )
+
+
 async def revoke(session: AsyncSession, key_id: UUID) -> ApiKey | None:
-    """Set ``enabled = False`` on the key. Returns the updated key or None if not found."""
+    """Set ``enabled = False`` on the key and revoke its browser sessions in the same
+    transaction. Returns the updated key or None if not found."""
     key = await session.get(ApiKey, key_id)
     if key is None:
         return None
     key.enabled = False
     session.add(key)
+    await revoke_sessions(session, key_id)
     await session.commit()
     await session.refresh(key)
     return key

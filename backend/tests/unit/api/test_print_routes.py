@@ -17,10 +17,11 @@ import pytest
 from app.api.routes.print import router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
-from app.printer_backends.exceptions import SnmpQueryError
+from app.db.session import get_session
+from app.printer_backends.exceptions import PrinterOfflineError, SnmpQueryError
 from app.printer_backends.snmp_helper import LiveStatus
 from app.services.job_lifecycle import Job, JobState
-from app.services.lookup_service import LookupFailedError
+from app.services.lookup_service import LookupFailedError, UnknownAppError
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
@@ -45,6 +46,14 @@ def _app(service, queue):
     app.state.print_service = service
     app.state.print_queue = queue
     app.include_router(router)
+
+    async def _fake_session():  # legacy resume also clears the DB pause flag
+        s = MagicMock()
+        s.get = AsyncMock()
+        s.commit = AsyncMock()
+        yield s
+
+    app.dependency_overrides[get_session] = _fake_session
     _fake_ctx = AuthContext(source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1")
     for _dep in (require_read, require_print):
         app.dependency_overrides[_dep] = lambda _c=_fake_ctx: _c
@@ -104,6 +113,43 @@ async def test_post_print_lookup_failed_is_502(fake_service, fake_queue) -> None
         )
     assert r.status_code == 502
     assert r.json()["error_code"] == "integration_lookup_failed"
+
+
+_LOOKUP_BODY = {"content_type": "qr_two_lines", "lookup": {"app": "snipeit", "identifier": "x"}}
+
+
+async def test_post_print_unknown_app_is_422_not_a_crash(fake_service, fake_queue) -> None:
+    fake_service.submit_print_job.side_effect = UnknownAppError(
+        "Unknown integration. Registered: [a, b]"
+    )
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post("/print", json=_LOOKUP_BODY)
+    assert r.status_code == 422
+    assert r.json()["error_code"] == "integration_unknown_app"
+    assert "Registered" not in r.text
+
+
+async def test_post_print_lookup_failure_text_stays_server_side(fake_service, fake_queue) -> None:
+    fake_service.submit_print_job.side_effect = LookupFailedError(
+        "GET https://up.example.invalid/?token=s3cret"
+    )
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post("/print", json=_LOOKUP_BODY)
+    assert r.status_code == 502
+    assert "s3cret" not in r.text and "example.invalid" not in r.text
+
+
+async def test_post_print_subclass_of_a_mapped_error_uses_its_parents_mapping(
+    fake_service, fake_queue
+) -> None:
+    class _DownError(PrinterOfflineError):
+        pass
+
+    fake_service.submit_print_job.side_effect = _DownError("offline")
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post("/print", json=_LOOKUP_BODY)
+    assert r.status_code == 503
+    assert r.json()["error_code"] == "printer_offline"
 
 
 async def test_get_jobs_returns_status_with_live_block(

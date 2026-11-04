@@ -1,10 +1,10 @@
 # ============================================================================
 # Label Printer Hub — Pangolin
-# Two-container setup: only the frontend is exposed via Pangolin. Backend stays
-# on an internal network. Frontend proxies all API calls + SSE to backend.
+# One container: the backend serves the API and the web UI (ADR 0015) and is
+# the Pangolin target. Printers are added in the UI.
 # Uses Blueprint Labels with the Two-Resources pattern:
 # - Main UI behind Pangolin SSO
-# - Webhook subroute with auth bypass (uses WEBHOOK_API_KEY instead)
+# - Webhook subroute with auth bypass (uses PRINTER_HUB_WEBHOOK_API_KEY instead)
 # ============================================================================
 
 services:
@@ -13,19 +13,29 @@ services:
     container_name: label-printer-hub-backend
     user: "1000:1000"
     networks:
-      - hub-internal
+      - pangolin_mgmt
     expose:
       - "${BACKEND_PORT:-8000}"
     environment:
       - PORT=${BACKEND_PORT:-8000}
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-*}
-      - PRINTER_HUB_PRINTERS_CONFIG=${PRINTER_HUB_PRINTERS_CONFIG:-/etc/hub/printers.yaml}
+      - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. https://printerhub.example.invalid}"
+      # D10: the hub trusts the Remote-User header only together with this shared
+      # token. The Pangolin resource below must inject the SAME value as the
+      # X-Pangolin-Token request header; without the token every request is
+      # treated as unauthenticated. Generate: openssl rand -hex 32
+      - "PRINTER_HUB_SSO_TRUST_TOKEN=${PRINTER_HUB_SSO_TRUST_TOKEN:?set PRINTER_HUB_SSO_TRUST_TOKEN - generate with: openssl rand -hex 32}"
+      # Opt-in only (off by default, D10). Enable ONLY if you rely on them:
+      #   PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER=true       legacy X-Pangolin-User header
+      #   PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS=true      Authorization: Basic bypass credential
+      #   PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE=true  limit the Basic bypass to a narrower scope
+      # See docs/migration/v-next-single-container.md before enabling any of them.
       - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
-      - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY}
+      - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY:-}
       - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data
-      - ./printers.yaml:/etc/hub/printers.yaml:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:${BACKEND_PORT:-8000}/healthz"]
@@ -33,28 +43,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
-  frontend:
-    image: ghcr.io/strausmann/label-printer-hub-frontend:${HUB_VERSION:-latest}
-    container_name: label-printer-hub-frontend
-    user: "1000:1000"
-    networks:
-      - pangolin_mgmt
-      - hub-internal
-    environment:
-      - PORT=${FRONTEND_PORT:-8080}
-      - BACKEND_URL=http://backend:${BACKEND_PORT:-8000}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:${FRONTEND_PORT:-8080}/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
     labels:
       # Main UI — behind Pangolin SSO
       - "pangolin.public-resources.printerhub.name=Label Printer Hub"
@@ -62,9 +50,14 @@ services:
       - "pangolin.public-resources.printerhub.protocol=http"
       - "pangolin.public-resources.printerhub.ssl=true"
       - "pangolin.public-resources.printerhub.targets[0].method=http"
-      - "pangolin.public-resources.printerhub.targets[0].port=${FRONTEND_PORT:-8080}"
+      - "pangolin.public-resources.printerhub.targets[0].port=${BACKEND_PORT:-8000}"
       - "pangolin.public-resources.printerhub.targets[0].path-match=prefix"
       - "pangolin.public-resources.printerhub.auth.sso-enabled=true"
+      # Pangolin sets Remote-User after a successful SSO login. It also has to
+      # inject the trust token the backend expects (PRINTER_HUB_SSO_TRUST_TOKEN)
+      # as a custom request header, using the same value as the backend variable.
+      - "pangolin.public-resources.printerhub.request-headers[0].name=X-Pangolin-Token"
+      - "pangolin.public-resources.printerhub.request-headers[0].value=${PRINTER_HUB_SSO_TRUST_TOKEN}"
 
       # Webhook subroute — auth bypass (Two-Resources pattern)
       # Note: Two routes on the same full-domain are only possible with distinct
@@ -75,7 +68,7 @@ services:
       - "pangolin.public-resources.printerhub-webhooks.protocol=http"
       - "pangolin.public-resources.printerhub-webhooks.ssl=true"
       - "pangolin.public-resources.printerhub-webhooks.targets[0].method=http"
-      - "pangolin.public-resources.printerhub-webhooks.targets[0].port=${FRONTEND_PORT:-8080}"
+      - "pangolin.public-resources.printerhub-webhooks.targets[0].port=${BACKEND_PORT:-8000}"
       - "pangolin.public-resources.printerhub-webhooks.targets[0].path-match=prefix"
       - "pangolin.public-resources.printerhub-webhooks.targets[0].path=/api/webhook/"
       - "pangolin.public-resources.printerhub-webhooks.auth.bypass=true"
@@ -87,8 +80,6 @@ networks:
     # own project name (typically "pangolin_pangolin_mgmt").
     name: pangolin_pangolin_mgmt
     external: true
-  hub-internal:
-    driver: bridge
 
 # After deploy, reload the Newt container so the blueprint labels are picked up.
 # Use your container management tool (Dockhand, Portainer, or similar) to

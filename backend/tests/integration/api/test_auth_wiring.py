@@ -119,8 +119,13 @@ async def test_healthz_is_public_no_auth(api_client_with_seed):
 
 
 @pytest.mark.asyncio
-async def test_pangolin_sso_header_grants_read(api_client_with_seed):
-    """Pangolin-SSO header (X-Pangolin-User) grants read access."""
+async def test_pangolin_sso_header_grants_read(api_client_with_seed, monkeypatch):
+    """Legacy Pangolin-SSO header (X-Pangolin-User) grants read access — only with
+    the D10 opt-in PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER (default off)."""
+    from app.config import get_settings
+
+    monkeypatch.setenv("PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER", "true")
+    get_settings.cache_clear()
     resp = await api_client_with_seed.get(
         "/api/printers",
         headers={"X-Pangolin-User": "testuser@example.com"},

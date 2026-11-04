@@ -27,9 +27,22 @@ def test_auth_context_importable():
 def test_auth_context_source_field_accepts_valid_values():
     from app.auth.dependencies import AuthContext
 
-    for source in ("api-key", "pangolin-sso", "pangolin-bypass"):
+    for source in ("api-key", "pangolin-sso", "pangolin-bypass", "session", "bootstrap"):
         ctx = AuthContext(source=source, scope="read", api_key_id=None, ip="192.0.2.1")
         assert ctx.source == source
+
+
+def test_auth_context_user_and_session_id_default_to_none():
+    from app.auth.dependencies import AuthContext
+
+    ctx = AuthContext(source="session", scope="print", api_key_id=None, ip="192.0.2.1")
+    assert ctx.user is None
+    assert ctx.session_id is None
+    sid = uuid4()
+    ctx = AuthContext(
+        source="session", scope="print", api_key_id=None, ip="192.0.2.1", user="a", session_id=sid
+    )
+    assert (ctx.user, ctx.session_id) == ("a", sid)
 
 
 def test_auth_context_scope_field_accepts_valid_values():
@@ -294,7 +307,8 @@ async def test_pangolin_sso_allows_read_scope():
     from app.db.session import get_session
     from fastapi import Depends, FastAPI
 
-    settings = Settings(_env_file=None)
+    # D10: the legacy header counts only with the explicit opt-in.
+    settings = Settings(_env_file=None, trust_legacy_pangolin_user=True)
     app = FastAPI()
 
     @app.get("/test")
@@ -340,7 +354,8 @@ async def test_pangolin_sso_allows_print_and_admin_scopes(required_scope: str):
     from app.db.session import get_session
     from fastapi import Depends, FastAPI
 
-    settings = Settings(_env_file=None)
+    # D10: legacy header only with opt-in; state-changing SSO requests need Origin.
+    settings = Settings(_env_file=None, trust_legacy_pangolin_user=True)
     app = FastAPI()
 
     @app.post("/test")
@@ -354,7 +369,10 @@ async def test_pangolin_sso_allows_print_and_admin_scopes(required_scope: str):
     app.dependency_overrides[get_session] = _session
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
-        resp = await client.post("/test", headers={"X-Pangolin-User": "testuser@example.com"})
+        resp = await client.post(
+            "/test",
+            headers={"X-Pangolin-User": "testuser@example.com", "Origin": "http://localhost:8000"},
+        )
 
     assert resp.status_code == 200
     body = resp.json()
@@ -621,7 +639,8 @@ async def test_sso_backwards_compat_x_pangolin_user():
     from sqlmodel import SQLModel
 
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
-    settings = Settings(_env_file=None)  # sso_trust_token leer — X-Pangolin-User trotzdem erlaubt
+    # D10: legacy header accepted only with the explicit opt-in (default off).
+    settings = Settings(_env_file=None, trust_legacy_pangolin_user=True)
     test_app = FastAPI()
 
     @test_app.get("/test")

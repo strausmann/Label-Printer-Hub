@@ -1,0 +1,21 @@
+import { resolve } from "node:path";
+
+/** Two throw-away hubs: one with an admin key, one waiting for its first admin key (D7). */
+export const MAIN = {
+  port: 8765,
+  url: "http://localhost:8765",
+  keyFile: resolve(import.meta.dirname, ".tmp", "main.key"),
+};
+export const BOOTSTRAP = {
+  port: 8766,
+  url: "http://localhost:8766",
+  keyFile: resolve(import.meta.dirname, ".tmp", "bootstrap.key"),
+};
+
+/** Pictures for the fake camera of the scan tests (written by `global-setup.ts`). */
+export const FAKE_CAMERA = {
+  qr: resolve(import.meta.dirname, ".tmp", "camera-qr.y4m"),
+  dataMatrix: resolve(import.meta.dirname, ".tmp", "camera-data-matrix.y4m"),
+  qrText: "https://hub.example.invalid/asset/42",
+  dataMatrixText: "https://hub.example.invalid/spool/5",
+};

@@ -77,9 +77,23 @@ LimitQuery = Annotated[
 # ---------------------------------------------------------------------------
 
 
-async def _get_job_or_404(session: AsyncSession, job_id: UUID) -> Job:
-    """Return the Job row or raise HTTP 404."""
+async def _get_job_or_404(
+    session: AsyncSession, job_id: UUID, auth: AuthContext | None = None
+) -> Job:
+    """Return the Job row or raise HTTP 404.
+
+    A job on a printer outside the caller's ``allowed_printer_ids`` answers the
+    same 404 as an unknown job, so its existence is not disclosed.  An empty
+    allowed list means all printers.
+    """
     job = await jobs_repo.get(session, job_id)
+    if (
+        job is not None
+        and auth is not None
+        and auth.allowed_printer_ids
+        and str(job.printer_id) not in auth.allowed_printer_ids
+    ):
+        job = None
     if job is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -114,12 +128,17 @@ async def list_jobs(
     limit: LimitQuery = 50,
 ) -> list[JobRead]:
     """Return jobs matching the given filters."""
+    # Per-printer ACL: restrict to the caller's printers (empty list = all).
+    allowed = [UUID(p) for p in _auth.allowed_printer_ids] if _auth is not None else []
+    if printer_id is not None and allowed and printer_id not in allowed:
+        return []
     rows = await jobs_repo.list_by_filter(
         session,
         state=state,
         printer_id=printer_id,
         since=since,
         limit=limit,
+        allowed_printer_ids=allowed,
     )
     return [JobRead.model_validate(r, from_attributes=True) for r in rows]
 
@@ -141,7 +160,7 @@ async def get_job(
     _auth: ReadAuthDep,
 ) -> JobRead:
     """Return a single job by ID."""
-    job = await _get_job_or_404(session, job_id)
+    job = await _get_job_or_404(session, job_id, _auth)
     return JobRead.model_validate(job, from_attributes=True)
 
 
@@ -167,7 +186,7 @@ async def cancel_job(
     _auth: PrintAuthDep,
 ) -> JobRead:
     """Cancel a QUEUED job; reject with 409 for any other state."""
-    job = await _get_job_or_404(session, job_id)
+    job = await _get_job_or_404(session, job_id, _auth)
     job_state: str = job.state
     if job_state != JobState.QUEUED.value:
         problem = ProblemDetail(
@@ -211,7 +230,7 @@ async def pause_job(
 ) -> ProblemDetail:
     """Return 501 — pause is not yet implemented."""
     # Verify the job exists so we return 404 rather than 501 for unknown jobs
-    await _get_job_or_404(session, job_id)
+    await _get_job_or_404(session, job_id, _auth)
     return ProblemDetail(
         type="not-implemented",
         title="Pause not implemented",
@@ -246,7 +265,7 @@ async def resume_job(
 ) -> ProblemDetail:
     """Return 501 — resume is not yet implemented."""
     # Verify the job exists so we return 404 rather than 501 for unknown jobs
-    await _get_job_or_404(session, job_id)
+    await _get_job_or_404(session, job_id, _auth)
     return ProblemDetail(
         type="not-implemented",
         title="Resume not implemented",
@@ -281,7 +300,7 @@ async def retry_job(
     _auth: PrintAuthDep,
 ) -> JobRead:
     """Clone a terminal job into a fresh QUEUED job."""
-    job = await _get_job_or_404(session, job_id)
+    job = await _get_job_or_404(session, job_id, _auth)
     job_state: str = job.state
     # Only allow retry for terminal states — refuse if the job is still active
     active_states = {JobState.QUEUED.value, JobState.PRINTING.value}

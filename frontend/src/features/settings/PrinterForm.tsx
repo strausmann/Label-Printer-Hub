@@ -1,0 +1,119 @@
+import { useLingui } from "@lingui/react/macro";
+import { useState } from "react";
+import { Button } from "react-aria-components";
+import { PRIMARY_BUTTON } from "../../shell/SignIn";
+import { PANEL, SECONDARY_BUTTON } from "../ui";
+import { usePrinterAdmin, type AdminPrinter, type PrinterCreate } from "./api";
+import { SelectField, SwitchField, TextInput } from "./controls";
+import { SaveFeedback, useErrorText } from "./feedback";
+
+const SLUG = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+const MODELS: Record<string, string[]> = { ptouch: ["PT-P750W"], brother_ql: ["QL-820NWB"] };
+
+const connectionOf = (printer: AdminPrinter | null) => (printer?.connection ?? {}) as { host?: string; port?: number; snmp?: unknown };
+const numberIn = (obj: Record<string, unknown> | undefined, key: string, fallback: number) => {
+  const v = obj?.[key];
+  return typeof v === "number" ? v : fallback;
+};
+
+/**
+ * Add a printer or change one (D6). The slug, model and backend name the printer and
+ * the driver, so they can only be chosen when it is created.
+ */
+export function PrinterForm({ printer, onDone }: { printer: AdminPrinter | null; onDone: () => void }) {
+  const { t } = useLingui();
+  const errorText = useErrorText();
+  const admin = usePrinterAdmin();
+  const editing = printer !== null;
+  const conn = connectionOf(printer);
+
+  const [name, setName] = useState(printer?.name ?? "");
+  const [slug, setSlug] = useState("");
+  const [backend, setBackend] = useState(printer?.backend ?? "ptouch");
+  const [model, setModel] = useState(printer?.model ?? MODELS.ptouch![0]!);
+  const [host, setHost] = useState(conn.host ?? "");
+  const [port, setPort] = useState(String(conn.port ?? 9100));
+  const [timeout, setTimeoutValue] = useState(String(numberIn(printer?.queue, "timeout_s", 30)));
+  const [halfCut, setHalfCut] = useState(Boolean(printer?.cut_defaults?.half_cut));
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const pending = admin.create.isPending || admin.update.isPending;
+  const serverError = admin.create.error ?? admin.update.error;
+
+  function submit() {
+    const portNumber = Number(port);
+    const timeoutNumber = Number(timeout);
+    if (!name.trim() || !host.trim()) return setFormError(t`Name and host are required.`);
+    if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) return setFormError(t`The port must be between 1 and 65535.`);
+    if (!Number.isInteger(timeoutNumber) || timeoutNumber < 1 || timeoutNumber > 600) return setFormError(t`The queue timeout must be between 1 and 600 seconds.`);
+    if (!editing && !SLUG.test(slug)) return setFormError(t`The slug uses lowercase letters, digits and dashes, 3 to 64 characters.`);
+    setFormError(null);
+    const connection = { ...(conn as object), host: host.trim(), port: portNumber } as PrinterCreate["connection"];
+    const queue = { timeout_s: timeoutNumber };
+    const cut_defaults = { half_cut: halfCut };
+    if (printer) {
+      admin.update.mutate({ slug: printer.slug, body: { name: name.trim(), connection, queue, cut_defaults } }, { onSuccess: onDone });
+    } else {
+      admin.create.mutate({ name: name.trim(), slug, model, backend: backend as PrinterCreate["backend"], connection, queue, cut_defaults, enabled: true }, { onSuccess: onDone });
+    }
+  }
+
+  const heading = editing ? t`Edit ${printer.name}` : t`Add a printer`;
+  return (
+    <form
+      aria-label={heading}
+      className={`${PANEL} flex max-w-xl flex-col gap-5`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <h3 className="text-section font-bold">{heading}</h3>
+      <TextInput label={t`Name`} value={name} onChange={setName} />
+      {editing ? null : (
+        <TextInput label={t`Slug`} value={slug} onChange={setSlug} mono description={t`The short name in addresses and in the API. It cannot be changed later.`} />
+      )}
+      {editing ? (
+        <p className="text-ink-2">
+          {t`Model`}: <span className="font-bold text-ink">{printer.model}</span>
+        </p>
+      ) : (
+        <div className="grid gap-5 sm:grid-cols-2">
+          <SelectField
+            label={t`Driver`}
+            value={backend}
+            options={[
+              { id: "ptouch", label: "P-touch (PT)" },
+              { id: "brother_ql", label: "Brother QL" },
+            ]}
+            onChange={(next) => {
+              setBackend(next);
+              setModel(MODELS[next]![0]!);
+            }}
+          />
+          <TextInput label={t`Model`} value={model} onChange={setModel} mono />
+        </div>
+      )}
+      <div className="grid gap-5 sm:grid-cols-[1fr_8rem]">
+        <TextInput label={t`Host`} value={host} onChange={setHost} mono />
+        <TextInput label={t`Port`} value={port} onChange={setPort} mono inputMode="numeric" />
+      </div>
+      <TextInput label={t`Queue timeout (seconds)`} value={timeout} onChange={setTimeoutValue} inputMode="numeric" />
+      <SwitchField
+        label={t`Half cut by default`}
+        isSelected={halfCut}
+        onChange={setHalfCut}
+        description={t`Cuts the tape but leaves the backing, so a strip of labels stays together. A print can still override it.`}
+      />
+      <div className="flex flex-wrap gap-3">
+        <Button type="submit" isDisabled={pending} className={PRIMARY_BUTTON}>
+          {editing ? t`Save printer` : t`Create printer`}
+        </Button>
+        <Button onPress={onDone} className={SECONDARY_BUTTON}>
+          {t`Cancel`}
+        </Button>
+      </div>
+      <SaveFeedback error={formError ?? (serverError ? errorText(serverError) : null)} saved={false} />
+    </form>
+  );
+}

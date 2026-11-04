@@ -58,32 +58,42 @@ An empty list means all printers are allowed.
 
 ## Transition from Pangolin Bypass
 
-After creating dedicated keys for all callers, the Pangolin `claude-automation`
-bypass is downgraded to `read` scope by setting:
+The Pangolin `Authorization: Basic` bypass is **off by default**. It only
+authenticates when `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS=true` is set, and its
+state-changing requests need an `Origin` equal to `PRINTER_HUB_PUBLIC_URL`. While it
+is enabled, limit it to `read` scope with:
 
 ```env
 PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE=true
 ```
 
-**Default is `false`** — no breakage on deploy. Flip this after confirming
-all consumers have migrated to app keys.
+Prefer dedicated API keys for every caller and leave the bypass disabled.
 
-## Bootstrap Key
+## First Admin Key (Bootstrap)
 
-On first migration, a `bootstrap-admin` key is seeded and its plaintext
-is printed to the container startup log. Copy it and create your permanent
-keys, then revoke the bootstrap key.
+A fresh install has no API key. The migrations create none and print none.
+
+1. Set a one-time key of at least 32 characters, for example
+   `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY=$(openssl rand -hex 32)`, and start the hub.
+2. Sign in to the web UI with that key. The bootstrap session can only create
+   the first real admin key, and the key is shown once.
+3. Sign in with the new admin key and remove `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY`.
+   Once any enabled admin key exists, the bootstrap key is rejected.
+
+Without the web UI, create the first key inside the container instead:
 
 ```bash
-# Find the bootstrap key in container logs
-docker logs label-printer-hub-backend 2>&1 | grep "BOOTSTRAP API KEY"
+docker compose exec backend printer-hub admin create-key --scope admin --name first-admin
 ```
 
 ## Recovery
 
-If all keys are lost:
+If every admin key is lost, create a new one with the same command inside the
+container. It prints the plaintext key once on stdout:
 
-1. The `claude-automation` Pangolin bypass still works for `read`-scoped endpoints
-2. Use `/readiness` to verify the backend is up
-3. Connect to the backend DB directly and re-seed a key, or restart the backend
-   (a second bootstrap key is only seeded when the table is empty)
+```bash
+docker compose exec backend printer-hub admin create-key --scope admin --name recovery
+```
+
+Whoever can run commands in the container already controls the hub, so this adds
+no new attack surface. Revoke the lost keys afterwards via `/api/admin/api-keys`.

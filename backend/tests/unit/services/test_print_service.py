@@ -26,6 +26,7 @@ from app.schemas.print_request import (
     RawLabelData,
 )
 from app.services.layout_engine import LayoutEngine
+from app.services.lookup_service import AppLookupService
 from app.services.print_service import PrintService
 
 _PRINTER_ID = UUID("bbbbbbbb-0000-0000-0000-000000000001")
@@ -323,8 +324,9 @@ class TestLookupPath:
         """lookup request resolves via lookup_service, then renders + queues."""
         from app.schemas.label_data import LabelData
 
-        lookup_svc = AsyncMock()
-        lookup_svc.resolve = AsyncMock(
+        # spec= makes a call to a method AppLookupService does not have fail, as in production.
+        lookup_svc = AsyncMock(spec=AppLookupService)
+        lookup_svc.lookup = AsyncMock(
             return_value=LabelData(
                 title="Workshop",
                 primary_id="K02",
@@ -356,14 +358,14 @@ class TestLookupPath:
         )
         job_id = await svc.submit_print_job(request)
         assert isinstance(job_id, UUID)
-        lookup_svc.resolve.assert_awaited_once_with("hangar", "K02")
+        lookup_svc.lookup.assert_awaited_once_with("hangar", "K02")
         queue.submit_with_id.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_data_path_bypasses_lookup(self, make_service) -> None:
-        """data path: lookup_service.resolve is never called."""
-        lookup_svc = AsyncMock()
-        lookup_svc.resolve = AsyncMock()
+        """data path: lookup_service.lookup is never called."""
+        lookup_svc = AsyncMock(spec=AppLookupService)
+        lookup_svc.lookup = AsyncMock()
 
         backend = AsyncMock()
         backend.preflight_check = AsyncMock(return_value=_preflight(12))
@@ -387,7 +389,7 @@ class TestLookupPath:
             data=RawLabelData(qr_payload="https://example.com/x"),
         )
         await svc.submit_print_job(request)
-        lookup_svc.resolve.assert_not_awaited()
+        lookup_svc.lookup.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

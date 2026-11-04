@@ -1,30 +1,28 @@
 # ============================================================================
 # Label Printer Hub — standalone (no reverse proxy)
-# Two-container setup: backend (Python/FastAPI) + frontend (Go/Tailwind/HTMX/PWA).
-# Frontend exposes the user-facing port; it talks to backend on the internal
-# docker network. Use only on a trusted LAN.
+# One container: the backend serves the API and the web UI (ADR 0015).
+# Printers are added in the UI (Settings > Printers); no printer variables.
+# Use only on a trusted LAN. First admin access: set PRINTER_HUB_BOOTSTRAP_ADMIN_KEY
+# (32+ characters) for the first sign-in, or create a key inside the container:
+#   docker compose exec backend printer-hub admin create-key --scope admin --name first-admin
 # ============================================================================
-
-x-version: &version
-  HUB_VERSION: ${HUB_VERSION:-latest}
 
 services:
   backend:
     image: ghcr.io/strausmann/label-printer-hub-backend:${HUB_VERSION:-latest}
     container_name: label-printer-hub-backend
     user: "1000:1000"
-    networks:
-      - hub-internal
-    expose:
-      - "${BACKEND_PORT:-8000}"
+    ports:
+      - "${HUB_PORT:-8000}:${BACKEND_PORT:-8000}"
     environment:
       - PORT=${BACKEND_PORT:-8000}
-      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-*}
-      - PRINTERS=${PRINTERS}
-      - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/printer-hub.db}
-      - WEBHOOK_API_KEY=${WEBHOOK_API_KEY}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Directly exposed: trust forwarded headers from nobody unless you put a proxy in front.
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
+      - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. http://printerhub.example.invalid:8000}"
+      - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
+      - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY:-}
+      - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -34,30 +32,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
-  frontend:
-    image: ghcr.io/strausmann/label-printer-hub-frontend:${HUB_VERSION:-latest}
-    container_name: label-printer-hub-frontend
-    user: "1000:1000"
-    networks:
-      - hub-internal
-    ports:
-      - "${FRONTEND_PORT:-8080}:${FRONTEND_PORT:-8080}"
-    environment:
-      - PORT=${FRONTEND_PORT:-8080}
-      - BACKEND_URL=http://backend:${BACKEND_PORT:-8000}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:${FRONTEND_PORT:-8080}/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-networks:
-  hub-internal:
-    driver: bridge

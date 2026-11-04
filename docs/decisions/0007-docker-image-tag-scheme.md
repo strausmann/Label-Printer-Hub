@@ -1,6 +1,6 @@
 # 0007 — Docker image tag scheme
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by ADR-0015: a single image `label-printer-hub-backend` is published; the frontend image no longer exists)
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
@@ -23,7 +23,7 @@ Every **stable** release publishes the image with **four** tags pointing to the 
 
 **Pre-releases** (semver with hyphen, e.g. `1.0.0-rc.1` or `2.0.0-beta.3`) publish **only the full version tag** — never `<major>.<minor>`, `<major>`, or `latest`.
 
-Both backend and frontend images (per ADR 0001) follow this scheme identically and are released together at the same version.
+The single image `label-printer-hub-backend` (ADR 0015) follows this scheme. Releases before the single-image change also published a `label-printer-hub-frontend` image on the same tags; it is no longer published.
 
 Builds are multi-architecture: `linux/amd64` + `linux/arm64`. The four tags reference a manifest list pointing at both architectures.
 

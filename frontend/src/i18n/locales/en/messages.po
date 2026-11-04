@@ -1,0 +1,1527 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-11-04 10:15+0000\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: en\n"
+
+#. placeholder {0}: tape.widthMm
+#: src/features/printers/TapeSwatch.tsx
+msgid "{0} mm"
+msgstr "{0} mm"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "{appName} is not set up yet, so there is nothing to look up."
+msgstr "{appName} is not set up yet, so there is nothing to look up."
+
+#: src/features/jobs/JobDetail.tsx
+msgid "{copyNo} of {copyTotal}"
+msgstr "{copyNo} of {copyTotal}"
+
+#: src/features/lookup/CartPage.tsx
+msgid "{labels, plural, one {Print # label} other {Print # labels}}"
+msgstr "{labels, plural, one {Print # label} other {Print # labels}}"
+
+#: src/features/lookup/ItemView.tsx
+msgid "{name} is not set up yet, so this item cannot be shown."
+msgstr "{name} is not set up yet, so this item cannot be shown."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "{revokingName} stops working at once, and so does every browser session that signed in with it. This cannot be undone."
+msgstr "{revokingName} stops working at once, and so does every browser session that signed in with it. This cannot be undone."
+
+#: src/features/lookup/CartPage.tsx
+msgid "{sentLabels, plural, one {# label sent to} other {# labels sent to}}"
+msgstr "{sentLabels, plural, one {# label sent to} other {# labels sent to}}"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "{tapeMm} mm"
+msgstr "{tapeMm} mm"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
+msgstr "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "A name that tells you who uses it, for example “Kept”."
+msgstr "A name that tells you who uses it, for example “Kept”."
+
+#: src/features/settings/feedback.tsx
+msgid "A secret is saved for the old URL. Enter the secret again to use the new URL."
+msgstr "A secret is saved for the old URL. Enter the secret again to use the new URL."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "A webhook key needs at least {MIN_WEBHOOK_KEY} characters."
+msgstr "A webhook key needs at least {MIN_WEBHOOK_KEY} characters."
+
+#: src/features/settings/SettingsPage.tsx
+msgid "Access and keys"
+msgstr "Access and keys"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Add a printer"
+msgstr "Add a printer"
+
+#: src/features/settings/Printers.tsx
+msgid "Add printer"
+msgstr "Add printer"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Add to cart"
+msgstr "Add to cart"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Added to the cart: {added}"
+msgstr "Added to the cart: {added}"
+
+#: src/features/jobs/JobsPage.tsx
+msgid "All"
+msgstr "All"
+
+#: src/features/settings/sections.tsx
+msgid "An IANA name such as Europe/Berlin."
+msgstr "An IANA name such as Europe/Berlin."
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Another app may be using the camera. Close it and try again."
+msgstr "Another app may be using the camera. Close it and try again."
+
+#: src/features/settings/System.tsx
+msgid "API documentation"
+msgstr "API documentation"
+
+#: src/features/settings/Integrations.tsx
+#: src/shell/SignIn.tsx
+msgid "API key"
+msgstr "API key"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "API keys"
+msgstr "API keys"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Ask an admin to set it up."
+msgstr "Ask an admin to set it up."
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Asset"
+msgstr "Asset"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Asset tag (for example AT-0042), numeric ID (42) or a printed label link. Locations need the loc: prefix, for example loc:17."
+msgstr "Asset tag (for example AT-0042), numeric ID (42) or a printed label link. Locations need the loc: prefix, for example loc:17."
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Back to the jobs"
+msgstr "Back to the jobs"
+
+#: src/pages/placeholders.tsx
+msgid "Back to the overview"
+msgstr "Back to the overview"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Back to the printers"
+msgstr "Back to the printers"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Backend"
+msgstr "Backend"
+
+#: src/features/printers/model.ts
+msgid "Blue"
+msgstr "Blue"
+
+#: src/features/printers/PrinterDetail.tsx
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Calibration"
+msgstr "Calibration"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Calibration for this printer will appear here."
+msgstr "Calibration for this printer will appear here."
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Camera view"
+msgstr "Camera view"
+
+#: src/features/settings/SettingField.tsx
+msgid "Can't be read with the current secret key — enter it again"
+msgstr "Can't be read with the current secret key — enter it again"
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/printers/PrinterDetail.tsx
+#: src/features/settings/PrinterForm.tsx
+msgid "Cancel"
+msgstr "Cancel"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Cancel {label}"
+msgstr "Cancel {label}"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Cancel {queued} queued"
+msgstr "Cancel {queued} queued"
+
+#: src/features/jobs/JobsPage.tsx
+#: src/features/printers/model.ts
+msgid "Cancelled"
+msgstr "Cancelled"
+
+#: src/features/lookup/CartPage.tsx
+msgid "Cart"
+msgstr "Cart"
+
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/lookup/ItemView.tsx
+msgid "Cart ({inCart})"
+msgstr "Cart ({inCart})"
+
+#: src/shell/SessionStatus.tsx
+msgid "Checking your session…"
+msgstr "Checking your session…"
+
+#: src/features/settings/System.tsx
+msgid "Checking…"
+msgstr "Checking…"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Choose a photo of a code"
+msgstr "Choose a photo of a code"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Clear queue"
+msgstr "Clear queue"
+
+#: src/features/settings/Integrations.tsx
+msgid "Clients"
+msgstr "Clients"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Code"
+msgstr "Code"
+
+#: src/features/lookup/apps.ts
+msgid "Code and title, no QR code"
+msgstr "Code and title, no QR code"
+
+#: src/features/lookup/apps.ts
+msgid "Code only, no QR code"
+msgstr "Code only, no QR code"
+
+#: src/features/printers/TapeSwatch.tsx
+msgid "Colour not reported"
+msgstr "Colour not reported"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Configured"
+msgstr "Configured"
+
+#: src/features/settings/Integrations.tsx
+msgid "Connect the apps that labels are made from. A secret belongs to the URL it was saved with: change the URL and you enter the secret again."
+msgstr "Connect the apps that labels are made from. A secret belongs to the URL it was saved with: change the URL and you enter the secret again."
+
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/integrations/IntegrationTiles.tsx
+msgid "Connected"
+msgstr "Connected"
+
+#. placeholder {0}: info.data.version
+#: src/shell/Sidebar.tsx
+msgid "Connected · v{0}"
+msgstr "Connected · v{0}"
+
+#: src/shell/Sidebar.tsx
+msgid "Connecting…"
+msgstr "Connecting…"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Connection"
+msgstr "Connection"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Continue"
+msgstr "Continue"
+
+#: src/features/scan/ScanScreen.tsx
+#: src/features/settings/AccessKeys.tsx
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Copied"
+msgstr "Copied"
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/lookup/CartPage.tsx
+#: src/features/lookup/ItemView.tsx
+msgid "Copies"
+msgstr "Copies"
+
+#: src/features/lookup/CartPage.tsx
+msgid "Copies of {itemName}"
+msgstr "Copies of {itemName}"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Copy"
+msgstr "Copy"
+
+#: src/features/settings/AccessKeys.tsx
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Copy failed. Select the key and copy it by hand."
+msgstr "Copy failed. Select the key and copy it by hand."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Copy it now; after saving it cannot be shown again:"
+msgstr "Copy it now; after saving it cannot be shown again:"
+
+#: src/features/settings/AccessKeys.tsx
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Copy key"
+msgstr "Copy key"
+
+#: src/features/printers/PauseResumeButton.tsx
+msgid "Could not pause the printer."
+msgstr "Could not pause the printer."
+
+#: src/features/printers/PauseResumeButton.tsx
+msgid "Could not resume the printer."
+msgstr "Could not resume the printer."
+
+#: src/features/printers/PauseReason.tsx
+msgid "Cover is open"
+msgstr "Cover is open"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Create admin key"
+msgstr "Create admin key"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Create an API key"
+msgstr "Create an API key"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Create key"
+msgstr "Create key"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Create printer"
+msgstr "Create printer"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Create the first admin key"
+msgstr "Create the first admin key"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Cuts the tape but leaves the backing, so a strip of labels stays together. A print can still override it."
+msgstr "Cuts the tape but leaves the backing, so a strip of labels stays together. A print can still override it."
+
+#: src/shell/ThemeSwitch.tsx
+msgid "Dark theme"
+msgstr "Dark theme"
+
+#: src/features/settings/System.tsx
+msgid "Degraded"
+msgstr "Degraded"
+
+#: src/features/settings/Printers.tsx
+msgid "Disable"
+msgstr "Disable"
+
+#. placeholder {0}: printer.name
+#: src/features/settings/Printers.tsx
+msgid "Disable {0}"
+msgstr "Disable {0}"
+
+#: src/features/settings/Printers.tsx
+msgid "Disabled"
+msgstr "Disabled"
+
+#: src/features/settings/sections.tsx
+msgid "Display name"
+msgstr "Display name"
+
+#: src/features/jobs/JobsPage.tsx
+#: src/features/printers/model.ts
+#: src/features/settings/AccessKeys.tsx
+msgid "Done"
+msgstr "Done"
+
+#: src/features/settings/System.tsx
+msgid "Download settings"
+msgstr "Download settings"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Drawing the label…"
+msgstr "Drawing the label…"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Driver"
+msgstr "Driver"
+
+#: src/features/settings/Printers.tsx
+msgid "Edit"
+msgstr "Edit"
+
+#. placeholder {0}: printer.name
+#: src/features/settings/PrinterForm.tsx
+#: src/features/settings/Printers.tsx
+msgid "Edit {0}"
+msgstr "Edit {0}"
+
+#: src/features/lookup/CartPage.tsx
+msgid "Empty the cart"
+msgstr "Empty the cart"
+
+#: src/features/settings/Printers.tsx
+msgid "Enable"
+msgstr "Enable"
+
+#. placeholder {0}: printer.name
+#: src/features/settings/Printers.tsx
+msgid "Enable {0}"
+msgstr "Enable {0}"
+
+#: src/features/settings/Printers.tsx
+msgid "Enabled"
+msgstr "Enabled"
+
+#: src/features/settings/SectionForm.tsx
+msgid "Enter a valid number."
+msgstr "Enter a valid number."
+
+#: src/features/settings/SettingField.tsx
+msgid "Enter it again"
+msgstr "Enter it again"
+
+#: src/features/jobs/JobsPage.tsx
+#: src/features/printers/model.ts
+#: src/features/settings/Integrations.tsx
+msgid "Failed"
+msgstr "Failed"
+
+#: src/features/jobs/JobsPage.tsx
+msgid "Filter by state"
+msgstr "Filter by state"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Find a product"
+msgstr "Find a product"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Find a spool"
+msgstr "Find a spool"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Find an asset or location"
+msgstr "Find an asset or location"
+
+#: src/features/settings/sections.tsx
+#: src/features/settings/SettingsPage.tsx
+msgid "General"
+msgstr "General"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Generate a key"
+msgstr "Generate a key"
+
+#: src/features/printers/model.ts
+msgid "Green"
+msgstr "Green"
+
+#: src/features/lookup/apps.ts
+msgid "Grocy"
+msgstr "Grocy"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Half cut by default"
+msgstr "Half cut by default"
+
+#: src/features/settings/System.tsx
+msgid "Health"
+msgstr "Health"
+
+#: src/features/settings/System.tsx
+msgid "Healthy"
+msgstr "Healthy"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "History"
+msgstr "History"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Hold a label's code inside the corners. QR, Code 128 and Data Matrix are read."
+msgstr "Hold a label's code inside the corners. QR, Code 128 and Data Matrix are read."
+
+#: src/features/printers/PrinterDetail.tsx
+#: src/features/settings/PrinterForm.tsx
+msgid "Host"
+msgstr "Host"
+
+#: src/features/settings/sections.tsx
+msgid "How long finished jobs stay in the history."
+msgstr "How long finished jobs stay in the history."
+
+#. placeholder {0}: test.data.status
+#: src/features/settings/Integrations.tsx
+msgid "HTTP {0}"
+msgstr "HTTP {0}"
+
+#: src/shell/StatusBadge.tsx
+msgid "Idle"
+msgstr "Idle"
+
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/integrations/IntegrationTiles.tsx
+#: src/features/settings/Integrations.tsx
+#: src/features/settings/SettingsPage.tsx
+#: src/shell/labels.ts
+msgid "Integrations"
+msgstr "Integrations"
+
+#: src/features/printers/model.ts
+msgid "Interrupted by a restart"
+msgstr "Interrupted by a restart"
+
+#: src/features/jobs/JobsPage.tsx
+#: src/features/search/jobsSource.ts
+#: src/features/settings/sections.tsx
+#: src/features/settings/SettingsPage.tsx
+#: src/shell/labels.ts
+msgid "Jobs"
+msgstr "Jobs"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "just now"
+msgstr "just now"
+
+#: src/features/settings/sections.tsx
+msgid "Keep finished jobs for (days)"
+msgstr "Keep finished jobs for (days)"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Keep it"
+msgstr "Keep it"
+
+#: src/features/settings/SettingField.tsx
+msgid "Keep saved value"
+msgstr "Keep saved value"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Keep them"
+msgstr "Keep them"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Kept / Hangar / Grocy"
+msgstr "Kept / Hangar / Grocy"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Kept only in this browser. Print adds the label to the cart."
+msgstr "Kept only in this browser. Print adds the label to the cart."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Key"
+msgstr "Key"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Key name"
+msgstr "Key name"
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/JobsPage.tsx
+#: src/features/overview/OverviewPage.tsx
+#: src/features/printers/PrinterDetail.tsx
+msgid "Label"
+msgstr "Label"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Label preview"
+msgstr "Label preview"
+
+#: src/i18n/messages.ts
+#: src/shell/Sidebar.tsx
+#: src/shell/SignIn.tsx
+msgid "Label Printer Hub"
+msgstr "Label Printer Hub"
+
+#: src/features/settings/sections.tsx
+msgid "Language"
+msgstr "Language"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Last status {age} s ago"
+msgstr "Last status {age} s ago"
+
+#: src/features/settings/LastUsed.tsx
+msgid "Last used {when}"
+msgstr "Last used {when}"
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/lookup/ItemView.tsx
+msgid "Layout"
+msgstr "Layout"
+
+#: src/features/settings/System.tsx
+msgid "Level"
+msgstr "Level"
+
+#: src/shell/ThemeSwitch.tsx
+msgid "Light theme"
+msgstr "Light theme"
+
+#: src/shell/LiveStatus.tsx
+msgid "Live updates paused"
+msgstr "Live updates paused"
+
+#: src/app/router.tsx
+#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/JobsPage.tsx
+#: src/features/lookup/ItemView.tsx
+#: src/features/lookup/PrinterPicker.tsx
+#: src/features/printers/PrinterDetail.tsx
+#: src/features/printers/PrinterGrid.tsx
+#: src/features/settings/AccessKeys.tsx
+#: src/features/settings/Integrations.tsx
+#: src/features/settings/Printers.tsx
+#: src/features/settings/sections.tsx
+#: src/features/settings/System.tsx
+#: src/i18n/messages.ts
+msgid "Loading…"
+msgstr "Loading…"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Location"
+msgstr "Location"
+
+#: src/features/search/lookupSource.ts
+msgid "Look up {query} in {name}"
+msgstr "Look up {query} in {name}"
+
+#: src/features/search/lookupSource.ts
+msgid "Look up in an integration"
+msgstr "Look up in an integration"
+
+#: src/shell/Sidebar.tsx
+msgid "Main"
+msgstr "Main"
+
+#: src/features/overview/OverviewPage.tsx
+#: src/features/printers/PrinterDetail.tsx
+#: src/shell/labels.ts
+msgid "Material"
+msgstr "Material"
+
+#: src/features/settings/System.tsx
+msgid "Message"
+msgstr "Message"
+
+#: src/features/printers/PrinterDetail.tsx
+#: src/features/settings/PrinterForm.tsx
+msgid "Model"
+msgstr "Model"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Name"
+msgstr "Name"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Name and host are required."
+msgstr "Name and host are required."
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Needs attention"
+msgstr "Needs attention"
+
+#: src/features/settings/LastUsed.tsx
+msgid "Never used"
+msgstr "Never used"
+
+#: src/shell/UpdatePrompt.tsx
+msgid "New version available"
+msgstr "New version available"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "No camera"
+msgstr "No camera"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "No camera was found on this device. Choose a photo of the code instead."
+msgstr "No camera was found on this device. Choose a photo of the code instead."
+
+#: src/features/settings/Integrations.tsx
+msgid "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
+msgstr "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
+
+#: src/features/scan/ScanScreen.tsx
+msgid "No code found in this photo. Hold the camera closer and try again."
+msgstr "No code found in this photo. Hold the camera closer and try again."
+
+#: src/features/lookup/ItemView.tsx
+msgid "No item has this ID:"
+msgstr "No item has this ID:"
+
+#: src/features/overview/OverviewPage.tsx
+msgid "No jobs yet."
+msgstr "No jobs yet."
+
+#: src/features/jobs/JobsPage.tsx
+msgid "No jobs."
+msgstr "No jobs."
+
+#: src/features/lookup/ItemView.tsx
+msgid "No preview for this tape."
+msgstr "No preview for this tape."
+
+#: src/features/lookup/PrinterPicker.tsx
+msgid "No printer available"
+msgstr "No printer available"
+
+#: src/features/overview/OverviewPage.tsx
+#: src/features/printers/PrinterGrid.tsx
+#: src/features/settings/Printers.tsx
+msgid "No printers yet."
+msgstr "No printers yet."
+
+#: src/features/printers/model.ts
+msgid "No status yet"
+msgstr "No status yet"
+
+#: src/features/printers/TapeSwatch.tsx
+msgid "No tape loaded"
+msgstr "No tape loaded"
+
+#: src/features/settings/System.tsx
+msgid "No warnings or errors recorded."
+msgstr "No warnings or errors recorded."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Not configured"
+msgstr "Not configured"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Not found"
+msgstr "Not found"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Not found in {name}"
+msgstr "Not found in {name}"
+
+#: src/features/settings/System.tsx
+msgid "Not reachable"
+msgstr "Not reachable"
+
+#: src/features/settings/System.tsx
+msgid "Not ready"
+msgstr "Not ready"
+
+#: src/features/settings/SettingField.tsx
+msgid "Not set"
+msgstr "Not set"
+
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/integrations/IntegrationTiles.tsx
+#: src/features/settings/Integrations.tsx
+#: src/shell/IntegrationNav.tsx
+msgid "Not set up"
+msgstr "Not set up"
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Nothing is printing."
+msgstr "Nothing is printing."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Nothing is waiting."
+msgstr "Nothing is waiting."
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Nothing needs attention."
+msgstr "Nothing needs attention."
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Nothing opened yet."
+msgstr "Nothing opened yet."
+
+#: src/features/printers/model.ts
+msgid "Offline"
+msgstr "Offline"
+
+#: src/shell/StatusBadge.tsx
+msgid "OK"
+msgstr "OK"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Open"
+msgstr "Open"
+
+#. placeholder {0}: label.id
+#: src/features/search/lookupSource.ts
+msgid "Open {0} in {name}"
+msgstr "Open {0} in {name}"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Open {appName}"
+msgstr "Open {appName}"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Open in {appName}"
+msgstr "Open in {appName}"
+
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/lookup/ItemView.tsx
+msgid "Open Settings › Integrations"
+msgstr "Open Settings › Integrations"
+
+#: src/features/settings/Integrations.tsx
+msgid "Other apps that print through this hub. They are recognised by the name of their API key."
+msgstr "Other apps that print through this hub. They are recognised by the name of their API key."
+
+#: src/features/overview/OverviewPage.tsx
+#: src/shell/labels.ts
+msgid "Overview"
+msgstr "Overview"
+
+#: src/pages/placeholders.tsx
+msgid "Page not found"
+msgstr "Page not found"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Paperless ASN"
+msgstr "Paperless ASN"
+
+#: src/features/printers/PauseResumeButton.tsx
+msgid "Pause"
+msgstr "Pause"
+
+#: src/features/printers/model.ts
+msgid "Paused"
+msgstr "Paused"
+
+#: src/features/printers/PauseReason.tsx
+msgid "Paused by user"
+msgstr "Paused by user"
+
+#: src/features/printers/PrinterDetail.tsx
+#: src/features/settings/PrinterForm.tsx
+msgid "Port"
+msgstr "Port"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Preview"
+msgstr "Preview"
+
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/lookup/CartPage.tsx
+#: src/features/lookup/ItemView.tsx
+msgid "Print"
+msgstr "Print"
+
+#. placeholder {0}: item.name
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Print {0}"
+msgstr "Print {0}"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Print now"
+msgstr "Print now"
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/lookup/PrinterPicker.tsx
+msgid "Printer"
+msgstr "Printer"
+
+#: src/features/printers/PauseReason.tsx
+msgid "Printer is offline"
+msgstr "Printer is offline"
+
+#: src/features/overview/OverviewPage.tsx
+#: src/features/printers/PrintersPage.tsx
+#: src/features/search/printersSource.ts
+#: src/features/settings/Printers.tsx
+#: src/features/settings/SettingsPage.tsx
+#: src/shell/labels.ts
+msgid "Printers"
+msgstr "Printers"
+
+#: src/features/settings/Printers.tsx
+msgid "Printers live here; there is no configuration file. A disabled printer keeps its history but receives no jobs."
+msgstr "Printers live here; there is no configuration file. A disabled printer keeps its history but receives no jobs."
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/JobsPage.tsx
+#: src/features/printers/model.ts
+msgid "Printing"
+msgstr "Printing"
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Printing now"
+msgstr "Printing now"
+
+#: src/features/printers/model.ts
+#: src/shell/StatusBadge.tsx
+msgid "Problem"
+msgstr "Problem"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Product"
+msgstr "Product"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Product ID or barcode."
+msgstr "Product ID or barcode."
+
+#: src/features/settings/sections.tsx
+msgid "Public URL"
+msgstr "Public URL"
+
+#: src/features/lookup/apps.ts
+msgid "QR code and code"
+msgstr "QR code and code"
+
+#: src/features/lookup/apps.ts
+msgid "QR code only"
+msgstr "QR code only"
+
+#: src/features/lookup/apps.ts
+msgid "QR code, code and title"
+msgstr "QR code, code and title"
+
+#: src/features/lookup/apps.ts
+msgid "QR code, code, title and detail"
+msgstr "QR code, code, title and detail"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Queue"
+msgstr "Queue"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Queue timeout (seconds)"
+msgstr "Queue timeout (seconds)"
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/JobsPage.tsx
+#: src/features/printers/model.ts
+msgid "Queued"
+msgstr "Queued"
+
+#: src/features/settings/System.tsx
+msgid "Readiness"
+msgstr "Readiness"
+
+#: src/features/printers/model.ts
+#: src/features/settings/System.tsx
+msgid "Ready"
+msgstr "Ready"
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Recent jobs"
+msgstr "Recent jobs"
+
+#: src/features/settings/System.tsx
+msgid "Recent warnings and errors"
+msgstr "Recent warnings and errors"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Recently opened"
+msgstr "Recently opened"
+
+#: src/shell/LiveStatus.tsx
+msgid "Reconnect"
+msgstr "Reconnect"
+
+#: src/shell/LiveStatus.tsx
+msgid "Reconnecting…"
+msgstr "Reconnecting…"
+
+#: src/features/printers/model.ts
+msgid "Red"
+msgstr "Red"
+
+#: src/shell/UpdatePrompt.tsx
+msgid "Reload"
+msgstr "Reload"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Reload the page and try again. If it keeps failing, the browser may block WebAssembly."
+msgstr "Reload the page and try again. If it keeps failing, the browser may block WebAssembly."
+
+#: src/features/lookup/CartPage.tsx
+msgid "Remove"
+msgstr "Remove"
+
+#: src/features/lookup/CartPage.tsx
+msgid "Remove {itemName}"
+msgstr "Remove {itemName}"
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
+msgstr "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
+
+#: src/features/settings/SettingField.tsx
+msgid "Remove saved value"
+msgstr "Remove saved value"
+
+#: src/features/printers/PauseResumeButton.tsx
+msgid "Resume"
+msgstr "Resume"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Retry"
+msgstr "Retry"
+
+#: src/features/settings/System.tsx
+msgid "Revision"
+msgstr "Revision"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Revoke"
+msgstr "Revoke"
+
+#. placeholder {0}: key.name
+#: src/features/settings/AccessKeys.tsx
+msgid "Revoke {0}"
+msgstr "Revoke {0}"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Revoke key"
+msgstr "Revoke key"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Revoke this key?"
+msgstr "Revoke this key?"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Revoked"
+msgstr "Revoked"
+
+#: src/features/settings/Integrations.tsx
+#: src/features/settings/SectionForm.tsx
+msgid "Save"
+msgstr "Save"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Save printer"
+msgstr "Save printer"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Save webhook key"
+msgstr "Save webhook key"
+
+#: src/features/settings/feedback.tsx
+msgid "Saved"
+msgstr "Saved"
+
+#: src/features/settings/SettingField.tsx
+msgid "Saved — enter a new value to replace"
+msgstr "Saved — enter a new value to replace"
+
+#: src/features/settings/Integrations.tsx
+msgid "Saved values exist, but this integration cannot be used yet. A secret may belong to another URL or may not be readable with the current secret key, or the URL is missing. Enter the secret again."
+msgstr "Saved values exist, but this integration cannot be used yet. A secret may belong to another URL or may not be readable with the current secret key, or the URL is missing. Enter the secret again."
+
+#: src/features/settings/feedback.tsx
+msgid "Saving failed."
+msgstr "Saving failed."
+
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/scan/ScanScreen.tsx
+#: src/shell/labels.ts
+#: src/shell/TopBar.tsx
+msgid "Scan"
+msgstr "Scan"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Scan again"
+msgstr "Scan again"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Scan barcode"
+msgstr "Scan barcode"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Scopes"
+msgstr "Scopes"
+
+#: src/features/search/GlobalSearch.tsx
+msgid "Search"
+msgstr "Search"
+
+#: src/features/search/GlobalSearch.tsx
+msgid "Search results"
+msgstr "Search results"
+
+#: src/features/lookup/CartPage.tsx
+msgid "See the jobs"
+msgstr "See the jobs"
+
+#: src/features/lookup/ItemView.tsx
+msgid "Sent to {printerName}."
+msgstr "Sent to {printerName}."
+
+#: src/shell/Sidebar.tsx
+msgid "Server unreachable"
+msgstr "Server unreachable"
+
+#: src/features/settings/SettingField.tsx
+msgid "Set"
+msgstr "Set"
+
+#: src/features/settings/SettingField.tsx
+msgid "Set by the container"
+msgstr "Set by the container"
+
+#: src/features/settings/feedback.tsx
+msgid "Set the URL first; a secret belongs to its URL."
+msgstr "Set the URL first; a secret belongs to its URL."
+
+#: src/features/integrations/IntegrationTiles.tsx
+#: src/features/settings/Integrations.tsx
+msgid "Set up"
+msgstr "Set up"
+
+#: src/features/integrations/IntegrationTiles.tsx
+msgid "Set up {name}"
+msgstr "Set up {name}"
+
+#: src/features/settings/SettingsPage.tsx
+#: src/shell/labels.ts
+msgid "Settings"
+msgstr "Settings"
+
+#: src/features/settings/SettingsPage.tsx
+msgid "Settings can only be changed with an admin key. Sign in with one, or ask an admin."
+msgstr "Settings can only be changed with an admin key. Sign in with one, or ask an admin."
+
+#: src/features/settings/SettingsPage.tsx
+msgid "Settings sections"
+msgstr "Settings sections"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Sheet archive"
+msgstr "Sheet archive"
+
+#: src/pages/placeholders.tsx
+#: src/shell/labels.ts
+msgid "Sheets"
+msgstr "Sheets"
+
+#: src/shell/SignIn.tsx
+msgid "Sign in"
+msgstr "Sign in"
+
+#: src/shell/SignIn.tsx
+msgid "Sign in with an API key that has print or admin scope."
+msgstr "Sign in with an API key that has print or admin scope."
+
+#: src/shell/TopBar.tsx
+msgid "Sign out"
+msgstr "Sign out"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Sign-in through a reverse proxy is configured. It is set by the container and cannot be changed here."
+msgstr "Sign-in through a reverse proxy is configured. It is set by the container and cannot be changed here."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Sign-in through a reverse proxy is not configured. Browsers sign in with an API key."
+msgstr "Sign-in through a reverse proxy is not configured. Browsers sign in with an API key."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Signing in with the new key failed."
+msgstr "Signing in with the new key failed."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Single sign-on"
+msgstr "Single sign-on"
+
+#: src/shell/AppShell.tsx
+msgid "Skip to content"
+msgstr "Skip to content"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Slug"
+msgstr "Slug"
+
+#: src/features/lookup/apps.ts
+msgid "Snipe-IT"
+msgstr "Snipe-IT"
+
+#: src/i18n/messages.ts
+#: src/shell/SignIn.tsx
+msgid "Something went wrong."
+msgstr "Something went wrong."
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/settings/System.tsx
+msgid "Source"
+msgstr "Source"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Spool"
+msgstr "Spool"
+
+#: src/features/integrations/IntegrationPage.tsx
+msgid "Spool ID."
+msgstr "Spool ID."
+
+#: src/features/lookup/apps.ts
+msgid "Spoolman"
+msgstr "Spoolman"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Spoolman sends this key with its webhook. At least {MIN_WEBHOOK_KEY} characters."
+msgstr "Spoolman sends this key with its webhook. At least {MIN_WEBHOOK_KEY} characters."
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Starting the camera…"
+msgstr "Starting the camera…"
+
+#: src/features/settings/SettingsPage.tsx
+#: src/features/settings/System.tsx
+#: src/shell/labels.ts
+msgid "System"
+msgstr "System"
+
+#: src/shell/ThemeSwitch.tsx
+msgid "System theme"
+msgstr "System theme"
+
+#: src/shell/TabBar.tsx
+msgid "Tabs"
+msgstr "Tabs"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Tape"
+msgstr "Tape"
+
+#: src/features/printers/PauseReason.tsx
+msgid "Tape is empty"
+msgstr "Tape is empty"
+
+#: src/features/printers/TapeSwatch.tsx
+msgid "Tape not known yet"
+msgstr "Tape not known yet"
+
+#: src/features/settings/Integrations.tsx
+msgid "Test connection"
+msgstr "Test connection"
+
+#: src/features/settings/Integrations.tsx
+msgid "Testing…"
+msgstr "Testing…"
+
+#: src/shell/SignIn.tsx
+msgid "That key was not accepted."
+msgstr "That key was not accepted."
+
+#: src/features/settings/feedback.tsx
+msgid "That name is already used by another printer."
+msgstr "That name is already used by another printer."
+
+#: src/features/settings/feedback.tsx
+msgid "That slug is already used by another printer."
+msgstr "That slug is already used by another printer."
+
+#: src/features/settings/feedback.tsx
+msgid "That value is set by the container and cannot be changed here."
+msgstr "That value is set by the container and cannot be changed here."
+
+#: src/shell/SignIn.tsx
+msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."
+msgstr "The bootstrap key no longer works because an admin key exists. Sign in with that key."
+
+#: src/features/scan/ScanScreen.tsx
+msgid "The camera did not start"
+msgstr "The camera did not start"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "The camera is blocked"
+msgstr "The camera is blocked"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "The camera is not available here"
+msgstr "The camera is not available here"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "The camera needs a secure connection (HTTPS) or localhost. Open the hub through its HTTPS address, or choose a photo of the code below."
+msgstr "The camera needs a secure connection (HTTPS) or localhost. Open the hub through its HTTPS address, or choose a photo of the code below."
+
+#: src/features/lookup/CartPage.tsx
+msgid "The cart is empty."
+msgstr "The cart is empty."
+
+#: src/features/scan/ScanScreen.tsx
+msgid "The code reader did not start"
+msgstr "The code reader did not start"
+
+#: src/features/settings/System.tsx
+msgid "The download holds the settings that are not secret and not set by the container, as JSON. Keys and tokens are never included."
+msgstr "The download holds the settings that are not secret and not set by the container, as JSON. Keys and tokens are never included."
+
+#: src/features/lookup/ItemView.tsx
+msgid "The item could not be loaded."
+msgstr "The item could not be loaded."
+
+#: src/features/jobs/JobDetail.tsx
+#: src/features/printers/PrinterDetail.tsx
+msgid "The job could not be cancelled."
+msgstr "The job could not be cancelled."
+
+#: src/features/jobs/JobDetail.tsx
+msgid "The job could not be loaded."
+msgstr "The job could not be loaded."
+
+#: src/features/jobs/JobDetail.tsx
+msgid "The job could not be retried."
+msgstr "The job could not be retried."
+
+#: src/features/jobs/JobsPage.tsx
+#: src/features/overview/OverviewPage.tsx
+msgid "The jobs could not be loaded."
+msgstr "The jobs could not be loaded."
+
+#: src/features/settings/AccessKeys.tsx
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "The key could not be created."
+msgstr "The key could not be created."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "The key could not be revoked."
+msgstr "The key could not be revoked."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "The key that webhooks from other apps must present."
+msgstr "The key that webhooks from other apps must present."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "The keys could not be loaded."
+msgstr "The keys could not be loaded."
+
+#: src/features/lookup/PrinterPicker.tsx
+msgid "The labels could not be sent."
+msgstr "The labels could not be sent."
+
+#: src/features/settings/System.tsx
+msgid "The last 200 records of level warning or higher, newest first. They are kept in memory and start over with the container."
+msgstr "The last 200 records of level warning or higher, newest first. They are kept in memory and start over with the container."
+
+#: src/features/settings/System.tsx
+msgid "The log could not be loaded."
+msgstr "The log could not be loaded."
+
+#: src/features/settings/sections.tsx
+msgid "The name in the title bar, the language new visitors see, and the address of this hub."
+msgstr "The name in the title bar, the language new visitors see, and the address of this hub."
+
+#: src/features/settings/PrinterForm.tsx
+msgid "The port must be between 1 and 65535."
+msgstr "The port must be between 1 and 65535."
+
+#: src/features/settings/Printers.tsx
+msgid "The printer could not be changed."
+msgstr "The printer could not be changed."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "The printer could not be loaded."
+msgstr "The printer could not be loaded."
+
+#: src/features/printers/PrinterGrid.tsx
+#: src/features/settings/Printers.tsx
+msgid "The printers could not be loaded."
+msgstr "The printers could not be loaded."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "The queue could not be loaded."
+msgstr "The queue could not be loaded."
+
+#: src/features/settings/PrinterForm.tsx
+msgid "The queue timeout must be between 1 and 600 seconds."
+msgstr "The queue timeout must be between 1 and 600 seconds."
+
+#: src/features/settings/SettingField.tsx
+msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."
+msgstr "The secret comes from the container, but the URL does not. Set the URL in the container too."
+
+#: src/app/router.tsx
+#: src/features/lookup/PrinterPicker.tsx
+#: src/features/settings/feedback.tsx
+#: src/i18n/messages.ts
+#: src/shell/SignIn.tsx
+msgid "The server cannot be reached."
+msgstr "The server cannot be reached."
+
+#: src/features/settings/sections.tsx
+msgid "The settings could not be loaded."
+msgstr "The settings could not be loaded."
+
+#: src/features/settings/PrinterForm.tsx
+msgid "The short name in addresses and in the API. It cannot be changed later."
+msgstr "The short name in addresses and in the API. It cannot be changed later."
+
+#: src/features/settings/PrinterForm.tsx
+msgid "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
+msgstr "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
+
+#: src/features/settings/Integrations.tsx
+msgid "The test could not be run."
+msgstr "The test could not be run."
+
+#: src/shell/ThemeSwitch.tsx
+msgid "Theme"
+msgstr "Theme"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
+msgstr "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
+
+#: src/features/scan/ScanScreen.tsx
+msgid "This code is not one the hub knows. Its text:"
+msgstr "This code is not one the hub knows. Its text:"
+
+#: src/features/lookup/ItemView.tsx
+msgid "This item cannot be shown"
+msgstr "This item cannot be shown"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "This job does not exist."
+msgstr "This job does not exist."
+
+#: src/shell/SignIn.tsx
+msgid "This key can only read. Sign in with a key that has print or admin scope."
+msgstr "This key can only read. Sign in with a key that has print or admin scope."
+
+#: src/features/settings/AccessKeys.tsx
+msgid "This key is shown only once. Store it in your password manager before you close this window."
+msgstr "This key is shown only once. Store it in your password manager before you close this window."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "This key is shown only once. Store it in your password manager before you continue."
+msgstr "This key is shown only once. Store it in your password manager before you continue."
+
+#: src/pages/placeholders.tsx
+msgid "This page is not available yet."
+msgstr "This page is not available yet."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "This printer does not exist."
+msgstr "This printer does not exist."
+
+#: src/features/settings/SettingField.tsx
+msgid "This secret is saved for the old URL. Enter it again to use the new URL."
+msgstr "This secret is saved for the old URL. Enter it again to use the new URL."
+
+#: src/features/settings/System.tsx
+msgid "Time"
+msgstr "Time"
+
+#: src/features/settings/sections.tsx
+msgid "Time zone"
+msgstr "Time zone"
+
+#: src/features/settings/Integrations.tsx
+msgid "Timeout (seconds)"
+msgstr "Timeout (seconds)"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Title"
+msgstr "Title"
+
+#: src/features/settings/Integrations.tsx
+msgid "Token"
+msgstr "Token"
+
+#: src/shell/SignIn.tsx
+msgid "Too many attempts. Wait a minute and try again."
+msgstr "Too many attempts. Wait a minute and try again."
+
+#: src/app/router.tsx
+#: src/features/lookup/ItemView.tsx
+#: src/features/scan/ScanScreen.tsx
+#: src/i18n/messages.ts
+msgid "Try again"
+msgstr "Try again"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Unknown code"
+msgstr "Unknown code"
+
+#: src/features/jobs/JobsPage.tsx
+#: src/features/overview/OverviewPage.tsx
+msgid "Unknown printer"
+msgstr "Unknown printer"
+
+#: src/features/settings/Integrations.tsx
+msgid "URL"
+msgstr "URL"
+
+#: src/features/settings/System.tsx
+msgid "Version"
+msgstr "Version"
+
+#: src/features/lookup/ItemView.tsx
+msgid "View the job"
+msgstr "View the job"
+
+#: src/shell/StatusBadge.tsx
+msgid "Warning"
+msgstr "Warning"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Webhook key"
+msgstr "Webhook key"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Webhooks"
+msgstr "Webhooks"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "What was printed"
+msgstr "What was printed"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "What went wrong"
+msgstr "What went wrong"
+
+#: src/features/printers/model.ts
+msgid "White"
+msgstr "White"
+
+#: src/features/settings/SettingField.tsx
+msgid "Will be removed when you save"
+msgstr "Will be removed when you save"
+
+#: src/features/settings/Integrations.tsx
+msgid "Works"
+msgstr "Works"
+
+#: src/features/printers/PauseReason.tsx
+msgid "Wrong tape loaded"
+msgstr "Wrong tape loaded"
+
+#: src/features/printers/model.ts
+msgid "Yellow"
+msgstr "Yellow"
+
+#: src/features/settings/SettingsPage.tsx
+msgid "You need an admin key"
+msgstr "You need an admin key"
+
+#: src/features/settings/feedback.tsx
+msgid "You need an admin key for this."
+msgstr "You need an admin key for this."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "You signed in with the one-time bootstrap key. It can do one thing: create the first admin key."
+msgstr "You signed in with the one-time bootstrap key. It can do one thing: create the first admin key."
+
+#: src/shell/BootstrapKeyCreated.tsx
+msgid "Your new admin key"
+msgstr "Your new admin key"
+
+#: src/features/settings/AccessKeys.tsx
+msgid "Your new key"
+msgstr "Your new key"
+
+#: src/i18n/messages.ts
+msgid "Your session has expired. Sign in again."
+msgstr "Your session has expired. Sign in again."

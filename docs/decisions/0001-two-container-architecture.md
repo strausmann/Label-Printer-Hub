@@ -1,6 +1,6 @@
 # 0001 — Two-container architecture (separate backend and frontend)
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0015
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 

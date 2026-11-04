@@ -8,11 +8,24 @@ References:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.schemas._datetime import serialize_datetime_utc
+
+
+class PauseRead(BaseModel):
+    """Why a printer is paused: ``user`` (manual) or ``printer_error`` (automatic)."""
+
+    source: Literal["user", "printer_error"]
+    reason_code: str
+    since: datetime
+
+    @field_serializer("since")
+    def _serialise_since(self, dt: datetime, _info: object) -> str:
+        return serialize_datetime_utc(dt, _info)
 
 
 class PrinterRead(BaseModel):
@@ -33,7 +46,8 @@ class PrinterRead(BaseModel):
     backend: str
     connection: dict[str, object]
     enabled: bool
-    paused: bool  # joined from printer_state — always set explicitly by callers
+    paused: bool  # DB flag OR queue worker paused — always set explicitly by callers
+    pause: PauseRead | None = None  # reason, when the queue knows one
     created_at: datetime
     updated_at: datetime
 

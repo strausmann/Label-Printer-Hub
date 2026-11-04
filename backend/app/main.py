@@ -24,7 +24,6 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 from typing import Annotated, Any, cast
 
 # ---------------------------------------------------------------------------
@@ -68,16 +67,17 @@ except ValidationError as _cfg_exc:
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.openapi.utils import get_openapi
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
 from app.api.error_handlers import register_error_handlers
+from app.api.routes import auth_session as auth_session_routes
 from app.api.routes import batch as batch_routes
 from app.api.routes import batches as batches_routes
-from app.api.routes import events as events_routes
+from app.api.routes import events_v1 as events_v1_routes
+from app.api.routes import info as info_routes
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
 from app.api.routes import printers as printers_routes
@@ -87,8 +87,11 @@ from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.admin_printers_api import router as admin_printers_api_router
 from app.api.routes.print import render_router
 from app.api.routes.print import router as print_router
+from app.api.routes.settings_api import router as settings_api_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
+from app.auth.sessions import purge_expired as purge_expired_sessions
+from app.auth.sessions import warn_if_insecure as warn_if_insecure_cookies
 from app.config import get_settings
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
@@ -98,6 +101,7 @@ from app.db.lifespan import (
 )
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
+from app.observability.log_buffer import install_log_buffer
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
@@ -108,13 +112,16 @@ from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
-from app.services.print_queue import PrintQueue
+from app.services.print_queue import PrintQueue, load_manual_pauses
 from app.services.print_service import PrintService
 from app.services.producers.print_queue_producer import PrintQueueProducer
+from app.services.producers.printer_pause_producer import PrinterPauseProducer
 from app.services.producers.status_probe_producer import StatusProbeProducer
 from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.readiness import build_readiness_response
 from app.services.tape_registry import TapeRegistry
+from app.settings_store import SettingsStore
+from app.web.spa import add_security_headers, mount_spa
 
 # Per ADR 0011 we pin the OpenAPI version explicitly rather than relying on
 # FastAPI's default, so a FastAPI upgrade can't drift the API contract version.
@@ -235,7 +242,7 @@ async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
         if not model_fallback:
             raise ValueError(
                 "printer_cfg.model ist leer und SNMP-Discovery ist deaktiviert. "
-                "Setze 'model' in printers.yaml oder aktiviere snmp.discover."
+                "Setze 'model' am Drucker oder aktiviere snmp.discover."
             )
         return model_fallback
 
@@ -278,6 +285,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     cancels remaining workers forcibly.
     """
     settings = get_settings()
+    warn_if_insecure_cookies(settings)
 
     # --- DB startup: migrations first, then in-memory state, then DB writes ---
     await run_migrations()
@@ -297,7 +305,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await asyncio.to_thread(ModelRegistry.ensure_discovered)
 
     # 3. DB-bound init — plugin registry is populated.
-    # Phase 5 (#124): Drucker werden aus der DB geladen (nicht mehr aus printers.yaml).
+    # Phase 5 (#124): Drucker werden aus der DB geladen (keine Konfigurationsdatei).
     # Beim ersten Start (leere printers-Tabelle) ist _printer_configs leer und der
     # Hub startet ohne Drucker-Wiring (Operator legt Drucker via Admin-API an).
     async with async_session() as s:
@@ -313,15 +321,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db_printer_ids = [p.id for p in _db_printers]
         await ensure_printer_state(s)
         await s.commit()
+        # D4/D5: runtime settings (env-locked values, encrypted secrets).
+        settings_store = SettingsStore()
+        await settings_store.load(s)
+        app.state.settings_store = settings_store
+    # D4: integrations read URL/key/timeout from the store and follow changes live.
+    for _plugin in IntegrationRegistry.all().values():
+        _bind = getattr(_plugin, "bind", None)
+        if callable(_bind):
+            _bind(settings_store)
     # -------------------------------------------------------------------------
 
     # Phase 2: JobStore + CleanupTask
     # 'async_session' ist die async_sessionmaker aus app.db.engine (R2-M5)
     job_store = SQLiteJobStore(async_session)
 
+    # Browser sessions: purge those expired for more than a day on every cleanup run.
     cleanup_task = CleanupTask(
         store=job_store,
-        retention_days=settings.job_retention_days,
+        retention_days=lambda: int(settings_store.get("jobs.retention_days")),
+        session_purge=lambda: purge_expired_sessions(async_session),
     )
     await cleanup_task.start()
     app.state.cleanup_task = cleanup_task
@@ -358,13 +377,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine = shared_engine
 
     pq_producer = PrintQueueProducer(bus=event_bus)
+    pause_producer = PrinterPauseProducer(bus=event_bus)
     queue = PrintQueue(
         printers=queue_printers,
         on_state_change=pq_producer.handle_transition,
         store=job_store,
         engine=shared_engine,
+        on_pause_change=pause_producer.handle_change,
     )
-    await queue.start()
+    # Persisted manual pauses must be in place before any worker task exists.
+    async with async_session() as _pause_session:
+        _initially_paused = await load_manual_pauses(_pause_session)
+    await queue.start(initially_paused=_initially_paused)
+    if _initially_paused:
+        _log.info("Restored %d manual printer pause(s) from the database", len(_initially_paused))
 
     # StatusProbeProducer pro Drucker — R4-MA1-Fix Degraded-Start:
     # Probe-Fehler werden geloggt, Hub startet trotzdem.
@@ -623,14 +649,14 @@ class _LifespanManager:
 
 def create_app() -> _LifespanManager:
     """Build the FastAPI app. Kept as a factory so tests can re-instantiate."""
+    install_log_buffer()
     app = FastAPI(
         lifespan=lifespan,
         title="Label Printer Hub — backend",
         description=(
-            "REST + SSE API for the Label Printer Hub backend. "
-            "The Go frontend consumes the OpenAPI spec at /openapi.json via "
-            "oapi-codegen; humans browse the interactive docs at /docs "
-            "(Swagger UI) or /redoc."
+            "REST + SSE API for the Label Printer Hub backend, which also serves "
+            "the web UI. The OpenAPI spec is at /openapi.json; humans browse the "
+            "interactive docs at /docs (Swagger UI) or /redoc."
         ),
         version=__version__,
         openapi_url="/openapi.json",
@@ -705,18 +731,22 @@ def create_app() -> _LifespanManager:
     app.include_router(render_router)
     app.include_router(batch_routes.router)
     app.include_router(batches_routes.router)
-    app.include_router(events_routes.router)
+    app.include_router(events_v1_routes.router)
     app.include_router(printers_routes.router)
     app.include_router(jobs_routes.router)
     app.include_router(lookup_routes.router)
     app.include_router(webhooks_routes.router)
     app.include_router(qr_routes.router)
     app.include_router(admin_api_keys_router)
+    app.include_router(auth_session_routes.router)
     app.include_router(admin_printers_api_router)
+    app.include_router(settings_api_router)
+    app.include_router(info_routes.router)
 
-    _static_dir = Path(__file__).parent / "static"
-    if _static_dir.exists():
-        app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+    # D1: the same process serves the web app. Mounted after every router so the
+    # catch-all only sees what no API route claimed.
+    add_security_headers(app)
+    mount_spa(app, get_settings().web_dist_dir)
 
     return _LifespanManager(app)
 

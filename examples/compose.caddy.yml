@@ -1,9 +1,9 @@
 # ============================================================================
 # Label Printer Hub — Caddy
-# Two-container setup: only the frontend is exposed via Caddy. Backend stays
-# on an internal network. Caddy obtains TLS certificates automatically.
+# One container: the backend serves the API and the web UI (ADR 0015); Caddy
+# proxies to backend:8000 and obtains TLS certificates automatically.
 # Assumes a Caddy 2 instance with caddy-docker-proxy is running on a docker
-# network called "caddy".
+# network called "caddy". Printers are added in the UI.
 # ============================================================================
 
 services:
@@ -12,18 +12,18 @@ services:
     container_name: label-printer-hub-backend
     user: "1000:1000"
     networks:
-      - hub-internal
+      - caddy
     expose:
       - "${BACKEND_PORT:-8000}"
     environment:
       - PORT=${BACKEND_PORT:-8000}
+      # Reachable only through the proxy network, so its forwarded headers are accepted.
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-*}
-      - PRINTERS=${PRINTERS}
-      - SNMP_COMMUNITY=${SNMP_COMMUNITY:-public}
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/printer-hub.db}
-      - WEBHOOK_API_KEY=${WEBHOOK_API_KEY}
-      - UI_BASE_URL=https://${PRINTERHUB_HOST}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. https://printerhub.example.invalid}"
+      - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
+      - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY:-}
+      - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -33,36 +33,12 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
-  frontend:
-    image: ghcr.io/strausmann/label-printer-hub-frontend:${HUB_VERSION:-latest}
-    container_name: label-printer-hub-frontend
-    user: "1000:1000"
-    networks:
-      - caddy
-      - hub-internal
-    environment:
-      - PORT=${FRONTEND_PORT:-8080}
-      - BACKEND_URL=http://backend:${BACKEND_PORT:-8000}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-    depends_on:
-      backend:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:${FRONTEND_PORT:-8080}/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
     labels:
       caddy: ${PRINTERHUB_HOST}
-      caddy.reverse_proxy: "{{upstreams ${FRONTEND_PORT:-8080}}}"
-      # SSE: disable response buffering for live updates
+      caddy.reverse_proxy: "{{upstreams ${BACKEND_PORT:-8000}}}"
+      # SSE: disable response buffering for the live event stream (/api/v1/events)
       caddy.reverse_proxy.flush_interval: "-1"
 
 networks:
   caddy:
     external: true
-  hub-internal:
-    driver: bridge

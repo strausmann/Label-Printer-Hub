@@ -1,6 +1,6 @@
 # 0010 — PWA with progressive enhancement
 
-- **Status:** Accepted
+- **Status:** Accepted (restated for the React stack in ADR-0016)
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 

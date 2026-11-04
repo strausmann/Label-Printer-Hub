@@ -25,6 +25,7 @@ from app.repositories import print_batches as batches_repo
 from app.repositories import printers as printers_repo
 from app.schemas.print_batch import BatchRequest, BatchResponse
 from app.services.batch_dispatch import dispatch_batch
+from app.services.lookup_service import LookupFailedError, UnknownAppError
 
 # SessionDep locally — Hub has no central app/api/deps.py module.
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -124,6 +125,26 @@ async def create_batch(
             items=body.items,
             half_cut=use_half_cut,
         )
+    except UnknownAppError as exc:
+        # 422: the request names an integration this hub does not have (a client mistake).
+        # Fixed message: the exception text lists the registered integrations.
+        raise HTTPException(
+            422,
+            detail={
+                "error_code": "integration_unknown_app",
+                "error_message": "The requested integration is not available.",
+            },
+        ) from exc
+    except LookupFailedError as exc:
+        # 502: the integration failed or its upstream is unreachable. NOT str(exc): the
+        # plugin wraps upstream errors, which can carry URLs and response details (CWE-209).
+        raise HTTPException(
+            502,
+            detail={
+                "error_code": "integration_lookup_failed",
+                "error_message": "The integration failed or could not be reached.",
+            },
+        ) from exc
     except (PrinterCoverOpenError, TapeMismatchError) as exc:
         # 409: hardware state the user can fix (cover open / wrong tape)
         raise HTTPException(

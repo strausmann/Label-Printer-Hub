@@ -1,6 +1,6 @@
 # 0003 — Go + Tailwind + HTMX + PWA for the frontend
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0016
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 

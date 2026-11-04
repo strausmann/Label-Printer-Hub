@@ -8,35 +8,34 @@ Three scenarios are tested:
 
 We build a minimal FastAPI app with a single GET ``/guarded`` route that
 depends on ``require_webhook_key``.  Because ``get_settings`` is
-``@lru_cache``-decorated, every test overrides the dependency via FastAPI's
-:meth:`~fastapi.FastAPI.dependency_overrides` rather than mutating the
-environment, so the cache is never a problem.
+the key now lives in the runtime settings store, each test puts a stub store on
+``app.state.settings_store`` rather than mutating the environment.
 """
 
 from __future__ import annotations
 
 from app.api.dependencies.webhook_auth import require_webhook_key
-from app.config import Settings, get_settings
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 
 _VALID_KEY = "a" * 32  # 32-char key — passes the Settings validator
 
 
-def _make_settings(key: str) -> Settings:
-    """Return a Settings instance with the given webhook_api_key.
+class _StubStore:
+    """Minimal SettingsStore stand-in: only ``get`` is used by the dependency."""
 
-    Passes ``_env_file=None`` so no local ``.env`` file is read.
-    """
-    return Settings(_env_file=None, webhook_api_key=SecretStr(key))  # type: ignore[call-arg]
+    def __init__(self, key: str) -> None:
+        self._key = key
+
+    def get(self, key: str) -> str:
+        assert key == "access.webhook_api_key"
+        return self._key
 
 
 def _make_app(key: str) -> FastAPI:
     """Return a tiny FastAPI app whose single route is guarded by require_webhook_key."""
     app = FastAPI()
-    settings_instance = _make_settings(key)
-    app.dependency_overrides[get_settings] = lambda: settings_instance
+    app.state.settings_store = _StubStore(key)
 
     @app.get("/guarded", dependencies=[Depends(require_webhook_key)])
     async def guarded() -> dict[str, str]:

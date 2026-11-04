@@ -31,12 +31,12 @@ This project is being designed against the [Brother PT-E550W/P750W/P710BT Raster
 
 ## Tech Stack
 
-**Two-container split:** backend (printer protocols, queue, API) and frontend (UI, PWA) are separate containers. They release together at the same semver version, communicate over HTTP/JSON, and the frontend proxies SSE for live status updates.
+**One container:** a single backend process serves the REST API, the live event stream and the web UI ([ADR 0015](docs/decisions/0015-single-process-deployment.md)). Printers are added in the UI (Settings > Printers), not through environment variables.
 
-- **Backend** (`label-printer-hub-backend`): Python 3.12+, FastAPI, SQLModel (SQLite), asyncio
+- **Backend** (`label-printer-hub-backend`, the only image): Python 3.12+, FastAPI, SQLModel (SQLite), asyncio
 - **Printer protocols**: `nbuchwitz/ptouch` (PT-Series), `pklaus/brother_ql` (QL-Series), `pysnmp` for status polling
-- **Frontend** (`label-printer-hub-frontend`): Go web server, Tailwind CSS, HTMX, PWA (manifest + service worker + Web Notifications API)
-- **Container**: Docker (multi-stage per service), GHCR + Docker Hub publishing, multi-arch (amd64 + arm64)
+- **Web UI** (built into the backend image from `frontend/`): React + TypeScript, Vite, PWA (manifest + service worker + camera scanning) — [ADR 0016](docs/decisions/0016-react-typescript-web-ui.md)
+- **Container**: Docker (multi-stage, one image), GHCR + Docker Hub publishing, multi-arch (amd64 + arm64)
 - **CI/CD**: GitHub Actions, semantic-release, Dependabot
 
 ## Container images and tags
@@ -56,32 +56,37 @@ Both registries receive identical multi-arch images (`linux/amd64`, `linux/arm64
 
 ## Quick Start
 
-See [`examples/README.md`](examples/README.md) for sample compose files (standalone / Traefik / Pangolin / Caddy). For early-development testing of the REST API alone — without the frontend — see [`examples/compose.backend-only.yml`](examples/compose.backend-only.yml):
+See [`examples/README.md`](examples/README.md) for sample compose files (standalone / Traefik / Pangolin / Caddy). Upgrading from the two-container release: [migration notes](docs/migration/v-next-single-container.md).
 
 ```bash
-# Backend-only (builds the image from source — no GHCR pull required):
-git clone --branch main https://github.com/strausmann/label-printer-hub.git
-cd label-printer-hub
-cp backend/.env.example .env
-$EDITOR .env                # set PRINTER_HUB_PT750W_HOST and friends
-docker compose -f examples/compose.backend-only.yml up -d --build
+git clone https://github.com/strausmann/Label-Printer-Hub.git
+cd Label-Printer-Hub/examples
+cp .env.example .env
+# Required: PRINTER_HUB_SECRET_KEY (openssl rand -base64 32 | tr '+/' '-_')
+#           PRINTER_HUB_PUBLIC_URL (the address you open the hub at)
+$EDITOR .env
+docker compose -f compose.standalone.yml up -d
 
-# REST API smoke
-curl http://localhost:8090/healthz
-curl -X POST http://localhost:8090/print -H 'Content-Type: application/json' \
-  -d '{"template_id":"qr-only-12mm","data":{"title":"Smoke","primary_id":"SMOKE-001","qr_payload":"https://example.test"}}'
+curl http://localhost:8000/healthz
+curl http://localhost:8000/api/info
+# Open http://localhost:8000/ and sign in. A fresh install has no admin key:
+# either set PRINTER_HUB_BOOTSTRAP_ADMIN_KEY (one-time key, 32+ characters) or run
+docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
+# then add your printers under Settings > Printers.
 ```
 
-To build and run the **full stack** (backend + frontend) from source without any real printer hardware, use the smoke-test compose file:
+To build and run the hub from source without any printer hardware, use the smoke-test compose file (throw-away keys, one container, built from the local tree):
 
 ```bash
-# Full-stack local smoke test (mock printer, no hardware required):
+export PRINTER_HUB_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
 docker compose -f dev/docker-compose.smoke.yml up --build
-
-# UI is served at http://localhost:8080
-# Verify both services are healthy:
-curl http://localhost:8080/healthz   # frontend → backend_reachable: true
+# UI and API on http://localhost:8000
+curl http://localhost:8000/healthz
 ```
+
+Other containers in the same stack can call the hub directly with an API key: [using the hub from other services](examples/README.md#using-the-hub-from-other-services-in-the-same-stack).
+
+For the REST API alone, without the web UI, see [`examples/compose.backend-only.yml`](examples/compose.backend-only.yml).
 
 ## REST API surface
 
@@ -149,16 +154,13 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PRINTER_HUB_DATABASE_URL` | `sqlite:////data/printer-hub.db` | SQLite path (Phase-5 persistence; ignored today) |
-| `PRINTER_HUB_PT750W_HOST` | _empty_ | Brother PT-P750W IP/hostname (required when `printer_backend=ptouch`) |
-| `PRINTER_HUB_PT750W_PORT` | `9100` | TCP print port |
-| `PRINTER_HUB_QL820_HOST` | _empty_ | Brother QL-820NWB IP (when QL backend lands) |
-| `PRINTER_HUB_QL820_PORT` | `9100` | TCP print port |
-| **`PRINTER_HUB_PRINTER_BACKEND`** | `ptouch` | Transport: `ptouch` \| `mock` \| third-party entry-point id |
-| **`PRINTER_HUB_PRINTER_MODEL`** | `PT-P750W` | Fallback model id when SNMP discovery is off / unreachable |
-| **`PRINTER_HUB_PRINTER_DISCOVER_VIA_SNMP`** | `true` | SNMP-first model discovery via Brother private OID, fall back to `PRINTER_HUB_PRINTER_MODEL` on failure |
-| **`PRINTER_HUB_PRINTER_SNMP_COMMUNITY`** | `public` | SNMPv2c community (LAN-only — read-only) |
-| **`PRINTER_HUB_PRINTER_QUEUE_TIMEOUT_S`** | `30` | Graceful shutdown timeout for the print queue |
+| **`PRINTER_HUB_SECRET_KEY`** | _required_ | Master key for secrets stored in the database (base64url of 32 random bytes; `openssl rand -base64 32 \| tr '+/' '-_'`) |
+| **`PRINTER_HUB_PUBLIC_URL`** | _required_ | The address people open the UI at; decides cookie security (`Secure` and `__Host-` prefix when `https`) and the allowed `Origin` |
+| `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` | _empty_ | One-time key (32+ characters) that signs you in while no admin key exists; empty disables it |
+| `PRINTER_HUB_DATABASE_URL` | `sqlite+aiosqlite:////data/printer-hub.db` | Database |
+| `PRINTER_HUB_SSO_TRUST_TOKEN` | _empty_ | Shared secret the proxy sends as `X-Pangolin-Token`; without it `Remote-User` is ignored |
+| `PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER` | `false` | Opt in to the legacy `X-Pangolin-User` header |
+| `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS` | `false` | Opt in to the `Authorization: Basic` bypass credential |
 | `PRINTER_HUB_WEBHOOK_API_KEY` | _empty_ | Bearer for inbound integration webhooks (≥ 32 chars; generate with `openssl rand -hex 32`) |
 | `PRINTER_HUB_SNIPEIT_URL` | _empty_ | Snipe-IT base URL |
 | `PRINTER_HUB_SNIPEIT_API_KEY` | _empty_ | Snipe-IT bearer token |
@@ -168,7 +170,7 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 | `PRINTER_HUB_SERVER_PORT` | `8090` | Internal port (overridden to `8000` in the container — see Dockerfile) |
 | `PRINTER_HUB_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 
-All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`.
+All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`. A variable set in the environment wins over the stored value and locks the field in the UI (D4). Printers have no variables: they are managed in Settings > Printers.
 
 ## Documentation
 

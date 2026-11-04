@@ -13,7 +13,7 @@ DELETE /api/admin/api-keys/{id}     — revoke key (sets enabled=False)
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -102,6 +102,31 @@ def _key_to_read(key: ApiKey) -> ApiKeyRead:
     )
 
 
+def _require_bootstrap_admin_key(body: ApiKeyCreate) -> None:
+    """D7: a bootstrap session exists to create the first admin key and nothing else.
+
+    Anything weaker (a print key, a printer restriction, an already expired key) would let
+    the holder of the bootstrap secret keep using the hub while the bootstrap stays open.
+    """
+    expires = body.expires_at
+    if expires is not None and expires.tzinfo is None:
+        expires = expires.replace(tzinfo=UTC)
+    if (
+        "admin" not in body.scopes
+        or body.allowed_printer_ids
+        or (expires is not None and expires <= datetime.now(UTC))
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "bootstrap_admin_key_only",
+                "error_message": (
+                    "A bootstrap session may only create an unrestricted, unexpired admin key."
+                ),
+            },
+        )
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -135,6 +160,8 @@ async def create_api_key(
     session: SessionDep,
     _auth: AdminAuthDep,
 ) -> ApiKeyCreateResponse:
+    if _auth.source == "bootstrap":
+        _require_bootstrap_admin_key(body)
     plaintext, prefix, hashed = generate_api_key()
     key = ApiKey(
         name=body.name,
@@ -201,6 +228,9 @@ async def update_api_key(
         )
     if body.enabled is not None:
         key.enabled = body.enabled
+        if not body.enabled:
+            # A disabled key also ends its browser sessions (re-enabling does not revive them).
+            await api_keys_repo.revoke_sessions(session, key_id)
     if body.rate_limit_per_minute is not None:
         key.rate_limit_per_minute = body.rate_limit_per_minute
     if body.notes is not None:

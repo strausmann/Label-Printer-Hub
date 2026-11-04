@@ -22,14 +22,12 @@ import app.models  # noqa: F401 — registers all SQLModel tables with metadata
 import pytest
 import pytest_asyncio
 from app.api.routes.webhooks import router
-from app.config import Settings, get_settings
 from app.db.engine import _apply_pragmas
 from app.db.session import get_session
 from app.models.printer import Printer
 from app.schemas.label_data import LabelData
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic import SecretStr
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
@@ -100,12 +98,12 @@ def _build_app(session_override: AsyncSession, key: str = _VALID_KEY) -> FastAPI
     async def _override_session() -> AsyncIterator[AsyncSession]:
         yield session_override
 
-    settings_instance = Settings(
-        _env_file=None,  # type: ignore[call-arg]
-        webhook_api_key=SecretStr(key),
-    )
+    class _StubStore:
+        def get(self, _key: str) -> str:
+            return key
+
+    test_app.state.settings_store = _StubStore()
     test_app.dependency_overrides[get_session] = _override_session
-    test_app.dependency_overrides[get_settings] = lambda: settings_instance
     return test_app
 
 

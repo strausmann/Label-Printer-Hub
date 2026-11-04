@@ -11,24 +11,28 @@ entry-points.
    implements `IntegrationPlugin`:
 
    ```python
+   from app.integrations.live_config import StoreBoundPlugin
    from app.schemas.label_data import LabelData
 
 
-   class MyAppPlugin:
+   class MyAppPlugin(StoreBoundPlugin):
        name = "myapp"
        display_name = "My App"
+       secret_suffix = "api_key"  # None when the app needs no key
 
        def __init__(self) -> None:
-           # Local import avoids a load-time cycle.
-           from app.config import get_settings
-
-           settings = get_settings()
-           self._base_url = settings.myapp_url.rstrip("/")
+           self._init_live()  # no arguments: discovery calls plugin_cls()
 
        async def lookup(self, identifier: str) -> LabelData:
-           # Call upstream, build LabelData.
+           self._require_configured()  # raises -> 503 integration_not_configured
+           # Use self._base_url / self._api_key / self._client.
            ...
    ```
+
+   `StoreBoundPlugin` provides `bind`, `reconfigure`, `is_configured` and
+   `aclose`. The lifespan calls `bind(store)` after discovery; from then on the
+   URL, secret and timeout come from the runtime settings store (D4) and a
+   change applies on the next request, without a restart.
 
 2. Add the plugin's configuration fields to `backend/app/config.py`:
 
@@ -41,8 +45,10 @@ entry-points.
    ```
 
    Settings reads them from environment variables prefixed with
-   `PRINTER_HUB_` (e.g. `PRINTER_HUB_MYAPP_URL`). Match the field
-   names you read in the plugin constructor.
+   `PRINTER_HUB_` (e.g. `PRINTER_HUB_MYAPP_URL`). Also add the
+   `integrations.myapp.*` keys to `app/settings_store/registry.py`; the
+   plugin reads them through the store (an environment value locks the
+   field, D4).
 
 3. Register the entry-point in `backend/pyproject.toml`:
 
@@ -76,8 +82,9 @@ their own configuration: read environment variables directly (with
 or accept a dedicated env-var prefix (e.g. `LABEL_HUB_OPENFOODFACTS_*`)
 that does not collide with the core `PRINTER_HUB_*` namespace.
 
-Bundled plugins use `app.config.get_settings()`; third-party plugins
-must NOT, because adding a field there requires a core repo change.
+Bundled plugins read the runtime settings store; third-party plugins
+must NOT depend on it for their own keys, because adding a key there
+requires a core repo change.
 
 ## Plugin contract
 
@@ -85,7 +92,10 @@ must NOT, because adding a field there requires a core repo change.
 |---|---|---|
 | `name` | `str` | Canonical id used in templates (`TemplateSchema.app`) and audit logs. Must be unique across all registered plugins. |
 | `display_name` | `str` | UI label, e.g. shown in template-picker dropdowns. |
-| `__init__(self)` | `None` | Must accept no positional or keyword arguments — entry-points discovery instantiates plugins with `plugin_cls()`. Read configuration from `app.config.get_settings()` via a local import. |
+| `__init__(self)` | `None` | Must accept no positional or keyword arguments — entry-points discovery instantiates plugins with `plugin_cls()`. Do not read configuration here; it arrives through `bind`. |
+| `bind(store)` | `(SettingsStore) -> None` | Called once in the lifespan after discovery. Attaches the runtime settings store and subscribes to changes. |
+| `reconfigure()` | `async () -> None` | Closes and recreates the `httpx.AsyncClient` from the current store values. |
+| `is_configured()` | `() -> bool` | URL set and, where needed, key set and decryptable. `False` before `bind`. |
 | `lookup(identifier)` | `async (str) -> LabelData` | Resolves the integration's identifier to a `LabelData`. Raise `AppLookupNotFoundError` (or a subclass) when the entity does not exist. |
 
 ## Defensive loading
@@ -115,7 +125,10 @@ in `pyproject.toml`).
 
 To exercise plugin configuration via environment variables in tests,
 use the `monkeypatch.setenv` pattern + `get_settings.cache_clear()`
-in an `autouse=True` fixture:
+in an `autouse=True` fixture, then build the plugin with
+`tests.unit.integrations._bound.bound(MyAppPlugin)` (binds an env-backed
+store). To test live changes, use a `SettingsStore` and `set_many` as in
+`test_live_settings.py`:
 
 ```python
 @pytest.fixture(autouse=True)

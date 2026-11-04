@@ -22,13 +22,14 @@ References:
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
 from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import AuthContext, check_printer_access
@@ -39,13 +40,31 @@ from app.repositories import jobs as jobs_repo
 from app.repositories import printer_state as printer_state_repo
 from app.repositories import printer_status_cache as cache_repo
 from app.repositories import printers as printers_repo
-from app.schemas.printer import PrinterRead, PrinterStatus
+from app.schemas.printer import PauseRead, PrinterRead, PrinterStatus
+from app.services.print_queue import PrinterAlreadyActiveError
 from app.services.status_block import MediaType, PrinterError, StatusBlockParser
 from app.services.tape_registry import TapeRegistry, UnknownTapeError
 
 _log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/printers", tags=["printers"])
+
+
+def _pause_view(
+    request: Request, printer_id: UUID, db_paused: bool
+) -> tuple[bool, PauseRead | None]:
+    """Combine the DB flag with the queue worker state (automatic pauses)."""
+    queue = getattr(request.app.state, "print_queue", None)
+    if queue is None:
+        return db_paused, None
+    info = queue.pause_info(printer_id)
+    pause = (
+        PauseRead(source=info.source, reason_code=info.reason_code, since=info.since)
+        if info is not None
+        else None
+    )
+    return db_paused or queue.is_paused(printer_id), pause
+
 
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -86,6 +105,7 @@ async def _get_printer_or_404(session: AsyncSession, printer_id: UUID) -> Any:
     ),
 )
 async def list_printers(
+    request: Request,
     session: SessionDep,
     _auth: ReadAuthDep,
     slug: Annotated[str | None, Query(description="Filter by exact slug")] = None,
@@ -104,10 +124,24 @@ async def list_printers(
         printers = [printer]
     else:
         printers = await printers_repo.list_all(session)
+    # Per-printer ACL (#146): an empty allowed list means all printers.  A
+    # foreign printer found by slug yields the same 404 as an unknown slug so
+    # its existence is not disclosed.
+    allowed = set(_auth.allowed_printer_ids) if _auth is not None else set()
+    if allowed:
+        printers = [p for p in printers if str(p.id) in allowed]
+        if slug is not None and not printers:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={
+                    "error_code": "printer_not_found",
+                    "error_message": f"slug={slug!r} not found",
+                },
+            )
     result: list[PrinterRead] = []
     for p in printers:
         state = await printer_state_repo.get(session, p.id)
-        paused = state.paused if state is not None else False
+        paused, pause = _pause_view(request, p.id, state.paused if state is not None else False)
         result.append(
             PrinterRead(
                 id=p.id,
@@ -118,6 +152,7 @@ async def list_printers(
                 connection=dict(p.connection),
                 enabled=p.enabled,
                 paused=paused,
+                pause=pause,
                 created_at=p.created_at,
                 updated_at=p.updated_at,
             )
@@ -141,6 +176,7 @@ async def list_printers(
     ),
 )
 async def get_printer(
+    request: Request,
     printer_id: UUID,
     session: SessionDep,
     _auth: ReadAuthDep,
@@ -150,6 +186,7 @@ async def get_printer(
     if _auth is not None:
         check_printer_access(_auth, printer_id)
     state = await printer_state_repo.get(session, printer_id)
+    paused, pause = _pause_view(request, printer_id, state.paused if state is not None else False)
     return PrinterRead(
         id=printer.id,
         name=printer.name,
@@ -157,7 +194,8 @@ async def get_printer(
         backend=printer.backend,
         connection=dict(printer.connection),
         enabled=printer.enabled,
-        paused=state.paused if state is not None else False,
+        paused=paused,
+        pause=pause,
         created_at=printer.created_at,
         updated_at=printer.updated_at,
     )
@@ -298,6 +336,8 @@ async def get_printer_tape(
 ) -> dict[str, object]:
     """Return the current tape spec for a printer."""
     await _get_printer_or_404(session, printer_id)
+    if _auth is not None:
+        check_printer_access(_auth, printer_id)
 
     cache = await cache_repo.get(session, printer_id)
     if cache is None or cache.parsed is None:
@@ -351,6 +391,8 @@ async def get_printer_queue(
 ) -> list[dict[str, object]]:
     """Return queued and printing jobs for a printer."""
     await _get_printer_or_404(session, printer_id)
+    if _auth is not None:
+        check_printer_access(_auth, printer_id)
 
     active_jobs = await jobs_repo.list_active(session)
     printer_jobs = [j for j in active_jobs if j.printer_id == printer_id]
@@ -378,13 +420,14 @@ async def get_printer_queue(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Pause job dispatch for a printer",
     description=(
-        "Sets ``printer_state.paused = true`` for this printer.  "
+        "Sets ``printer_state.paused = true`` and pauses the queue worker.  "
         "New jobs can still be queued but the worker will not dispatch them "
         "until the printer is resumed.  Idempotent — pausing an already-paused "
         "printer returns 204 without error."
     ),
 )
 async def pause_printer(
+    request: Request,
     printer_id: UUID,
     session: SessionDep,
     _auth: PrintAuthDep,
@@ -394,6 +437,12 @@ async def pause_printer(
     if _auth is not None:
         check_printer_access(_auth, printer_id)
     await printer_state_repo.set_paused(session, printer_id, True)
+    # Keep the queue worker in sync: the DB flag alone never stopped dispatch.
+    queue = getattr(request.app.state, "print_queue", None)
+    if queue is not None:
+        # KeyError: printer not known to the queue (e.g. added after start)
+        with contextlib.suppress(KeyError):
+            await queue.pause_printer(printer_id, reason="user", source="user")
 
 
 # ---------------------------------------------------------------------------
@@ -406,11 +455,13 @@ async def pause_printer(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Resume job dispatch for a printer",
     description=(
-        "Sets ``printer_state.paused = false``.  Idempotent — resuming an "
+        "Sets ``printer_state.paused = false`` and releases the queue worker, "
+        "including an automatic pause after a printer error.  Idempotent — resuming an "
         "already-active printer returns 204 without error."
     ),
 )
 async def resume_printer(
+    request: Request,
     printer_id: UUID,
     session: SessionDep,
     _auth: PrintAuthDep,
@@ -420,6 +471,12 @@ async def resume_printer(
     if _auth is not None:
         check_printer_access(_auth, printer_id)
     await printer_state_repo.set_paused(session, printer_id, False)
+    # Also release an automatically paused worker (this is how the user clears
+    # the stuck state after fixing the printer).
+    queue = getattr(request.app.state, "print_queue", None)
+    if queue is not None:
+        with contextlib.suppress(KeyError, PrinterAlreadyActiveError):
+            await queue.resume_printer(printer_id)
 
 
 # ---------------------------------------------------------------------------

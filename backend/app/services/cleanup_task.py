@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
 from app.services.job_store import JobStore
@@ -33,14 +34,22 @@ class CleanupTask:
     def __init__(
         self,
         store: JobStore,
-        retention_days: int,
+        retention_days: int | Callable[[], int],
         interval: timedelta = _DEFAULT_INTERVAL,
+        session_purge: Callable[[], Awaitable[int]] | None = None,
     ) -> None:
-        if retention_days < 1:
-            raise ValueError("retention_days must be >= 1")
+        if isinstance(retention_days, int):
+            if retention_days < 1:
+                raise ValueError("retention_days must be >= 1")
+            fixed = retention_days
+            self._retention_days: Callable[[], int] = lambda: fixed
+        else:
+            # D4: a callable is read on every run, so a settings change applies without restart.
+            self._retention_days = retention_days
         self._store = store
-        self._retention = timedelta(days=retention_days)
         self._interval = interval
+        # Browser sessions expired for more than a day are purged on the same schedule.
+        self._session_purge = session_purge
         self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
 
@@ -82,12 +91,22 @@ class CleanupTask:
     async def _run_once(self) -> None:
         """Führt einen einzelnen Eviction-Run durch. Exceptions werden geloggt, nicht propagiert."""
         try:
-            deleted = await self._store.evict_terminal_older_than(self._retention)
+            days = int(self._retention_days())
+            if days < 1:
+                raise ValueError("retention_days must be >= 1")
+            deleted = await self._store.evict_terminal_older_than(timedelta(days=days))
             if deleted > 0:
                 logger.info(
                     "CleanupTask: %d terminal Jobs älter als %d Tage gelöscht",
                     deleted,
-                    self._retention.days,
+                    days,
                 )
         except Exception:
             logger.exception("CleanupTask: _run_once fehlgeschlagen")
+        if self._session_purge is not None:
+            try:
+                purged = await self._session_purge()
+                if purged > 0:
+                    logger.info("CleanupTask: %d expired browser sessions purged", purged)
+            except Exception:
+                logger.exception("CleanupTask: session purge failed")

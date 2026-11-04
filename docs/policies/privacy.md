@@ -10,8 +10,8 @@ The following must not appear in commits, examples, tests, docs, issues, PRs, or
 
 | Category | Examples to avoid | Use instead |
 |---|---|---|
-| **Internal IPs** | `172.16.50.212`, `192.168.x.x`, `10.x.x.x` from real networks, Tailscale `100.64.0.0/10` | `192.0.2.10`, `198.51.100.10`, `<printer-ip>` (RFC 5737 documentation ranges) |
-| **Internal hostnames** | `hhdocker03`, `hhplex01`, real Tailscale machine names | `printer-host`, `docker-host`, generic placeholders |
+| **Internal IPs** | Addresses from a real network (`192.168.x.x`, `10.x.x.x`, `172.16.x.x`–`172.31.x.x`), Tailscale `100.64.0.0/10` | `192.0.2.10`, `198.51.100.10`, `<printer-ip>` (RFC 5737 documentation ranges) |
+| **Internal hostnames** | Hostnames of your own machines, real Tailscale machine names | `printer-host`, `docker-host`, generic placeholders |
 | **Personal domains** | `*.strausmann.cloud`, `*.strausmann.de`, `*.strausmann.net` and similar | `printerhub.example.com`, `your-domain.example.com` |
 | **Personal location/contact** | Real `sysLocation`/`sysContact` values, real serial numbers, real MAC addresses | `Office`, `<your-name>`, `D5G123456` (synthetic), `04:68:74:00:00:00` (locally administered) |
 | **Reverse-proxy specifics** | Real Pangolin organisation IDs, real OAuth client IDs, real API keys | Generic Traefik/Caddy/Pangolin placeholders |
