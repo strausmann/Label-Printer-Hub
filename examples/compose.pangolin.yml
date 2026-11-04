@@ -18,7 +18,9 @@ services:
       - "${BACKEND_PORT:-8000}"
     environment:
       - PORT=${BACKEND_PORT:-8000}
-      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-*}
+      # Never "*": trusting every peer lets any client forge X-Forwarded-For. Set the proxy address or
+      # network here once the trusted-proxy design (#160) lands; the default is loopback only.
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
       - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
       - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. https://printerhub.example.invalid}"
       # D10: the hub trusts the Remote-User header only together with this shared

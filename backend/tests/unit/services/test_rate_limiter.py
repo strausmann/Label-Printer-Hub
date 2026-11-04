@@ -91,3 +91,39 @@ def test_retry_after_is_zero_when_allowed():
     result, retry_after = limiter.check_and_consume_with_retry_after(key_id, limit_per_minute=60)
     assert result is True
     assert retry_after == 0
+
+
+def test_bucket_map_is_bounded_by_max_buckets():
+    from app.services.rate_limiter import RateLimiter
+
+    limiter = RateLimiter(max_buckets=100)
+    for i in range(1_000):
+        limiter.check_and_consume(f"k{i}", limit_per_minute=10)
+    assert len(limiter._buckets) <= 100
+
+
+def test_lru_keeps_recently_used_bucket_and_its_state():
+    from app.services.rate_limiter import RateLimiter
+
+    limiter = RateLimiter(max_buckets=3)
+    for _ in range(10):
+        assert limiter.check_and_consume("busy", limit_per_minute=10)
+    assert not limiter.check_and_consume("busy", limit_per_minute=10)  # drained
+    for i in range(2):
+        limiter.check_and_consume(f"other{i}", limit_per_minute=10)
+        limiter.check_and_consume("busy", limit_per_minute=10)  # touch: stays most recent
+    assert not limiter.check_and_consume("busy", limit_per_minute=10)  # still drained, not reset
+
+
+def test_idle_buckets_are_evicted(monkeypatch):
+    import app.services.rate_limiter as rl
+
+    clock = [1000.0]
+    monkeypatch.setattr(rl.time, "monotonic", lambda: clock[0])
+    limiter = rl.RateLimiter(idle_ttl_seconds=600)
+    for i in range(50):
+        limiter.check_and_consume(f"k{i}", limit_per_minute=10)
+    assert len(limiter._buckets) == 50
+    clock[0] += 601
+    limiter.check_and_consume("fresh", limit_per_minute=10)
+    assert list(limiter._buckets) == ["fresh"]

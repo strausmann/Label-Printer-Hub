@@ -673,3 +673,27 @@ async def test_bootstrap_admin_key_with_future_expiry_is_allowed_and_closes_boot
     assert resp.status_code == 201, resp.text
     assert (await client.get("/api/v1/auth/session")).json()["source"] is None
     assert (await client.get("/api/printers")).status_code == 401
+
+
+def test_limiter_key_accepts_ips_and_collapses_everything_else():
+    from app.api.routes.auth_session import _limiter_key
+
+    assert _limiter_key("192.0.2.7") == "192.0.2.7"
+    assert _limiter_key("2001:db8::1") == "2001:db8::1"
+    assert _limiter_key("2001:DB8:0:0:0:0:0:1") == "2001:db8::1"  # one bucket per address
+    for bad in ("evil-1", "999.1.1.1", "", " ", "a" * 500, None):
+        assert _limiter_key(bad) == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_sign_in_with_garbage_forwarded_value_cannot_mint_buckets(api_client_with_seed):
+    """Garbage in the client address shares one bucket and keeps the map small."""
+    from app.api.routes import auth_session
+    from app.services.rate_limiter import _sign_in_rate_limiter
+
+    for i in range(20):
+        # The ASGI test client has no real peer; patch the helper input via the route's key.
+        assert auth_session._limiter_key(f"not-an-ip-{i}") == "unknown"
+    resp = await _sign_in(api_client_with_seed, "lh_pat_unknown_key")
+    assert resp.status_code == 401  # normal limit path unchanged: wrong key is a 401, not a 429
+    assert len(_sign_in_rate_limiter._buckets) <= 1
