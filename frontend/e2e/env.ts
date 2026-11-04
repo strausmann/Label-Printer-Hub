@@ -11,3 +11,11 @@ export const BOOTSTRAP = {
   url: "http://localhost:8766",
   keyFile: resolve(import.meta.dirname, ".tmp", "bootstrap.key"),
 };
+
+/** Pictures for the fake camera of the scan tests (written by `global-setup.ts`). */
+export const FAKE_CAMERA = {
+  qr: resolve(import.meta.dirname, ".tmp", "camera-qr.y4m"),
+  dataMatrix: resolve(import.meta.dirname, ".tmp", "camera-data-matrix.y4m"),
+  qrText: "https://hub.example.invalid/asset/42",
+  dataMatrixText: "https://hub.example.invalid/spool/5",
+};

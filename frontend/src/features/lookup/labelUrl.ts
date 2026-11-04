@@ -15,12 +15,18 @@ const MAX_ID_LENGTH = 200;
 /** The `/loc` path is the one label whose id the lookup API only understands with a prefix. */
 export const lookupIdFromQrPath = (kind: QrPath, id: string): string => (kind === "loc" ? `loc:${id}` : id);
 
+export interface LabelPath {
+  kind: QrPath;
+  /** Decoded, as printed on the label (no `loc:` prefix). */
+  id: string;
+}
+
 /**
- * A printed label link (the QR payload of this hub) read as "which item is meant".
- * Only the path counts: the host is whatever the label was printed with, and the result is
- * always an in-app route, never something to navigate to.
+ * The one reader of printed label links (the QR payload of this hub): which kind of label
+ * and which id. Only the path counts: the host is whatever the label was printed with, and
+ * the result is always an in-app route, never something to navigate to.
  */
-export function parseLabelUrl(raw: string): LookupTarget | null {
+export function parseLabelPath(raw: string): LabelPath | null {
   const text = raw.trim();
   let pathname: string;
   try {
@@ -43,8 +49,13 @@ export function parseLabelUrl(raw: string): LookupTarget | null {
     return null;
   }
   if (id === "" || id.length > MAX_ID_LENGTH) return null;
-  const kind = match[1] as QrPath;
-  return { app: QR_PATH_APP[kind], id: lookupIdFromQrPath(kind, id) };
+  return { kind: match[1] as QrPath, id };
+}
+
+/** A printed label link read as "which item in which app" (the lookup API's ids). */
+export function parseLabelUrl(raw: string): LookupTarget | null {
+  const label = parseLabelPath(raw);
+  return label ? { app: QR_PATH_APP[label.kind], id: lookupIdFromQrPath(label.kind, label.id) } : null;
 }
 
 /**

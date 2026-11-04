@@ -15,11 +15,6 @@ function PagePlaceholder({ title }: { title: string }) {
   );
 }
 
-export function ScanPage() {
-  const { t } = useLingui();
-  return <PagePlaceholder title={t`Scan`} />;
-}
-
 /* Modules that have not shipped: their navigation entries stay hidden until `features` says so. */
 export function SheetsPage() {
   const { t } = useLingui();

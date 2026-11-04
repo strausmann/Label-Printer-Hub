@@ -1,7 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "@tanstack/react-router";
-import { Fragment, useId, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { SearchIcon } from "../../shell/icons";
 import { runSearch, type SearchResult } from "./registry";
 
@@ -34,6 +34,20 @@ export function GlobalSearch() {
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const latest = useRef(0);
+  const field = useRef<HTMLInputElement>(null);
+
+  // `/` jumps to the search from anywhere, except while the person is typing in a field.
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      event.preventDefault();
+      field.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   const open = results.length > 0 && !dismissed;
 
@@ -84,6 +98,7 @@ export function GlobalSearch() {
     <div role="search" className="relative min-w-0 flex-1 lg:max-w-md lg:flex-none lg:basis-96">
       <SearchIcon width={18} height={18} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-3" />
       <input
+        ref={field}
         type="search"
         role="combobox"
         aria-label={t`Search`}

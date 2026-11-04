@@ -32,4 +32,22 @@ describe.skipIf(!required && !existsSync(dist))("built output", () => {
     expect(fonts.some((f) => /atkinson-hyperlegible-mono/.test(f))).toBe(true);
     expect(fonts.some((f) => /atkinson-hyperlegible-latin/.test(f) && !/mono/.test(f))).toBe(true);
   });
+
+  it("pwa: the generated service worker never caches /api", () => {
+    const sw = readFileSync(join(dist, "sw.js"), "utf8");
+    // The only route is the navigation fallback, and it skips the API, docs and OpenAPI document.
+    expect(sw.match(/registerRoute\(/g)).toHaveLength(1);
+    expect(sw).toContain('createHandlerBoundToURL("/index.html")');
+    for (const denied of ["/^\\/api\\//", "/^\\/docs(\\/|$)/", "/^\\/openapi\\.json$/", "/^\\/redoc(\\/|$)/"]) expect(sw).toContain(denied);
+    // Nothing under /api is precached either.
+    expect(sw).not.toMatch(/["']\/?api\//);
+  });
+
+  it("ships the code reader's WebAssembly from this origin, not a CDN", () => {
+    expect(walk(dist, ".wasm").some((f) => /zxing_reader/.test(f))).toBe(true);
+    const worker = walk(join(dist, "assets"), ".js").filter((f) => /decoder\.worker/.test(f));
+    expect(worker).toHaveLength(1);
+    // The library's default points at a CDN; our override must be what the worker uses.
+    expect(readFileSync(worker[0]!, "utf8")).toMatch(/zxing_reader-[\w-]+\.wasm/);
+  });
 });

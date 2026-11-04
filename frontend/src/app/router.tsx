@@ -18,7 +18,6 @@ import {
   CalibrationPage,
   KeptPage,
   NotFoundPage,
-  ScanPage,
   SheetArchivePage,
   SheetsPage,
 } from "../pages/placeholders";
@@ -33,6 +32,7 @@ import { Printers as SettingsPrinters } from "../features/settings/Printers";
 import { General, Jobs } from "../features/settings/sections";
 import { SettingsLayout } from "../features/settings/SettingsPage";
 import { System } from "../features/settings/System";
+import { ScanScreen } from "../features/scan/ScanScreen";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { PrinterPage } from "../features/printers/PrinterDetail";
 import { PrintersPage } from "../features/printers/PrintersPage";
@@ -166,7 +166,7 @@ const routeTree = rootRoute.addChildren([
   page("/spool/$id", SpoolPage),
   page("/product/$id", ProductPage),
   page("/cart", CartPage),
-  page("/scan", ScanPage),
+  page("/scan", ScanScreen),
   settingsRoute.addChildren([
     settingsChild("/", General),
     settingsChild("/printers", SettingsPrinters),

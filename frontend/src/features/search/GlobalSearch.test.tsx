@@ -2,7 +2,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
-import { mockApi } from "../test-api";
+import { job, mockApi, PRINTER_A, PRINTER_B } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -101,5 +101,40 @@ describe("global search", () => {
     await screen.findByRole("listbox");
     await userEvent.clear(field());
     expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("lists printers and jobs after the integration lookups, under their own headings", async () => {
+    const wanted = job("0f3a9c1e-7b2d-4e5f-8a6b-1c2d3e4f5a6b", PRINTER_A.id, "queued", { template_key: "asset-label" });
+    mockApi({ "GET /api/printers": [PRINTER_A, PRINTER_B], "GET /api/jobs": [wanted] });
+    const { router } = await renderApp({ path: "/", info: { integrations: set(true, false, false) } });
+    await userEvent.type(field(), "office");
+    const list = await screen.findByRole("listbox", { name: "Search results" });
+    await within(list).findByRole("option", { name: /Office QL-820NWB/ });
+    expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual(["Look up office in Snipe-IT", "Office QL-820NWBoffice-ql"]);
+    expect(within(list).getByText("Printers")).toBeVisible();
+    await userEvent.click(within(list).getByRole("option", { name: /Office QL-820NWB/ }));
+    expect(router.state.location.pathname).toBe(`/printers/${PRINTER_B.id}`);
+
+    await userEvent.type(field(), "0f3a9c");
+    await within(await screen.findByRole("listbox")).findByRole("option", { name: /0f3a9c1e/ });
+    expect(within(screen.getByRole("listbox")).getByText("Jobs")).toBeVisible();
+  });
+
+  it("/ focuses the field, unless the person is typing somewhere else", async () => {
+    mockApi({ "GET /api/printers": [] });
+    await renderApp({ path: "/", info: { integrations: set(true, false, false) } });
+    expect(field()).not.toHaveFocus();
+    await userEvent.keyboard("/");
+    expect(field()).toHaveFocus();
+    expect(field()).toHaveValue("");
+
+    field().blur();
+    const other = document.createElement("textarea");
+    document.body.append(other);
+    other.focus();
+    await userEvent.keyboard("/");
+    expect(other).toHaveFocus();
+    expect(other).toHaveValue("/");
+    other.remove();
   });
 });

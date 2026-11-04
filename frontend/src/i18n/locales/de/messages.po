@@ -84,6 +84,10 @@ msgstr "Alle"
 msgid "An IANA name such as Europe/Berlin."
 msgstr "Ein IANA-Name wie Europe/Berlin."
 
+#: src/features/scan/ScanScreen.tsx
+msgid "Another app may be using the camera. Close it and try again."
+msgstr "Möglicherweise nutzt eine andere App die Kamera. Schließe sie und versuche es erneut."
+
 #: src/features/settings/System.tsx
 msgid "API documentation"
 msgstr "API-Dokumentation"
@@ -139,6 +143,10 @@ msgstr "Kalibrierung"
 msgid "Calibration for this printer will appear here."
 msgstr "Die Kalibrierung dieses Druckers erscheint hier."
 
+#: src/features/scan/ScanScreen.tsx
+msgid "Camera view"
+msgstr "Kamerabild"
+
 #: src/features/settings/SettingField.tsx
 msgid "Can't be read with the current secret key — enter it again"
 msgstr "Lässt sich mit dem aktuellen Geheimschlüssel nicht lesen — bitte erneut eingeben"
@@ -174,6 +182,10 @@ msgstr "Warenkorb ({inCart})"
 #: src/features/settings/System.tsx
 msgid "Checking…"
 msgstr "Wird geprüft…"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Choose a photo of a code"
+msgstr "Foto eines Codes wählen"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Clear queue"
@@ -229,6 +241,7 @@ msgstr "Verbindung"
 msgid "Continue"
 msgstr "Weiter"
 
+#: src/features/scan/ScanScreen.tsx
 #: src/features/settings/AccessKeys.tsx
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Copied"
@@ -243,6 +256,10 @@ msgstr "Kopien"
 #: src/features/lookup/CartPage.tsx
 msgid "Copies of {itemName}"
 msgstr "Kopien von {itemName}"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Copy"
+msgstr "Kopieren"
 
 #: src/features/settings/AccessKeys.tsx
 #: src/shell/BootstrapKeyCreated.tsx
@@ -427,6 +444,10 @@ msgstr "Gesund"
 msgid "History"
 msgstr "Verlauf"
 
+#: src/features/scan/ScanScreen.tsx
+msgid "Hold a label's code inside the corners. QR, Code 128 and Data Matrix are read."
+msgstr "Halte den Code eines Etiketts in die Ecken. QR, Code 128 und Data Matrix werden gelesen."
+
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/PrinterForm.tsx
 msgid "Host"
@@ -458,6 +479,7 @@ msgid "Interrupted by a restart"
 msgstr "Durch Neustart unterbrochen"
 
 #: src/features/jobs/JobsPage.tsx
+#: src/features/search/jobsSource.ts
 #: src/features/settings/sections.tsx
 #: src/features/settings/SettingsPage.tsx
 #: src/shell/labels.ts
@@ -610,9 +632,21 @@ msgstr "Braucht Aufmerksamkeit"
 msgid "Never used"
 msgstr "Nie benutzt"
 
+#: src/features/scan/ScanScreen.tsx
+msgid "No camera"
+msgstr "Keine Kamera"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "No camera was found on this device. Choose a photo of the code instead."
+msgstr "Auf diesem Gerät wurde keine Kamera gefunden. Wähle stattdessen ein Foto des Codes."
+
 #: src/features/settings/Integrations.tsx
 msgid "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
 msgstr "Noch keine Client-Schlüssel. Lege unter <0>Zugang und Schlüssel</0> einen an, benannt nach dem Client (zum Beispiel „Kept“)."
+
+#: src/features/scan/ScanScreen.tsx
+msgid "No code found in this photo. Hold the camera closer and try again."
+msgstr "In diesem Foto wurde kein Code gefunden. Halte die Kamera näher heran und versuche es erneut."
 
 #: src/features/lookup/ItemView.tsx
 msgid "No item has this ID:"
@@ -794,6 +828,7 @@ msgstr "Der Drucker ist offline"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrintersPage.tsx
+#: src/features/search/printersSource.ts
 #: src/features/settings/Printers.tsx
 #: src/features/settings/SettingsPage.tsx
 #: src/shell/labels.ts
@@ -894,6 +929,10 @@ msgstr "Verbinde …"
 msgid "Red"
 msgstr "Rot"
 
+#: src/features/scan/ScanScreen.tsx
+msgid "Reload the page and try again. If it keeps failing, the browser may block WebAssembly."
+msgstr "Lade die Seite neu und versuche es erneut. Wenn es weiter scheitert, blockiert der Browser möglicherweise WebAssembly."
+
 #: src/features/lookup/CartPage.tsx
 msgid "Remove"
 msgstr "Entfernen"
@@ -964,16 +1003,24 @@ msgstr "Gespeichert"
 msgid "Saved — enter a new value to replace"
 msgstr "Gespeichert — neuen Wert eingeben, um ihn zu ersetzen"
 
+#: src/features/settings/Integrations.tsx
+msgid "Saved values exist, but this integration cannot be used yet. A secret may belong to another URL or may not be readable with the current secret key, or the URL is missing. Enter the secret again."
+msgstr "Es sind gespeicherte Werte vorhanden, aber die Integration lässt sich noch nicht nutzen. Ein Geheimnis gehört möglicherweise zu einer anderen URL oder ist mit dem aktuellen Geheimnisschlüssel nicht lesbar, oder die URL fehlt. Gib das Geheimnis erneut ein."
+
 #: src/features/settings/feedback.tsx
 msgid "Saving failed."
 msgstr "Das Speichern ist fehlgeschlagen."
 
 #: src/features/integrations/IntegrationPage.tsx
-#: src/pages/placeholders.tsx
+#: src/features/scan/ScanScreen.tsx
 #: src/shell/labels.ts
 #: src/shell/TopBar.tsx
 msgid "Scan"
 msgstr "Scannen"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Scan again"
+msgstr "Erneut scannen"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Scan barcode"
@@ -1113,6 +1160,10 @@ msgstr "Spoolman"
 msgid "Spoolman sends this key with its webhook. At least {MIN_WEBHOOK_KEY} characters."
 msgstr "Spoolman sendet diesen Schlüssel mit seinem Webhook. Mindestens {MIN_WEBHOOK_KEY} Zeichen."
 
+#: src/features/scan/ScanScreen.tsx
+msgid "Starting the camera…"
+msgstr "Kamera wird gestartet …"
+
 #: src/features/settings/SettingsPage.tsx
 #: src/features/settings/System.tsx
 #: src/shell/labels.ts
@@ -1167,9 +1218,29 @@ msgstr "Dieser Wert wird vom Container gesetzt und lässt sich hier nicht änder
 msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."
 msgstr "Der Bootstrap-Schlüssel gilt nicht mehr, weil ein Admin-Schlüssel existiert. Melde dich mit diesem an."
 
+#: src/features/scan/ScanScreen.tsx
+msgid "The camera did not start"
+msgstr "Die Kamera ist nicht gestartet"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "The camera is blocked"
+msgstr "Die Kamera ist gesperrt"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "The camera is not available here"
+msgstr "Die Kamera ist hier nicht verfügbar"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "The camera needs a secure connection (HTTPS) or localhost. Open the hub through its HTTPS address, or choose a photo of the code below."
+msgstr "Die Kamera braucht eine sichere Verbindung (HTTPS) oder localhost. Öffne den Hub über seine HTTPS-Adresse oder wähle unten ein Foto des Codes."
+
 #: src/features/lookup/CartPage.tsx
 msgid "The cart is empty."
 msgstr "Der Warenkorb ist leer."
+
+#: src/features/scan/ScanScreen.tsx
+msgid "The code reader did not start"
+msgstr "Der Code-Leser ist nicht gestartet"
 
 #: src/features/settings/System.tsx
 msgid "The download holds the settings that are not secret and not set by the container, as JSON. Keys and tokens are never included."
@@ -1287,6 +1358,14 @@ msgstr "Der Test konnte nicht ausgeführt werden."
 msgid "Theme"
 msgstr "Design"
 
+#: src/features/scan/ScanScreen.tsx
+msgid "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
+msgstr "Der Browser hat die Kamera für diese Seite gesperrt. Erlaube sie in den Website-Einstellungen (Symbol neben der Adresse, dann Kamera) und versuche es erneut."
+
+#: src/features/scan/ScanScreen.tsx
+msgid "This code is not one the hub knows. Its text:"
+msgstr "Diesen Code kennt der Hub nicht. Sein Text:"
+
 #: src/features/lookup/ItemView.tsx
 msgid "This item cannot be shown"
 msgstr "Dieser Eintrag kann nicht angezeigt werden"
@@ -1345,9 +1424,14 @@ msgstr "Zu viele Versuche. Warte eine Minute und versuche es erneut."
 
 #: src/app/router.tsx
 #: src/features/lookup/ItemView.tsx
+#: src/features/scan/ScanScreen.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Erneut versuchen"
+
+#: src/features/scan/ScanScreen.tsx
+msgid "Unknown code"
+msgstr "Unbekannter Code"
 
 #: src/features/jobs/JobsPage.tsx
 #: src/features/overview/OverviewPage.tsx
