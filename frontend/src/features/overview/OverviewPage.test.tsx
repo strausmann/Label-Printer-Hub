@@ -18,7 +18,9 @@ describe("Overview", () => {
     mockApi(base());
     await renderApp({ path: "/" });
     const headings = await screen.findAllByRole("heading", { level: 2 });
-    expect(headings.slice(0, 3).map((h) => h.textContent)).toEqual(["Printing now", "Needs attention", "Material"]);
+    // The phone-only Integrations tiles sit between the second and third question.
+    const questions = headings.map((h) => h.textContent).filter((h) => h !== "Integrations");
+    expect(questions.slice(0, 3)).toEqual(["Printing now", "Needs attention", "Material"]);
   });
 
   it("lists a running job under Printing now", async () => {
@@ -115,7 +117,7 @@ describe("Overview", () => {
       { name: "spoolman" as const, configured: spoolman },
     ];
 
-    it("shows a tile with the status for each configured integration, after the three questions", async () => {
+    it("shows a tile with the status for each configured integration, directly after Needs attention and before Material", async () => {
       mockApi(base());
       await renderApp({ path: "/", info: { integrations: set(true, true, false) } });
       const section = await screen.findByRole("region", { name: "Integrations" });
@@ -123,7 +125,7 @@ describe("Overview", () => {
       expect(snipe).toHaveAttribute("href", "/integrations/snipeit");
       expect(within(snipe).getByText("Connected")).toBeVisible();
       const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-      expect(headings.slice(0, 3)).toEqual(["Printing now", "Needs attention", "Material"]);
+      expect(headings.slice(0, 4)).toEqual(["Printing now", "Needs attention", "Integrations", "Material"]);
     });
 
     it("an admin gets Not set up with a Set up link for the rest", async () => {

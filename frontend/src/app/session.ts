@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient, type UseQueryR
 import { useCallback, useEffect } from "react";
 import { apiFetch, setCsrfToken, setOnUnauthorized } from "../api/client";
 import type { components } from "../api/schema.gen";
+import { clearRecent } from "../features/lookup/recent";
 
 export type InfoData = components["schemas"]["Info"];
 export type SessionData = components["schemas"]["SessionInfo"];
@@ -78,6 +79,7 @@ export function useSession(): Session {
     onSettled: () => {
       setCsrfToken(null);
       resetUserData(queryClient);
+      clearRecent();
       queryClient.setQueryData(SESSION_KEY, SIGNED_OUT);
     },
   });

@@ -101,6 +101,8 @@ export function OverviewPage() {
           )}
         </Block>
 
+        <IntegrationTiles />
+
         <Block id="material-h" title={t`Material`}>
           {list.length === 0 ? (
             <p className="text-ink-2">{t`No printers yet.`}</p>
@@ -113,8 +115,6 @@ export function OverviewPage() {
           )}
         </Block>
       </div>
-
-      <IntegrationTiles />
 
       <section aria-labelledby="printers-h" className="flex flex-col gap-3">
         <h2 id="printers-h" className={SECTION_HEADING}>{t`Printers`}</h2>

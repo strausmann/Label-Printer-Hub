@@ -21,6 +21,9 @@ class GrocyNotFoundError(AppLookupNotFoundError):
 
 
 _DIGITS = re.compile(r"[0-9]+")
+# A barcode goes into a URL path. quote() leaves dots alone and httpx collapses dot-segments,
+# so ".." would reach another authenticated Grocy endpoint: letters, digits, "-" and "_" only.
+_BARCODE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 class GrocyPlugin(StoreBoundPlugin):
@@ -73,15 +76,17 @@ class GrocyPlugin(StoreBoundPlugin):
         200 is a ProductDetailsResponse whose ``product`` is the product; 400 is
         "Unknown barcode".
         """
-        response, base = await self._get(
-            f"/api/stock/products/by-barcode/{quote(barcode, safe='')}", self._headers
-        )
+        if not _BARCODE.fullmatch(barcode):
+            raise GrocyNotFoundError(f"Product {barcode!r} not found")
+        response, base = await self._get(f"/api/stock/products/by-barcode/{barcode}", self._headers)
         if response.status_code in (400, 404):
             raise GrocyNotFoundError(f"Product {barcode!r} not found")
         response.raise_for_status()
-        details: dict[str, Any] = response.json()
-        product = details.get("product")
-        return self._payload_to_label(product if isinstance(product, dict) else {}, barcode, base)
+        details = response.json()
+        product = details.get("product") if isinstance(details, dict) else None
+        if not isinstance(product, dict):
+            raise ValueError(f"Grocy response for barcode {barcode!r} has no product object")
+        return self._payload_to_label(product, barcode, base)
 
     def _payload_to_label(
         self, payload: dict[str, Any], product_id: str, base: str | None = None

@@ -93,11 +93,11 @@ async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.Mo
 @respx.mock
 async def test_lookup_url_encodes_product_id() -> None:
     # A non-numeric value is a barcode (E-INT) and is percent-encoded the same way.
-    respx.get("https://grocy.example/api/stock/products/by-barcode/A%2F1").mock(
+    respx.get("https://grocy.example/api/stock/products/by-barcode/A-1_x").mock(
         return_value=httpx.Response(200, json={"product": {"id": 1, "name": "Encoded"}})
     )
     client = bound(GrocyPlugin)
-    data = await client.lookup("A/1")
+    data = await client.lookup("A-1_x")
     assert data.title == "Encoded"
 
 
@@ -258,12 +258,12 @@ async def test_lookup_numeric_unknown_in_both_ways_raises_not_found() -> None:
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_lookup_barcode_is_url_encoded_and_5xx_surfaces() -> None:
-    respx.get("https://grocy.example/api/stock/products/by-barcode/A%2F1%20x").mock(
+async def test_lookup_barcode_5xx_surfaces() -> None:
+    respx.get("https://grocy.example/api/stock/products/by-barcode/A-1").mock(
         return_value=httpx.Response(500)
     )
     with pytest.raises(httpx.HTTPStatusError):
-        await bound(GrocyPlugin).lookup("A/1 x")
+        await bound(GrocyPlugin).lookup("A-1")
 
 
 @pytest.mark.asyncio
@@ -273,4 +273,55 @@ async def test_lookup_barcode_response_without_a_product_id_fails_loudly() -> No
         return_value=httpx.Response(200, json={"product": {"name": "No id"}})
     )
     with pytest.raises(ValueError, match="missing required field 'id'"):
+        await bound(GrocyPlugin).lookup("X1")
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "..",
+        ".",
+        "...",
+        "a/b",
+        "%2e%2e",
+        "a.b",
+        "a b",
+        "",
+        "  ",
+        "x" * 65,
+        "a\\b",
+        "a?b",
+        "a#b",
+        "é1",
+    ],
+)
+async def test_lookup_rejects_unsafe_barcodes_without_a_request(bad: str) -> None:
+    """Dots survive quote() and httpx collapses dot-segments: '..' would hit another endpoint."""
+    anything = respx.route().mock(return_value=httpx.Response(200, json=_DETAILS))
+    with pytest.raises(GrocyNotFoundError):
+        await bound(GrocyPlugin).lookup(bad)
+    assert not anything.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_accepts_the_longest_allowed_barcode() -> None:
+    code = "A-" * 32
+    route = respx.get(f"https://grocy.example/api/stock/products/by-barcode/{code}").mock(
+        return_value=httpx.Response(200, json=_DETAILS)
+    )
+    await bound(GrocyPlugin).lookup(code)
+    assert route.called
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("body", [[], {}, {"product": None}, {"product": []}, "text"])
+async def test_lookup_barcode_200_without_a_product_object_is_a_clean_error(body: object) -> None:
+    respx.get("https://grocy.example/api/stock/products/by-barcode/X1").mock(
+        return_value=httpx.Response(200, json=body)
+    )
+    with pytest.raises(ValueError, match="no product"):
         await bound(GrocyPlugin).lookup("X1")

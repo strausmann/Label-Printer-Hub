@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { kindOf, RECENT_LIMIT, recentKey, recordRecent, reloadRecent, useRecent } from "./recent";
+import { clearRecent, kindOf, RECENT_LIMIT, recentKey, recordRecent, reloadRecent, useRecent } from "./recent";
 
 beforeEach(() => {
   localStorage.clear();
@@ -91,5 +91,19 @@ describe("recent items", () => {
     const raw = localStorage.getItem("lph.recent.snipeit") ?? "";
     expect(raw).not.toContain("example.invalid");
     expect(Object.keys((JSON.parse(raw) as Record<string, unknown>[])[0]!).sort()).toEqual(["at", "id", "kind", "name"]);
+  });
+
+  it("clearRecent removes every app's list from storage and from memory, and nothing else", () => {
+    recordRecent("grocy", { id: "1", name: "A" });
+    recordRecent("snipeit", { id: "HH-1", name: "B" });
+    localStorage.setItem("lph.cart", "[]");
+    const { result } = renderHook(() => useRecent("grocy"));
+    act(() => clearRecent());
+    expect(result.current).toEqual([]);
+    expect(localStorage.getItem("lph.recent.grocy")).toBeNull();
+    expect(localStorage.getItem("lph.recent.snipeit")).toBeNull();
+    expect(localStorage.getItem("lph.cart")).toBe("[]");
+    reloadRecent();
+    expect(renderHook(() => useRecent("snipeit")).result.current).toEqual([]);
   });
 });

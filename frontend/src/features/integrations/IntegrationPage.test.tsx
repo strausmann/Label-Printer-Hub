@@ -185,3 +185,16 @@ describe("link to the app itself", () => {
     expect(page().queryByRole("link", { name: /Open Snipe-IT/ })).toBeNull();
   });
 });
+
+describe("sign out", () => {
+  it("forgets the recently opened lists of this browser", async () => {
+    recordRecent("snipeit", { id: "HH-AK0042", name: "Tool chest" });
+    recordRecent("grocy", { id: "118", name: "Oats" });
+    mockApi({ "DELETE /api/v1/auth/session": null });
+    await renderApp({ path: "/integrations/snipeit" });
+    expect(page().getByText("Tool chest")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await vi.waitFor(() => expect(localStorage.getItem("lph.recent.snipeit")).toBeNull());
+    expect(localStorage.getItem("lph.recent.grocy")).toBeNull();
+  });
+});

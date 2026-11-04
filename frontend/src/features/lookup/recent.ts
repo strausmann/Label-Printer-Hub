@@ -55,6 +55,22 @@ export function reloadRecent(): void {
   listeners.forEach((l) => l());
 }
 
+/** Sign-out: the next person at this browser should not see what was opened here. */
+export function clearRecent(): void {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith("lph.recent.")) keys.push(key);
+    }
+    keys.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    /* storage unavailable: there is nothing stored to forget */
+  }
+  lists.clear();
+  listeners.forEach((l) => l());
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   const onStorage = (event: StorageEvent) => {
