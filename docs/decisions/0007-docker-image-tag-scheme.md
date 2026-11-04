@@ -1,6 +1,6 @@
 # 0007 — Docker image tag scheme
 
-- **Status:** Accepted
+- **Status:** Accepted (amended by ADR-0015: a single image `label-printer-hub-backend` is published; the frontend image no longer exists)
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 

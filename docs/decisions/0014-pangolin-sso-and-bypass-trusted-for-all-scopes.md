@@ -1,6 +1,6 @@
 # 0014 — Pangolin-SSO and Bypass are trusted for all scopes
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0019
 - **Date:** 2026-06-23
 - **Deciders:** Project Owner
 
