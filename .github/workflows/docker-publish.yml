@@ -3,12 +3,12 @@ name: Docker — publish to GHCR + Docker Hub
 # =============================================================================
 # Two-phase build to keep arm64 off QEMU.
 #
-# Phase 1 (`build`):  matrix = service × platform → 4 jobs, each on a NATIVE
+# Phase 1 (`build`):  matrix = service × platform → 2 jobs, each on a NATIVE
 #   runner (amd64 on ubuntu-24.04, arm64 on ubuntu-24.04-arm). Each job
 #   builds its single-platform image, pushes it BY DIGEST (no tag), and
 #   uploads the digest as an artifact for the merge phase.
 #
-# Phase 2 (`merge`): matrix = service → 2 jobs. Downloads all digests for
+# Phase 2 (`merge`): matrix = service → 1 job. Downloads all digests for
 #   its service, asks the registry to compose a multi-arch manifest index
 #   pointing at the per-platform digests, and applies every tag and the
 #   index-level annotations in one shot via `docker buildx imagetools
@@ -67,13 +67,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [backend, frontend]
+        service: [backend]
         platform:
           - linux/amd64
           - linux/arm64
         # `include` adds the runner/arch fields to each existing matrix
         # combination that matches the `platform` key, without multiplying
-        # the matrix further. Net result: 4 jobs (2 services × 2 platforms),
+        # the matrix further. Net result: 2 jobs (1 service × 2 platforms),
         # each with the right runner.
         include:
           - platform: linux/amd64
@@ -187,8 +187,9 @@ jobs:
         id: build
         uses: docker/build-push-action@v7
         with:
-          context: ./${{ matrix.service }}
-          file: ./${{ matrix.service }}/Dockerfile
+          # Repo root as context: the image also builds the web app from frontend/ (D1).
+          context: .
+          file: backend/Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           # `push-by-digest=true` skips the tag write and returns digest in
@@ -238,7 +239,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [backend, frontend]
+        service: [backend]
     steps:
       - name: Download digests for ${{ matrix.service }}
         uses: actions/download-artifact@v8

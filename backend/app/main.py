@@ -24,7 +24,6 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 from typing import Annotated, Any, cast
 
 # ---------------------------------------------------------------------------
@@ -68,7 +67,6 @@ except ValidationError as _cfg_exc:
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.openapi.utils import get_openapi
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,7 +76,6 @@ from app.api.error_handlers import register_error_handlers
 from app.api.routes import auth_session as auth_session_routes
 from app.api.routes import batch as batch_routes
 from app.api.routes import batches as batches_routes
-from app.api.routes import events as events_routes
 from app.api.routes import events_v1 as events_v1_routes
 from app.api.routes import info as info_routes
 from app.api.routes import jobs as jobs_routes
@@ -123,6 +120,7 @@ from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.readiness import build_readiness_response
 from app.services.tape_registry import TapeRegistry
 from app.settings_store import SettingsStore
+from app.web.spa import add_security_headers, mount_spa
 
 # Per ADR 0011 we pin the OpenAPI version explicitly rather than relying on
 # FastAPI's default, so a FastAPI upgrade can't drift the API contract version.
@@ -648,10 +646,9 @@ def create_app() -> _LifespanManager:
         lifespan=lifespan,
         title="Label Printer Hub — backend",
         description=(
-            "REST + SSE API for the Label Printer Hub backend. "
-            "The Go frontend consumes the OpenAPI spec at /openapi.json via "
-            "oapi-codegen; humans browse the interactive docs at /docs "
-            "(Swagger UI) or /redoc."
+            "REST + SSE API for the Label Printer Hub backend, which also serves "
+            "the web UI. The OpenAPI spec is at /openapi.json; humans browse the "
+            "interactive docs at /docs (Swagger UI) or /redoc."
         ),
         version=__version__,
         openapi_url="/openapi.json",
@@ -726,7 +723,6 @@ def create_app() -> _LifespanManager:
     app.include_router(render_router)
     app.include_router(batch_routes.router)
     app.include_router(batches_routes.router)
-    app.include_router(events_routes.router)
     app.include_router(events_v1_routes.router)
     app.include_router(printers_routes.router)
     app.include_router(jobs_routes.router)
@@ -739,9 +735,10 @@ def create_app() -> _LifespanManager:
     app.include_router(settings_api_router)
     app.include_router(info_routes.router)
 
-    _static_dir = Path(__file__).parent / "static"
-    if _static_dir.exists():
-        app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+    # D1: the same process serves the web app. Mounted after every router so the
+    # catch-all only sees what no API route claimed.
+    add_security_headers(app)
+    mount_spa(app, get_settings().web_dist_dir)
 
     return _LifespanManager(app)
 

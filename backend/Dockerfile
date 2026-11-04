@@ -2,18 +2,49 @@
 # Label Printer Hub — backend container
 #
 # Multi-stage build:
-#   1) builder       — installs Python deps into an isolated /opt/venv
-#   2) runtime       — copies the venv onto a slim base, runs as UID 1000
+#   1) web-builder   — builds the web app from frontend/ (pnpm + Vite)
+#   2) builder       — installs Python deps into an isolated /opt/venv
+#   3) runtime       — copies the venv and the built web app onto a slim base,
+#                      runs as UID 1000
 #
-# Build context: the `backend/` directory. Cache-friendly layer order: deps
-# first (rare changes), source code last (frequent changes).
+# One process serves the API and the web UI (D1).
+#
+# Build context: the REPOSITORY ROOT (the web app lives in frontend/):
+#   docker build -f backend/Dockerfile .
+# Cache-friendly layer order: deps first (rare changes), source code last.
+#
+# Until the web app exists the default WEB_SOURCE is the empty `web-stub`
+# stage: the image then runs API-only. Task 8 switches the default to
+# `web-builder`; override per build with --build-arg WEB_SOURCE=web-builder.
 #
 # References:
-#   docs/decisions/0001-two-container-architecture.md  (two-container split)
+#   docs/decisions/0001-two-container-architecture.md  (superseded by D1)
 #   docs/decisions/0002-python-fastapi-backend.md      (Python + FastAPI)
 #   docs/decisions/0007-docker-image-tag-scheme.md     (multi-arch publish)
 #   CLAUDE.md hard rules                               (non-root UID 1000)
 # =============================================================================
+
+ARG WEB_SOURCE=web-stub
+
+# -----------------------------------------------------------------------------
+# Stage 0a: web-builder — the Vite build of the web app
+# -----------------------------------------------------------------------------
+FROM node:22-bookworm-slim AS web-builder
+WORKDIR /web
+RUN corepack enable
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY frontend/ ./
+RUN pnpm build && mkdir /dist && cp -r dist/. /dist/
+
+# -----------------------------------------------------------------------------
+# Stage 0b: web-stub — empty placeholder (API-only image)
+# -----------------------------------------------------------------------------
+FROM scratch AS web-stub
+WORKDIR /dist
+
+# The stage the runtime image copies the web app from (see WEB_SOURCE above).
+FROM ${WEB_SOURCE} AS web
 
 # -----------------------------------------------------------------------------
 # Stage 1: builder
@@ -46,7 +77,7 @@ ENV PATH="/opt/venv/bin:${PATH}"
 # Stage A: deps only. Copying pyproject.toml + README first means Docker can
 # reuse this layer until either of those files changes — re-running pip install
 # on every source edit would be wasteful.
-COPY pyproject.toml README.md ./
+COPY backend/pyproject.toml backend/README.md ./
 # Create an empty package skeleton so hatchling can resolve [project] but
 # nothing app-specific is installed yet — purely a dependency-resolution pass.
 RUN mkdir -p app && touch app/__init__.py \
@@ -56,7 +87,7 @@ RUN mkdir -p app && touch app/__init__.py \
 # Stage B: real source. Replaces the placeholder app/ and reinstalls so
 # entry-points (uvicorn discovers the module via the venv) reflect the actual
 # code. Without the prior layer, every code change would re-download all deps.
-COPY app/ ./app/
+COPY backend/app/ ./app/
 RUN pip install --no-deps --force-reinstall .
 
 # -----------------------------------------------------------------------------
@@ -103,9 +134,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # The compose files in examples/ set this via the .env file.
     PORT=8000 \
     # uvicorn FORWARDED_ALLOW_IPS default — safe restriction to localhost only.
-    # Deployments behind a reverse proxy (the Go frontend per ADR 0001) must
-    # override this with the proxy's IP or CIDR via the FORWARDED_ALLOW_IPS
-    # env var. The sample compose files set it to a docker-internal subnet.
+    # Deployments behind a reverse proxy must override this with the proxy's
+    # IP or CIDR via the FORWARDED_ALLOW_IPS env var.
     FORWARDED_ALLOW_IPS=127.0.0.1
 
 # Minimal runtime deps:
@@ -141,6 +171,9 @@ RUN groupadd --system --gid 1000 hub \
 # package is importable via the venv's site-packages.
 COPY --from=builder --chown=hub:hub /opt/venv /opt/venv
 
+# The built web app; settings.web_dist_dir defaults to this path (D1).
+COPY --from=web --chown=hub:hub /dist /opt/app/web
+
 # Alembic runtime configuration and migration scripts.
 #
 # lifespan.py resolves alembic.ini as:
@@ -149,8 +182,8 @@ COPY --from=builder --chown=hub:hub /opt/venv /opt/venv
 # parents[2] = /opt/venv/lib/python3.12/site-packages — we place alembic.ini
 # there. alembic.ini.runtime uses absolute script_location = /opt/migrations/alembic
 # so the migration scripts are found regardless of the working directory.
-COPY --chown=hub:hub alembic.ini.runtime /opt/venv/lib/python3.12/site-packages/alembic.ini
-COPY --chown=hub:hub alembic/ /opt/migrations/alembic/
+COPY --chown=hub:hub backend/alembic.ini.runtime /opt/venv/lib/python3.12/site-packages/alembic.ini
+COPY --chown=hub:hub backend/alembic/ /opt/migrations/alembic/
 
 WORKDIR /home/hub
 

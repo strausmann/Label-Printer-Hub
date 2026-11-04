@@ -717,3 +717,36 @@ async def test_put_enabled_true_subscribes_and_sends_a_snapshot(hub_app):
         assert _queue_subscribers(app, pid) == 1
     finally:
         await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_queue_producer_transitions_reach_the_stream(hub_app):
+    """The real producer (not a hand-built event) feeds the stream, one frame per transition.
+
+    Ported from the removed fragment-stream tests, which covered the same
+    producer -> bus -> stream path for the old HTML endpoint.
+    """
+    from app.services.job_lifecycle import Job, JobState
+    from app.services.producers.print_queue_producer import PrintQueueProducer
+
+    app, _ = hub_app
+    key, _ = await _insert_key(["read"])
+    printer_id = await _insert_printer("producer")
+    producer = PrintQueueProducer(_bus(app))
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        job_ids = [f"job-{i}" for i in range(3)]
+        for job_id in job_ids:
+            job = Job(id=job_id, printer_id=printer_id)
+            producer.handle_transition(job, JobState.QUEUED, JobState.PRINTING, queue_depth=2)
+        seen: list[str] = []
+        while len(seen) < len(job_ids):
+            ev = await stream.event_of_type("job.state_changed")
+            assert ev["payload"]["data"]["from_state"] == "queued"
+            assert ev["payload"]["data"]["to_state"] == "printing"
+            assert ev["payload"]["data"]["queue_depth"] == 2
+            seen.append(ev["payload"]["data"]["job_id"])
+        assert seen == job_ids
+    finally:
+        await stream.close()

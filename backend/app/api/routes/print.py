@@ -34,6 +34,7 @@ from app.services.job_lifecycle import JobState
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import LookupFailedError
 from app.services.print_queue import PrinterAlreadyActiveError
+from app.web.spa import serve_index
 
 _log = logging.getLogger(__name__)
 
@@ -122,7 +123,12 @@ async def get_job_status(
     job_id: str,
     http: Request,
     _auth: Annotated[AuthContext, Depends(require_read)],
-) -> PrintJobStatusResponse:
+) -> PrintJobStatusResponse | Response:
+    # Old links point browsers here: hand them the web app (D1), keep JSON for clients.
+    if "text/html" in http.headers.get("accept", ""):
+        shell = serve_index(http)
+        if shell is not None:
+            return shell
     queue = http.app.state.print_queue
     try:
         job = await queue.get(job_id)
