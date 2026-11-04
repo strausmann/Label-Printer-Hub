@@ -137,6 +137,28 @@ async def test_legacy_job_route_html_for_browser_json_for_client(spa: AsyncClien
         spa.app._app.dependency_overrides.clear()  # type: ignore[attr-defined]
 
 
+async def test_unauthenticated_browser_gets_app_for_job_link(spa: AsyncClient) -> None:
+    """A browser without a session opening /jobs/<id> gets the app (it shows sign-in),
+    not the JSON 401 of the legacy route; API clients keep the JSON route incl. auth."""
+    job = "7f9c1c2e-1d0a-4c55-9a53-2f0f6c4f9a11"
+    browser = await spa.get(f"/jobs/{job}", headers={"Accept": "text/html,*/*;q=0.8"})
+    assert browser.status_code == 200
+    assert browser.text == INDEX_HTML
+    assert browser.headers["content-security-policy"] == CSP
+    client = await spa.get(f"/jobs/{job}", headers={"Accept": "application/json"})
+    assert client.status_code == 401
+    assert client.headers["content-type"].startswith("application/json")
+    default = await spa.get(f"/jobs/{job}")  # httpx sends Accept: */*
+    assert default.status_code == 401
+
+
+async def test_html_negotiation_never_applies_to_other_methods(spa: AsyncClient) -> None:
+    # Only a GET navigation is handed the app; a POST stays on its JSON route (and its auth).
+    resp = await spa.post("/jobs/abc/resume", headers={"Accept": "text/html"})
+    assert resp.status_code == 401
+    assert resp.headers["content-type"].startswith("application/json")
+
+
 @pytest.mark.parametrize("prefix", ["loc", "asset", "spool", "product"])
 async def test_qr_paths_serve_app(spa: AsyncClient, prefix: str) -> None:
     resp = await spa.get(f"/{prefix}/ABC-123")
