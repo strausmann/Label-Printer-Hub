@@ -1,8 +1,9 @@
 # Web UI redesign: foundation
 
 - **Date:** 2026-11-03
-- **Status:** Draft, open points settled 2026-11-04
+- **Status:** Approved by the maintainer 2026-11-04
 - **Scope:** the new web UI's foundation. Feature modules for parts and partial retry (#149), page printers, the sheet archive and calibration (#150), Paperless ASN labels (#151) and the Kept integration (keptinventory/kept#421) get their own designs later and plug into this foundation.
+- **Last step of the overall project:** a documentation and product site built with Zensical, in the style of the Gangway project's site, once the foundation and the feature modules have shipped. It gets its own design.
 - **Mockups:** portal and token set (private draft, screenshots to be attached to the PR); sheet screens <https://claude.ai/artifact/BLKZ7Vhe1RkksXuwptB5ha>; Kept integration <https://claude.ai/artifact/5NUGZXqJ68seriPKwQB5fD>
 
 ## 1. Intent
