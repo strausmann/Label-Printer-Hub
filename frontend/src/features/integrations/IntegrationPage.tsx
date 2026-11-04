@@ -95,7 +95,7 @@ function Start({ app }: { app: LookupApp }) {
         <section className={`${PANEL} flex max-w-xl flex-col items-start gap-3`}>
           <p>{t`${appName} is not set up yet, so there is nothing to look up.`}</p>
           {admin ? (
-            <Link to="/settings/$" params={{ _splat: "integrations" }} className="text-link underline underline-offset-2">
+            <Link to="/settings/integrations" className="text-link underline underline-offset-2">
               {t`Open Settings › Integrations`}
             </Link>
           ) : (

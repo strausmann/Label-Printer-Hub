@@ -13,6 +13,8 @@ Environment:
 - ``E2E_BOOTSTRAP=1``: start with no API keys and the one-time bootstrap key instead (D7);
   the file then holds the bootstrap key.
 
+The Grocy URL is set through the environment, so the settings UI has a locked field to test.
+
 The module builds the app on import (like ``app.main``), because that is how uvicorn
 loads it. Importing it therefore needs the same settings ``app.main`` needs; they are
 filled with throw-away values below, never read from the real environment.
@@ -90,6 +92,8 @@ def _prepare_environment(workdir: Path) -> tuple[bool, Path | None]:
     os.environ["PRINTER_HUB_PUBLIC_URL"] = f"http://localhost:{os.environ.get('E2E_PORT', '8765')}"
     os.environ["PRINTER_HUB_DATABASE_URL"] = f"sqlite+aiosqlite:///{workdir / 'e2e.db'}"
     os.environ.setdefault("PRINTER_HUB_WEB_DIST_DIR", "../frontend/dist")
+    # One integration URL comes from the container, so the settings UI has a locked field (D4).
+    os.environ["PRINTER_HUB_GROCY_URL"] = "http://grocy.example.invalid"
     if bootstrap:
         # A throw-away bootstrap key: at least 32 characters.
         os.environ["PRINTER_HUB_BOOTSTRAP_ADMIN_KEY"] = "e2e-bootstrap-" + secrets.token_urlsafe(24)

@@ -42,8 +42,7 @@ export function IntegrationTiles() {
                   <span className="flex items-center gap-2 text-small">
                     {t`Not set up`} ·
                     <Link
-                      to="/settings/$"
-                      params={{ _splat: "integrations" }}
+                      to="/settings/integrations"
                       aria-label={t`Set up ${name}`}
                       className="inline-flex h-11 items-center text-link underline underline-offset-2"
                     >

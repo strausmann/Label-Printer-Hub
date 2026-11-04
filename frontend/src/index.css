@@ -109,3 +109,16 @@
     transform: scale(0.97);
   }
 }
+
+/* Entrances for popovers and dialogs: opacity plus a small scale, never from nothing. */
+@keyframes popin {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@keyframes fadein {
+  from {
+    opacity: 0;
+  }
+}

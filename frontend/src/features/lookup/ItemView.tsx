@@ -82,7 +82,7 @@ function Item({ app, id }: { app: LookupApp; id: string }) {
         <div className="flex flex-col gap-3">
           <h1 className="text-title font-bold">{t`This item cannot be shown`}</h1>
           <p className="text-ink-2">{t`${name} is not set up yet, so this item cannot be shown.`}</p>
-          <Link to="/settings/$" params={{ _splat: "integrations" }} className="w-fit text-link underline underline-offset-2">
+          <Link to="/settings/integrations" className="w-fit text-link underline underline-offset-2">
             {t`Open Settings › Integrations`}
           </Link>
         </div>

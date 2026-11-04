@@ -19,7 +19,6 @@ import {
   KeptPage,
   NotFoundPage,
   ScanPage,
-  SettingsPage,
   SheetArchivePage,
   SheetsPage,
 } from "../pages/placeholders";
@@ -28,6 +27,12 @@ import { JobPage } from "../features/jobs/JobDetail";
 import { JobsPage } from "../features/jobs/JobsPage";
 import { CartPage } from "../features/lookup/CartPage";
 import { AssetPage, LocPage, LookupPage, ProductPage, SpoolPage } from "../features/lookup/ItemView";
+import { AccessKeys } from "../features/settings/AccessKeys";
+import { Integrations } from "../features/settings/Integrations";
+import { Printers as SettingsPrinters } from "../features/settings/Printers";
+import { General, Jobs } from "../features/settings/sections";
+import { SettingsLayout } from "../features/settings/SettingsPage";
+import { System } from "../features/settings/System";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { PrinterPage } from "../features/printers/PrinterDetail";
 import { PrintersPage } from "../features/printers/PrintersPage";
@@ -131,6 +136,11 @@ function SignInRoute() {
 const page = <P extends string>(path: P, component: () => React.JSX.Element) =>
   createRoute({ getParentRoute: () => rootRoute, path, component });
 
+// Settings is a layout (admin gate and section navigation) with one child per section.
+const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsLayout });
+const settingsChild = <P extends string>(path: P, component: () => React.JSX.Element) =>
+  createRoute({ getParentRoute: () => settingsRoute, path, component });
+
 const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sign-in",
@@ -157,8 +167,14 @@ const routeTree = rootRoute.addChildren([
   page("/product/$id", ProductPage),
   page("/cart", CartPage),
   page("/scan", ScanPage),
-  page("/settings", SettingsPage),
-  page("/settings/$", SettingsPage),
+  settingsRoute.addChildren([
+    settingsChild("/", General),
+    settingsChild("/printers", SettingsPrinters),
+    settingsChild("/integrations", Integrations),
+    settingsChild("/access", AccessKeys),
+    settingsChild("/jobs", Jobs),
+    settingsChild("/system", System),
+  ]),
   page("/sheets", SheetsPage),
   page("/sheets/archive", SheetArchivePage),
   page("/calibration", CalibrationPage),

@@ -19,10 +19,6 @@ export function ScanPage() {
   const { t } = useLingui();
   return <PagePlaceholder title={t`Scan`} />;
 }
-export function SettingsPage() {
-  const { t } = useLingui();
-  return <PagePlaceholder title={t`Settings`} />;
-}
 
 /* Modules that have not shipped: their navigation entries stay hidden until `features` says so. */
 export function SheetsPage() {

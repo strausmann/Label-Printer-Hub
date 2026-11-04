@@ -33,7 +33,7 @@ export function IntegrationNavEntries({ integrations }: { integrations: Integrat
           <span>{appName(app)}</span>
         </Link>
       ) : (
-        <Link to="/settings/$" params={{ _splat: "integrations" }} className={`${ROW} text-ink-3 hover:text-ink-2`}>
+        <Link to="/settings/integrations" className={`${ROW} text-ink-3 hover:text-ink-2`}>
           {INTEGRATION_ICON[app]}
           <span>{appName(app)}</span>
           <span className="ml-auto text-small">{t`Not set up`}</span>
