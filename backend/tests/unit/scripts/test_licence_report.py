@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
+from scripts import licence_report
 from scripts.licence_report import (
     LicenceException,
     Policy,
+    _collect,
     check,
     classify,
     expression_allowed,
@@ -22,12 +26,16 @@ ALLOWED = frozenset({"MIT", "MIT-0", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause
 ALLOWED |= frozenset({"PSF-2.0", "LGPL-2.1-or-later"})
 
 
-def _policy(**exceptions: tuple[str, str]) -> Policy:
+def _policy(reviewed: dict[str, str] | None = None, /, **exceptions: tuple[str, str]) -> Policy:
+    reviewed = reviewed or {}
     return Policy(
         allowed=ALLOWED,
         exceptions={
             normalise_purl(f"pkg:pypi/{name}"): LicenceException(
-                purl=f"pkg:pypi/{name}", licence=lic, reason=reason
+                purl=f"pkg:pypi/{name}",
+                licence=lic,
+                reason=reason,
+                reviewed_expression=reviewed.get(name),
             )
             for name, (lic, reason) in exceptions.items()
         },
@@ -201,3 +209,106 @@ def test_load_policy_rejects_malformed_documents(tmp_path: Path, document: objec
     path.write_text(json.dumps(document), encoding="utf-8")
     with pytest.raises(ValueError):
         load_policy(path)
+
+
+def test_exception_survives_the_exact_expression_it_was_reviewed_against() -> None:
+    # A package that declares a non-SPDX or LicenseRef expression has a documented way out.
+    policy = _policy(
+        {"bundled": "Apache-2.0 AND LicenseRef-Bundled-Font"},
+        bundled=("Apache-2.0", "the bundled font is OFL-1.1"),
+    )
+    declared = "Apache-2.0 AND LicenseRef-Bundled-Font"
+    assert classify(_record("bundled", expression=declared), policy) == ("Apache-2.0", True)
+    assert check([_record("bundled", expression=declared)], policy) == []
+
+
+def test_exception_stops_applying_when_the_declared_expression_changes() -> None:
+    policy = _policy({"bundled": "BSD"}, bundled=("BSD-3-Clause", "declares the bare id BSD"))
+    drifted = _record("bundled", expression="GPL-2.0-only")
+    assert classify(drifted, policy) == ("GPL-2.0-only", False)
+    assert check([drifted], policy) == [
+        "bundled (GPL-2.0-only): exception reviewed against BSD, package now declares GPL-2.0-only"
+    ]
+    # An unusable declaration that was never reviewed is refused with the same message.
+    unusable = _record("bundled", expression="BSD-ish")
+    assert check([unusable], policy) == [
+        "bundled (BSD-ish): exception reviewed against BSD, package now declares BSD-ish"
+    ]
+
+
+def test_exception_without_reviewed_expression_stops_when_something_is_declared() -> None:
+    policy = _policy(pysnmp=("BSD-2-Clause", "metadata UNKNOWN"))
+    drifted = _record("pysnmp", expression="LicenseRef-x")
+    assert check([drifted], policy) == [
+        "pysnmp (LicenseRef-x): exception reviewed against no declared expression, "
+        "package now declares LicenseRef-x"
+    ]
+
+
+def test_conflicting_classifier_is_not_settled_by_metadata() -> None:
+    entry = _record("x", metadata="MIT", classifier="GNU General Public License v2 (GPLv2)")
+    assert classify(entry, _policy()) == ("UNKNOWN", False)
+
+
+def test_load_policy_reads_reviewed_expression(tmp_path: Path) -> None:
+    path = tmp_path / "policy.yml"
+    doc: dict[str, Any] = {
+        "allow-licenses": ["MIT"],
+        "x-licence-exceptions": [
+            {"purl": "pkg:pypi/a", "licence": "MIT", "reason": "r", "reviewed_expression": "BSD"}
+        ],
+    }
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert load_policy(path).exceptions["pkg:pypi/a"].reviewed_expression == "BSD"
+    doc["x-licence-exceptions"][0]["reviewed_expression"] = " "
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_policy(path)
+
+
+def test_collect_excludes_the_own_package_and_reports_tool_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = [
+        _record("label-printer-hub-backend", expression="MIT"),
+        _record("a", expression="MIT"),
+    ]
+
+    def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        assert command[1:3] == ["-m", "piplicenses"]
+        assert "--from=all" in command
+        return subprocess.CompletedProcess(command, 0, json.dumps(records), "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert [e["Name"] for e in _collect("python")] == ["a"]
+
+    def failing_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 2, "", "boom")
+
+    monkeypatch.setattr(subprocess, "run", failing_run)
+    with pytest.raises(RuntimeError, match="boom"):
+        _collect("python")
+
+
+def test_main_exit_codes_and_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    policy_file = tmp_path / "policy.yml"
+    policy_file.write_text(json.dumps({"allow-licenses": ["MIT"]}), encoding="utf-8")
+    monkeypatch.setattr(
+        licence_report,
+        "_collect",
+        lambda _: [_record("ok", expression="MIT"), _record("bad", expression="GPL-2.0-only")],
+    )
+    out = tmp_path / "out.json"
+    code = licence_report.main(
+        ["--python", "x", "--policy", str(policy_file), "--output", str(out)]
+    )
+    assert code == 1
+    assert capsys.readouterr().out == "bad (GPL-2.0-only)\n"
+    assert {r["name"]: r["allowed"] for r in json.loads(out.read_text("utf-8"))} == {
+        "ok": True,
+        "bad": False,
+    }
+    monkeypatch.setattr(licence_report, "_collect", lambda _: [_record("ok", expression="MIT")])
+    assert licence_report.main(["--python", "x", "--policy", str(policy_file)]) == 0

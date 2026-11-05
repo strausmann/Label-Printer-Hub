@@ -17,13 +17,13 @@ jobs:
     name: Dependency review
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
       - name: Review the licences of changed dependencies
         id: review
-        uses: actions/dependency-review-action@v5
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5
         with:
           config-file: ./licence-policy.yml
 
@@ -41,9 +41,11 @@ jobs:
           INVALID_LICENSE_CHANGES: ${{ steps.review.outputs.invalid-license-changes }}
         run: |
           unlicensed=$(printf '%s' "$INVALID_LICENSE_CHANGES" \
-            | jq -r '.unlicensed[]? | select(.ecosystem != "actions") | "\(.manifest) » \(.name)@\(.version)"')
+            | jq -r '.unlicensed[]? | select(.ecosystem != "actions") | "- \(.manifest) » \(.name)@\(.version)"')
           if [ -n "$unlicensed" ]; then
             echo "::error::Dependencies without a detectable licence. Read their licence file and add an exception to licence-policy.yml (see CONTRIBUTING.md)."
+            # Every line starts with "- ": a manifest path or name that begins with "::" must not
+            # be read as a workflow command.
             printf '%s\n' "$unlicensed"
             exit 1
           fi

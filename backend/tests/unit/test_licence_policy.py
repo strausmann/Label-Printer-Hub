@@ -81,7 +81,16 @@ def test_every_allowed_purl_has_reason() -> None:
 def test_exception_entries_are_complete() -> None:
     seen: set[str] = set()
     for entry in _policy()["x-licence-exceptions"]:
-        assert set(entry) == {"purl", "licence", "reason"}
+        assert (
+            {"purl", "licence", "reason"}
+            <= set(entry)
+            <= {
+                "purl",
+                "licence",
+                "reason",
+                "reviewed_expression",
+            }
+        )
         assert entry["purl"].startswith("pkg:")
         assert entry["reason"].strip()
         key = normalise_purl(entry["purl"])

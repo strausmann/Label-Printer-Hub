@@ -23,15 +23,19 @@ image build) and is never a required pull request check.
 
 Classification rules, in this order (:func:`classify`):
 
-1. An exception for ``pkg:pypi/<normalised name>`` in ``x-licence-exceptions`` wins, unless the
-   package declares a valid SPDX ``License-Expression`` itself. Exceptions exist to repair
-   wrong or missing metadata, and they carry no version (there is no lockfile, and a pinned
-   exception would fail the image build on every upstream release). Once a release declares its
-   licence properly, the metadata is no longer deficient and is judged as declared, so a later
-   release cannot hide behind the licence that was reviewed for an older one.
+1. An exception for ``pkg:pypi/<normalised name>`` in ``x-licence-exceptions`` applies when the
+   package declares no ``License-Expression`` at all (the metadata is missing), or declares
+   exactly the string the exception records as ``reviewed_expression`` (the metadata is wrong
+   in a way that was reviewed). Exceptions carry no version (there is no lockfile, and a pinned
+   exception would fail the image build on every upstream release). When a release declares
+   something else, the exception does not apply and the record is judged as declared: a later
+   release cannot hide behind the licence that was reviewed for an older one. If that leaves
+   the package refused, the report says "exception reviewed against X, package now declares Y".
 2. A valid SPDX ``License-Expression`` is used as it is.
 3. Otherwise the classifiers are mapped one by one through :data:`CLASSIFIER_TO_SPDX` and
-   joined with `` OR ``. When one classifier cannot be mapped, the step yields nothing.
+   joined with `` OR ``. When the only unmapped classifier is the ambiguous bare
+   ``BSD License``, the step yields nothing and the metadata decides; any other unmapped
+   classifier yields ``UNKNOWN`` (conflicting data is never settled by the metadata).
 4. Otherwise :data:`METADATA_TO_SPDX`.
 5. Otherwise ``UNKNOWN``, which is never allowed.
 
@@ -95,6 +99,9 @@ class LicenceException:
     purl: str
     licence: str
     reason: str
+    #: The ``License-Expression`` string the package declared when the exception was reviewed
+    #: (only for packages that declare something that is not usable as it stands).
+    reviewed_expression: str | None = None
 
 
 @dataclass(frozen=True)
@@ -134,7 +141,12 @@ def load_policy(path: Path) -> Policy:
             raise ValueError(f"{path}: an exception needs purl, licence and reason: {raw!r}")
         if not purl.strip() or not licence.strip() or not reason.strip():
             raise ValueError(f"{path}: purl, licence and reason must not be empty: {raw!r}")
-        exceptions[normalise_purl(purl)] = LicenceException(purl, licence, reason)
+        reviewed = raw.get("reviewed_expression")
+        if reviewed is not None and not (isinstance(reviewed, str) and reviewed.strip()):
+            raise ValueError(f"{path}: reviewed_expression must be a non-empty string: {raw!r}")
+        exceptions[normalise_purl(purl)] = LicenceException(
+            purl, licence, reason, reviewed.strip() if reviewed else None
+        )
     return Policy(allowed=frozenset(licences), exceptions=exceptions)
 
 
@@ -218,14 +230,20 @@ def expression_allowed(expr: str, allowed: frozenset[str]) -> bool:
         return False
 
 
-def _classifier_expression(classifiers: str) -> str | None:
+#: The one classifier that is knowingly ambiguous (BSD-2-Clause, BSD-3-Clause and others).
+_AMBIGUOUS_CLASSIFIER = "BSD License"
+
+
+def _classifier_expression(classifiers: str) -> tuple[str | None, bool]:
+    """Map the classifiers to ``(expression, metadata_may_decide)``."""
     parts = [part.strip() for part in classifiers.split("; ") if part.strip()]
     if not parts or classifiers == UNKNOWN:
-        return None
+        return None, True
     mapped = [CLASSIFIER_TO_SPDX.get(part) for part in parts]
-    if any(item is None for item in mapped):
-        return None
-    return " OR ".join(item for item in mapped if item is not None)
+    unmapped = [part for part, item in zip(parts, mapped, strict=True) if item is None]
+    if unmapped:
+        return None, all(part == _AMBIGUOUS_CLASSIFIER for part in unmapped)
+    return " OR ".join(item for item in mapped if item is not None), True
 
 
 def _is_spdx_expression(value: str) -> bool:
@@ -244,18 +262,43 @@ def _is_spdx_expression(value: str) -> bool:
     return True
 
 
+def _declared(entry: Mapping[str, str]) -> str:
+    """The ``License-Expression`` the package declares, or an empty string."""
+    value = entry.get("License-Expression", UNKNOWN).strip()
+    return "" if value == UNKNOWN else value
+
+
+def _stale_exception(entry: Mapping[str, str], policy: Policy) -> str | None:
+    """Why an exception does not apply to this record, or None when it does or there is none."""
+    exception = policy.exceptions.get(normalise_purl(f"pkg:pypi/{entry['Name']}"))
+    declared = _declared(entry)
+    if exception is None or not declared or declared == exception.reviewed_expression:
+        return None
+    reviewed = exception.reviewed_expression or "no declared expression"
+    return f"exception reviewed against {reviewed}, package now declares {declared}"
+
+
 def classify(entry: Mapping[str, str], policy: Policy) -> tuple[str, bool]:
     """Return ``(licence expression, allowed)`` for one pip-licenses ``--from=all`` record."""
     exception = policy.exceptions.get(normalise_purl(f"pkg:pypi/{entry['Name']}"))
-    declared = _is_spdx_expression(entry.get("License-Expression", UNKNOWN))
-    if declared:
-        expression = entry["License-Expression"].strip()
-    elif exception is not None:
+    declared = _declared(entry)
+    if exception is not None and (not declared or declared == exception.reviewed_expression):
         expression = exception.licence
+    elif _is_spdx_expression(declared):
+        expression = declared
+    elif declared and exception is not None:
+        expression = declared  # unusable, and the reviewed exception no longer matches it
     else:
+        from_classifiers, metadata_may_decide = _classifier_expression(
+            entry.get("License-Classifier", UNKNOWN)
+        )
         expression = (
-            _classifier_expression(entry.get("License-Classifier", UNKNOWN))
-            or METADATA_TO_SPDX.get(entry.get("License-Metadata", UNKNOWN).strip())
+            from_classifiers
+            or (
+                METADATA_TO_SPDX.get(entry.get("License-Metadata", UNKNOWN).strip())
+                if metadata_may_decide
+                else None
+            )
             or UNKNOWN
         )
     return expression, expression_allowed(expression, policy.allowed)
@@ -267,7 +310,9 @@ def check(entries: Iterable[Mapping[str, str]], policy: Policy) -> list[str]:
     for entry in entries:
         expression, allowed = classify(entry, policy)
         if not allowed:
-            offenders.append(f"{entry['Name']} ({expression})")
+            line = f"{entry['Name']} ({expression})"
+            stale = _stale_exception(entry, policy)
+            offenders.append(f"{line}: {stale}" if stale else line)
     return sorted(offenders, key=str.lower)
 
 
@@ -302,15 +347,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     policy = load_policy(args.policy)
     entries = _collect(args.python)
     if args.output:
-        classified = [
-            {
-                "name": e["Name"],
-                "version": e["Version"],
-                "licence": classify(e, policy)[0],
-                "allowed": classify(e, policy)[1],
-            }
-            for e in entries
-        ]
+        classified = []
+        for e in entries:
+            expression, allowed = classify(e, policy)
+            classified.append(
+                {
+                    "name": e["Name"],
+                    "version": e["Version"],
+                    "licence": expression,
+                    "allowed": allowed,
+                }
+            )
         args.output.write_text(json.dumps(classified, indent=2) + "\n", encoding="utf-8")
     offenders = check(entries, policy)
     for line in offenders:
