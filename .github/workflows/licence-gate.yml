@@ -7,7 +7,7 @@ name: Licence gate
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, tmp/a2-gate-base]
 
 permissions:
   contents: read
