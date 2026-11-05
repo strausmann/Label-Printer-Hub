@@ -127,7 +127,7 @@ LABEL org.opencontainers.image.title="label-printer-hub-backend" \
       org.opencontainers.image.documentation="https://github.com/strausmann/label-printer-hub/tree/main/docs" \
       org.opencontainers.image.authors="Björn Strausmann <strausmannservices@googlemail.com>" \
       org.opencontainers.image.vendor="strausmann (independent open-source project; not affiliated with Brother Industries, Ltd.)" \
-      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
@@ -188,6 +188,9 @@ COPY --from=builder --chown=hub:hub /opt/venv /opt/venv
 COPY --from=web --chown=hub:hub /dist /opt/app/web
 # Licence notices for what the image redistributes (fonts and barcode reader texts are in web/licenses).
 COPY --chown=hub:hub THIRD_PARTY_NOTICES.md /opt/app/THIRD_PARTY_NOTICES.md
+# The project licence, also served as /licenses/agpl-3.0.txt for the About page.
+COPY --chown=hub:hub LICENSE /opt/app/LICENSE
+COPY --chown=hub:hub LICENSE /opt/app/web/licenses/agpl-3.0.txt
 
 # Alembic runtime configuration and migration scripts.
 #

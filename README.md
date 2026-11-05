@@ -4,7 +4,7 @@
 [![CodeQL](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/codeql.yml/badge.svg)](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/codeql.yml)
 [![codecov](https://codecov.io/github/strausmann/Label-Printer-Hub/graph/badge.svg)](https://codecov.io/github/strausmann/Label-Printer-Hub)
 [![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/Label-Printer-Hub)](https://cla-assistant.io/strausmann/Label-Printer-Hub)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
 [![GitHub Issues](https://img.shields.io/github/issues/strausmann/label-printer-hub)](https://github.com/strausmann/label-printer-hub/issues)
@@ -207,9 +207,16 @@ Contributions are welcome — especially **printer model plugins**. See [CONTRIB
 
 ## License
 
-This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for details.
+Label Printer Hub is licensed under the **GNU Affero General Public License, version 3 or later** (`AGPL-3.0-or-later`) — see [LICENSE](LICENSE).
 
-The Brother Raster Command Reference PDFs distributed in this repository (under `docs/research/brother-spec/`, if present) remain the property of Brother Industries, Ltd. Their inclusion is a verbatim, unmodified copy redistributed under fair use for development reference. The Brother documentation license terms apply to those files.
+Releases up to and including 1.0.3 are MIT; from 1.1.0 on AGPL-3.0-or-later. Anyone who received an earlier release keeps the MIT terms for that release.
+
+Why the change:
+
+- The hub depends on [`brother_ql`](https://github.com/pklaus/brother_ql), which is GPL-3.0-or-later, so the combined work is distributed under terms at least as strong as GPL-3.0.
+- The hub is a network service. Section 13 of the AGPL gives the people who use a modified version over a network the right to its source.
+
+If you run a modified version for others, set `HUB_REPO_URL` to where its source is published — the About page links there. Unmodified releases link to the exact tag of the running version.
 
 ## Acknowledgements
 

@@ -31,7 +31,7 @@ Nothing depends on the hub in production yet, so this is the moment to replace t
 
 ## 4. Anti-goals (failure even if it "works")
 
-- Any file, token value or component copied from Kept (AGPL-3.0) into this MIT project. Same stack and similar feel are fine; copied code is not.
+- Any file, token value or component copied from Kept (AGPL-3.0) into this AGPL-3.0-or-later project. Same stack and similar feel are fine; copied code is not.
 - A status shown by colour alone.
 - Secrets readable back from the UI or the API after they were saved.
 - A setting that the UI lets you change although an environment variable overrides it, without saying so.
@@ -232,7 +232,7 @@ Settings changed in the UI apply immediately: the integrations and the queue rea
 
 ## 11. Constraints
 
-- MIT project; every new dependency's licence is checked and listed in the PR (`CLAUDE.md`: propose new dependencies).
+- AGPL-3.0-or-later project; every new dependency's licence is checked and listed in the PR (`CLAUDE.md`: propose new dependencies).
 - Public repository: English prose; no private network artefacts; Brother trademark fair use (`docs/policies/trademarks.md`).
 - TDD and the existing CI gates; Conventional Commits; squash merge.
 - Accessibility: keyboard reachable, visible focus, WCAG AA contrast in both themes, no colour-only state.

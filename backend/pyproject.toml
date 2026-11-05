@@ -3,7 +3,7 @@ name = "label-printer-hub-backend"
 version = "0.0.0-dev"
 description = "Self-hosted label printer hub for Brother PT/QL series — backend"
 readme = "README.md"
-license = "MIT"
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
 authors = [
     {name = "Björn Strausmann", email = "strausmannservices@googlemail.com"},
@@ -11,7 +11,6 @@ authors = [
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
