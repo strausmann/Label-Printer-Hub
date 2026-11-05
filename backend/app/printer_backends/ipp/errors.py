@@ -12,6 +12,23 @@ byte of the request have reached the printer?
   error, connect timeout, TLS handshake failure, no free connection).
 * ``IppTransportError``: maybe. The request had started when it failed (read
   or write timeout, reset, protocol error, the overall deadline).
+
+How a failed **Print-Job** ends (the contract the page-job runner relies on;
+"started" = bytes may have reached the printer, cells unconfirmed):
+
+* ``IppUnreachableError`` — nothing was sent: ``failed``, ``started=False``.
+* ``IppTransportError`` — the upload had begun: ``failed``/``interrupted``,
+  ``started=True``.
+* ``IppBusyError`` — the printer answered and refused the job for now:
+  ``failed``, ``started=False``.
+* ``IppStatusError`` (``client-error-*`` and ``server-error-*`` alike, including
+  ``IppNotFoundError``) — the printer answered with a refusal, so it did not
+  accept the job: ``failed``, ``started=False``.
+* ``IppBadResponseError``, ``IppDecodeError``, ``IppResponseTooLargeError`` — the
+  request was sent but the answer is unusable, so whether the printer accepted
+  the job is unknown: ``failed``/``interrupted``, ``started=True``.
+* ``IppEncodeError`` — raised while building the request, before anything is
+  sent: ``failed``, ``started=False``.
 """
 
 from __future__ import annotations
