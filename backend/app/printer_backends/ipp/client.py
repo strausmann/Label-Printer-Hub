@@ -14,7 +14,18 @@ bounded:
   from the printer's ``queue_timeout_s``, OC-41). The same value is httpx's read,
   write and pool timeout; the connect phase gets ``CONNECT_SHARE`` of it (at most
   ``MAX_CONNECT_TIMEOUT_S``), so a connect timeout is reported as unreachable
-  before the overall deadline fires.
+  before the overall deadline fires. httpx applies the connect timeout twice for
+  ``ipps``/``https`` (TCP connect including DNS, then the TLS handshake), so the
+  share is below one half: both phases together stay under the deadline. The
+  remaining limit is deliberate: a connect that is slow in both phases *and* then
+  stalls on writing can still hit the deadline before any request byte left, and
+  is then reported as ``IppTransportError`` ("may have reached the printer") —
+  the safe side for the queue, which then treats the cells as unconfirmed.
+* **Connections** are not kept alive between requests. An idle pooled connection
+  that the printer closes just as the next request is written would fail as
+  ``IppTransportError`` and turn a harmless race (pre-flight read, then
+  Print-Job) into an interrupted job. One TCP (and TLS) setup per request on a
+  local network is cheap at the hub's polling rate.
 * **Redirects** are never followed (``follow_redirects=False``): a 3xx is a bad
   response, so a printer cannot send the hub to another host. Proxy settings
   from the environment are ignored (``trust_env=False``): the printer is on the
@@ -79,7 +90,8 @@ Keeps a long job history far below the codec's group cap (``MAX_GROUPS``), so a
 busy printer cannot turn a job count into a decode error.
 """
 
-CONNECT_SHARE = 0.8
+CONNECT_SHARE = 0.45
+"""Share of a request's timeout for each connect phase (TCP, TLS); 2 x 0.45 < 1."""
 MAX_CONNECT_TIMEOUT_S = 5.0
 IPP_VERSION = (1, 1)
 """IPP/1.1 is understood by every IPP printer; nothing the hub sends needs 2.0."""
@@ -104,7 +116,11 @@ def validate_ipp_uri(uri: str) -> None:
     """Raise ``ValueError`` (fixed message per rule) unless ``uri`` is a usable IPP URI."""
     if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in uri):
         raise ValueError("IPP URI must not contain spaces or control characters")
-    parts = urlsplit(uri)
+    try:
+        parts = urlsplit(uri)
+        parts.hostname  # noqa: B018 - parses (and validates) a bracketed IPv6 host
+    except ValueError:
+        raise ValueError("IPP URI is malformed") from None
     if parts.scheme not in _SCHEMES:
         raise ValueError("IPP URI scheme must be ipp, ipps, http or https")
     if "@" in parts.netloc:
@@ -218,6 +234,7 @@ class IppClient:
             verify=tls_verify,
             follow_redirects=False,
             trust_env=False,
+            limits=httpx.Limits(max_keepalive_connections=0),
         )
 
     async def __aenter__(self) -> Self:

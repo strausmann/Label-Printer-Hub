@@ -14,7 +14,7 @@ import httpx
 import pytest
 from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.ipp.codec import Attr, Collection, Resolution, Tag, decode
-from app.printer_backends.ipp.errors import IppStatusError
+from app.printer_backends.ipp.errors import IppStatusError, IppTransportError
 
 from tests.helpers.fake_ipp_printer import (
     FailingTransport,
@@ -298,9 +298,8 @@ async def test_failing_transport_passes_other_operations() -> None:
     async with IppClient(URI, transport=transport) as client:
         job = await client.print_job(PDF, [], OP)
         assert transport.failed_documents == []
-        with pytest.raises(Exception) as err:
+        with pytest.raises(IppTransportError):
             await client.cancel_job(job.job_id)
-    assert type(err.value).__name__ == "IppTransportError"
     assert transport.failed_documents == [b""]
     assert [op.operation for op in fake.received] == ["Print-Job", "Cancel-Job"]
 
@@ -320,7 +319,7 @@ async def test_serve_on_loopback() -> None:
     assert job.job_id == 1
     assert fake.received[-1].document == PDF
     with pytest.raises(httpx.ConnectError):
-        async with httpx.AsyncClient() as http:
+        async with httpx.AsyncClient(trust_env=False) as http:
             await http.get(uri.replace("ipp://", "http://"))
 
 

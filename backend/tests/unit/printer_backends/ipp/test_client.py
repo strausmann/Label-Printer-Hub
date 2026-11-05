@@ -201,12 +201,11 @@ def test_client_refuses_bad_uri() -> None:
         IppClient("ftp://printer.example.invalid/p")
 
 
-def test_error_messages_do_not_contain_the_uri() -> None:
-    for message in (
-        "IPP URI must not contain user info",
-        "IPP URI must name a host",
-    ):
-        assert "example" not in message
+def test_malformed_uri_gets_a_fixed_message() -> None:
+    for bad in ("ipp://[::1/p", "ipp://[2001:db8::zz]/p"):
+        with pytest.raises(ValueError) as err:
+            validate_ipp_uri(bad)
+        assert str(err.value) == "IPP URI is malformed"
 
 
 # --------------------------------------------------------------------------- operations
@@ -763,7 +762,9 @@ async def test_timeouts_passed() -> None:
     assert job["read"] == 2
     # The connect phase gets a share of the budget, so a connect timeout is reported
     # (as unreachable) before the overall deadline of the request fires.
-    assert 0 < query["connect"] < 2
+    # httpx applies the connect timeout to TCP connect (incl. DNS) and to the TLS
+    # handshake separately; both together must stay below the request's deadline.
+    assert 0 < 2 * query["connect"] < 2
     assert 0 < upload["connect"] <= 5
 
 
@@ -779,7 +780,8 @@ async def test_whole_request_is_bounded_by_the_timeout() -> None:
     started = time.monotonic()
     with pytest.raises(IppTransportError):
         await client.get_printer_attributes(["printer-state"])
-    assert time.monotonic() - started < 1.5
+    # Relative bound: the drip alone would take 100 x 0.05 s; the deadline ends it far earlier.
+    assert time.monotonic() - started < (100 * 0.05) / 2
 
 
 def test_http_client_settings(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -796,6 +798,9 @@ def test_http_client_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [s["verify"] for s in seen] == [True, False]
     assert all(s["follow_redirects"] is False for s in seen)
     assert all(s.get("trust_env") is False for s in seen)
+    # No idle keep-alive connection that the printer may close just as the next
+    # request (e.g. Print-Job after the pre-flight read) is written to it.
+    assert all(s["limits"].max_keepalive_connections == 0 for s in seen)
 
 
 async def test_aclose_closes_the_http_client() -> None:
