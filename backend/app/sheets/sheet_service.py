@@ -287,6 +287,8 @@ async def mark_cells(
 ) -> SheetDetail:
     """Mark free cells as used by hand; any non-free cell refuses the whole request."""
     marks = _clean_marks(cells)
+    if not marks:  # nothing to mark: no lock, no commit, no event
+        return await _writable(session, code)
     async with write_transaction(session):
         before = await _writable(session, code)
         _check_range(list(marks), before.total)
@@ -311,6 +313,8 @@ async def unmark_cells(
 ) -> SheetDetail:
     """Free cells that were marked by hand; a cell a job used carries a label and stays."""
     wanted = sorted(set(cells))
+    if not wanted:  # nothing to free: no lock, no commit, no event
+        return await _writable(session, code)
     async with write_transaction(session):
         before = await _writable(session, code)
         _check_range(wanted, before.total)
@@ -345,6 +349,8 @@ async def resolve_cells(
     if outcome not in ("printed", "not_printed"):
         raise InvalidFieldError("outcome", "must be printed or not_printed")
     wanted = sorted(set(cells))
+    if not wanted:  # nothing to settle: no lock, no commit, no event
+        return await _writable(session, code)
     async with write_transaction(session):
         before = await _writable(session, code)
         _check_range(wanted, before.total)

@@ -12,7 +12,6 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
-from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +34,7 @@ from app.sheets.geometry import (
     validate_geometry,
 )
 from app.sheets.naming import KEY_PATTERN, PREFIX_PATTERN
+from app.sheets.text import check_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -64,16 +64,6 @@ class GeometryMm(_Strict):
     margin_left: _Mm
     corner_radius: _Mm_opt = None
     shape: Literal["rectangle", "round"]
-
-
-def check_http_url(value: str) -> str:
-    """Only http(s) URLs without control characters; shared by import and the type API."""
-    parsed = urlparse(value)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        raise ValueError("only http and https URLs are allowed")
-    if any(ch.isspace() or ord(ch) < 32 for ch in value):
-        raise ValueError("control characters are not allowed")
-    return value
 
 
 class TypeDoc(_Strict):

@@ -492,7 +492,7 @@ async def test_patch_sanitises_and_refuses_over_long_text(session: AsyncSession)
         {"notes": "ok‪\x07", "product_codes": ["A⁩B"], "vendor": "\x07"},
         actor="tester",
     )
-    assert (patched.notes, patched.product_codes, patched.vendor) == ("ok", ["AB"], "")
+    assert (patched.notes, patched.product_codes, patched.vendor) == ("ok", ["AB"], None)
     with pytest.raises(InvalidGeometryError) as exc:
         await ts.patch_type(
             session, key, {"description": "fine", "notes": "y" * 2001}, actor="tester"
@@ -512,3 +512,67 @@ async def test_add_version_sanitises_and_refuses_over_long_change_note(
         await ts.add_version(session, t.key, G_SMALL, actor="tester", change_note="z" * 501)
     assert exc.value.detail == {"field": "change_note", "reason": "too long"}
     assert await _version_count(session) == 2
+
+
+async def test_text_that_cleans_to_nothing_is_null_and_empty_codes_are_dropped(
+    session: AsyncSession,
+) -> None:
+    t, v = await ts.create_type(
+        session,
+        fields(
+            vendor="\x07\x08",
+            description="  ",
+            source_name="‮",
+            notes="\x1b",
+            product_codes=["\x07", "A1", "", "‎"],
+        ),
+        G_4X12,
+        actor="tester",
+        change_note="\x07",
+    )
+    stored = await ts.get_type(session, t.key)
+    assert (stored.vendor, stored.description, stored.source_name, stored.notes) == (None,) * 4
+    assert stored.product_codes == ["A1"]
+    assert v.change_note is None
+    patched = await ts.patch_type(
+        session, t.key, {"description": "x", "product_codes": ["\x07"]}, actor="tester"
+    )
+    assert patched.product_codes == []
+    cleared = await ts.patch_type(session, t.key, {"description": "\x07"}, actor="tester")
+    assert cleared.description is None
+
+
+async def test_add_version_refuses_a_change_note_that_cleans_to_nothing(
+    session: AsyncSession,
+) -> None:
+    t, _ = await ts.create_type(session, fields(), G_4X12, actor="tester")
+    with pytest.raises(InvalidGeometryError) as exc:
+        await ts.add_version(session, t.key, G_5X12, actor="tester", change_note="\x07 ")
+    assert exc.value.detail == {"field": "change_note", "reason": "must not be empty"}
+    assert await _version_count(session) == 1
+
+
+@pytest.mark.parametrize(
+    "url", ["javascript:alert(1)", "ftp://example.invalid/x", "https://", "https://a b", "/rel"]
+)
+async def test_source_url_must_be_http_on_create_and_patch(session: AsyncSession, url: str) -> None:
+    with pytest.raises(InvalidGeometryError) as exc:
+        await ts.create_type(session, fields(source_url=url), G_4X12, actor="tester")
+    assert exc.value.detail is not None and exc.value.detail["field"] == "source_url"
+    t, _ = await ts.create_type(session, fields(), G_4X12, actor="tester")
+    with pytest.raises(InvalidGeometryError):
+        await ts.patch_type(session, t.key, {"source_url": url}, actor="tester")
+    ok = await ts.patch_type(
+        session, t.key, {"source_url": "https://example.invalid/sheet"}, actor="tester"
+    )
+    assert ok.source_url == "https://example.invalid/sheet"
+    cleared = await ts.patch_type(session, t.key, {"source_url": None}, actor="tester")
+    assert cleared.source_url is None
+
+
+async def test_source_url_over_500_characters_is_refused(session: AsyncSession) -> None:
+    with pytest.raises(InvalidGeometryError) as exc:
+        await ts.create_type(
+            session, fields(source_url="https://e.invalid/" + "a" * 500), G_4X12, actor="tester"
+        )
+    assert exc.value.detail == {"field": "source_url", "reason": "too long"}

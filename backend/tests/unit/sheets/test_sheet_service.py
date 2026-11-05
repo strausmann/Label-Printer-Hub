@@ -601,3 +601,36 @@ async def test_every_sheet_write_takes_the_write_lock(session: AsyncSession, l47
     await ss.find_cells(session, source="x", ref="y")
     await session.commit()
     assert await seq() == before + 5
+
+
+# --- empty cell lists ------------------------------------------------------------------
+
+
+async def test_empty_cell_lists_do_nothing(session: AsyncSession, l4736: str) -> None:
+    """Spec 8: nothing to mark, free or settle means no lock, no commit and no event."""
+
+    async def seq() -> int:
+        return int(
+            (await session.execute(text("SELECT seq FROM sheet_write_lock WHERE id = 1"))).scalar()
+            or 0
+        )
+
+    bus: Any = FakeBus()
+    sheet = await _create(session, used_cells=[MarkedCell(3, "kept")])
+    await session.commit()
+    before = await seq()
+    for result in (
+        await ss.mark_cells(session, sheet.code, [], actor="t", bus=bus),
+        await ss.unmark_cells(session, sheet.code, [], actor="t", bus=bus),
+        await ss.resolve_cells(session, sheet.code, [], "printed", actor="t", bus=bus),
+    ):
+        assert result.sheet.code == sheet.code and result.used == 1
+    await session.commit()
+    assert await seq() == before
+    assert bus.events == []
+    # an empty request still refuses an unknown or discarded sheet
+    with pytest.raises(SheetNotFoundError):
+        await ss.mark_cells(session, "L4736-0999", [], actor="t")
+    await ss.discard_sheet(session, sheet.code, actor="t")
+    with pytest.raises(SheetDiscardedError):
+        await ss.unmark_cells(session, sheet.code, [], actor="t")

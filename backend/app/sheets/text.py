@@ -10,6 +10,7 @@ cleaning is a ``ValueError`` (the schema reports 422).
 from __future__ import annotations
 
 import unicodedata
+from urllib.parse import urlparse
 
 _BIDI_CONTROLS = frozenset({0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A)})
 
@@ -23,3 +24,13 @@ def sanitise_text(value: str, *, max_len: int) -> str:
     if len(cleaned) > max_len:
         raise ValueError(f"longer than {max_len} characters")
     return cleaned
+
+
+def check_http_url(value: str) -> str:
+    """Only http(s) URLs without control characters; shared by import, the API and the service."""
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("only http and https URLs are allowed")
+    if any(ch.isspace() or ord(ch) < 32 for ch in value):
+        raise ValueError("control characters are not allowed")
+    return value

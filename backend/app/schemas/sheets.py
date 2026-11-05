@@ -11,8 +11,9 @@ from typing import Annotated, Any, Literal
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_serializer
 
 from app.schemas._datetime import serialize_datetime_utc
-from app.sheets.exchange import GeometryMm, check_http_url
+from app.sheets.exchange import GeometryMm
 from app.sheets.naming import KEY_PATTERN, PREFIX_PATTERN
+from app.sheets.text import check_http_url
 
 __all__ = [
     "GeometryMm",

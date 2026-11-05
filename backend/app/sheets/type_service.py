@@ -33,7 +33,7 @@ from app.sheets.errors import (
 from app.sheets.geometry import Geometry, geometry_hash, normalise, validate_geometry
 from app.sheets.locking import acquire_sheet_write_lock
 from app.sheets.naming import KEY_PATTERN, PREFIX_PATTERN, default_allow_qr
-from app.sheets.text import sanitise_text
+from app.sheets.text import check_http_url, sanitise_text
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +144,7 @@ _NULLABLE_TEXT = frozenset({"vendor", "description", "source_name", "source_url"
 # Free text is cleaned before it is stored; same bounds as the export document (spec 9.2).
 TEXT_LIMITS = {"vendor": 200, "description": 200, "source_name": 200, "notes": 2000}
 PRODUCT_CODE_MAX = 40
+SOURCE_URL_MAX = 500
 CHANGE_NOTE_MAX = 500
 
 
@@ -156,15 +157,29 @@ def clean_text(field: str, value: str, max_len: int) -> str:
 
 
 def _clean_optional(field: str, value: str | None) -> str | None:
-    return None if value is None else clean_text(field, value, TEXT_LIMITS[field])
+    """Text that is nothing after cleaning is no text: ``None``, never an empty string."""
+    return None if value is None else clean_text(field, value, TEXT_LIMITS[field]) or None
+
+
+def _clean_url(value: str | None) -> str | None:
+    """``source_url`` is http(s) only (the same check as import and the API schema)."""
+    if value is None:
+        return None
+    if len(value) > SOURCE_URL_MAX:
+        raise InvalidFieldError("source_url", "too long")
+    try:
+        return check_http_url(value)
+    except ValueError as exc:
+        raise InvalidFieldError("source_url", str(exc)) from None
 
 
 def _clean_codes(codes: list[str]) -> list[str]:
-    return [clean_text("product_codes", c, PRODUCT_CODE_MAX) for c in codes]
+    cleaned = (clean_text("product_codes", c, PRODUCT_CODE_MAX) for c in codes)
+    return [c for c in cleaned if c]  # an entry that cleans to nothing is dropped
 
 
 def _clean_change_note(note: str | None) -> str | None:
-    return None if note is None else clean_text("change_note", note, CHANGE_NOTE_MAX)
+    return None if note is None else clean_text("change_note", note, CHANGE_NOTE_MAX) or None
 
 
 def _clean_fields(fields: TypeFields) -> TypeFields:
@@ -174,6 +189,7 @@ def _clean_fields(fields: TypeFields) -> TypeFields:
         description=_clean_optional("description", fields.description),
         source_name=_clean_optional("source_name", fields.source_name),
         notes=_clean_optional("notes", fields.notes),
+        source_url=_clean_url(fields.source_url),
         product_codes=_clean_codes(fields.product_codes),
     )
 
@@ -181,6 +197,8 @@ def _clean_fields(fields: TypeFields) -> TypeFields:
 def _clean_patch_value(name: str, value: Any) -> Any:
     if name in TEXT_LIMITS:
         return _clean_optional(name, value)
+    if name == "source_url":
+        return _clean_url(value)
     if name == "product_codes":
         return _clean_codes(value)
     return value
@@ -332,6 +350,8 @@ async def add_version_locked(
 ) -> SheetTypeVersion:
     """Add the next version inside a transaction that already holds the write lock."""
     change_note = _clean_change_note(change_note) or ""
+    if not change_note:
+        raise InvalidFieldError("change_note", "must not be empty")
     validate_geometry(normalise(geometry))
     t = await get_type(session, key)
     latest = await current_version(session, t.id)
