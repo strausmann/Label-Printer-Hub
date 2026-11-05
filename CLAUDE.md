@@ -68,3 +68,5 @@ The full review workflow is documented in [CONTRIBUTING.md](CONTRIBUTING.md) sec
 ## Privacy reminder
 
 You will sometimes be invoked from contexts that have access to the maintainer's private repos and notes (e.g. `homelab-pangolin-client`). **Never** transcribe values from those contexts into this public repository. Use placeholders. The CI `privacy-scan` job will reject obvious leaks but it can't catch everything — your judgement is the first line of defence.
+
+Throwaway note for the docs-only proof.
