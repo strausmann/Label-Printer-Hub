@@ -67,7 +67,7 @@
     [
       "@semantic-release/exec",
       {
-        "successCmd": "echo \"version=${nextRelease.version}\" >> \"$GITHUB_OUTPUT\""
+        "publishCmd": "echo \"version=${nextRelease.version}\" >> \"$GITHUB_OUTPUT\""
       }
     ]
   ]

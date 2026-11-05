@@ -45,6 +45,22 @@ updates:
           - patch
         applies-to: version-updates
 
+  # Pinned semantic-release toolchain used by the release workflow
+  - package-ecosystem: npm
+    directory: /.github/release-tools
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - javascript
+    commit-message:
+      prefix: ci
+      include: scope
+
   # Docker base images
   - package-ecosystem: docker
     directory: /
