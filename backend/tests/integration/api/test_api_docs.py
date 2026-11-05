@@ -120,10 +120,10 @@ async def test_docs_page_has_no_external_urls_and_no_inline_script(docs: AsyncCl
     html = (await docs.get("/docs")).text
     assert not re.search(r"""(?:src|href)\s*=\s*["']?(?:https?:)?//""", html)
     # Every <script> must be an external file or an inert data block, never inline code.
-    for tag in re.findall(r"<script\b[^>]*>(.*?)</script>", html, flags=re.S):
+    for tag in re.findall(r"<script\b[^>]*>(.*?)</script\s*>", html, flags=re.S | re.I):
         assert tag.strip() == ""
-    for match in re.finditer(r"<script\b([^>]*)>", html):
-        attrs = match.group(1)
+    for match in re.finditer(r"<script\b([^>]*)>", html, flags=re.I):
+        attrs = match.group(1).lower()
         assert "src=" in attrs or 'type="application/json"' in attrs
 
 
