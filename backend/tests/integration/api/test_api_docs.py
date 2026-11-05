@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 from collections.abc import AsyncIterator
+from html.parser import HTMLParser
 from pathlib import Path
 
 import app.models  # noqa: F401
@@ -116,15 +117,47 @@ async def test_docs_page_is_scalar_from_the_hub(docs: AsyncClient) -> None:
     assert "swagger" not in html.lower()
 
 
+class _ScriptCollector(HTMLParser):
+    """Collect every <script> element as (attributes, text content)."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.scripts: list[tuple[dict[str, str | None], str]] = []
+        self._current: tuple[dict[str, str | None], list[str]] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "script":
+            self._current = (dict(attrs), [])
+
+    def handle_data(self, data: str) -> None:
+        if self._current is not None:
+            self._current[1].append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script" and self._current is not None:
+            attrs, parts = self._current
+            self.scripts.append((attrs, "".join(parts)))
+            self._current = None
+
+
+def _collect_scripts(html: str) -> list[tuple[dict[str, str | None], str]]:
+    parser = _ScriptCollector()
+    parser.feed(html)
+    parser.close()
+    return parser.scripts
+
+
 async def test_docs_page_has_no_external_urls_and_no_inline_script(docs: AsyncClient) -> None:
     html = (await docs.get("/docs")).text
     assert not re.search(r"""(?:src|href)\s*=\s*["']?(?:https?:)?//""", html)
     # Every <script> must be an external file or an inert data block, never inline code.
-    for tag in re.findall(r"<script\b[^>]*>(.*?)</script\s*>", html, flags=re.S | re.I):
-        assert tag.strip() == ""
-    for match in re.finditer(r"<script\b([^>]*)>", html, flags=re.I):
-        attrs = match.group(1).lower()
-        assert "src=" in attrs or 'type="application/json"' in attrs
+    # Parsed with the stdlib HTML parser rather than a regex, so case and odd end tags
+    # (`</SCRIPT >`, `</script\t\nfoo>`) are handled the way a browser handles them.
+    scripts = _collect_scripts(html)
+    assert scripts, "the docs page must load Scalar through a <script> element"
+    for attrs, body in scripts:
+        assert body.strip() == ""
+        assert "src" in attrs or attrs.get("type") == "application/json"
 
 
 async def test_docs_page_disables_third_party_features(docs: AsyncClient) -> None:
