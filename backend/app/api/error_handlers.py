@@ -70,7 +70,8 @@ async def _validation_handler(request: Request, exc: Exception) -> JSONResponse:
     FastAPI's default body repeats the offending input; for these routes the shape is the
     API error shape instead. Other routes keep the default.
     """
-    assert isinstance(exc, RequestValidationError)
+    if not isinstance(exc, RequestValidationError):
+        raise TypeError("validation handler registered for another exception type")
     if not request.url.path.startswith(_SHEET_PREFIXES):
         return await request_validation_exception_handler(request, exc)
     paths: list[str] = []

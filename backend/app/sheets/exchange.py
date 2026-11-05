@@ -300,7 +300,8 @@ async def import_type(
             )
             await session.commit()
             return ImportResult("version_added", existing_key, added.version)
-        assert new_key is not None
+        if new_key is None:  # refused above; kept as a real check for the type narrowing
+            raise InvalidImportError(["new_key"])
         await ts.create_type_locked(
             session,
             _type_fields(doc, new_key, new_prefix or doc.type.prefix),
