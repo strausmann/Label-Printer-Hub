@@ -29,11 +29,13 @@ async def probe_integration(
         hname, _, template = header.partition(": ")
         headers[hname] = template.replace("{s}", secret)
     try:
+        target = api_url(url, path, strip_api=name in _STRIP_API)
+    except ValueError:
+        return False, None, "invalid URL"
+    try:
         # follow_redirects=False: never forward the secret to a redirect target.
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            resp = await client.get(
-                api_url(url, path, strip_api=name in _STRIP_API), headers=headers
-            )
+            resp = await client.get(target, headers=headers)
     except UnicodeError:
         return False, None, "invalid characters in the URL or secret"
     except httpx.TimeoutException:

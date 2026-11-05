@@ -44,3 +44,12 @@ def test_api_url_never_doubles_api() -> None:
     assert api_url(HOST + "/paperless/", "/api/documents/", strip_api=True) == (
         HOST + "/paperless/api/documents/"
     )
+
+
+@pytest.mark.parametrize("raw", ["http://[::1", "https://[host"])
+def test_base_url_raises_value_error_on_malformed_url(raw: str) -> None:
+    # Environment-provided URLs bypass the settings validator.
+    with pytest.raises(ValueError):
+        base_url(raw)
+    with pytest.raises(ValueError):
+        api_url(raw, "/x")

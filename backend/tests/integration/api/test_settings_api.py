@@ -428,3 +428,15 @@ async def test_paperless_probe_does_not_follow_redirect_with_secret(client) -> N
         assert resp.json()["ok"] is False and resp.json()["status"] == 302
         assert evil.call_count == 0
         assert FAKE_TOKEN not in resp.text
+
+
+async def test_integration_probe_reports_invalid_url_instead_of_crashing(
+    client, monkeypatch
+) -> None:
+    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "http://[::1")
+    get_settings.cache_clear()
+    resp = await client.post("/api/v1/settings/integrations/grocy/test", json={})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False and body["status"] is None
+    assert body["detail"] == "invalid URL"
