@@ -285,11 +285,12 @@ async def import_type(
             return ImportResult("created", doc.type.key, 1)
 
         existing_key = existing.key  # read before a rollback expires the row
-        for version, _count in await ts.list_versions_with_sheet_counts(session, existing.id):
-            if version.geometry_hash == wanted:  # identical geometry changes nothing (OC-12)
-                found = version.version
-                await session.rollback()  # nothing written: release the lock
-                return ImportResult("unchanged", existing_key, found)
+        if mode != "as_new_key":  # a requested copy is made even for identical geometry
+            for version, _count in await ts.list_versions_with_sheet_counts(session, existing.id):
+                if version.geometry_hash == wanted:  # identical geometry changes nothing (OC-12)
+                    found = version.version
+                    await session.rollback()  # nothing written: release the lock
+                    return ImportResult("unchanged", existing_key, found)
 
         if mode == "strict":
             raise TypeExistsError()

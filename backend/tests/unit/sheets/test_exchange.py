@@ -554,3 +554,16 @@ async def test_import_refuses_over_long_text(session: AsyncSession, field: str, 
     with pytest.raises(InvalidImportError):
         exchange.parse_import(_raw(d))
     assert await _counts(session) == before
+
+
+async def test_as_new_key_creates_the_key_even_for_identical_geometry(
+    session: AsyncSession,
+) -> None:
+    """A requested copy is made; OC-12's "identical changes nothing" is for the other modes."""
+    d = await _base_doc(session)
+    doc = exchange.parse_import(_raw(d))
+    result = await exchange.import_type(
+        session, doc, mode="as_new_key", new_key="my-copy", new_prefix="MYCOPY", actor="importer"
+    )
+    assert (result.outcome, result.key, result.version) == ("created_as_new_key", "my-copy", 1)
+    assert await _counts(session) == (2, 2)
