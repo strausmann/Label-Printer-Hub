@@ -51,4 +51,18 @@ describe("message catalogues", () => {
     const extra = [...readPo("de").keys()].filter((id) => !en.has(id));
     expect(extra).toEqual([]);
   });
+
+  // A state and an action must never share one msgid: the catalogue holds a single translation per id,
+  // and German turns "Set up" into the imperative "Einrichten". States use their own strings.
+  it("integration states are translated as states, not as the imperative", () => {
+    const de = readPo("de");
+    expect(de.get("Configured")).toBe("Eingerichtet");
+    expect(de.get("Connected")).toBe("Verbunden");
+    expect(de.get("Connection failed")).toBe("Verbindung fehlgeschlagen");
+    expect(de.get("Not set up")).toBe("Nicht eingerichtet");
+  });
+
+  it("the ambiguous 'Set up' is not a live message id", () => {
+    expect(readPo("en").has("Set up")).toBe(false);
+  });
 });

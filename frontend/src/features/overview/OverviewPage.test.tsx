@@ -123,26 +123,27 @@ describe("Overview", () => {
       const section = await screen.findByRole("region", { name: "Integrations" });
       const snipe = within(section).getByRole("link", { name: /Snipe-IT/ });
       expect(snipe).toHaveAttribute("href", "/integrations/snipeit");
-      expect(within(snipe).getByText("Connected")).toBeVisible();
+      expect(within(snipe).getByText("Configured")).toBeVisible();
+      expect(within(snipe).queryByText("Connected")).toBeNull();
       const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
       expect(headings.slice(0, 4)).toEqual(["Printing now", "Needs attention", "Integrations", "Material"]);
     });
 
-    it("an admin gets Not set up with a Set up link for the rest", async () => {
+    it("an admin sees no tile for an integration that is not set up", async () => {
       mockApi(base());
       await renderApp({ path: "/", info: { integrations: set(true, true, false) } });
       const section = await screen.findByRole("region", { name: "Integrations" });
-      expect(within(section).getByText(/Spoolman/)).toBeVisible();
-      expect(within(section).getByText(/Not set up/)).toBeVisible();
-      expect(within(section).getByRole("link", { name: "Set up Spoolman" })).toHaveAttribute("href", "/settings/integrations");
+      expect(within(section).queryByText(/Spoolman/)).toBeNull();
+      expect(within(section).queryByText(/Not set up/)).toBeNull();
+      expect(within(section).queryByRole("link", { name: /Set up/ })).toBeNull();
+      expect(within(section).getAllByRole("link")).toHaveLength(2);
     });
 
-    it("a non-admin sees only what works; with nothing configured the section is gone", async () => {
+    it("with nothing configured even an admin gets no section", async () => {
       mockApi(base());
-      await renderApp({ path: "/", info: { integrations: set(true, false, false) }, session: { ...SIGNED_IN, scope: "print" } });
-      const section = await screen.findByRole("region", { name: "Integrations" });
-      expect(within(section).queryByText(/Grocy/)).toBeNull();
-      expect(within(section).getAllByRole("link")).toHaveLength(1);
+      await renderApp({ path: "/", info: { integrations: set(false, false, false) } });
+      await screen.findByRole("heading", { level: 2, name: "Printing now" });
+      expect(screen.queryByRole("region", { name: "Integrations" })).toBeNull();
     });
 
     it("no tiles and no heading when nothing is visible", async () => {

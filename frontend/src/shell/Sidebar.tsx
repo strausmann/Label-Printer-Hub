@@ -5,14 +5,14 @@ import { IntegrationNavEntries } from "./IntegrationNav";
 import { NAV_GROUPS, visibleGroups, type NavGroup } from "./features";
 import { useNavLabels } from "./labels";
 import { StatusBadge } from "./StatusBadge";
-import { useVisibleIntegrations } from "../features/integrations/api";
+import { useConfiguredIntegrations } from "../features/integrations/api";
 
 /** Desktop navigation (>= 1024 px): groups as in spec 5.3, hidden entries removed. */
 export function Sidebar() {
   const { t } = useLingui();
   const info = useInfo();
   const labels = useNavLabels();
-  const integrations = useVisibleIntegrations();
+  const integrations = useConfiguredIntegrations();
   const shown = visibleGroups((feature) => info.data?.features[feature] ?? false);
   // The integrations come from `/api/info`, not from `NAV_GROUPS`: the group exists as soon as one is visible.
   const groups = NAV_GROUPS.flatMap((g): NavGroup[] => {

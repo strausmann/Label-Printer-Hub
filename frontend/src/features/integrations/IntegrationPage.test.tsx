@@ -28,7 +28,8 @@ describe("integration start page", () => {
     mockApi({});
     await renderApp({ path: "/integrations/snipeit" });
     expect(screen.getByRole("heading", { level: 1, name: "Snipe-IT" })).toBeVisible();
-    expect(screen.getByText("Connected")).toBeVisible();
+    expect(screen.getByText("Configured")).toBeVisible();
+    expect(screen.queryByText("Connected")).toBeNull();
     const field = screen.getByRole("textbox", { name: "Find an asset or location" });
     expect(field).toHaveFocus();
     expect(field).toHaveClass("font-mono");

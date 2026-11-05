@@ -350,7 +350,7 @@ describe("fix round 1", () => {
     expect(within(snipe).getByText(/cannot be used/i)).toBeVisible();
     // Grocy has nothing saved in settings, yet the plugin is configured (environment).
     const grocy = screen.getByRole("group", { name: "Grocy" });
-    expect(within(grocy).getByText("Set up")).toBeVisible();
+    expect(within(grocy).getByText("Configured")).toBeVisible();
     expect(within(grocy).queryByText(/cannot be used/i)).toBeNull();
   });
 

@@ -21,10 +21,9 @@ export function useIntegrationStates(): IntegrationState[] {
 }
 
 /**
- * What to show in the navigation: every configured integration, plus (for an admin) the ones
- * still to be set up. Someone who cannot fix it is not shown a dead end.
+ * What to show in the navigation: the configured integrations only. One that is not set up is
+ * configured in Settings > Integrations, which lists all of them; the navigation offers no dead ends.
  */
-export function useVisibleIntegrations(): IntegrationState[] {
-  const admin = useIsAdmin();
-  return useIntegrationStates().filter((i) => i.configured || admin);
+export function useConfiguredIntegrations(): IntegrationState[] {
+  return useIntegrationStates().filter((i) => i.configured);
 }

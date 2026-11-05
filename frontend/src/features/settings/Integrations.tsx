@@ -5,7 +5,7 @@ import { Button } from "react-aria-components";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
-import { useApiKeys, useSaveSettings, useTestIntegration, type ApiKey, type SettingView } from "./api";
+import { useApiKeys, useSaveSettings, useTestIntegration, type ApiKey, type IntegrationTestResult, type SettingView } from "./api";
 import { useInfo } from "../../app/session";
 import { sameUrl, useSettingsDraft } from "./draft";
 import { LastUsed } from "./LastUsed";
@@ -17,6 +17,15 @@ type Integration = "snipeit" | "grocy" | "spoolman" | "paperless";
 const SECRET_SUFFIX: Record<Integration, string | null> = { snipeit: "api_key", grocy: "api_key", spoolman: null, paperless: "token" };
 const NAMES: Record<Integration, string> = { snipeit: "Snipe-IT", grocy: "Grocy", spoolman: "Spoolman", paperless: "Paperless" };
 const ORDER: Integration[] = ["paperless", "snipeit", "grocy", "spoolman"];
+
+const isRedirect = (status: number | null | undefined): boolean => status != null && status >= 300 && status < 400;
+
+/** The probe's detail, unless it only repeats the status that is shown next to it ("HTTP 302 HTTP 302"). */
+function distinctDetail(result: IntegrationTestResult): string | null {
+  const detail = result.detail?.trim();
+  if (!detail || (result.status != null && detail === `HTTP ${result.status}`)) return null;
+  return detail;
+}
 
 function IntegrationCard({ name, views }: { name: Integration; views: SettingView[] }) {
   const { t } = useLingui();
@@ -45,6 +54,16 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   // One source with the sidebar: /api/info says whether the integration is usable (Paperless has no entry there).
   const configured = info ? info.configured : savedInSettings;
   const savedButUnusable = !configured && (urlView.is_set || Boolean(secretView?.is_set));
+  // The header says what is known. "Connected" and "Connection failed" come only from a test of the values
+  // that are saved; a result for unsaved edits says nothing about the saved integration.
+  const tested = test.isSuccess && !changed ? test.data : null;
+  const header: { state: "ok" | "bad" | "idle"; label: string } = tested
+    ? tested.ok
+      ? { state: "ok", label: t`Connected` }
+      : { state: "bad", label: t`Connection failed` }
+    : configured
+      ? { state: "ok", label: t`Configured` }
+      : { state: "idle", label: t`Not set up` };
   const label = (suffix: string) => ({ url: t`URL`, secret: SECRET_SUFFIX[name] === "token" ? t`Token` : t`API key`, timeout: t`Timeout (seconds)` })[suffix]!;
 
   const change = (key: string) => (value: string | boolean | null) => {
@@ -60,7 +79,7 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
         <h3 id={heading} className="text-section font-bold">
           {NAMES[name]}
         </h3>
-        <StatusBadge state={configured ? "ok" : "idle"} label={configured ? t`Set up` : t`Not set up`} />
+        <StatusBadge state={header.state} label={header.label} />
       </div>
       {savedButUnusable ? (
         <p className="max-w-xl text-small text-ink-2">
@@ -104,7 +123,11 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
         <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <StatusBadge state={test.data.ok ? "ok" : "bad"} label={test.data.ok ? t`Works` : t`Failed`} />
           {test.data.status ? <span className="font-mono text-small text-ink-2">{t`HTTP ${test.data.status}`}</span> : null}
-          <span className="text-ink">{test.data.detail}</span>
+          {isRedirect(test.data.status) ? (
+            <span className="text-ink">{t`The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly.`}</span>
+          ) : distinctDetail(test.data) ? (
+            <span className="text-ink">{distinctDetail(test.data)}</span>
+          ) : null}
         </div>
       ) : test.isError ? (
         <p role="alert">{errorText(test.error, t`The test could not be run.`)}</p>
