@@ -401,3 +401,108 @@ async def test_error_detail_names_the_field_path(session: AsyncSession) -> None:
     with pytest.raises(InvalidImportError) as info:
         exchange.parse_import(_raw(d))
     assert info.value.detail == {"errors": ["version.geometry.margin_top"]}
+
+
+async def test_concurrent_identical_imports_one_creates_rest_unchanged(
+    async_session_factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    """Review Important 1: the decision is taken under the write lock (no read-then-upgrade)."""
+    import asyncio
+
+    from sqlalchemy import text
+
+    await session.execute(text("PRAGMA journal_mode=WAL"))  # the production mode
+    await ts.create_type(session, _fields("seed-type", "SEED1"), G, actor="tester")
+    d = _doc_dict(await exchange.export_type(session, "seed-type", None))
+    d["type"]["key"] = "racing-type"
+    d["type"]["prefix"] = "RACE1"
+    doc = exchange.parse_import(_raw(d))
+
+    async def one() -> exchange.ImportResult:
+        async with async_session_factory() as s:
+            return await exchange.import_type(s, doc, actor="importer")
+
+    results = await asyncio.gather(*(one() for _ in range(6)))
+    assert sorted(r.outcome for r in results) == ["created"] + ["unchanged"] * 5
+    assert {r.version for r in results} == {1}
+    assert await _counts(session) == (2, 2)
+
+
+async def test_concurrent_new_version_imports_add_exactly_one_version(
+    async_session_factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    import asyncio
+
+    from sqlalchemy import text
+
+    await session.execute(text("PRAGMA journal_mode=WAL"))
+    doc = exchange.parse_import(_raw(_changed(await _base_doc(session))))
+
+    async def one() -> exchange.ImportResult:
+        async with async_session_factory() as s:
+            return await exchange.import_type(s, doc, mode="new_version", actor="importer")
+
+    results = await asyncio.gather(*(one() for _ in range(5)))
+    assert sorted(r.outcome for r in results) == ["unchanged"] * 4 + ["version_added"]
+    assert {r.version for r in results} == {2}
+    assert await _counts(session) == (1, 2)
+
+
+async def test_unchanged_path_releases_the_lock(
+    async_session_factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    doc = exchange.parse_import(_raw(await _base_doc(session)))
+    async with async_session_factory() as a:
+        assert (await exchange.import_type(a, doc, actor="x")).outcome == "unchanged"
+        # session `a` is still open; another writer must not be blocked by it
+        await ts.create_type(session, _fields("second-one", "SECOND1"), G, actor="tester")
+
+
+async def test_identical_geometry_with_other_prefix_is_unchanged(session: AsyncSession) -> None:
+    """Spec 9.3 / OC-12: identical geometry changes nothing, whatever the prefix says."""
+    d = await _base_doc(session)
+    d["type"]["prefix"] = "OTHER1"
+    result = await exchange.import_type(session, exchange.parse_import(_raw(d)), actor="importer")
+    assert (result.outcome, result.version) == ("unchanged", 1)
+    assert (await ts.get_type(session, "avery-l4736")).prefix == "L4736"
+    assert await _counts(session) == (1, 1)
+
+
+async def test_new_key_with_unknown_key_is_refused(session: AsyncSession) -> None:
+    d = await _base_doc(session)
+    d["type"]["key"] = "fresh-key"
+    d["type"]["prefix"] = "FRESH1"
+    doc = exchange.parse_import(_raw(d))
+    before = await _counts(session)
+    with pytest.raises(InvalidImportError) as info:
+        await exchange.import_type(session, doc, mode="as_new_key", new_key="other-key", actor="i")
+    assert info.value.detail == {"errors": ["new_key"]}
+    assert await _counts(session) == before
+
+
+async def test_failure_after_flush_leaves_no_partial_rows(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    d = await _base_doc(session)
+    d["type"]["key"] = "fresh-key"
+    d["type"]["prefix"] = "FRESH1"
+    doc = exchange.parse_import(_raw(d))
+
+    def boom(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError("version insert failed")
+
+    monkeypatch.setattr(ts, "_new_version", boom)  # runs after the type row was flushed
+    before = await _counts(session)
+    with pytest.raises(RuntimeError):
+        await exchange.import_type(session, doc, actor="importer")
+    assert await _counts(session) == before
+    monkeypatch.undo()
+    assert (await exchange.import_type(session, doc, actor="i")).outcome == "created"
+
+
+async def test_new_key_outside_as_new_key_mode_is_refused(session: AsyncSession) -> None:
+    doc = exchange.parse_import(_raw(_changed(await _base_doc(session))))
+    for mode in ("strict", "new_version"):
+        with pytest.raises(InvalidImportError):
+            await exchange.import_type(session, doc, mode=mode, new_key="x-key", actor="i")  # type: ignore[arg-type]
+    assert await _counts(session) == (1, 1)

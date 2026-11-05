@@ -244,7 +244,7 @@ def _type_fields(doc: ExportDoc, key: str, prefix: str) -> ts.TypeFields:
         product_codes=list(t.product_codes),
         description=t.description,
         allow_qr=t.allow_qr,
-        verified=False,  # a stranger's claim is not a verification on this hub
+        verified=False,  # D17: a stranger's claim is not a verification on this hub
         source_name=t.source_name,
         source_url=t.source_url,
         notes=t.notes,
@@ -260,38 +260,60 @@ async def import_type(
     new_prefix: str | None = None,
     actor: str,
 ) -> ImportResult:
+    """Apply an import document (spec 9.3, OC-12).
+
+    ``new_key`` belongs to ``mode="as_new_key"`` and is refused in every other mode; an
+    unknown document key never silently ignores it. ``new_prefix`` replaces the prefix of the
+    document whenever a type is created.
+    """
     geometry = geometry_from_doc(doc.version.geometry)
-    existing: SheetType | None = await repo.get_by_key(session, doc.type.key)
+    if mode == "as_new_key" and new_key is None:
+        raise InvalidImportError(["new_key"])
+    if mode != "as_new_key" and new_key is not None:
+        raise InvalidImportError(["new_key"])
     note = f"Imported from version {doc.version.version} of an export"
-    if existing is None:
-        await ts.create_type(
+    wanted = geometry_hash(geometry)
+    # The write lock comes first: reading before it and upgrading later can fail with
+    # "database is locked", and a concurrent identical import would see a stale answer.
+    async with ts.write_transaction(session):
+        existing: SheetType | None = await repo.get_by_key(session, doc.type.key)
+        if existing is None:
+            if new_key is not None:  # as_new_key only means something for an existing key
+                raise InvalidImportError(["new_key"])
+            await ts.create_type_locked(
+                session,
+                _type_fields(doc, doc.type.key, new_prefix or doc.type.prefix),
+                geometry,
+                actor=actor,
+                origin="imported",
+                change_note=note,
+            )
+            await session.commit()
+            return ImportResult("created", doc.type.key, 1)
+
+        existing_key = existing.key  # read before a rollback expires the row
+        for version, _count in await ts.list_versions_with_sheet_counts(session, existing.id):
+            if version.geometry_hash == wanted:  # identical geometry changes nothing (OC-12)
+                found = version.version
+                await session.rollback()  # nothing written: release the lock
+                return ImportResult("unchanged", existing_key, found)
+
+        if mode == "strict":
+            raise TypeExistsError()
+        if mode == "new_version":
+            added = await ts.add_version_locked(
+                session, existing_key, geometry, actor=actor, change_note=note
+            )
+            await session.commit()
+            return ImportResult("version_added", existing_key, added.version)
+        assert new_key is not None
+        await ts.create_type_locked(
             session,
-            _type_fields(doc, doc.type.key, new_prefix or doc.type.prefix),
+            _type_fields(doc, new_key, new_prefix or doc.type.prefix),
             geometry,
             actor=actor,
             origin="imported",
             change_note=note,
         )
-        return ImportResult("created", doc.type.key, 1)
-
-    wanted = geometry_hash(geometry)
-    for version, _count in await ts.list_versions_with_sheet_counts(session, existing.id):
-        if version.geometry_hash == wanted:
-            return ImportResult("unchanged", existing.key, version.version)
-
-    if mode == "strict":
-        raise TypeExistsError()
-    if mode == "new_version":
-        added = await ts.add_version(session, existing.key, geometry, actor=actor, change_note=note)
-        return ImportResult("version_added", existing.key, added.version)
-    if new_key is None:
-        raise InvalidImportError(["new_key"])  # as_new_key without a key
-    await ts.create_type(
-        session,
-        _type_fields(doc, new_key, new_prefix or doc.type.prefix),
-        geometry,
-        actor=actor,
-        origin="imported",
-        change_note=note,
-    )
-    return ImportResult("created_as_new_key", new_key, 1)
+        await session.commit()
+        return ImportResult("created_as_new_key", new_key, 1)

@@ -24,5 +24,6 @@ A guard test (`backend/tests/unit/test_decision_register.py`) fails if a `D<n>` 
 | D13 | Sheet archive, physical sheets and calibration live in the hub (#150) | 2026-11-05 | Accepted | — |
 | D14 | Sheet type geometry is versioned; sheets pin their version | 2026-11-05 | Accepted | — |
 | D16 | Lengths stored in hundredths of a millimetre | 2026-11-05 | Accepted | — |
+| D17 | Imported sheet types are never marked verified | 2026-11-05 | Accepted | — |
 | V2 | L4731REV has no vertical gap (pitch 10 mm) | 2026-11-05 | To verify | — |
 | V4 | Corner radius of L4736REV (unknown, to measure) | 2026-11-05 | To verify | — |

@@ -71,8 +71,12 @@ def _now() -> datetime:
 
 
 @asynccontextmanager
-async def _write(session: AsyncSession) -> AsyncIterator[None]:
-    """One write transaction: lock first, roll back on any failure."""
+async def write_transaction(session: AsyncSession) -> AsyncIterator[None]:
+    """One write transaction: lock first, roll back on any failure.
+
+    Callers that decide before they write (import) enter this once and use the ``*_locked``
+    functions inside; those assume the lock is already held and neither lock nor commit.
+    """
     try:
         await acquire_sheet_write_lock(session)
         yield
@@ -182,6 +186,46 @@ async def list_versions_with_sheet_counts(
     return await repo.versions_with_sheet_counts(session, type_id)
 
 
+async def create_type_locked(
+    session: AsyncSession,
+    fields: TypeFields,
+    geometry: Geometry,
+    *,
+    actor: str,
+    origin: Literal["seed", "custom", "imported"],
+    change_note: str | None,
+) -> tuple[SheetType, SheetTypeVersion]:
+    """Insert type and version 1 inside a transaction that already holds the write lock."""
+    if not KEY_PATTERN.match(fields.key):
+        raise InvalidFieldError("key", "invalid format")
+    _check_prefix(fields.prefix)
+    validate_geometry(normalise(geometry))
+    if await repo.get_by_key(session, fields.key) is not None:
+        raise TypeExistsError()
+    if await repo.get_by_prefix(session, fields.prefix) is not None:
+        raise PrefixTakenError()
+    allow_qr = default_allow_qr(geometry) if fields.allow_qr is None else fields.allow_qr
+    t = SheetType(
+        key=fields.key,
+        prefix=fields.prefix,
+        vendor=fields.vendor,
+        product_codes=list(fields.product_codes),
+        description=fields.description,
+        allow_qr=allow_qr,
+        verified=fields.verified,
+        origin=origin,
+        source_name=fields.source_name,
+        source_url=fields.source_url,
+        notes=fields.notes,
+        created_by=actor,
+    )
+    session.add(t)
+    await session.flush()
+    v = _new_version(t.id, 1, geometry, actor=actor, change_note=change_note)
+    session.add(v)
+    return t, v
+
+
 async def create_type(
     session: AsyncSession,
     fields: TypeFields,
@@ -191,34 +235,15 @@ async def create_type(
     origin: Literal["seed", "custom", "imported"] = "custom",
     change_note: str | None = None,
 ) -> tuple[SheetType, SheetTypeVersion]:
+    # Cheap input checks first so a bad request does not take the write lock.
     if not KEY_PATTERN.match(fields.key):
         raise InvalidFieldError("key", "invalid format")
     _check_prefix(fields.prefix)
     validate_geometry(normalise(geometry))
-    async with _write(session):
-        if await repo.get_by_key(session, fields.key) is not None:
-            raise TypeExistsError()
-        if await repo.get_by_prefix(session, fields.prefix) is not None:
-            raise PrefixTakenError()
-        allow_qr = default_allow_qr(geometry) if fields.allow_qr is None else fields.allow_qr
-        t = SheetType(
-            key=fields.key,
-            prefix=fields.prefix,
-            vendor=fields.vendor,
-            product_codes=list(fields.product_codes),
-            description=fields.description,
-            allow_qr=allow_qr,
-            verified=fields.verified,
-            origin=origin,
-            source_name=fields.source_name,
-            source_url=fields.source_url,
-            notes=fields.notes,
-            created_by=actor,
+    async with write_transaction(session):
+        t, v = await create_type_locked(
+            session, fields, geometry, actor=actor, origin=origin, change_note=change_note
         )
-        session.add(t)
-        await session.flush()
-        v = _new_version(t.id, 1, geometry, actor=actor, change_note=change_note)
-        session.add(v)
         await session.commit()
     return t, v
 
@@ -230,7 +255,7 @@ async def patch_type(
         if name not in _EDITABLE:
             raise InvalidFieldError(name, "not editable")
         _check_patch_value(name, value)
-    async with _write(session):
+    async with write_transaction(session):
         t = await get_type(session, key)
         new_prefix = changes.get("prefix")
         if new_prefix is not None and new_prefix != t.prefix:
@@ -251,24 +276,33 @@ async def patch_type(
     return t
 
 
+async def add_version_locked(
+    session: AsyncSession, key: str, geometry: Geometry, *, actor: str, change_note: str
+) -> SheetTypeVersion:
+    """Add the next version inside a transaction that already holds the write lock."""
+    validate_geometry(normalise(geometry))
+    t = await get_type(session, key)
+    latest = await current_version(session, t.id)
+    if latest.geometry_hash == geometry_hash(geometry):
+        raise InvalidGeometryError("geometry", "unchanged")
+    v = _new_version(t.id, latest.version + 1, geometry, actor=actor, change_note=change_note)
+    session.add(v)
+    t.updated_at = _now()
+    return v
+
+
 async def add_version(
     session: AsyncSession, key: str, geometry: Geometry, *, actor: str, change_note: str
 ) -> SheetTypeVersion:
     validate_geometry(normalise(geometry))
-    async with _write(session):
-        t = await get_type(session, key)
-        latest = await current_version(session, t.id)
-        if latest.geometry_hash == geometry_hash(geometry):
-            raise InvalidGeometryError("geometry", "unchanged")
-        v = _new_version(t.id, latest.version + 1, geometry, actor=actor, change_note=change_note)
-        session.add(v)
-        t.updated_at = _now()
+    async with write_transaction(session):
+        v = await add_version_locked(session, key, geometry, actor=actor, change_note=change_note)
         await session.commit()
     return v
 
 
 async def _set_archived(session: AsyncSession, key: str, archived: bool, actor: str) -> SheetType:
-    async with _write(session):
+    async with write_transaction(session):
         t = await get_type(session, key)
         if archived and t.archived_at is None:
             t.archived_at = _now()
@@ -289,7 +323,7 @@ async def unarchive_type(session: AsyncSession, key: str, *, actor: str) -> Shee
 
 
 async def delete_type(session: AsyncSession, key: str, *, actor: str) -> None:
-    async with _write(session):
+    async with write_transaction(session):
         t = await get_type(session, key)
         if t.origin != "custom":
             # OC-10: only custom types without sheets are deleted; the rest is archived.
