@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## <small>1.0.3 (2026-11-05)</small>
+
+* ci(release): build release images from the release workflow and push releases over a deploy key (#19 ([d434f51](https://github.com/strausmann/Label-Printer-Hub/commit/d434f51)), closes [#192](https://github.com/strausmann/Label-Printer-Hub/issues/192) [#183](https://github.com/strausmann/Label-Printer-Hub/issues/183) [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+* docs(plans): design and implementation plans for the sheet archive (part A) (#185) ([e18a44c](https://github.com/strausmann/Label-Printer-Hub/commit/e18a44c)), closes [#185](https://github.com/strausmann/Label-Printer-Hub/issues/185) [#150](https://github.com/strausmann/Label-Printer-Hub/issues/150) [#150](https://github.com/strausmann/Label-Printer-Hub/issues/150) [#184](https://github.com/strausmann/Label-Printer-Hub/issues/184) [#150](https://github.com/strausmann/Label-Printer-Hub/issues/150) [#184](https://github.com/strausmann/Label-Printer-Hub/issues/184)
+* docs(plans): relicensing to AGPL-3.0-or-later, licence gate, licence list and SBOM (#191) ([c9fb691](https://github.com/strausmann/Label-Printer-Hub/commit/c9fb691)), closes [#191](https://github.com/strausmann/Label-Printer-Hub/issues/191) [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+* fix(queue): make cancel, queue clear and retry act on the live print queue (#187) ([a8f3ec8](https://github.com/strausmann/Label-Printer-Hub/commit/a8f3ec8)), closes [#187](https://github.com/strausmann/Label-Printer-Hub/issues/187) [#184](https://github.com/strausmann/Label-Printer-Hub/issues/184) [#187](https://github.com/strausmann/Label-Printer-Hub/issues/187) [#184](https://github.com/strausmann/Label-Printer-Hub/issues/184)
+
 ## <small>1.0.2 (2026-11-05)</small>
 
 * fix(api): serve Scalar from the hub and report the running release (#181) ([fbb5f5e](https://github.com/strausmann/label-printer-hub/commit/fbb5f5e)), closes [#181](https://github.com/strausmann/label-printer-hub/issues/181) [#171](https://github.com/strausmann/label-printer-hub/issues/171) [#171](https://github.com/strausmann/label-printer-hub/issues/171) [#171](https://github.com/strausmann/label-printer-hub/issues/171)
