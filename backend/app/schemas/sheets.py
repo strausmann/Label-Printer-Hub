@@ -112,8 +112,21 @@ class SheetTypeCreate(_Body):
     geometry: GeometryMm
 
 
+_PATCH_NOT_NULLABLE = ("prefix", "product_codes", "allow_qr", "verified")
+
+
+def _patch_schema(schema: dict[str, Any]) -> None:
+    """Describe omission without ``null`` for the fields the endpoint refuses to clear."""
+    for name in _PATCH_NOT_NULLABLE:
+        prop = schema["properties"][name]
+        options = [o for o in prop.pop("anyOf") if o.get("type") != "null"]
+        prop.update(options[0])
+
+
 class SheetTypePatch(_Body):
     """Only the fields the client sends change. ``null`` clears a nullable field."""
+
+    model_config = ConfigDict(extra="forbid", json_schema_extra=_patch_schema)
 
     prefix: str | None = None
     vendor: Annotated[str, Field(max_length=200)] | None = None

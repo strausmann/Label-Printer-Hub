@@ -2241,15 +2241,15 @@ export interface components {
          */
         SheetTypePatch: {
             /** Allow Qr */
-            allow_qr?: boolean | null;
+            allow_qr?: boolean;
             /** Description */
             description?: string | null;
             /** Notes */
             notes?: string | null;
             /** Prefix */
-            prefix?: string | null;
+            prefix?: string;
             /** Product Codes */
-            product_codes?: string[] | null;
+            product_codes?: string[];
             /** Source Name */
             source_name?: string | null;
             /** Source Url */
@@ -2257,7 +2257,7 @@ export interface components {
             /** Vendor */
             vendor?: string | null;
             /** Verified */
-            verified?: boolean | null;
+            verified?: boolean;
         };
         /** SheetTypeRead */
         SheetTypeRead: {
