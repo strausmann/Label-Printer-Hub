@@ -90,6 +90,19 @@ RUN mkdir -p app && touch app/__init__.py \
 COPY backend/app/ ./app/
 RUN pip install --no-deps --force-reinstall .
 
+# Licence check of what the image actually ships. Python has no lockfile, so the only
+# deterministic place to judge the backend's licences is here, against the packages that
+# were just installed. A violation fails the build. The policy is the repository's single
+# licence-policy.yml; the script imports nothing from `app`. The tool venv holds
+# pip-licenses (build-time only) and never reaches the runtime stage.
+COPY licence-policy.yml /opt/licence/licence-policy.yml
+COPY backend/scripts/licence_report.py /opt/licence/licence_report.py
+RUN python -m venv /opt/licence-tool \
+    && /opt/licence-tool/bin/pip install pip-licenses==5.5.5 \
+    && /opt/licence-tool/bin/python /opt/licence/licence_report.py \
+        --python /opt/venv/bin/python \
+        --policy /opt/licence/licence-policy.yml
+
 # -----------------------------------------------------------------------------
 # Stage 2: runtime
 # -----------------------------------------------------------------------------

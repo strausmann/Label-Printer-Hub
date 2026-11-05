@@ -128,7 +128,7 @@ def test_key_never_reaches_images_job_or_called_workflow() -> None:
 
 def test_actions_are_pinned_to_full_commit_shas() -> None:
     sha = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
-    for name in ("release.yml", "docker-publish.yml"):
+    for name in ("release.yml", "docker-publish.yml", "licence-gate.yml", "licence-backend.yml"):
         for job_name, job in _load(name)["jobs"].items():
             for step in job.get("steps", []):
                 uses = step.get("uses")

@@ -1,0 +1,51 @@
+name: Licence gate
+
+# The only licence check that is meant to be a required status check (see CONTRIBUTING.md,
+# "Dependencies and licences"). It judges the dependencies a pull request changes, against
+# licence-policy.yml. It has no `paths:` filter on purpose: a required check that is skipped
+# for a docs-only pull request would never report and would block the merge.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Review the licences of changed dependencies
+        id: review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5
+        with:
+          config-file: ./licence-policy.yml
+
+      # The action only informs about dependencies whose licence it cannot detect ("unlicensed":
+      # no licence in the graph, no source repository to ask) and does not fail. A licence gate
+      # that lets those through is open for exactly the packages nobody has looked at, so the
+      # same job refuses them. The remedy is an `x-licence-exceptions` entry plus the purl in
+      # `allow-dependencies-licenses`, after reading the package's licence file.
+      # GitHub Actions used by the workflows are excluded: the graph never knows their licence,
+      # they are CI tooling and are not redistributed, so refusing them would turn every pull
+      # request that touches a workflow red for no defect.
+      - name: Refuse dependencies whose licence could not be detected
+        if: ${{ always() && steps.review.outputs.invalid-license-changes != '' }}
+        env:
+          INVALID_LICENSE_CHANGES: ${{ steps.review.outputs.invalid-license-changes }}
+        run: |
+          unlicensed=$(printf '%s' "$INVALID_LICENSE_CHANGES" \
+            | jq -r '.unlicensed[]? | select(.ecosystem != "actions") | "- \(.manifest) » \(.name)@\(.version)"')
+          if [ -n "$unlicensed" ]; then
+            echo "::error::Dependencies without a detectable licence. Read their licence file and add an exception to licence-policy.yml (see CONTRIBUTING.md)."
+            # Every line starts with "- ": a manifest path or name that begins with "::" must not
+            # be read as a workflow command.
+            printf '%s\n' "$unlicensed"
+            exit 1
+          fi

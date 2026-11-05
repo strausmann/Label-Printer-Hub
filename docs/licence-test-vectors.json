@@ -1,0 +1,17 @@
+[
+  {"expression": "MIT", "allowed": true},
+  {"expression": "MIT-0", "allowed": true},
+  {"expression": "(MIT OR CC0-1.0)", "allowed": true},
+  {"expression": "Apache-2.0 OR BSD-3-Clause", "allowed": true},
+  {"expression": "GPL-2.0-only OR Proprietary", "allowed": false},
+  {"expression": "MIT AND PSF-2.0", "allowed": true},
+  {"expression": "MIT AND SSPL-1.0", "allowed": false},
+  {"expression": "GPL-2.0-only", "allowed": false},
+  {"expression": "Apache-2.0 WITH LLVM-exception", "allowed": true},
+  {"expression": "LicenseRef-scancode-unicode AND MIT", "allowed": false},
+  {"expression": "", "allowed": false},
+  {"expression": "UNKNOWN", "allowed": false},
+  {"expression": "MIT OR GPL-2.0-only", "allowed": true},
+  {"expression": "MIT AND GPL-2.0-only", "allowed": false},
+  {"expression": "(MIT OR GPL-2.0-only) AND GPL-2.0-only", "allowed": false}
+]
