@@ -103,3 +103,14 @@ class TestHealthzModel:
         )
         with pytest.raises(ValidationError):
             instance.status = "tampered"  # type: ignore[misc]
+
+
+def test_healthz_repository_has_no_credentials(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repo URL with user info must never leave the process."""
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "HUB_REPO_URL", "https://token@example.invalid/x")
+    body = client.get("/healthz").json()
+    assert body["repository"] == "https://github.com/strausmann/label-printer-hub"

@@ -57,6 +57,8 @@ async def test_info_shape(api_client_with_seed) -> None:
         "auth",
         "features",
         "integrations",
+        "license",
+        "source_url",
     }
     assert set(body["auth"]) == {"sso_configured", "bootstrap_open"}
     assert set(body["features"]) == FEATURE_KEYS
@@ -180,3 +182,28 @@ async def test_info_integrations_leak_no_url_or_key(
     assert {i["name"]: i["configured"] for i in resp.json()["integrations"]}["snipeit"] is True
     assert url not in resp.text and "snipe-it.example" not in resp.text and key not in resp.text
     assert all(set(i) == {"name", "configured"} for i in resp.json()["integrations"])
+
+
+async def test_info_license_and_source(
+    api_client_with_seed, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Public (no session): the licence and the link to the running build's source."""
+    import app.main as main_module
+
+    repo = "https://github.com/strausmann/label-printer-hub"
+    monkeypatch.setattr(main_module, "HUB_VERSION", "1.1.0")
+    monkeypatch.setattr(main_module, "HUB_REVISION", "0123456789abcdef0123456789abcdef01234567")
+    monkeypatch.setattr(main_module, "HUB_REPO_URL", repo)
+    resp = await api_client_with_seed.get("/api/info")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["license"] == "AGPL-3.0-or-later"
+    assert body["source_url"] == f"{repo}/tree/v1.1.0"
+
+
+async def test_openapi_license(api_client_with_seed) -> None:
+    resp = await api_client_with_seed.get("/openapi.json")
+    assert resp.json()["info"]["license"] == {
+        "name": "AGPL-3.0-or-later",
+        "identifier": "AGPL-3.0-or-later",
+    }
