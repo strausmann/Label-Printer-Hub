@@ -520,7 +520,7 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 - `tray` (default tray if omitted), `expected_cells` (from the preview).
 - **Capacity:** if the items do not fit the placements, `409 insufficient_cells` with `free_cells` per placement and the shortfall. The UI then offers: rest onto another sheet of the type, rest onto a new sheet, or a sheet with enough room (mockup screen 2).
 
-**Error codes added:** `sheet_type_not_found`, `sheet_type_archived`, `type_exists`, `prefix_taken`, `invalid_geometry`, `sheet_not_found`, `sheet_discarded`, `sheet_busy`, `sheet_type_mismatch`, `cells_taken`, `cell_out_of_range`, `plan_changed`, `insufficient_cells`, `media_kind_mismatch`, `tray_unknown`, `margin_too_small`, `calibration_out_of_range`, `ipp_unreachable`, `ipp_pdf_unsupported`, `ipp_rejected`. Existing ones (`content_type_data_mismatch`, `printer_disabled`, `printer_not_allowed`) are reused.
+**Error codes added:** `sheet_type_not_found`, `sheet_type_version_not_found`, `sheet_type_archived`, `type_exists`, `prefix_taken`, `invalid_geometry`, `sheet_not_found`, `sheet_discarded`, `sheet_busy`, `sheet_type_mismatch`, `cells_taken`, `cell_out_of_range`, `plan_changed`, `insufficient_cells`, `media_kind_mismatch`, `tray_unknown`, `margin_too_small`, `calibration_out_of_range`, `ipp_unreachable`, `ipp_pdf_unsupported`, `ipp_rejected`. Existing ones (`content_type_data_mismatch`, `printer_disabled`, `printer_not_allowed`) are reused.
 
 *Added 2026-11-05 with the sheet API (Plan 1, Task 8): the codes that the type and sheet routes of Plan 1 answer with, as built.*
 
@@ -535,6 +535,7 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 | `invalid_import` | 422 | import document is not valid; `{errors}` with field paths, never the input |
 | `invalid_request` | 422 | request validation failed on `/api/sheet-types`, `/api/sheets` or `/api/sheet-cells`; `{errors}` with field paths only, never the input |
 | `prefix_taken` | 409 | prefix used by another type; `{reason: "sheets_exist"}` when sheets already carry this type's prefix |
+| `sheet_type_version_not_found` | 404 | `POST /api/sheets` names a version the (existing) type does not have; the type itself unknown is `sheet_type_not_found` |
 | `type_in_use` | 409 | delete refused; `{reason}` is `has_sheets` (any sheet, even discarded), `seed_type` or `imported_type` (only custom types are deleted, the others are archived) |
 
 *Empty cell lists (decided with Task 8):* `cells/mark`, `unmark` and `resolve` refuse an empty list at the API (`422 invalid_request`, `cells` needs 1 to 400 entries). The service treats an empty list as a no-op — no write lock, no commit, no event — so a caller that skips the HTTP layer gets the sheet back unchanged. Text that is nothing after cleaning is `null` (optional fields) or the default (`marked by hand` for a cell purpose); empty product code entries are dropped.
