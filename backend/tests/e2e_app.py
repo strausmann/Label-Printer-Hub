@@ -142,7 +142,14 @@ async def _seed(database_url: str, *, with_admin_key: bool) -> str | None:
                     error=E2E_FAILED_JOB_ERROR,
                     payload={
                         "content_type": "qr_two_lines",
-                        "tape_mm": 12,
+                        # Same keys PrintService writes: retry re-renders from them.
+                        # 24 mm = what the mock printer reports as loaded: a retry no longer
+                        # fails with a tape mismatch, which would pause this printer and
+                        # leak into the printer specs.  (The QL driver has no 24 mm spec, so
+                        # the retried job still ends up failed; the jobs spec does not
+                        # depend on that outcome.)
+                        "rendered_tape_mm": 24,
+                        "tape_mm": 24,
                         "options": {"copies": 1},
                         "label_data": {
                             "source_app": "snipeit",

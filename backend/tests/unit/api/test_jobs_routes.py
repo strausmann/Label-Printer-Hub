@@ -16,6 +16,7 @@ Test mapping:
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 from uuid import uuid4 as _uuid4
 
@@ -527,7 +528,8 @@ async def test_cancel_job_direct_returns_job_read(session) -> None:
     printer = await _make_printer(session)
     job = await _make_job(session, printer.id, state=JobState.QUEUED.value)
 
-    result = await cancel_job(job_id=job.id, session=session, _auth=None)
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))  # no print_queue
+    result = await cancel_job(request=request, job_id=job.id, session=session, _auth=None)
 
     assert str(result.id) == str(job.id)
     assert result.state == JobState.CANCELLED.value
@@ -546,7 +548,8 @@ async def test_retry_job_direct_returns_new_queued_job(session) -> None:
     original = await _make_job(session, printer.id, state=JobState.FAILED.value)
 
     fake_auth = AuthContext(source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1")
-    result = await retry_job(job_id=original.id, session=session, _auth=fake_auth)
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))  # no print_queue
+    result = await retry_job(request=request, job_id=original.id, session=session, _auth=fake_auth)
 
     assert str(result.id) != str(original.id)
     assert result.state == JobState.QUEUED.value

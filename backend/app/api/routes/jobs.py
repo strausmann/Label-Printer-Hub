@@ -21,8 +21,13 @@ Design notes
   so the Phase 7 UI can wire to stable URLs; the implementation follows in a
   later phase when the queue worker gains mid-job control.
 - retry clones the failed job's ``printer_id``, ``template_key``, and
-  ``payload`` into a new QUEUED job.  The original job remains in FAILED state
-  (it is an immutable history entry).
+  ``payload`` into a new QUEUED job and hands it to the live ``PrintQueue``, so it
+  prints without a restart.  The original job remains in FAILED state (it is an
+  immutable history entry).
+- cancel and retry act on the ``PrintQueue`` stored in ``app.state`` (not only on
+  the DB): the worker gates on the in-memory job state, so a DB-only cancel would
+  still be printed.  Rows the queue does not track (e.g. webhook-created jobs)
+  fall back to the DB-only path.
 
 References:
     docs/superpowers/specs/2026-05-16-phase6a-rest-api-design.md — Jobs section
@@ -31,11 +36,12 @@ References:
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import AuthContext
@@ -45,6 +51,7 @@ from app.models.job import Job, JobState
 from app.repositories import jobs as jobs_repo
 from app.schemas.job import JobRead
 from app.schemas.problem import ProblemDetail
+from app.services.print_queue import UnrenderableJobError
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -181,6 +188,7 @@ async def get_job(
     ),
 )
 async def cancel_job(
+    request: Request,
     job_id: UUID,
     session: SessionDep,
     _auth: PrintAuthDep,
@@ -189,21 +197,34 @@ async def cancel_job(
     job = await _get_job_or_404(session, job_id, _auth)
     job_state: str = job.state
     if job_state != JobState.QUEUED.value:
-        problem = ProblemDetail(
-            type="invalid-job-state",
-            title="Cannot cancel job in current state",
-            status=409,
-            detail=(
-                f"Job is in state '{job_state}' — only QUEUED jobs can be cancelled "
-                "(mid-print abort is unsafe over TCP/9100)"
-            ),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=problem.model_dump(exclude_none=True),
-        )
+        raise _cancel_conflict(job_state)
+    queue = getattr(request.app.state, "print_queue", None)
+    if queue is not None and queue.has_job(job_id):
+        # The queue transitions the in-memory job (the state the worker gates on)
+        # and persists the cancellation.  False = the worker took the job first.
+        if not await queue.cancel(str(job_id)):
+            live = await queue.get(job_id)
+            raise _cancel_conflict(live.state.value)
+        await session.refresh(job)
+        return JobRead.model_validate(job, from_attributes=True)
     cancelled = await jobs_repo.mark_cancelled(session, job_id)
     return JobRead.model_validate(cancelled, from_attributes=True)
+
+
+def _cancel_conflict(job_state: str) -> HTTPException:
+    problem = ProblemDetail(
+        type="invalid-job-state",
+        title="Cannot cancel job in current state",
+        status=409,
+        detail=(
+            f"Job is in state '{job_state}' — only QUEUED jobs can be cancelled "
+            "(mid-print abort is unsafe over TCP/9100)"
+        ),
+    )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=problem.model_dump(exclude_none=True),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -290,11 +311,15 @@ async def resume_job(
     description=(
         "Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a "
         "new ``queued`` job with a fresh UUID.  The original job is untouched and "
-        "remains as an immutable history entry.  Returns 409 when the original job "
-        "is still in an active state (``queued`` or ``printing``)."
+        "remains as an immutable history entry.  The new job is handed to the print "
+        "queue immediately — no restart needed.  Returns 409 when the original job "
+        "is still in an active state (``queued`` or ``printing``) or its printer is "
+        "not available, and 422 when the stored payload cannot be re-rendered "
+        "(e.g. webhook-created jobs)."
     ),
 )
 async def retry_job(
+    request: Request,
     job_id: UUID,
     session: SessionDep,
     _auth: PrintAuthDep,
@@ -324,4 +349,38 @@ async def retry_job(
         template_key=job.template_key,
         payload=dict(job.payload),
     )
+    queue = getattr(request.app.state, "print_queue", None)
+    if queue is not None:
+        try:
+            await queue.enqueue_persisted(new_job)
+        except UnrenderableJobError as exc:
+            await _fail_unqueued(session, new_job.id, "retry_unrenderable_payload")
+            raise _retry_rejected(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "job-not-retryable",
+                "Job payload cannot be re-rendered",
+                str(exc),
+            ) from exc
+        except KeyError as exc:
+            await _fail_unqueued(session, new_job.id, "retry_printer_unavailable")
+            raise _retry_rejected(
+                status.HTTP_409_CONFLICT,
+                "printer-unavailable",
+                "Printer is not available to the print queue",
+                f"Printer {job.printer_id} is not known to the print queue",
+            ) from exc
     return JobRead.model_validate(new_job, from_attributes=True)
+
+
+async def _fail_unqueued(session: AsyncSession, job_id: UUID, error: str) -> None:
+    """Mark a retry row that never reached the queue as failed (not left QUEUED).
+
+    A concurrent cancel may already have made it terminal; that is fine.
+    """
+    with contextlib.suppress(ValueError):
+        await jobs_repo.mark_failed(session, job_id, error)
+
+
+def _retry_rejected(http_status: int, type_: str, title: str, detail: str) -> HTTPException:
+    problem = ProblemDetail(type=type_, title=title, status=http_status, detail=detail)
+    return HTTPException(status_code=http_status, detail=problem.model_dump(exclude_none=True))

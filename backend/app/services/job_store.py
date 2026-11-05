@@ -46,11 +46,16 @@ class JobStore(Protocol):
     async def get(self, job_id: UUID) -> Job | None:
         """Load a job by ID. None if not found."""
 
-    async def mark_printing(self, job_id: UUID) -> None:
+    async def mark_printing(self, job_id: UUID) -> bool:
         """Transition QUEUED -> PRINTING. Called by worker when it picks up the job.
 
-        Silently no-op if job_id does not exist in the store. Implementations
-        must NOT raise on missing jobs — callers may race against eviction.
+        Returns True when the worker may print: the transition happened, or the
+        store does not know the job at all (callers may race against eviction, and
+        a job submitted without a row has nothing that could have cancelled it).
+        Returns False when the row exists but is no longer QUEUED (e.g. cancelled
+        through the API): the worker must NOT print such a job.
+
+        Must NOT raise on missing jobs.
         """
 
     async def mark_done(self, job_id: UUID) -> None:
@@ -65,6 +70,14 @@ class JobStore(Protocol):
 
         Silently no-op if job_id does not exist in the store. Implementations
         must NOT raise on missing jobs — callers may race against eviction.
+        """
+
+    async def mark_cancelled(self, job_id: UUID) -> None:
+        """Transition QUEUED -> CANCELLED. Called by PrintQueue.cancel()/clear_queue().
+
+        Only a QUEUED job can be cancelled: a PRINTING job is already on the wire
+        (mid-print abort is unsafe over TCP/9100) and terminal jobs stay as they
+        are.  Silently no-op if job_id does not exist or is not QUEUED.
         """
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
@@ -107,12 +120,15 @@ class MemoryJobStore(JobStore):
     async def get(self, job_id: UUID) -> Job | None:
         return self._jobs.get(job_id)
 
-    async def mark_printing(self, job_id: UUID) -> None:
+    async def mark_printing(self, job_id: UUID) -> bool:
         job = self._jobs.get(job_id)
         if job is None:
-            return
+            return True
+        if job.state != JobState.QUEUED.value:
+            return False
         job.state = JobState.PRINTING.value
         job.started_at = datetime.now(UTC)
+        return True
 
     async def mark_done(self, job_id: UUID) -> None:
         job = self._jobs.get(job_id)
@@ -127,6 +143,13 @@ class MemoryJobStore(JobStore):
             return
         job.state = JobState.FAILED.value
         job.error = error
+        job.finished_at = datetime.now(UTC)
+
+    async def mark_cancelled(self, job_id: UUID) -> None:
+        job = self._jobs.get(job_id)
+        if job is None or job.state != JobState.QUEUED.value:
+            return
+        job.state = JobState.CANCELLED.value
         job.finished_at = datetime.now(UTC)
 
     async def mark_interrupted(self, printer_id: UUID) -> int:

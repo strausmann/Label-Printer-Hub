@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -705,7 +706,6 @@ async def test_list_printers_returns_printer_with_state(session) -> None:
     await session.commit()
 
     # Simulate the session dependency by passing the session directly.
-    from types import SimpleNamespace
 
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))  # no print_queue
     result = await list_printers(request=request, session=session, _auth=None)  # type: ignore[arg-type]
@@ -798,7 +798,8 @@ async def test_clear_printer_queue_direct_cancels_queued(session) -> None:
     job_q = await _make_job(session, printer.id, state=JobState.QUEUED.value)
     job_p = await _make_job(session, printer.id, state=JobState.PRINTING.value)
 
-    await clear_printer_queue(printer_id=printer.id, session=session, _auth=None)
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))  # no print_queue
+    await clear_printer_queue(request=request, printer_id=printer.id, session=session, _auth=None)
 
     queued = await session.get(Job, job_q.id)
     assert queued is not None

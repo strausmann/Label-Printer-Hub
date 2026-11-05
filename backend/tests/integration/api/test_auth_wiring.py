@@ -168,7 +168,21 @@ async def _seed_failed_job(factory, printer_id):
             printer_id=printer_id,
             template_key="audit-seed-template",
             state=JobState.FAILED.value,
-            payload={"text": "audit"},
+            # Renderable like a job created by POST /print: retry re-renders it.
+            payload={
+                "label_data": {
+                    "title": "audit",
+                    "primary_id": "A-001",
+                    "qr_payload": "https://example.com",
+                    "source_app": "manual",
+                    "secondary": [],
+                    "items": [],
+                },
+                "content_type": "qr_two_lines",
+                "rendered_tape_mm": 24,
+                "tape_mm": 24,
+                "options": {},
+            },
         )
         s.add(job)
         await s.commit()
