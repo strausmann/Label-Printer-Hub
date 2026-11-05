@@ -244,7 +244,7 @@ def _type_fields(doc: ExportDoc, key: str, prefix: str) -> ts.TypeFields:
         product_codes=list(t.product_codes),
         description=t.description,
         allow_qr=t.allow_qr,
-        verified=False,  # D17: a stranger's claim is not a verification on this hub
+        verified=False,  # D19: a stranger's claim is not a verification on this hub
         source_name=t.source_name,
         source_url=t.source_url,
         notes=t.notes,
