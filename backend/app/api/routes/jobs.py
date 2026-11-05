@@ -36,6 +36,7 @@ References:
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -353,7 +354,7 @@ async def retry_job(
         try:
             await queue.enqueue_persisted(new_job)
         except UnrenderableJobError as exc:
-            await jobs_repo.mark_failed(session, new_job.id, "retry_unrenderable_payload")
+            await _fail_unqueued(session, new_job.id, "retry_unrenderable_payload")
             raise _retry_rejected(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
                 "job-not-retryable",
@@ -361,7 +362,7 @@ async def retry_job(
                 str(exc),
             ) from exc
         except KeyError as exc:
-            await jobs_repo.mark_failed(session, new_job.id, "retry_printer_unavailable")
+            await _fail_unqueued(session, new_job.id, "retry_printer_unavailable")
             raise _retry_rejected(
                 status.HTTP_409_CONFLICT,
                 "printer-unavailable",
@@ -369,6 +370,15 @@ async def retry_job(
                 f"Printer {job.printer_id} is not known to the print queue",
             ) from exc
     return JobRead.model_validate(new_job, from_attributes=True)
+
+
+async def _fail_unqueued(session: AsyncSession, job_id: UUID, error: str) -> None:
+    """Mark a retry row that never reached the queue as failed (not left QUEUED).
+
+    A concurrent cancel may already have made it terminal; that is fine.
+    """
+    with contextlib.suppress(ValueError):
+        await jobs_repo.mark_failed(session, job_id, error)
 
 
 def _retry_rejected(http_status: int, type_: str, title: str, detail: str) -> HTTPException:

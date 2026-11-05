@@ -143,8 +143,10 @@ async def _seed(database_url: str, *, with_admin_key: bool) -> str | None:
                     payload={
                         "content_type": "qr_two_lines",
                         # Same keys PrintService writes: retry re-renders from them.
-                        "rendered_tape_mm": 12,
-                        "tape_mm": 12,
+                        # 24 mm = the tape the mock printer reports as loaded, so the
+                        # retried job prints instead of failing with a tape mismatch.
+                        "rendered_tape_mm": 24,
+                        "tape_mm": 24,
                         "options": {"copies": 1},
                         "label_data": {
                             "source_app": "snipeit",

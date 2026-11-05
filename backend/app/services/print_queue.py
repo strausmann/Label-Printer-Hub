@@ -802,26 +802,50 @@ class PrintQueue:
             raise UnrenderableJobError(
                 f"Job {db_job.id} payload lacks {sorted(missing)} and cannot be re-rendered"
             )
-        try:
-            image = await asyncio.to_thread(self._rerender_from_db_payload, db_job.payload)
-            payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
-        except Exception as exc:
-            raise UnrenderableJobError(
-                f"Job {db_job.id} could not be re-rendered ({exc.__class__.__name__})"
-            ) from exc
-        # Re-check after the awaits above: a concurrent call may have won.
-        if job_key in self._jobs:
-            return
+        # Claim the row BEFORE the slow re-render: from here on the queue tracks it
+        # (has_job() is True), so a concurrent cancel()/clear_queue() reaches the
+        # in-memory job instead of cancelling only the DB row and then losing the
+        # race against the enqueue below.  The image is attached after rendering.
         job = Job(
             id=job_key,
             printer_id=printer_id,
-            image_payload=payload_bytes,
             tape_mm=db_job.payload.get("tape_mm"),
             options=db_job.payload.get("options", {}),
         )
         self._jobs[job_key] = job
-        await self._queues[printer_id].put(job)
+        try:
+            image = await asyncio.to_thread(self._rerender_from_db_payload, db_job.payload)
+            job.image_payload = await asyncio.to_thread(_serialize_image_to_png, image)
+        except Exception as exc:
+            self._drop_unqueued(job)
+            raise UnrenderableJobError(
+                f"Job {db_job.id} could not be re-rendered ({exc.__class__.__name__})"
+            ) from exc
+        try:
+            persisted = await self._store.get(db_job.id)
+        except Exception:
+            self._drop_unqueued(job)
+            raise
+        # No await from here to the put: the checks and the enqueue are atomic.
+        if job.state != JobState.QUEUED:
+            return  # cancelled while rendering; cancel() already persisted that
+        if persisted is None or persisted.state != DbJobState.QUEUED.value:
+            # Cancelled in the DB before the claim (e.g. by a client that saw the row).
+            JobStateMachine.transition(job, JobState.CANCELLED)
+            self._notify_state_change(
+                job,
+                JobState.QUEUED,
+                JobState.CANCELLED,
+                queue_depth=self._queue_depth(printer_id),
+            )
+            return
+        self._queues[printer_id].put_nowait(job)
         logger.info("Job %s (persisted) queued on %s", job_key, printer_id)
+
+    def _drop_unqueued(self, job: Job) -> None:
+        """Forget a claimed job that never reached the queue (re-render failed)."""
+        if self._jobs.get(job.id) is job:
+            del self._jobs[job.id]
 
     # --- worker loop -------------------------------------------------------
 

@@ -398,3 +398,87 @@ async def test_cancel_unknown_job_raises_key_error() -> None:
     with pytest.raises(KeyError):
         await queue.cancel(str(uuid4()))
     assert queue.has_job(uuid4()) is False
+
+
+@pytest.mark.asyncio
+async def test_cancel_while_persisted_row_is_rendering_wins() -> None:
+    """Codex P1 on #187: a cancel during the re-render must not lose to the enqueue.
+
+    The row is committed before ``enqueue_persisted`` renders it.  If the queue did
+    not track it yet, a concurrent cancel would only touch the DB row and the
+    enqueue would then print it anyway.
+    """
+    import threading
+
+    printer = _RecordingPrinter()
+    store = MemoryJobStore()
+    queue = PrintQueue([printer], store=store, engine=_engine())
+    await queue.start()
+    release = threading.Event()
+    entered = threading.Event()
+    real_render = queue._rerender_from_db_payload
+
+    def _slow_render(payload: dict[str, Any]) -> Image.Image:
+        entered.set()
+        release.wait(timeout=10)
+        return real_render(payload)
+
+    queue._rerender_from_db_payload = _slow_render  # type: ignore[method-assign]
+    try:
+        row = Job(printer_id=_PRINTER_ID, payload=dict(_RENDERABLE_PAYLOAD))
+        await store.save_queued(row)
+        enqueue = asyncio.create_task(queue.enqueue_persisted(row))
+        while not entered.is_set():
+            await asyncio.sleep(0.01)
+
+        # Mid-render the queue already tracks the row, so cancel reaches it.
+        assert queue.has_job(row.id) is True
+        assert await queue.cancel(str(row.id)) is True
+
+        release.set()
+        await enqueue
+        await _drain_with_canary(queue, store)
+        assert printer.prints == 1  # the canary only
+        assert (await queue.get(row.id)).state == JobState.CANCELLED
+        stored = await store.get(row.id)
+        assert stored is not None
+        assert stored.state == DbJobState.CANCELLED.value
+    finally:
+        release.set()
+        await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_enqueue_persisted_skips_row_cancelled_in_db_before_the_claim() -> None:
+    printer = _RecordingPrinter()
+    store = MemoryJobStore()
+    queue = PrintQueue([printer], store=store, engine=_engine())
+    await queue.start()
+    try:
+        row = Job(printer_id=_PRINTER_ID, payload=dict(_RENDERABLE_PAYLOAD))
+        await store.save_queued(row)
+        await store.mark_cancelled(row.id)  # a DB-only cancel got there first
+
+        await queue.enqueue_persisted(row)
+
+        await _drain_with_canary(queue, store)
+        assert printer.prints == 1  # the canary only
+        assert (await queue.get(row.id)).state == JobState.CANCELLED
+    finally:
+        await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_failed_render_releases_the_claim() -> None:
+    from app.services.print_queue import UnrenderableJobError
+
+    queue = PrintQueue([_RecordingPrinter()], store=MemoryJobStore(), engine=_engine())
+
+    def _boom(payload: dict[str, Any]) -> Image.Image:
+        raise ValueError("bad")
+
+    queue._rerender_from_db_payload = _boom  # type: ignore[method-assign]
+    row = Job(printer_id=_PRINTER_ID, payload=dict(_RENDERABLE_PAYLOAD))
+    with pytest.raises(UnrenderableJobError):
+        await queue.enqueue_persisted(row)
+    assert queue.has_job(row.id) is False
