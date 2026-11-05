@@ -137,3 +137,18 @@ class CellOutOfRangeError(SheetApiError):
 
     def __init__(self, cells: list[int], max_cell: int) -> None:
         super().__init__(detail={"cells": cells, "max": max_cell})
+
+
+class ImportTooLargeError(SheetApiError):
+    status = 413
+    error_code = "import_too_large"
+    message = "Import document is too large."
+
+
+class InvalidImportError(SheetApiError):
+    status = 422
+    error_code = "invalid_import"
+    message = "Import document is invalid."
+
+    def __init__(self, errors: list[str]) -> None:
+        super().__init__(detail={"errors": errors})
