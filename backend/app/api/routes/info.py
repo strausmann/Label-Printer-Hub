@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import sessions as ui_sessions
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin
+from app.build_info import PROJECT_LICENSE, source_url
 from app.config import get_settings
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
@@ -56,7 +57,7 @@ def _integration_status() -> list[InfoIntegration]:
 @router.get("/api/info", response_model=Info)
 async def get_info(request: Request, db: SessionDep) -> Info:
     # Imported lazily: app.main imports this module.
-    from app.main import HUB_BUILD_DATE, HUB_REVISION, HUB_VERSION
+    from app.main import HUB_BUILD_DATE, HUB_REPO_URL, HUB_REVISION, HUB_VERSION
 
     settings = get_settings()
     store = request.app.state.settings_store
@@ -69,6 +70,8 @@ async def get_info(request: Request, db: SessionDep) -> Info:
         version=HUB_VERSION,
         revision=HUB_REVISION,
         build_date=HUB_BUILD_DATE,
+        license=PROJECT_LICENSE,
+        source_url=source_url(HUB_REPO_URL, HUB_VERSION, HUB_REVISION),
         default_language=cast(Literal["en", "de"], language if language in ("en", "de") else "en"),
         display_name=str(store.get("general.display_name")),
         auth=InfoAuth(

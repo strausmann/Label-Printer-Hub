@@ -30,6 +30,8 @@ class Info(BaseModel):
     version: str
     revision: str
     build_date: str
+    license: str
+    source_url: str
     default_language: Literal["en", "de"]
     display_name: str
     auth: InfoAuth

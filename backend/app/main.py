@@ -92,6 +92,7 @@ from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
 from app.auth.sessions import purge_expired as purge_expired_sessions
 from app.auth.sessions import warn_if_insecure as warn_if_insecure_cookies
+from app.build_info import PROJECT_LICENSE, public_repo_url
 from app.config import get_settings
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
@@ -185,6 +186,7 @@ def _pinned_openapi_schema(app: FastAPI) -> Any:
         routes=app.routes,
         tags=app.openapi_tags,
         servers=app.servers,
+        license_info=app.license_info,
     )
     return app.openapi_schema
 
@@ -664,6 +666,7 @@ def create_app() -> _LifespanManager:
         # Interactive docs are served by app.web.api_docs (Scalar, no CDN).
         docs_url=None,
         redoc_url=None,
+        license_info={"name": PROJECT_LICENSE, "identifier": PROJECT_LICENSE},
     )
     # Pin the OpenAPI document version per ADR 0011 via the supported
     # extension point: replace `app.openapi` with our wrapped builder.
@@ -693,7 +696,7 @@ def create_app() -> _LifespanManager:
             version=HUB_VERSION,
             revision=HUB_REVISION,
             build_date=HUB_BUILD_DATE,
-            repository=HUB_REPO_URL,
+            repository=public_repo_url(HUB_REPO_URL),
             sse_active_subscribers=bus.distinct_subscriber_count() if bus else 0,
         )
 

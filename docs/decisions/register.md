@@ -20,3 +20,4 @@ A guard test (`backend/tests/unit/test_decision_register.py`) fails if a `D<n>` 
 | D10 | Proxy headers are trusted only with the trust token; legacy header and Basic bypass are opt-in | 2026-11-04 | Accepted | [0019](0019-proxy-headers-need-trust-token.md) |
 | D11 | No global part-size or half-cut setting in the foundation | 2026-11-04 | Accepted | — |
 | D12 | `ink-500` is `#6B655A` to meet WCAG AA contrast | 2026-11-04 | Accepted | — |
+| D20 | The hub is AGPL-3.0-or-later and links to the source of the running build | 2026-11-05 | Accepted | — |

@@ -11,6 +11,8 @@ export const INFO: InfoData = {
   version: "0.0.0-test",
   revision: "test",
   build_date: "1970-01-01T00:00:00Z",
+  license: "AGPL-3.0-or-later",
+  source_url: "https://github.com/strausmann/label-printer-hub",
   default_language: "en",
   display_name: "Label Printer Hub",
   auth: { sso_configured: false, bootstrap_open: false },

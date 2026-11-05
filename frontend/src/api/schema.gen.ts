@@ -1070,8 +1070,12 @@ export interface components {
             };
             /** Integrations */
             integrations: components["schemas"]["InfoIntegration"][];
+            /** License */
+            license: string;
             /** Revision */
             revision: string;
+            /** Source Url */
+            source_url: string;
             /** Version */
             version: string;
         };
