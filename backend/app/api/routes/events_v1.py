@@ -11,7 +11,8 @@ Frames (``text/event-stream``):
 * ``: keepalive`` every ``sse_heartbeat_s``; on the same beat the credentials are
   re-checked and the stream ends with ``event: auth.expired`` once they are gone.
 
-The stream subscribes to ``hub`` and to ``printer:{id}:{queue,state,tape}`` of each
+The stream subscribes to ``hub``, to ``sheets`` (``sheet.updated``; sheets carry no printer
+restriction) and to ``printer:{id}:{queue,state,tape}`` of each
 enabled printer (or only the requested one), never to printers outside the caller's
 ``allowed_printer_ids``. Printers that appear later (``hub.printers_changed``) are
 picked up without reconnecting.
@@ -46,6 +47,7 @@ from app.repositories import printers as printers_repo
 from app.schemas.problem import ProblemDetail
 from app.services.event_bus import BusEvent, EventBus
 from app.services.sse_snapshot import build_snapshot
+from app.sheets.events import SHEETS_CHANNEL
 
 _log = logging.getLogger(__name__)
 
@@ -303,7 +305,8 @@ async def _follow_printer_change(
     description=(
         "``text/event-stream`` with JSON frames ``{channel, printer_id, type, ts, data}``. "
         "Without ``printer_id`` it carries every printer the caller may see plus the "
-        "``hub`` channel (``hub.printers_changed``). Ends with ``auth.expired`` when the "
+        "``hub`` channel (``hub.printers_changed``) and the ``sheets`` channel "
+        "(``sheet.updated``). Ends with ``auth.expired`` when the "
         "session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 "
         "when the credentials exclude it, 429 when ``PRINTER_HUB_SSE_MAX_SUBSCRIBERS`` "
         "connections are open."
@@ -360,7 +363,7 @@ async def stream_events(
         )
     subscriber_id = str(uuid.uuid4())
     subs = _Subscriptions(bus, subscriber_id)
-    subs.add([HUB_CHANNEL])
+    subs.add([HUB_CHANNEL, SHEETS_CHANNEL])
 
     try:
         if printer_id is not None:

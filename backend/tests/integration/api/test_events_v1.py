@@ -750,3 +750,27 @@ async def test_queue_producer_transitions_reach_the_stream(hub_app):
         assert seen == job_ids
     finally:
         await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_stream_carries_sheet_updates(hub_app):
+    """Every stream subscribes to ``sheets`` (sheet archive, Task 6); no printer scope applies."""
+    from app.sheets.events import publish_sheet_updated
+
+    app, _ = hub_app
+    key, _ = await _insert_key(["read"])
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        assert _bus(app).subscriber_count("sheets") == 1
+        publish_sheet_updated(
+            _bus(app), code="L4736-02", free=31, total=48, changed=[5], state="active"
+        )
+        ev = await stream.event_of_type("sheet.updated")
+        assert ev["payload"]["channel"] == "sheets"
+        assert ev["payload"]["printer_id"] is None
+        assert ev["payload"]["data"]["code"] == "L4736-02"
+    finally:
+        await stream.close()
+    await asyncio.sleep(0.1)
+    assert _bus(app).subscriber_count("sheets") == 0

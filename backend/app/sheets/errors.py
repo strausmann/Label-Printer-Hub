@@ -130,6 +130,26 @@ class CellsTakenError(SheetApiError):
         super().__init__(detail={"cells": cells})
 
 
+class CellsNotMarkedByHandError(SheetApiError):
+    """Only cells marked by hand can be un-marked; a printed cell carries a label (spec 8)."""
+
+    status = 409
+    error_code = "cells_not_marked_by_hand"
+    message = "Some cells were not marked by hand."
+
+    def __init__(self, cells: list[int]) -> None:
+        super().__init__(detail={"cells": cells})
+
+
+class CellsNotUnconfirmedError(SheetApiError):
+    status = 409
+    error_code = "cells_not_unconfirmed"
+    message = "Some cells are not waiting for confirmation."
+
+    def __init__(self, cells: list[int]) -> None:
+        super().__init__(detail={"cells": cells})
+
+
 class CellOutOfRangeError(SheetApiError):
     status = 422
     error_code = "cell_out_of_range"
