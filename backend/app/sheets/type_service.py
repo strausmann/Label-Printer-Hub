@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from sqlmodel import col
 from app.models.sheet import SheetType, SheetTypeVersion
 from app.repositories import sheet_types as repo
 from app.sheets.errors import (
+    InvalidFieldError,
     InvalidGeometryError,
     PrefixLockedError,
     PrefixTakenError,
@@ -28,13 +30,13 @@ from app.sheets.errors import (
     SheetTypeNotFoundError,
     TypeExistsError,
 )
-from app.sheets.geometry import Geometry, geometry_hash, hmm_to_mm, normalise, validate_geometry
+from app.sheets.geometry import Geometry, geometry_hash, normalise, validate_geometry
 from app.sheets.locking import acquire_sheet_write_lock
 from app.sheets.naming import KEY_PATTERN, PREFIX_PATTERN, default_allow_qr
 
 logger = logging.getLogger(__name__)
 
-_SIZE_TOLERANCE_MM = 0.5
+_SIZE_TOLERANCE_HMM = 50  # 0.5 mm, compared as integers (D16)
 _EDITABLE = frozenset(
     {
         "vendor",
@@ -123,9 +125,33 @@ def _new_version(
     )
 
 
-def _check_prefix(prefix: str) -> None:
-    if not PREFIX_PATTERN.match(prefix):
-        raise InvalidGeometryError("prefix", "invalid format")
+def mm_to_hmm_rounded(value: float) -> int:
+    """Filter input in mm to whole hundredths; any float noise rounds away."""
+    return round(Decimal(str(value)) * 100)
+
+
+def _check_prefix(prefix: object) -> None:
+    if not isinstance(prefix, str) or not PREFIX_PATTERN.match(prefix):
+        raise InvalidFieldError("prefix", "invalid format")
+
+
+_NULLABLE_TEXT = frozenset({"vendor", "description", "source_name", "source_url", "notes"})
+_BOOLEAN = frozenset({"allow_qr", "verified"})
+
+
+def _check_patch_value(name: str, value: object) -> None:
+    """Reject a value the column cannot hold before anything is written."""
+    if name in _BOOLEAN:
+        if not isinstance(value, bool):
+            raise InvalidFieldError(name, "must be true or false")
+    elif name in _NULLABLE_TEXT:
+        if value is not None and not isinstance(value, str):
+            raise InvalidFieldError(name, "must be text or null")
+    elif name == "product_codes":
+        if not (isinstance(value, list) and all(isinstance(c, str) for c in value)):
+            raise InvalidFieldError(name, "must be a list of strings")
+    elif name == "prefix":
+        _check_prefix(value)
 
 
 async def get_type(session: AsyncSession, key: str) -> SheetType:
@@ -166,7 +192,7 @@ async def create_type(
     change_note: str | None = None,
 ) -> tuple[SheetType, SheetTypeVersion]:
     if not KEY_PATTERN.match(fields.key):
-        raise InvalidGeometryError("key", "invalid format")
+        raise InvalidFieldError("key", "invalid format")
     _check_prefix(fields.prefix)
     validate_geometry(normalise(geometry))
     async with _write(session):
@@ -202,25 +228,24 @@ async def patch_type(
 ) -> SheetType:
     for name, value in changes.items():
         if name not in _EDITABLE:
-            raise InvalidGeometryError(name, "not editable")
-        if name == "product_codes" and not (
-            isinstance(value, list) and all(isinstance(c, str) for c in value)
-        ):
-            raise InvalidGeometryError(name, "must be a list of strings")
+            raise InvalidFieldError(name, "not editable")
+        _check_patch_value(name, value)
     async with _write(session):
         t = await get_type(session, key)
         new_prefix = changes.get("prefix")
         if new_prefix is not None and new_prefix != t.prefix:
-            _check_prefix(new_prefix)
             if await repo.count_sheets(session, t.id) > 0:
                 raise PrefixLockedError()  # OC-5
             if await repo.get_by_prefix(session, new_prefix) is not None:
                 raise PrefixTakenError()
+        changed = False
         for name, value in changes.items():
-            if name == "prefix" and value is None:
-                continue
-            setattr(t, name, list(value) if name == "product_codes" else value)
-        t.updated_at = _now()
+            new = list(value) if name == "product_codes" else value
+            if getattr(t, name) != new:
+                setattr(t, name, new)
+                changed = True
+        if changed:
+            t.updated_at = _now()
         await session.commit()
     logger.info("sheet type %s edited by %s: %s", key, actor, sorted(changes))
     return t
@@ -267,7 +292,8 @@ async def delete_type(session: AsyncSession, key: str, *, actor: str) -> None:
     async with _write(session):
         t = await get_type(session, key)
         if t.origin != "custom":
-            raise SheetTypeInUseError("seed_type")  # OC-10: seed types are only archived
+            # OC-10: only custom types without sheets are deleted; the rest is archived.
+            raise SheetTypeInUseError(f"{t.origin}_type")
         if await repo.count_sheets(session, t.id) > 0:
             raise SheetTypeInUseError("has_sheets")
         await session.execute(delete(SheetTypeVersion).where(col(SheetTypeVersion.type_id) == t.id))
@@ -290,13 +316,15 @@ async def list_types(
         session, vendor=vendor, include_archived=include_archived
     )
     needle = q.lower() if q else None
+    w_hmm = None if w is None else mm_to_hmm_rounded(w)
+    h_hmm = None if h is None else mm_to_hmm_rounded(h)
     out: list[SheetType] = []
     for t, v in rows:
         if page is not None and v.page_size != page:
             continue
-        if w is not None and abs(hmm_to_mm(v.label_w) - w) > _SIZE_TOLERANCE_MM:
+        if w_hmm is not None and abs(v.label_w - w_hmm) > _SIZE_TOLERANCE_HMM:
             continue
-        if h is not None and abs(hmm_to_mm(v.label_h) - h) > _SIZE_TOLERANCE_MM:
+        if h_hmm is not None and abs(v.label_h - h_hmm) > _SIZE_TOLERANCE_HMM:
             continue
         if needle is not None:
             haystack = [t.key, t.description or "", *t.product_codes]

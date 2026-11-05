@@ -94,6 +94,15 @@ class InvalidGeometryError(SheetApiError):
         )
 
 
+class InvalidFieldError(InvalidGeometryError):
+    """A non-geometry field has a bad value; same code and status as invalid geometry."""
+
+    def __init__(self, field: str, reason: str) -> None:
+        super().__init__(field, reason)
+        self.message = f"Invalid value for {field}: {reason}."
+        self.args = (self.message,)
+
+
 class SheetNotFoundError(SheetApiError):
     status = 404
     error_code = "sheet_not_found"

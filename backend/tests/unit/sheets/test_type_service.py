@@ -185,6 +185,68 @@ async def test_patch_rejects_unknown_field(session: AsyncSession) -> None:
     assert (await ts.get_type(session, t.key)).origin == "custom"
 
 
+@pytest.mark.parametrize(
+    ("field", "bad"),
+    [
+        ("allow_qr", None),
+        ("allow_qr", "yes"),
+        ("allow_qr", 1),
+        ("verified", None),
+        ("verified", "true"),
+        ("verified", 0),
+        ("prefix", None),
+        ("prefix", 5),
+        ("vendor", 5),
+        ("description", ["x"]),
+        ("source_name", 1.5),
+        ("source_url", {}),
+        ("notes", True),
+        ("product_codes", None),
+        ("product_codes", [1]),
+    ],
+)
+async def test_patch_rejects_wrong_value_types(session: AsyncSession, field: str, bad: Any) -> None:
+    t, _ = await ts.create_type(session, fields(), G_4X12, actor="tester")
+    key = t.key
+    with pytest.raises(InvalidGeometryError) as exc:
+        await ts.patch_type(session, key, {field: bad}, actor="tester")
+    assert exc.value.status == 422
+    assert exc.value.error_code == "invalid_geometry"
+    assert exc.value.detail is not None and exc.value.detail["field"] == field
+    assert "geometry" not in exc.value.message.lower()
+    stored = await ts.get_type(session, key)
+    assert stored.allow_qr is True and stored.verified is False and stored.prefix == "L4736"
+
+
+async def test_patch_nullable_text_fields_accept_none(session: AsyncSession) -> None:
+    t, _ = await ts.create_type(session, fields(), G_4X12, actor="tester")
+    patched = await ts.patch_type(
+        session,
+        t.key,
+        {"vendor": None, "description": None, "notes": None, "allow_qr": False},
+        actor="tester",
+    )
+    assert patched.vendor is None and patched.description is None
+    assert patched.allow_qr is False
+
+
+async def test_noop_patch_keeps_updated_at(session: AsyncSession) -> None:
+    t, _ = await ts.create_type(session, fields(), G_4X12, actor="tester")
+    before = t.updated_at
+    same = await ts.patch_type(session, t.key, {"description": t.description}, actor="tester")
+    assert same.updated_at == before
+
+
+async def test_format_errors_do_not_talk_about_geometry(session: AsyncSession) -> None:
+    with pytest.raises(InvalidGeometryError) as exc:
+        await ts.create_type(session, fields(key="Bad Key"), G_4X12, actor="tester")
+    assert exc.value.error_code == "invalid_geometry"
+    assert "geometry" not in exc.value.message.lower()
+    with pytest.raises(InvalidGeometryError) as exc2:
+        await ts.create_type(session, fields(prefix="bad"), G_4X12, actor="tester")
+    assert "geometry" not in exc2.value.message.lower()
+
+
 async def test_prefix_editable_only_without_sheets(session: AsyncSession) -> None:
     t, _ = await ts.create_type(session, fields(), G_4X12, actor="tester")
     key = t.key
@@ -233,13 +295,15 @@ async def test_delete_rules(session: AsyncSession) -> None:
     assert exc.value.error_code == "type_in_use"
     assert exc.value.detail == {"reason": "has_sheets"}
 
-    seed, _ = await ts.create_type(
-        session, fields("seed-type", "SEED1"), G_4X12, actor="t", origin="seed"
-    )
-    with pytest.raises(SheetTypeInUseError) as exc2:
-        await ts.delete_type(session, seed.key, actor="t")
-    assert exc2.value.detail == {"reason": "seed_type"}
-    assert (await ts.get_type(session, "seed-type")).origin == "seed"
+    for origin, reason in (("seed", "seed_type"), ("imported", "imported_type")):
+        key = f"{origin}-type"
+        await ts.create_type(
+            session, fields(key, origin[:4].upper() + "1"), G_4X12, actor="t", origin=origin
+        )  # type: ignore[arg-type]
+        with pytest.raises(SheetTypeInUseError) as exc2:
+            await ts.delete_type(session, key, actor="t")
+        assert exc2.value.detail == {"reason": reason}
+        assert (await ts.get_type(session, key)).origin == origin
 
     with pytest.raises(SheetTypeNotFoundError):
         await ts.delete_type(session, "nope", actor="t")
@@ -293,6 +357,23 @@ async def test_list_filters(session: AsyncSession) -> None:
                     ("TINY", ["zweckform-small"]), ("small", ["zweckform-small"])):  # fmt: skip
         got = await ts.list_types(session, include_archived=False, **{**kw, "q": q})
         assert keys(got) == want, q
+
+
+async def test_list_size_tolerance_boundary_is_exact(session: AsyncSession) -> None:
+    await ts.create_type(session, fields(), G_4X12, actor="t")  # label 45.70 x 21.20
+    kw: dict[str, Any] = {"page": None, "vendor": None, "q": None, "include_archived": False}
+    for w in (45.2, 46.2):  # exactly +-0.50 mm: included
+        assert [x.key for x in await ts.list_types(session, w=w, h=None, **kw)] == ["avery-l4736"]
+    for w in (45.19, 46.21):  # just outside
+        assert await ts.list_types(session, w=w, h=None, **kw) == []
+    assert [x.key for x in await ts.list_types(session, w=None, h=20.7, **kw)] == ["avery-l4736"]
+
+
+async def test_list_size_boundary_survives_float_noise(session: AsyncSession) -> None:
+    # abs(31.70 - 32.2) is 0.5000000000000036 in floating point; in hundredths it is exactly 50.
+    await ts.create_type(session, fields(), replace(G_4X12, label_w=3170), actor="t")
+    kw: dict[str, Any] = {"page": None, "vendor": None, "q": None, "include_archived": False}
+    assert [x.key for x in await ts.list_types(session, w=32.2, h=None, **kw)] == ["avery-l4736"]
 
 
 async def test_list_uses_current_version_size(session: AsyncSession) -> None:
