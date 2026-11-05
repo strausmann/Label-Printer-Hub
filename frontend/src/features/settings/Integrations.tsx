@@ -35,8 +35,8 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   const test = useTestIntegration(name);
   const info = useInfo().data?.integrations.find((i) => i.name === name);
   const [saved, setSaved] = useState(false);
-  // The URL the last test ran against: a result only describes the configuration it tested.
-  const [testedUrl, setTestedUrl] = useState<string | null>(null);
+  // What the last test ran against: a result only describes the configuration it tested.
+  const [testedSignature, setTestedSignature] = useState<string | null>(null);
 
   const urlKey = `integrations.${name}.url`;
   const secretKey = SECRET_SUFFIX[name] ? `integrations.${name}.${SECRET_SUFFIX[name]}` : null;
@@ -56,10 +56,17 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   // One source with the sidebar: /api/info says whether the integration is usable (Paperless has no entry there).
   const configured = info ? info.configured : savedInSettings;
   const savedButUnusable = !configured && (urlView.is_set || Boolean(secretView?.is_set));
+  // The probe uses URL, secret and timeout. A secret's value is not readable here, only that one is present.
+  const signature = JSON.stringify([
+    urlNow.trim().replace(/\/+$/, ""),
+    String(draft.valueOf(timeoutKey)),
+    Boolean(secretView?.is_set) || (secretKey !== null && ![null, ""].includes(draft.valueOf(secretKey) as string | null)),
+  ]);
+  // A result describes the configuration it tested, not whatever the form shows now (settings may refresh after a save elsewhere).
+  const resultCurrent = testedSignature === signature;
   // The header says what is known. "Connected" and "Connection failed" come only from a test of the values
   // that are saved; a result for unsaved edits says nothing about the saved integration.
-  // It also stops applying when the saved URL changes underneath it (settings refreshed after a save elsewhere).
-  const tested = test.isSuccess && !changed && testedUrl !== null && sameUrl(testedUrl, String(urlView.value ?? "")) ? test.data : null;
+  const tested = test.isSuccess && !changed && resultCurrent ? test.data : null;
   const header: { state: "ok" | "bad" | "idle"; label: string } = tested
     ? tested.ok
       ? { state: "ok", label: t`Connected` }
@@ -67,8 +74,6 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
     : configured
       ? { state: "ok", label: t`Configured` }
       : { state: "idle", label: t`Not set up` };
-  // The result line follows the same rule: it describes the URL that was tested, not whatever the form shows now.
-  const resultCurrent = testedUrl !== null && sameUrl(testedUrl, urlNow);
   const label = (suffix: string) => ({ url: t`URL`, secret: SECRET_SUFFIX[name] === "token" ? t`Token` : t`API key`, timeout: t`Timeout (seconds)` })[suffix]!;
 
   const change = (key: string) => (value: string | boolean | null) => {
@@ -103,7 +108,7 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
       <div className="flex flex-wrap items-center gap-3">
         <Button
           onPress={() => {
-            setTestedUrl(urlNow);
+            setTestedSignature(signature);
             test.mutate(values);
           }}
           isDisabled={test.isPending || invalid.length > 0}

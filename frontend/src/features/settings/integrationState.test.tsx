@@ -112,6 +112,40 @@ describe("a test result belongs to the configuration it tested", () => {
   });
 });
 
+describe("a refresh of any tested value drops the result", () => {
+  it("drops it when only the timeout changed elsewhere", async () => {
+    let saved = settingsList();
+    mockApi({ "GET /api/v1/settings": () => saved, "GET /api/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: { ok: true, status: 200, detail: "ok" } });
+    const { queryClient } = await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED } });
+    const card = await screen.findByRole("group", { name: "Grocy" });
+    await userEvent.click(testButton(card));
+    await within(card).findByText("Connected");
+    saved = settingsList({ "integrations.grocy.timeout": { value: 30 } });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+    });
+    await within(card).findByDisplayValue("30");
+    expect(within(card).queryByText("Connected")).toBeNull();
+    expect(within(card).queryByText("Works")).toBeNull();
+    expect(within(card).getByText("Configured")).toBeVisible();
+  });
+
+  it("drops it when a secret appears elsewhere", async () => {
+    let saved = settingsList();
+    mockApi({ "GET /api/v1/settings": () => saved, "GET /api/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: { ok: false, status: 401, detail: "HTTP 401" } });
+    const { queryClient } = await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED } });
+    const card = await screen.findByRole("group", { name: "Grocy" });
+    await userEvent.click(testButton(card));
+    await within(card).findByText("Connection failed");
+    saved = settingsList({ "integrations.grocy.api_key": { is_set: true } });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+    });
+    await within(card).findByText(/Saved/i);
+    expect(within(card).queryByText("Connection failed")).toBeNull();
+  });
+});
+
 describe("test result line (#174)", () => {
   it("shows the status once when the detail only repeats it", async () => {
     const card = await openGrocy({ ok: false, status: 404, detail: "HTTP 404" });
