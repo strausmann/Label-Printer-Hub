@@ -53,12 +53,12 @@ describe("Sidebar", () => {
       expect(within(group).getByRole("link", { name: "Grocy" })).toHaveAttribute("href", "/integrations/grocy");
     });
 
-    it("an admin sees a muted entry for an integration that is not set up, linking to the settings", async () => {
+    it("an admin does not see an integration that is not set up either", async () => {
       await renderApp({ path: "/", info: { integrations: set(true, true, false) } });
       const nav = screen.getByRole("navigation", { name: "Main" });
-      const link = within(nav).getByRole("link", { name: /Spoolman/ });
-      expect(link).toHaveAttribute("href", "/settings/integrations");
-      expect(link).toHaveTextContent("Not set up");
+      expect(within(nav).queryByText(/Spoolman/)).toBeNull();
+      expect(within(nav).queryByText(/Not set up/)).toBeNull();
+      expect(within(nav).getByRole("link", { name: "Snipe-IT" })).toBeVisible();
     });
 
     it("a non-admin does not see it at all", async () => {
@@ -68,11 +68,13 @@ describe("Sidebar", () => {
       expect(within(nav).getByRole("link", { name: "Snipe-IT" })).toBeVisible();
     });
 
-    it("only configured integrations are linked to their start page", async () => {
+    it("with none configured the whole group is gone, for an admin as well", async () => {
       await renderApp({ path: "/", info: { integrations: set(false, false, false) } });
       const nav = screen.getByRole("navigation", { name: "Main" });
-      expect(within(nav).queryByRole("link", { name: "Snipe-IT" })).toBeNull();
-      expect(within(nav).getAllByRole("link", { name: /Not set up/ })).toHaveLength(3);
+      expect(within(nav).queryByText("Integrations")).toBeNull();
+      expect(within(nav).queryByRole("list", { name: "Integrations" })).toBeNull();
+      expect(within(nav).queryByText(/Not set up/)).toBeNull();
+      expect(within(nav).queryByRole("link", { name: /Snipe-IT|Grocy|Spoolman/ })).toBeNull();
     });
 
     it("marks the open start page", async () => {

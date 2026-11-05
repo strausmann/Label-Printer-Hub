@@ -1,4 +1,3 @@
-import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useAppName } from "../features/lookup/apps";
@@ -14,31 +13,19 @@ export const INTEGRATION_ICON: Record<LookupApp, ReactNode> = {
 
 const ROW = "press flex h-10 items-center gap-3 rounded-r2 px-3 transition-colors duration-150 hover:bg-sunken";
 
-/**
- * One sidebar entry per integration `/api/info` lists. A configured one opens its start page;
- * one that is not set up is muted and, for the admins who are given it, leads to the settings.
- */
+/** One sidebar entry per configured integration; the ones not set up are not listed (see `useConfiguredIntegrations`). */
 export function IntegrationNavEntries({ integrations }: { integrations: IntegrationState[] }) {
-  const { t } = useLingui();
   const appName = useAppName();
-  return integrations.map(({ app, configured }) => (
+  return integrations.map(({ app }) => (
     <li key={app}>
-      {configured ? (
-        <Link
-          to="/integrations/$app"
-          params={{ app }}
-          className={`${ROW} text-ink-2 hover:text-ink data-[status=active]:bg-sunken data-[status=active]:font-bold data-[status=active]:text-ink`}
-        >
-          {INTEGRATION_ICON[app]}
-          <span>{appName(app)}</span>
-        </Link>
-      ) : (
-        <Link to="/settings/integrations" className={`${ROW} text-ink-3 hover:text-ink-2`}>
-          {INTEGRATION_ICON[app]}
-          <span>{appName(app)}</span>
-          <span className="ml-auto text-small">{t`Not set up`}</span>
-        </Link>
-      )}
+      <Link
+        to="/integrations/$app"
+        params={{ app }}
+        className={`${ROW} text-ink-2 hover:text-ink data-[status=active]:bg-sunken data-[status=active]:font-bold data-[status=active]:text-ink`}
+      >
+        {INTEGRATION_ICON[app]}
+        <span>{appName(app)}</span>
+      </Link>
     </li>
   ));
 }

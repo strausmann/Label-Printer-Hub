@@ -72,8 +72,8 @@ describe("Integrations", () => {
     await userEvent.type(within(grocy).getByRole("textbox", { name: "URL" }), "https://grocy.example.invalid");
     await userEvent.type(within(grocy).getByLabelText("API key"), "fake-key-for-tests");
     await userEvent.click(within(grocy).getByRole("button", { name: "Test connection" }));
-    expect(await within(grocy).findByText(/Grocy 4.2 answered/)).toBeVisible();
-    expect(within(grocy).getByText(/HTTP 200/)).toBeVisible();
+    expect(await within(grocy).findByText("Works")).toBeVisible();
+    expect(within(grocy).queryByText(/HTTP 200|Grocy 4.2 answered/)).toBeNull();
     expect(lastBody(calls, "POST", "/api/v1/settings/integrations/grocy/test")).toEqual({
       values: { "integrations.grocy.url": "https://grocy.example.invalid", "integrations.grocy.api_key": "fake-key-for-tests" },
     });
@@ -350,7 +350,7 @@ describe("fix round 1", () => {
     expect(within(snipe).getByText(/cannot be used/i)).toBeVisible();
     // Grocy has nothing saved in settings, yet the plugin is configured (environment).
     const grocy = screen.getByRole("group", { name: "Grocy" });
-    expect(within(grocy).getByText("Set up")).toBeVisible();
+    expect(within(grocy).getByText("Configured")).toBeVisible();
     expect(within(grocy).queryByText(/cannot be used/i)).toBeNull();
   });
 

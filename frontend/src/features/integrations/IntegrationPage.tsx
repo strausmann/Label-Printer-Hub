@@ -72,7 +72,7 @@ function Start({ app }: { app: LookupApp }) {
         </p>
         <header className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <h1 className="text-title font-bold">{appName}</h1>
-          <StatusBadge state={configured ? "ok" : "idle"} label={configured ? t`Connected` : t`Not set up`} />
+          <StatusBadge state={configured ? "ok" : "idle"} label={configured ? t`Configured` : t`Not set up`} />
           {configured && base && (
             <a href={base} target="_blank" rel="noopener noreferrer" className={SECONDARY_BUTTON}>
               {t`Open ${appName}`}&nbsp;<span aria-hidden="true">↗</span>

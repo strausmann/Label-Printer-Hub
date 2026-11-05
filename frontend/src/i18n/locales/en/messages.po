@@ -215,7 +215,10 @@ msgstr "Code only, no QR code"
 msgid "Colour not reported"
 msgstr "Colour not reported"
 
+#: src/features/integrations/IntegrationPage.tsx
+#: src/features/integrations/IntegrationTiles.tsx
 #: src/features/settings/AccessKeys.tsx
+#: src/features/settings/Integrations.tsx
 msgid "Configured"
 msgstr "Configured"
 
@@ -223,8 +226,7 @@ msgstr "Configured"
 msgid "Connect the apps that labels are made from. A secret belongs to the URL it was saved with: change the URL and you enter the secret again."
 msgstr "Connect the apps that labels are made from. A secret belongs to the URL it was saved with: change the URL and you enter the secret again."
 
-#: src/features/integrations/IntegrationPage.tsx
-#: src/features/integrations/IntegrationTiles.tsx
+#: src/features/settings/Integrations.tsx
 msgid "Connected"
 msgstr "Connected"
 
@@ -240,6 +242,10 @@ msgstr "Connecting…"
 #: src/features/printers/PrinterDetail.tsx
 msgid "Connection"
 msgstr "Connection"
+
+#: src/features/settings/Integrations.tsx
+msgid "Connection failed"
+msgstr "Connection failed"
 
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Continue"
@@ -719,9 +725,7 @@ msgid "Not set"
 msgstr "Not set"
 
 #: src/features/integrations/IntegrationPage.tsx
-#: src/features/integrations/IntegrationTiles.tsx
 #: src/features/settings/Integrations.tsx
-#: src/shell/IntegrationNav.tsx
 msgid "Not set up"
 msgstr "Not set up"
 
@@ -1076,12 +1080,12 @@ msgstr "Set the URL first; a secret belongs to its URL."
 
 #: src/features/integrations/IntegrationTiles.tsx
 #: src/features/settings/Integrations.tsx
-msgid "Set up"
-msgstr "Set up"
+#~ msgid "Set up"
+#~ msgstr "Set up"
 
 #: src/features/integrations/IntegrationTiles.tsx
-msgid "Set up {name}"
-msgstr "Set up {name}"
+#~ msgid "Set up {name}"
+#~ msgstr "Set up {name}"
 
 #: src/features/settings/SettingsPage.tsx
 #: src/shell/labels.ts
@@ -1225,6 +1229,10 @@ msgstr "That slug is already used by another printer."
 #: src/features/settings/feedback.tsx
 msgid "That value is set by the container and cannot be changed here."
 msgstr "That value is set by the container and cannot be changed here."
+
+#: src/features/settings/Integrations.tsx
+msgid "The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly."
+msgstr "The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly."
 
 #: src/shell/SignIn.tsx
 msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."

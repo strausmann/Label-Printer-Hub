@@ -230,3 +230,16 @@ Source: PR #30 review (Copilot).
 - **Format**: start with the rule. Show "bad" and "good" examples. Cite the PR where the finding originated.
 
 A finding with no clear takeaway pattern (e.g. a typo, a one-off naming nit) doesn't need to land here — only patterns that are likely to recur.
+
+
+---
+
+## Frontend / i18n
+
+### One message id, one meaning: states and actions get different strings
+
+The catalogue holds a single translation per msgid. `Set up` was used as a status badge ("is set up") and as a link ("set it up"); German can only be one of them and picked the imperative, so a configured integration showed "Einrichten". A state and an action use different strings ("Configured" vs. "Set up"), and a string that is a state must not be one that reads as a command in the target language.
+
+A header state is only as strong as what is known: "Connected" appears only after a successful connection test of the saved values, "Configured" is what a saved URL proves.
+
+Source: issues #174, #176.

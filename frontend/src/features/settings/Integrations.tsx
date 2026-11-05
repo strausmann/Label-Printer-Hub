@@ -5,7 +5,7 @@ import { Button } from "react-aria-components";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
-import { useApiKeys, useSaveSettings, useTestIntegration, type ApiKey, type SettingView } from "./api";
+import { useApiKeys, useSaveSettings, useTestIntegration, type ApiKey, type IntegrationTestResult, type SettingView } from "./api";
 import { useInfo } from "../../app/session";
 import { sameUrl, useSettingsDraft } from "./draft";
 import { LastUsed } from "./LastUsed";
@@ -18,6 +18,15 @@ const SECRET_SUFFIX: Record<Integration, string | null> = { snipeit: "api_key", 
 const NAMES: Record<Integration, string> = { snipeit: "Snipe-IT", grocy: "Grocy", spoolman: "Spoolman", paperless: "Paperless" };
 const ORDER: Integration[] = ["paperless", "snipeit", "grocy", "spoolman"];
 
+const isRedirect = (status: number | null | undefined): boolean => status != null && status >= 300 && status < 400;
+
+/** The probe's detail, unless it only repeats the status that is shown next to it ("HTTP 302 HTTP 302"). */
+function distinctDetail(result: IntegrationTestResult): string | null {
+  const detail = result.detail?.trim();
+  if (!detail || (result.status != null && detail === `HTTP ${result.status}`)) return null;
+  return detail;
+}
+
 function IntegrationCard({ name, views }: { name: Integration; views: SettingView[] }) {
   const { t } = useLingui();
   const errorText = useErrorText();
@@ -26,6 +35,8 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   const test = useTestIntegration(name);
   const info = useInfo().data?.integrations.find((i) => i.name === name);
   const [saved, setSaved] = useState(false);
+  // What the last test ran against: a result only describes the configuration it tested.
+  const [testedSignature, setTestedSignature] = useState<string | null>(null);
 
   const urlKey = `integrations.${name}.url`;
   const secretKey = SECRET_SUFFIX[name] ? `integrations.${name}.${SECRET_SUFFIX[name]}` : null;
@@ -45,6 +56,26 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   // One source with the sidebar: /api/info says whether the integration is usable (Paperless has no entry there).
   const configured = info ? info.configured : savedInSettings;
   const savedButUnusable = !configured && (urlView.is_set || Boolean(secretView?.is_set));
+  // The probe uses URL, secret and timeout. A secret's value is not readable here, only that one is present.
+  const signature = JSON.stringify([
+    urlNow.trim().replace(/\/+$/, ""),
+    String(draft.valueOf(timeoutKey)),
+    Boolean(secretView?.is_set) || (secretKey !== null && ![null, ""].includes(draft.valueOf(secretKey) as string | null)),
+  ]);
+  // A result describes the configuration it tested, not whatever the form shows now (settings may refresh after a save elsewhere).
+  const resultCurrent = testedSignature === signature;
+  // A test still running for an older configuration neither blocks the button nor shows a result.
+  const testing = test.isPending && resultCurrent;
+  // The header says what is known. "Connected" and "Connection failed" come only from a test of the values
+  // that are saved; a result for unsaved edits says nothing about the saved integration.
+  const tested = test.isSuccess && !changed && resultCurrent ? test.data : null;
+  const header: { state: "ok" | "bad" | "idle"; label: string } = tested
+    ? tested.ok
+      ? { state: "ok", label: t`Connected` }
+      : { state: "bad", label: t`Connection failed` }
+    : configured
+      ? { state: "ok", label: t`Configured` }
+      : { state: "idle", label: t`Not set up` };
   const label = (suffix: string) => ({ url: t`URL`, secret: SECRET_SUFFIX[name] === "token" ? t`Token` : t`API key`, timeout: t`Timeout (seconds)` })[suffix]!;
 
   const change = (key: string) => (value: string | boolean | null) => {
@@ -60,7 +91,7 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
         <h3 id={heading} className="text-section font-bold">
           {NAMES[name]}
         </h3>
-        <StatusBadge state={configured ? "ok" : "idle"} label={configured ? t`Set up` : t`Not set up`} />
+        <StatusBadge state={header.state} label={header.label} />
       </div>
       {savedButUnusable ? (
         <p className="max-w-xl text-small text-ink-2">
@@ -78,11 +109,14 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button
-          onPress={() => test.mutate(values)}
-          isDisabled={test.isPending || invalid.length > 0}
+          onPress={() => {
+            setTestedSignature(signature);
+            test.mutate(values);
+          }}
+          isDisabled={testing || invalid.length > 0}
           className={SECONDARY_BUTTON}
         >
-          {test.isPending ? t`Testing…` : t`Test connection`}
+          {testing ? t`Testing…` : t`Test connection`}
         </Button>
         <Button
           isDisabled={!changed || invalid.length > 0 || secretRequired || save.isPending}
@@ -100,11 +134,19 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
           {t`Save`}
         </Button>
       </div>
-      {test.isPending ? null : test.isSuccess ? (
+      {test.isPending || !resultCurrent ? null : test.isSuccess ? (
         <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <StatusBadge state={test.data.ok ? "ok" : "bad"} label={test.data.ok ? t`Works` : t`Failed`} />
-          {test.data.status ? <span className="font-mono text-small text-ink-2">{t`HTTP ${test.data.status}`}</span> : null}
-          <span className="text-ink">{test.data.detail}</span>
+          {test.data.ok ? null : (
+            <>
+              {test.data.status ? <span className="font-mono text-small text-ink-2">{t`HTTP ${test.data.status}`}</span> : null}
+              {isRedirect(test.data.status) ? (
+                <span className="text-ink">{t`The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly.`}</span>
+              ) : distinctDetail(test.data) ? (
+                <span className="text-ink">{distinctDetail(test.data)}</span>
+              ) : null}
+            </>
+          )}
         </div>
       ) : test.isError ? (
         <p role="alert">{errorText(test.error, t`The test could not be run.`)}</p>
