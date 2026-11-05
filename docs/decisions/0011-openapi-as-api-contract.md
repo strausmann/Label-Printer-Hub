@@ -1,6 +1,6 @@
 # 0011 — OpenAPI as the canonical API contract
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-11: the interactive UI at `/docs` is Scalar, see "Amendment")
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
@@ -22,8 +22,8 @@ OpenAPI 3.1 is the **canonical API contract**. The contract surfaces in three fo
 | Path | What | Used by |
 |---|---|---|
 | `/openapi.json` | Raw OpenAPI 3.1 spec, JSON | Tooling (codegen, contract tests, Postman, etc.) |
-| `/docs` | Swagger UI — interactive try-it-now interface | Developers during development |
-| `/redoc` | ReDoc — clean reference rendering, optimised for reading | Contributors and integrators reading the API |
+| `/docs` | Interactive API reference (Scalar since the amendment below; originally Swagger UI) | Developers and integrators |
+| `/redoc` | Retired by the amendment below: permanent redirect to `/docs` | Old links |
 
 The Go frontend client is **generated from `/openapi.json` using [`oapi-codegen`](https://github.com/oapi-codegen/oapi-codegen)** at frontend build time. Hand-written backend clients are not allowed — schema drift must not be possible.
 
@@ -94,9 +94,19 @@ We choose Option A. Option D may supersede via a future ADR if the maintainer wa
 - API reference doc (`docs/api.md`) becomes a thin pointer to `/redoc` rather than hand-maintained Markdown
 - Contract-breaking changes (renaming a field, removing an endpoint) require `feat!` Conventional Commit and explicit migration notes — the diff in `openapi.json` makes them visible
 
+## Amendment (2026-11): Scalar replaces Swagger UI and ReDoc
+
+Issue #171. FastAPI's Swagger UI and ReDoc load their scripts from a CDN, which does not work on
+isolated networks and shows a different look than our other projects. `/docs` now renders the
+spec with [Scalar](https://github.com/scalar/scalar) (`@scalar/api-reference`, MIT), served by the
+hub itself: the frontend build copies the pinned standalone bundle into `dist/scalar/`, the hub
+serves it at `/docs/scalar.js`, and the page runs under its own strict Content Security Policy
+(`'self'` for scripts and connections; inline styles only, because Scalar injects style elements at runtime). `/redoc` answers `308` with
+`Location: /docs`; `/openapi.json` and the pinned OpenAPI version (`3.1.0`) are unchanged.
+`info.version` is the running release (`HUB_VERSION`), not the package placeholder.
+
 ## Future enhancements (separate ADRs if pursued)
 
-- **Scalar API Reference** as a third interactive UI option (`/scalar` route, modern UX)
 - **Mock server** generated from OpenAPI for frontend dev without running backend (`prism mock backend/openapi.json`)
 - **Contract tests** in CI — schemathesis fuzzing or dredd verification
 

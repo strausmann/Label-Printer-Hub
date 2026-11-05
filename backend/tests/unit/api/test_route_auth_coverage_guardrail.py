@@ -54,9 +54,13 @@ from fastapi.routing import APIRoute
 
 _PUBLIC_BY_DESIGN: dict[tuple[str, str], str] = {
     ("GET", "/healthz"): "liveness probe — zero deps, no PII, own docstring",
-    # /openapi.json, /docs, /docs/oauth2-redirect, /redoc are framework-added
-    # Starlette Route objects (not APIRoute) — _iter_api_routes never visits
-    # them, so they don't need (and can't take) an allowlist entry here.
+    # /openapi.json is a framework-added Starlette Route (not an APIRoute) and never
+    # visited here. The interactive docs are our own routes (app/web/api_docs.py).
+    ("GET", "/docs"): "interactive API reference shell (Scalar) — static HTML, no data; "
+    "the spec it loads is as public as /openapi.json (api_docs.py module docstring)",
+    ("GET", "/docs/scalar.js"): "the Scalar bundle served by the hub instead of a CDN — "
+    "a static third-party file (api_docs.py)",
+    ("GET", "/redoc"): "permanent redirect to /docs (api_docs.py)",
     # /readiness is intentionally NOT allowlisted: it declares its own
     # Depends(require_read) and is correctly picked up as authenticated.
     ("GET", "/loc/{entity_id}"): "QR landing path — serves only the static app shell, "

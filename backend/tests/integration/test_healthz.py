@@ -82,15 +82,11 @@ class TestAppMetadata:
         title_lower = data["info"]["title"].lower()
         assert "label" in title_lower and "printer" in title_lower and "hub" in title_lower
 
-    def test_swagger_ui_at_docs(self, client: TestClient) -> None:
-        response = client.get("/docs")
-        assert response.status_code == 200
-        assert b"swagger" in response.content.lower()
-
-    def test_redoc_at_redoc(self, client: TestClient) -> None:
-        response = client.get("/redoc")
-        assert response.status_code == 200
-        assert b"redoc" in response.content.lower()
+    def test_redoc_redirects_to_docs(self, client: TestClient) -> None:
+        # /docs itself (Scalar) is covered in tests/integration/api/test_api_docs.py.
+        response = client.get("/redoc", follow_redirects=False)
+        assert response.status_code == 308
+        assert response.headers["location"] == "/docs"
 
 
 class TestHealthzModel:

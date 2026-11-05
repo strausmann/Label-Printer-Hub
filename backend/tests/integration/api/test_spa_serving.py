@@ -35,6 +35,8 @@ def dist(tmp_path: Path) -> Path:
     (root / "index.html").write_text(INDEX_HTML)
     (root / "assets" / "app.js").write_text("console.log('x')")
     (root / "favicon.svg").write_text("<svg/>")
+    (root / "scalar").mkdir()
+    (root / "scalar" / "standalone.js").write_text("/* scalar */")
     return root
 
 
@@ -191,7 +193,7 @@ def test_missing_dist_logs_one_warning(tmp_path: Path, caplog: pytest.LogCapture
     assert not hasattr(app.state, "spa_index") or app.state.spa_index is None
 
 
-async def test_spa_has_csp_docs_has_none(spa: AsyncClient) -> None:
+async def test_spa_has_csp_api_endpoints_have_none(spa: AsyncClient) -> None:
     page = await spa.get("/")
     assert page.headers["content-security-policy"] == CSP
     assert page.headers["permissions-policy"] == "camera=(self)"
@@ -199,12 +201,24 @@ async def test_spa_has_csp_docs_has_none(spa: AsyncClient) -> None:
     assert page.headers["referrer-policy"] == "same-origin"
     asset = await spa.get("/assets/app.js")
     assert asset.headers["content-security-policy"] == CSP
-    for path in ("/docs", "/redoc", "/openapi.json", "/healthz"):
+    for path in ("/openapi.json", "/healthz"):
         resp = await spa.get(path)
         assert resp.status_code == 200, path
         assert "content-security-policy" not in {k.lower() for k in resp.headers}, path
         assert resp.headers["x-content-type-options"] == "nosniff", path
         assert resp.headers["referrer-policy"] == "same-origin", path
+
+
+async def test_docs_has_its_own_csp_not_the_spa_one(spa: AsyncClient) -> None:
+    resp = await spa.get("/docs")
+    assert resp.status_code == 200
+    assert "hub-app-shell" not in resp.text
+    csp = resp.headers["content-security-policy"]
+    assert csp != CSP
+    assert "'wasm-unsafe-eval'" not in csp
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    redoc = await spa.get("/redoc", follow_redirects=False)
+    assert redoc.status_code == 308
 
 
 async def test_old_fragment_stream_gone(spa: AsyncClient, no_spa: AsyncClient) -> None:
