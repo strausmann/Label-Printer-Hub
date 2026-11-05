@@ -30,7 +30,9 @@ test.describe("jobs", () => {
     // The retry is a new job: another address, and it is not the failed one.
     await expect(page).not.toHaveURL(failedUrl);
     await expect(page).toHaveURL(/\/jobs\/[0-9a-f-]{36}$/);
-    await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+    // The retried job is queued for real now, so its state (and thus a Retry button) depends on
+    // what the mock printer does with it; only its identity is asserted here.
+    await expect(page.getByRole("heading", { level: 1, name: "Failed cable label" })).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 844 });
     await shot(page, "task-12-job-phone.png");
