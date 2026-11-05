@@ -2053,7 +2053,7 @@ export interface components {
                 error_code: string;
                 error_detail?: {
                     [key: string]: unknown;
-                };
+                } | null;
                 error_message: string;
             };
         };

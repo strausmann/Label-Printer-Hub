@@ -71,3 +71,9 @@ def test_every_4xx_of_the_sheet_routes_carries_the_envelope(schema: dict[str, An
                         code,
                     )
     assert {"404", "409", "413", "422"} <= codes
+
+
+def test_error_detail_may_be_null(schema: dict[str, Any]) -> None:
+    detail = schema["components"]["schemas"][SHEET_ERROR_SCHEMA_NAME]["properties"]["detail"]
+    options = detail["properties"]["error_detail"]["anyOf"]
+    assert {"type": "null"} in options

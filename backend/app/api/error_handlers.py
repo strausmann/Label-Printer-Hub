@@ -75,7 +75,12 @@ SHEET_ERROR_SCHEMA: dict[str, Any] = {
             "properties": {
                 "error_code": {"type": "string"},
                 "error_message": {"type": "string"},
-                "error_detail": {"type": "object", "additionalProperties": True},
+                "error_detail": {
+                    "anyOf": [
+                        {"type": "object", "additionalProperties": True},
+                        {"type": "null"},
+                    ]
+                },
             },
         }
     },
