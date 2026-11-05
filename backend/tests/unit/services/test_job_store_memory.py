@@ -123,3 +123,19 @@ async def test_memory_store_mark_cancelled_only_from_queued() -> None:
     assert (await store.get(queued.id)).state == JobState.CANCELLED.value  # type: ignore[union-attr]
     assert (await store.get(queued.id)).finished_at is not None  # type: ignore[union-attr]
     assert (await store.get(printing.id)).state == JobState.PRINTING.value  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_memory_store_mark_printing_reports_whether_it_transitioned() -> None:
+    store = MemoryJobStore()
+    queued = Job(printer_id=uuid4(), template_key="t", payload={})
+    cancelled = Job(printer_id=uuid4(), template_key="t", payload={})
+    await store.save_queued(queued)
+    await store.save_queued(cancelled)
+    await store.mark_cancelled(cancelled.id)
+
+    assert await store.mark_printing(queued.id) is True
+    assert await store.mark_printing(cancelled.id) is False
+    assert (await store.get(cancelled.id)).state == JobState.CANCELLED.value  # type: ignore[union-attr]
+    # A row the store never saw is not a veto (legacy submit() without a row).
+    assert await store.mark_printing(uuid4()) is True

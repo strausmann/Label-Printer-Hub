@@ -225,3 +225,22 @@ async def test_sqlite_store_mark_cancelled_only_from_queued(async_session_factor
     assert still_printing is not None
     assert still_printing.state == JobState.PRINTING.value
     assert "mark_cancelled called on job" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_sqlite_store_mark_printing_reports_whether_it_transitioned(
+    async_session_factory,
+) -> None:  # type: ignore[no-untyped-def]
+    store = SQLiteJobStore(async_session_factory)
+    queued = Job(printer_id=uuid4(), template_key="t", payload={})
+    cancelled = Job(printer_id=uuid4(), template_key="t", payload={})
+    await store.save_queued(queued)
+    await store.save_queued(cancelled)
+    await store.mark_cancelled(cancelled.id)
+
+    assert await store.mark_printing(queued.id) is True
+    assert await store.mark_printing(cancelled.id) is False
+    refused = await store.get(cancelled.id)
+    assert refused is not None
+    assert refused.state == JobState.CANCELLED.value
+    assert await store.mark_printing(uuid4()) is True  # unknown row: no veto

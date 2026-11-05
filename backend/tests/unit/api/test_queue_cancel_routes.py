@@ -368,3 +368,82 @@ async def test_clear_route_cancels_untracked_queued_rows_in_db(env: _Env) -> Non
         r = await c.post(f"/api/printers/{env.printer.id}/queue/clear")
     assert r.status_code == 204
     assert await env.db_state(untracked) == JobState.CANCELLED.value
+
+
+class _SerialiseGate:
+    """Hold ``_serialize_image_to_png`` open so cancel/clear can land mid-submit."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import threading
+
+        from app.services import print_queue as pq_module
+
+        self.entered = threading.Event()
+        self.release = threading.Event()
+        real = pq_module._serialize_image_to_png
+
+        def _gated(image: Image.Image) -> bytes:
+            self.entered.set()
+            self.release.wait(timeout=10)
+            return real(image)
+
+        monkeypatch.setattr(pq_module, "_serialize_image_to_png", _gated)
+
+    async def wait_entered(self) -> None:
+        for _ in range(500):
+            if self.entered.is_set():
+                return
+            await asyncio.sleep(0.01)
+        raise AssertionError("serialisation never started")
+
+
+async def _start_submit_and_hold(env: _Env, gate: _SerialiseGate) -> tuple[UUID, asyncio.Task[Any]]:
+    """Persist a row and start ``submit_with_id`` (as PrintService does), stuck in serialisation."""
+    job = Job(printer_id=env.printer.id, payload=dict(_PAYLOAD))
+    await env.store.save_queued(job)
+    task = asyncio.create_task(
+        env.queue.submit_with_id(job.id, job.printer_id, Image.new("1", (300, 76)), tape_mm=24)
+    )
+    await gate.wait_entered()
+    return job.id, task
+
+
+@pytest.mark.asyncio
+async def test_cancel_route_during_submit_serialisation_is_never_printed(
+    env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gate = _SerialiseGate(monkeypatch)
+    try:
+        job_id, submit = await _start_submit_and_hold(env, gate)
+        async with env.client() as c:
+            r = await c.post(f"/api/jobs/{job_id}/cancel")
+        assert r.status_code == 200
+        assert r.json()["state"] == JobState.CANCELLED.value
+
+        gate.release.set()
+        await submit
+        await _drain_with_canary(env)
+        assert env.printer.prints == 1  # the canary only
+        assert await env.db_state(job_id) == JobState.CANCELLED.value
+    finally:
+        gate.release.set()
+
+
+@pytest.mark.asyncio
+async def test_clear_route_during_submit_serialisation_is_never_printed(
+    env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    gate = _SerialiseGate(monkeypatch)
+    try:
+        job_id, submit = await _start_submit_and_hold(env, gate)
+        async with env.client() as c:
+            r = await c.post(f"/api/printers/{env.printer.id}/queue/clear")
+        assert r.status_code == 204
+
+        gate.release.set()
+        await submit
+        await _drain_with_canary(env)
+        assert env.printer.prints == 1  # the canary only
+        assert await env.db_state(job_id) == JobState.CANCELLED.value
+    finally:
+        gate.release.set()

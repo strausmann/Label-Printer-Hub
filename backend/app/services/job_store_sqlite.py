@@ -42,20 +42,26 @@ class SQLiteJobStore(JobStore):
         async with self._session_factory() as session:
             return await jobs_repo.get(session, job_id)
 
-    async def mark_printing(self, job_id: UUID) -> None:
-        """Transition QUEUED -> PRINTING. Silently no-op if job not found."""
+    async def mark_printing(self, job_id: UUID) -> bool:
+        """Transition QUEUED -> PRINTING.
+
+        Returns True if the transition happened or the job is unknown (no veto);
+        False if the row exists but is no longer QUEUED (the worker must not print).
+        """
         async with self._session_factory() as session:
             job = await jobs_repo.get(session, job_id)
             if job is None:
-                return  # silent no-op (Protocol contract)
+                return True  # nothing could have cancelled it (Protocol contract)
             if job.state != JobState.QUEUED.value:
                 logger.warning(
-                    "mark_printing called on job %s in state %s (expected queued)",
+                    "mark_printing refused for job %s in state %s (expected queued); "
+                    "the worker will not print it",
                     job_id,
                     job.state,
                 )
-                return
+                return False
             await jobs_repo.mark_printing(session, job_id)
+            return True
 
     async def mark_done(self, job_id: UUID) -> None:
         """Transition PRINTING -> DONE.

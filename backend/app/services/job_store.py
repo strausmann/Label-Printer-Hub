@@ -46,11 +46,16 @@ class JobStore(Protocol):
     async def get(self, job_id: UUID) -> Job | None:
         """Load a job by ID. None if not found."""
 
-    async def mark_printing(self, job_id: UUID) -> None:
+    async def mark_printing(self, job_id: UUID) -> bool:
         """Transition QUEUED -> PRINTING. Called by worker when it picks up the job.
 
-        Silently no-op if job_id does not exist in the store. Implementations
-        must NOT raise on missing jobs — callers may race against eviction.
+        Returns True when the worker may print: the transition happened, or the
+        store does not know the job at all (callers may race against eviction, and
+        a job submitted without a row has nothing that could have cancelled it).
+        Returns False when the row exists but is no longer QUEUED (e.g. cancelled
+        through the API): the worker must NOT print such a job.
+
+        Must NOT raise on missing jobs.
         """
 
     async def mark_done(self, job_id: UUID) -> None:
@@ -115,12 +120,15 @@ class MemoryJobStore(JobStore):
     async def get(self, job_id: UUID) -> Job | None:
         return self._jobs.get(job_id)
 
-    async def mark_printing(self, job_id: UUID) -> None:
+    async def mark_printing(self, job_id: UUID) -> bool:
         job = self._jobs.get(job_id)
         if job is None:
-            return
+            return True
+        if job.state != JobState.QUEUED.value:
+            return False
         job.state = JobState.PRINTING.value
         job.started_at = datetime.now(UTC)
+        return True
 
     async def mark_done(self, job_id: UUID) -> None:
         job = self._jobs.get(job_id)

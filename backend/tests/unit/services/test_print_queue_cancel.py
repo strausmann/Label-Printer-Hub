@@ -198,10 +198,10 @@ class _GatedStore(MemoryJobStore):
         self.cancelled_gate = asyncio.Event()
         self.cancelled_gate.set()
 
-    async def mark_printing(self, job_id: UUID) -> None:
+    async def mark_printing(self, job_id: UUID) -> bool:
         self.printing_entered.set()
         await self.printing_gate.wait()
-        await super().mark_printing(job_id)
+        return await super().mark_printing(job_id)
 
     async def mark_cancelled(self, job_id: UUID) -> None:
         self.cancelled_entered.set()
