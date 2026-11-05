@@ -132,7 +132,7 @@ async def test_get_type_not_found_and_get_version(session: AsyncSession) -> None
 
 async def test_new_version_does_not_move_existing_sheets(session: AsyncSession) -> None:
     t, v1 = await ts.create_type(session, fields(), G_4X12, actor="tester")
-    sheet = await _add_sheet(session, t.key, 1, "L4736-01")
+    sheet = await _add_sheet(session, t.key, 1, "L4736-0001")
     v2 = await ts.add_version(session, t.key, G_5X12, actor="tester", change_note="5 columns")
     assert v2.version == 2
     assert v2.change_note == "5 columns"
@@ -257,7 +257,7 @@ async def test_prefix_editable_only_without_sheets(session: AsyncSession) -> Non
         await ts.patch_type(session, key, {"prefix": "OTH1"}, actor="tester")
     with pytest.raises(InvalidGeometryError):
         await ts.patch_type(session, key, {"prefix": "lower"}, actor="tester")
-    await _add_sheet(session, key, 1, "NEWP1-01")
+    await _add_sheet(session, key, 1, "NEWP1-0001")
     with pytest.raises(PrefixLockedError) as exc:
         await ts.patch_type(session, key, {"prefix": "THIRD1"}, actor="tester")
     assert exc.value.status == 409
@@ -288,7 +288,7 @@ async def test_delete_rules(session: AsyncSession) -> None:
     assert await _version_count(session) == 0  # versions go with the type
 
     used, _ = await ts.create_type(session, fields("used-type", "USED1"), G_4X12, actor="t")
-    await _add_sheet(session, used.key, 1, "USED1-01")
+    await _add_sheet(session, used.key, 1, "USED1-0001")
     with pytest.raises(SheetTypeInUseError) as exc:
         await ts.delete_type(session, used.key, actor="t")
     assert exc.value.status == 409

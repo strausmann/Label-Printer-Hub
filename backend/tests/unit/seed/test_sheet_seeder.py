@@ -93,7 +93,7 @@ async def test_seeder_leaves_type_with_sheets_alone(
     async with async_session_factory() as s:
         t = await ts.get_type(s, "herma-4098")
         v = await ts.current_version(s, t.id)
-        s.add(Sheet(code="H4098-01", type_id=t.id, type_version_id=v.id, id_placement="cell"))
+        s.add(Sheet(code="H4098-0001", type_id=t.id, type_version_id=v.id, id_placement="cell"))
         await s.commit()
     _patched(monkeypatch, "herma-4098")
     report = await run_sheet_seed(async_session_factory)

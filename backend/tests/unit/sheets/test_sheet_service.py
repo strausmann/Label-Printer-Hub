@@ -116,21 +116,33 @@ async def _cell_rows(session: AsyncSession) -> int:
 
 
 async def test_create_manual_sheet_codes(session: AsyncSession, l4736: str) -> None:
-    assert await ss.peek_next_code(session, l4736) == "L4736-01"
+    assert await ss.peek_next_code(session, l4736) == "L4736-0001"
     first = await _create(session)
-    assert first.code == "L4736-01"
+    assert first.code == "L4736-0001"
     assert first.id_placement == "manual"
     assert first.state == "active"
-    assert await ss.peek_next_code(session, l4736) == "L4736-02"
-    assert (await _create(session)).code == "L4736-02"
+    assert await ss.peek_next_code(session, l4736) == "L4736-0002"
+    assert (await _create(session)).code == "L4736-0002"
 
     counter = await session.get(SheetIdCounter, "L4736")
     assert counter is not None
     counter.next_value = 100
     await session.commit()
-    assert await ss.peek_next_code(session, l4736) == "L4736-100"
-    assert (await _create(session)).code == "L4736-100"
-    assert await ss.peek_next_code(session, l4736) == "L4736-101"
+    assert await ss.peek_next_code(session, l4736) == "L4736-0100"
+    assert (await _create(session)).code == "L4736-0100"
+    assert await ss.peek_next_code(session, l4736) == "L4736-0101"
+
+
+async def test_codes_have_four_digits_and_grow_past_9999(session: AsyncSession, l4736: str) -> None:
+    """Operator decision 2026-11-05: always four digits; above 9999 the number just grows."""
+    assert await ss.allocate_code(session, "L4736") == "L4736-0001"
+    counter = await session.get(SheetIdCounter, "L4736")
+    assert counter is not None
+    counter.next_value = 9999
+    await session.flush()
+    assert await ss.allocate_code(session, "L4736") == "L4736-9999"
+    assert await ss.allocate_code(session, "L4736") == "L4736-10000"
+    assert ss.format_code("L4736", 7) == "L4736-0007"
 
 
 async def test_peek_next_code_writes_nothing(session: AsyncSession, l4736: str) -> None:
@@ -144,8 +156,8 @@ async def test_peek_next_code_writes_nothing(session: AsyncSession, l4736: str) 
 async def test_allocate_code_uses_the_callers_transaction(
     session: AsyncSession, l4736: str
 ) -> None:
-    assert await ss.allocate_code(session, "L4736") == "L4736-01"
-    assert await ss.allocate_code(session, "L4736") == "L4736-02"
+    assert await ss.allocate_code(session, "L4736") == "L4736-0001"
+    assert await ss.allocate_code(session, "L4736") == "L4736-0002"
     await session.rollback()  # nothing committed by allocate_code itself
     assert await session.get(SheetIdCounter, "L4736") is None
 
@@ -191,7 +203,7 @@ async def test_create_refuses_bad_cells_and_writes_nothing(
         await _create(session, id_placement="cell")  # Plan 3 widens this
     assert await _cell_rows(session) == 0
     assert (await session.execute(select(func.count()).select_from(Sheet))).scalar_one() == 0
-    assert await ss.peek_next_code(session, l4736) == "L4736-01"  # no code was burnt
+    assert await ss.peek_next_code(session, l4736) == "L4736-0001"  # no code was burnt
 
 
 async def test_create_on_archived_type_refused(session: AsyncSession, l4736: str) -> None:
@@ -220,7 +232,7 @@ async def test_create_old_version(session: AsyncSession, l4736: str) -> None:
 
 async def test_get_unknown_sheet(session: AsyncSession, l4736: str) -> None:
     with pytest.raises(SheetNotFoundError):
-        await ss.get_sheet(session, "L4736-99")
+        await ss.get_sheet(session, "L4736-0099")
 
 
 # --- mark ------------------------------------------------------------------------------
@@ -279,7 +291,7 @@ async def test_mark_on_discarded_or_unknown_sheet(session: AsyncSession, l4736: 
     with pytest.raises(SheetDiscardedError):
         await ss.mark_cells(session, code, [MarkedCell(1)], actor="tester")
     with pytest.raises(SheetNotFoundError):
-        await ss.mark_cells(session, "L4736-77", [MarkedCell(1)], actor="tester")
+        await ss.mark_cells(session, "L4736-0077", [MarkedCell(1)], actor="tester")
 
 
 # --- unmark ----------------------------------------------------------------------------
@@ -379,7 +391,7 @@ async def test_discard_busy_and_ok(session: AsyncSession, l4736: str) -> None:
     assert [r.sheet.code for r in await ss.list_sheets(session, state="discarded")] == [code]
     assert [r.sheet.code for r in await ss.list_sheets(session, state="all")] == [code]
     with pytest.raises(SheetNotFoundError):
-        await ss.discard_sheet(session, "L4736-55", actor="tester")
+        await ss.discard_sheet(session, "L4736-0055", actor="tester")
 
 
 async def test_discard_twice_keeps_the_first_record(session: AsyncSession, l4736: str) -> None:
@@ -397,11 +409,11 @@ async def test_discarded_code_never_reissued_after_archive_cycle(
     session: AsyncSession, l4736: str
 ) -> None:
     first = await _create(session)
-    assert first.code == "L4736-01"
+    assert first.code == "L4736-0001"
     await ss.discard_sheet(session, first.code, actor="tester")
     await ts.archive_type(session, l4736, actor="tester")
     await ts.unarchive_type(session, l4736, actor="tester")
-    assert (await _create(session)).code == "L4736-02"
+    assert (await _create(session)).code == "L4736-0002"
 
 
 # --- list ------------------------------------------------------------------------------
@@ -521,11 +533,11 @@ async def test_events_published_after_commit(session: AsyncSession, l4736: str) 
     assert {ch for ch, _ in bus.events} == {"sheets"}
     assert [e.event_type for _, e in bus.events] == ["sheet.updated"] * 5
     assert [e.data for _, e in bus.events] == [
-        {"code": "L4736-01", "free": 46, "total": 48, "changed": [1, 2], "state": "active"},
-        {"code": "L4736-01", "free": 44, "total": 48, "changed": [5, 7], "state": "active"},
-        {"code": "L4736-01", "free": 45, "total": 48, "changed": [5], "state": "active"},
-        {"code": "L4736-01", "free": 44, "total": 48, "changed": [9], "state": "active"},
-        {"code": "L4736-01", "free": 44, "total": 48, "changed": [], "state": "discarded"},
+        {"code": "L4736-0001", "free": 46, "total": 48, "changed": [1, 2], "state": "active"},
+        {"code": "L4736-0001", "free": 44, "total": 48, "changed": [5, 7], "state": "active"},
+        {"code": "L4736-0001", "free": 45, "total": 48, "changed": [5], "state": "active"},
+        {"code": "L4736-0001", "free": 44, "total": 48, "changed": [9], "state": "active"},
+        {"code": "L4736-0001", "free": 44, "total": 48, "changed": [], "state": "discarded"},
     ]
     assert all(e.channel == "sheets" for _, e in bus.events)
 

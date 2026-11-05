@@ -119,8 +119,8 @@ def _clean_marks(cells: list[MarkedCell]) -> dict[int, str]:
 
 
 def format_code(prefix: str, value: int) -> str:
-    """``L4736-02``, ``L4736-100`` (spec 7.1)."""
-    return f"{prefix}-{value:02d}"
+    """``L4736-0002``; four digits, a counter above 9999 grows to five (spec 7.1)."""
+    return f"{prefix}-{value:04d}"
 
 
 def _total(version: SheetTypeVersion) -> int:

@@ -764,12 +764,12 @@ async def test_stream_carries_sheet_updates(hub_app):
         await _connected(stream)
         assert _bus(app).subscriber_count("sheets") == 1
         publish_sheet_updated(
-            _bus(app), code="L4736-02", free=31, total=48, changed=[5], state="active"
+            _bus(app), code="L4736-0002", free=31, total=48, changed=[5], state="active"
         )
         ev = await stream.event_of_type("sheet.updated")
         assert ev["payload"]["channel"] == "sheets"
         assert ev["payload"]["printer_id"] is None
-        assert ev["payload"]["data"]["code"] == "L4736-02"
+        assert ev["payload"]["data"]["code"] == "L4736-0002"
     finally:
         await stream.close()
     await asyncio.sleep(0.1)

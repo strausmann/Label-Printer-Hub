@@ -92,9 +92,9 @@ async def test_parallel_create_gives_distinct_codes(
             return sheet.code
 
     codes = await asyncio.gather(*(one(i) for i in range(10)))  # an error would raise here
-    assert sorted(codes) == [f"L4736-{n:02d}" for n in range(1, 11)]
+    assert sorted(codes) == [f"L4736-{n:04d}" for n in range(1, 11)]
     async with factory() as s:
-        assert await ss.peek_next_code(s, "avery-l4736rev") == "L4736-11"
+        assert await ss.peek_next_code(s, "avery-l4736rev") == "L4736-0011"
         rows = (await s.execute(select(func.count()).select_from(SheetCell))).scalar_one()
         assert rows == 10
 
@@ -227,7 +227,7 @@ async def test_write_lock_on_migrated_schema(tmp_path: pathlib.Path) -> None:
                 note=None,
                 actor="tester",
             )
-            assert sheet.code == "L4736-01"
+            assert sheet.code == "L4736-0001"
             seq = (await s.execute(text("SELECT seq FROM sheet_write_lock"))).scalar()
             assert seq == 3
     finally:
