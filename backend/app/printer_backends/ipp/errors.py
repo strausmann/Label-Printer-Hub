@@ -17,7 +17,7 @@ How a failed **Print-Job** ends (the contract the page-job runner relies on;
 "started" = bytes may have reached the printer, cells unconfirmed):
 
 * ``IppUnreachableError`` — nothing was sent: ``failed``, ``started=False``.
-* ``IppTransportError`` — the upload had begun: ``failed``/``interrupted``,
+* ``IppTransportError`` — the upload had begun: ``failed`` with ``error_code=interrupted``,
   ``started=True``.
 * ``IppBusyError`` — the printer answered and refused the job for now:
   ``failed``, ``started=False``.
@@ -26,7 +26,7 @@ How a failed **Print-Job** ends (the contract the page-job runner relies on;
   accept the job: ``failed``, ``started=False``.
 * ``IppBadResponseError``, ``IppDecodeError``, ``IppResponseTooLargeError`` — the
   request was sent but the answer is unusable, so whether the printer accepted
-  the job is unknown: ``failed``/``interrupted``, ``started=True``.
+  the job is unknown: ``failed`` with ``error_code=interrupted``, ``started=True``.
 * ``IppEncodeError`` — raised while building the request, before anything is
   sent: ``failed``, ``started=False``.
 """
