@@ -39,6 +39,11 @@ on:
         description: "Release version to build, e.g. 1.1.0 (a leading v is accepted)."
         type: string
         required: true
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
   workflow_dispatch:
     inputs:
       tag:

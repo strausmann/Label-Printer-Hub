@@ -63,6 +63,12 @@
         "assets": ["CHANGELOG.md", "package.json", "package-lock.json"],
         "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}\n\n[skip ci]"
       }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "successCmd": "echo \"version=${nextRelease.version}\" >> \"$GITHUB_OUTPUT\""
+      }
     ]
   ]
 }

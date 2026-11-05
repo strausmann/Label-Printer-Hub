@@ -29,12 +29,10 @@ on:
         default: false
         type: boolean
 
+# Least privilege: the workflow default is read-only; each job asks for what
+# it needs.
 permissions:
-  contents: write       # create tags + GitHub Releases
-  issues: write         # post comments on closed issues
-  pull-requests: write  # comment on PRs
-  packages: write       # push to GHCR
-  id-token: write       # OIDC if needed
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -47,42 +45,75 @@ jobs:
     # workflow_dispatch can be triggered against any ref via the Actions UI.
     # Releases must only ever come from main — refuse to run on anything else.
     if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write       # create tags + GitHub Releases
+      issues: write         # post comments on closed issues
+      pull-requests: write  # comment on PRs
     outputs:
-      new-release-published: ${{ steps.semantic.outputs.new_release_published }}
-      new-release-version: ${{ steps.semantic.outputs.new_release_version }}
+      new-release-published: ${{ steps.semantic.outputs.version != '' }}
+      new-release-version: ${{ steps.semantic.outputs.version }}
     steps:
-      - uses: actions/checkout@v6
+      # No credentials are persisted by the checkout. The deploy key is only
+      # loaded into an ssh-agent right before semantic-release runs.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-          # Push the release commit and tag over SSH with a deploy key, so a
-          # branch ruleset can list the key as a bypass actor (the GitHub
-          # Actions app cannot be one on a user-owned repository).
-          ssh-key: ${{ secrets.SEMANTIC_RELEASE_SSH_KEY }}
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "lts/*"
 
+      # The toolchain comes from a lockfile and is installed WITHOUT lifecycle
+      # scripts, and before the deploy key exists in this job. Dependency code
+      # therefore never runs while the key is loadable.
+      - name: Install semantic-release (locked, no scripts)
+        working-directory: .github/release-tools
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # The key goes from the secret into the agent through stdin: it is never
+      # written to disk and never appears in a command line. Only the agent
+      # socket is exported to later steps, and the host key of github.com is
+      # pinned instead of trusted on first use.
+      - name: Load deploy key into ssh-agent
+        env:
+          SSH_KEY: ${{ secrets.SEMANTIC_RELEASE_SSH_KEY }}
+        run: |
+          set -eu
+          eval "$(ssh-agent -s)" > /dev/null
+          printf '%s\n' "$SSH_KEY" | ssh-add - 2> /dev/null
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$RUNNER_TEMP/known_hosts"
+          {
+            echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
+            echo "SSH_AGENT_PID=$SSH_AGENT_PID"
+            echo "GIT_SSH_COMMAND=ssh -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts -o StrictHostKeyChecking=yes"
+          } >> "$GITHUB_ENV"
+
+      # `.releaserc.json` writes `version=<x>` to $GITHUB_OUTPUT from the exec
+      # plugin's successCmd, so the output is set only when a release was
+      # really published (never in a dry run).
       - name: semantic-release
         id: semantic
-        uses: cycjimmy/semantic-release-action@v6
-        with:
-          dry_run: ${{ inputs.dry_run || false }}
-          extra_plugins: |
-            @semantic-release/changelog@6
-            @semantic-release/git@10
-            @semantic-release/exec@6
-            conventional-changelog-conventionalcommits@7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        run: |
+          set -eu
+          args=()
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          .github/release-tools/node_modules/.bin/semantic-release "${args[@]}"
+
+      - name: Stop ssh-agent
+        if: always()
+        run: |
+          if [ -n "${SSH_AGENT_PID:-}" ]; then ssh-agent -k > /dev/null || true; fi
 
   # `@semantic-release/github` publishes the release with GITHUB_TOKEN, and
   # GitHub does not start workflows for events created by that token, so
   # docker-publish.yml's old `release: published` trigger never fired (#183).
-  # Build the release images here instead. Never in a dry run: the action
-  # reports `new_release_published=true` there too.
+  # Build the release images here instead. Never in a dry run. The deploy key
+  # is not passed on: secrets are handed over by name, not inherited.
   images:
     name: Release images
     needs: release
@@ -90,7 +121,9 @@ jobs:
     uses: ./.github/workflows/docker-publish.yml
     with:
       tag: ${{ needs.release.outputs.new-release-version }}
-    secrets: inherit
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     permissions:
       contents: write
       packages: write
