@@ -9,7 +9,7 @@ describe("pwa", () => {
   it("service worker never caches /api", () => {
     expect(workbox.navigateFallback).toBe("/index.html");
     const deny = workbox.navigateFallbackDenylist ?? [];
-    for (const path of ["/api/jobs", "/api/v1/auth/session", "/docs", "/openapi.json", "/redoc", "/docs/oauth2-redirect"]) {
+    for (const path of ["/api/jobs", "/api/v1/auth/session", "/docs", "/openapi.json", "/docs/oauth2-redirect"]) {
       expect(
         deny.some((re) => re.test(path)),
         path,

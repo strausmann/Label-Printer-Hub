@@ -2,7 +2,7 @@
 
 This module exposes the ASGI app that uvicorn runs in the container. It owns:
 
-- The OpenAPI metadata (title, version, description, /openapi.json, /docs, /redoc)
+- The OpenAPI metadata (title, version, description, /openapi.json, /docs)
 - The /healthz endpoint for container orchestrators
 - The lifespan that wires plugin discovery, backend selection, driver resolution
   (SNMP-first / setting fallback), queue start, and PrintService into app.state
@@ -121,6 +121,7 @@ from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.readiness import build_readiness_response
 from app.services.tape_registry import TapeRegistry
 from app.settings_store import SettingsStore
+from app.web.api_docs import mount_api_docs
 from app.web.spa import add_security_headers, mount_spa
 
 # Per ADR 0011 we pin the OpenAPI version explicitly rather than relying on
@@ -652,16 +653,17 @@ def create_app() -> _LifespanManager:
     install_log_buffer()
     app = FastAPI(
         lifespan=lifespan,
-        title="Label Printer Hub — backend",
+        title="Label Printer Hub API",
         description=(
-            "REST + SSE API for the Label Printer Hub backend, which also serves "
-            "the web UI. The OpenAPI spec is at /openapi.json; humans browse the "
-            "interactive docs at /docs (Swagger UI) or /redoc."
+            "REST + SSE API of the Label Printer Hub, which also serves the web UI. "
+            "The OpenAPI spec is at /openapi.json; humans browse the interactive "
+            "reference (Scalar) at /docs."
         ),
-        version=__version__,
+        version=HUB_VERSION,
         openapi_url="/openapi.json",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        # Interactive docs are served by app.web.api_docs (Scalar, no CDN).
+        docs_url=None,
+        redoc_url=None,
     )
     # Pin the OpenAPI document version per ADR 0011 via the supported
     # extension point: replace `app.openapi` with our wrapped builder.
@@ -746,6 +748,7 @@ def create_app() -> _LifespanManager:
     # D1: the same process serves the web app. Mounted after every router so the
     # catch-all only sees what no API route claimed.
     add_security_headers(app)
+    mount_api_docs(app, get_settings().web_dist_dir)
     mount_spa(app, get_settings().web_dist_dir)
 
     return _LifespanManager(app)

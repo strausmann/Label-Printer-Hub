@@ -13,7 +13,7 @@ pytest -v
 uvicorn app.main:app --reload
 ```
 
-The backend exposes its OpenAPI spec at `/openapi.json`, Swagger UI at `/docs`, and ReDoc at `/redoc` (see [ADR 0011](../docs/decisions/0011-openapi-as-api-contract.md)).
+The backend exposes its OpenAPI spec at `/openapi.json`, and the interactive Scalar API reference at `/docs` (see [ADR 0011](../docs/decisions/0011-openapi-as-api-contract.md)).
 
 ## Container
 

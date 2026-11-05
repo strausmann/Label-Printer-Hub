@@ -113,8 +113,7 @@ The backend's OpenAPI 3.1 spec is canonical:
 | Path | Audience |
 |---|---|
 | `GET /openapi.json` | Tooling (codegen, Postman, contract tests) |
-| `GET /docs` | Swagger UI for interactive try-it-now |
-| `GET /redoc` | ReDoc reference rendering |
+| `GET /docs` | Interactive API reference (Scalar, served by the hub, no CDN) |
 
 The web UI's API types are generated from the backend's OpenAPI document (`pnpm gen:api`), and CI fails when the generated client no longer matches the contract.
 
@@ -162,7 +161,7 @@ Upgrading from the two-container release: [`migration/v-next-single-container.md
 | Why a decision was made | [`decisions/`](decisions/) ADRs |
 | How to deploy the hub | [`getting-started.md`](getting-started.md) (TBD) |
 | How to add a new printer model | [`plugin-development.md`](plugin-development.md) (TBD) |
-| API reference | `/redoc` on a running backend |
+| API reference | `/docs` on a running hub |
 | Brother protocol details | [`research/`](research/) (TBD — to be migrated from maintainer's mono-repo) |
 | Privacy and trademark policy | [`policies/`](policies/) |
 | Sample deployments | [`../examples/`](../examples/) |

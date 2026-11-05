@@ -55,7 +55,7 @@ describe.skipIf(!required && !existsSync(dist))("built output", () => {
     // The only route is the navigation fallback, and it skips the API, docs and OpenAPI document.
     expect(sw.match(/registerRoute\(/g)).toHaveLength(1);
     expect(sw).toContain('createHandlerBoundToURL("/index.html")');
-    for (const denied of ["/^\\/api\\//", "/^\\/docs(\\/|$)/", "/^\\/openapi\\.json$/", "/^\\/redoc(\\/|$)/"]) expect(sw).toContain(denied);
+    for (const denied of ["/^\\/api\\//", "/^\\/docs(\\/|$)/", "/^\\/openapi\\.json$/"]) expect(sw).toContain(denied);
     // Nothing under /api is precached either.
     expect(sw).not.toMatch(/["']\/?api\//);
   });
@@ -66,6 +66,18 @@ describe.skipIf(!required && !existsSync(dist))("built output", () => {
     expect(worker).toHaveLength(1);
     // The library's default points at a CDN; our override must be what the worker uses.
     expect(readFileSync(worker[0]!, "utf8")).toMatch(/zxing_reader-[\w-]+\.wasm/);
+  });
+
+  it("ships the Scalar API reference bundle and its licence, kept out of the offline cache", () => {
+    // The hub serves it at /docs/scalar.js (backend/app/web/api_docs.py); no CDN is involved.
+    const bundle = join(dist, "scalar", "standalone.js");
+    expect(existsSync(bundle), "dist/scalar/standalone.js is missing").toBe(true);
+    expect(statSync(bundle).size).toBeGreaterThan(1_000_000);
+    const licence = readFileSync(join(dist, "licenses", "scalar-api-reference-MIT.txt"), "utf8");
+    expect(licence).toContain("MIT License");
+    expect(licence).toContain("Scalar");
+    // A 5 MB documentation viewer must not be precached for every installed app.
+    expect(readFileSync(join(dist, "sw.js"), "utf8")).not.toContain("scalar/standalone.js");
   });
 
   it("csp: every inline style the bundle can inject is allowed by its hash, and nothing broader", () => {
