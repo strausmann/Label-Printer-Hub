@@ -680,3 +680,58 @@ async def test_export_survives_json_loads(api_client_with_seed, admin):
     await _create(api_client_with_seed, admin)
     resp = await api_client_with_seed.get("/api/sheet-types/acme-t1/export", headers=admin)
     assert json.loads(resp.content)["type"]["prefix"] == "AT1"
+
+
+# ---------------------------------------------------------------------------
+# Parked minors of Task 7
+# ---------------------------------------------------------------------------
+
+
+async def test_import_with_non_numeric_content_length_is_read_by_streaming(
+    api_client_with_seed, admin
+):
+    """A declared length that is no number is ignored; the streaming limit still applies."""
+    await _create(api_client_with_seed, admin)
+    doc = (await api_client_with_seed.get("/api/sheet-types/acme-t1/export", headers=admin)).json()
+    doc["type"]["key"], doc["type"]["prefix"] = "acme-t2", "AT2"
+    doc["type"]["product_codes"] = ["T-2"]
+    doc["version"]["geometry"]["cols"] = 3
+    resp = await api_client_with_seed.post(
+        "/api/sheet-types/import",
+        content=json.dumps(doc).encode(),
+        headers={**admin, "Content-Length": "abc", "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 201, resp.text
+    too_big = await api_client_with_seed.post(
+        "/api/sheet-types/import",
+        content=b"x" * 70_000,
+        headers={**admin, "Content-Length": "abc"},
+    )
+    assert too_big.status_code == 413, too_big.text
+    assert _err(too_big)["error_code"] == "import_too_large"
+
+
+async def test_discarded_sheet_counts_in_sheets_in_use(api_client_with_seed, admin):
+    await _create(api_client_with_seed, admin)
+    async with _factory()() as s:
+        sheet = await ss.create_sheet(
+            s,
+            type_key="acme-t1",
+            version=None,
+            id_placement="manual",
+            used_cells=[],
+            note=None,
+            actor="test",
+        )
+        await ss.discard_sheet(s, sheet.code, actor="test")
+    detail = await api_client_with_seed.get("/api/sheet-types/acme-t1", headers=admin)
+    assert detail.json()["sheets_in_use"] == 1
+    assert detail.json()["versions"][0]["sheets"] == 1
+
+
+async def test_create_rejects_non_http_source_url(api_client_with_seed, admin):
+    resp = await api_client_with_seed.post(
+        "/api/sheet-types", json=_body(source_url="javascript:alert(1)"), headers=admin
+    )
+    assert resp.status_code == 422
+    assert _err(resp)["error_code"] == "invalid_request"

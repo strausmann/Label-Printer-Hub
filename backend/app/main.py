@@ -89,6 +89,7 @@ from app.api.routes.print import render_router
 from app.api.routes.print import router as print_router
 from app.api.routes.settings_api import router as settings_api_router
 from app.api.routes.sheet_types import router as sheet_types_router
+from app.api.routes.sheets import router as sheets_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
 from app.auth.sessions import purge_expired as purge_expired_sessions
@@ -756,6 +757,7 @@ def create_app() -> _LifespanManager:
     app.include_router(admin_printers_api_router)
     app.include_router(settings_api_router)
     app.include_router(sheet_types_router)
+    app.include_router(sheets_router)
     app.include_router(info_routes.router)
 
     # D1: the same process serves the web app. Mounted after every router so the

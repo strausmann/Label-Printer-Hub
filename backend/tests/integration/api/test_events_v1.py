@@ -774,3 +774,43 @@ async def test_stream_carries_sheet_updates(hub_app):
         await stream.close()
     await asyncio.sleep(0.1)
     assert _bus(app).subscriber_count("sheets") == 0
+
+
+@pytest.mark.asyncio
+async def test_sheet_updated_event_on_stream(hub_app):
+    """Marking a cell over HTTP reaches an open stream as ``sheet.updated`` (spec 16)."""
+    from tests.integration.api.test_sheet_types_api import _body
+
+    app, client = hub_app
+    admin_key, _ = await _insert_key(["admin"])
+    print_key, _ = await _insert_key(["print"])
+    read_key, _ = await _insert_key(["read"])
+    made = await client.post("/api/sheet-types", json=_body(), headers=_key_header(admin_key))
+    assert made.status_code == 201, made.text
+    sheet = await client.post(
+        "/api/sheets",
+        json={"type": "acme-t1", "id_placement": "manual"},
+        headers=_key_header(print_key),
+    )
+    assert sheet.status_code == 201, sheet.text
+    code = sheet.json()["code"]
+    stream = await _open(app, _key_header(read_key))
+    try:
+        await _connected(stream)
+        marked = await client.post(
+            f"/api/sheets/{code}/cells/mark",
+            json={"cells": [{"cell": 7}, {"cell": 3}]},
+            headers=_key_header(print_key),
+        )
+        assert marked.status_code == 200, marked.text
+        ev = await stream.event_of_type("sheet.updated")
+        assert ev["payload"]["channel"] == "sheets"
+        assert ev["payload"]["data"] == {
+            "code": code,
+            "free": 46,
+            "total": 48,
+            "changed": [3, 7],
+            "state": "active",
+        }
+    finally:
+        await stream.close()

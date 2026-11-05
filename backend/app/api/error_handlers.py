@@ -61,17 +61,17 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, _validation_handler)
 
 
-_SHEET_TYPE_PREFIX = "/api/sheet-types"
+_SHEET_PREFIXES = ("/api/sheet-types", "/api/sheets", "/api/sheet-cells")
 
 
 async def _validation_handler(request: Request, exc: Exception) -> JSONResponse:
-    """Request validation errors of the sheet type API name field paths and nothing else.
+    """Request validation errors of the sheet type and sheet APIs name field paths and nothing else.
 
     FastAPI's default body repeats the offending input; for these routes the shape is the
     API error shape instead. Other routes keep the default.
     """
     assert isinstance(exc, RequestValidationError)
-    if not request.url.path.startswith(_SHEET_TYPE_PREFIX):
+    if not request.url.path.startswith(_SHEET_PREFIXES):
         return await request_validation_exception_handler(request, exc)
     paths: list[str] = []
     for err in exc.errors():

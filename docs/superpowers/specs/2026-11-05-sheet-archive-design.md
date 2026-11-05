@@ -522,6 +522,23 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 
 **Error codes added:** `sheet_type_not_found`, `sheet_type_archived`, `type_exists`, `prefix_taken`, `invalid_geometry`, `sheet_not_found`, `sheet_discarded`, `sheet_busy`, `sheet_type_mismatch`, `cells_taken`, `cell_out_of_range`, `plan_changed`, `insufficient_cells`, `media_kind_mismatch`, `tray_unknown`, `margin_too_small`, `calibration_out_of_range`, `ipp_unreachable`, `ipp_pdf_unsupported`, `ipp_rejected`. Existing ones (`content_type_data_mismatch`, `printer_disabled`, `printer_not_allowed`) are reused.
 
+*Added 2026-11-05 with the sheet API (Plan 1, Task 8): the codes that the type and sheet routes of Plan 1 answer with, as built.*
+
+| Code | Status | Meaning, `error_detail` |
+|---|---|---|
+| `cell_out_of_range` | 422 | a cell number is not on the sheet's pinned version; `{cells, max}` |
+| `cells_not_marked_by_hand` | 409 | un-mark of a cell a job used or that is not used; `{cells}` |
+| `cells_not_unconfirmed` | 409 | resolve of a cell that is not waiting for confirmation; `{cells}` |
+| `cells_taken` | 409 | mark of cells that are not free; nothing is written; `{cells}` |
+| `import_too_large` | 413 | import document above 64 KB, refused before it is read where the length is declared |
+| `invalid_geometry` | 422 | a geometry rule or a field value is wrong (also used for bad text fields); `{field, reason}` |
+| `invalid_import` | 422 | import document is not valid; `{errors}` with field paths, never the input |
+| `invalid_request` | 422 | request validation failed on `/api/sheet-types`, `/api/sheets` or `/api/sheet-cells`; `{errors}` with field paths only, never the input |
+| `prefix_taken` | 409 | prefix used by another type; `{reason: "sheets_exist"}` when sheets already carry this type's prefix |
+| `type_in_use` | 409 | delete refused; `{reason}` is `has_sheets` (any sheet, even discarded), `seed_type` or `imported_type` (only custom types are deleted, the others are archived) |
+
+*Empty cell lists (decided with Task 8):* `cells/mark`, `unmark` and `resolve` refuse an empty list at the API (`422 invalid_request`, `cells` needs 1 to 400 entries). The service treats an empty list as a no-op — no write lock, no commit, no event — so a caller that skips the HTTP layer gets the sheet back unchanged. Text that is nothing after cleaning is `null` (optional fields) or the default (`marked by hand` for a cell purpose); empty product code entries are dropped.
+
 ## 16. Events
 
 On the existing JSON event stream (foundation 8.3):

@@ -246,6 +246,7 @@ async def create_sheet(
             id_placement=id_placement,
             note=clean_note,
             created_by=actor,
+            last_used_at=_now() if marks else None,
         )
         session.add(sheet)
         await session.flush()
@@ -296,6 +297,7 @@ async def mark_cells(
         if taken:
             raise CellsTakenError(taken)
         _add_hand_marks(session, before.sheet.id, marks, actor)
+        before.sheet.last_used_at = _now()
         await session.flush()
         detail = await _detail(session, before.sheet)
         await session.commit()
@@ -364,6 +366,7 @@ async def resolve_cells(
             if outcome == "not_printed":
                 await session.delete(row)
                 continue
+            before.sheet.last_used_at = now
             row.state = "used"  # source, purpose, ref and job id stay
             row.updated_at = now
             row.updated_by = actor

@@ -634,3 +634,22 @@ async def test_empty_cell_lists_do_nothing(session: AsyncSession, l4736: str) ->
     await ss.discard_sheet(session, sheet.code, actor="t")
     with pytest.raises(SheetDiscardedError):
         await ss.unmark_cells(session, sheet.code, [], actor="t")
+
+
+async def test_last_used_at_follows_cells_that_became_used(
+    session: AsyncSession, l4736: str
+) -> None:
+    empty = await _create(session)
+    assert empty.last_used_at is None
+    with_marks = await _create(session, used_cells=[MarkedCell(1)])
+    assert with_marks.last_used_at is not None
+    code = empty.code
+    detail = await ss.mark_cells(session, code, [MarkedCell(2)], actor="t")
+    assert detail.sheet.last_used_at is not None
+    third = (await _create(session)).code
+    await _add_cell(session, third, 4, "unconfirmed", job_id=uuid4())
+    await ss.resolve_cells(session, third, [4], "not_printed", actor="t")
+    assert (await ss.get_sheet(session, third)).sheet.last_used_at is None  # nothing was used
+    await _add_cell(session, third, 5, "unconfirmed", job_id=uuid4())
+    resolved = await ss.resolve_cells(session, third, [5], "printed", actor="t")
+    assert resolved.sheet.last_used_at is not None
