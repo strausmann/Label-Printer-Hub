@@ -30,6 +30,7 @@ covers the direct runtime dependencies this release added.
 | react | 19.3.1 | MIT | UI |
 | react-aria-components | 1.22.1 | Apache-2.0 | Accessible components (with its `@react-aria/*`, `@react-stately/*` and `@internationalized/*` packages) |
 | react-dom | 19.3.1 | MIT | UI |
+| @scalar/api-reference | 1.77.0 | MIT | Interactive API reference at `/docs`; the standalone bundle is served from `dist/scalar/` (no CDN), text in `licenses/scalar-api-reference-MIT.txt` |
 | zxing-wasm | 3.1.6 | MIT | Wrapper; the `.wasm` it ships is zxing-cpp, Apache-2.0, text in `licenses/zxing-cpp-Apache-2.0.txt` |
 
 The service worker is generated with Workbox (MIT) and `vite-plugin-pwa` (MIT) at build time.

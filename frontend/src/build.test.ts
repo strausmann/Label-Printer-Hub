@@ -68,6 +68,18 @@ describe.skipIf(!required && !existsSync(dist))("built output", () => {
     expect(readFileSync(worker[0]!, "utf8")).toMatch(/zxing_reader-[\w-]+\.wasm/);
   });
 
+  it("ships the Scalar API reference bundle and its licence, kept out of the offline cache", () => {
+    // The hub serves it at /docs/scalar.js (backend/app/web/api_docs.py); no CDN is involved.
+    const bundle = join(dist, "scalar", "standalone.js");
+    expect(existsSync(bundle), "dist/scalar/standalone.js is missing").toBe(true);
+    expect(statSync(bundle).size).toBeGreaterThan(1_000_000);
+    const licence = readFileSync(join(dist, "licenses", "scalar-api-reference-MIT.txt"), "utf8");
+    expect(licence).toContain("MIT License");
+    expect(licence).toContain("Scalar");
+    // A 5 MB documentation viewer must not be precached for every installed app.
+    expect(readFileSync(join(dist, "sw.js"), "utf8")).not.toContain("scalar/standalone.js");
+  });
+
   it("csp: every inline style the bundle can inject is allowed by its hash, and nothing broader", () => {
     const csp = readFileSync(resolve(__dirname, "..", "..", "backend", "app", "web", "spa.py"), "utf8");
     expect(csp).not.toContain("unsafe-inline");

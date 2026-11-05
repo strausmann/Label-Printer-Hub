@@ -17,6 +17,8 @@ export const pwaOptions: Partial<VitePWAOptions> = {
   injectRegister: false,
   workbox: {
     globPatterns: ["**/*.{js,css,html,woff2,svg,png,wasm,webmanifest}"],
+    // The API reference viewer (/docs) is a 5 MB developer tool, not part of the installable app.
+    globIgnores: ["scalar/**"],
     navigateFallback: "/index.html",
     navigateFallbackDenylist: [/^\/api\//, /^\/docs(\/|$)/, /^\/openapi\.json$/, /^\/redoc(\/|$)/],
     runtimeCaching: [],

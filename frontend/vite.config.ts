@@ -13,6 +13,7 @@ const NOTICES: { from: string; to: string }[] = [
   { from: "node_modules/@fontsource/atkinson-hyperlegible/LICENSE", to: "licenses/atkinson-hyperlegible-OFL-1.1.txt" },
   { from: "node_modules/@fontsource/atkinson-hyperlegible-mono/LICENSE", to: "licenses/atkinson-hyperlegible-mono-OFL-1.1.txt" },
   { from: "licenses/zxing-cpp-Apache-2.0.txt", to: "licenses/zxing-cpp-Apache-2.0.txt" },
+  { from: "licenses/scalar-api-reference-MIT.txt", to: "licenses/scalar-api-reference-MIT.txt" },
 ];
 
 function licenseNotices(): Plugin {
@@ -26,6 +27,22 @@ function licenseNotices(): Plugin {
   };
 }
 
+// The interactive API reference (/docs) runs Scalar from the hub itself, never from a CDN. The standalone
+// bundle of the pinned @scalar/api-reference package is copied verbatim into `dist/scalar/`; the backend
+// serves it at /docs/scalar.js (backend/app/web/api_docs.py). It is not part of the app and not precached.
+function scalarApiReference(): Plugin {
+  return {
+    name: "scalar-api-reference",
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "scalar/standalone.js",
+        source: readFileSync(new URL("node_modules/@scalar/api-reference/dist/browser/standalone.js", import.meta.url)),
+      });
+    },
+  };
+}
+
 // D1: the backend serves `dist/` — same origin, so the dev server proxies the API.
 export default defineConfig({
   plugins: [
@@ -34,6 +51,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA(pwaOptions),
     licenseNotices(),
+    scalarApiReference(),
   ],
   server: {
     proxy: {
