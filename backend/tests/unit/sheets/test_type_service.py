@@ -135,6 +135,40 @@ async def test_page_dimensions_must_match_the_page_size(session: AsyncSession) -
     assert await _version_count(session) == 1
 
 
+async def test_key_and_prefix_with_a_trailing_newline_are_rejected(session: AsyncSession) -> None:
+    with pytest.raises(InvalidFieldError):
+        await ts.create_type(session, fields(prefix="AB\n"), G_4X12, actor="t")
+    with pytest.raises(InvalidFieldError):
+        await ts.create_type(session, fields(key="avery-l4736\n"), G_4X12, actor="t")
+    t, _ = await ts.create_type(session, fields(), G_4X12, actor="t")
+    with pytest.raises(InvalidFieldError):
+        await ts.patch_type(session, t.key, {"prefix": "AB\n"}, actor="t")
+
+
+async def test_listing_counts_sheets_in_one_query(session: AsyncSession) -> None:
+    from sqlalchemy import event
+
+    for i in range(3):
+        await ts.create_type(
+            session, fields(key=f"avery-l47{i}x", prefix=f"AV{i}"), G_4X12, actor="t"
+        )
+    types = await ts.list_types(
+        session, page=None, vendor=None, q=None, w=None, h=None, include_archived=False
+    )
+    seen: list[str] = []
+
+    def spy(_c: Any, _cur: Any, statement: str, *_a: Any) -> None:
+        seen.append(statement)
+
+    event.listen(session.bind.sync_engine, "before_cursor_execute", spy)
+    try:
+        grouped = await ts.list_versions_with_sheet_counts_many(session, [t.id for t in types])
+    finally:
+        event.remove(session.bind.sync_engine, "before_cursor_execute", spy)
+    assert len(seen) == 1
+    assert all(len(v) == 1 for v in grouped.values()) and len(grouped) == 3
+
+
 async def test_get_type_not_found_and_get_version(session: AsyncSession) -> None:
     with pytest.raises(SheetTypeNotFoundError):
         await ts.get_type(session, "nope")

@@ -40,10 +40,16 @@ async def get_version(session: AsyncSession, type_id: UUID, n: int) -> SheetType
     return result.scalar_one_or_none()
 
 
-async def versions_with_sheet_counts(
-    session: AsyncSession, type_id: UUID
-) -> list[tuple[SheetTypeVersion, int]]:
-    """Every version, oldest first, with the number of sheets (any state) pinned to it."""
+async def versions_with_sheet_counts_many(
+    session: AsyncSession, type_ids: list[UUID]
+) -> dict[UUID, list[tuple[SheetTypeVersion, int]]]:
+    """Versions of all given types, oldest first, with the sheets (any state) pinned to each.
+
+    One query for any number of types.
+    """
+    grouped: dict[UUID, list[tuple[SheetTypeVersion, int]]] = {tid: [] for tid in type_ids}
+    if not type_ids:
+        return grouped
     counts = (
         select(col(Sheet.type_version_id).label("vid"), func.count().label("n"))
         .group_by(col(Sheet.type_version_id))
@@ -52,10 +58,19 @@ async def versions_with_sheet_counts(
     result = await session.execute(
         select(SheetTypeVersion, func.coalesce(counts.c.n, 0))
         .outerjoin(counts, counts.c.vid == col(SheetTypeVersion.id))
-        .where(col(SheetTypeVersion.type_id) == type_id)
-        .order_by(col(SheetTypeVersion.version))
+        .where(col(SheetTypeVersion.type_id).in_(type_ids))
+        .order_by(col(SheetTypeVersion.type_id), col(SheetTypeVersion.version))
     )
-    return [(v, int(n)) for v, n in result.all()]
+    for v, n in result.all():
+        grouped[v.type_id].append((v, int(n)))
+    return grouped
+
+
+async def versions_with_sheet_counts(
+    session: AsyncSession, type_id: UUID
+) -> list[tuple[SheetTypeVersion, int]]:
+    """Every version, oldest first, with the number of sheets (any state) pinned to it."""
+    return (await versions_with_sheet_counts_many(session, [type_id]))[type_id]
 
 
 async def count_sheets(session: AsyncSession, type_id: UUID) -> int:

@@ -67,9 +67,12 @@ def _version_read(v: SheetTypeVersion, sheets: int) -> VersionRead:
 
 
 async def _type_read(
-    session: AsyncSession, t: SheetType
+    session: AsyncSession,
+    t: SheetType,
+    versions: list[tuple[SheetTypeVersion, int]] | None = None,
 ) -> tuple[SheetTypeRead, list[VersionRead]]:
-    versions = await ts.list_versions_with_sheet_counts(session, t.id)
+    if versions is None:
+        versions = await ts.list_versions_with_sheet_counts(session, t.id)
     current, _ = versions[-1]  # oldest first; a type always has version 1
     hints = validate_geometry(normalise(ts.version_geometry(current)))
     read = SheetTypeRead(
@@ -116,7 +119,8 @@ async def list_sheet_types(
             h=h,
             include_archived=include_archived,
         )
-        return [(await _type_read(session, t))[0] for t in types]
+        by_type = await ts.list_versions_with_sheet_counts_many(session, [t.id for t in types])
+        return [(await _type_read(session, t, by_type[t.id]))[0] for t in types]
 
 
 @router.post(

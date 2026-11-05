@@ -142,7 +142,7 @@ def mm_to_hmm_rounded(value: float) -> int:
 
 
 def _check_prefix(prefix: object) -> None:
-    if not isinstance(prefix, str) or not PREFIX_PATTERN.match(prefix):
+    if not isinstance(prefix, str) or not PREFIX_PATTERN.fullmatch(prefix):
         raise InvalidFieldError("prefix", "invalid format")
 
 
@@ -263,6 +263,12 @@ async def list_versions_with_sheet_counts(
     return await repo.versions_with_sheet_counts(session, type_id)
 
 
+async def list_versions_with_sheet_counts_many(
+    session: AsyncSession, type_ids: list[UUID]
+) -> dict[UUID, list[tuple[SheetTypeVersion, int]]]:
+    return await repo.versions_with_sheet_counts_many(session, type_ids)
+
+
 async def create_type_locked(
     session: AsyncSession,
     fields: TypeFields,
@@ -275,7 +281,7 @@ async def create_type_locked(
     """Insert type and version 1 inside a transaction that already holds the write lock."""
     fields = _clean_fields(fields)
     change_note = _clean_change_note(change_note)
-    if not KEY_PATTERN.match(fields.key):
+    if not KEY_PATTERN.fullmatch(fields.key):
         raise InvalidFieldError("key", "invalid format")
     _check_prefix(fields.prefix)
     validate_geometry(normalise_shape(geometry))
@@ -315,7 +321,7 @@ async def create_type(
     change_note: str | None = None,
 ) -> tuple[SheetType, SheetTypeVersion]:
     # Cheap input checks first so a bad request does not take the write lock.
-    if not KEY_PATTERN.match(fields.key):
+    if not KEY_PATTERN.fullmatch(fields.key):
         raise InvalidFieldError("key", "invalid format")
     _check_prefix(fields.prefix)
     validate_geometry(normalise_shape(geometry))

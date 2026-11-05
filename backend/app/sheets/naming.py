@@ -22,7 +22,7 @@ def derive_prefix(vendor: str, first_code: str) -> str:
         if not letters:
             raise ValueError("vendor has no letter to prefix a numeric code")
         code = letters[0].upper() + code
-    if not PREFIX_PATTERN.match(code):
+    if not PREFIX_PATTERN.fullmatch(code):
         raise ValueError(f"cannot derive a valid prefix from {first_code!r}")
     return code
 
@@ -30,7 +30,7 @@ def derive_prefix(vendor: str, first_code: str) -> str:
 def derive_key(vendor: str, first_code: str) -> str:
     base = _PACK_SUFFIX.sub("", first_code.strip())
     key = re.sub(r"[^a-z0-9]+", "-", f"{vendor} {base}".lower()).strip("-")
-    if not KEY_PATTERN.match(key):
+    if not KEY_PATTERN.fullmatch(key):
         raise ValueError(f"cannot derive a valid key from {vendor!r} {first_code!r}")
     return key
 

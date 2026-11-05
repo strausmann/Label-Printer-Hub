@@ -128,7 +128,7 @@ class SheetTypePatch(_Body):
 
     model_config = ConfigDict(extra="forbid", json_schema_extra=_patch_schema)
 
-    prefix: str | None = None
+    prefix: _Prefix | None = None
     vendor: Annotated[str, Field(max_length=200)] | None = None
     product_codes: Annotated[list[_Code], Field(max_length=_PRODUCT_CODES_MAX)] | None = None
     description: Annotated[str, Field(max_length=200)] | None = None
