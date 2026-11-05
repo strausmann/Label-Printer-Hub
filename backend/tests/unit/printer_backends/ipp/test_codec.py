@@ -200,7 +200,7 @@ def test_fixture_bytes_are_what_assemble_writes() -> None:
     [
         (0x7F, b"\x40\x00\x00\x01vendor-extended"),  # RFC 8010 3.5.2 extension tag
         (0x60, b"\x00\x01\x02"),  # reserved for future types
-        (0x15, b""),  # out-of-band 'not-settable' (RFC 3380), not in our set
+        (0x11, b"\x01"),  # unassigned out-of-band tag with a value (3.8: future use)
         (0x38, b"\xff\xfe"),  # unassigned octetString type
     ],
 )
@@ -211,6 +211,36 @@ def test_unknown_tag_preserved(tag: int, raw: bytes) -> None:
     msg, _ = decode(data)
     assert msg.attrs(Tag.OPERATION)["x-vendor"] == [Unknown(tag, raw)]
     assert encode(msg) == data
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        0x15,  # not-settable (RFC 3380)
+        0x16,  # delete-attribute (RFC 3380)
+        0x17,  # admin-define (RFC 3380)
+        0x11,  # unassigned, zero length
+        0x14,  # unassigned, zero length
+        0x1F,  # last tag of the out-of-band range
+    ],
+)
+def test_every_zero_length_out_of_band_tag_is_out_of_band(tag: int) -> None:
+    data = _minimal(wire.attr(0x47, "attributes-charset", b"utf-8"), wire.attr(tag, "x-oob", b""))
+    msg, _ = decode(data)
+    assert msg.attrs(Tag.OPERATION)["x-oob"] == [OutOfBand(tag)]
+    assert encode(msg) == data
+
+
+def test_registered_out_of_band_tags_are_named() -> None:
+    assert (Tag.NOT_SETTABLE, Tag.DELETE_ATTRIBUTE, Tag.ADMIN_DEFINE) == (0x15, 0x16, 0x17)
+
+
+@pytest.mark.parametrize("tag", [0x15, 0x16, 0x17])
+def test_registered_out_of_band_tag_with_a_value_is_rejected(tag: int) -> None:
+    data = _minimal(wire.attr(tag, "x-oob", b"\x00"))
+    with pytest.raises(IppDecodeError) as err:
+        decode(data)
+    assert err.value.reason == "out_of_band_length"
 
 
 def test_unknown_delimiter_group_kept_but_not_read() -> None:

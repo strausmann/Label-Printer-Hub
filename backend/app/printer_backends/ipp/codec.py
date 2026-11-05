@@ -34,6 +34,27 @@ Representation choices (all documented here so later tasks can rely on them):
   is also the escape hatch to emit raw bytes under any non-structural tag.
 * An unassigned delimiter tag in 0x06-0x0f starts a group that is kept in
   ``Message.groups`` with its integer tag; ``Message.attrs`` never reads it.
+* Every zero-length value under an out-of-band tag (0x10-0x1f) decodes to
+  ``OutOfBand(tag)``, registered or not, so ``isinstance(v, OutOfBand)`` always
+  means "no real value". The registered ones (``unsupported``, ``unknown``,
+  ``no-value``, ``not-settable``, ``delete-attribute``, ``admin-define``) must
+  have length 0; an unassigned one with a value stays ``Unknown`` (3.8 reserves
+  that for future definitions).
+* Duplicates are handled differently on purpose. A repeated attribute name in
+  a group is accepted and kept in ``Group.attrs`` (RFC 8010 3.6 calls the group
+  malformed, but printers do it and the order is still unambiguous);
+  ``Message.attrs`` returns the first. A repeated member name inside one
+  collection is rejected with ``duplicate_member``, because ``Collection``
+  holds members in a dict and keeping either copy would silently drop the other
+  together with its position. A printer that repeats a member makes the whole
+  message undecodable; callers treat that like any other decode error.
+
+Decode then encode is byte-identical only for well-formed UTF-8 text in the
+message's natural language. Invalid UTF-8 is replaced (one byte can become
+three, so a long value may then exceed 32767 bytes and fail to encode), and a
+``*WithLanguage`` value in another language is re-encoded with the message's
+language. Code that answers a decoded message must therefore build its reply
+from its own values, never by re-encoding what it received.
 
 Strings are decoded as UTF-8 with replacement characters for invalid bytes
 (the hub always sends ``attributes-charset=utf-8``); a printer cannot make the
@@ -79,6 +100,9 @@ class Tag(IntEnum):
     UNSUPPORTED_VALUE = 0x10
     UNKNOWN = 0x12
     NO_VALUE = 0x13
+    NOT_SETTABLE = 0x15  # RFC 3380
+    DELETE_ATTRIBUTE = 0x16  # RFC 3380
+    ADMIN_DEFINE = 0x17  # RFC 3380
     # integer tags, Table 4
     INTEGER = 0x21
     BOOLEAN = 0x22
@@ -249,7 +273,15 @@ STATUS_NAMES: dict[int, str] = {
 }
 
 _KNOWN_GROUPS = {Tag.OPERATION, Tag.JOB, Tag.PRINTER, Tag.UNSUPPORTED}
-_OUT_OF_BAND = {Tag.UNSUPPORTED_VALUE, Tag.UNKNOWN, Tag.NO_VALUE}
+_OUT_OF_BAND = {
+    Tag.UNSUPPORTED_VALUE,
+    Tag.UNKNOWN,
+    Tag.NO_VALUE,
+    Tag.NOT_SETTABLE,
+    Tag.DELETE_ATTRIBUTE,
+    Tag.ADMIN_DEFINE,
+}
+_OUT_OF_BAND_RANGE = range(0x10, 0x20)  # RFC 8010 3.5.2, Table 3
 _INT_TAGS = {Tag.INTEGER, Tag.ENUM}
 _BYTES_TAGS = {Tag.OCTET_STRING, Tag.DATETIME}
 _LANG_TAGS = {Tag.TEXT_LANG, Tag.NAME_LANG}
@@ -349,6 +381,10 @@ def _with_language(raw: bytes) -> str:
 def _scalar(tag: int, raw: bytes) -> Value:
     """Decode one non-collection value of wire tag ``tag``."""
     if tag not in _KNOWN_VALUE_TAGS:
+        if tag in _OUT_OF_BAND_RANGE and not raw:
+            # An unassigned out-of-band tag still means "no real value" (3.8); only a
+            # non-empty one (reserved by 3.8 for future definitions) stays Unknown.
+            return OutOfBand(tag)
         return Unknown(tag, bytes(raw))
     expected = _FIXED_LENGTH.get(Tag(tag))
     if expected is not None and len(raw) != expected:
