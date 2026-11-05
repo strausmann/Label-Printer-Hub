@@ -1,4 +1,5 @@
 {
+  "repositoryUrl": "git@github.com:strausmann/Label-Printer-Hub.git",
   "branches": ["main"],
   "plugins": [
     [

@@ -49,6 +49,7 @@ module.exports = {
         'decisions',
         'integrations',
         'plans',
+        'license',
       ],
     ],
     'subject-case': [2, 'never', ['upper-case', 'pascal-case', 'start-case']],
