@@ -66,3 +66,5 @@ backend/data/hub.db*
 *.crt
 secrets/
 backend/.venv/
+# The pinned release toolchain is installed with `npm ci`, so its lockfile is committed.
+!.github/release-tools/package-lock.json

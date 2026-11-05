@@ -29,8 +29,21 @@ on:
       - 'backend/**'
       - 'frontend/**'
       - '.github/workflows/docker-publish.yml'
-  release:
-    types: [published]
+  # Called by release.yml once semantic-release has published a version.
+  # A release created with GITHUB_TOKEN never fires `release: published`
+  # (GitHub suppresses events caused by the workflow token), so the release
+  # workflow calls this one directly (#183).
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release version to build, e.g. 1.1.0 (a leading v is accepted)."
+        type: string
+        required: true
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
   workflow_dispatch:
     inputs:
       tag:
@@ -45,10 +58,12 @@ permissions:
 # Per-ref grouping: cancel an older in-progress run on the same branch when
 # a new push arrives. Release and manually-dispatched builds are NEVER
 # cancelled — losing a half-published release would leave the registry
-# in an inconsistent state.
+# in an inconsistent state. Release builds (a non-empty tag input, from the
+# release workflow or a dispatch) get their own group per version, so they
+# never queue behind or get cancelled by a dev push to main.
 concurrency:
-  group: docker-publish-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  group: docker-publish-${{ inputs.tag && format('release-{0}', inputs.tag) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' && !inputs.tag }}
 
 env:
   REGISTRY_GHCR: ghcr.io
@@ -83,7 +98,31 @@ jobs:
             runner: ubuntu-24.04-arm
             arch: arm64
     steps:
-      - uses: actions/checkout@v6
+      # Fail fast on a malformed release tag, before it is used anywhere
+      # (the checkout ref below, labels, image tags).
+      - name: Validate release tag input
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          if [ -n "$INPUT_TAG" ] && ! printf '%s' "$INPUT_TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Invalid release tag input: not a semantic version"
+            exit 1
+          fi
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # Release builds check out the tag itself, so the image is built
+          # from the released commit rather than whatever the calling
+          # workflow ran on. Empty = the event's default ref.
+          ref: ${{ inputs.tag && (startsWith(inputs.tag, 'v') && format('refs/tags/{0}', inputs.tag) || format('refs/tags/v{0}', inputs.tag)) || '' }}
+          persist-credentials: false
+
+      # The commit that is actually built. For a release this is the tag's
+      # commit, never `github.sha` (which is the caller's commit).
+      - name: Resolve built revision
+        id: rev
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Verify Dockerfile exists for ${{ matrix.service }}
         run: test -f "${{ matrix.service }}/Dockerfile"
@@ -103,10 +142,10 @@ jobs:
           echo "ref=${{ env.REGISTRY_GHCR }}/${repo_lc}-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ${{ env.REGISTRY_GHCR }}
           username: ${{ github.actor }}
@@ -119,33 +158,30 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Classify what we're building AND derive a version-like value for
       # labels/build-args. Three flavors:
-      #   release  semver published or manually dispatched with a tag —
-      #            image is tagged {{version}}, {{major.minor}}, {{major}},
-      #            and latest (for stable releases).
+      #   release  a non-empty `tag` input (called by the release workflow
+      #            or dispatched by hand) — image is tagged {{version}},
+      #            {{major.minor}}, {{major}} and latest. Pre-releases
+      #            (a `-` in the version) get only the exact tag and stay
+      #            off Docker Hub.
       #   dev      push to the default branch — image is tagged "dev".
       #   branch   push to any other branch — image is tagged with the
       #            sanitised branch slug ('/' replaced with '-').
       - name: Determine flavor and tag
         id: tag
         env:
-          EVENT: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           INPUT_TAG: ${{ inputs.tag }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -eu
-          if [ "$EVENT" = "release" ]; then
-            flavor=release
-            tag="${RELEASE_TAG#v}"
-          elif [ "$EVENT" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
+          if [ -n "$INPUT_TAG" ]; then
             flavor=release
             tag="${INPUT_TAG#v}"
           elif [ "$REF_NAME" = "$DEFAULT_BRANCH" ]; then
@@ -163,7 +199,7 @@ jobs:
       # and index-level annotations are applied in the merge phase.
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
           images: |
             ${{ steps.image.outputs.ref }}
@@ -174,7 +210,7 @@ jobs:
             org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
 
       - name: Compute build date
         id: builddate
@@ -185,7 +221,7 @@ jobs:
       # off to the merge phase via an artifact.
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           # Repo root as context: the image also builds the web app from frontend/ (D1).
           context: .
@@ -200,7 +236,7 @@ jobs:
           outputs: type=image,name=${{ steps.image.outputs.ref }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             VERSION=${{ steps.tag.outputs.tag }}
-            REVISION=${{ github.sha }}
+            REVISION=${{ steps.rev.outputs.sha }}
             BUILD_DATE=${{ steps.builddate.outputs.date }}
           # Cache scope is per (service, arch) so amd64 and arm64 builds
           # don't trash each other's caches.
@@ -222,7 +258,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: digests-${{ matrix.service }}-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -241,8 +277,34 @@ jobs:
       matrix:
         service: [backend]
     steps:
+      # Fail fast on a malformed release tag, before it is used anywhere
+      # (the checkout ref below, labels, image tags).
+      - name: Validate release tag input
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          if [ -n "$INPUT_TAG" ] && ! printf '%s' "$INPUT_TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Invalid release tag input: not a semantic version"
+            exit 1
+          fi
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # Release builds check out the tag itself, so the image is built
+          # from the released commit rather than whatever the calling
+          # workflow ran on. Empty = the event's default ref.
+          ref: ${{ inputs.tag && (startsWith(inputs.tag, 'v') && format('refs/tags/{0}', inputs.tag) || format('refs/tags/v{0}', inputs.tag)) || '' }}
+          persist-credentials: false
+
+      # The commit that is actually built. For a release this is the tag's
+      # commit, never `github.sha` (which is the caller's commit).
+      - name: Resolve built revision
+        id: rev
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Download digests for ${{ matrix.service }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           # Wildcard merges artifacts from every (service, arch) leg.
           pattern: digests-${{ matrix.service }}-*
@@ -259,10 +321,10 @@ jobs:
           echo "ref=${{ env.REGISTRY_GHCR }}/${repo_lc}-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           registry: ${{ env.REGISTRY_GHCR }}
           username: ${{ github.actor }}
@@ -273,33 +335,30 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@v4
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Classify what we're building AND derive a version-like value for
       # labels/build-args. Three flavors:
-      #   release  semver published or manually dispatched with a tag —
-      #            image is tagged {{version}}, {{major.minor}}, {{major}},
-      #            and latest (for stable releases).
+      #   release  a non-empty `tag` input (called by the release workflow
+      #            or dispatched by hand) — image is tagged {{version}},
+      #            {{major.minor}}, {{major}} and latest. Pre-releases
+      #            (a `-` in the version) get only the exact tag and stay
+      #            off Docker Hub.
       #   dev      push to the default branch — image is tagged "dev".
       #   branch   push to any other branch — image is tagged with the
       #            sanitised branch slug ('/' replaced with '-').
       - name: Determine flavor and tag
         id: tag
         env:
-          EVENT: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           INPUT_TAG: ${{ inputs.tag }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -eu
-          if [ "$EVENT" = "release" ]; then
-            flavor=release
-            tag="${RELEASE_TAG#v}"
-          elif [ "$EVENT" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
+          if [ -n "$INPUT_TAG" ]; then
             flavor=release
             tag="${INPUT_TAG#v}"
           elif [ "$REF_NAME" = "$DEFAULT_BRANCH" ]; then
@@ -318,13 +377,13 @@ jobs:
       # on each per-platform manifest from the build phase).
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
-          # GHCR is always a target. Docker Hub is only published for release
-          # flavors so branch/dev builds don't pollute the public namespace.
+          # GHCR is always a target. Docker Hub is only published for stable release
+          # flavors (never pre-releases) so branch/dev builds don't pollute the public namespace.
           images: |
             ${{ steps.image.outputs.ref }}
-            ${{ (steps.tag.outputs.flavor == 'release' && secrets.DOCKERHUB_USERNAME) && format('docker.io/{0}/label-printer-hub-{1}', secrets.DOCKERHUB_USERNAME, matrix.service) || '' }}
+            ${{ (steps.tag.outputs.flavor == 'release' && !contains(steps.tag.outputs.tag, '-') && secrets.DOCKERHUB_USERNAME) && format('docker.io/{0}/label-printer-hub-{1}', secrets.DOCKERHUB_USERNAME, matrix.service) || '' }}
           # Tag scheme by flavor:
           #   branch   <branch-slug>                       feature-branch push
           #   dev      dev                                 main-branch push
@@ -347,7 +406,7 @@ jobs:
             org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
 
       # `docker buildx imagetools create` composes a manifest list from
       # source digests and pushes it to the registry under one or more tags.
