@@ -107,6 +107,8 @@ describe("a test result belongs to the configuration it tested", () => {
     await within(card).findByDisplayValue("https://other.example.invalid");
     expect(within(card).queryByText("Connected")).toBeNull();
     expect(within(card).getByText("Configured")).toBeVisible();
+    // The result line goes too: "Works" for the old URL must not sit under the new one.
+    expect(within(card).queryByText("Works")).toBeNull();
   });
 });
 

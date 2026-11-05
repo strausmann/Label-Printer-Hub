@@ -67,6 +67,8 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
     : configured
       ? { state: "ok", label: t`Configured` }
       : { state: "idle", label: t`Not set up` };
+  // The result line follows the same rule: it describes the URL that was tested, not whatever the form shows now.
+  const resultCurrent = testedUrl !== null && sameUrl(testedUrl, urlNow);
   const label = (suffix: string) => ({ url: t`URL`, secret: SECRET_SUFFIX[name] === "token" ? t`Token` : t`API key`, timeout: t`Timeout (seconds)` })[suffix]!;
 
   const change = (key: string) => (value: string | boolean | null) => {
@@ -126,7 +128,8 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
         </Button>
       </div>
       {test.isPending ? null : test.isSuccess ? (
-        <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        resultCurrent ? (
+          <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <StatusBadge state={test.data.ok ? "ok" : "bad"} label={test.data.ok ? t`Works` : t`Failed`} />
           {test.data.ok ? null : (
             <>
@@ -139,6 +142,7 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
             </>
           )}
         </div>
+        ) : null
       ) : test.isError ? (
         <p role="alert">{errorText(test.error, t`The test could not be run.`)}</p>
       ) : null}
