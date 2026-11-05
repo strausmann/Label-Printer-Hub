@@ -1,0 +1,27 @@
+name: Licence gate
+
+# The only licence check that is meant to be a required status check (see CONTRIBUTING.md,
+# "Dependencies and licences"). It judges the dependencies a pull request changes, against
+# licence-policy.yml. It has no `paths:` filter on purpose: a required check that is skipped
+# for a docs-only pull request would never report and would block the merge.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Review the licences of changed dependencies
+        uses: actions/dependency-review-action@v5
+        with:
+          config-file: ./licence-policy.yml

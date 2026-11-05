@@ -1,0 +1,75 @@
+{
+  "allow-licenses": [
+    "0BSD",
+    "AFL-2.1",
+    "AGPL-3.0-only",
+    "AGPL-3.0-or-later",
+    "Apache-2.0",
+    "BlueOak-1.0.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC-BY-4.0",
+    "CC0-1.0",
+    "GPL-2.0-or-later",
+    "GPL-3.0-only",
+    "GPL-3.0-or-later",
+    "HPND",
+    "ISC",
+    "LGPL-2.0-or-later",
+    "LGPL-2.1-only",
+    "LGPL-2.1-or-later",
+    "LGPL-3.0-only",
+    "LGPL-3.0-or-later",
+    "MIT",
+    "MIT-0",
+    "MIT-CMU",
+    "MPL-2.0",
+    "OFL-1.1",
+    "PSF-2.0",
+    "Python-2.0",
+    "Unlicense",
+    "Zlib"
+  ],
+  "allow-dependencies-licenses": [
+    "pkg:npm/json-schema@0.4.0"
+  ],
+  "fail-on-scopes": [
+    "runtime",
+    "unknown"
+  ],
+  "license-check": true,
+  "vulnerability-check": false,
+  "x-licence-exceptions": [
+    {
+      "purl": "pkg:npm/json-schema@0.4.0",
+      "licence": "AFL-2.1 OR BSD-3-Clause",
+      "reason": "The dependency graph mis-reports the package.json expression (AFL-2.1 AND AFL-3.0 AND BSD-3-Clause); package.json says (AFL-2.1 OR BSD-3-Clause)."
+    },
+    {
+      "purl": "pkg:pypi/pysnmp",
+      "licence": "BSD-2-Clause",
+      "reason": "Metadata says UNKNOWN in every field; the licence file is the BSD 2-clause text."
+    },
+    {
+      "purl": "pkg:pypi/qrcode",
+      "licence": "BSD-3-Clause AND MIT",
+      "reason": "The classifiers list Other/Proprietary License next to BSD License; the licence file is the BSD 3-clause text and adds the MIT notice of the ported pyqrnative code."
+    },
+    {
+      "purl": "pkg:pypi/jinja2",
+      "licence": "BSD-3-Clause",
+      "reason": "Bare BSD License classifier; the licence file is the BSD 3-clause text."
+    },
+    {
+      "purl": "pkg:pypi/pyusb",
+      "licence": "BSD-3-Clause",
+      "reason": "Bare BSD License classifier; the licence file is the BSD 3-clause text."
+    },
+    {
+      "purl": "pkg:pypi/ptouch",
+      "licence": "LGPL-2.1-or-later",
+      "reason": "Classifier LGPLv2+; the shipped text is the GNU LGPL version 2.1."
+    }
+  ]
+}

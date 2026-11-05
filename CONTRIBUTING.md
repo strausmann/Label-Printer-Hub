@@ -194,6 +194,39 @@ If you want to bypass a gate locally during exploration, use `mypy --no-strict-o
 
 PRs that fail any check won't be reviewed until green.
 
+## Dependencies and licences
+
+Every dependency that ships in the container image has to carry a licence the project can redistribute. One file decides: [`licence-policy.yml`](licence-policy.yml) (JSON, which is valid YAML). It holds the allow list (`allow-licenses`) and the reviewed exceptions (`x-licence-exceptions`). Every check reads this file.
+
+| Check | What it judges | Required to merge |
+|---|---|---|
+| `Dependency review` (workflow *Licence gate*) | Dependencies a pull request **adds or changes**, against the allow list (`actions/dependency-review-action`) | Yes, once the repository ruleset is in place |
+| *Licences — backend runtime* | The Python packages `pip install ./backend` resolves. Runs only when `backend/pyproject.toml`, the policy or `backend/scripts/licence_report.py` change | No — Python has no lockfile, so the result depends on what PyPI serves that day |
+| Image build (`backend/Dockerfile`, `builder` stage) | The packages that are **installed into the image**. A violation fails the build | Part of the image build |
+
+To run the backend check locally:
+
+```bash
+python -m venv /tmp/rt && /tmp/rt/bin/pip install ./backend
+python -m venv /tmp/tool && /tmp/tool/bin/pip install pip-licenses==5.5.5
+cd backend && /tmp/tool/bin/python -m scripts.licence_report \
+  --python /tmp/rt/bin/python --policy ../licence-policy.yml
+```
+
+It prints every package the policy refuses as `name (licence)` and exits 1.
+
+**A new dependency whose licence is on the list needs nothing.** If a gate refuses a package whose real licence is acceptable (package metadata that is wrong, ambiguous or missing), add an exception to `x-licence-exceptions` in the same pull request:
+
+```json
+{"purl": "pkg:pypi/example", "licence": "BSD-3-Clause", "reason": "Metadata says UNKNOWN; the licence file is the BSD 3-clause text."}
+```
+
+- `licence` is the SPDX expression the package really carries, taken from its licence file, and it has to pass the allow list. `reason` says what is wrong with the metadata.
+- PyPI purls carry no version (there is no lockfile). npm purls carry the exact version.
+- For an npm package that the dependency graph mis-reports, also add the purl to `allow-dependencies-licenses`. A test requires an exception with a reason for every purl there.
+
+A licence that is **not** on the allow list is not an exception to add quietly: it is a decision about what the project may redistribute. Open an issue first. `GPL-2.0-only` and `LGPL-2.0-only` are left out on purpose (incompatible with AGPL-3.0), as is anything non-free.
+
 ## Releases
 
 Releases are **scheduled, not on every merge.** Merging to `main` does NOT publish a release — it only bundles changes for the next scheduled release window.

@@ -1,0 +1,51 @@
+name: Licences — backend runtime
+
+# Checks the licences of the Python packages that `pip install ./backend` resolves today.
+# Python has no lockfile, so the result depends on what PyPI serves on the day: this is a
+# convenience check for pull requests that touch the dependency list or the policy, and it is
+# NOT a required check. The authoritative check runs in the `builder` stage of
+# backend/Dockerfile against the packages that are installed into the image.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - backend/pyproject.toml
+      - licence-policy.yml
+      - backend/scripts/licence_report.py
+      - .github/workflows/licence-backend.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-licences:
+    name: Backend runtime licences
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install the runtime dependencies into a clean venv
+        run: |
+          python -m venv /tmp/rt
+          /tmp/rt/bin/pip install --upgrade pip
+          /tmp/rt/bin/pip install ./backend
+
+      - name: Install the licence tool into its own venv
+        run: |
+          python -m venv /tmp/tool
+          /tmp/tool/bin/pip install pip-licenses==5.5.5
+
+      - name: Check the licences against licence-policy.yml
+        working-directory: backend
+        run: >-
+          /tmp/tool/bin/python -m scripts.licence_report
+          --python /tmp/rt/bin/python
+          --policy ../licence-policy.yml
