@@ -169,6 +169,23 @@ async def test_listing_counts_sheets_in_one_query(session: AsyncSession) -> None
     assert all(len(v) == 1 for v in grouped.values()) and len(grouped) == 3
 
 
+async def test_an_open_read_transaction_ends_before_the_write_lock(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[bool] = []
+    real = ts.acquire_sheet_write_lock
+
+    async def spy(s: AsyncSession) -> None:
+        seen.append(s.in_transaction())
+        await real(s)
+
+    monkeypatch.setattr(ts, "acquire_sheet_write_lock", spy)
+    await session.execute(select(func.count()).select_from(SheetType))  # an auth-style read
+    assert session.in_transaction()
+    await ts.create_type(session, fields(), G_4X12, actor="t")
+    assert seen == [False]
+
+
 async def test_get_type_not_found_and_get_version(session: AsyncSession) -> None:
     with pytest.raises(SheetTypeNotFoundError):
         await ts.get_type(session, "nope")

@@ -54,3 +54,20 @@ def test_other_routes_keep_the_default_validation_schema(schema: dict[str, Any])
         == {"$ref": "#/components/schemas/HTTPValidationError"}
         for r in others
     )
+
+
+def test_every_4xx_of_the_sheet_routes_carries_the_envelope(schema: dict[str, Any]) -> None:
+    ref = f"#/components/schemas/{SHEET_ERROR_SCHEMA_NAME}"
+    codes: set[str] = set()
+    for path, item in schema["paths"].items():
+        if not path.startswith(SHEET_PREFIXES):
+            continue
+        for operation in item.values():
+            for code, response in operation["responses"].items():
+                if code.startswith("4"):
+                    codes.add(code)
+                    assert response["content"]["application/json"]["schema"] == {"$ref": ref}, (
+                        path,
+                        code,
+                    )
+    assert {"404", "409", "413", "422"} <= codes

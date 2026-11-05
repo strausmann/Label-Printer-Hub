@@ -3427,7 +3427,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3466,7 +3468,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3503,14 +3507,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Type is in use or not custom. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3553,7 +3561,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3592,7 +3602,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3633,7 +3645,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3672,7 +3686,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3715,7 +3731,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3755,7 +3773,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3831,14 +3851,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Sheet type is archived. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description A cell number is outside the sheet. */
             422: {
@@ -3877,7 +3901,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3916,7 +3942,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3959,14 +3987,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Sheet is discarded, or the cells are in the wrong state. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description A cell number is outside the sheet. */
             422: {
@@ -4009,14 +4041,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Sheet is discarded, or the cells are in the wrong state. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description A cell number is outside the sheet. */
             422: {
@@ -4059,14 +4095,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Sheet is discarded, or the cells are in the wrong state. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description A cell number is outside the sheet. */
             422: {
@@ -4105,14 +4145,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description A running job holds cells of the sheet. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

@@ -200,7 +200,7 @@ def _pinned_openapi_schema(app: FastAPI) -> Any:
 
 
 def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
-    """Describe the 422 body the sheet APIs really return (see ``_validation_handler``).
+    """Describe the error bodies the sheet APIs really return (see ``_validation_handler``).
 
     FastAPI documents ``HTTPValidationError`` for every route; the sheet routes answer with the
     nested error envelope instead, so generated clients must not be told otherwise.
@@ -215,9 +215,10 @@ def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
         if not path.startswith(SHEET_PREFIXES):
             continue
         for operation in item.values():
-            response = operation.get("responses", {}).get("422")
-            if response is not None:
-                response["content"] = ref
+            for status_code, response in operation.get("responses", {}).items():
+                # Every documented 4xx of these routes carries the same error envelope.
+                if status_code.startswith("4"):
+                    response["content"] = ref
 
 
 def _build_configs_from_db(

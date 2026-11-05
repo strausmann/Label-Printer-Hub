@@ -84,6 +84,11 @@ async def write_transaction(session: AsyncSession) -> AsyncIterator[None]:
     Callers that decide before they write (import) enter this once and use the ``*_locked``
     functions inside; those assume the lock is already held and neither lock nor commit.
     """
+    # Authentication reads (browser session, API key) share this session and leave a read
+    # transaction open. A read snapshot that later asks for the write lock can fail with
+    # SQLITE_BUSY_SNAPSHOT, so that transaction ends first.
+    if session.in_transaction():
+        await session.commit()
     try:
         await acquire_sheet_write_lock(session)
         yield
