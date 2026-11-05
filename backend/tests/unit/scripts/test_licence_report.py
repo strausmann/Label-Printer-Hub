@@ -111,9 +111,20 @@ def test_expression_beats_classifier_and_metadata() -> None:
     assert classify(entry, _policy()) == ("MIT", True)
 
 
-def test_exception_beats_a_valid_expression() -> None:
-    entry = _record("qrcode", expression="MIT")
+def test_exception_does_not_hide_a_declared_expression() -> None:
+    # The exception was reviewed for a release with deficient metadata. A release that declares
+    # a licence is judged as declared: a drifted licence must not hide behind the old review.
     policy = _policy(qrcode=("BSD-3-Clause", "reason"))
+    assert classify(_record("qrcode", expression="GPL-2.0-only"), policy) == (
+        "GPL-2.0-only",
+        False,
+    )
+    assert classify(_record("qrcode", expression="MIT"), policy) == ("MIT", True)
+
+
+def test_exception_applies_while_the_metadata_stays_deficient() -> None:
+    policy = _policy(qrcode=("BSD-3-Clause", "reason"))
+    entry = _record("qrcode", metadata="BSD", classifier="BSD License; Other/Proprietary License")
     assert classify(entry, policy) == ("BSD-3-Clause", True)
 
 

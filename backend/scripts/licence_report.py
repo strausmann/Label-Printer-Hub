@@ -23,7 +23,12 @@ image build) and is never a required pull request check.
 
 Classification rules, in this order (:func:`classify`):
 
-1. An exception for ``pkg:pypi/<normalised name>`` in ``x-licence-exceptions`` wins.
+1. An exception for ``pkg:pypi/<normalised name>`` in ``x-licence-exceptions`` wins, unless the
+   package declares a valid SPDX ``License-Expression`` itself. Exceptions exist to repair
+   wrong or missing metadata, and they carry no version (there is no lockfile, and a pinned
+   exception would fail the image build on every upstream release). Once a release declares its
+   licence properly, the metadata is no longer deficient and is judged as declared, so a later
+   release cannot hide behind the licence that was reviewed for an older one.
 2. A valid SPDX ``License-Expression`` is used as it is.
 3. Otherwise the classifiers are mapped one by one through :data:`CLASSIFIER_TO_SPDX` and
    joined with `` OR ``. When one classifier cannot be mapped, the step yields nothing.
@@ -242,10 +247,11 @@ def _is_spdx_expression(value: str) -> bool:
 def classify(entry: Mapping[str, str], policy: Policy) -> tuple[str, bool]:
     """Return ``(licence expression, allowed)`` for one pip-licenses ``--from=all`` record."""
     exception = policy.exceptions.get(normalise_purl(f"pkg:pypi/{entry['Name']}"))
-    if exception is not None:
-        expression = exception.licence
-    elif _is_spdx_expression(entry.get("License-Expression", UNKNOWN)):
+    declared = _is_spdx_expression(entry.get("License-Expression", UNKNOWN))
+    if declared:
         expression = entry["License-Expression"].strip()
+    elif exception is not None:
+        expression = exception.licence
     else:
         expression = (
             _classifier_expression(entry.get("License-Classifier", UNKNOWN))
