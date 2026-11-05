@@ -122,12 +122,16 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
       {test.isPending ? null : test.isSuccess ? (
         <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <StatusBadge state={test.data.ok ? "ok" : "bad"} label={test.data.ok ? t`Works` : t`Failed`} />
-          {test.data.status ? <span className="font-mono text-small text-ink-2">{t`HTTP ${test.data.status}`}</span> : null}
-          {isRedirect(test.data.status) ? (
-            <span className="text-ink">{t`The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly.`}</span>
-          ) : distinctDetail(test.data) ? (
-            <span className="text-ink">{distinctDetail(test.data)}</span>
-          ) : null}
+          {test.data.ok ? null : (
+            <>
+              {test.data.status ? <span className="font-mono text-small text-ink-2">{t`HTTP ${test.data.status}`}</span> : null}
+              {isRedirect(test.data.status) ? (
+                <span className="text-ink">{t`The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly.`}</span>
+              ) : distinctDetail(test.data) ? (
+                <span className="text-ink">{distinctDetail(test.data)}</span>
+              ) : null}
+            </>
+          )}
         </div>
       ) : test.isError ? (
         <p role="alert">{errorText(test.error, t`The test could not be run.`)}</p>

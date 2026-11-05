@@ -72,8 +72,8 @@ describe("Integrations", () => {
     await userEvent.type(within(grocy).getByRole("textbox", { name: "URL" }), "https://grocy.example.invalid");
     await userEvent.type(within(grocy).getByLabelText("API key"), "fake-key-for-tests");
     await userEvent.click(within(grocy).getByRole("button", { name: "Test connection" }));
-    expect(await within(grocy).findByText(/Grocy 4.2 answered/)).toBeVisible();
-    expect(within(grocy).getByText(/HTTP 200/)).toBeVisible();
+    expect(await within(grocy).findByText("Works")).toBeVisible();
+    expect(within(grocy).queryByText(/HTTP 200|Grocy 4.2 answered/)).toBeNull();
     expect(lastBody(calls, "POST", "/api/v1/settings/integrations/grocy/test")).toEqual({
       values: { "integrations.grocy.url": "https://grocy.example.invalid", "integrations.grocy.api_key": "fake-key-for-tests" },
     });

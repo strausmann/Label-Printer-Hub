@@ -100,12 +100,26 @@ describe("test result line (#174)", () => {
     expect(line.textContent?.match(/HTTP 404/g)).toHaveLength(1);
   });
 
-  it("shows status and detail when they differ", async () => {
+  it("a success says only that it works: no status code, no backend detail (en)", async () => {
     const card = await openGrocy({ ok: true, status: 200, detail: "ok" });
     await userEvent.click(testButton(card));
     const line = await resultLine(card);
-    expect(line).toHaveTextContent("HTTP 200");
-    expect(line).toHaveTextContent("ok");
+    expect(line).toHaveTextContent(/^Works$/);
+  });
+
+  it("a success says only 'Funktioniert' (de)", async () => {
+    const card = await openGrocy({ ok: true, status: 200, detail: "ok" }, "de");
+    await userEvent.click(testButton(card, true));
+    const line = await resultLine(card);
+    expect(line).toHaveTextContent(/^Funktioniert$/);
+  });
+
+  it("a failure shows status and detail when they differ", async () => {
+    const card = await openGrocy({ ok: false, status: 401, detail: "token rejected" });
+    await userEvent.click(testButton(card));
+    const line = await resultLine(card);
+    expect(line).toHaveTextContent("HTTP 401");
+    expect(line).toHaveTextContent("token rejected");
   });
 
   it("explains a redirect: login page in front of the app, use an address that reaches the API", async () => {
