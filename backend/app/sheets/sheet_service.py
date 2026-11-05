@@ -34,6 +34,7 @@ from app.sheets.errors import (
     SheetNotFoundError,
     SheetTypeArchivedError,
     SheetTypeNotFoundError,
+    SheetTypeVersionNotFoundError,
 )
 from app.sheets.events import publish_sheet_updated
 from app.sheets.text import sanitise_text
@@ -236,8 +237,8 @@ async def create_sheet(
             if version is None
             else await types_repo.get_version(session, t.id, version)
         )
-        if v is None:
-            raise SheetTypeNotFoundError()
+        if v is None:  # the type exists, so only the pinned version can be missing
+            raise SheetTypeVersionNotFoundError()
         _check_range(list(marks), _total(v))
         sheet = Sheet(
             code=await allocate_code(session, t.prefix),

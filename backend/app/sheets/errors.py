@@ -46,6 +46,12 @@ class SheetTypeNotFoundError(SheetApiError):
     message = "Sheet type not found."
 
 
+class SheetTypeVersionNotFoundError(SheetApiError):
+    status = 404
+    error_code = "sheet_type_version_not_found"
+    message = "Sheet type version not found."
+
+
 class SheetTypeArchivedError(SheetApiError):
     status = 409
     error_code = "sheet_type_archived"

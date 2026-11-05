@@ -131,6 +131,7 @@ async def test_create_pins_the_version_and_validates_cells(ready, printer, admin
         headers=printer,
     )
     assert missing.status_code == 404
+    assert _err(missing)["error_code"] == "sheet_type_version_not_found"
 
 
 async def test_list_sheets_filters_and_order(ready, printer, reader, admin):
