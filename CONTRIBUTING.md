@@ -223,7 +223,7 @@ It prints every package the policy refuses as `name (licence)` and exits 1.
 
 - `licence` is the SPDX expression the package really carries, taken from its licence file, and it has to pass the allow list. `reason` says what is wrong with the metadata.
 - PyPI purls carry no version (there is no lockfile). npm purls carry the exact version.
-- For an npm package that the dependency graph mis-reports, also add the purl to `allow-dependencies-licenses`. A test requires an exception with a reason for every purl there.
+- For an npm package that the dependency graph mis-reports, or reports with no licence at all, also add the purl to `allow-dependencies-licenses`. A test requires an exception with a reason for every purl there. `Dependency review` fails on a dependency whose licence cannot be detected, so such a package is never let through unread.
 
 A licence that is **not** on the allow list is not an exception to add quietly: it is a decision about what the project may redistribute. Open an issue first. `GPL-2.0-only` and `LGPL-2.0-only` are left out on purpose (incompatible with AGPL-3.0), as is anything non-free.
 

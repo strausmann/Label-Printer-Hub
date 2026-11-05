@@ -22,6 +22,25 @@ jobs:
           persist-credentials: false
 
       - name: Review the licences of changed dependencies
+        id: review
         uses: actions/dependency-review-action@v5
         with:
           config-file: ./licence-policy.yml
+
+      # The action only informs about dependencies whose licence it cannot detect ("unlicensed":
+      # no licence in the graph, no source repository to ask) and does not fail. A licence gate
+      # that lets those through is open for exactly the packages nobody has looked at, so the
+      # same job refuses them. The remedy is an `x-licence-exceptions` entry plus the purl in
+      # `allow-dependencies-licenses`, after reading the package's licence file.
+      - name: Refuse dependencies whose licence could not be detected
+        if: ${{ always() && steps.review.outputs.invalid-license-changes != '' }}
+        env:
+          INVALID_LICENSE_CHANGES: ${{ steps.review.outputs.invalid-license-changes }}
+        run: |
+          unlicensed=$(printf '%s' "$INVALID_LICENSE_CHANGES" \
+            | jq -r '.unlicensed[]? | "\(.manifest) » \(.name)@\(.version)"')
+          if [ -n "$unlicensed" ]; then
+            echo "::error::Dependencies without a detectable licence. Read their licence file and add an exception to licence-policy.yml (see CONTRIBUTING.md)."
+            printf '%s\n' "$unlicensed"
+            exit 1
+          fi
