@@ -47,8 +47,8 @@ PARTICULAR PURPOSE.
 
 Based on the grant of rights in Sections 1 and 2, the Maintainer may license
 the Contribution under any license, including commercial licenses or open
-source licenses (e.g., the MIT License under which the Project is currently
-distributed), at the Maintainer's discretion.
+source licenses (e.g., the GNU Affero General Public License v3.0 or later under which
+the Project is distributed), at the Maintainer's discretion.
 
 ## Definitions
 

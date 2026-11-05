@@ -21,4 +21,4 @@ The `Dockerfile` here produces the `ghcr.io/strausmann/label-printer-hub-backend
 
 ## License
 
-MIT — see [LICENSE](../LICENSE) in the repository root.
+AGPL-3.0-or-later — see [LICENSE](../LICENSE) in the repository root.

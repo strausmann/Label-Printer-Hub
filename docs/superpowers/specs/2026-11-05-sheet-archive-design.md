@@ -64,7 +64,7 @@ Part A leaves room for Part B: the calibration record has a `method` field and r
 
 ## 4. Constraints
 
-- MIT project. New dependencies are proposed with their licence in the PR (`CLAUDE.md`). This design adds one: **reportlab** (BSD licence, pulls in `charset-normalizer`, MIT) for PDF output (section 12.4). The IPP client is written in the project on top of `httpx` (section 11.2), so no IPP library is added.
+- AGPL-3.0-or-later project. New dependencies are proposed with their licence in the PR (`CLAUDE.md`). This design adds one: **reportlab** (BSD licence, pulls in `charset-normalizer`, MIT) for PDF output (section 12.4). The IPP client is written in the project on top of `httpx` (section 11.2), so no IPP library is added.
 - Single container, single process (ADR 0015). Everything runs in the FastAPI backend; no worker processes, no CUPS.
 - SQLite with Alembic migrations; the existing repository and session patterns.
 - Security boundaries stay as they are: sessions, CSRF on cookie-authenticated writes, origin checks, scopes `read` / `print` / `admin`, printer-restricted keys (`check_printer_access`), secrets encrypted and write-only (ADR 0017). Part A stores no new secret.

@@ -22,7 +22,7 @@ Brother trademarks may be used in this project **only** for the descriptive purp
 
 ## Brother documentation files
 
-If the Brother Raster Command Reference PDF is redistributed in this repository (under `docs/research/brother-spec/`), it is included verbatim and unmodified. Copyright remains with Brother Industries, Ltd. The Brother documentation license terms apply to those files, separate from this project's MIT license.
+If the Brother Raster Command Reference PDF is redistributed in this repository (under `docs/research/brother-spec/`), it is included verbatim and unmodified. Copyright remains with Brother Industries, Ltd. The Brother documentation terms apply to those files, separately from the licence of this project.
 
 ## Other trademarks
 

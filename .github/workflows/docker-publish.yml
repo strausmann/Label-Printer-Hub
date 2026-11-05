@@ -208,7 +208,7 @@ jobs:
             org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series — ${{ matrix.service }} container
             org.opencontainers.image.url=https://github.com/strausmann/label-printer-hub
             org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
-            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
             org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
 
@@ -404,7 +404,7 @@ jobs:
             org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series — ${{ matrix.service }} container
             org.opencontainers.image.url=https://github.com/strausmann/label-printer-hub
             org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
-            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
             org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
 
