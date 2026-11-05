@@ -144,6 +144,7 @@ _NULLABLE_TEXT = frozenset({"vendor", "description", "source_name", "source_url"
 # Free text is cleaned before it is stored; same bounds as the export document (spec 9.2).
 TEXT_LIMITS = {"vendor": 200, "description": 200, "source_name": 200, "notes": 2000}
 PRODUCT_CODE_MAX = 40
+PRODUCT_CODES_MAX = 50  # the export document's limit (``TypeDoc.product_codes``)
 SOURCE_URL_MAX = 500
 CHANGE_NOTE_MAX = 500
 
@@ -174,6 +175,8 @@ def _clean_url(value: str | None) -> str | None:
 
 
 def _clean_codes(codes: list[str]) -> list[str]:
+    if len(codes) > PRODUCT_CODES_MAX:
+        raise InvalidFieldError("product_codes", "too many")
     cleaned = (clean_text("product_codes", c, PRODUCT_CODE_MAX) for c in codes)
     return [c for c in cleaned if c]  # an entry that cleans to nothing is dropped
 

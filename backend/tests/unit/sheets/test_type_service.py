@@ -11,6 +11,7 @@ import pytest_asyncio
 from app.models.sheet import Sheet, SheetType, SheetTypeVersion
 from app.sheets import type_service as ts
 from app.sheets.errors import (
+    InvalidFieldError,
     InvalidGeometryError,
     PrefixLockedError,
     PrefixTakenError,
@@ -576,3 +577,13 @@ async def test_source_url_over_500_characters_is_refused(session: AsyncSession) 
             session, fields(source_url="https://e.invalid/" + "a" * 500), G_4X12, actor="tester"
         )
     assert exc.value.detail == {"field": "source_url", "reason": "too long"}
+
+
+async def test_service_refuses_more_than_fifty_product_codes(session: AsyncSession) -> None:
+    many = [f"P-{i}" for i in range(51)]
+    with pytest.raises(InvalidFieldError) as exc:
+        await ts.create_type(session, fields(product_codes=many), G_4X12, actor="tester")
+    assert exc.value.detail == {"field": "product_codes", "reason": "too many"}
+    t, _ = await ts.create_type(session, fields(product_codes=many[:50]), G_4X12, actor="tester")
+    with pytest.raises(InvalidFieldError):
+        await ts.patch_type(session, t.key, {"product_codes": many}, actor="tester")

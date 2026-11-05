@@ -40,6 +40,7 @@ __all__ = [
 _Key = Annotated[str, Field(max_length=64, pattern=KEY_PATTERN.pattern)]
 _Prefix = Annotated[str, Field(max_length=10, pattern=PREFIX_PATTERN.pattern)]
 _Code = Annotated[str, Field(min_length=1, max_length=40)]
+_PRODUCT_CODES_MAX = 50  # the export document's limit
 _Url = Annotated[str, Field(max_length=500), AfterValidator(check_http_url)]
 
 
@@ -99,7 +100,7 @@ class SheetTypeCreate(_Body):
     key: _Key
     prefix: _Prefix
     vendor: Annotated[str, Field(max_length=200)] | None = None
-    product_codes: Annotated[list[_Code], Field(max_length=50)] = []
+    product_codes: Annotated[list[_Code], Field(max_length=_PRODUCT_CODES_MAX)] = []
     description: Annotated[str, Field(max_length=200)] | None = None
     allow_qr: bool | None = Field(
         default=None, description="Left out: true when the shorter label side is at least 15 mm."
@@ -116,7 +117,7 @@ class SheetTypePatch(_Body):
 
     prefix: str | None = None
     vendor: str | None = None
-    product_codes: list[str] | None = None
+    product_codes: Annotated[list[_Code], Field(max_length=_PRODUCT_CODES_MAX)] | None = None
     description: str | None = None
     allow_qr: bool | None = None
     verified: bool | None = None

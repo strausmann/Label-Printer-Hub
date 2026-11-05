@@ -735,3 +735,32 @@ async def test_create_rejects_non_http_source_url(api_client_with_seed, admin):
     )
     assert resp.status_code == 422
     assert _err(resp)["error_code"] == "invalid_request"
+
+
+async def test_product_codes_are_capped_at_fifty_on_patch_and_export_still_works(
+    api_client_with_seed, admin, reader
+):
+    await _create(api_client_with_seed, admin)
+    fifty = [f"P-{i}" for i in range(50)]
+    ok = await api_client_with_seed.patch(
+        "/api/sheet-types/acme-t1", json={"product_codes": fifty}, headers=admin
+    )
+    assert ok.status_code == 200, ok.text
+    exported = await api_client_with_seed.get("/api/sheet-types/acme-t1/export", headers=reader)
+    assert exported.status_code == 200, exported.text
+    assert len(exported.json()["type"]["product_codes"]) == 50
+
+    too_many = await api_client_with_seed.patch(
+        "/api/sheet-types/acme-t1", json={"product_codes": [*fifty, "P-50"]}, headers=admin
+    )
+    assert too_many.status_code == 422, too_many.text
+    assert _err(too_many)["error_code"] == "invalid_request"
+    stored = await api_client_with_seed.get("/api/sheet-types/acme-t1", headers=reader)
+    assert len(stored.json()["product_codes"]) == 50  # the refused patch changed nothing
+
+    created = await api_client_with_seed.post(
+        "/api/sheet-types",
+        json=_body("acme-t2", "AT2", product_codes=[f"P-{i}" for i in range(51)]),
+        headers=admin,
+    )
+    assert created.status_code == 422
