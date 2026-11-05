@@ -25,6 +25,7 @@ from app.sheets.errors import (
     SheetNotFoundError,
     SheetTypeArchivedError,
     SheetTypeNotFoundError,
+    SheetTypeVersionNotFoundError,
 )
 from app.sheets.geometry import Geometry
 from app.sheets.sheet_service import MarkedCell
@@ -223,7 +224,7 @@ async def test_create_old_version(session: AsyncSession, l4736: str) -> None:
     assert (await ss.get_sheet(session, old.code)).total == 48
     assert (await ss.get_sheet(session, new.code)).version.version == 2
     assert (await ss.get_sheet(session, new.code)).total == 60
-    with pytest.raises(SheetTypeNotFoundError):
+    with pytest.raises(SheetTypeVersionNotFoundError):
         await _create(session, version=3)
 
 
