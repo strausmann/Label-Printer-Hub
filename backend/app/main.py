@@ -72,7 +72,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
-from app.api.error_handlers import register_error_handlers
+from app.api.error_handlers import (
+    SHEET_ERROR_SCHEMA,
+    SHEET_ERROR_SCHEMA_NAME,
+    SHEET_PREFIXES,
+    register_error_handlers,
+)
 from app.api.routes import auth_session as auth_session_routes
 from app.api.routes import batch as batch_routes
 from app.api.routes import batches as batches_routes
@@ -190,7 +195,29 @@ def _pinned_openapi_schema(app: FastAPI) -> Any:
         servers=app.servers,
         license_info=app.license_info,
     )
+    _declare_sheet_error_envelope(app.openapi_schema)
     return app.openapi_schema
+
+
+def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
+    """Describe the 422 body the sheet APIs really return (see ``_validation_handler``).
+
+    FastAPI documents ``HTTPValidationError`` for every route; the sheet routes answer with the
+    nested error envelope instead, so generated clients must not be told otherwise.
+    """
+    schema.setdefault("components", {}).setdefault("schemas", {})[SHEET_ERROR_SCHEMA_NAME] = (
+        SHEET_ERROR_SCHEMA
+    )
+    ref = {
+        "application/json": {"schema": {"$ref": f"#/components/schemas/{SHEET_ERROR_SCHEMA_NAME}"}}
+    }
+    for path, item in schema.get("paths", {}).items():
+        if not path.startswith(SHEET_PREFIXES):
+            continue
+        for operation in item.values():
+            response = operation.get("responses", {}).get("422")
+            if response is not None:
+                response["content"] = ref
 
 
 def _build_configs_from_db(

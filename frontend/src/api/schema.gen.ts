@@ -2048,6 +2048,15 @@ export interface components {
         SettingsExport: {
             [key: string]: unknown;
         };
+        SheetApiErrorResponse: {
+            detail: {
+                error_code: string;
+                error_detail?: {
+                    [key: string]: unknown;
+                };
+                error_message: string;
+            };
+        };
         /** SheetCreate */
         SheetCreate: {
             /**
@@ -3301,7 +3310,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3340,7 +3349,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3373,7 +3382,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3426,7 +3435,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3465,7 +3474,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3509,7 +3518,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3552,7 +3561,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3591,7 +3600,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3632,7 +3641,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3671,7 +3680,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3714,7 +3723,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3754,7 +3763,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3790,7 +3799,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3836,7 +3845,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
         };
     };
@@ -3874,7 +3885,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3913,7 +3924,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -3962,7 +3973,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
         };
     };
@@ -4010,7 +4023,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
         };
     };
@@ -4058,7 +4073,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
         };
     };
@@ -4103,7 +4120,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };

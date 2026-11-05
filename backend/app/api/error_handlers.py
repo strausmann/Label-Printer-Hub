@@ -61,7 +61,25 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, _validation_handler)
 
 
-_SHEET_PREFIXES = ("/api/sheet-types", "/api/sheets", "/api/sheet-cells")
+SHEET_PREFIXES = ("/api/sheet-types", "/api/sheets", "/api/sheet-cells")
+
+# JSON schema of the sheet API error envelope (also used for the 422 documented in OpenAPI).
+SHEET_ERROR_SCHEMA_NAME = "SheetApiErrorResponse"
+SHEET_ERROR_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["detail"],
+    "properties": {
+        "detail": {
+            "type": "object",
+            "required": ["error_code", "error_message"],
+            "properties": {
+                "error_code": {"type": "string"},
+                "error_message": {"type": "string"},
+                "error_detail": {"type": "object", "additionalProperties": True},
+            },
+        }
+    },
+}
 
 
 async def _validation_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -72,7 +90,7 @@ async def _validation_handler(request: Request, exc: Exception) -> JSONResponse:
     """
     if not isinstance(exc, RequestValidationError):
         raise TypeError("validation handler registered for another exception type")
-    if not request.url.path.startswith(_SHEET_PREFIXES):
+    if not request.url.path.startswith(SHEET_PREFIXES):
         return await request_validation_exception_handler(request, exc)
     paths: list[str] = []
     for err in exc.errors():
