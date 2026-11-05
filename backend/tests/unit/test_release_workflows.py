@@ -58,7 +58,7 @@ def test_prerelease_never_floats_or_reaches_docker_hub() -> None:
     guard = "!contains(steps.tag.outputs.tag, '-')"
     lines = text.splitlines()
 
-    hub = [ln for ln in lines if "docker.io/" in ln and "format(" in ln]
+    hub = [ln for ln in lines if re.search(r"docker\.io/", ln) and "format(" in ln]
     assert hub, "Docker Hub image line not found"
     assert all(guard in ln for ln in hub)
 
