@@ -142,6 +142,8 @@ async def _seed(database_url: str, *, with_admin_key: bool) -> str | None:
                     error=E2E_FAILED_JOB_ERROR,
                     payload={
                         "content_type": "qr_two_lines",
+                        # Same keys PrintService writes: retry re-renders from them.
+                        "rendered_tape_mm": 12,
                         "tape_mm": 12,
                         "options": {"copies": 1},
                         "label_data": {

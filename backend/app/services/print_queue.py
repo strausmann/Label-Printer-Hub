@@ -33,6 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.models.printer_state import PrinterState
 from app.printer_backends.exceptions import (
@@ -82,6 +83,18 @@ class PrinterAlreadyActiveError(Exception):
         super().__init__(f"Printer {printer_id!r} is already active")
         self.printer_id = printer_id
 
+
+class UnrenderableJobError(Exception):
+    """Raised by enqueue_persisted() when a stored job cannot be turned into an image.
+
+    Webhook-created rows carry no ``content_type`` / ``label_data`` /
+    ``rendered_tape_mm``, and a stored payload can be stale; neither can be
+    printed.  The route layer maps this to HTTP 422.
+    """
+
+
+# Payload keys a stored job needs to be re-rendered (recovery and retry).
+_REQUIRED_RERENDER_KEYS = frozenset({"content_type", "label_data", "rendered_tape_mm"})
 
 _RECOVERABLE_PRINTER_ERRORS: tuple[type[PrinterError], ...] = (
     TapeMismatchError,
@@ -266,6 +279,10 @@ class PrintQueue:
                     # S-1: StrEnum-Konsistenz — DbJobState.QUEUED.value statt String-Literal
                     if db_job.state != DbJobState.QUEUED.value:
                         continue
+                    # A row handed over via enqueue_persisted() before start() is
+                    # already known; enqueueing it again would print it twice.
+                    if str(db_job.id) in self._jobs:
+                        continue
                     # C-1/I-2: fehlerhafte/veraltete Rows dürfen die Recovery nicht abbrechen.
                     # KeyError (fehlendes label_data/content_type), ValidationError
                     # (ungültige Struktur), ValueError (ungültiger ContentType-Wert) →
@@ -276,8 +293,7 @@ class PrintQueue:
                     # R2-1: check all three required keys — a job with content_type +
                     # label_data but missing rendered_tape_mm would still fail in
                     # _rerender_from_db_payload; guard must cover the full set.
-                    _required_rerender_keys = {"content_type", "label_data", "rendered_tape_mm"}
-                    _missing_keys = _required_rerender_keys - db_job.payload.keys()
+                    _missing_keys = _REQUIRED_RERENDER_KEYS - db_job.payload.keys()
                     if _missing_keys:
                         skip_msg = (
                             f"Recovery: Skipping job {db_job.id} — payload lacks "
@@ -550,8 +566,22 @@ class PrintQueue:
 
     # --- per-job control ---------------------------------------------------
 
+    def has_job(self, job_id: str | UUID) -> bool:
+        """True if the queue tracks *job_id* in memory (any state)."""
+        return str(job_id) in self._jobs
+
     async def cancel(self, job_id: str) -> bool:
-        """Cancel a queued or paused job. Returns False for non-cancellable states."""
+        """Cancel a queued or paused job. Returns False for non-cancellable states.
+
+        The in-memory transition happens before the first ``await`` so it is atomic
+        with respect to the worker: the worker either still sees QUEUED (and this
+        call then wins the check below) or already moved the job to PRINTING (and
+        this call returns False).  The cancellation is then persisted, so the DB
+        and the in-memory state cannot disagree about a job that was cancelled.
+
+        Raises:
+            KeyError: *job_id* is unknown to the queue.
+        """
         job = self._jobs[job_id]
         if job.state not in (JobState.QUEUED, JobState.PAUSED):
             return False
@@ -566,6 +596,7 @@ class PrintQueue:
             JobState.CANCELLED,
             queue_depth=self._queue_depth(job.printer_id),
         )
+        await self._store.mark_cancelled(UUID(job.id))
         return True
 
     async def pause_job(self, job_id: str) -> bool:
@@ -718,12 +749,17 @@ class PrintQueue:
     async def clear_queue(self, printer_id: UUID) -> int:
         """Cancel all queued + paused jobs for a printer. Returns the count.
 
+        Like ``cancel()``, every in-memory transition happens before the first
+        ``await`` (so the worker cannot pick up a job that is being cleared), and
+        the cancellations are persisted afterwards.  A job the worker already took
+        (PRINTING) is left alone.
+
         O(N) over all-time jobs — acceptable at MVP scale; see TODO(phase5)
         on the _jobs declaration in __init__.
         """
         if printer_id not in self._queues:
             raise KeyError(f"Unknown printer: {printer_id}")
-        cancelled = 0
+        cleared: list[Job] = []
         for job in self._jobs.values():
             if job.printer_id == printer_id and job.state in (
                 JobState.QUEUED,
@@ -731,14 +767,61 @@ class PrintQueue:
             ):
                 from_state = job.state
                 JobStateMachine.transition(job, JobState.CANCELLED)
-                cancelled += 1
+                cleared.append(job)
                 self._notify_state_change(
                     job,
                     from_state,
                     JobState.CANCELLED,
                     queue_depth=self._queue_depth(printer_id),
                 )
-        return cancelled
+        for job in cleared:
+            await self._store.mark_cancelled(UUID(job.id))
+        return len(cleared)
+
+    async def enqueue_persisted(self, db_job: DbJob) -> None:
+        """Hand an already-persisted QUEUED row to the worker (used by retry).
+
+        The row is re-rendered from its stored payload exactly like startup
+        recovery does.  Idempotent: a row the queue already tracks is not
+        enqueued a second time, so neither a repeated call nor a later
+        ``start()`` recovery can print it twice.
+
+        Raises:
+            KeyError: the row's printer is not known to the queue.
+            UnrenderableJobError: the payload cannot be re-rendered (e.g. a
+                webhook-created row, or a payload that no longer validates).
+        """
+        printer_id = db_job.printer_id
+        if printer_id not in self._queues:
+            raise KeyError(f"Unknown printer: {printer_id}")
+        job_key = str(db_job.id)
+        if job_key in self._jobs:
+            return
+        missing = _REQUIRED_RERENDER_KEYS - db_job.payload.keys()
+        if missing:
+            raise UnrenderableJobError(
+                f"Job {db_job.id} payload lacks {sorted(missing)} and cannot be re-rendered"
+            )
+        try:
+            image = await asyncio.to_thread(self._rerender_from_db_payload, db_job.payload)
+            payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
+        except Exception as exc:
+            raise UnrenderableJobError(
+                f"Job {db_job.id} could not be re-rendered ({exc.__class__.__name__})"
+            ) from exc
+        # Re-check after the awaits above: a concurrent call may have won.
+        if job_key in self._jobs:
+            return
+        job = Job(
+            id=job_key,
+            printer_id=printer_id,
+            image_payload=payload_bytes,
+            tape_mm=db_job.payload.get("tape_mm"),
+            options=db_job.payload.get("options", {}),
+        )
+        self._jobs[job_key] = job
+        await self._queues[printer_id].put(job)
+        logger.info("Job %s (persisted) queued on %s", job_key, printer_id)
 
     # --- worker loop -------------------------------------------------------
 
@@ -805,18 +888,23 @@ class PrintQueue:
             if job.state != JobState.QUEUED:
                 continue
 
-            # Phase 2: DB-State QUEUED->PRINTING persistieren (bridge: dataclass.id ist str)
-            await self._store.mark_printing(UUID(job.id))
+            # Take the job in memory FIRST, with no await between the check above
+            # and this transition: a concurrent cancel()/clear_queue() either ran
+            # before (state != QUEUED, skipped above) or now sees PRINTING and
+            # refuses.  Persisting first left a window (the DB await) in which a
+            # cancel was accepted and the job was printed anyway.
+            _from = job.state
+            JobStateMachine.transition(job, JobState.PRINTING)
+            self._notify_state_change(
+                job,
+                _from,
+                JobState.PRINTING,
+                queue_depth=self._queue_depth(printer_id),
+            )
 
             try:
-                _from = job.state
-                JobStateMachine.transition(job, JobState.PRINTING)
-                self._notify_state_change(
-                    job,
-                    _from,
-                    JobState.PRINTING,
-                    queue_depth=self._queue_depth(printer_id),
-                )
+                # Phase 2: DB-State QUEUED->PRINTING persistieren (bridge: dataclass.id ist str)
+                await self._store.mark_printing(UUID(job.id))
                 if job.tape_mm is None:
                     raise RuntimeError(
                         f"Job {job.id} has no tape_mm — submit() and retry_job() must populate it"

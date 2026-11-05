@@ -98,6 +98,21 @@ class SQLiteJobStore(JobStore):
                 return
             await jobs_repo.mark_failed(session, job_id, error)
 
+    async def mark_cancelled(self, job_id: UUID) -> None:
+        """Transition QUEUED -> CANCELLED. Silently no-op if not found or not QUEUED."""
+        async with self._session_factory() as session:
+            job = await jobs_repo.get(session, job_id)
+            if job is None:
+                return  # silent no-op (Protocol contract)
+            if job.state != JobState.QUEUED.value:
+                logger.warning(
+                    "mark_cancelled called on job %s in state %s (expected queued)",
+                    job_id,
+                    job.state,
+                )
+                return
+            await jobs_repo.mark_cancelled(session, job_id)
+
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: mark all PRINTING jobs of this printer as FAILED_RESTART."""
         async with self._session_factory() as session:

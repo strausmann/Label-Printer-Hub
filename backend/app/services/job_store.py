@@ -67,6 +67,14 @@ class JobStore(Protocol):
         must NOT raise on missing jobs — callers may race against eviction.
         """
 
+    async def mark_cancelled(self, job_id: UUID) -> None:
+        """Transition QUEUED -> CANCELLED. Called by PrintQueue.cancel()/clear_queue().
+
+        Only a QUEUED job can be cancelled: a PRINTING job is already on the wire
+        (mid-print abort is unsafe over TCP/9100) and terminal jobs stay as they
+        are.  Silently no-op if job_id does not exist or is not QUEUED.
+        """
+
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: set all PRINTING jobs of this printer to FAILED_RESTART
         with error='printer_interrupted'.
@@ -127,6 +135,13 @@ class MemoryJobStore(JobStore):
             return
         job.state = JobState.FAILED.value
         job.error = error
+        job.finished_at = datetime.now(UTC)
+
+    async def mark_cancelled(self, job_id: UUID) -> None:
+        job = self._jobs.get(job_id)
+        if job is None or job.state != JobState.QUEUED.value:
+            return
+        job.state = JobState.CANCELLED.value
         job.finished_at = datetime.now(UTC)
 
     async def mark_interrupted(self, printer_id: UUID) -> int:

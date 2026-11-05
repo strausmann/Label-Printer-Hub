@@ -209,7 +209,7 @@ export interface paths {
         put?: never;
         /**
          * Retry a failed job
-         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``).
+         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).
          */
         post: operations["retry_job_api_jobs__job_id__retry_post"];
         delete?: never;
@@ -349,7 +349,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel all queued jobs for a printer
-         * @description Bulk-cancels every job in ``queued`` state for this printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Returns 204 even when there are no queued jobs.
+         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Returns 204 even when there are no queued jobs.
          */
         post: operations["clear_printer_queue_api_printers__printer_id__queue_clear_post"];
         delete?: never;

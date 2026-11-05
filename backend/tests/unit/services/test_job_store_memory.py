@@ -105,3 +105,21 @@ async def test_memory_store_evict_terminal_older_than() -> None:
     assert await store.get(old.id) is None
     assert await store.get(young.id) is not None
     assert await store.get(queued.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_memory_store_mark_cancelled_only_from_queued() -> None:
+    store = MemoryJobStore()
+    queued = Job(printer_id=uuid4(), template_key="t", payload={})
+    printing = Job(printer_id=uuid4(), template_key="t", payload={})
+    await store.save_queued(queued)
+    await store.save_queued(printing)
+    await store.mark_printing(printing.id)
+
+    await store.mark_cancelled(queued.id)
+    await store.mark_cancelled(printing.id)
+    await store.mark_cancelled(uuid4())  # unknown id: silent no-op
+
+    assert (await store.get(queued.id)).state == JobState.CANCELLED.value  # type: ignore[union-attr]
+    assert (await store.get(queued.id)).finished_at is not None  # type: ignore[union-attr]
+    assert (await store.get(printing.id)).state == JobState.PRINTING.value  # type: ignore[union-attr]

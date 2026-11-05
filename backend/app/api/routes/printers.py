@@ -489,13 +489,16 @@ async def resume_printer(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Cancel all queued jobs for a printer",
     description=(
-        "Bulk-cancels every job in ``queued`` state for this printer.  "
+        "Bulk-cancels every job in ``queued`` state for this printer, including "
+        "jobs that are waiting while the printer is paused; none of them is sent "
+        "to the printer.  "
         "Jobs in ``printing`` state are intentionally **not** cancelled — "
         "a mid-print abort is unsafe over TCP/9100 because the raster data is "
         "already on the wire.  Returns 204 even when there are no queued jobs."
     ),
 )
 async def clear_printer_queue(
+    request: Request,
     printer_id: UUID,
     session: SessionDep,
     _auth: PrintAuthDep,
@@ -505,9 +508,23 @@ async def clear_printer_queue(
     if _auth is not None:
         check_printer_access(_auth, printer_id)
 
+    # The queue worker gates on its in-memory job state, so cancel there first
+    # (this also persists the cancellation); a DB-only update would still print.
+    queue = getattr(request.app.state, "print_queue", None)
+    if queue is not None:
+        # KeyError: printer not known to the queue (e.g. added after start)
+        with contextlib.suppress(KeyError):
+            await queue.clear_queue(printer_id)
+
+    # Rows the queue does not track (e.g. webhook-created) are cancelled in the DB.
+    # Rows it does track are authoritative: cancelled above, or already printing.
     active_jobs = await jobs_repo.list_active(session)
     queued_jobs = [
-        j for j in active_jobs if j.printer_id == printer_id and j.state == JobState.QUEUED.value
+        j
+        for j in active_jobs
+        if j.printer_id == printer_id
+        and j.state == JobState.QUEUED.value
+        and not (queue is not None and queue.has_job(j.id))
     ]
 
     for job in queued_jobs:

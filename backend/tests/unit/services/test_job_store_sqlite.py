@@ -201,3 +201,27 @@ async def test_sqlite_store_evict_terminal_older_than(async_session_factory) -> 
     assert await store.get(old.id) is None
     assert await store.get(young.id) is not None
     assert await store.get(queued.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_sqlite_store_mark_cancelled_only_from_queued(async_session_factory, caplog) -> None:  # type: ignore[no-untyped-def]
+    store = SQLiteJobStore(async_session_factory)
+    queued = Job(printer_id=uuid4(), template_key="t", payload={})
+    printing = Job(printer_id=uuid4(), template_key="t", payload={})
+    await store.save_queued(queued)
+    await store.save_queued(printing)
+    await store.mark_printing(printing.id)
+
+    await store.mark_cancelled(queued.id)
+    with caplog.at_level(logging.WARNING):
+        await store.mark_cancelled(printing.id)
+    await store.mark_cancelled(uuid4())  # unknown id: silent no-op
+
+    cancelled = await store.get(queued.id)
+    assert cancelled is not None
+    assert cancelled.state == JobState.CANCELLED.value
+    assert cancelled.finished_at is not None
+    still_printing = await store.get(printing.id)
+    assert still_printing is not None
+    assert still_printing.state == JobState.PRINTING.value
+    assert "mark_cancelled called on job" in caplog.text
