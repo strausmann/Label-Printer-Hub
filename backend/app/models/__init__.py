@@ -12,6 +12,14 @@ from app.models.print_batch import PrintBatch
 from app.models.printer import Printer, PrinterAudit
 from app.models.printer_state import PrinterState
 from app.models.printer_status_cache import PrinterStatusCache
+from app.models.sheet import (
+    Sheet,
+    SheetCell,
+    SheetIdCounter,
+    SheetType,
+    SheetTypeVersion,
+    SheetWriteLock,
+)
 from app.models.ui_session import UiSession
 
 __all__ = [
@@ -25,5 +33,11 @@ __all__ = [
     "PrinterAudit",
     "PrinterState",
     "PrinterStatusCache",
+    "Sheet",
+    "SheetCell",
+    "SheetIdCounter",
+    "SheetType",
+    "SheetTypeVersion",
+    "SheetWriteLock",
     "UiSession",
 ]
