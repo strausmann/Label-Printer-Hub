@@ -8,7 +8,7 @@ name: Licences — backend runtime
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, tmp/a2-gate-base]
     paths:
       - backend/pyproject.toml
       - licence-policy.yml
