@@ -38,7 +38,7 @@ Part A leaves room for Part B: the calibration record has a `method` field and r
 
 1. A user prints 9 labels from Grocy onto a partly used L4736REV sheet on an IPP laser printer: the hub picks the next free cells, shows the whole page with the real content, prints without a dialog, and records the cells as used with their purpose once the printer reports the job completed.
 2. The same sheet, picked by any client, shows the same used cells and what each one holds.
-3. A sheet type is defined once with full geometry, versioned, shareable as a small JSON file, and 38 common types ship as a seed (section 9.5).
+3. A sheet type is defined once with full geometry, versioned, shareable as a small JSON file, and 36 common types ship as a seed (section 9.5).
 4. A page printer is added in Settings › Printers like a tape printer, by IPP URI, and shows state and toner where tape printers show tape.
 5. Alignment is measured once per printer and tray, entered by hand, and applied to every sheet print; clients read it from the capabilities endpoint.
 
@@ -264,7 +264,7 @@ The prefix is the first product code without vendor-specific suffixes (`L4731REV
 
 - **File:** `backend/app/seed/sheet_types.json`, a list of documents in the export format (one parser for both), plus a `seed_revision` integer.
 - **Content:** the researched seed, converted to our schema: only the numbers and provenance, **notes translated to English**, the derived "remaining margin" fields dropped (they are computed), `verified=false` everywhere. The research file was checked for private data: it contains vendor data, public source URLs and the public gLabels commit hash only; its notes are German and must be translated.
-- **38 types, not 42 (OC-13, see Operator question 1).** The issue says Avery 7163, 8658, L4730 and L4770 deviate enough to need a cross-check "before going in". They are held back from the seed until cross-checked. Users can still create them as custom types.
+- **36 types, not 42 (OC-13, see Operator question 1).** The issue says Avery 7163, 8658, L4730 and L4770 deviate enough to need a cross-check "before going in". They are held back from the seed until cross-checked. The plan review found two more that fail the geometry rules of section 7.1 as researched: Avery 7161 (`pitch_y` 46.74 < label height 46.78) and Avery Zweckform 3475 (three 70.05 mm columns at 0 mm margin are wider than A4). They are held back as well until their values are checked (maintainer ruling 2026-11-05). Users can still create all six as custom types.
 - **L4731REV:** 25.4 × 10, 7 × 27, pitch 27.9 / 10.0, margins top 13.5 / left 8.6, radius 1.5, `allow_qr=false`. **L4736REV:** 45.7 × 21.2, 4 × 12, pitch 48.2 / 21.2, margins top 21.3 / left 9.85, radius **null** (to be measured), `allow_qr=true`. Both A4, rectangle.
 - **Loading (OC-14):** on startup a seeder inserts every seed type whose key is missing. A type already in the database is never changed automatically, with one exception: if all its versions have `origin=seed` and no sheet uses it yet, and the seed geometry changed in a newer `seed_revision`, a new version is added. Locally edited types are left alone; the change is logged.
 - **Notices:** `THIRD_PARTY_NOTICES.md` gets an entry for the gLabels-qt template database: project URL, commit `37901c1`, the copyright line ("Copyright (C) 2001-2026 Jaye Evins") and the MIT text. The two hand-added types cite Labelplanet LP189/25, MR-Label MR111 and Labelplanet LP48/45 as sources in their `source_*` fields; only facts are taken, no page content.
@@ -355,7 +355,7 @@ Reasons that stop printing (`media-empty`, `media-jam`, `door-open`, `cover-open
 - The per-printer worker gains a third item type next to `Job` and `BatchJob`: a **page job**. The worker dispatches by type, as it does for batches today.
 - A page job is rendered to PDF (section 12) right before sending, from its persisted payload (deterministic; no PDF is stored in the database). The payload holds: kind, sheet id and code, type version id, tray, render dpi, the calibration **snapshot taken at submit time** (so the preview and the print agree even if calibration changes while the job waits), the cells with their label data and content type, and the ID instructions.
 - Tape jobs to an IPP printer and page jobs to a tape printer are refused at submit with `409 media_kind_mismatch`.
-- **Preconditions before sending (OC-21):** if the cached status says stopped with a blocking reason, or the printer is unreachable, or it answers `server-error-busy`, the job **stays queued**, the printer is paused with `source=printer_error` and the reason code, and nothing is failed. The mockup says exactly this: "you can still add the job to the print queue; it waits until the printer is ready". Unlike tape (where the user must change tape and press resume), an IPP printer reports when the reason is gone, so a `printer_error` pause on an IPP printer **resumes automatically** when the status probe sees no blocking reason (OC-22). A pause set by a user never resumes by itself.
+- **Preconditions before sending (OC-21):** right before the job is marked printing, the hub reads the printer's attributes (Get-Printer-Attributes). If that read fails, or the printer is stopped with a blocking reason, or it is not accepting jobs, the job **stays queued** (it was never marked printing), the printer is paused with `source=printer_error` and the reason code, and nothing is failed. The mockup says exactly this: "you can still add the job to the print queue; it waits until the printer is ready". Unlike tape (where the user must change tape and press resume), an IPP printer reports when the reason is gone, so a `printer_error` pause on an IPP printer **resumes automatically** when the status probe sees no blocking reason (OC-22). A pause set by a user never resumes by itself. Once the job is marked printing there is no way back to queued: a Print-Job that is refused before any byte of it can have reached the printer (connect error, `server-error-busy`, `client-error-*`) ends the job `failed` cleanly (cells freed, retry allowed); any failure after the upload began ends it `failed` with `error_code=interrupted` (cells unconfirmed).
 - Only one hub job is at the printer at a time (per-printer serialisation as today): the worker waits for the job to reach a final IPP state before taking the next.
 - The printer's existing `queue_timeout_s` bounds each IPP request (upload, attribute and job queries), not the time a job may wait at the printer (OC-41).
 - A request spanning several sheets creates one page job per sheet, in placement order, grouped in one `print_batches` row. Each page has its own outcome: page 1 may complete while page 2 fails.
@@ -508,7 +508,7 @@ All under `/api`, Pydantic models, complete OpenAPI (ADR 0011), errors in the ex
 | `DELETE /printers/{id}/calibration/{tray}` | admin | back to identity |
 | `POST /printers/{id}/calibration/{tray}/fit` | read + printer access | readings → values (no save) |
 | `POST /printers/{id}/calibration/{tray}/page` | print + printer access | queue a calibration page (`type`, `version?`, `corrected: bool`) |
-| `GET /printers/{id}/calibration/{tray}/page.pdf` | read + printer access | the same page as a download (OC-35) |
+| `GET /printers/{id}/calibration/{tray}/page/pdf` | read + printer access | the same page as a download (OC-35) |
 | `POST /admin/printers/ipp/probe` | admin | live Get-Printer-Attributes summary (11.1) |
 
 Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `connection: {uri, tls_verify}` and a `trays` list.
@@ -618,7 +618,7 @@ From #150, adapted to Part A. Items marked **(hardware)** are verified by the op
 17. Restarting the hub while a page job is at the printer resumes tracking; the job completes and the cells become used.
 18. `GET /api/printers/{id}/capabilities` returns the documented fields for a PT, a QL and an IPP printer, including calibration per tray.
 19. OpenAPI lists every endpoint of section 15; scope and printer restriction are enforced (tests per endpoint).
-20. The seed loads 38 types with sources, `THIRD_PARTY_NOTICES.md` lists gLabels-qt with commit and MIT text.
+20. The seed loads 36 types with sources, `THIRD_PARTY_NOTICES.md` lists gLabels-qt with commit and MIT text.
 21. On a type with `allow_qr=false`, QR content types are printed as their text equivalents and the preview says so.
 22. **(hardware)** The calibration page printed onto L4736REV and L4731REV shows centre/cut lines, numbered S/Z lines and readable mini scales; values read from it and entered bring the check print within tolerance.
 23. The UI pages work in English and German, at phone width, keyboard only, and without colour-only states.
@@ -663,7 +663,7 @@ From #150, adapted to Part A. Items marked **(hardware)** are verified by the op
 
 Only one question would change what gets built; a default is chosen so the plan can proceed.
 
-1. **Seed: 38 or 42 types?** The issue says the four Avery types 7163, 8658, L4730 and L4770 need a cross-check "before going in"; the task brief for this document said "seed the 42 types". **Chosen default: 38**, the four are held back until cross-checked (OC-13). If they should ship now, they go in with `verified=false` and a visible "values deviate from third-party sources" note.
+1. **Seed: how many types?** The issue says the four Avery types 7163, 8658, L4730 and L4770 need a cross-check "before going in"; the task brief for this document said "seed the 42 types". **Decided (maintainer ruling 2026-11-05): 36.** The four, plus Avery 7161 and Avery Zweckform 3475 whose researched values fail the geometry rules, are held back until cross-checked (OC-13). If they should ship now, they go in with `verified=false` and a visible "values deviate from third-party sources" note.
 
 ## 24. Deviations from the issue text
 
@@ -672,7 +672,7 @@ Only one question would change what gets built; a default is chosen so the plan 
 | IPP printer "configured by IPP URI in `printers.yaml`" | configured in Settings › Printers | printers live in the database and are managed in the UI (D6, foundation 7.1) |
 | Comment of 22:56: "Drop point 4 (sheet preview…)", "client renders and previews", sheet types on the client | hub renders and previews for its own integrations; sheet types in the hub | the latest comment (23:25) moved the archive into the hub and has the hub render for its integrations; the drop applies to clients like Kept, which get finished-output printing in Part B |
 | "A failed or cancelled job leaves them free" | also a third outcome, `unconfirmed`, when the printer had started the job | a page that may have come out cannot honestly be recorded as free; the clean case still frees the cells |
-| Seed "42 types" (seed comment) | 38 shipped | same issue comment: four types need a cross-check before going in (Operator question 1) |
+| Seed "42 types" (seed comment) | 36 shipped | same issue comment: four types need a cross-check before going in; two more fail the geometry rules as researched (Operator question 1) |
 | "`GET /api/sheet-types/{key}@{version}`" | `/api/sheet-types/{key}/versions/{n}` | the issue said "roughly"; a path segment avoids `@` encoding issues in clients |
 | Scan payload "`sheet:L4731-02` or a hub URL" | hub URL, short form also accepted | phone cameras open the hub directly; both forms resolve |
 | Calibration comment of 22:56: test page on plain paper, "client prints" | printed by the hub onto a real sheet, gaps as reference | superseded by the 23:11 comment; the hub prints for its own printers |
@@ -695,7 +695,7 @@ Only one question would change what gets built; a default is chosen so the plan 
 | OC-10 | Custom types without sheets may be deleted; all others are archived. |
 | OC-11 | Sheet type writes and calibration writes need `admin`; sheet writes and prints need `print`. |
 | OC-12 | Import cases: create, no-op on identical geometry, otherwise `409` unless `new_version` or `as_new_key`. |
-| OC-13 | Seed ships 38 types; the four flagged Avery types are held back (Operator question 1). |
+| OC-13 | Seed ships 36 types; the four flagged Avery types and Avery 7161 / Avery Zweckform 3475 (fail the geometry rules as researched) are held back (Operator question 1). |
 | OC-14 | Seeder inserts missing types; only untouched, unused seed types get new seed geometry as a new version. |
 | OC-15 | Sheet-ID QR payload is `{public_url}/sheet/{code}`; `sheet:{code}` also resolves. |
 | OC-16 | Margin ID in the top margin; ≥ 4 mm usable height for text, ≥ 9 mm and a fitting QR for a QR; 5 mm hardware margin assumed if unknown. |
@@ -703,7 +703,7 @@ Only one question would change what gets built; a default is chosen so the plan 
 | OC-18 | Saving an IPP printer that does not accept PDF is refused. |
 | OC-19 | Print-Job attributes as listed (media-col when supported, else media keyword; `print-scaling=none` and `print-color-mode=monochrome` when supported). |
 | OC-20 | A printer-state reason without severity suffix counts as an error. |
-| OC-21 | Before the document is accepted, offline/stopped/busy keep the job queued and pause the printer instead of failing the job. |
+| OC-21 | A pre-flight attribute read right before the job is marked printing decides: offline/stopped/not accepting keep the job queued and pause the printer. After that point there is no way back to queued: a refusal before upload fails the job cleanly, a failure after the upload began fails it as interrupted. |
 | OC-22 | `printer_error` pauses on IPP printers resume automatically when the reason clears; user pauses never do. |
 | OC-23 | No time-based failure while the printer knows the job; a job the printer forgot ends interrupted. |
 | OC-24 | After a restart, page jobs with an IPP job id resume tracking; without one they fail with unconfirmed cells. |

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** The hub stores sheet types with versioned geometry, ships 38 seed types, records physical sheets with their non-free cells, and exposes all of it over a REST API — without printing anything yet.
+**Goal:** The hub stores sheet types with versioned geometry, ships 36 seed types, records physical sheets with their non-free cells, and exposes all of it over a REST API — without printing anything yet.
 
 **Architecture:** A new `app/sheets/` package holds the pure geometry core, the type and sheet services and the export/import format; SQLModel tables and one Alembic migration add six tables (five from the spec plus a one-row write lock); two routers (`sheet_types`, `sheets`) expose them. Sheet writes are serialised through a one-row write-lock table so the parallel guarantees of Plan 3 (reservations) rest on a mechanism this plan already proves.
 
@@ -33,7 +33,7 @@
 - Any task that changes the API regenerates `frontend/src/api/schema.gen.ts` (`cd frontend && pnpm gen:api`) and commits it with the change (CI checks it).
 - Coverage: backend `pytest --cov-fail-under=80` (project) and Codecov patch ≥ 80 %. Mutation modules of this plan (`app/sheets/*_service.py`, `app/sheets/exchange.py`) target ≥ 85 %.
 - English prose everywhere; no hostnames, IPs, serials or captures (`docs/policies/privacy.md`); vendor names only to identify a sheet ("for Avery Zweckform L4731REV", `docs/policies/trademarks.md`).
-- Decision labels: code that exists because of a decision carries a `# D13` / `# D14` / `# D16` comment; rows added to `docs/decisions/register.md` in Task 2 (`tests/unit/test_decision_register.py` enforces it).
+- Decision labels: code that exists because of a decision carries a `# D13` / `# D14` / `# D16` comment; rows are added to `docs/decisions/register.md` in Task 1, before the first labelled line exists (`tests/unit/test_decision_register.py` fails on a label without a row).
 - Conventional Commits, scopes from `commitlint.config.cjs` (`api`, `events`, `decisions`, `docs`, `config`); explicit `git add <paths>`; no AI attribution trailers or footers.
 - Every test step below is written first and must fail for the stated reason before the implementation step (TDD). Every mutation (DB write) has a happy path, an error path and — where a network or lock is involved — a contention path.
 
@@ -55,6 +55,7 @@
 | `backend/app/sheets/geometry.py` | `Geometry` value object, mm ↔ hundredths, validation, hash, cell numbering (pure) |
 | `backend/app/sheets/naming.py` | key/prefix derivation, default `allow_qr` (pure) |
 | `backend/app/sheets/errors.py` | `SheetApiError` and its subclasses with `error_code` and HTTP status |
+| `backend/app/sheets/text.py` | `sanitise_text()` for purposes and notes (shared with Plan 3) |
 | `backend/app/models/sheet.py` | tables `sheet_types`, `sheet_type_versions`, `sheet_id_counters`, `sheets`, `sheet_cells`, `sheet_write_lock` |
 | `backend/alembic/versions/2026_11_05_0001-20261105a1_sheet_archive.py` | the migration |
 | `backend/app/repositories/sheet_types.py`, `backend/app/repositories/sheets.py` | queries |
@@ -63,20 +64,23 @@
 | `backend/app/sheets/exchange.py` | export document model, import with modes |
 | `backend/app/sheets/sheet_service.py` | create sheet, next code, mark/unmark/resolve, discard, list, lookup, cell lookup |
 | `backend/app/sheets/events.py` | `sheet.updated` publisher on channel `sheets` |
-| `backend/app/seed/sheet_types.json` | 38 seed documents + `seed_revision` |
+| `backend/app/seed/sheet_types.json` | 36 seed documents + `seed_revision` |
 | `backend/app/seed/sheet_seed.py` | startup seeder |
 | `backend/app/schemas/sheets.py` | request/response models (mm floats) |
 | `backend/app/api/routes/sheet_types.py`, `backend/app/api/routes/sheets.py` | routers |
 | `THIRD_PARTY_NOTICES.md`, `docs/decisions/register.md` | notices, labels |
 
-Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`, `backend/tests/db/`, `backend/tests/integration/api/`.
+Tests mirror this under `backend/tests/unit/sheets/` (new package: add `__init__.py`), `backend/tests/unit/seed/`, `backend/tests/db/`, `backend/tests/integration/api/`. Every new test directory in this series gets an `__init__.py` (all test directories are packages).
+
+**Test-database note:** test fixtures build the schema with `SQLModel.metadata.create_all` (`tests/conftest.py`, `tests/integration/conftest.py`), not with the migration, and every integration test that runs the app lifespan also runs the seeder (Task 5), so its database holds the 36 seed types. Tests that count or list types filter by their own keys.
 
 ---
 
 ### Task 1: Geometry core and naming rules
 
 **Files:**
-- Create: `backend/app/sheets/__init__.py`, `backend/app/sheets/geometry.py`, `backend/app/sheets/naming.py`, `backend/app/sheets/errors.py`
+- Create: `backend/app/sheets/__init__.py`, `backend/app/sheets/geometry.py`, `backend/app/sheets/naming.py`, `backend/app/sheets/errors.py`, `backend/tests/unit/sheets/__init__.py`
+- Modify: `docs/decisions/register.md` — rows `D13` "Sheet archive, physical sheets and calibration live in the hub (#150)", `D14` "Sheet type geometry is versioned; sheets pin their version", `D16` "Lengths stored in hundredths of a millimetre", `V2` "L4731REV has no vertical gap (pitch 10 mm)", `V4` "Corner radius of L4736REV (unknown, to measure)" — date 2026-11-05, status `Accepted` / `To verify`, ADR `—`. `# D16` goes on `mm_to_hmm` in this task.
 - Test: `backend/tests/unit/sheets/test_geometry.py`, `backend/tests/unit/sheets/test_naming.py`
 
 **Interfaces:**
@@ -102,7 +106,7 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
 - `test_l4731rev_valid` — `2540×1000, 7×27, 2790/1000, top 1350, left 860, radius 150` → valid, `cell_count == 189`, `remaining_margins == (860, 1350)`.
 - `test_cell_origin_row_major` — on L4736REV `cell_origin(g, 1) == (985, 2130)`, `cell_origin(g, 9) == (985, 6370)`, `cell_origin(g, 48) == (985 + 3*4820, 2130 + 11*2120)`; `cell_origin(g, 0)` and `(g, 49)` raise `CellOutOfRangeError`.
 - `test_validation_rules` — parametrised, each raises `InvalidGeometryError` naming the field: `pitch_x < label_w`, `pitch_y < label_h`, `cols = 0`, `21×20 = 420 cells`, grid wider than page (`margin_left + (cols-1)*pitch_x + label_w > page_w`), grid taller than page, `round` with `label_w != label_h`, page_w not matching `PAGE_SIZES`.
-- `test_asymmetric_margins_are_hints_not_errors` — gLabels Avery 7160 values (`6399×3810, 3×7, 6604/3810, top 1549, left 748, radius 176`) → returns `["margins_asymmetric_x"]`.
+- `test_asymmetric_margins_are_hints_not_errors` — gLabels Avery 7160 values (`6399×3810, 3×7, 6604/3810, top 1549, left 748, radius 176`) → returns `["margins_asymmetric_x", "margins_asymmetric_y"]` (right 6.45 vs left 7.48 mm, bottom 14.81 vs top 15.49 mm — both differ by more than 0.5 mm); a synthetic geometry with only the right margin 1.0 mm off returns exactly `["margins_asymmetric_x"]`.
 - `test_geometry_hash_canonical` — `geometry_hash(l4736) == sha256('{"cols":4,"corner_radius":null,"label_h":2120,"label_w":4570,"margin_left":985,"margin_top":2130,"page_h":29700,"page_size":"A4","page_w":21000,"pitch_x":4820,"pitch_y":2120,"rows":12,"shape":"rectangle"}')`.
 - `test_hash_ignores_radius_on_round` — two `round` geometries differing only in `corner_radius` hash equal; two `rectangle` ones do not.
 
@@ -117,7 +121,7 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
 
 - [ ] **Step 4: Run, expect PASS** — same command.
 
-- [ ] **Step 5: Commit** — `git add backend/app/sheets backend/tests/unit/sheets && git commit -m "feat(api): sheet geometry core and naming rules"`
+- [ ] **Step 5: Commit** — `git add backend/app/sheets backend/tests/unit/sheets docs/decisions/register.md && git commit -m "feat(api): sheet geometry core and naming rules"`
 
 ---
 
@@ -131,17 +135,18 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
 **Interfaces:**
 - Produces tables exactly as spec 7.1 (`sheet_types`, `sheet_type_versions`, `sheet_id_counters`, `sheets`, `sheet_cells`) plus `sheet_write_lock(id INTEGER PK CHECK id = 1, seq INTEGER NOT NULL)` seeded with one row by the migration. SQLModel classes `SheetType`, `SheetTypeVersion`, `SheetIdCounter`, `Sheet`, `SheetCell`, `SheetWriteLock`.
 - Constraints: `sheet_types.key` unique, `sheet_types.prefix` unique; `(type_id, version)` unique; `sheets.code` unique; `sheet_cells` PK `(sheet_id, cell_no)`; CHECKs `sheets.state IN ('active','discarded')`, `sheets.id_placement IN ('cell','margin','manual')`, `sheet_cells.state IN ('reserved','used','unconfirmed')`, `sheet_types.origin IN ('seed','custom','imported')`, `sheet_type_versions.shape IN ('rectangle','round')`, `page_size IN ('A4','Letter')`. Indexes `ix_sheet_cells_source_ref (source, ref)`, `ix_sheets_type_state (type_id, state)`, `ix_sheet_cells_job_id (job_id)`. `sheet_cells.job_id` is a plain nullable UUID column, **not** a foreign key (OC-39). `product_codes` JSON list.
-- Produces (`locking.py`): `async def acquire_sheet_write_lock(session: AsyncSession) -> None` — executes `UPDATE sheet_write_lock SET seq = seq + 1 WHERE id = 1` as the **first statement** of every sheet write transaction, so SQLite takes the write lock before any read (a deferred reader upgrading to a writer can fail with `database is locked` at once in WAL mode; busy_timeout only helps a writer waiting for a writer).
+- Produces (`locking.py`): `async def acquire_sheet_write_lock(session: AsyncSession) -> None` — executes `INSERT INTO sheet_write_lock (id, seq) VALUES (1, 1) ON CONFLICT (id) DO UPDATE SET seq = seq + 1` as the **first statement** of every sheet write transaction (an upsert, so it also holds where the schema came from `create_all` and the migration's seed row is absent; it always writes one row, which is what takes the lock), so SQLite takes the write lock before any read (a deferred reader upgrading to a writer can fail with `database is locked` at once in WAL mode; busy_timeout only helps a writer waiting for a writer).
 
 - [ ] **Step 1: Write the failing tests**
   - `test_sheet_cells_composite_pk_blocks_double_take` — insert `(sheet, 5, reserved)`, a second insert of `(sheet, 5)` raises `IntegrityError`.
   - `test_check_constraints` — parametrised invalid `state`, `id_placement`, `origin`, `shape` → `IntegrityError`.
   - `test_sheet_cells_job_id_not_fk` — insert a cell with a random `job_id` that has no `jobs` row → succeeds with `PRAGMA foreign_keys = ON`.
+  - `test_write_lock_upsert_without_row` — on a `create_all` schema (no seed row) `acquire_sheet_write_lock` creates the row and a second call increments `seq` to 2.
   - `test_write_lock_row_present_after_migration` (integration, temp-file DB, `alembic upgrade head`) — `SELECT seq FROM sheet_write_lock WHERE id = 1` returns one row; `alembic downgrade 20261104a3` removes all six tables; upgrade again works.
 - [ ] **Step 2: Run, expect FAIL** — `pytest tests/db/test_sheet_tables.py tests/integration/db/test_alembic_sheet_migration.py -v` → import error / no such table.
-- [ ] **Step 3: Implement** models, migration (hand-written, no autogenerate leftovers), locking helper. Add register rows: `D13` "Sheet archive, physical sheets and calibration live in the hub (#150)", `D14` "Sheet type geometry is versioned; sheets pin their version", `D16` "Lengths stored in hundredths of a millimetre", `V2` "L4731REV has no vertical gap (pitch 10 mm)", `V4` "Corner radius of L4736REV (unknown, to measure)" — date 2026-11-05, status `Accepted` / `To verify`, ADR `—`. Label comments: `# D16` on the length columns, `# D14` on `Sheet.type_version_id`.
+- [ ] **Step 3: Implement** models, migration (hand-written, no autogenerate leftovers), locking helper (register rows exist since Task 1). Label comments: `# D16` on the length columns, `# D14` on `Sheet.type_version_id`.
 - [ ] **Step 4: Run, expect PASS** — the two files plus `pytest tests/db/test_alembic_consistency.py tests/unit/test_decision_register.py -v`.
-- [ ] **Step 5: Commit** — `git add backend/app/models/sheet.py backend/app/models/__init__.py backend/alembic/versions/2026_11_05_0001-20261105a1_sheet_archive.py backend/app/sheets/locking.py backend/tests/db/test_sheet_tables.py backend/tests/integration/db/test_alembic_sheet_migration.py docs/decisions/register.md && git commit -m "feat(api): tables for sheet types, versions, sheets and cells"`
+- [ ] **Step 5: Commit** — `git add backend/app/models/sheet.py backend/app/models/__init__.py backend/alembic/versions/2026_11_05_0001-20261105a1_sheet_archive.py backend/app/sheets/locking.py backend/tests/db/test_sheet_tables.py backend/tests/integration/db/test_alembic_sheet_migration.py && git commit -m "feat(api): tables for sheet types, versions, sheets and cells"`
 
 ---
 
@@ -191,10 +196,10 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
 - Produces:
   - Pydantic `GeometryMm` (all fields mm floats, `page_size`, `shape`, `corner_radius: float | None`), `TypeDoc`, `VersionDoc(version: int, geometry: GeometryMm)`, `ExportDoc(format: Literal["label-printer-hub.sheet-type"], format_version: Literal[1], type: TypeDoc, version: VersionDoc, exported_at: datetime, exported_by_hub: str)` — every model `extra="forbid"`, strings bounded (`key` ≤ 64, `vendor`/`description`/`source_name` ≤ 200, `notes` ≤ 2000, `source_url` ≤ 500 and `http`/`https` only, `product_codes` ≤ 50 items of ≤ 40 chars).
   - `def geometry_from_doc(g: GeometryMm) -> Geometry`, `def geometry_to_doc(g: Geometry) -> GeometryMm`.
-  - `async def export_type(session, key: str, version: int | None) -> ExportDoc` — `exported_by_hub` = `HUB_VERSION` string only.
+  - `async def export_type(session, key: str, version: int | None) -> ExportDoc` — `exported_by_hub` = `HUB_VERSION` string only, imported **inside the function** (`from app.main import HUB_VERSION`), as `app/api/routes/info.py` does — a module-level import would be circular (`app.main` imports the routers).
   - `MAX_IMPORT_BYTES = 65536`
   - `@dataclass class ImportResult: outcome: Literal["created","unchanged","version_added","created_as_new_key"]; key: str; version: int`
-  - `def parse_import(raw: bytes) -> ExportDoc` — size check first (`413`-mapped `ImportTooLargeError`, `error_code="import_too_large"`), then `json.loads` with `parse_constant` refusing `NaN`/`Infinity`, then model validation; all failures → `InvalidImportError` (422, `invalid_import`, detail `{"errors": [<pydantic loc paths only, no input values>]}`).
+  - `def parse_import(raw: bytes) -> ExportDoc` — size check first (`413`-mapped `ImportTooLargeError`, `error_code="import_too_large"`), then `json.loads` with `parse_constant` refusing `NaN`/`Infinity` and `RecursionError` caught (64 KB allow ~32 000 nesting levels, which overflow the parser), then model validation; all failures → `InvalidImportError` (422, `invalid_import`, detail `{"errors": [<pydantic loc paths only, no input values>]}`).
   - `async def import_type(session, doc: ExportDoc, *, mode: Literal["strict","new_version","as_new_key"] = "strict", new_key: str | None = None, new_prefix: str | None = None, actor: str) -> ImportResult` — cases of spec 9.3 / OC-12; `origin="imported"`.
   - The seed file uses the same `ExportDoc` model (Task 5).
 
@@ -203,7 +208,7 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
   - `test_import_same_geometry_unchanged` — import the export again → `unchanged`, names version 1, no new rows.
   - `test_import_changed_geometry_strict_conflict` → `TypeExistsError`; `mode="new_version"` → `version_added`, version 2; `mode="as_new_key", new_key="my-l4736", new_prefix="ML4736"` → `created_as_new_key`.
   - `test_import_prefix_taken` → `PrefixTakenError`; with `new_prefix` → created.
-  - `test_import_rejects_*` (parametrised, each asserts the error class and that the type count is unchanged): 65537 bytes; top-level list; unknown field `"type.colour"`; `format_version: 2`; `margin_top: 9.855`; `NaN` literal; `label_w: -1`; 400-deep nested arrays inside `notes` (refused by the schema type, no recursion error); `source_url: "javascript:alert(1)"`; geometry failing `validate_geometry`.
+  - `test_import_rejects_*` (parametrised, each asserts the error class and that the type count is unchanged): 65537 bytes; top-level list; unknown field `"type.colour"`; `format_version: 2`; `margin_top: 9.855`; `NaN` literal; `label_w: -1`; `"[" * 32000 + "]" * 32000` (64 000 bytes, under the limit; `RecursionError` inside `json.loads` → `InvalidImportError`, not 500); 400-deep nested arrays inside `notes` (refused by the schema type); `source_url: "javascript:alert(1)"`; geometry failing `validate_geometry`.
   - `test_import_error_detail_has_no_input_values` — the hostile string `"<script>"` in an unknown field does not appear in `error_detail`.
 - [ ] **Step 2: Run, expect FAIL.**
 - [ ] **Step 3: Implement.**
@@ -222,27 +227,37 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
 **Input (not in the repository).** The operator hands the implementer the research seed: a JSON list of 42 entries with fields `vendor, product_codes, description, page, label_w_mm, label_h_mm, cols, rows, labels_per_sheet, pitch_x_mm, pitch_y_mm, margin_top_mm, margin_left_mm, margin_right_calc_mm, margin_bottom_calc_mm, corner_radius_mm, shape, material_note, plausible, plausibility_notes, verified_against_manufacturer, source_url, source_name`. Its location is given in the execution brief and is never written into the repository. The conversion is a one-off done in a scratch script that is **not** committed.
 
 **Conversion rules (decisions):**
-- Drop the four entries whose first product code is `7163`, `8658`, `L4730`, `L4770` (OC-13) → 38 documents.
+- Drop six entries (OC-13, maintainer ruling 2026-11-05) → **36 documents**:
+
+  | First product code | Vendor | Reason |
+  |---|---|---|
+  | `7163` | Avery | deviates from other sources; cross-check before shipping (#150) |
+  | `8658` | Avery | same |
+  | `L4730` | Avery | same |
+  | `L4770` | Avery | same |
+  | `7161` | Avery | fails `pitch_y ≥ label_h` as researched (46.74 < 46.78 mm) |
+  | `3475` | Avery Zweckform | grid wider than A4 as researched (0 + 3 × 70.05 = 210.15 mm) |
+
 - Each document is an `ExportDoc` with `version.version = 1`, `exported_at` = `2026-11-05T00:00:00Z`, `exported_by_hub = "seed"`.
 - `type.key = derive_key(vendor, product_codes[0])`, `type.prefix = derive_prefix(...)`; a collision or a prefix longer than 10 is resolved by hand and noted in the test's expected-prefix table.
 - Drop `labels_per_sheet`, `*_calc_mm`, `plausible`, `verified_against_manufacturer` (computed or replaced by `verified=false`). `verified = false` everywhere. `allow_qr = default_allow_qr(geometry)`.
-- `notes`: English only (the input's notes, material note and two descriptions are not in English and are translated). The recurring note about uneven remaining margins becomes `"Left and right remaining margins differ (a / b mm)."` or `"Top and bottom remaining margins differ (a / b mm)."`; a material note "removable" becomes `"Material: removable."`; the L4731REV/L4736REV description becomes `"Mini labels, removable"`. Notes are joined with a space.
+- `notes`: English only, built from the input fields `plausibility_notes` and `material_note` (the input's notes, material note and two descriptions are not in English and are translated). The recurring note about uneven remaining margins becomes `"Left and right remaining margins differ (a / b mm)."` or `"Top and bottom remaining margins differ (a / b mm)."`; a material note "removable" becomes `"Material: removable."`; the L4731REV/L4736REV description becomes `"Mini labels, removable"`. Notes are joined with a space.
 - **L4731REV** (hand-added, spec 9.5): geometry `25.4 × 10, 7 × 27, pitch 27.9 / 10.0, top 13.5, left 8.6, radius 1.5, A4, rectangle`, `allow_qr=false`; `source_name = "Labelplanet LP189/25; MR-Label MR111"`, `source_url` = the Labelplanet LP189/25 template page URL from the input; `notes = "Vendor page not reachable; values agree between two third-party sources for this size (Labelplanet LP189/25, MR-Label MR111, listed there as the L4731 size; second source: <MR-Label URL from the input>). Corner radius 1.47 mm from MR-Label MR111, rounded to 1.5. No vertical gap (pitch 10 = label height). Material: removable."`
 - **L4736REV**: `45.7 × 21.2, 4 × 12, pitch 48.2 / 21.2, top 21.3, left 9.85, radius null, A4, rectangle`, `allow_qr=true`; `source_name = "Labelplanet LP48/45"`, `source_url` from the input; `notes = "Vendor page not reachable; values from Labelplanet LP48/45 only. Corner radius unknown (comparable templates range from 2.0 to 4.25 mm); measure. Commercial variation: an alternative layout of 45.5 × 21.1, top 21.9, side 9.8, pitch 48.3 × 21.1 is also listed. Material: removable."`
 - gLabels entries keep `source_name = "gLabels-qt templates (MIT) @ 37901c1"` and their permalink `source_url`.
-- Top level of the file: `{"seed_revision": 1, "types": [ ...38 ExportDoc... ]}`.
+- Top level of the file: `{"seed_revision": 1, "types": [ ...36 ExportDoc... ]}`.
 
 **Interfaces:**
 - Consumes: Tasks 3–4.
-- Produces (`sheet_seed.py`): `SEED_FILE = importlib.resources.files("app.seed") / "sheet_types.json"`; `def load_seed() -> tuple[int, list[ExportDoc]]`; `async def run_sheet_seed(session_factory: async_sessionmaker[AsyncSession]) -> SeedReport` with `SeedReport(inserted: list[str], versions_added: list[str], skipped: dict[str, str])`. Rules (OC-14): insert missing keys with `origin="seed"`; for an existing key add a new version only if every version of the type has `origin="seed"`-provenance (`created_by == "seed"`), no sheet uses the type, and the seed geometry hash differs from the current version; otherwise leave it and log at INFO. A seed whose prefix is taken by another type is skipped with `skipped[key] = "prefix_taken"` and a WARNING. The seeder keeps no state of its own: every start compares the 38 keys and hashes (one query per table), which is cheap; `seed_revision` is logged and only changes when the file's geometry does.
+- Produces (`sheet_seed.py`): `SEED_FILE = importlib.resources.files("app.seed") / "sheet_types.json"`; `def load_seed() -> tuple[int, list[ExportDoc]]`; `async def run_sheet_seed(session_factory: async_sessionmaker[AsyncSession]) -> SeedReport` with `SeedReport(inserted: list[str], versions_added: list[str], skipped: dict[str, str])`. Rules (OC-14): insert missing keys with `origin="seed"`; for an existing key add a new version only if every version of the type has `origin="seed"`-provenance (`created_by == "seed"`), no sheet uses the type, and the seed geometry hash differs from the current version; otherwise leave it and log at INFO. A seed whose prefix is taken by another type is skipped with `skipped[key] = "prefix_taken"` and a WARNING. The seeder keeps no state of its own: every start compares the 36 keys and hashes (one query per table), which is cheap; `seed_revision` is logged and only changes when the file's geometry does.
 
 - [ ] **Step 1: Write the failing tests**
-  - `test_seed_has_38_valid_documents` — `load_seed()` returns 38 docs, each parses as `ExportDoc`, each geometry passes `validate_geometry`, keys and prefixes unique and pattern-valid, `verified` all false.
-  - `test_seed_excludes_held_back_types` — no doc has first product code in `{"7163","8658","L4730","L4770"}`.
+  - `test_seed_has_36_valid_documents` — `load_seed()` returns 36 docs, each parses as `ExportDoc`, each geometry passes `validate_geometry`, keys and prefixes unique and pattern-valid, `verified` all false.
+  - `test_seed_excludes_held_back_types` — no doc has first product code in `{"7163","8658","L4730","L4770","7161","3475"}`.
   - `test_seed_first_types_exact` — L4731REV and L4736REV geometry equal the values above; L4736REV `corner_radius is None`, `allow_qr` true/false as stated.
   - `test_seed_is_english_and_private_clean` — every string in the file is ASCII apart from the characters `× · – —` (catches untranslated text); no IPv4 pattern; every `source_url` starts with `https://`.
   - `test_seed_file_ships_in_package` — `SEED_FILE.is_file()`.
-  - `test_seeder_inserts_once` — fresh DB → 38 inserted; second run → 0 inserted, 0 versions.
+  - `test_seeder_inserts_once` — fresh DB → 36 inserted; second run → 0 inserted, 0 versions.
   - `test_seeder_adds_version_for_untouched_seed_type` — bump revision with changed geometry for one key in a patched seed → one version added.
   - `test_seeder_leaves_edited_type_alone` — after a local `add_version` by `actor="admin"`, changed seed geometry → no version added, INFO logged.
   - `test_seeder_skips_on_prefix_taken` — a custom type already owns `L4731` → that seed skipped, others inserted, startup does not raise.
@@ -250,27 +265,29 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
 - [ ] **Step 2: Run, expect FAIL.**
 - [ ] **Step 3: Implement** the converted seed file, seeder, lifespan call (failures are logged, never block startup), and a "Sheet type data" section in `THIRD_PARTY_NOTICES.md`: project URL `https://github.com/j-evins/glabels-qt`, commit `37901c1`, the copyright line, the full MIT text; a line that L4731REV/L4736REV cite Labelplanet and MR-Label as sources of facts only.
 - [ ] **Step 4: Run, expect PASS** — `pytest tests/unit/seed -v`.
-- [ ] **Step 5: Commit** — `git add backend/app/seed/sheet_types.json backend/app/seed/sheet_seed.py backend/app/main.py THIRD_PARTY_NOTICES.md backend/tests/unit/seed && git commit -m "feat(api): seed 38 sheet types from gLabels-qt and third-party sources"`
+- [ ] **Step 5: Commit** — `git add backend/app/seed/sheet_types.json backend/app/seed/sheet_seed.py backend/app/main.py THIRD_PARTY_NOTICES.md backend/tests/unit/seed && git commit -m "feat(api): seed 36 sheet types from gLabels-qt and third-party sources"`
 
 ---
 
 ### Task 6: Sheet service (create, next code, mark, unmark, resolve, discard, list, lookups, events)
 
 **Files:**
-- Create: `backend/app/repositories/sheets.py`, `backend/app/sheets/sheet_service.py`, `backend/app/sheets/events.py`
+- Create: `backend/app/repositories/sheets.py`, `backend/app/sheets/sheet_service.py`, `backend/app/sheets/events.py`, `backend/app/sheets/text.py`
 - Modify: `backend/app/api/routes/events_v1.py` (every stream also subscribes to channel `sheets`, like `hub`)
 - Test: `backend/tests/unit/sheets/test_sheet_service.py`, `backend/tests/db/test_sheet_concurrency.py`, `backend/tests/unit/sheets/test_sheet_events.py`
 
 **Interfaces:**
 - Consumes: Tasks 1–3.
+- Produces (`text.py`): `def sanitise_text(value: str, *, max_len: int) -> str` — removes Unicode category `Cc` and the bidi controls U+061C, U+200E, U+200F, U+202A–U+202E, U+2066–U+2069; keeps other `Cf` characters such as U+200D (zero-width joiner) so emoji sequences stay intact (a deliberate choice); trims; longer than `max_len` → `ValueError` (the schema reports 422). Used for every purpose and note written in this plan and in Plan 3.
 - Produces (`sheet_service.py`):
+  - `async def allocate_code(session: AsyncSession, prefix: str) -> str` — read-increment of `sheet_id_counters` inside the **caller's** transaction (no commit, no lock of its own; the caller holds `acquire_sheet_write_lock`). Plan 3's reservation uses it.
   - `@dataclass class MarkedCell: cell: int; purpose: str | None = None`
-  - `create_sheet(session, *, type_key: str, version: int | None, id_placement: Literal["margin","manual"], used_cells: list[MarkedCell], note: str | None, actor: str) -> Sheet` — one transaction: lock, refuse archived type, read-increment `sheet_id_counters` (insert row at 1 if missing), insert sheet pinned to the version, insert `used` cells with `source="manual"`, `marked_by_hand=True`, purpose default `"marked by hand"`. Plan 3 widens `id_placement` to `"cell"`.
+  - `create_sheet(session, *, type_key: str, version: int | None, id_placement: Literal["margin","manual"], used_cells: list[MarkedCell], note: str | None, actor: str) -> Sheet` — one transaction: lock, refuse archived type, `allocate_code`, insert sheet pinned to the version, insert `used` cells with `source="manual"`, `marked_by_hand=True`, purpose default `"marked by hand"`. Plan 3 widens `id_placement` to `"cell"`.
   - `peek_next_code(session, type_key: str) -> str` — no write.
   - `get_sheet(session, code: str) -> SheetDetail` (`sheet`, `type`, `version`, `cells: list[SheetCell]`, `free: int`, `total: int`, counts per state). Unknown → `SheetNotFoundError`; discarded is returned, not raised.
   - `mark_cells(session, code, cells: list[MarkedCell], *, actor) -> SheetDetail` — cells in `1…cell_count(pinned version)` else `CellOutOfRangeError` (all bad numbers listed); any non-free → `CellsTakenError` with those numbers; discarded → `SheetDiscardedError`.
   - `unmark_cells(session, code, cells: list[int], *, actor) -> SheetDetail` — only `marked_by_hand=True` `used` cells; others → `CellsTakenError`-shaped `409 cells_not_marked_by_hand` (`CellsNotMarkedByHandError`).
-  - `resolve_cells(session, code, cells: list[int], outcome: Literal["printed","not_printed"], *, actor) -> SheetDetail` — only `unconfirmed` cells; `printed` → `used` (keeps source/purpose/job_id), `not_printed` → row deleted.
+  - `resolve_cells(session, code, cells: list[int], outcome: Literal["printed","not_printed"], *, actor) -> SheetDetail` — only `unconfirmed` cells; `printed` → `used` (keeps source/purpose/job_id), and if any resolved cell has `source="hub"` (the ID label) the sheet's `id_printed` becomes true (spec 7.1); `not_printed` → row deleted. Plan 3 Task 5 extends this for the margin ID.
   - `discard_sheet(session, code, *, actor) -> Sheet` — any `reserved` cell → `SheetBusyError`; sets `discarded_at/by`.
   - `list_sheets(session, *, type_key: str | None, free_at_least: int | None, state: Literal["active","full","discarded","all"] = "active", q: str | None) -> list[SheetListRow]` (`SheetListRow` dataclass: sheet, type, version, counts per state, free) — `full` = active with 0 free; order OC-34: rows with `free >= free_at_least` first, then by free descending, then code.
   - `find_cells(session, *, source: str, ref: str) -> list[CellHit]` (`code, cell, state, purpose, updated_at`), newest first.
@@ -284,11 +301,12 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
   - `test_mark_uses_pinned_version_cell_count` — sheet on a 48-cell v1, type at v2 with 60 cells → marking cell 49 → `CellOutOfRangeError(max=48)`.
   - `test_mark_taken_and_out_of_range` — mark `[5, 5]` duplicates collapse; mark used cell → `CellsTakenError(cells=[5])` and nothing else written (error path).
   - `test_unmark_only_hand_marked` — a `used` cell with `marked_by_hand=False` → `CellsNotMarkedByHandError`.
-  - `test_resolve_unconfirmed` — insert two `unconfirmed` rows (job id set) → `printed` keeps the row as `used` with purpose; `not_printed` deletes; resolving a `used` cell → `409 cells_not_unconfirmed` (`CellsNotUnconfirmedError`).
+  - `test_resolve_unconfirmed` — insert two `unconfirmed` rows (job id set) → `printed` keeps the row as `used` with purpose; `not_printed` deletes; resolving an unconfirmed `source="hub"` cell as `printed` sets `id_printed`; resolving a `used` cell → `409 cells_not_unconfirmed` (`CellsNotUnconfirmedError`).
   - `test_discard_busy_and_ok` — a `reserved` row → `SheetBusyError`; after removing it → discarded; `get_sheet` returns `state="discarded"`; `list_sheets()` hides it, `state="discarded"` shows it.
   - `test_discarded_code_never_reissued_after_archive_cycle` — create `-01`, discard, archive type, unarchive, create → `-02` (acceptance 4).
   - `test_list_order_fits_first` — sheets with free 3, 31, 9 and `free_at_least=9` → order 31, 9, 3.
   - `test_find_cells_by_ref` — two cells with `source="grocy", ref="42"` → both, newest first.
+  - `test_purposes_sanitised` — hand-marked purpose with `\x07` and `\u202e` stored without them; `\u200d` kept; 121 characters → error.
   - `test_events_published_after_commit` — fake bus records `sheet.updated` with `changed=[...]`; a failed mark publishes nothing.
   - `db/test_sheet_concurrency.py` (temp-file SQLite, two sessions from one engine, `asyncio.gather`):
     - `test_parallel_create_gives_distinct_codes` — 10 parallel `create_sheet` → 10 distinct codes `-01…-10`, no `database is locked`.
@@ -296,7 +314,7 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
 - [ ] **Step 2: Run, expect FAIL.**
 - [ ] **Step 3: Implement.** If the concurrency test shows `database is locked` despite the lock row, switch `acquire_sheet_write_lock` to an explicit `BEGIN IMMEDIATE` issued through the connection (keep the function name) and record the finding in `docs/learnings/code-review-patterns.md`.
 - [ ] **Step 4: Run, expect PASS.**
-- [ ] **Step 5: Commit** — `git add backend/app/repositories/sheets.py backend/app/sheets/sheet_service.py backend/app/sheets/events.py backend/app/api/routes/events_v1.py backend/tests/unit/sheets/test_sheet_service.py backend/tests/unit/sheets/test_sheet_events.py backend/tests/db/test_sheet_concurrency.py && git commit -m "feat(api): physical sheets with used cells, discard and events"`
+- [ ] **Step 5: Commit** — `git add backend/app/repositories/sheets.py backend/app/sheets/sheet_service.py backend/app/sheets/events.py backend/app/sheets/text.py backend/app/api/routes/events_v1.py backend/tests/unit/sheets/test_sheet_service.py backend/tests/unit/sheets/test_sheet_events.py backend/tests/db/test_sheet_concurrency.py && git commit -m "feat(api): physical sheets with used cells, discard and events"`
 
 ---
 
@@ -309,9 +327,9 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
 
 **Interfaces:**
 - Consumes: Tasks 3–5.
-- Produces the routes of spec 15 for `/api/sheet-types…` (list, get, get version, create, patch, new version, archive, unarchive, delete, export, import). Schemas: `GeometryMm` (reuse from `exchange.py`), `SheetTypeRead` (all type fields, `current_version: int`, `geometry: GeometryMm`, `hints: list[str]`, `sheets_in_use: int`), `SheetTypeDetail(SheetTypeRead + versions: list[VersionRead])`, `VersionRead(version, geometry, geometry_hash, change_note, created_at, sheets: int)`, `SheetTypeCreate(fields + geometry)`, `SheetTypePatch` (all optional), `VersionCreate(geometry, change_note: str = Field(min_length=1, max_length=500))`, `ImportResponse(outcome, key, version)`. Import endpoint takes the raw body (`Request.body()`, content type `application/json`), query `mode`, `new_key`, `new_prefix`, and calls `parse_import` so the 64 KB limit is checked before parsing. Export answers `application/json` with `Content-Disposition: attachment; filename="<key>-v<n>.json"`.
+- Produces the routes of spec 15 for `/api/sheet-types…` (list, get, get version, create, patch, new version, archive, unarchive, delete, export, import). Schemas: `GeometryMm` (reuse from `exchange.py`), `SheetTypeRead` (all type fields, `current_version: int`, `geometry: GeometryMm`, `hints: list[str]`, `sheets_in_use: int`), `SheetTypeDetail(SheetTypeRead + versions: list[VersionRead])`, `VersionRead(version, geometry, geometry_hash, change_note, created_at, sheets: int)`, `SheetTypeCreate(fields + geometry)`, `SheetTypePatch` (all optional), `VersionCreate(geometry, change_note: str = Field(min_length=1, max_length=500))`, `ImportResponse(outcome, key, version)`. Import endpoint reads the raw body as a stream (`request.stream()`), refusing a `Content-Length` above 65 536 up front and aborting once 65 537 bytes have been read (the app has no global body limit, so `Request.body()` would buffer anything), then calls `parse_import`; query `mode`, `new_key`, `new_prefix`. Because the body is not a Pydantic parameter, the route declares its request body with `openapi_extra={"requestBody": {"required": True, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ExportDoc"}}}}}` and makes sure `ExportDoc` is in the components (ADR 0011). Export answers `application/json` with `Content-Disposition: attachment; filename="<key>-v<n>.json"`.
 
-- [ ] **Step 1: Write the failing tests** — one per route for the happy path; scope matrix parametrised over all write routes: `read` key → 403, `print` key → 403, `admin` → 2xx; `GET` routes with a `read` key that is restricted to one printer → 200 (OC-37); error codes `sheet_type_not_found` (404), `type_exists`, `prefix_taken`, `invalid_geometry` (422 with `error_detail.field`), `import_too_large` (413), `invalid_import` (422); `test_export_import_roundtrip_over_http`; `test_openapi_lists_sheet_type_routes` (every path of spec 15 under `/api/sheet-types` present).
+- [ ] **Step 1: Write the failing tests** — one per route for the happy path; scope matrix parametrised over all write routes: `read` key → 403, `print` key → 403, `admin` → 2xx; `GET` routes with a `read` key that is restricted to one printer → 200 (OC-37); `test_import_route_documents_request_body` (OpenAPI operation has `requestBody` referencing `ExportDoc`); `test_import_streaming_limit` (no `Content-Length`, 70 000 bytes chunked → 413 after at most 65 537 read); error codes `sheet_type_not_found` (404), `type_exists`, `prefix_taken`, `invalid_geometry` (422 with `error_detail.field`), `import_too_large` (413), `invalid_import` (422); `test_export_import_roundtrip_over_http`; `test_openapi_lists_sheet_type_routes` (every path of spec 15 under `/api/sheet-types` present).
 - [ ] **Step 2: Run, expect FAIL.**
 - [ ] **Step 3: Implement** routes (thin: parse → service → map `SheetApiError.to_http()`), register router, raise the endpoint-count bound, `cd frontend && pnpm gen:api`.
 - [ ] **Step 4: Run, expect PASS** — the new file plus `pytest tests/api tests/unit/api/test_route_auth_coverage_guardrail.py -v`; `cd frontend && pnpm typecheck`.
@@ -342,4 +360,8 @@ Tests mirror this under `backend/tests/unit/sheets/`, `backend/tests/unit/seed/`
 
 - `cd backend && pytest -m "not slow" --cov=app --cov-fail-under=80 && mypy app/ && ruff check . && ruff format --check .`
 - `cd frontend && pnpm gen:api && git diff --exit-code src/api/schema.gen.ts && pnpm typecheck`
-- Fresh container start logs `inserted 38` once, nothing on the second start.
+- Fresh container start logs `inserted 36` once, nothing on the second start.
+
+## Plan review 2026-11-05
+
+Findings of the independent plan review worked in, each checked against the code: P1-B1 (36 types, six held back — maintainer ruling), P1-M1, P1-M2, P1-m1 … P1-m9, and the Plan 1 halves of P3-M2 (`id_printed` on resolving the ID cell) and P3-m7 (zero-width joiner kept). None rejected.
