@@ -20,7 +20,13 @@ from urllib.parse import urlparse
 _BIDI_CONTROLS = frozenset({0x061C, 0x200E, 0x200F, *range(0x202A, 0x202F), *range(0x2066, 0x206A)})
 
 
-_BREAK_RUN = re.compile(r"[ \t\n]*[\t\n][ \t\n]*")
+_WHITESPACE_RUN = re.compile(r"[ \t\n]+")  # one quantifier, no overlap: linear
+_INPUT_FACTOR = 4  # input longer than this many times ``max_len`` is refused unprocessed
+
+
+def _collapse_breaks(match: re.Match[str]) -> str:
+    run = match.group()
+    return " " if "\t" in run or "\n" in run else run
 
 
 def _keep(ch: str) -> bool:
@@ -29,8 +35,10 @@ def _keep(ch: str) -> bool:
 
 def sanitise_text(value: str, *, max_len: int, multiline: bool = False) -> str:
     """Clean ``value``; ``multiline`` keeps line breaks, otherwise they become a space."""
+    if len(value) > _INPUT_FACTOR * max_len:  # before any work on the text
+        raise ValueError(f"longer than {max_len} characters")
     text = value.replace("\r\n", "\n").replace("\r", "\n")
-    text = text.replace("\t", " ") if multiline else _BREAK_RUN.sub(" ", text)
+    text = text.replace("\t", " ") if multiline else _WHITESPACE_RUN.sub(_collapse_breaks, text)
     cleaned = "".join(ch for ch in text if _keep(ch)).strip()
     if len(cleaned) > max_len:
         raise ValueError(f"longer than {max_len} characters")

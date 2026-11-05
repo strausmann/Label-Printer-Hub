@@ -116,14 +116,14 @@ class SheetTypePatch(_Body):
     """Only the fields the client sends change. ``null`` clears a nullable field."""
 
     prefix: str | None = None
-    vendor: str | None = None
+    vendor: Annotated[str, Field(max_length=200)] | None = None
     product_codes: Annotated[list[_Code], Field(max_length=_PRODUCT_CODES_MAX)] | None = None
-    description: str | None = None
+    description: Annotated[str, Field(max_length=200)] | None = None
     allow_qr: bool | None = None
     verified: bool | None = None
-    source_name: str | None = None
+    source_name: Annotated[str, Field(max_length=200)] | None = None
     source_url: _Url | None = None
-    notes: str | None = None
+    notes: Annotated[str, Field(max_length=2000)] | None = None
 
 
 class VersionCreate(_Body):

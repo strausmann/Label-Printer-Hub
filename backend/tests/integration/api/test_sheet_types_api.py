@@ -764,3 +764,18 @@ async def test_product_codes_are_capped_at_fifty_on_patch_and_export_still_works
         headers=admin,
     )
     assert created.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("field", "limit"),
+    [("vendor", 200), ("description", 200), ("source_name", 200), ("notes", 2000)],
+)
+async def test_patch_refuses_over_long_free_text_before_the_service(
+    api_client_with_seed, admin, field, limit
+):
+    await _create(api_client_with_seed, admin)
+    resp = await api_client_with_seed.patch(
+        "/api/sheet-types/acme-t1", json={field: "x" * (limit + 1)}, headers=admin
+    )
+    assert resp.status_code == 422, resp.text
+    assert _err(resp)["error_code"] == "invalid_request"
