@@ -64,6 +64,25 @@ class PrefixTakenError(SheetApiError):
     message = "This sheet code prefix is already used by another sheet type."
 
 
+class PrefixLockedError(PrefixTakenError):
+    """The prefix cannot change any more because sheets already carry it (OC-5)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "The sheet code prefix cannot change while sheets of this type exist.",
+            detail={"reason": "sheets_exist"},
+        )
+
+
+class SheetTypeInUseError(SheetApiError):
+    status = 409
+    error_code = "type_in_use"
+    message = "Sheet type cannot be deleted."
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(detail={"reason": reason})
+
+
 class InvalidGeometryError(SheetApiError):
     status = 422
     error_code = "invalid_geometry"
