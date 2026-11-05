@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from app.integrations.urls import base_url
 from app.services.errors import IntegrationNotConfiguredError
 
 if TYPE_CHECKING:
@@ -67,7 +68,7 @@ class StoreBoundPlugin:
         store = self._store
         if store is None:
             return
-        self._base_url = str(store.get(self._key("url")) or "").rstrip("/")
+        self._base_url = base_url(str(store.get(self._key("url")) or ""))
         self._api_key = (
             str(store.get(self._key(self.secret_suffix)) or "") if self.secret_suffix else ""
         )
