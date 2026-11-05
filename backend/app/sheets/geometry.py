@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass, replace
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Literal
 
 from app.sheets.errors import CellOutOfRangeError, InvalidGeometryError
@@ -22,14 +22,15 @@ def mm_to_hmm(value: float | int | str | Decimal, *, field: str) -> int:  # D16
     """Convert millimetres (at most two decimals) to hundredths of a millimetre."""
     try:
         d = Decimal(str(value))
-    except InvalidOperation:
-        raise InvalidGeometryError(field, "not a number") from None
-    if not d.is_finite():
-        raise InvalidGeometryError(field, "not a finite number")
-    if d < 0:
-        raise InvalidGeometryError(field, "must not be negative")
-    scaled = d * 100
-    if scaled != scaled.to_integral_value():
+        if not d.is_finite():
+            raise InvalidGeometryError(field, "not a finite number")
+        if d < 0:
+            raise InvalidGeometryError(field, "must not be negative")
+        scaled = d * 100
+        integral = scaled == scaled.to_integral_value()
+    except ArithmeticError:  # InvalidOperation, Overflow and friends: hostile input
+        raise InvalidGeometryError(field, "not a valid number") from None
+    if not integral:
         raise InvalidGeometryError(field, "at most two decimals allowed")
     return int(scaled)
 
@@ -78,8 +79,10 @@ def validate_geometry(g: Geometry) -> list[str]:
     """Raise ``InvalidGeometryError`` on a rule failure; return hint codes otherwise."""
     if g.page_size not in PAGE_SIZES:
         raise InvalidGeometryError("page_size", "must be A4 or Letter")
-    if (g.page_w, g.page_h) != PAGE_SIZES[g.page_size]:
+    if g.page_w != PAGE_SIZES[g.page_size][0]:
         raise InvalidGeometryError("page_w", "does not match the page size")
+    if g.page_h != PAGE_SIZES[g.page_size][1]:
+        raise InvalidGeometryError("page_h", "does not match the page size")
     if g.shape not in ("rectangle", "round"):
         raise InvalidGeometryError("shape", "must be rectangle or round")
     for name in ("label_w", "label_h", "pitch_x", "pitch_y"):
@@ -100,12 +103,6 @@ def validate_geometry(g: Geometry) -> list[str]:
         raise InvalidGeometryError("pitch_y", "must not be smaller than label_h")
     if g.shape == "round" and g.label_w != g.label_h:
         raise InvalidGeometryError("label_h", "round labels need label_w equal to label_h")
-    if (
-        g.corner_radius is not None
-        and g.shape == "rectangle"
-        and (g.corner_radius < 0 or g.corner_radius * 2 > min(g.label_w, g.label_h))
-    ):
-        raise InvalidGeometryError("corner_radius", "must fit inside the label")
     right, bottom = remaining_margins(g)
     if right < 0:
         raise InvalidGeometryError("cols", "grid is wider than the page")
