@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## <small>1.0.2 (2026-11-05)</small>
+
+* fix(api): serve Scalar from the hub and report the running release (#181) ([fbb5f5e](https://github.com/strausmann/label-printer-hub/commit/fbb5f5e)), closes [#181](https://github.com/strausmann/label-printer-hub/issues/181) [#171](https://github.com/strausmann/label-printer-hub/issues/171) [#171](https://github.com/strausmann/label-printer-hub/issues/171) [#171](https://github.com/strausmann/label-printer-hub/issues/171)
+* fix(integrations): probe Paperless via the documents list and normalise its URL (#180) ([840f465](https://github.com/strausmann/label-printer-hub/commit/840f465)), closes [#180](https://github.com/strausmann/label-printer-hub/issues/180) [#175](https://github.com/strausmann/label-printer-hub/issues/175)
+* fix(settings): show integration state truthfully and hide integrations that are not set up (#182) ([1270d7f](https://github.com/strausmann/label-printer-hub/commit/1270d7f)), closes [#182](https://github.com/strausmann/label-printer-hub/issues/182) [#174](https://github.com/strausmann/label-printer-hub/issues/174) [#174](https://github.com/strausmann/label-printer-hub/issues/174) [#176](https://github.com/strausmann/label-printer-hub/issues/176) [#176](https://github.com/strausmann/label-printer-hub/issues/176) [#177](https://github.com/strausmann/label-printer-hub/issues/177) [#174](https://github.com/strausmann/label-printer-hub/issues/174) [#176](https://github.com/strausmann/label-printer-hub/issues/176) [#177](https://github.com/strausmann/label-printer-hub/issues/177) [#176](https://github.com/strausmann/label-printer-hub/issues/176)
+* docs(changelog): record the first 1.x release as 1.0.1 (#170) ([7c28739](https://github.com/strausmann/label-printer-hub/commit/7c28739)), closes [#170](https://github.com/strausmann/label-printer-hub/issues/170)
+
 ## 1.0.1 (2026-11-05)
 
 Published as 1.0.1: the version 1.0.0 is permanently reserved in this repository by an earlier, deleted 1.0.0 release (immutable releases).
