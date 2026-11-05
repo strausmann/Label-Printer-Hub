@@ -4,9 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
-## 1.0.0 (2026-11-05)
+## 1.0.1 (2026-11-05)
 
-* feat!: new web UI foundation (React + TypeScript, single container) (#153) ([e8aed7b](https://github.com/strausmann/label-printer-hub/commit/e8aed7b)), closes [#153](https://github.com/strausmann/label-printer-hub/issues/153) [#149](https://github.com/strausmann/label-printer-hub/issues/149) [#150](https://github.com/strausmann/label-printer-hub/issues/150) [#151](https://github.com/strausmann/label-printer-hub/issues/151) [#146](https://github.com/strausmann/label-printer-hub/issues/146) [#146](https://github.com/strausmann/label-printer-hub/issues/146) [hi#entropy](https://github.com/hi/issues/entropy)
+Published as 1.0.1: the version 1.0.0 is permanently reserved in this repository by an earlier, deleted 1.0.0 release (immutable releases).
+
+* feat!: new web UI foundation (React + TypeScript, single container) (#153) ([e8aed7b](https://github.com/strausmann/label-printer-hub/commit/e8aed7b)), closes [#152](https://github.com/strausmann/label-printer-hub/issues/152) [#146](https://github.com/strausmann/label-printer-hub/issues/146); follow-ups #149, #150, #151
 * chore(deps): bump github.com/getkin/kin-openapi in /frontend (#158) ([049fcf7](https://github.com/strausmann/label-printer-hub/commit/049fcf7)), closes [#158](https://github.com/strausmann/label-printer-hub/issues/158)
 * chore(deps): bump github.com/go-chi/chi/v5 in /frontend (#157) ([f8bed03](https://github.com/strausmann/label-printer-hub/commit/f8bed03)), closes [#157](https://github.com/strausmann/label-printer-hub/issues/157)
 * ci: make main green (mypy, privacy scan) (#156) ([1357ad1](https://github.com/strausmann/label-printer-hub/commit/1357ad1)), closes [#156](https://github.com/strausmann/label-printer-hub/issues/156)
