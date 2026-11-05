@@ -64,6 +64,8 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   ]);
   // A result describes the configuration it tested, not whatever the form shows now (settings may refresh after a save elsewhere).
   const resultCurrent = testedSignature === signature;
+  // A test still running for an older configuration neither blocks the button nor shows a result.
+  const testing = test.isPending && resultCurrent;
   // The header says what is known. "Connected" and "Connection failed" come only from a test of the values
   // that are saved; a result for unsaved edits says nothing about the saved integration.
   const tested = test.isSuccess && !changed && resultCurrent ? test.data : null;
@@ -111,10 +113,10 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
             setTestedSignature(signature);
             test.mutate(values);
           }}
-          isDisabled={test.isPending || invalid.length > 0}
+          isDisabled={testing || invalid.length > 0}
           className={SECONDARY_BUTTON}
         >
-          {test.isPending ? t`Testing…` : t`Test connection`}
+          {testing ? t`Testing…` : t`Test connection`}
         </Button>
         <Button
           isDisabled={!changed || invalid.length > 0 || secretRequired || save.isPending}
@@ -132,9 +134,8 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
           {t`Save`}
         </Button>
       </div>
-      {test.isPending ? null : test.isSuccess ? (
-        resultCurrent ? (
-          <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {test.isPending || !resultCurrent ? null : test.isSuccess ? (
+        <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <StatusBadge state={test.data.ok ? "ok" : "bad"} label={test.data.ok ? t`Works` : t`Failed`} />
           {test.data.ok ? null : (
             <>
@@ -147,7 +148,6 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
             </>
           )}
         </div>
-        ) : null
       ) : test.isError ? (
         <p role="alert">{errorText(test.error, t`The test could not be run.`)}</p>
       ) : null}

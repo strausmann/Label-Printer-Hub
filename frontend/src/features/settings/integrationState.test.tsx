@@ -2,7 +2,7 @@ import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
-import { KEY_ADMIN, mockApi, settingsList } from "../test-api";
+import { KEY_ADMIN, mockApi, respond, settingsList } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -143,6 +143,54 @@ describe("a refresh of any tested value drops the result", () => {
     });
     await within(card).findByText(/Saved/i);
     expect(within(card).queryByText("Connection failed")).toBeNull();
+  });
+});
+
+describe("an error or a running test belongs to its configuration too", () => {
+  const refreshWithOtherUrl = async (queryClient: { invalidateQueries: (o: { queryKey: string[] }) => Promise<void> }) => {
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+    });
+  };
+
+  it("drops a failed request (e.g. a secret is required) when the settings refresh with another URL", async () => {
+    let saved = settingsList();
+    mockApi({
+      "GET /api/v1/settings": () => saved,
+      "GET /api/admin/api-keys": [KEY_ADMIN],
+      [TEST_PATH]: () => respond(400, { error_code: "secret_required_for_new_url", error_message: "enter the secret again" }),
+    });
+    const { queryClient } = await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED } });
+    const card = await screen.findByRole("group", { name: "Grocy" });
+    await userEvent.click(testButton(card));
+    await within(card).findByRole("alert");
+    saved = settingsList({ "integrations.grocy.url": { value: "https://other.example.invalid", is_set: true }, "integrations.grocy.api_key": { is_set: true } });
+    await refreshWithOtherUrl(queryClient);
+    await within(card).findByDisplayValue("https://other.example.invalid");
+    expect(within(card).queryByRole("alert")).toBeNull();
+  });
+
+  it("a test still running for the old configuration neither blocks the button nor lands afterwards", async () => {
+    let saved = settingsList();
+    const { fetchMock } = mockApi({ "GET /api/v1/settings": () => saved, "GET /api/admin/api-keys": [KEY_ADMIN] });
+    const original = fetchMock.getMockImplementation()!;
+    let finish: (r: Response) => void = () => undefined;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/grocy/test")) return new Promise<Response>((resolve) => (finish = resolve));
+      return original(input, init);
+    });
+    const { queryClient } = await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED } });
+    const card = await screen.findByRole("group", { name: "Grocy" });
+    await userEvent.click(testButton(card));
+    await within(card).findByRole("button", { name: "Testing…" });
+    saved = settingsList({ "integrations.grocy.url": { value: "https://other.example.invalid", is_set: true } });
+    await refreshWithOtherUrl(queryClient);
+    await within(card).findByDisplayValue("https://other.example.invalid");
+    expect(within(card).queryByRole("button", { name: "Testing…" })).toBeNull();
+    expect(testButton(card)).toBeEnabled();
+    await act(async () => finish(respond(200, { ok: true, status: 200, detail: "ok" })));
+    expect(within(card).queryByText("Works")).toBeNull();
+    expect(within(card).queryByText("Connected")).toBeNull();
   });
 });
 
