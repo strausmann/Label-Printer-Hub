@@ -35,6 +35,8 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   const test = useTestIntegration(name);
   const info = useInfo().data?.integrations.find((i) => i.name === name);
   const [saved, setSaved] = useState(false);
+  // The URL the last test ran against: a result only describes the configuration it tested.
+  const [testedUrl, setTestedUrl] = useState<string | null>(null);
 
   const urlKey = `integrations.${name}.url`;
   const secretKey = SECRET_SUFFIX[name] ? `integrations.${name}.${SECRET_SUFFIX[name]}` : null;
@@ -56,7 +58,8 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   const savedButUnusable = !configured && (urlView.is_set || Boolean(secretView?.is_set));
   // The header says what is known. "Connected" and "Connection failed" come only from a test of the values
   // that are saved; a result for unsaved edits says nothing about the saved integration.
-  const tested = test.isSuccess && !changed ? test.data : null;
+  // It also stops applying when the saved URL changes underneath it (settings refreshed after a save elsewhere).
+  const tested = test.isSuccess && !changed && testedUrl !== null && sameUrl(testedUrl, String(urlView.value ?? "")) ? test.data : null;
   const header: { state: "ok" | "bad" | "idle"; label: string } = tested
     ? tested.ok
       ? { state: "ok", label: t`Connected` }
@@ -97,7 +100,10 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button
-          onPress={() => test.mutate(values)}
+          onPress={() => {
+            setTestedUrl(urlNow);
+            test.mutate(values);
+          }}
           isDisabled={test.isPending || invalid.length > 0}
           className={SECONDARY_BUTTON}
         >

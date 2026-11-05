@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
@@ -87,6 +87,24 @@ describe("integration card state (#176)", () => {
     await userEvent.type(within(card).getByRole("textbox", { name: "URL" }), "https://grocy.example.invalid");
     await userEvent.click(testButton(card));
     await resultLine(card);
+    expect(within(card).queryByText("Connected")).toBeNull();
+    expect(within(card).getByText("Configured")).toBeVisible();
+  });
+});
+
+describe("a test result belongs to the configuration it tested", () => {
+  it("is dropped when the settings refresh with another saved URL (e.g. saved in another tab)", async () => {
+    let saved = settingsList();
+    mockApi({ "GET /api/v1/settings": () => saved, "GET /api/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: { ok: true, status: 200, detail: "ok" } });
+    const { queryClient } = await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED } });
+    const card = await screen.findByRole("group", { name: "Grocy" });
+    await userEvent.click(testButton(card));
+    await within(card).findByText("Connected");
+    saved = settingsList({ "integrations.grocy.url": { value: "https://other.example.invalid", is_set: true } });
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+    });
+    await within(card).findByDisplayValue("https://other.example.invalid");
     expect(within(card).queryByText("Connected")).toBeNull();
     expect(within(card).getByText("Configured")).toBeVisible();
   });
