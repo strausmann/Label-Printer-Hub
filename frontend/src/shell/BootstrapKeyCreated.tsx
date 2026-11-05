@@ -1,6 +1,7 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useState } from "react";
 import { Button, Input, Label, TextField } from "react-aria-components";
+import { SourceLink } from "../features/about/SourceLink";
 import { FIELD, PRIMARY_BUTTON } from "./SignIn";
 
 const SECONDARY_BUTTON =
@@ -101,6 +102,9 @@ export function BootstrapKeyCreated({ onCreate, onContinue }: Props) {
             {error}
           </p>
         ) : null}
+        <p className="text-small">
+          <SourceLink />
+        </p>
       </section>
     </main>
   );

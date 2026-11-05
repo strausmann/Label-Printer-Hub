@@ -22,6 +22,7 @@ import {
   SheetsPage,
 } from "../pages/placeholders";
 import { IntegrationPage } from "../features/integrations/IntegrationPage";
+import { AboutPage } from "../features/about/AboutPage";
 import { JobPage } from "../features/jobs/JobDetail";
 import { JobsPage } from "../features/jobs/JobsPage";
 import { CartPage } from "../features/lookup/CartPage";
@@ -169,6 +170,7 @@ const routeTree = rootRoute.addChildren([
   page("/spool/$id", SpoolPage),
   page("/product/$id", ProductPage),
   page("/cart", CartPage),
+  page("/about", AboutPage),
   page("/scan", ScanScreen),
   settingsRoute.addChildren([
     settingsChild("/", General),

@@ -5,6 +5,7 @@ import { IntegrationNavEntries } from "./IntegrationNav";
 import { NAV_GROUPS, visibleGroups, type NavGroup } from "./features";
 import { useNavLabels } from "./labels";
 import { StatusBadge } from "./StatusBadge";
+import { SourceLink } from "../features/about/SourceLink";
 import { useConfiguredIntegrations } from "../features/integrations/api";
 
 /** Desktop navigation (>= 1024 px): groups as in spec 5.3, hidden entries removed. */
@@ -64,8 +65,14 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="border-t border-line px-6 py-4">
+      <div className="flex flex-col gap-3 border-t border-line px-6 py-4">
         <StatusBadge state={status.state} label={status.label} />
+        <p className="flex flex-wrap gap-x-4 gap-y-1 text-small">
+          <Link to="/about" className="press text-ink-2 underline underline-offset-2 hover:text-ink">
+            {t({ message: "About and licences", context: "link to the about page" })}
+          </Link>
+          <SourceLink className="press text-ink-2 underline underline-offset-2 hover:text-ink" />
+        </p>
       </div>
     </aside>
   );

@@ -1,16 +1,26 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@lingui/react";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import { i18n, initI18n } from "../i18n";
+import { createQueryClient } from "../app/queryClient";
+import { INFO_KEY } from "../app/session";
+import { INFO } from "../test-utils";
 import { SignIn } from "./SignIn";
+
+const SOURCE = "https://example.invalid/fork/tree/v1.1.0";
 
 async function renderSignIn(onSignIn: (key: string) => Promise<void>) {
   await initI18n("en");
+  const queryClient = createQueryClient();
+  queryClient.setQueryData(INFO_KEY, { ...INFO, source_url: SOURCE });
   return render(
     <I18nProvider i18n={i18n}>
-      <SignIn onSignIn={onSignIn} />
+      <QueryClientProvider client={queryClient}>
+        <SignIn onSignIn={onSignIn} />
+      </QueryClientProvider>
     </I18nProvider>,
   );
 }
@@ -31,6 +41,18 @@ describe("SignIn", () => {
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(onSignIn).toHaveBeenCalledWith("not-a-real-key"));
     expect(field).toHaveValue("");
+  });
+
+  it("source link before sign-in", async () => {
+    await renderSignIn(async () => undefined);
+    const link = screen.getByRole("link", { name: "Source code" });
+    expect(link).toHaveAttribute("href", SOURCE);
+    expect(link.getAttribute("rel")).toContain("noopener");
+  });
+
+  it("gives the source link a tap target of at least 44 px", async () => {
+    await renderSignIn(vi.fn(async () => undefined));
+    expect(screen.getByRole("link", { name: "Source code" }).className).toMatch(/\bmin-h-11\b/);
   });
 
   it("does not submit an empty field", async () => {

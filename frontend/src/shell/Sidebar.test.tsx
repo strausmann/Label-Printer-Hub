@@ -31,6 +31,15 @@ describe("Sidebar", () => {
     expect(within(nav).queryByRole("link", { name: "Calibration" })).toBeNull();
   });
 
+  it("footer links to about and source", async () => {
+    await renderApp({ path: "/", info: { source_url: "https://example.invalid/fork/tree/v1.1.0" } });
+    const aside = screen.getByRole("complementary", { hidden: true });
+    expect(within(aside).getByRole("link", { name: "About and licences", hidden: true })).toHaveAttribute("href", "/about");
+    const source = within(aside).getByRole("link", { name: "Source code", hidden: true });
+    expect(source).toHaveAttribute("href", "https://example.invalid/fork/tree/v1.1.0");
+    expect(source.getAttribute("rel")).toContain("noopener");
+  });
+
   it("marks the current page", async () => {
     await renderApp({ path: "/jobs" });
     const nav = screen.getByRole("navigation", { name: "Main" });

@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Button } from "react-aria-components";
 import { useSession } from "../app/session";
 import { GlobalSearch } from "../features/search";
-import { ScanIcon, SignOutIcon } from "./icons";
+import { InfoIcon, ScanIcon, SignOutIcon } from "./icons";
 import { ThemeSwitch } from "./ThemeSwitch";
 
 const ICON_BUTTON =
@@ -27,6 +27,13 @@ export function TopBar() {
       </Link>
 
       <div className="ml-auto flex items-center gap-1">
+        <Link
+          to="/about"
+          aria-label={t({ message: "About and licences", context: "link to the about page" })}
+          className={ICON_BUTTON}
+        >
+          <InfoIcon />
+        </Link>
         <ThemeSwitch />
         <Button aria-label={t`Sign out`} onPress={() => void session.signOut()} className={ICON_BUTTON}>
           <SignOutIcon />

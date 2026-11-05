@@ -56,6 +56,23 @@ msgstr "A secret is saved for the old URL. Enter the secret again to use the new
 msgid "A webhook key needs at least {MIN_WEBHOOK_KEY} characters."
 msgstr "A webhook key needs at least {MIN_WEBHOOK_KEY} characters."
 
+#: src/features/about/AboutPage.tsx
+msgctxt "page title"
+msgid "About"
+msgstr "About"
+
+#: src/features/settings/System.tsx
+#: src/shell/Sidebar.tsx
+#: src/shell/TopBar.tsx
+msgctxt "link to the about page"
+msgid "About and licences"
+msgstr "About and licences"
+
+#: src/features/about/AboutPage.tsx
+msgctxt "link"
+msgid "About the GNU AGPL"
+msgstr "About the GNU AGPL"
+
 #: src/features/settings/SettingsPage.tsx
 msgid "Access and keys"
 msgstr "Access and keys"
@@ -571,6 +588,16 @@ msgstr "Layout"
 msgid "Level"
 msgstr "Level"
 
+#: src/features/about/AboutPage.tsx
+msgctxt "field label"
+msgid "Licence"
+msgstr "Licence"
+
+#: src/features/about/AboutPage.tsx
+msgctxt "heading"
+msgid "Licence"
+msgstr "Licence"
+
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
 msgstr "Light theme"
@@ -908,6 +935,11 @@ msgstr "Queue timeout (seconds)"
 msgid "Queued"
 msgstr "Queued"
 
+#: src/features/about/AboutPage.tsx
+msgctxt "action"
+msgid "Read the licence"
+msgstr "Read the licence"
+
 #: src/features/settings/System.tsx
 msgid "Readiness"
 msgstr "Readiness"
@@ -973,7 +1005,7 @@ msgstr "Resume"
 msgid "Retry"
 msgstr "Retry"
 
-#: src/features/settings/System.tsx
+#: src/features/about/BuildRows.tsx
 msgid "Revision"
 msgstr "Revision"
 
@@ -1159,6 +1191,11 @@ msgstr "Something went wrong."
 #: src/features/settings/System.tsx
 msgid "Source"
 msgstr "Source"
+
+#: src/features/about/SourceLink.tsx
+msgctxt "link to the source of the running version"
+msgid "Source code"
+msgstr "Source code"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Spool"
@@ -1386,6 +1423,10 @@ msgstr "This browser blocked the camera for this site. Allow it in the site sett
 msgid "This code is not one the hub knows. Its text:"
 msgstr "This code is not one the hub knows. Its text:"
 
+#: src/features/about/AboutPage.tsx
+msgid "This hub is free software under the GNU Affero General Public License, version 3 or later. You can get the source of exactly this version at any time."
+msgstr "This hub is free software under the GNU Affero General Public License, version 3 or later. You can get the source of exactly this version at any time."
+
 #: src/features/lookup/ItemView.tsx
 msgid "This item cannot be shown"
 msgstr "This item cannot be shown"
@@ -1449,6 +1490,10 @@ msgstr "Too many attempts. Wait a minute and try again."
 msgid "Try again"
 msgstr "Try again"
 
+#: src/features/about/BuildRows.tsx
+msgid "unknown"
+msgstr "unknown"
+
 #: src/features/scan/ScanScreen.tsx
 msgid "Unknown code"
 msgstr "Unknown code"
@@ -1462,7 +1507,7 @@ msgstr "Unknown printer"
 msgid "URL"
 msgstr "URL"
 
-#: src/features/settings/System.tsx
+#: src/features/about/BuildRows.tsx
 msgid "Version"
 msgstr "Version"
 
