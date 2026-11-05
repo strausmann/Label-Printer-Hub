@@ -230,3 +230,46 @@ async def test_lookup_non_object_response_is_a_clean_error(body: object) -> None
     )
     with pytest.raises(ValueError, match="not an object"):
         await bound(SpoolmanPlugin).lookup("1")
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    "typed",
+    [
+        "https://spoolman.example/?next=/x",
+        "https://spoolman.example/",
+        "https://spoolman.example/#frag",
+        "https://spoolman.example/sub/?x=1",
+    ],
+)
+async def test_runtime_base_url_uses_same_normalisation_as_probe(
+    monkeypatch: pytest.MonkeyPatch, typed: str
+) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", typed)
+    get_settings.cache_clear()
+    base = "https://spoolman.example" + ("/sub" if "/sub" in typed else "")
+    route = respx.get(f"{base}/api/v1/spool/7").mock(
+        return_value=httpx.Response(200, json={"id": 7, "filament": {"name": "PLA"}})
+    )
+    data = await bound(SpoolmanPlugin).lookup("7")
+
+    assert route.call_count == 1
+    assert data.qr_payload == f"{base}/spool/show/7"
+
+
+@pytest.mark.asyncio
+async def test_malformed_env_url_does_not_break_startup(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "http://[::1")
+    get_settings.cache_clear()
+    plugin = bound(SpoolmanPlugin)  # bind() -> _refresh() must not raise
+
+    assert plugin.is_configured() is False
+    assert any("spoolman" in r.message and "invalid URL" in r.message for r in caplog.records)
+    assert "[::1" not in caplog.text

@@ -204,7 +204,7 @@ async def test_integration_test_uses_unsaved_values(client) -> None:
         ("snipeit", "/api/v1/hardware?limit=1", ("authorization", f"Bearer {FAKE_TOKEN}")),
         ("grocy", "/api/system/info", ("grocy-api-key", FAKE_TOKEN)),
         ("spoolman", "/api/v1/info", None),
-        ("paperless", "/api/", ("authorization", f"Token {FAKE_TOKEN}")),
+        ("paperless", "/api/documents/?page_size=1", ("authorization", f"Token {FAKE_TOKEN}")),
     ],
 )
 async def test_integration_probe_shapes(client, name, url_path, auth_header) -> None:
@@ -339,3 +339,104 @@ async def test_env_url_userinfo_not_shown(client, monkeypatch) -> None:
     resp = await client.get("/api/v1/settings")
     assert "pw-secret" not in resp.text
     assert _by_key(resp)["integrations.snipeit.url"]["value"] == "https://snipeit.example.invalid"
+
+
+PAPERLESS = "https://paperless.example.invalid"
+PAPERLESS_DOCS = "/api/documents/"
+
+
+def _mock_paperless(router, base: str = PAPERLESS):
+    """Like a real Paperless-ngx: /api/ redirects, /api/documents/ needs the token."""
+    router.get(base + "/api/").respond(302, headers={"location": base + "/api/schema/view/"})
+
+    def docs(request):
+        if request.headers.get("authorization") == f"Token {FAKE_TOKEN}":
+            return httpx.Response(200, json={"count": 0, "results": []})
+        return httpx.Response(401, json={"detail": "Authentication credentials were not provided."})
+
+    return router.get(base + PAPERLESS_DOCS).mock(side_effect=docs)
+
+
+async def _test_paperless(client, url: str, token: str = FAKE_TOKEN):
+    values = {"integrations.paperless.url": url, "integrations.paperless.token": token}
+    return await client.post(
+        "/api/v1/settings/integrations/paperless/test", json={"values": values}
+    )
+
+
+async def test_paperless_probe_ok_with_valid_token_despite_api_root_redirect(client) -> None:
+    with respx.mock(assert_all_called=False) as router:
+        route = _mock_paperless(router)
+        resp = await _test_paperless(client, PAPERLESS)
+        body = resp.json()
+        assert body["ok"] is True and body["status"] == 200
+        assert route.calls.last.request.url.query == b"page_size=1"
+        assert FAKE_TOKEN not in resp.text
+
+
+async def test_paperless_probe_rejects_wrong_token(client) -> None:
+    with respx.mock(assert_all_called=False) as router:
+        _mock_paperless(router)
+        resp = await _test_paperless(client, PAPERLESS, token="another-token-value-for-tests")
+        body = resp.json()
+        assert body["ok"] is False and body["status"] == 401
+        assert "another-token-value-for-tests" not in resp.text
+
+
+@pytest.mark.parametrize(
+    "typed",
+    [
+        PAPERLESS,
+        PAPERLESS + "/",
+        PAPERLESS + "/api",
+        PAPERLESS + "/api/",
+    ],
+)
+async def test_paperless_probe_normalises_typed_url(client, typed) -> None:
+    with respx.mock(assert_all_called=False) as router:
+        route = _mock_paperless(router)
+        body = (await _test_paperless(client, typed)).json()
+        assert body["ok"] is True
+        assert route.call_count == 1  # exactly /api/documents/, never /api/api/...
+
+
+async def test_paperless_probe_keeps_subpath(client) -> None:
+    base = PAPERLESS + "/paperless"
+    with respx.mock(assert_all_called=False) as router:
+        route = _mock_paperless(router, base)
+        for typed in (base, base + "/", base + "/api/"):
+            body = (await _test_paperless(client, typed)).json()
+            assert body["ok"] is True
+        assert route.call_count == 3
+
+
+async def test_paperless_probe_ignores_query_in_typed_url(client) -> None:
+    with respx.mock(assert_all_called=False) as router:
+        route = _mock_paperless(router)
+        body = (await _test_paperless(client, PAPERLESS + "/?next=/x")).json()
+        assert body["ok"] is True
+        assert route.calls.last.request.url.query == b"page_size=1"
+
+
+async def test_paperless_probe_does_not_follow_redirect_with_secret(client) -> None:
+    with respx.mock(assert_all_called=False) as router:
+        router.get(PAPERLESS + PAPERLESS_DOCS).respond(
+            302, headers={"location": "https://evil.example.invalid/x"}
+        )
+        evil = router.get("https://evil.example.invalid/x").respond(200)
+        resp = await _test_paperless(client, PAPERLESS)
+        assert resp.json()["ok"] is False and resp.json()["status"] == 302
+        assert evil.call_count == 0
+        assert FAKE_TOKEN not in resp.text
+
+
+async def test_integration_probe_reports_invalid_url_instead_of_crashing(
+    client, monkeypatch
+) -> None:
+    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "http://[::1")
+    get_settings.cache_clear()
+    resp = await client.post("/api/v1/settings/integrations/grocy/test", json={})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False and body["status"] is None
+    assert body["detail"] == "invalid URL"

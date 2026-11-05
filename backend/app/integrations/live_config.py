@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from app.integrations.urls import base_url
 from app.services.errors import IntegrationNotConfiguredError
 
 if TYPE_CHECKING:
@@ -67,7 +68,13 @@ class StoreBoundPlugin:
         store = self._store
         if store is None:
             return
-        self._base_url = str(store.get(self._key("url")) or "").rstrip("/")
+        try:
+            self._base_url = base_url(str(store.get(self._key("url")) or ""))
+        except ValueError:
+            # Environment URLs bypass the settings validator; a broken optional
+            # integration must never stop the hub. The URL itself is not logged.
+            _log.warning("%s: configured URL is an invalid URL; integration disabled", self.name)
+            self._base_url = ""
         self._api_key = (
             str(store.get(self._key(self.secret_suffix)) or "") if self.secret_suffix else ""
         )
