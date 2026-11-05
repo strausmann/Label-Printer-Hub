@@ -4,6 +4,117 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## 1.0.0 (2026-11-05)
+
+* feat!: new web UI foundation (React + TypeScript, single container) (#153) ([e8aed7b](https://github.com/strausmann/label-printer-hub/commit/e8aed7b)), closes [#153](https://github.com/strausmann/label-printer-hub/issues/153) [#149](https://github.com/strausmann/label-printer-hub/issues/149) [#150](https://github.com/strausmann/label-printer-hub/issues/150) [#151](https://github.com/strausmann/label-printer-hub/issues/151) [#146](https://github.com/strausmann/label-printer-hub/issues/146) [#146](https://github.com/strausmann/label-printer-hub/issues/146) [hi#entropy](https://github.com/hi/issues/entropy)
+* chore(deps): bump github.com/getkin/kin-openapi in /frontend (#158) ([049fcf7](https://github.com/strausmann/label-printer-hub/commit/049fcf7)), closes [#158](https://github.com/strausmann/label-printer-hub/issues/158)
+* chore(deps): bump github.com/go-chi/chi/v5 in /frontend (#157) ([f8bed03](https://github.com/strausmann/label-printer-hub/commit/f8bed03)), closes [#157](https://github.com/strausmann/label-printer-hub/issues/157)
+* ci: make main green (mypy, privacy scan) (#156) ([1357ad1](https://github.com/strausmann/label-printer-hub/commit/1357ad1)), closes [#156](https://github.com/strausmann/label-printer-hub/issues/156)
+
+
+### BREAKING CHANGE
+
+* PRINTER_HUB_SECRET_KEY and PRINTER_HUB_PUBLIC_URL are
+now required; PRINTER_HUB_PRINTERS_CONFIG is no longer read.
+
+* feat(settings): runtime settings store with env locks and encrypted secrets
+
+Adds app_settings and ui_sessions tables (migration 20261104a1), the settings registry and store (env wins, D4; secrets sealed and write-only, D5), the admin settings API with export and integration test-connection, and wires the store into the app lifespan.
+
+* fix(settings): bind secrets to their URL, ASCII-only secrets, hide URL userinfo
+
+Env secrets are usable only with an env URL, secrets need an effective URL when saved and are only sent to the URL they were saved with; secrets must be printable ASCII; userinfo is stripped from every URL view.
+
+* feat(integrations): apply settings changes without restart
+
+* fix(integrations): drain in-flight lookups on client swap, enforce webhook key length
+
+* feat(auth)!: trust proxy headers only with the trust token; browser sessions with CSRF, bootstrap key and recovery command
+
+- require_scope order: API key header, session cookie, SSO headers, Basic bypass.
+- Sessions: sha256 of a random token stored, 12 h absolute expiry, re-checked on
+  every use (revoked, expired, key disabled/expired, bootstrap vs. admin key),
+  at most 20 per key/user, CSRF header on POST/PUT/PATCH/DELETE.
+- /api/v1/auth/session: sign in (IP rate limited), state + SSO session, sign out.
+- D7: one-time bootstrap key, only until an admin key exists; bootstrap
+  sessions may only create that key. Recovery: printer-hub admin create-key.
+- D10: SSO headers count only with a matching trust token (constant-time);
+  X-Pangolin-User and the Basic bypass are opt-in; bypass scope downgrade
+  takes effect; SSO-header writes need a matching Origin.
+- Revoking or disabling a key revokes its sessions; CleanupTask purges
+  sessions expired for more than a day.
+* removes the Go frontend container and image, the HTML-fragment
+SSE endpoint GET /api/events (use GET /api/v1/events), the server-rendered QR
+pages and the /static mount. The backend image is built from the repository
+root: docker build -f backend/Dockerfile .
+
+* feat(web): scaffold the React app with tokens, fonts, i18n and API client
+
+Vite + React 19 + Tailwind v4 app in frontend/ (D2). Design tokens as CSS
+custom properties and a typed mirror with a WCAG contrast test (D3, D12),
+self-hosted Atkinson Hyperlegible fonts, Lingui catalogues for en (default,
+D8) and de, a fetch wrapper with CSRF header and ApiError parsing, and the
+OpenAPI export + generated types behind a CI drift gate. The Docker image now
+builds the web app by default.
+* the legacy X-Pangolin-User header and the Pangolin Basic
+bypass no longer authenticate unless PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER or
+PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS is set. Supersedes ADR 0014.
+
+* fix(auth): apply the key rate limit to its sessions, end SSO sessions on trust-token change
+
+- Sessions derived from an API key consume the key's per-minute bucket and
+  return 429 with Retry-After, the same as the key header (shared helper).
+- pangolin-sso sessions store an HMAC-SHA256 fingerprint of the trust token
+  (keyed with PRINTER_HUB_SECRET_KEY, never the token) and are rejected when
+  the configured token changes or is cleared (D10). New column via alembic
+  revision 20261104a2.
+
+* fix(auth): stop seeding an admin key in migrations, Origin rule for the Basic bypass
+
+- The phase-7c migration no longer inserts a bootstrap-admin key or prints
+  its plaintext; schema operations are unchanged and existing rows stay.
+  The first admin key comes from the one-time bootstrap sign-in or from
+  printer-hub admin create-key (D7). Test runs the real migrations on an
+  empty DB and signs in with the bootstrap key.
+- State-changing requests via the opt-in Basic bypass need an Origin equal
+  to public_url, like cookie-less SSO-header requests (D10).
+- Comments name two known limitations: sign-in limiter keyed by direct peer
+  IP, bootstrap allowlist matched on the raw URL path.
+- docs: first admin key and recovery now describe the bootstrap / CLI flow.
+
+* feat(api): add /api/info with feature flags
+
+* refactor(events): move SSE metrics and snapshot out of the legacy events route
+
+* feat(events): global JSON event stream for the web UI
+
+* fix(events): scope hub frames, release DB sessions, re-check auth on a timer, reserve the stream slot
+
+* fix(examples): pass required settings and the SSO trust token; derive test keys at runtime
+
+- compose examples set PRINTER_HUB_SECRET_KEY and PRINTER_HUB_PUBLIC_URL with
+  the compose ':?' form, so a missing value is a compose-time error
+- compose.pangolin.yml passes PRINTER_HUB_SSO_TRUST_TOKEN, injects it as
+  X-Pangolin-Token and documents the opt-in legacy/Basic-bypass flags (D10)
+- test and CI secret keys are built from readable text at runtime instead of
+  checked-in base64 literals
+- add tests/unit/test_examples_compose.py
+
+* fix(auth,events): bootstrap creates only an admin key; stream follows persisted enabled state; normalise legacy key ids
+
+- A: a bootstrap session may only create an unrestricted, unexpired admin key (403 bootstrap_admin_key_only).
+- B: new revision 20261104a3 rewrites hyphenated api_keys.id (old phase-7c seed) and its references to the hex form SQLModel binds; regression test upgrades a legacy DB and signs in.
+- C: on every hub.printers_changed the stream reconciles against the persisted enabled flag.
+- D: Pangolin example uses request-headers instead of the deprecated headers alias.
+
+* feat!: serve the web UI from the backend and remove the Go frontend
+
+The backend process now serves the built web app (D1): index.html with
+no-cache, /assets immutable, client routes fall back to the app shell, /api,
+/docs, /redoc and /openapi.json keep their JSON 404. Security headers (CSP on
+SPA responses only, nosniff, referrer policy) come from a pure ASGI middleware
+so the event stream is not buffered.
+
 ## <small>0.11.1 (2026-08-15)</small>
 
 * fix(security): require auth on printer detail GET and job retry (#145) ([23f4c70](https://github.com/strausmann/label-printer-hub/commit/23f4c70)), closes [#145](https://github.com/strausmann/label-printer-hub/issues/145)
