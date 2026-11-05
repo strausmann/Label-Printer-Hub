@@ -17,7 +17,7 @@ test.describe("integrations", () => {
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Snipe-IT" }).click();
     await expect(page).toHaveURL(/\/integrations\/snipeit$/);
     await expect(page.getByRole("heading", { level: 1, name: "Snipe-IT" })).toBeVisible();
-    await expect(page.getByRole("main").getByText("Connected", { exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByText("Configured", { exact: true })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Find an asset or location" })).toBeFocused();
     await shot(page, "eint-snipeit-desktop-empty.png");
 
