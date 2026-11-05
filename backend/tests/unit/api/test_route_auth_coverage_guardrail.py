@@ -60,7 +60,6 @@ _PUBLIC_BY_DESIGN: dict[tuple[str, str], str] = {
     "the spec it loads is as public as /openapi.json (api_docs.py module docstring)",
     ("GET", "/docs/scalar.js"): "the Scalar bundle served by the hub instead of a CDN — "
     "a static third-party file (api_docs.py)",
-    ("GET", "/redoc"): "permanent redirect to /docs (api_docs.py)",
     # /readiness is intentionally NOT allowlisted: it declares its own
     # Depends(require_read) and is correctly picked up as authenticated.
     ("GET", "/loc/{entity_id}"): "QR landing path — serves only the static app shell, "

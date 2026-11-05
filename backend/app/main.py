@@ -661,7 +661,7 @@ def create_app() -> _LifespanManager:
         ),
         version=HUB_VERSION,
         openapi_url="/openapi.json",
-        # Interactive docs are served by app.web.api_docs (Scalar, no CDN); /redoc redirects.
+        # Interactive docs are served by app.web.api_docs (Scalar, no CDN).
         docs_url=None,
         redoc_url=None,
     )

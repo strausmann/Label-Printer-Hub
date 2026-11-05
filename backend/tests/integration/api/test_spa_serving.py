@@ -217,8 +217,16 @@ async def test_docs_has_its_own_csp_not_the_spa_one(spa: AsyncClient) -> None:
     assert csp != CSP
     assert "'wasm-unsafe-eval'" not in csp
     assert resp.headers["x-content-type-options"] == "nosniff"
+
+
+async def test_redoc_behaves_like_any_unknown_address(
+    spa: AsyncClient, no_spa: AsyncClient
+) -> None:
+    # Not reserved any more: the web app answers it like /nothing-here, API-only mode 404s.
     redoc = await spa.get("/redoc", follow_redirects=False)
-    assert redoc.status_code == 308
+    other = await spa.get("/nothing-here", follow_redirects=False)
+    assert (redoc.status_code, redoc.text) == (other.status_code, other.text) == (200, INDEX_HTML)
+    assert (await no_spa.get("/redoc")).status_code == 404
 
 
 async def test_old_fragment_stream_gone(spa: AsyncClient, no_spa: AsyncClient) -> None:

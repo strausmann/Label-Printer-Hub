@@ -136,7 +136,7 @@ test.describe.serial("scan", () => {
     });
     expect(state.scope).toBe(`${MAIN.url}/`);
     expect(state.urls).toContain("/index.html");
-    expect(state.urls.filter((u) => /^\/(api|docs|openapi|redoc)/.test(u))).toEqual([]);
+    expect(state.urls.filter((u) => /^\/(api|docs|openapi)/.test(u))).toEqual([]);
   });
 
   test("@qr without HTTPS the scan screen says so and offers a photo", async ({ browser }) => {

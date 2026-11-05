@@ -23,7 +23,6 @@ OpenAPI 3.1 is the **canonical API contract**. The contract surfaces in three fo
 |---|---|---|
 | `/openapi.json` | Raw OpenAPI 3.1 spec, JSON | Tooling (codegen, contract tests, Postman, etc.) |
 | `/docs` | Interactive API reference (Scalar since the amendment below; originally Swagger UI) | Developers and integrators |
-| `/redoc` | Retired by the amendment below: permanent redirect to `/docs` | Old links |
 
 The Go frontend client is **generated from `/openapi.json` using [`oapi-codegen`](https://github.com/oapi-codegen/oapi-codegen)** at frontend build time. Hand-written backend clients are not allowed — schema drift must not be possible.
 
@@ -101,8 +100,7 @@ isolated networks and shows a different look than our other projects. `/docs` no
 spec with [Scalar](https://github.com/scalar/scalar) (`@scalar/api-reference`, MIT), served by the
 hub itself: the frontend build copies the pinned standalone bundle into `dist/scalar/`, the hub
 serves it at `/docs/scalar.js`, and the page runs under its own strict Content Security Policy
-(`'self'` for scripts and connections; inline styles only, because Scalar injects style elements at runtime). `/redoc` answers `308` with
-`Location: /docs`; `/openapi.json` and the pinned OpenAPI version (`3.1.0`) are unchanged.
+(`'self'` for scripts and connections; inline styles only, because Scalar injects style elements at runtime). `/openapi.json` and the pinned OpenAPI version (`3.1.0`) are unchanged.
 `info.version` is the running release (`HUB_VERSION`), not the package placeholder.
 
 ## Future enhancements (separate ADRs if pursued)

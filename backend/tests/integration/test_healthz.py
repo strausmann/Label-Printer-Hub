@@ -82,11 +82,10 @@ class TestAppMetadata:
         title_lower = data["info"]["title"].lower()
         assert "label" in title_lower and "printer" in title_lower and "hub" in title_lower
 
-    def test_redoc_redirects_to_docs(self, client: TestClient) -> None:
+    def test_redoc_is_gone(self, client: TestClient) -> None:
         # /docs itself (Scalar) is covered in tests/integration/api/test_api_docs.py.
-        response = client.get("/redoc", follow_redirects=False)
-        assert response.status_code == 308
-        assert response.headers["location"] == "/docs"
+        # API-only: /redoc behaves like any other unknown address.
+        assert client.get("/redoc", follow_redirects=False).status_code == 404
 
 
 class TestHealthzModel:

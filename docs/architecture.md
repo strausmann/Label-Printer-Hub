@@ -114,7 +114,6 @@ The backend's OpenAPI 3.1 spec is canonical:
 |---|---|
 | `GET /openapi.json` | Tooling (codegen, Postman, contract tests) |
 | `GET /docs` | Interactive API reference (Scalar, served by the hub, no CDN) |
-| `GET /redoc` | Permanent redirect (308) to `/docs` |
 
 The web UI's API types are generated from the backend's OpenAPI document (`pnpm gen:api`), and CI fails when the generated client no longer matches the contract.
 

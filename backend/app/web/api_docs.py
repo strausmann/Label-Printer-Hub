@@ -6,7 +6,7 @@ the Scalar standalone bundle (``@scalar/api-reference``, MIT) from the hub itsel
 
 The bundle is copied into the web app's build output (``<web_dist_dir>/scalar/``) by
 the frontend build, so the single image ships it and the pinned npm version is the one
-Renovate keeps current. ``/redoc`` is retired and redirects to ``/docs``.
+Renovate keeps current.
 
 Content Security Policy for this page: scripts, connections, images and fonts come from
 the hub only, and the page declares no inline script (the Scalar configuration lives in
@@ -25,7 +25,7 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ def render_docs_page(openapi_url: str) -> str:
 
 
 def mount_api_docs(app: FastAPI, dist_dir: Path) -> None:
-    """Register ``/docs``, ``/docs/scalar.js`` and the ``/redoc`` redirect.
+    """Register ``/docs``, and ``/docs/scalar.js``.
 
     Call before ``mount_spa`` so the SPA catch-all never sees these paths.
     """
@@ -105,7 +105,3 @@ def mount_api_docs(app: FastAPI, dist_dir: Path) -> None:
         return FileResponse(
             bundle, media_type="text/javascript", headers={"Cache-Control": "no-cache"}
         )
-
-    @app.get("/redoc", include_in_schema=False)
-    async def redoc_redirect() -> Response:
-        return RedirectResponse("/docs", status_code=308)

@@ -191,7 +191,7 @@ All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` mode
 - [Install as PWA](https://github.com/strausmann/label-printer-hub/wiki/Install-as-PWA) (TBD)
 - [Troubleshooting](https://github.com/strausmann/label-printer-hub/wiki/Troubleshooting) (TBD)
 
-**Live API reference** (when running): `/openapi.json` and `/docs` (interactive reference, Scalar, served by the hub itself; `/redoc` redirects there) — see [ADR 0011](docs/decisions/0011-openapi-as-api-contract.md).
+**Live API reference** (when running): `/openapi.json` and `/docs` (interactive reference, Scalar, served by the hub itself) — see [ADR 0011](docs/decisions/0011-openapi-as-api-contract.md).
 
 ## Contributing
 

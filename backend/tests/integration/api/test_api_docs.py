@@ -2,7 +2,7 @@
 
 Covers issue #171: the page shows the running release instead of the package
 placeholder, uses the "Label Printer Hub API" title, loads Scalar from the hub
-(no CDN) under a strict CSP, and ``/redoc`` is retired in favour of ``/docs``.
+(no CDN) under a strict CSP.
 """
 
 from __future__ import annotations
@@ -102,7 +102,6 @@ async def test_openapi_title_and_description_have_no_backend_wording(docs: Async
     assert "Scalar" in info["description"]
     assert "/openapi.json" in info["description"]
     assert "swagger" not in info["description"].lower()
-    assert "redoc" not in info["description"].lower()
 
 
 async def test_docs_page_is_scalar_from_the_hub(docs: AsyncClient) -> None:
@@ -115,7 +114,6 @@ async def test_docs_page_is_scalar_from_the_hub(docs: AsyncClient) -> None:
     assert 'data-url="/openapi.json"' in html
     assert 'src="/docs/scalar.js"' in html
     assert "swagger" not in html.lower()
-    assert "redoc" not in html.lower()
 
 
 async def test_docs_page_has_no_external_urls_and_no_inline_script(docs: AsyncClient) -> None:
@@ -176,10 +174,11 @@ async def test_docs_without_bundle_is_an_explicit_503_not_a_broken_page(
     assert (await docs_no_bundle.get("/openapi.json")).status_code == 200
 
 
-async def test_redoc_redirects_permanently_to_docs(docs: AsyncClient) -> None:
+async def test_redoc_is_no_longer_a_docs_page(docs: AsyncClient) -> None:
+    # Not reserved any more: it behaves like any unknown address (here: the web app shell).
     resp = await docs.get("/redoc", follow_redirects=False)
-    assert resp.status_code == 308
-    assert resp.headers["location"] == "/docs"
+    assert resp.status_code == 200
+    assert resp.text == INDEX_HTML
 
 
 async def test_openapi_json_still_served_at_its_path(docs: AsyncClient) -> None:

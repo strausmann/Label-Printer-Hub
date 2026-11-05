@@ -55,7 +55,7 @@ describe.skipIf(!required && !existsSync(dist))("built output", () => {
     // The only route is the navigation fallback, and it skips the API, docs and OpenAPI document.
     expect(sw.match(/registerRoute\(/g)).toHaveLength(1);
     expect(sw).toContain('createHandlerBoundToURL("/index.html")');
-    for (const denied of ["/^\\/api\\//", "/^\\/docs(\\/|$)/", "/^\\/openapi\\.json$/", "/^\\/redoc(\\/|$)/"]) expect(sw).toContain(denied);
+    for (const denied of ["/^\\/api\\//", "/^\\/docs(\\/|$)/", "/^\\/openapi\\.json$/"]) expect(sw).toContain(denied);
     // Nothing under /api is precached either.
     expect(sw).not.toMatch(/["']\/?api\//);
   });

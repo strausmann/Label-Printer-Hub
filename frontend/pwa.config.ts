@@ -20,7 +20,7 @@ export const pwaOptions: Partial<VitePWAOptions> = {
     // The API reference viewer (/docs) is a 5 MB developer tool, not part of the installable app.
     globIgnores: ["scalar/**"],
     navigateFallback: "/index.html",
-    navigateFallbackDenylist: [/^\/api\//, /^\/docs(\/|$)/, /^\/openapi\.json$/, /^\/redoc(\/|$)/],
+    navigateFallbackDenylist: [/^\/api\//, /^\/docs(\/|$)/, /^\/openapi\.json$/],
     runtimeCaching: [],
     cleanupOutdatedCaches: true,
     clientsClaim: true,

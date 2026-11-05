@@ -31,7 +31,7 @@ IMMUTABLE = "public, max-age=31536000, immutable"
 NO_CACHE = "no-cache"
 
 # Paths owned by the API; never answered with the app shell.
-_RESERVED_PREFIXES = ("api/", "docs", "redoc", "openapi.json")
+_RESERVED_PREFIXES = ("api/", "docs", "openapi.json")
 
 # react-aria injects two fixed `<style>` elements at runtime: a touch-action rule
 # (id react-aria-pressable-style) and, while a modal is open on iOS, an overscroll-behavior
