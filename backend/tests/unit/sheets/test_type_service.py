@@ -122,6 +122,19 @@ async def test_create_rejects_bad_key_prefix_and_geometry(session: AsyncSession)
     assert count == 0
 
 
+async def test_page_dimensions_must_match_the_page_size(session: AsyncSession) -> None:
+    wrong = replace(G_4X12, page_w=20000)
+    with pytest.raises(InvalidGeometryError) as exc:
+        await ts.create_type(session, fields(), wrong, actor="tester")
+    assert exc.value.detail["field"] == "page_w"
+    t, _ = await ts.create_type(session, fields(), G_4X12, actor="tester")
+    with pytest.raises(InvalidGeometryError):
+        await ts.add_version(
+            session, t.key, replace(G_5X12, page_h=29000), actor="t", change_note="x"
+        )
+    assert await _version_count(session) == 1
+
+
 async def test_get_type_not_found_and_get_version(session: AsyncSession) -> None:
     with pytest.raises(SheetTypeNotFoundError):
         await ts.get_type(session, "nope")

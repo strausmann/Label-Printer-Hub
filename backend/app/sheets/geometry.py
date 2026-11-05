@@ -64,6 +64,13 @@ def normalise(g: Geometry) -> Geometry:
     return replace(g, page_w=page_w, page_h=page_h, corner_radius=radius)
 
 
+def normalise_shape(g: Geometry) -> Geometry:
+    """Drop the radius of a round label but keep the submitted page size, so that a request
+    whose ``page_w``/``page_h`` contradict ``page_size`` still fails validation."""
+    radius = None if g.shape == "round" else g.corner_radius
+    return replace(g, corner_radius=radius)
+
+
 def cell_count(g: Geometry) -> int:
     return g.cols * g.rows
 

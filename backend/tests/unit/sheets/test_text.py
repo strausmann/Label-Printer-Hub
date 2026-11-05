@@ -108,3 +108,10 @@ def test_long_whitespace_runs_are_linear_and_over_long_input_is_refused_early() 
     with pytest.raises(ValueError, match="120"):
         sanitise_text("x" * 481, max_len=120, multiline=True)
     assert sanitise_text("  " + "x" * 118 + "\n\n\n", max_len=120) == "x" * 118
+
+
+def test_log_value_removes_line_breaks() -> None:
+    from app.sheets.text import log_value
+
+    assert log_value("a\r\nb\nc\rd") == "abcd"
+    assert log_value(42) == "42"

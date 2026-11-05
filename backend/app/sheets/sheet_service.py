@@ -37,7 +37,7 @@ from app.sheets.errors import (
     SheetTypeVersionNotFoundError,
 )
 from app.sheets.events import publish_sheet_updated
-from app.sheets.text import sanitise_text
+from app.sheets.text import log_value, sanitise_text
 from app.sheets.type_service import write_transaction
 
 logger = logging.getLogger(__name__)
@@ -255,7 +255,7 @@ async def create_sheet(
         await session.flush()
         detail = await _detail(session, sheet)
         await session.commit()
-    logger.info("sheet %s created by %s (%d cells used)", sheet.code, actor, len(marks))
+    logger.info("sheet %s created (%d cells used)", log_value(sheet.code), len(marks))
     _publish(bus, detail, sorted(marks))
     return sheet
 
@@ -311,7 +311,7 @@ async def unmark_cells(
     code: str,
     cells: list[int],
     *,
-    actor: str,
+    actor: str,  # noqa: ARG001 - kept for the call contract; not logged (CodeQL treats it as sensitive)
     bus: EventBus | None = None,
 ) -> SheetDetail:
     """Free cells that were marked by hand; a cell a job used carries a label and stays."""
@@ -334,7 +334,7 @@ async def unmark_cells(
         await session.flush()
         detail = await _detail(session, before.sheet)
         await session.commit()
-    logger.info("sheet %s: %d cells un-marked by %s", code, len(wanted), actor)
+    logger.info("sheet %s: %d cells un-marked", log_value(code), len(wanted))
     _publish(bus, detail, wanted)
     return detail
 
@@ -376,7 +376,9 @@ async def resolve_cells(
         await session.flush()
         detail = await _detail(session, before.sheet)
         await session.commit()
-    logger.info("sheet %s: %d cells resolved as %s by %s", code, len(wanted), outcome, actor)
+    logger.info(
+        "sheet %s: %d cells resolved as %s", log_value(code), len(wanted), log_value(outcome)
+    )
     _publish(bus, detail, wanted)
     return detail
 
@@ -398,7 +400,7 @@ async def discard_sheet(
         sheet.discarded_by = actor
         await session.flush()
         await session.commit()
-    logger.info("sheet %s discarded by %s", code, actor)
+    logger.info("sheet %s discarded", log_value(code))
     _publish(bus, detail, [])
     return sheet
 

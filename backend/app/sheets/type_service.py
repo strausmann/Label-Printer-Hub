@@ -30,10 +30,16 @@ from app.sheets.errors import (
     SheetTypeNotFoundError,
     TypeExistsError,
 )
-from app.sheets.geometry import Geometry, geometry_hash, normalise, validate_geometry
+from app.sheets.geometry import (
+    Geometry,
+    geometry_hash,
+    normalise,
+    normalise_shape,
+    validate_geometry,
+)
 from app.sheets.locking import acquire_sheet_write_lock
 from app.sheets.naming import KEY_PATTERN, PREFIX_PATTERN, default_allow_qr
-from app.sheets.text import check_http_url, sanitise_text
+from app.sheets.text import check_http_url, log_value, sanitise_text
 
 logger = logging.getLogger(__name__)
 
@@ -272,7 +278,7 @@ async def create_type_locked(
     if not KEY_PATTERN.match(fields.key):
         raise InvalidFieldError("key", "invalid format")
     _check_prefix(fields.prefix)
-    validate_geometry(normalise(geometry))
+    validate_geometry(normalise_shape(geometry))
     if await repo.get_by_key(session, fields.key) is not None:
         raise TypeExistsError()
     if await repo.get_by_prefix(session, fields.prefix) is not None:
@@ -312,7 +318,7 @@ async def create_type(
     if not KEY_PATTERN.match(fields.key):
         raise InvalidFieldError("key", "invalid format")
     _check_prefix(fields.prefix)
-    validate_geometry(normalise(geometry))
+    validate_geometry(normalise_shape(geometry))
     _clean_fields(fields)
     _clean_change_note(change_note)
     async with write_transaction(session):
@@ -324,7 +330,11 @@ async def create_type(
 
 
 async def patch_type(
-    session: AsyncSession, key: str, changes: dict[str, Any], *, actor: str
+    session: AsyncSession,
+    key: str,
+    changes: dict[str, Any],
+    *,
+    actor: str,  # noqa: ARG001 - actor kept for the call contract; not logged
 ) -> SheetType:
     for name, value in changes.items():
         if name not in _EDITABLE:
@@ -348,7 +358,7 @@ async def patch_type(
         if changed:
             t.updated_at = _now()
         await session.commit()
-    logger.info("sheet type %s edited by %s: %s", key, actor, sorted(changes))
+    logger.info("sheet type %s edited: %s", log_value(key), log_value(sorted(changes)))
     return t
 
 
@@ -359,7 +369,7 @@ async def add_version_locked(
     change_note = _clean_change_note(change_note) or ""
     if not change_note:
         raise InvalidFieldError("change_note", "must not be empty")
-    validate_geometry(normalise(geometry))
+    validate_geometry(normalise_shape(geometry))
     t = await get_type(session, key)
     latest = await current_version(session, t.id)
     if latest.geometry_hash == geometry_hash(geometry):
@@ -373,7 +383,7 @@ async def add_version_locked(
 async def add_version(
     session: AsyncSession, key: str, geometry: Geometry, *, actor: str, change_note: str
 ) -> SheetTypeVersion:
-    validate_geometry(normalise(geometry))
+    validate_geometry(normalise_shape(geometry))
     _clean_change_note(change_note)
     async with write_transaction(session):
         v = await add_version_locked(session, key, geometry, actor=actor, change_note=change_note)
@@ -381,7 +391,7 @@ async def add_version(
     return v
 
 
-async def _set_archived(session: AsyncSession, key: str, archived: bool, actor: str) -> SheetType:
+async def _set_archived(session: AsyncSession, key: str, archived: bool, actor: str) -> SheetType:  # noqa: ARG001
     async with write_transaction(session):
         t = await get_type(session, key)
         if archived and t.archived_at is None:
@@ -390,7 +400,7 @@ async def _set_archived(session: AsyncSession, key: str, archived: bool, actor: 
             t.archived_at = None
         t.updated_at = _now()
         await session.commit()
-    logger.info("sheet type %s %s by %s", key, "archived" if archived else "restored", actor)
+    logger.info("sheet type %s %s", log_value(key), "archived" if archived else "restored")
     return t
 
 
@@ -402,7 +412,7 @@ async def unarchive_type(session: AsyncSession, key: str, *, actor: str) -> Shee
     return await _set_archived(session, key, False, actor)
 
 
-async def delete_type(session: AsyncSession, key: str, *, actor: str) -> None:
+async def delete_type(session: AsyncSession, key: str, *, actor: str) -> None:  # noqa: ARG001
     async with write_transaction(session):
         t = await get_type(session, key)
         if t.origin != "custom":
@@ -413,7 +423,7 @@ async def delete_type(session: AsyncSession, key: str, *, actor: str) -> None:
         await session.execute(delete(SheetTypeVersion).where(col(SheetTypeVersion.type_id) == t.id))
         await session.delete(t)
         await session.commit()
-    logger.info("sheet type %s deleted by %s", key, actor)
+    logger.info("sheet type %s deleted", log_value(key))
 
 
 async def list_types(

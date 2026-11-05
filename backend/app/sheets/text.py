@@ -53,3 +53,8 @@ def check_http_url(value: str) -> str:
     if any(ch.isspace() or ord(ch) < 32 for ch in value):
         raise ValueError("control characters are not allowed")
     return value
+
+
+def log_value(value: object) -> str:
+    """Return ``value`` as one log-safe line: CR and LF removed so it cannot forge a log entry."""
+    return str(value).replace("\r", "").replace("\n", "")

@@ -86,6 +86,21 @@ async def test_seeder_leaves_edited_type_alone(
         assert (await ts.current_version(s, t.id)).version == 2  # only the admin's version
 
 
+async def test_seeder_treats_an_allow_qr_edit_as_a_local_edit(
+    async_session_factory: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await run_sheet_seed(async_session_factory)
+    async with async_session_factory() as s:
+        t = await ts.get_type(s, "herma-4098")
+        await ts.patch_type(s, t.key, {"allow_qr": not t.allow_qr}, actor="admin")
+    _patched(monkeypatch, "herma-4098")
+    report = await run_sheet_seed(async_session_factory)
+    assert not report.versions_added
+    async with async_session_factory() as s:
+        t = await ts.get_type(s, "herma-4098")
+        assert (await ts.current_version(s, t.id)).version == 1
+
+
 async def test_seeder_leaves_type_with_sheets_alone(
     async_session_factory: Factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

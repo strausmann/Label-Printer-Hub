@@ -108,6 +108,7 @@ def _row_edited(row: SheetType, doc: ExportDoc) -> bool:
         or row.product_codes != list(t.product_codes)
         or row.description != t.description
         or row.verified != t.verified
+        or row.allow_qr != t.allow_qr
         or row.source_name != t.source_name
         or row.source_url != t.source_url
         or row.notes != t.notes
