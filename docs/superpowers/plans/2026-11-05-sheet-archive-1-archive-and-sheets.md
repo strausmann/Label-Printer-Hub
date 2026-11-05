@@ -26,7 +26,7 @@
 - Page sizes `A4` (21000 × 29700) and `Letter` (21590 × 27940) only (OC-1).
 - Key pattern `^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$`; prefix pattern `^[A-Z][A-Z0-9]{1,9}$`; client source tag pattern `^[a-z][a-z0-9_-]{0,31}$`; purpose ≤ 120 characters, plain text.
 - `cols × rows ≤ 400` (OC-7); `round` requires `label_w == label_h`, corner radius ignored (OC-6).
-- Sheet code = `prefix` + `-` + counter zero-padded to at least 2 digits (`L4736-02`, `L4736-100`); counters never decrease, never reset, survive archive (spec 7.1).
+- Sheet code = `prefix` + `-` + counter zero-padded to four digits (`L4736-0002`; a counter above 9999 grows to five digits, `L4736-10000`) — changed 2026-11-05 (operator decision: four-digit codes); counters never decrease, never reset, survive archive (spec 7.1).
 - Scopes (OC-11, OC-37): reads `read` (no printer restriction applies to sheets/types); sheet-type writes `admin`; sheet writes `print`.
 - Errors use the existing shape `HTTPException(status, detail={"error_code", "error_message", "error_detail"})`; messages are fixed English text, never echo raw input beyond identifiers.
 - Every new route carries a `require_read` / `require_print` / `require_admin` dependency so `tests/unit/api/test_route_auth_coverage_guardrail.py` passes without allowlist entries; `tests/api/test_openapi_completeness.py::test_endpoint_count_in_range` upper bound is raised by the number of routes added.
@@ -294,7 +294,7 @@ Tests mirror this under `backend/tests/unit/sheets/` (new package: add `__init__
 - Produces (`events.py`): `SHEETS_CHANNEL = "sheets"`; `def publish_sheet_updated(bus: EventBus | None, *, code: str, free: int, total: int, changed: list[int], state: str) -> None` — event type `sheet.updated`; called by the service after commit (service functions accept `bus: EventBus | None = None`).
 
 - [ ] **Step 1: Write the failing tests**
-  - `test_create_manual_sheet_codes` — first sheet of prefix `L4736` → `L4736-01`; `peek_next_code` before → `L4736-01`, after → `L4736-02`; counter row 100 → code `L4736-100`.
+  - `test_create_manual_sheet_codes` — first sheet of prefix `L4736` → `L4736-0001`; `peek_next_code` before → `L4736-0001`, after → `L4736-0002`; counter row 100 → code `L4736-0100`.
   - `test_create_with_used_cells` — 17 hand-marked cells → `free == 31` on L4736REV.
   - `test_create_on_archived_type_refused` → `SheetTypeArchivedError`.
   - `test_create_old_version` — `version=1` after v2 exists → pinned to v1.
@@ -303,13 +303,13 @@ Tests mirror this under `backend/tests/unit/sheets/` (new package: add `__init__
   - `test_unmark_only_hand_marked` — a `used` cell with `marked_by_hand=False` → `CellsNotMarkedByHandError`.
   - `test_resolve_unconfirmed` — insert two `unconfirmed` rows (job id set) → `printed` keeps the row as `used` with purpose; `not_printed` deletes; resolving an unconfirmed `source="hub"` cell as `printed` sets `id_printed`; resolving a `used` cell → `409 cells_not_unconfirmed` (`CellsNotUnconfirmedError`).
   - `test_discard_busy_and_ok` — a `reserved` row → `SheetBusyError`; after removing it → discarded; `get_sheet` returns `state="discarded"`; `list_sheets()` hides it, `state="discarded"` shows it.
-  - `test_discarded_code_never_reissued_after_archive_cycle` — create `-01`, discard, archive type, unarchive, create → `-02` (acceptance 4).
+  - `test_discarded_code_never_reissued_after_archive_cycle` — create `-0001`, discard, archive type, unarchive, create → `-0002` (acceptance 4).
   - `test_list_order_fits_first` — sheets with free 3, 31, 9 and `free_at_least=9` → order 31, 9, 3.
   - `test_find_cells_by_ref` — two cells with `source="grocy", ref="42"` → both, newest first.
   - `test_purposes_sanitised` — hand-marked purpose with `\x07` and `\u202e` stored without them; `\u200d` kept; 121 characters → error.
   - `test_events_published_after_commit` — fake bus records `sheet.updated` with `changed=[...]`; a failed mark publishes nothing.
   - `db/test_sheet_concurrency.py` (temp-file SQLite, two sessions from one engine, `asyncio.gather`):
-    - `test_parallel_create_gives_distinct_codes` — 10 parallel `create_sheet` → 10 distinct codes `-01…-10`, no `database is locked`.
+    - `test_parallel_create_gives_distinct_codes` — 10 parallel `create_sheet` → 10 distinct codes `-0001…-0010`, no `database is locked`.
     - `test_parallel_mark_same_cell_one_conflict` — two parallel `mark_cells(cell 7)` → exactly one success, one `CellsTakenError([7])`.
 - [ ] **Step 2: Run, expect FAIL.**
 - [ ] **Step 3: Implement.** If the concurrency test shows `database is locked` despite the lock row, switch `acquire_sheet_write_lock` to an explicit `BEGIN IMMEDIATE` issued through the connection (keep the function name) and record the finding in `docs/learnings/code-review-patterns.md`.
@@ -346,7 +346,7 @@ Tests mirror this under `backend/tests/unit/sheets/` (new package: add `__init__
 
 **Interfaces:**
 - Consumes: Task 6.
-- Produces routes: `GET /api/sheets`, `GET /api/sheets/next-code?type=`, `GET /api/sheets/{code}`, `POST /api/sheets`, `POST /api/sheets/{code}/discard`, `POST /api/sheets/{code}/cells/mark`, `/unmark`, `/resolve`, `GET /api/sheet-cells?source=&ref=`. Path param `code` pattern `^[A-Z][A-Z0-9]{1,9}-[0-9]{2,}$`. Schemas: `SheetSummary(code, type_key, type_label, version, label_w, label_h, total, used, reserved, unconfirmed, free, state, last_used_at)`, `SheetRead(SheetSummary + id_placement, id_printed, note, geometry: GeometryMm, cells: list[CellRead], discarded_at)`, `CellRead(cell, state, source, purpose, ref, marked_by_hand, job_id, updated_at)`, `SheetCreate(type: str, version: int | None, id_placement: Literal["margin","manual"], used_cells: list[MarkedCellIn] = Field(max_length=400), note: str | None = Field(max_length=500))`, `MarkedCellIn(cell: int = Field(ge=1), purpose: str | None = Field(max_length=120))`, `CellNumbers(cells: list[int] = Field(min_length=1, max_length=400))`, `ResolveRequest(cells, outcome)`, `CellHitRead`, `NextCode(code: str, hint: Literal["probable"])`. `next-code` route is declared before `/{code}`.
+- Produces routes: `GET /api/sheets`, `GET /api/sheets/next-code?type=`, `GET /api/sheets/{code}`, `POST /api/sheets`, `POST /api/sheets/{code}/discard`, `POST /api/sheets/{code}/cells/mark`, `/unmark`, `/resolve`, `GET /api/sheet-cells?source=&ref=`. Path param `code` pattern `^[A-Z][A-Z0-9]{1,9}-[0-9]{4,}$`. Schemas: `SheetSummary(code, type_key, type_label, version, label_w, label_h, total, used, reserved, unconfirmed, free, state, last_used_at)`, `SheetRead(SheetSummary + id_placement, id_printed, note, geometry: GeometryMm, cells: list[CellRead], discarded_at)`, `CellRead(cell, state, source, purpose, ref, marked_by_hand, job_id, updated_at)`, `SheetCreate(type: str, version: int | None, id_placement: Literal["margin","manual"], used_cells: list[MarkedCellIn] = Field(max_length=400), note: str | None = Field(max_length=500))`, `MarkedCellIn(cell: int = Field(ge=1), purpose: str | None = Field(max_length=120))`, `CellNumbers(cells: list[int] = Field(min_length=1, max_length=400))`, `ResolveRequest(cells, outcome)`, `CellHitRead`, `NextCode(code: str, hint: Literal["probable"])`. `next-code` route is declared before `/{code}`.
 
 - [ ] **Step 1: Write the failing tests** — happy path per route; `test_scope_matrix` (writes: `read` → 403, `print` → 2xx); `test_other_client_sees_same_cells` (two different API keys: key A marks cell 5 with purpose `"Grocy · flour 1 kg"`-style purpose, key B `GET /api/sheets/{code}` sees it — acceptance 11 at the data level); `test_discarded_lookup_200_unknown_404` (acceptance 8, data side); `test_code_pattern_rejects_lowercase` (422); `test_purpose_over_120_rejected`; `test_sheet_updated_event_on_stream` (open `/api/v1/events`, mark a cell, receive `sheet.updated` on channel `sheets`).
 - [ ] **Step 2: Run, expect FAIL.**

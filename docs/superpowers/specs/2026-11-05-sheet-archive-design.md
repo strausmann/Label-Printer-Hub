@@ -80,7 +80,7 @@ Part A leaves room for Part B: the calibration record has a `method` field and r
 |---|---|
 | **Sheet type** | A kind of label sheet, e.g. Avery Zweckform L4731REV. Has a stable `key`, a short `prefix` for sheet IDs, and one or more versions. |
 | **Version** | Immutable geometry of a sheet type: page, label size, grid, pitch, margins, corner radius, shape. Editing geometry creates a new version. |
-| **Sheet** | One physical sheet with an ID such as `L4736-02`, pinned to one version of its type. |
+| **Sheet** | One physical sheet with an ID such as `L4736-0002`, pinned to one version of its type. |
 | **Cell** | One label position on a sheet, numbered row by row, 1…N (N = columns × rows). |
 | **Placement** | Which cells of which sheet a print uses. |
 | **Reservation** | A cell taken by a job that is queued or printing. |
@@ -99,7 +99,7 @@ These are taken as requirements. Section 24 lists where this document departs fr
 5. Calibration is a property of **printer and tray**, valid for every sheet type; a new type needs dimensions, not a new calibration.
 6. Sheet types carry label width/height, columns × rows, pitch across/down (gap = pitch − label), margin top/left, corner radius, shape, page size. Values from the vendor template, checked by calibration.
 7. The **sheet archive lives in the hub**: catalogue with full geometry, own types created and edited in the hub, **versions** (changing a type creates a new version; sheets in use keep their version and cell numbering), **export/import** of a type as a small JSON file.
-8. A sheet gets an ID on first use: type prefix plus counter (`L4736-03`); the ID is **never reused**.
+8. A sheet gets an ID on first use: type prefix plus counter (`L4736-0003`); the ID is **never reused**.
 9. Per sheet the hub stores the **set of used cells**, not a start cell; gaps work. Cells are numbered **row-major 1…N**.
 10. Each used cell records **what it was used for** (e.g. `Grocy · flour 1 kg`), so the sheet view shows what is stuck where and a reprint finds the old position.
 11. Picker: partly used sheets of the matching type, searchable by ID, those with enough free cells first; "new sheet" shows the ID it will get.
@@ -160,7 +160,7 @@ Validation on insert: `pitch_x ≥ label_w`, `pitch_y ≥ label_h`, `cols, rows 
 | Column | Notes |
 |---|---|
 | `id` | UUID, PK |
-| `code` | unique, e.g. `L4736-02`: prefix, hyphen, counter zero-padded to at least 2 digits (`L4736-100` after 99) |
+| `code` | unique, e.g. `L4736-0002`: prefix, hyphen, counter zero-padded to four digits (`L4736-0100`; above 9999 the number simply grows: `L4736-10000`). *Changed 2026-11-05 (operator decision): four-digit codes, replacing "at least 2 digits".* |
 | `type_id`, `type_version_id` | the version is pinned for life |
 | `state` | `active` or `discarded` (+ `discarded_at`, `discarded_by`) |
 | `id_placement` | `cell`, `margin`, `manual` |
@@ -276,7 +276,7 @@ The prefix is the first product code without vendor-specific suffixes (`L4731REV
 
 A sheet comes into existence in one of three ways, all through the same service:
 
-1. **New sheet in the print dialog** ("+ New L4736REV sheet (becomes L4736-04)"): created inside the print transaction (section 8). With ID placement `cell`, the first free cell holds the ID label in the same job; with `margin`, the ID is drawn in the margin of that same job.
+1. **New sheet in the print dialog** ("+ New L4736REV sheet (becomes L4736-0004)"): created inside the print transaction (section 8). With ID placement `cell`, the first free cell holds the ID label in the same job; with `margin`, the ID is drawn in the margin of that same job.
 2. **Add sheet** (mockup screen 3) without printing: type, version, cells already used (tapped on the grid, stored as `manual`, purpose "marked by hand" unless typed), ID placement.
    - `cell`: needs a printer and tray; a job printing only the ID label into the first free cell is queued at once. This is what makes "creating a sheet with option 1 prints the ID label into the first free cell" true.
    - `margin`: the ID is printed with the sheet's first job.
@@ -284,7 +284,7 @@ A sheet comes into existence in one of three ways, all through the same service:
    - `manual`: nothing printed.
 3. **API** (`POST /api/sheets`), same options.
 
-The ID shown before creation ("becomes L4736-04") comes from `GET /api/sheets/next-code?type=…`. It is a hint, not a reservation; under concurrency the actual ID may be higher, and the UI says so only if it happens (the response of the create call is authoritative).
+The ID shown before creation ("becomes L4736-0004") comes from `GET /api/sheets/next-code?type=…`. It is a hint, not a reservation; under concurrency the actual ID may be higher, and the UI says so only if it happens (the response of the create call is authoritative).
 
 ### 10.2 The sheet ID label and margin ID
 
@@ -298,7 +298,7 @@ The ID shown before creation ("becomes L4736-04") comes from `GET /api/sheets/ne
 - `GET /api/sheets/{code}` returns the sheet with type, version geometry, state, counts and all non-free cells with purpose and source. A discarded sheet returns `200` with `state=discarded`; an unknown code `404`.
 - SPA route `/sheet/$code` (the scanned URL) resolves the code and opens the sheet detail; a discarded sheet shows "Discarded on …, this ID is not used again".
 - Scan resolver `sheet` registered by the sheets module: matches the URL path or the short form. In the print dialog's sheet picker, a scan button opens the camera and selects the scanned sheet if its type matches, or explains why not (other type, discarded, full).
-- Reprint lookup: `GET /api/sheet-cells?source=grocy&ref=42` lists where an item was printed (sheet, cell, date). The print dialog shows it as a hint ("printed before on L4736-02, cell 5"). It never prints into a used cell.
+- Reprint lookup: `GET /api/sheet-cells?source=grocy&ref=42` lists where an item was printed (sheet, cell, date). The print dialog shows it as a hint ("printed before on L4736-0002, cell 5"). It never prints into a used cell.
 
 ## 11. IPP page-printer backend
 
@@ -326,7 +326,7 @@ The message format is small and fully specified; recorded, synthetic request/res
 
 Print-Job request (OC-19):
 
-- `document-format=application/pdf`, `job-name` = "Sheet L4736-02 · 9 labels" (no personal data), `requesting-user-name` = `label-printer-hub`.
+- `document-format=application/pdf`, `job-name` = "Sheet L4736-0002 · 9 labels" (no personal data), `requesting-user-name` = `label-printer-hub`.
 - Media: `media-col` with `media-size` (21000 × 29700 for A4, 21590 × 27940 for Letter, in hundredths of mm), `media-type=labels` and `media-source` (unless `auto`) when the printer lists `media-col` as supported. Otherwise the `media` keyword (`iso_a4_210x297mm`, `na_letter_8.5x11in`) alone, and the capabilities report `media_type_settable=false` (assumption **V-IPP-1**, to verify on the CP1525N).
 - Scaling: `print-scaling=none` when `print-scaling-supported` lists it; the PDF page is always exactly the media size, so a printer without the attribute has nothing to scale.
 - `print-color-mode=monochrome` when supported (labels and the calibration page are black only).
@@ -563,7 +563,7 @@ In the item view and the cart, the existing printer choice decides (#179 builds 
 - **Tape printer:** as today.
 - **Page printer:** the tape preview is replaced by the sheet section (mockup 2):
   - printer row with state dot + word and toner levels (per marker: name, level, low/empty as words); a stopped printer shows the alert from the mockup and the print button reads "Add to print queue";
-  - tray (default tray preselected) with its load hint shown below the preview ("Put L4736-02 into the manual tray, written side down, top edge first");
+  - tray (default tray preselected) with its load hint shown below the preview ("Put L4736-0002 into the manual tray, written side down, top edge first");
   - sheet type (default: the type last used on this printer in this browser, OC-36), sheet picker (combobox: type to search by code; sheets of the type that fit first, with free count and "fits 9" / "too small"; "+ New … sheet (becomes …)"; scan button);
   - fill: first free cells, or choose cells (tap cells in the preview);
   - capacity alert with the split choices (15);
@@ -674,7 +674,7 @@ Only one question would change what gets built; a default is chosen so the plan 
 | "A failed or cancelled job leaves them free" | also a third outcome, `unconfirmed`, when the printer had started the job | a page that may have come out cannot honestly be recorded as free; the clean case still frees the cells |
 | Seed "42 types" (seed comment) | 36 shipped | same issue comment: four types need a cross-check before going in; two more fail the geometry rules as researched (Operator question 1) |
 | "`GET /api/sheet-types/{key}@{version}`" | `/api/sheet-types/{key}/versions/{n}` | the issue said "roughly"; a path segment avoids `@` encoding issues in clients |
-| Scan payload "`sheet:L4731-02` or a hub URL" | hub URL, short form also accepted | phone cameras open the hub directly; both forms resolve |
+| Scan payload "`sheet:L4731-0002` or a hub URL" | hub URL, short form also accepted | phone cameras open the hub directly; both forms resolve |
 | Calibration comment of 22:56: test page on plain paper, "client prints" | printed by the hub onto a real sheet, gaps as reference | superseded by the 23:11 comment; the hub prints for its own printers |
 | Calibration "check per type" (wrong sheet dimensions detected) | Part B | needs the measured fit over the whole sheet; a manual reading cannot separate printer scale from a wrong pitch on one type |
 | Mockup 2: separate "Add to print queue" and "Print" buttons | one button; it reads "Add to print queue" when the printer is not ready | every print goes through the queue (ADR 0005); the two buttons would do the same |
