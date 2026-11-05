@@ -5,7 +5,7 @@ with the database (one query per table) and acts only where the database is unto
 
 - a missing key is inserted with ``origin="seed"``;
 - an existing type gets a new version only if every version of it came from the seeder
-  (``created_by == "seed"``), no sheet uses it and the seed geometry differs from the current
+  (``created_by == "system:seed"``), no sheet uses it and the seed geometry differs from the current
   version, so a local edit is never overwritten;
 - a seed whose prefix belongs to another type is skipped and logged.
 """
@@ -30,7 +30,7 @@ from app.sheets.geometry import geometry_hash
 logger = logging.getLogger(__name__)
 
 SEED_FILE = importlib.resources.files("app.seed") / "sheet_types.json"
-SEED_ACTOR = "seed"
+SEED_ACTOR = "system:seed"  # the "system:" prefix is reserved; API actors cannot carry it
 
 
 @dataclass

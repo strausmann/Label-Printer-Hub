@@ -8,7 +8,7 @@ from dataclasses import replace
 import pytest
 from app.models.sheet import Sheet, SheetType, SheetTypeVersion
 from app.seed import sheet_seed
-from app.seed.sheet_seed import load_seed, run_sheet_seed
+from app.seed.sheet_seed import SEED_ACTOR, load_seed, run_sheet_seed
 from app.sheets import type_service as ts
 from app.sheets.exchange import ExportDoc, geometry_from_doc
 from sqlalchemy import func, select
@@ -60,7 +60,7 @@ async def test_seeder_adds_version_for_untouched_seed_type(
     async with async_session_factory() as s:
         t = await ts.get_type(s, "herma-4098")
         v = await ts.current_version(s, t.id)
-        assert v.version == 2 and v.cols == 2 and v.created_by == "seed"
+        assert v.version == 2 and v.cols == 2 and v.created_by == SEED_ACTOR
     again = await run_sheet_seed(async_session_factory)
     assert not again.versions_added
 
@@ -99,6 +99,28 @@ async def test_seeder_treats_an_allow_qr_edit_as_a_local_edit(
     async with async_session_factory() as s:
         t = await ts.get_type(s, "herma-4098")
         assert (await ts.current_version(s, t.id)).version == 1
+
+
+async def test_seeder_does_not_mistake_a_user_named_seed_for_itself(
+    async_session_factory: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.api.routes.sheet_common import actor
+    from app.auth.dependencies import AuthContext
+
+    await run_sheet_seed(async_session_factory)
+    _, docs = load_seed()
+    doc = next(d for d in docs if d.type.key == "herma-4098")
+    edited = replace(geometry_from_doc(doc.version.geometry), margin_left=700)
+    who = actor(
+        AuthContext(
+            source="pangolin-sso", scope="print", api_key_id=None, user="seed", ip="192.0.2.1"
+        )
+    )
+    async with async_session_factory() as s:
+        await ts.add_version(s, "herma-4098", edited, actor=who, change_note="local fix")
+    _patched(monkeypatch, "herma-4098")
+    report = await run_sheet_seed(async_session_factory)
+    assert not report.versions_added
 
 
 async def test_seeder_leaves_type_with_sheets_alone(

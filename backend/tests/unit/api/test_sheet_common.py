@@ -31,3 +31,11 @@ def test_actor_is_the_key_id_without_a_user() -> None:
 
 def test_actor_falls_back_to_the_source() -> None:
     assert actor(_ctx(source="pangolin-bypass", scope="read")) == "pangolin-bypass"
+
+
+def test_a_user_cannot_pose_as_the_seeder() -> None:
+    from app.seed.sheet_seed import SEED_ACTOR
+
+    for name in (SEED_ACTOR, "system:anything"):
+        assert actor(_ctx(source="pangolin-sso", user=name)) == f"user:{name}"
+        assert actor(_ctx(source="pangolin-sso", user=name)) != SEED_ACTOR
