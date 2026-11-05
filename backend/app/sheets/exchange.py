@@ -66,6 +66,16 @@ class GeometryMm(_Strict):
     shape: Literal["rectangle", "round"]
 
 
+def check_http_url(value: str) -> str:
+    """Only http(s) URLs without control characters; shared by import and the type API."""
+    parsed = urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("only http and https URLs are allowed")
+    if any(ch.isspace() or ord(ch) < 32 for ch in value):
+        raise ValueError("control characters are not allowed")
+    return value
+
+
 class TypeDoc(_Strict):
     key: Annotated[str, Field(max_length=64, pattern=KEY_PATTERN.pattern)]
     prefix: Annotated[str, Field(max_length=10, pattern=PREFIX_PATTERN.pattern)]
@@ -83,14 +93,7 @@ class TypeDoc(_Strict):
     @field_validator("source_url")
     @classmethod
     def _http_only(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        parsed = urlparse(value)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            raise ValueError("only http and https URLs are allowed")
-        if any(ch.isspace() or ord(ch) < 32 for ch in value):
-            raise ValueError("control characters are not allowed")
-        return value
+        return None if value is None else check_http_url(value)
 
 
 class VersionDoc(_Strict):

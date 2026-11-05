@@ -23,6 +23,8 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.printer_backends.exceptions import (
@@ -56,6 +58,39 @@ def register_error_handlers(app: FastAPI) -> None:
             exc_class,
             _make_handler(http_status, problem_type),
         )
+    app.add_exception_handler(RequestValidationError, _validation_handler)
+
+
+_SHEET_TYPE_PREFIX = "/api/sheet-types"
+
+
+async def _validation_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Request validation errors of the sheet type API name field paths and nothing else.
+
+    FastAPI's default body repeats the offending input; for these routes the shape is the
+    API error shape instead. Other routes keep the default.
+    """
+    assert isinstance(exc, RequestValidationError)
+    if not request.url.path.startswith(_SHEET_TYPE_PREFIX):
+        return await request_validation_exception_handler(request, exc)
+    paths: list[str] = []
+    for err in exc.errors():
+        loc = [str(part) for part in err["loc"] if part != "body"]
+        if err["type"] == "extra_forbidden" and loc:
+            loc[-1] = "<unknown field>"  # a name the client chose is not echoed
+        path = ".".join(loc) or "<request>"
+        if path not in paths:
+            paths.append(path)
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": {
+                "error_code": "invalid_request",
+                "error_message": "Request validation failed.",
+                "error_detail": {"errors": paths[:20]},
+            }
+        },
+    )
 
 
 def _make_handler(
