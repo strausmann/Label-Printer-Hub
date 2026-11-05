@@ -139,3 +139,32 @@ async def test_notices_list_glabels() -> None:
         "Permission is hereby granted, free of charge",
     ):
         assert needle in text
+
+
+async def test_seeder_leaves_type_with_row_edit_alone(
+    async_session_factory: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A row edit makes no version, so geometry provenance alone would miss it."""
+    await run_sheet_seed(async_session_factory)
+    async with async_session_factory() as s:
+        await ts.patch_type(s, "herma-4098", {"verified": True}, actor="admin")
+    _patched(monkeypatch, "herma-4098")
+    report = await run_sheet_seed(async_session_factory)
+    assert not report.versions_added
+    async with async_session_factory() as s:
+        t = await ts.get_type(s, "herma-4098")
+        assert (await ts.current_version(s, t.id)).version == 1
+        assert t.verified is True
+
+
+async def test_seeder_leaves_type_that_is_not_seed_origin_alone(
+    async_session_factory: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await run_sheet_seed(async_session_factory)
+    async with async_session_factory() as s:
+        t = await ts.get_type(s, "herma-4098")
+        t.origin = "custom"
+        await s.commit()
+    _patched(monkeypatch, "herma-4098")
+    report = await run_sheet_seed(async_session_factory)
+    assert not report.versions_added

@@ -99,6 +99,21 @@ async def run_sheet_seed(session_factory: async_sessionmaker[AsyncSession]) -> S
     return report
 
 
+def _row_edited(row: SheetType, doc: ExportDoc) -> bool:
+    """Row edits make no version, so they are compared with the seed values (spec 9.5)."""
+    t = doc.type
+    return (
+        row.prefix != t.prefix
+        or row.vendor != t.vendor
+        or row.product_codes != list(t.product_codes)
+        or row.description != t.description
+        or row.verified != t.verified
+        or row.source_name != t.source_name
+        or row.source_url != t.source_url
+        or row.notes != t.notes
+    )
+
+
 async def _seed_one(
     session: AsyncSession, doc: ExportDoc, known: _Known, report: SeedReport
 ) -> None:
@@ -131,7 +146,12 @@ async def _seed_one(
     current = known.current.get(existing.id)
     if current is None or current.geometry_hash == geometry_hash(geometry):
         return
-    if existing.id in known.foreign_versions or existing.id in known.with_sheets:
+    if (
+        existing.id in known.foreign_versions
+        or existing.id in known.with_sheets
+        or existing.origin != "seed"
+        or _row_edited(existing, doc)
+    ):
         logger.info("seed type %s left alone: edited locally or in use", key)
         return
     await ts.add_version_locked(
