@@ -32,7 +32,8 @@
     "Zlib"
   ],
   "allow-dependencies-licenses": [
-    "pkg:npm/json-schema@0.4.0"
+    "pkg:npm/json-schema@0.4.0",
+    "pkg:githubactions/actions/cache@4.%2A.%2A"
   ],
   "fail-on-scopes": [
     "runtime",
