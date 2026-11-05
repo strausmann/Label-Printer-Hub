@@ -56,6 +56,8 @@ def test_gate_refuses_dependencies_with_an_undetectable_licence() -> None:
     # Untrusted action output reaches the shell through env only, never inline.
     assert "${{" not in refuse["run"]
     assert "unlicensed" in refuse["run"]
+    # CI actions have no licence in the graph and are not redistributed: not a defect.
+    assert 'select(.ecosystem != "actions")' in refuse["run"]
 
 
 def test_backend_check_only_runs_when_dependencies_or_the_policy_change() -> None:
