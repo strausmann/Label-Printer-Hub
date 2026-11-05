@@ -1,0 +1,1533 @@
+{
+  "seed_revision": 1,
+  "types": [
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-7160",
+        "prefix": "A7160",
+        "vendor": "Avery",
+        "product_codes": [
+          "7160",
+          "L7160",
+          "J8160"
+        ],
+        "description": "Mailing labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-iso-templates.xml#L115",
+        "notes": "Left and right remaining margins differ (7.48 / 6.45 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 63.99,
+          "label_h": 38.1,
+          "cols": 3,
+          "rows": 7,
+          "pitch_x": 66.04,
+          "pitch_y": 38.1,
+          "margin_top": 15.49,
+          "margin_left": 7.48,
+          "corner_radius": 1.76,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-7162",
+        "prefix": "A7162",
+        "vendor": "Avery",
+        "product_codes": [
+          "7162",
+          "L7162"
+        ],
+        "description": "Mailing labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-iso-templates.xml#L147",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 99.1,
+          "label_h": 33.9,
+          "cols": 2,
+          "rows": 8,
+          "pitch_x": 102.48,
+          "pitch_y": 33.9,
+          "margin_top": 12.98,
+          "margin_left": 3.99,
+          "corner_radius": 1.76,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-7164",
+        "prefix": "A7164",
+        "vendor": "Avery",
+        "product_codes": [
+          "7164",
+          "L7164",
+          "J8164"
+        ],
+        "description": "Address labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-iso-templates.xml#L177",
+        "notes": "Top and bottom remaining margins differ (3.53 / 5.55 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 63.5,
+          "label_h": 71.98,
+          "cols": 3,
+          "rows": 4,
+          "pitch_x": 66.0,
+          "pitch_y": 71.98,
+          "margin_top": 3.53,
+          "margin_left": 7.35,
+          "corner_radius": 3.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-7165",
+        "prefix": "A7165",
+        "vendor": "Avery",
+        "product_codes": [
+          "7165",
+          "L7165",
+          "J8165"
+        ],
+        "description": "Address labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-iso-templates.xml#L193",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 99.06,
+          "label_h": 67.73,
+          "cols": 2,
+          "rows": 4,
+          "pitch_x": 101.64,
+          "pitch_y": 67.73,
+          "margin_top": 13.04,
+          "margin_left": 4.67,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-8651",
+        "prefix": "A8651",
+        "vendor": "Avery",
+        "product_codes": [
+          "8651",
+          "L8651",
+          "J8651",
+          "J8551",
+          "L7651",
+          "L7551"
+        ],
+        "description": "Mini address labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-iso-templates.xml#L327",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 38.1,
+          "label_h": 21.2,
+          "cols": 5,
+          "rows": 13,
+          "pitch_x": 40.6,
+          "pitch_y": 21.2,
+          "margin_top": 10.9,
+          "margin_left": 4.7,
+          "corner_radius": 1.76,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-l4732",
+        "prefix": "L4732",
+        "vendor": "Avery",
+        "product_codes": [
+          "L4732"
+        ],
+        "description": "Mini labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-iso-templates.xml#L31",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 35.6,
+          "label_h": 16.9,
+          "cols": 5,
+          "rows": 16,
+          "pitch_x": 38.1,
+          "pitch_y": 16.9,
+          "margin_top": 13.0,
+          "margin_left": 11.0,
+          "corner_radius": 1.5,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-3474",
+        "prefix": "A3474",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "3474"
+        ],
+        "description": "Address labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/zweckform-iso-templates.xml#L153",
+        "notes": "Top and bottom remaining margins differ (0.00 / 1.00 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 70.0,
+          "label_h": 37.0,
+          "cols": 3,
+          "rows": 8,
+          "pitch_x": 70.0,
+          "pitch_y": 37.0,
+          "margin_top": 0.0,
+          "margin_left": 0.0,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-3481",
+        "prefix": "A3481",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "3481"
+        ],
+        "description": "Multipurpose labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/zweckform-iso-templates.xml#L49",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 70.0,
+          "label_h": 41.0,
+          "cols": 3,
+          "rows": 7,
+          "pitch_x": 70.0,
+          "pitch_y": 41.0,
+          "margin_top": 5.0,
+          "margin_left": 0.0,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-3669",
+        "prefix": "A3669",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "3669"
+        ],
+        "description": "Rectangular labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/zweckform-iso-templates.xml#L96",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 70.0,
+          "label_h": 50.8,
+          "cols": 3,
+          "rows": 5,
+          "pitch_x": 70.0,
+          "pitch_y": 50.8,
+          "margin_top": 21.52,
+          "margin_left": 0.0,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-4760",
+        "prefix": "A4760",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "4760"
+        ],
+        "description": "Lever arch file labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/zweckform-iso-templates.xml#L13",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 192.0,
+          "label_h": 38.0,
+          "cols": 1,
+          "rows": 7,
+          "pitch_x": 192.0,
+          "pitch_y": 38.0,
+          "margin_top": 15.43,
+          "margin_left": 9.0,
+          "corner_radius": 2.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-4761",
+        "prefix": "A4761",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "4761"
+        ],
+        "description": "Lever arch file labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/zweckform-iso-templates.xml#L25",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 192.0,
+          "label_h": 61.0,
+          "cols": 1,
+          "rows": 4,
+          "pitch_x": 192.0,
+          "pitch_y": 61.0,
+          "margin_top": 26.46,
+          "margin_left": 8.82,
+          "corner_radius": 1.76,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-4780",
+        "prefix": "A4780",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "4780"
+        ],
+        "description": "Multipurpose labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/zweckform-iso-templates.xml#L142",
+        "notes": "Top and bottom remaining margins differ (19.01 / 23.99 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 48.5,
+          "label_h": 25.4,
+          "cols": 4,
+          "rows": 10,
+          "pitch_x": 48.5,
+          "pitch_y": 25.4,
+          "margin_top": 19.01,
+          "margin_left": 8.11,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-6021",
+        "prefix": "A6021",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "6021"
+        ],
+        "description": "Multipurpose labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/zweckform-iso-templates.xml#L222",
+        "notes": "Left and right remaining margins differ (8.50 / 10.60 mm). Top and bottom remaining margins differ (14.00 / 12.60 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 46.0,
+          "label_h": 16.9,
+          "cols": 4,
+          "rows": 16,
+          "pitch_x": 48.3,
+          "pitch_y": 16.9,
+          "margin_top": 14.0,
+          "margin_left": 8.5,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-l4731rev",
+        "prefix": "L4731",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "L4731REV-25",
+          "L4731REV-10",
+          "L4731REV-65",
+          "L4731"
+        ],
+        "description": "Mini labels, removable",
+        "allow_qr": false,
+        "verified": false,
+        "source_name": "Labelplanet LP189/25; MR-Label MR111",
+        "source_url": "https://labelplanet.co.uk/label-templates-for-rounded-rectangle-labels/label-templates-189-per-sheet-lp189-25/",
+        "notes": "Vendor page not reachable; values agree between two third-party sources for this size (Labelplanet LP189/25, MR-Label MR111, listed there as the L4731 size; second source: http://mr-label.com/articles/3884). Corner radius 1.47 mm from MR-Label MR111, rounded to 1.5. No vertical gap (pitch 10 = label height). Material: removable."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 25.4,
+          "label_h": 10.0,
+          "cols": 7,
+          "rows": 27,
+          "pitch_x": 27.9,
+          "pitch_y": 10.0,
+          "margin_top": 13.5,
+          "margin_left": 8.6,
+          "corner_radius": 1.5,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-l4736rev",
+        "prefix": "L4736",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "L4736REV-25",
+          "L4736REV-10",
+          "L4736REV-65",
+          "L4736REV-100",
+          "L4736"
+        ],
+        "description": "Mini labels, removable",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "Labelplanet LP48/45",
+        "source_url": "https://labelplanet.co.uk/label-templates-for-rounded-rectangle-labels/label-templates-48-per-sheet-lp48-45",
+        "notes": "Vendor page not reachable; values from Labelplanet LP48/45 only. Corner radius unknown (comparable templates range from 2.0 to 4.25 mm); measure. Commercial variation: an alternative layout of 45.5 x 21.1, top 21.9, side 9.8, pitch 48.3 x 21.1 is also listed. Material: removable."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 45.7,
+          "label_h": 21.2,
+          "cols": 4,
+          "rows": 12,
+          "pitch_x": 48.2,
+          "pitch_y": 21.2,
+          "margin_top": 21.3,
+          "margin_left": 9.85,
+          "corner_radius": null,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "endisch-6500040x",
+        "prefix": "E6500040X",
+        "vendor": "Endisch",
+        "product_codes": [
+          "6500040x"
+        ],
+        "description": "Round labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/endisch-templates.xml#L36",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 40.0,
+          "label_h": 40.0,
+          "cols": 4,
+          "rows": 6,
+          "pitch_x": 46.0,
+          "pitch_y": 46.0,
+          "margin_top": 13.5,
+          "margin_left": 16.0,
+          "corner_radius": null,
+          "shape": "round",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "endisch-6500060x",
+        "prefix": "E6500060X",
+        "vendor": "Endisch",
+        "product_codes": [
+          "6500060x"
+        ],
+        "description": "Round labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/endisch-templates.xml#L52",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 60.0,
+          "label_h": 60.0,
+          "cols": 3,
+          "rows": 4,
+          "pitch_x": 67.0,
+          "pitch_y": 67.0,
+          "margin_top": 18.0,
+          "margin_left": 8.0,
+          "corner_radius": null,
+          "shape": "round",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "herma-10001",
+        "prefix": "H10001",
+        "vendor": "Herma",
+        "product_codes": [
+          "10001"
+        ],
+        "description": "Rectangular labels",
+        "allow_qr": false,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L445",
+        "notes": "Left and right remaining margins differ (8.00 / 7.40 mm). Top and bottom remaining margins differ (14.40 / 12.60 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 25.4,
+          "label_h": 10.0,
+          "cols": 7,
+          "rows": 27,
+          "pitch_x": 28.2,
+          "pitch_y": 10.0,
+          "margin_top": 14.4,
+          "margin_left": 8.0,
+          "corner_radius": 3.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "herma-4097",
+        "prefix": "H4097",
+        "vendor": "Herma",
+        "product_codes": [
+          "4097",
+          "4221",
+          "4232",
+          "4235",
+          "4346",
+          "4366",
+          "4367",
+          "4368",
+          "4369",
+          "8864",
+          "8940",
+          "8965",
+          "9531",
+          "10004"
+        ],
+        "description": "Rectangular labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L305",
+        "notes": "Left and right remaining margins differ (10.00 / 8.12 mm). Top and bottom remaining margins differ (22.00 / 20.60 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 45.72,
+          "label_h": 21.2,
+          "cols": 4,
+          "rows": 12,
+          "pitch_x": 48.72,
+          "pitch_y": 21.2,
+          "margin_top": 22.0,
+          "margin_left": 10.0,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "herma-4098",
+        "prefix": "H4098",
+        "vendor": "Herma",
+        "product_codes": [
+          "4098",
+          "4222",
+          "4233",
+          "4347",
+          "4418",
+          "4419",
+          "4864",
+          "5045",
+          "5140",
+          "5141",
+          "5142",
+          "5143",
+          "8865",
+          "8966",
+          "10006",
+          "10300"
+        ],
+        "description": "Rectangular labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L332",
+        "notes": "Left and right remaining margins differ (7.80 / 5.70 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 63.5,
+          "label_h": 29.6,
+          "cols": 3,
+          "rows": 9,
+          "pitch_x": 66.5,
+          "pitch_y": 29.6,
+          "margin_top": 15.5,
+          "margin_left": 7.8,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "herma-4103",
+        "prefix": "H4103",
+        "vendor": "Herma",
+        "product_codes": [
+          "4103",
+          "4113",
+          "4641b",
+          "4677",
+          "4904",
+          "5074",
+          "8632",
+          "8650",
+          "8680",
+          "8801",
+          "8838",
+          "8890",
+          "9600",
+          "9621",
+          "9661",
+          "10007",
+          "10301",
+          "10802"
+        ],
+        "description": "Rectangular labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L414",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 63.5,
+          "label_h": 38.1,
+          "cols": 3,
+          "rows": 7,
+          "pitch_x": 66.5,
+          "pitch_y": 38.1,
+          "margin_top": 15.5,
+          "margin_left": 6.75,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "herma-4283",
+        "prefix": "H4283",
+        "vendor": "Herma",
+        "product_codes": [
+          "4283",
+          "5090",
+          "5091"
+        ],
+        "description": "Arch file labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L18",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 192.0,
+          "label_h": 39.0,
+          "cols": 1,
+          "rows": 6,
+          "pitch_x": 192.0,
+          "pitch_y": 47.0,
+          "margin_top": 11.5,
+          "margin_left": 9.0,
+          "corner_radius": 1.76,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "herma-4293",
+        "prefix": "H4293",
+        "vendor": "Herma",
+        "product_codes": [
+          "4293",
+          "5092"
+        ],
+        "description": "Arch file labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L48",
+        "notes": "Top and bottom remaining margins differ (15.00 / 16.00 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 192.0,
+          "label_h": 38.0,
+          "cols": 1,
+          "rows": 7,
+          "pitch_x": 192.0,
+          "pitch_y": 38.0,
+          "margin_top": 15.0,
+          "margin_left": 9.0,
+          "corner_radius": 1.76,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "herma-4606",
+        "prefix": "H4606",
+        "vendor": "Herma",
+        "product_codes": [
+          "4606",
+          "4270"
+        ],
+        "description": "Multipurpose labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L100",
+        "notes": "Left and right remaining margins differ (9.50 / 10.50 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 38.0,
+          "label_h": 21.2,
+          "cols": 5,
+          "rows": 13,
+          "pitch_x": 38.0,
+          "pitch_y": 21.2,
+          "margin_top": 10.5,
+          "margin_left": 9.5,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "herma-4607",
+        "prefix": "H4607",
+        "vendor": "Herma",
+        "product_codes": [
+          "4607",
+          "4271"
+        ],
+        "description": "Multipurpose labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L114",
+        "notes": "Top and bottom remaining margins differ (14.00 / 12.60 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 48.3,
+          "label_h": 16.9,
+          "cols": 4,
+          "rows": 16,
+          "pitch_x": 48.3,
+          "pitch_y": 16.9,
+          "margin_top": 14.0,
+          "margin_left": 8.5,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "herma-4614",
+        "prefix": "H4614",
+        "vendor": "Herma",
+        "product_codes": [
+          "4614",
+          "4670",
+          "5053"
+        ],
+        "description": "Multipurpose labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L156",
+        "notes": "Left and right remaining margins differ (5.70 / 6.30 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 66.0,
+          "label_h": 33.8,
+          "cols": 3,
+          "rows": 8,
+          "pitch_x": 66.0,
+          "pitch_y": 33.8,
+          "margin_top": 13.0,
+          "margin_left": 5.7,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "herma-4625",
+        "prefix": "H4625",
+        "vendor": "Herma",
+        "product_codes": [
+          "4625",
+          "4674",
+          "5057"
+        ],
+        "description": "Mailing labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L184",
+        "notes": "Top and bottom remaining margins differ (0.00 / 0.90 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "label_w": 105.0,
+          "label_h": 42.3,
+          "cols": 2,
+          "rows": 7,
+          "pitch_x": 105.0,
+          "pitch_y": 42.3,
+          "margin_top": 0.0,
+          "margin_left": 0.0,
+          "corner_radius": 0.0,
+          "shape": "rectangle",
+          "page_w": 210.0,
+          "page_h": 297.0
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-5159",
+        "prefix": "A5159",
+        "vendor": "Avery",
+        "product_codes": [
+          "5159"
+        ],
+        "description": "Address labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-us-templates.xml#L92",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "Letter",
+          "label_w": 101.6,
+          "label_h": 38.1,
+          "cols": 2,
+          "rows": 7,
+          "pitch_x": 106.36,
+          "pitch_y": 38.1,
+          "margin_top": 6.35,
+          "margin_left": 3.97,
+          "corner_radius": 1.59,
+          "shape": "rectangle",
+          "page_w": 215.9,
+          "page_h": 279.4
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-5160",
+        "prefix": "A5160",
+        "vendor": "Avery",
+        "product_codes": [
+          "5160",
+          "5260",
+          "5510",
+          "5520",
+          "5560",
+          "5810",
+          "5920",
+          "5960",
+          "5970",
+          "5971",
+          "5972",
+          "5979",
+          "5980",
+          "6231",
+          "6233",
+          "6245",
+          "6460",
+          "6498",
+          "8160",
+          "8250",
+          "8460",
+          "8560",
+          "8620",
+          "8660",
+          "8810",
+          "8920",
+          "8930",
+          "15160",
+          "18160",
+          "18660",
+          "25160"
+        ],
+        "description": "Address labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-us-templates.xml#L105",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "Letter",
+          "label_w": 66.67,
+          "label_h": 25.4,
+          "cols": 3,
+          "rows": 10,
+          "pitch_x": 70.64,
+          "pitch_y": 25.4,
+          "margin_top": 12.7,
+          "margin_left": 3.97,
+          "corner_radius": 1.59,
+          "shape": "rectangle",
+          "page_w": 215.9,
+          "page_h": 279.4
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-5161",
+        "prefix": "A5161",
+        "vendor": "Avery",
+        "product_codes": [
+          "5161",
+          "5261",
+          "5961",
+          "8161",
+          "8461",
+          "18161"
+        ],
+        "description": "Address labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-us-templates.xml#L149",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "Letter",
+          "label_w": 101.6,
+          "label_h": 25.4,
+          "cols": 2,
+          "rows": 10,
+          "pitch_x": 106.36,
+          "pitch_y": 25.4,
+          "margin_top": 12.7,
+          "margin_left": 3.97,
+          "corner_radius": 1.59,
+          "shape": "rectangle",
+          "page_w": 215.9,
+          "page_h": 279.4
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-5162",
+        "prefix": "A5162",
+        "vendor": "Avery",
+        "product_codes": [
+          "5162",
+          "5262",
+          "5512",
+          "5522",
+          "5922",
+          "5962",
+          "8162",
+          "8252",
+          "8462",
+          "8662",
+          "8922",
+          "8932",
+          "15162",
+          "18162",
+          "18662"
+        ],
+        "description": "Address labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-us-templates.xml#L168",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "Letter",
+          "label_w": 101.6,
+          "label_h": 33.87,
+          "cols": 2,
+          "rows": 7,
+          "pitch_x": 106.36,
+          "pitch_y": 33.87,
+          "margin_top": 21.17,
+          "margin_left": 3.97,
+          "corner_radius": 1.59,
+          "shape": "rectangle",
+          "page_w": 215.9,
+          "page_h": 279.4
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-5163",
+        "prefix": "A5163",
+        "vendor": "Avery",
+        "product_codes": [
+          "5163",
+          "5263",
+          "5513",
+          "5523",
+          "5795",
+          "5923",
+          "5963",
+          "5978",
+          "8163",
+          "8253",
+          "8463",
+          "8663",
+          "8763",
+          "8923",
+          "15163",
+          "18163",
+          "18663"
+        ],
+        "description": "Shipping labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-us-templates.xml#L197",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "Letter",
+          "label_w": 101.6,
+          "label_h": 50.8,
+          "cols": 2,
+          "rows": 5,
+          "pitch_x": 106.36,
+          "pitch_y": 50.8,
+          "margin_top": 12.7,
+          "margin_left": 4.13,
+          "corner_radius": 3.17,
+          "shape": "rectangle",
+          "page_w": 215.9,
+          "page_h": 279.4
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-5164",
+        "prefix": "A5164",
+        "vendor": "Avery",
+        "product_codes": [
+          "5164",
+          "5264",
+          "5514",
+          "5524",
+          "6464",
+          "6499",
+          "8164",
+          "8254",
+          "8464"
+        ],
+        "description": "Shipping labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-us-templates.xml#L227",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "Letter",
+          "label_w": 101.6,
+          "label_h": 84.67,
+          "cols": 2,
+          "rows": 3,
+          "pitch_x": 106.36,
+          "pitch_y": 84.67,
+          "margin_top": 12.7,
+          "margin_left": 3.97,
+          "corner_radius": 3.17,
+          "shape": "rectangle",
+          "page_w": 215.9,
+          "page_h": 279.4
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-5167",
+        "prefix": "A5167",
+        "vendor": "Avery",
+        "product_codes": [
+          "5167",
+          "5267",
+          "5667",
+          "5927",
+          "6467",
+          "6504",
+          "8167",
+          "8567",
+          "8667",
+          "8927",
+          "15167",
+          "15267",
+          "18167",
+          "18667"
+        ],
+        "description": "Return address labels",
+        "allow_qr": false,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-us-templates.xml#L249",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "Letter",
+          "label_w": 44.45,
+          "label_h": 12.7,
+          "cols": 4,
+          "rows": 20,
+          "pitch_x": 52.39,
+          "pitch_y": 12.7,
+          "margin_top": 12.7,
+          "margin_left": 7.14,
+          "corner_radius": 1.59,
+          "shape": "rectangle",
+          "page_w": 215.9,
+          "page_h": 279.4
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-5195",
+        "prefix": "A5195",
+        "vendor": "Avery",
+        "product_codes": [
+          "5195",
+          "5295"
+        ],
+        "description": "Round labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-us-templates.xml#L319",
+        "notes": null
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "Letter",
+          "label_w": 84.14,
+          "label_h": 84.14,
+          "cols": 2,
+          "rows": 3,
+          "pitch_x": 99.22,
+          "pitch_y": 85.33,
+          "margin_top": 12.3,
+          "margin_left": 16.27,
+          "corner_radius": null,
+          "shape": "round",
+          "page_w": 215.9,
+          "page_h": 279.4
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-8195",
+        "prefix": "A8195",
+        "vendor": "Avery",
+        "product_codes": [
+          "8195"
+        ],
+        "description": "Return address labels",
+        "allow_qr": true,
+        "verified": false,
+        "source_name": "gLabels-qt templates (MIT) @ 37901c1",
+        "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-us-templates.xml#L795",
+        "notes": "Left and right remaining margins differ (7.54 / 9.14 mm). Top and bottom remaining margins differ (13.49 / 12.17 mm)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "Letter",
+          "label_w": 44.45,
+          "label_h": 16.92,
+          "cols": 4,
+          "rows": 15,
+          "pitch_x": 51.59,
+          "pitch_y": 16.92,
+          "margin_top": 13.49,
+          "margin_left": 7.54,
+          "corner_radius": 1.6,
+          "shape": "rectangle",
+          "page_w": 215.9,
+          "page_h": 279.4
+        }
+      },
+      "exported_at": "2026-11-05T00:00:00Z",
+      "exported_by_hub": "seed"
+    }
+  ]
+}
