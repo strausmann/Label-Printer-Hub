@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## 1.1.0 (2026-11-05)
+
+* chore(license): relicense to AGPL-3.0-or-later ([a661990](https://github.com/strausmann/Label-Printer-Hub/commit/a661990)), closes [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+* feat(api): project licence and source link of the running build ([0989576](https://github.com/strausmann/Label-Printer-Hub/commit/0989576)), closes [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+* feat(ui): about page with licence and a link to the running version's source ([8f15260](https://github.com/strausmann/Label-Printer-Hub/commit/8f15260)), closes [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+* ci(security): licence policy with a dependency review gate and an image build check (#194) ([fbde9b2](https://github.com/strausmann/Label-Printer-Hub/commit/fbde9b2)), closes [#194](https://github.com/strausmann/Label-Printer-Hub/issues/194) [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+
 ## <small>1.0.3 (2026-11-05)</small>
 
 * ci(release): build release images from the release workflow and push releases over a deploy key (#19 ([d434f51](https://github.com/strausmann/Label-Printer-Hub/commit/d434f51)), closes [#192](https://github.com/strausmann/Label-Printer-Hub/issues/192) [#183](https://github.com/strausmann/Label-Printer-Hub/issues/183) [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
