@@ -56,6 +56,23 @@ msgstr "Das Geheimnis ist für die alte URL gespeichert. Gib es erneut ein, um e
 msgid "A webhook key needs at least {MIN_WEBHOOK_KEY} characters."
 msgstr "Ein Webhook-Schlüssel braucht mindestens {MIN_WEBHOOK_KEY} Zeichen."
 
+#: src/features/about/AboutPage.tsx
+msgctxt "page title"
+msgid "About"
+msgstr "Über"
+
+#: src/features/settings/System.tsx
+#: src/shell/Sidebar.tsx
+#: src/shell/TopBar.tsx
+msgctxt "link to the about page"
+msgid "About and licences"
+msgstr "Über und Lizenzen"
+
+#: src/features/about/AboutPage.tsx
+msgctxt "link"
+msgid "About the GNU AGPL"
+msgstr "Über die GNU AGPL"
+
 #: src/features/settings/SettingsPage.tsx
 msgid "Access and keys"
 msgstr "Zugang und Schlüssel"
@@ -571,6 +588,16 @@ msgstr "Layout"
 msgid "Level"
 msgstr "Stufe"
 
+#: src/features/about/AboutPage.tsx
+msgctxt "field label"
+msgid "Licence"
+msgstr "Lizenz"
+
+#: src/features/about/AboutPage.tsx
+msgctxt "heading"
+msgid "Licence"
+msgstr "Lizenz"
+
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
 msgstr "Helles Design"
@@ -908,6 +935,11 @@ msgstr "Warteschlangen-Zeitlimit (Sekunden)"
 msgid "Queued"
 msgstr "Wartet"
 
+#: src/features/about/AboutPage.tsx
+msgctxt "action"
+msgid "Read the licence"
+msgstr "Lizenz lesen"
+
 #: src/features/settings/System.tsx
 msgid "Readiness"
 msgstr "Bereitschaft"
@@ -973,7 +1005,7 @@ msgstr "Fortsetzen"
 msgid "Retry"
 msgstr "Wiederholen"
 
-#: src/features/settings/System.tsx
+#: src/features/about/BuildRows.tsx
 msgid "Revision"
 msgstr "Revision"
 
@@ -1159,6 +1191,11 @@ msgstr "Etwas ist schiefgelaufen."
 #: src/features/settings/System.tsx
 msgid "Source"
 msgstr "Quelle"
+
+#: src/features/about/SourceLink.tsx
+msgctxt "link to the source of the running version"
+msgid "Source code"
+msgstr "Quellcode"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Spool"
@@ -1386,6 +1423,10 @@ msgstr "Der Browser hat die Kamera für diese Seite gesperrt. Erlaube sie in den
 msgid "This code is not one the hub knows. Its text:"
 msgstr "Diesen Code kennt der Hub nicht. Sein Text:"
 
+#: src/features/about/AboutPage.tsx
+msgid "This hub is free software under the GNU Affero General Public License, version 3 or later. You can get the source of exactly this version at any time."
+msgstr "Dieser Hub ist freie Software unter der GNU Affero General Public License, Version 3 oder neuer. Den Quellcode genau dieser Version bekommst du jederzeit."
+
 #: src/features/lookup/ItemView.tsx
 msgid "This item cannot be shown"
 msgstr "Dieser Eintrag kann nicht angezeigt werden"
@@ -1449,6 +1490,10 @@ msgstr "Zu viele Versuche. Warte eine Minute und versuche es erneut."
 msgid "Try again"
 msgstr "Erneut versuchen"
 
+#: src/features/about/BuildRows.tsx
+msgid "unknown"
+msgstr "unbekannt"
+
 #: src/features/scan/ScanScreen.tsx
 msgid "Unknown code"
 msgstr "Unbekannter Code"
@@ -1462,7 +1507,7 @@ msgstr "Unbekannter Drucker"
 msgid "URL"
 msgstr "URL"
 
-#: src/features/settings/System.tsx
+#: src/features/about/BuildRows.tsx
 msgid "Version"
 msgstr "Version"
 

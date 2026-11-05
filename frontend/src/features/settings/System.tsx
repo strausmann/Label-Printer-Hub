@@ -1,19 +1,12 @@
 import { useLingui } from "@lingui/react/macro";
-import { useInfo } from "../../app/session";
 import { StatusBadge, type BadgeState } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { useHealth, useLogs, useReadiness } from "./api";
 import { Section } from "./sections";
-
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-b border-line py-2 last:border-b-0">
-      <dt className="w-40 shrink-0 text-ink-2">{label}</dt>
-      <dd className="min-w-0 break-words">{children}</dd>
-    </div>
-  );
-}
+import { Link } from "@tanstack/react-router";
+import { BuildRows } from "../about/BuildRows";
+import { SourceLink } from "../about/SourceLink";
+import { Row } from "../Row";
 
 function LevelBadge({ level }: { level: string }) {
   const state: BadgeState = /error|critical/i.test(level) ? "bad" : "warn";
@@ -22,7 +15,6 @@ function LevelBadge({ level }: { level: string }) {
 
 export function System() {
   const { t, i18n } = useLingui();
-  const info = useInfo().data;
   const health = useHealth();
   const readiness = useReadiness();
   const logs = useLogs();
@@ -36,12 +28,7 @@ export function System() {
     <div className="flex flex-col gap-10">
       <Section title={t`System`}>
         <dl className={`${PANEL} max-w-xl`}>
-          <Row label={t`Version`}>
-            <span className="font-mono">{info?.version ?? "…"}</span>
-          </Row>
-          <Row label={t`Revision`}>
-            <span className="font-mono">{info?.revision ?? "…"}</span>
-          </Row>
+          <BuildRows />
           <Row label={t`Health`}>
             {health.isPending ? t`Checking…` : <StatusBadge state={health.isSuccess ? "ok" : "bad"} label={health.isSuccess ? t`Healthy` : t`Not reachable`} />}
           </Row>
@@ -70,6 +57,10 @@ export function System() {
           <a href="/docs" className={`${SECONDARY_BUTTON} no-underline`}>
             {t`API documentation`}
           </a>
+          <Link to="/about" className={`${SECONDARY_BUTTON} no-underline`}>
+            {t({ message: "About and licences", context: "link to the about page" })}
+          </Link>
+          <SourceLink className={`${SECONDARY_BUTTON} no-underline`} />
         </div>
         <p className="max-w-prose text-small text-ink-2">
           {t`The download holds the settings that are not secret and not set by the container, as JSON. Keys and tokens are never included.`}

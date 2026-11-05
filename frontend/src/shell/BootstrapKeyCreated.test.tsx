@@ -1,18 +1,28 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@lingui/react";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import { i18n, initI18n } from "../i18n";
+import { createQueryClient } from "../app/queryClient";
+import { INFO_KEY } from "../app/session";
+import { INFO } from "../test-utils";
 import { BootstrapKeyCreated } from "./BootstrapKeyCreated";
+
+const SOURCE = "https://example.invalid/fork/tree/v1.1.0";
 
 async function renderFlow(props: Partial<React.ComponentProps<typeof BootstrapKeyCreated>> = {}) {
   await initI18n("en");
   const onCreate = props.onCreate ?? vi.fn(async () => "lh_pat_fake-key-for-tests");
   const onContinue = props.onContinue ?? vi.fn(async () => undefined);
+  const queryClient = createQueryClient();
+  queryClient.setQueryData(INFO_KEY, { ...INFO, source_url: SOURCE });
   render(
     <I18nProvider i18n={i18n}>
-      <BootstrapKeyCreated onCreate={onCreate} onContinue={onContinue} />
+      <QueryClientProvider client={queryClient}>
+        <BootstrapKeyCreated onCreate={onCreate} onContinue={onContinue} />
+      </QueryClientProvider>
     </I18nProvider>,
   );
   return { onCreate, onContinue };
@@ -24,6 +34,13 @@ describe("BootstrapKeyCreated", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Create the first admin key" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create admin key" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+  });
+
+  it("source link", async () => {
+    await renderFlow();
+    const link = screen.getByRole("link", { name: "Source code" });
+    expect(link).toHaveAttribute("href", SOURCE);
+    expect(link.getAttribute("rel")).toContain("noopener");
   });
 
   it("shows the key once, with the removal hint, then continues with it", async () => {
