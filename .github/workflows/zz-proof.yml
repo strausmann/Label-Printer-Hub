@@ -1,0 +1,7 @@
+name: zz-proof
+on: workflow_dispatch
+jobs:
+  x:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/cache@v4
