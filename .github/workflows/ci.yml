@@ -18,7 +18,7 @@ jobs:
     name: Python — lint, type, test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Detect Python project
         id: pyproject
@@ -35,7 +35,7 @@ jobs:
 
       - name: Set up Python (with cache)
         if: steps.pyproject.outputs.exists == 'true'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -43,7 +43,7 @@ jobs:
 
       - name: Set up Python (without cache, no pyproject.toml yet)
         if: steps.pyproject.outputs.exists != 'true'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -133,13 +133,13 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           package_json_file: frontend/package.json
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: frontend/.nvmrc
           cache: pnpm
@@ -158,7 +158,7 @@ jobs:
         run: pnpm test:coverage
 
       # The API types are generated from the backend's OpenAPI; a stale file fails here.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -202,7 +202,7 @@ jobs:
     name: Docker — build smoke test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -221,7 +221,7 @@ jobs:
     name: Privacy / secret scan
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
