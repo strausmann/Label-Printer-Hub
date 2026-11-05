@@ -437,3 +437,78 @@ async def test_every_write_takes_the_write_lock(session: AsyncSession) -> None:
     with pytest.raises(SheetTypeNotFoundError):
         await ts.archive_type(session, "nope", actor="t")
     assert await _lock_seq(session) == before  # the rollback undid the bump
+
+
+# --- free text is sanitised (Task 6 retrofit) ------------------------------------------
+
+
+async def test_create_sanitises_free_text(session: AsyncSession) -> None:
+    t, v = await ts.create_type(
+        session,
+        fields(
+            vendor=" Av\x07ery‮ ",
+            description="Address⁦ labels",
+            product_codes=["L4736\x00REV-25", "‎L4736"],
+            source_name="Data‏sheet",
+            notes="Measured\x1b by hand \U0001f468‍\U0001f469",
+        ),
+        G_4X12,
+        actor="tester",
+        change_note="first\x07 cut",
+    )
+    stored = await ts.get_type(session, t.key)
+    assert stored.vendor == "Avery"
+    assert stored.description == "Address labels"
+    assert stored.product_codes == ["L4736REV-25", "L4736"]
+    assert stored.source_name == "Datasheet"
+    assert stored.notes == "Measured by hand \U0001f468‍\U0001f469"
+    assert v.change_note == "first cut"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("vendor", "x" * 201),
+        ("description", "x" * 201),
+        ("source_name", "x" * 201),
+        ("notes", "x" * 2001),
+        ("product_codes", ["x" * 41]),
+    ],
+)
+async def test_create_refuses_over_long_text(session: AsyncSession, field: str, value: Any) -> None:
+    with pytest.raises(InvalidGeometryError) as exc:
+        await ts.create_type(session, fields(**{field: value}), G_4X12, actor="tester")
+    assert exc.value.status == 422
+    assert exc.value.detail == {"field": field, "reason": "too long"}
+    assert await _version_count(session) == 0
+
+
+async def test_patch_sanitises_and_refuses_over_long_text(session: AsyncSession) -> None:
+    t, _ = await ts.create_type(session, fields(), G_4X12, actor="tester")
+    key = t.key
+    patched = await ts.patch_type(
+        session,
+        key,
+        {"notes": "ok‪\x07", "product_codes": ["A⁩B"], "vendor": "\x07"},
+        actor="tester",
+    )
+    assert (patched.notes, patched.product_codes, patched.vendor) == ("ok", ["AB"], "")
+    with pytest.raises(InvalidGeometryError) as exc:
+        await ts.patch_type(
+            session, key, {"description": "fine", "notes": "y" * 2001}, actor="tester"
+        )
+    assert exc.value.detail == {"field": "notes", "reason": "too long"}
+    stored = await ts.get_type(session, key)
+    assert stored.notes == "ok" and stored.description == "Address labels"
+
+
+async def test_add_version_sanitises_and_refuses_over_long_change_note(
+    session: AsyncSession,
+) -> None:
+    t, _ = await ts.create_type(session, fields(), G_4X12, actor="tester")
+    v = await ts.add_version(session, t.key, G_5X12, actor="tester", change_note="5‮ cols")
+    assert v.change_note == "5 cols"
+    with pytest.raises(InvalidGeometryError) as exc:
+        await ts.add_version(session, t.key, G_SMALL, actor="tester", change_note="z" * 501)
+    assert exc.value.detail == {"field": "change_note", "reason": "too long"}
+    assert await _version_count(session) == 2

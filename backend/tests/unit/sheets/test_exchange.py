@@ -506,3 +506,51 @@ async def test_new_key_outside_as_new_key_mode_is_refused(session: AsyncSession)
         with pytest.raises(InvalidImportError):
             await exchange.import_type(session, doc, mode=mode, new_key="x-key", actor="i")  # type: ignore[arg-type]
     assert await _counts(session) == (1, 1)
+
+
+# --- free text is sanitised (Task 6 retrofit) ------------------------------------------
+
+
+async def test_import_sanitises_free_text(session: AsyncSession) -> None:
+    d = await _base_doc(session)
+    d["type"].update(
+        key="dirty-type",
+        prefix="DIRTY",
+        vendor="Av\u0007ery‮",
+        description="Labels⁧",
+        product_codes=["L47\u001b36"],
+        source_name="‎Sheet",
+        notes="  note\u0000 ‍ ",
+    )
+    result = await exchange.import_type(session, exchange.parse_import(_raw(d)), actor="x")
+    assert result.outcome == "created"
+    t = await ts.get_type(session, "dirty-type")
+    assert (t.vendor, t.description, t.product_codes, t.source_name, t.notes) == (
+        "Avery",
+        "Labels",
+        ["L4736"],
+        "Sheet",
+        "note ‍",
+    )
+    # the export of the cleaned type carries the cleaned text
+    again = await exchange.export_type(session, "dirty-type", None)
+    assert again.type.vendor == "Avery"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("vendor", "x" * 201),
+        ("description", "x" * 201),
+        ("source_name", "x" * 201),
+        ("notes", "x" * 2001),
+        ("product_codes", ["x" * 41]),
+    ],
+)
+async def test_import_refuses_over_long_text(session: AsyncSession, field: str, value: Any) -> None:
+    d = await _base_doc(session)
+    d["type"].update(key="long-type", prefix="LONG", **{field: value})
+    before = await _counts(session)
+    with pytest.raises(InvalidImportError):
+        exchange.parse_import(_raw(d))
+    assert await _counts(session) == before

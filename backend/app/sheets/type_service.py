@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -33,6 +33,7 @@ from app.sheets.errors import (
 from app.sheets.geometry import Geometry, geometry_hash, normalise, validate_geometry
 from app.sheets.locking import acquire_sheet_write_lock
 from app.sheets.naming import KEY_PATTERN, PREFIX_PATTERN, default_allow_qr
+from app.sheets.text import sanitise_text
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,51 @@ def _check_prefix(prefix: object) -> None:
 
 
 _NULLABLE_TEXT = frozenset({"vendor", "description", "source_name", "source_url", "notes"})
+# Free text is cleaned before it is stored; same bounds as the export document (spec 9.2).
+TEXT_LIMITS = {"vendor": 200, "description": 200, "source_name": 200, "notes": 2000}
+PRODUCT_CODE_MAX = 40
+CHANGE_NOTE_MAX = 500
+
+
+def clean_text(field: str, value: str, max_len: int) -> str:
+    """``sanitise_text`` with the error mapped to a 422 that names the field."""
+    try:
+        return sanitise_text(value, max_len=max_len)
+    except ValueError:
+        raise InvalidFieldError(field, "too long") from None
+
+
+def _clean_optional(field: str, value: str | None) -> str | None:
+    return None if value is None else clean_text(field, value, TEXT_LIMITS[field])
+
+
+def _clean_codes(codes: list[str]) -> list[str]:
+    return [clean_text("product_codes", c, PRODUCT_CODE_MAX) for c in codes]
+
+
+def _clean_change_note(note: str | None) -> str | None:
+    return None if note is None else clean_text("change_note", note, CHANGE_NOTE_MAX)
+
+
+def _clean_fields(fields: TypeFields) -> TypeFields:
+    return replace(
+        fields,
+        vendor=_clean_optional("vendor", fields.vendor),
+        description=_clean_optional("description", fields.description),
+        source_name=_clean_optional("source_name", fields.source_name),
+        notes=_clean_optional("notes", fields.notes),
+        product_codes=_clean_codes(fields.product_codes),
+    )
+
+
+def _clean_patch_value(name: str, value: Any) -> Any:
+    if name in TEXT_LIMITS:
+        return _clean_optional(name, value)
+    if name == "product_codes":
+        return _clean_codes(value)
+    return value
+
+
 _BOOLEAN = frozenset({"allow_qr", "verified"})
 
 
@@ -196,6 +242,8 @@ async def create_type_locked(
     change_note: str | None,
 ) -> tuple[SheetType, SheetTypeVersion]:
     """Insert type and version 1 inside a transaction that already holds the write lock."""
+    fields = _clean_fields(fields)
+    change_note = _clean_change_note(change_note)
     if not KEY_PATTERN.match(fields.key):
         raise InvalidFieldError("key", "invalid format")
     _check_prefix(fields.prefix)
@@ -240,6 +288,8 @@ async def create_type(
         raise InvalidFieldError("key", "invalid format")
     _check_prefix(fields.prefix)
     validate_geometry(normalise(geometry))
+    _clean_fields(fields)
+    _clean_change_note(change_note)
     async with write_transaction(session):
         t, v = await create_type_locked(
             session, fields, geometry, actor=actor, origin=origin, change_note=change_note
@@ -255,6 +305,7 @@ async def patch_type(
         if name not in _EDITABLE:
             raise InvalidFieldError(name, "not editable")
         _check_patch_value(name, value)
+    changes = {name: _clean_patch_value(name, value) for name, value in changes.items()}
     async with write_transaction(session):
         t = await get_type(session, key)
         new_prefix = changes.get("prefix")
@@ -280,6 +331,7 @@ async def add_version_locked(
     session: AsyncSession, key: str, geometry: Geometry, *, actor: str, change_note: str
 ) -> SheetTypeVersion:
     """Add the next version inside a transaction that already holds the write lock."""
+    change_note = _clean_change_note(change_note) or ""
     validate_geometry(normalise(geometry))
     t = await get_type(session, key)
     latest = await current_version(session, t.id)
@@ -295,6 +347,7 @@ async def add_version(
     session: AsyncSession, key: str, geometry: Geometry, *, actor: str, change_note: str
 ) -> SheetTypeVersion:
     validate_geometry(normalise(geometry))
+    _clean_change_note(change_note)
     async with write_transaction(session):
         v = await add_version_locked(session, key, geometry, actor=actor, change_note=change_note)
         await session.commit()
