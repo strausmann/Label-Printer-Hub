@@ -149,10 +149,14 @@ SOURCE_URL_MAX = 500
 CHANGE_NOTE_MAX = 500
 
 
+# Fields that may hold several lines; every other text is a single line (spec 18).
+MULTILINE_FIELDS = frozenset({"description", "notes", "change_note"})
+
+
 def clean_text(field: str, value: str, max_len: int) -> str:
     """``sanitise_text`` with the error mapped to a 422 that names the field."""
     try:
-        return sanitise_text(value, max_len=max_len)
+        return sanitise_text(value, max_len=max_len, multiline=field in MULTILINE_FIELDS)
     except ValueError:
         raise InvalidFieldError(field, "too long") from None
 

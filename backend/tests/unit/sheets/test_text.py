@@ -8,7 +8,7 @@ from app.sheets.text import sanitise_text
 
 @pytest.mark.parametrize(
     "char",
-    ["\x00", "\x07", "\n", "\t", "\x7f", "\x85", "؜", "‎", "‏"]
+    ["\x00", "\x07", "\x7f", "\x85", "؜", "‎", "‏"]
     + [chr(c) for c in range(0x202A, 0x202F)]
     + [chr(c) for c in range(0x2066, 0x206A)],
 )
@@ -35,3 +35,46 @@ def test_length_limit_applies_to_the_cleaned_text() -> None:
 
 def test_empty_stays_empty() -> None:
     assert sanitise_text(" \x07 ", max_len=5) == ""
+
+
+@pytest.mark.parametrize("multiline", [False, True])
+def test_other_control_characters_go_in_both_kinds(multiline: bool) -> None:
+    assert sanitise_text("a\x07b\x1bc\u202ed", max_len=20, multiline=multiline) == "abcd"
+    family = "\U0001f468\u200d\U0001f469"
+    assert sanitise_text(family, max_len=20, multiline=multiline) == family
+
+
+@pytest.mark.parametrize(
+    ("raw", "want"),
+    [
+        ("box\nlabels", "box labels"),
+        ("a\r\nb", "a b"),
+        ("a\rb", "a b"),
+        ("a\tb\nc", "a b c"),
+        ("a \n\n \t b", "a b"),  # a run that held a break or tab becomes one space
+        ("a  b", "a  b"),  # plain spaces the author typed stay
+        ("\nlead and trail\n", "lead and trail"),
+    ],
+)
+def test_single_line_text_turns_breaks_and_tabs_into_one_space(raw: str, want: str) -> None:
+    assert sanitise_text(raw, max_len=40) == want
+
+
+@pytest.mark.parametrize(
+    ("raw", "want"),
+    [
+        ("line1\nline2", "line1\nline2"),
+        ("line1\r\nline2", "line1\nline2"),
+        ("line1\rline2", "line1\nline2"),
+        ("a\tb", "a b"),
+        ("\n\nbody\n", "body"),
+    ],
+)
+def test_multiline_text_keeps_line_breaks_as_newline(raw: str, want: str) -> None:
+    assert sanitise_text(raw, max_len=40, multiline=True) == want
+
+
+def test_length_counts_the_normalised_text() -> None:
+    assert sanitise_text("ab\r\ncd", max_len=5, multiline=True) == "ab\ncd"
+    with pytest.raises(ValueError, match="4"):
+        sanitise_text("ab\r\ncd", max_len=4, multiline=True)

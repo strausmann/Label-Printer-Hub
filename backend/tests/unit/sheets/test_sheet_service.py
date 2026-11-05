@@ -653,3 +653,16 @@ async def test_last_used_at_follows_cells_that_became_used(
     await _add_cell(session, third, 5, "unconfirmed", job_id=uuid4())
     resolved = await ss.resolve_cells(session, third, [5], "printed", actor="t")
     assert resolved.sheet.last_used_at is not None
+
+
+async def test_sheet_note_keeps_line_breaks_but_a_purpose_does_not(
+    session: AsyncSession, l4736: str
+) -> None:
+    sheet = await _create(
+        session,
+        used_cells=[MarkedCell(3, "flour\n1 kg")],
+        note="shelf 2\r\nleft side",
+    )
+    detail = await ss.get_sheet(session, sheet.code)
+    assert detail.sheet.note == "shelf 2\nleft side"
+    assert [c.purpose for c in detail.cells] == ["flour 1 kg"]

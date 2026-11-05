@@ -102,9 +102,9 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _clean(field: str, value: str, max_len: int) -> str:
+def _clean(field: str, value: str, max_len: int, *, multiline: bool = False) -> str:
     try:
-        return sanitise_text(value, max_len=max_len)
+        return sanitise_text(value, max_len=max_len, multiline=multiline)
     except ValueError:
         raise InvalidFieldError(field, "too long") from None
 
@@ -224,7 +224,7 @@ async def create_sheet(
     if id_placement not in _ID_PLACEMENTS:
         raise InvalidFieldError("id_placement", "not supported")
     marks = _clean_marks(used_cells)
-    clean_note = None if note is None else _clean("note", note, NOTE_MAX) or None
+    clean_note = None if note is None else _clean("note", note, NOTE_MAX, multiline=True) or None
     async with write_transaction(session):
         t = await repo.get_type_by_key(session, type_key)
         if t is None:

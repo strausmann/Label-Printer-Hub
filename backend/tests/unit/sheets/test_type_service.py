@@ -587,3 +587,30 @@ async def test_service_refuses_more_than_fifty_product_codes(session: AsyncSessi
     t, _ = await ts.create_type(session, fields(product_codes=many[:50]), G_4X12, actor="tester")
     with pytest.raises(InvalidFieldError):
         await ts.patch_type(session, t.key, {"product_codes": many}, actor="tester")
+
+
+async def test_line_breaks_are_kept_only_in_multi_line_fields(session: AsyncSession) -> None:
+    t, v = await ts.create_type(
+        session,
+        fields(
+            vendor="Av\nery",
+            description="box\r\nlabels",
+            product_codes=["L47\n36"],
+            source_name="Data\tsheet",
+            notes="line1\r\nline2\nline3",
+        ),
+        G_4X12,
+        actor="tester",
+        change_note="first\r\nsecond",
+    )
+    stored = await ts.get_type(session, t.key)
+    assert stored.vendor == "Av ery"
+    assert stored.description == "box\nlabels"
+    assert stored.product_codes == ["L47 36"]
+    assert stored.source_name == "Data sheet"
+    assert stored.notes == "line1\nline2\nline3"
+    assert v.change_note == "first\nsecond"
+    patched = await ts.patch_type(
+        session, t.key, {"notes": "a\r\nb", "vendor": "x\ny"}, actor="tester"
+    )
+    assert (patched.notes, patched.vendor) == ("a\nb", "x y")
