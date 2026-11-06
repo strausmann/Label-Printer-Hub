@@ -21,3 +21,9 @@ A guard test (`backend/tests/unit/test_decision_register.py`) fails if a `D<n>` 
 | D11 | No global part-size or half-cut setting in the foundation | 2026-11-04 | Accepted | — |
 | D12 | `ink-500` is `#6B655A` to meet WCAG AA contrast | 2026-11-04 | Accepted | — |
 | D20 | The hub is AGPL-3.0-or-later and links to the source of the running build | 2026-11-05 | Accepted | — |
+| D13 | Sheet archive, physical sheets and calibration live in the hub (#150) | 2026-11-05 | Accepted | — |
+| D14 | Sheet type geometry is versioned; sheets pin their version | 2026-11-05 | Accepted | — |
+| D16 | Lengths stored in hundredths of a millimetre | 2026-11-05 | Accepted | — |
+| D19 | Imported sheet types are never marked verified | 2026-11-05 | Accepted | — |
+| V2 | L4731REV has no vertical gap (pitch 10 mm) | 2026-11-05 | To verify | — |
+| V4 | Corner radius of L4736REV (unknown, to measure) | 2026-11-05 | To verify | — |

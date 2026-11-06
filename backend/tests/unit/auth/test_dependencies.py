@@ -713,3 +713,70 @@ async def test_sso_configurable_header_names():
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     assert resp.json()["source"] == "pangolin-sso"
     await eng.dispose()
+
+
+@pytest.mark.asyncio
+async def test_failed_last_used_update_rolls_the_session_back(monkeypatch: pytest.MonkeyPatch):
+    """A failing best-effort update must neither fail auth nor leave the session unusable."""
+    import app.models
+    import bcrypt
+    from app.auth import dependencies
+    from app.auth.dependencies import require_scope
+    from app.config import Settings
+    from app.db.session import get_session
+    from app.models.api_key import ApiKey
+    from fastapi import Depends, FastAPI
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from sqlmodel import SQLModel
+
+    plaintext = "lh_pat_rollbackkey_test_a1b2c3d4e5f6g7"
+    hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
+    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with eng.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    async with factory() as s:
+        s.add(
+            ApiKey(
+                id=uuid4(),
+                name="rb",
+                key_hash=hashed,
+                key_prefix=plaintext[:16],
+                scopes=["read"],
+                allowed_printer_ids=[],
+                enabled=True,
+            )
+        )
+        await s.commit()
+
+    async def boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("commit failed")
+
+    rollbacks: list[int] = []
+    real_rollback = AsyncSession.rollback
+
+    async def counting_rollback(self: AsyncSession) -> None:
+        rollbacks.append(1)
+        await real_rollback(self)
+
+    monkeypatch.setattr(dependencies.api_keys_repo, "update_last_used", boom)
+    monkeypatch.setattr(AsyncSession, "rollback", counting_rollback)
+
+    app = FastAPI()
+    settings = Settings(_env_file=None)
+
+    @app.get("/test")
+    async def ep(ctx=Depends(require_scope("read", settings=settings))):
+        return {"key": str(ctx.api_key_id)}
+
+    async def _session():
+        async with factory() as s:
+            yield s
+
+    app.dependency_overrides[get_session] = _session
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+        resp = await client.get("/test", headers={"X-Label-Hub-Key": plaintext})
+
+    assert resp.status_code == 200
+    assert rollbacks, "the failed update must roll the session back"
+    await eng.dispose()

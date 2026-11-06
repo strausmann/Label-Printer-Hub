@@ -438,6 +438,282 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sheet-cells": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where an integration item was printed before, newest first */
+        get: operations["find_cells_api_sheet_cells_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheet-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List sheet types */
+        get: operations["list_sheet_types_api_sheet_types_get"];
+        put?: never;
+        /** Create a sheet type with version 1 */
+        post: operations["create_sheet_type_api_sheet_types_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheet-types/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import a sheet type document */
+        post: operations["import_sheet_type_api_sheet_types_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheet-types/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One sheet type with its versions */
+        get: operations["get_sheet_type_api_sheet_types__key__get"];
+        put?: never;
+        post?: never;
+        /** Delete a custom sheet type without sheets */
+        delete: operations["delete_sheet_type_api_sheet_types__key__delete"];
+        options?: never;
+        head?: never;
+        /** Edit the non-geometric fields of a sheet type */
+        patch: operations["patch_sheet_type_api_sheet_types__key__patch"];
+        trace?: never;
+    };
+    "/api/sheet-types/{key}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a sheet type */
+        post: operations["archive_sheet_type_api_sheet_types__key__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheet-types/{key}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export one version of a sheet type as a JSON document */
+        get: operations["export_sheet_type_api_sheet_types__key__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheet-types/{key}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an archived sheet type */
+        post: operations["unarchive_sheet_type_api_sheet_types__key__unarchive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheet-types/{key}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a version with new geometry */
+        post: operations["add_sheet_type_version_api_sheet_types__key__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheet-types/{key}/versions/{n}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One version of a sheet type */
+        get: operations["get_sheet_type_version_api_sheet_types__key__versions__n__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List sheets */
+        get: operations["list_sheets_api_sheets_get"];
+        put?: never;
+        /** Create a sheet, with the cells already used marked by hand */
+        post: operations["create_sheet_api_sheets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheets/next-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The code a new sheet of a type would probably get */
+        get: operations["next_code_api_sheets_next_code_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheets/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One sheet with all cells that are not free (discarded sheets too) */
+        get: operations["get_sheet_api_sheets__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheets/{code}/cells/mark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark free cells as used by hand */
+        post: operations["mark_cells_api_sheets__code__cells_mark_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheets/{code}/cells/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Settle cells waiting for confirmation as printed or not printed */
+        post: operations["resolve_cells_api_sheets__code__cells_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheets/{code}/cells/unmark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Free cells that were marked by hand */
+        post: operations["unmark_cells_api_sheets__code__cells_unmark_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheets/{code}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discard a sheet; its code is never issued again */
+        post: operations["discard_sheet_api_sheets__code__discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/printers": {
         parameters: {
             query?: never;
@@ -563,7 +839,7 @@ export interface paths {
         };
         /**
          * Server-Sent Events stream for the web UI
-         * @description ``text/event-stream`` with JSON frames ``{channel, printer_id, type, ts, data}``. Without ``printer_id`` it carries every printer the caller may see plus the ``hub`` channel (``hub.printers_changed``). Ends with ``auth.expired`` when the session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 when the credentials exclude it, 429 when ``PRINTER_HUB_SSE_MAX_SUBSCRIBERS`` connections are open.
+         * @description ``text/event-stream`` with JSON frames ``{channel, printer_id, type, ts, data}``. Without ``printer_id`` it carries every printer the caller may see plus the ``hub`` channel (``hub.printers_changed``) and the ``sheets`` channel (``sheet.updated``). Ends with ``auth.expired`` when the session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 when the credentials exclude it, 429 when ``PRINTER_HUB_SSE_MAX_SUBSCRIBERS`` connections are open.
          */
         get: operations["stream_events_api_v1_events_get"];
         put?: never;
@@ -976,6 +1252,49 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** CellHitRead */
+        CellHitRead: {
+            /** Cell */
+            cell: number;
+            /** Code */
+            code: string;
+            /** Purpose */
+            purpose: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "reserved" | "used" | "unconfirmed";
+            /** Updated At */
+            updated_at: string | null;
+        };
+        /** CellNumbers */
+        CellNumbers: {
+            /** Cells */
+            cells: number[];
+        };
+        /** CellRead */
+        CellRead: {
+            /** Cell */
+            cell: number;
+            /** Job Id */
+            job_id: string | null;
+            /** Marked By Hand */
+            marked_by_hand: boolean;
+            /** Purpose */
+            purpose: string | null;
+            /** Ref */
+            ref: string | null;
+            /** Source */
+            source: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "reserved" | "used" | "unconfirmed";
+            /** Updated At */
+            updated_at: string | null;
+        };
         /** CheckStatus */
         CheckStatus: {
             /** Detail */
@@ -996,6 +1315,63 @@ export interface components {
          * @enum {string}
          */
         ContentType: "qr_only" | "qr_one_line" | "qr_two_lines" | "qr_three_lines" | "text_one_line" | "text_two_lines" | "qr_with_listing";
+        /** ExportDoc */
+        ExportDoc: {
+            /**
+             * Exported At
+             * Format: date-time
+             */
+            exported_at: string;
+            /** Exported By Hub */
+            exported_by_hub: string;
+            /**
+             * Format
+             * @constant
+             */
+            format: "label-printer-hub.sheet-type";
+            /**
+             * Format Version
+             * @constant
+             */
+            format_version: 1;
+            type: components["schemas"]["TypeDoc"];
+            version: components["schemas"]["VersionDoc"];
+        };
+        /** GeometryMm */
+        GeometryMm: {
+            /** Cols */
+            cols: number;
+            /** Corner Radius */
+            corner_radius?: number | null;
+            /** Label H */
+            label_h: number;
+            /** Label W */
+            label_w: number;
+            /** Margin Left */
+            margin_left: number;
+            /** Margin Top */
+            margin_top: number;
+            /** Page H */
+            page_h?: number | null;
+            /**
+             * Page Size
+             * @enum {string}
+             */
+            page_size: "A4" | "Letter";
+            /** Page W */
+            page_w?: number | null;
+            /** Pitch X */
+            pitch_x: number;
+            /** Pitch Y */
+            pitch_y: number;
+            /** Rows */
+            rows: number;
+            /**
+             * Shape
+             * @enum {string}
+             */
+            shape: "rectangle" | "round";
+        };
         /**
          * GrocyWebhookPayload
          * @description Event payload emitted by Grocy when a product stock event occurs.
@@ -1051,6 +1427,18 @@ export interface components {
             status: string;
             /** Version */
             version: string;
+        };
+        /** ImportResponse */
+        ImportResponse: {
+            /** Key */
+            key: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "created" | "unchanged" | "version_added" | "created_as_new_key";
+            /** Version */
+            version: number;
         };
         /** Info */
         Info: {
@@ -1221,6 +1609,32 @@ export interface components {
              * @description Deep-link URL to the entity in the integration's web UI (e.g. Snipe-IT asset page, Grocy product page, Spoolman spool page)
              */
             url?: string | null;
+        };
+        /** MarkRequest */
+        MarkRequest: {
+            /** Cells */
+            cells: components["schemas"]["MarkedCellIn"][];
+        };
+        /** MarkedCellIn */
+        MarkedCellIn: {
+            /** Cell */
+            cell: number;
+            /**
+             * Purpose
+             * @description Left out or empty: the cell reads `marked by hand`.
+             */
+            purpose?: string | null;
+        };
+        /** NextCode */
+        NextCode: {
+            /** Code */
+            code: string;
+            /**
+             * Hint
+             * @description A hint, not a reservation (spec 10.1).
+             * @constant
+             */
+            hint: "probable";
         };
         /**
          * PauseRead
@@ -1559,6 +1973,16 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** ResolveRequest */
+        ResolveRequest: {
+            /** Cells */
+            cells: number[];
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "printed" | "not_printed";
+        };
         /**
          * SNMPConfig
          * @description Verschachtelt — konsistent mit altem YAML-Schema.
@@ -1624,6 +2048,274 @@ export interface components {
         SettingsExport: {
             [key: string]: unknown;
         };
+        SheetApiErrorResponse: {
+            detail: {
+                error_code: string;
+                error_detail?: {
+                    [key: string]: unknown;
+                } | null;
+                error_message: string;
+            };
+        };
+        /** SheetCreate */
+        SheetCreate: {
+            /**
+             * Id Placement
+             * @enum {string}
+             */
+            id_placement: "margin" | "manual";
+            /** Note */
+            note?: string | null;
+            /** Type */
+            type: string;
+            /**
+             * Used Cells
+             * @default []
+             */
+            used_cells: components["schemas"]["MarkedCellIn"][];
+            /**
+             * Version
+             * @description Left out: the current version.
+             */
+            version?: number | null;
+        };
+        /** SheetRead */
+        SheetRead: {
+            /**
+             * Cells
+             * @description Every cell that is not free, by cell number.
+             */
+            cells: components["schemas"]["CellRead"][];
+            /** Code */
+            code: string;
+            /** Discarded At */
+            discarded_at: string | null;
+            /** Free */
+            free: number;
+            /** @description Geometry of the version the sheet is pinned to. */
+            geometry: components["schemas"]["GeometryMm"];
+            /**
+             * Id Placement
+             * @enum {string}
+             */
+            id_placement: "cell" | "margin" | "manual";
+            /** Id Printed */
+            id_printed: boolean;
+            /** Label H */
+            label_h: number;
+            /** Label W */
+            label_w: number;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Note */
+            note: string | null;
+            /** Reserved */
+            reserved: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "active" | "discarded";
+            /** Total */
+            total: number;
+            /** Type Key */
+            type_key: string;
+            /** Type Label */
+            type_label: string;
+            /** Unconfirmed */
+            unconfirmed: number;
+            /** Used */
+            used: number;
+            /** Version */
+            version: number;
+        };
+        /** SheetSummary */
+        SheetSummary: {
+            /** Code */
+            code: string;
+            /** Free */
+            free: number;
+            /** Label H */
+            label_h: number;
+            /** Label W */
+            label_w: number;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Reserved */
+            reserved: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "active" | "discarded";
+            /** Total */
+            total: number;
+            /** Type Key */
+            type_key: string;
+            /** Type Label */
+            type_label: string;
+            /** Unconfirmed */
+            unconfirmed: number;
+            /** Used */
+            used: number;
+            /** Version */
+            version: number;
+        };
+        /** SheetTypeCreate */
+        SheetTypeCreate: {
+            /**
+             * Allow Qr
+             * @description Left out: true when the shorter label side is at least 15 mm.
+             */
+            allow_qr?: boolean | null;
+            /** Description */
+            description?: string | null;
+            geometry: components["schemas"]["GeometryMm"];
+            /** Key */
+            key: string;
+            /** Notes */
+            notes?: string | null;
+            /** Prefix */
+            prefix: string;
+            /**
+             * Product Codes
+             * @default []
+             */
+            product_codes: string[];
+            /** Source Name */
+            source_name?: string | null;
+            /** Source Url */
+            source_url?: string | null;
+            /** Vendor */
+            vendor?: string | null;
+            /**
+             * Verified
+             * @default false
+             */
+            verified: boolean;
+        };
+        /** SheetTypeDetail */
+        SheetTypeDetail: {
+            /** Allow Qr */
+            allow_qr: boolean;
+            /** Archived At */
+            archived_at: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Current Version */
+            current_version: number;
+            /** Description */
+            description: string | null;
+            /** @description Geometry of the current version. */
+            geometry: components["schemas"]["GeometryMm"];
+            /**
+             * Hints
+             * @description Advisory codes about the current geometry.
+             */
+            hints: string[];
+            /** Key */
+            key: string;
+            /** Notes */
+            notes: string | null;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "seed" | "custom" | "imported";
+            /** Prefix */
+            prefix: string;
+            /** Product Codes */
+            product_codes: string[];
+            /**
+             * Sheets In Use
+             * @description Sheets of any state of this type.
+             */
+            sheets_in_use: number;
+            /** Source Name */
+            source_name: string | null;
+            /** Source Url */
+            source_url: string | null;
+            /** Updated At */
+            updated_at: string | null;
+            /** Vendor */
+            vendor: string | null;
+            /** Verified */
+            verified: boolean;
+            /** Versions */
+            versions: components["schemas"]["VersionRead"][];
+        };
+        /**
+         * SheetTypePatch
+         * @description Only the fields the client sends change. ``null`` clears a nullable field.
+         */
+        SheetTypePatch: {
+            /** Allow Qr */
+            allow_qr?: boolean;
+            /** Description */
+            description?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Prefix */
+            prefix?: string;
+            /** Product Codes */
+            product_codes?: string[];
+            /** Source Name */
+            source_name?: string | null;
+            /** Source Url */
+            source_url?: string | null;
+            /** Vendor */
+            vendor?: string | null;
+            /** Verified */
+            verified?: boolean;
+        };
+        /** SheetTypeRead */
+        SheetTypeRead: {
+            /** Allow Qr */
+            allow_qr: boolean;
+            /** Archived At */
+            archived_at: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Current Version */
+            current_version: number;
+            /** Description */
+            description: string | null;
+            /** @description Geometry of the current version. */
+            geometry: components["schemas"]["GeometryMm"];
+            /**
+             * Hints
+             * @description Advisory codes about the current geometry.
+             */
+            hints: string[];
+            /** Key */
+            key: string;
+            /** Notes */
+            notes: string | null;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "seed" | "custom" | "imported";
+            /** Prefix */
+            prefix: string;
+            /** Product Codes */
+            product_codes: string[];
+            /**
+             * Sheets In Use
+             * @description Sheets of any state of this type.
+             */
+            sheets_in_use: number;
+            /** Source Name */
+            source_name: string | null;
+            /** Source Url */
+            source_url: string | null;
+            /** Updated At */
+            updated_at: string | null;
+            /** Vendor */
+            vendor: string | null;
+            /** Verified */
+            verified: boolean;
+        };
         /** SignInRequest */
         SignInRequest: {
             /** Key */
@@ -1650,6 +2342,35 @@ export interface components {
              */
             type: string;
         };
+        /** TypeDoc */
+        TypeDoc: {
+            /** Allow Qr */
+            allow_qr: boolean;
+            /** Description */
+            description?: string | null;
+            /** Key */
+            key: string;
+            /** Notes */
+            notes?: string | null;
+            /** Prefix */
+            prefix: string;
+            /**
+             * Product Codes
+             * @default []
+             */
+            product_codes: string[];
+            /** Source Name */
+            source_name?: string | null;
+            /** Source Url */
+            source_url?: string | null;
+            /** Vendor */
+            vendor?: string | null;
+            /**
+             * Verified
+             * @default false
+             */
+            verified: boolean;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -1662,6 +2383,35 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VersionCreate */
+        VersionCreate: {
+            /** Change Note */
+            change_note: string;
+            geometry: components["schemas"]["GeometryMm"];
+        };
+        /** VersionDoc */
+        VersionDoc: {
+            geometry: components["schemas"]["GeometryMm"];
+            /** Version */
+            version: number;
+        };
+        /** VersionRead */
+        VersionRead: {
+            /** Change Note */
+            change_note: string | null;
+            /** Created At */
+            created_at: string | null;
+            geometry: components["schemas"]["GeometryMm"];
+            /** Geometry Hash */
+            geometry_hash: string;
+            /**
+             * Sheets
+             * @description Sheets of any state pinned to this version.
+             */
+            sheets: number;
+            /** Version */
+            version: number;
         };
         /**
          * WebhookAcceptedResponse
@@ -2530,6 +3280,892 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    find_cells_api_sheet_cells_get: {
+        parameters: {
+            query: {
+                source: string;
+                ref: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CellHitRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    list_sheet_types_api_sheet_types_get: {
+        parameters: {
+            query?: {
+                page?: ("A4" | "Letter") | null;
+                vendor?: string | null;
+                /** @description Key, codes, description. */
+                q?: string | null;
+                /** @description Label width, ±0.5 mm. */
+                w?: number | null;
+                /** @description Label height, ±0.5 mm. */
+                h?: number | null;
+                include_archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    create_sheet_type_api_sheet_types_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetTypeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    import_sheet_type_api_sheet_types_import_post: {
+        parameters: {
+            query?: {
+                mode?: "strict" | "new_version" | "as_new_key";
+                new_key?: string | null;
+                new_prefix?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportDoc"];
+            };
+        };
+        responses: {
+            /** @description The same geometry exists already. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResponse"];
+                };
+            };
+            /** @description Document larger than 64 KB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sheet_type_api_sheet_types__key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeDetail"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_sheet_type_api_sheet_types__key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Type is in use or not custom. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    patch_sheet_type_api_sheet_types__key__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetTypePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    archive_sheet_type_api_sheet_types__key__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    export_sheet_type_api_sheet_types__key__export_get: {
+        parameters: {
+            query?: {
+                version?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportDoc"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    unarchive_sheet_type_api_sheet_types__key__unarchive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    add_sheet_type_version_api_sheet_types__key__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sheet_type_version_api_sheet_types__key__versions__n__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+                n: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    list_sheets_api_sheets_get: {
+        parameters: {
+            query?: {
+                /** @description Sheet type key. */
+                type?: string | null;
+                free_at_least?: number | null;
+                state?: "active" | "full" | "discarded" | "all";
+                /** @description Part of the code. */
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    create_sheet_api_sheets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet type is archived. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A cell number is outside the sheet. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    next_code_api_sheets_next_code_get: {
+        parameters: {
+            query: {
+                /** @description Sheet type key. */
+                type: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NextCode"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sheet_api_sheets__code__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    mark_cells_api_sheets__code__cells_mark_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet is discarded, or the cells are in the wrong state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A cell number is outside the sheet. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    resolve_cells_api_sheets__code__cells_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet is discarded, or the cells are in the wrong state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A cell number is outside the sheet. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    unmark_cells_api_sheets__code__cells_unmark_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CellNumbers"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet is discarded, or the cells are in the wrong state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A cell number is outside the sheet. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    discard_sheet_api_sheets__code__discard_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A running job holds cells of the sheet. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
         };
     };

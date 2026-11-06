@@ -72,7 +72,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
-from app.api.error_handlers import register_error_handlers
+from app.api.error_handlers import (
+    SHEET_ERROR_SCHEMA,
+    SHEET_ERROR_SCHEMA_NAME,
+    SHEET_PREFIXES,
+    register_error_handlers,
+)
 from app.api.routes import auth_session as auth_session_routes
 from app.api.routes import batch as batch_routes
 from app.api.routes import batches as batches_routes
@@ -88,6 +93,8 @@ from app.api.routes.admin_printers_api import router as admin_printers_api_route
 from app.api.routes.print import render_router
 from app.api.routes.print import router as print_router
 from app.api.routes.settings_api import router as settings_api_router
+from app.api.routes.sheet_types import router as sheet_types_router
+from app.api.routes.sheets import router as sheets_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
 from app.auth.sessions import purge_expired as purge_expired_sessions
@@ -188,7 +195,30 @@ def _pinned_openapi_schema(app: FastAPI) -> Any:
         servers=app.servers,
         license_info=app.license_info,
     )
+    _declare_sheet_error_envelope(app.openapi_schema)
     return app.openapi_schema
+
+
+def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
+    """Describe the error bodies the sheet APIs really return (see ``_validation_handler``).
+
+    FastAPI documents ``HTTPValidationError`` for every route; the sheet routes answer with the
+    nested error envelope instead, so generated clients must not be told otherwise.
+    """
+    schema.setdefault("components", {}).setdefault("schemas", {})[SHEET_ERROR_SCHEMA_NAME] = (
+        SHEET_ERROR_SCHEMA
+    )
+    ref = {
+        "application/json": {"schema": {"$ref": f"#/components/schemas/{SHEET_ERROR_SCHEMA_NAME}"}}
+    }
+    for path, item in schema.get("paths", {}).items():
+        if not path.startswith(SHEET_PREFIXES):
+            continue
+        for operation in item.values():
+            for status_code, response in operation.get("responses", {}).items():
+                # Every documented 4xx of these routes carries the same error envelope.
+                if status_code.startswith("4"):
+                    response["content"] = ref
 
 
 def _build_configs_from_db(
@@ -293,6 +323,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # --- DB startup: migrations first, then in-memory state, then DB writes ---
     await run_migrations()
     await verify_alembic_at_head(settings)
+
+    # Sheet type archive: seed the shipped types. A failure is logged and never blocks startup.
+    try:
+        from app.seed.sheet_seed import run_sheet_seed
+
+        await run_sheet_seed(async_session)
+    except Exception:
+        _log.exception("Sheet type seeding failed; continuing without it")
 
     # 2. Plugin registries (idempotent — skips already-registered names).
     # Re-run if the registry was cleared (e.g. by test fixtures that call
@@ -746,6 +784,8 @@ def create_app() -> _LifespanManager:
     app.include_router(auth_session_routes.router)
     app.include_router(admin_printers_api_router)
     app.include_router(settings_api_router)
+    app.include_router(sheet_types_router)
+    app.include_router(sheets_router)
     app.include_router(info_routes.router)
 
     # D1: the same process serves the web app. Mounted after every router so the

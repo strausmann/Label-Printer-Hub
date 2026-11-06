@@ -139,7 +139,7 @@
   - `ItemMeta(source: str, purpose: str, ref: str | None)`.
 - [ ] **Step 1: Write the failing tests**
   - `test_reserve_writes_reserved_rows_with_job_id` — 9 items → 9 rows `reserved`, all with the page's `job_id`, purposes and sources from `ItemMeta`.
-  - `test_new_sheet_created_in_same_transaction` — new L4736REV sheet with `id_placement="cell"` → code `L4736-01`, ID row at cell 1 `source="hub"`.
+  - `test_new_sheet_created_in_same_transaction` — new L4736REV sheet with `id_placement="cell"` → code `L4736-0001`, ID row at cell 1 `source="hub"`.
   - `test_plan_changed_writes_nothing` — `expected` differs → `PlanChangedError` with the new plan; no rows; a would-be new sheet not created and the counter **not** advanced (acceptance 13).
   - `test_explicit_taken` — `[5]` already reserved → `CellsTakenError([5])`.
   - `test_type_mismatch_and_archived`.
@@ -232,8 +232,8 @@
   - `test_preview_plan_and_png` — 9 Grocy items (fake lookup) on a sheet with 17 used → 9 `new` cells 18–26, `free_after == [22]`, `png_base64` decodes to a 1240 × 1754 1-bit PNG.
   - `test_preview_marks_mapped_cells` — `qr_two_lines` on L4731REV → `mapped=True` (acceptance 21, preview side).
   - `test_preview_has_no_side_effects` — row counts of `sheets`, `sheet_cells`, `sheet_id_counters`, `jobs` unchanged.
-  - `test_preview_reprint_hint` — item `grocy/42` printed before on `L4736-02` cell 5 → hint.
-  - `test_preview_new_sheet_hint` — `new_sheet` → `new_code_hint == "L4736-03"` and an ID cell `is_id=True` when `id_placement="cell"`.
+  - `test_preview_reprint_hint` — item `grocy/42` printed before on `L4736-0002` cell 5 → hint.
+  - `test_preview_new_sheet_hint` — `new_sheet` → `new_code_hint == "L4736-0003"` and an ID cell `is_id=True` when `id_placement="cell"`.
   - `test_preview_page_bound` — a plan of 11 pages → 422 `preview_too_large`, no render.
   - API: scope `read` OK; printer-restricted key for another printer → 403 `printer_not_allowed`; tape printer → 409 `media_kind_mismatch`; unknown tray → 422 `tray_unknown`; 501 items → 422.
 - [ ] **Step 2: Run, expect FAIL.**
@@ -285,7 +285,7 @@
 - Consumes: Tasks 3, 5, 7.
 - Produces: `SheetCreate.id_placement: Literal["cell","margin","manual"]` plus `printer: str | None`, `tray: str | None`. `cell` requires a page printer (print scope + printer access) and creates the sheet, reserves the ID cell (first free after the hand-marked cells) and submits an ID-only `sheet_page` job in the same request; the response gains `job_id: UUID | None`. `margin` with a printer given runs the margin check and refuses `margin_too_small`; without a printer it is stored unchecked (the print dialog checks later). `GET /api/sheets/margin-check?type=&printer=&tray=` (read + printer access) → `{usable_mm, qr: bool, allowed: bool, reason: str | None}` for the UI's disabled-with-reason radio (spec 17.1). *(Plan decision: the spec's API table has no endpoint that tells the UI whether the margin option is available for a printer; this read-only route adds it. It is declared before `/{code}`; the code pattern cannot match it anyway.)*
 - [ ] **Step 1: Write the failing tests**
-  - `test_create_cell_queues_id_label` — L4736REV with 5 hand-marked cells → ID cell 6 reserved `source="hub"`, job printed by the fake → cell 6 used, `id_printed=True` (acceptance 6); the PDF's ID cell is `qr_two_lines` with payload `<public_url>/sheet/L4736-01`; on L4731REV the ID cell is text only.
+  - `test_create_cell_queues_id_label` — L4736REV with 5 hand-marked cells → ID cell 6 reserved `source="hub"`, job printed by the fake → cell 6 used, `id_printed=True` (acceptance 6); the PDF's ID cell is `qr_two_lines` with payload `<public_url>/sheet/L4736-0001`; on L4731REV the ID cell is text only.
   - `test_id_job_clean_failure_then_next_job_carries_id` — ID-only job aborted before start → cell 6 free, `id_printed=False`; next print onto the sheet reserves an ID cell at its first free cell (OC-40).
   - `test_margin_only_first_completed_job` — margin sheet: job 1 completes → `id_printed`; job 2 payload has no `margin_id`; a fresh margin sheet whose first job fails cleanly → the next job draws the margin ID again (acceptance 7).
   - `test_margin_too_small` — L4731REV on a printer reporting hw top 10 mm → 422 `margin_too_small`; `margin-check` returns `allowed=false` with the reason.

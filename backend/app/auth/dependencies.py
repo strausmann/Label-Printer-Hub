@@ -288,18 +288,23 @@ async def _validate_api_key(
     # Rate limit check — after bcrypt verify to avoid info leak on exhaustion
     _enforce_key_rate_limit(key_row.id, key_row.rate_limit_per_minute, key_row.name)
 
+    # Read before the update: a rollback expires the row's attributes.
+    key_id = key_row.id
+    allowed_printer_ids = key_row.allowed_printer_ids or []
+
     # Best-effort last-used update (don't fail auth if this errors)
     try:
-        await api_keys_repo.update_last_used(session, key_row.id, ip=client_ip)
+        await api_keys_repo.update_last_used(session, key_id, ip=client_ip)
     except Exception as exc:
-        _log.warning("Failed to update last_used for key %s: %s", key_row.id, exc)
+        _log.warning("Failed to update last_used for key %s: %s", key_id, exc)
+        await session.rollback()  # a failed commit leaves the session unusable until rolled back
 
     return AuthContext(
         source="api-key",
         scope=effective_scope,  # type: ignore[arg-type]
-        api_key_id=key_row.id,
+        api_key_id=key_id,
         ip=client_ip,
-        allowed_printer_ids=key_row.allowed_printer_ids or [],
+        allowed_printer_ids=allowed_printer_ids,
     )
 
 
