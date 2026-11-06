@@ -133,7 +133,7 @@ def apply_deviation(
 
 def correction_mm(dev: Deviation, page: PageName) -> Affine:
     """The inverse of the deviation, in mm with y down."""
-    return _deviation_affine(dev, page).inverse()
+    return _deviation_affine(dev, page).inverse()  # D17
 
 
 def _mm_to_pdf(page: str) -> Affine:

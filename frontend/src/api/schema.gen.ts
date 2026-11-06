@@ -298,6 +298,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/printers/{printer_id}/calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Calibration of every enabled tray */
+        get: operations["get_calibration_api_printers__printer_id__calibration_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/printers/{printer_id}/calibration/{tray}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the manual calibration of a tray */
+        put: operations["put_calibration_api_printers__printer_id__calibration__tray__put"];
+        post?: never;
+        /** Reset a tray to no calibration */
+        delete: operations["delete_calibration_api_printers__printer_id__calibration__tray__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/printers/{printer_id}/calibration/{tray}/fit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fit calibration values from measured readings (nothing is saved) */
+        post: operations["fit_calibration_api_printers__printer_id__calibration__tray__fit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/printers/{printer_id}/pause": {
         parameters: {
             query?: never;
@@ -1272,6 +1324,97 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * CalibrationIn
+         * @description A printer's measured deviation; the hub applies the inverse when it renders (D17).
+         *
+         *     Offsets are millimetres (±10, at most 2 decimals), scales are factors (0.95 to 1.05, at
+         *     most 6 decimals), rotation is degrees (±2, at most 6 decimals, positive is clockwise).
+         *     The bounds are checked by the service and reported as ``calibration_out_of_range``; the
+         *     fit endpoint returns values of this shape even when they are outside the bounds.
+         */
+        CalibrationIn: {
+            /**
+             * Offset X Mm
+             * @default 0
+             */
+            offset_x_mm: number;
+            /**
+             * Offset Y Mm
+             * @default 0
+             */
+            offset_y_mm: number;
+            /**
+             * Rotation Deg
+             * @default 0
+             */
+            rotation_deg: number;
+            /**
+             * Scale X
+             * @default 1
+             */
+            scale_x: number;
+            /**
+             * Scale Y
+             * @default 1
+             */
+            scale_y: number;
+        };
+        /** CalibrationPut */
+        CalibrationPut: {
+            /** @description The sheet type version the page was measured on (optional). */
+            measured_on?: components["schemas"]["MeasuredOn"] | null;
+            /**
+             * Offset X Mm
+             * @default 0
+             */
+            offset_x_mm: number;
+            /**
+             * Offset Y Mm
+             * @default 0
+             */
+            offset_y_mm: number;
+            /**
+             * Rotation Deg
+             * @default 0
+             */
+            rotation_deg: number;
+            /**
+             * Scale X
+             * @default 1
+             */
+            scale_x: number;
+            /**
+             * Scale Y
+             * @default 1
+             */
+            scale_y: number;
+        };
+        /**
+         * CalibrationRead
+         * @description One enabled tray; the values are ``None`` while the tray has no calibration (identity).
+         */
+        CalibrationRead: {
+            measured_on?: components["schemas"]["MeasuredOn"] | null;
+            /** Method */
+            method?: string | null;
+            /** Offset X Mm */
+            offset_x_mm?: number | null;
+            /** Offset Y Mm */
+            offset_y_mm?: number | null;
+            /** Rotation Deg */
+            rotation_deg?: number | null;
+            /** Scale X */
+            scale_x?: number | null;
+            /** Scale Y */
+            scale_y?: number | null;
+            /** Tray */
+            tray: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+        };
         /** CellHitRead */
         CellHitRead: {
             /** Cell */
@@ -1356,6 +1499,37 @@ export interface components {
             format_version: 1;
             type: components["schemas"]["TypeDoc"];
             version: components["schemas"]["VersionDoc"];
+        };
+        /** FitRequest */
+        FitRequest: {
+            /** Readings */
+            readings: components["schemas"]["ReadingIn"][];
+            /**
+             * Type
+             * @description Sheet type key.
+             */
+            type: string;
+            /**
+             * Version
+             * @description Defaults to the current version.
+             */
+            version?: number | null;
+        };
+        /** FitResponse */
+        FitResponse: {
+            /**
+             * Flagged
+             * @description Indices of readings further than 0.3 mm from the fit.
+             */
+            flagged: number[];
+            /**
+             * Out Of Range
+             * @description Names of values outside the allowed ranges.
+             */
+            out_of_range: string[];
+            /** Residuals Mm */
+            residuals_mm: number[];
+            values: components["schemas"]["CalibrationIn"];
         };
         /** GeometryMm */
         GeometryMm: {
@@ -1694,6 +1868,13 @@ export interface components {
             some_remaining: boolean;
             /** Type */
             type: string | null;
+        };
+        /** MeasuredOn */
+        MeasuredOn: {
+            /** Type Key */
+            type_key: string;
+            /** Version */
+            version: number;
         };
         /** NextCode */
         NextCode: {
@@ -2112,6 +2293,29 @@ export interface components {
             status: "ready" | "degraded" | "not-ready";
             /** Version */
             version: string;
+        };
+        /** ReadingIn */
+        ReadingIn: {
+            /**
+             * Across Mm
+             * @description Ink offset to the right, mm.
+             */
+            across_mm: number;
+            /**
+             * Col Gap
+             * @description Vertical gap S1, S2, ... counted from 1.
+             */
+            col_gap: number;
+            /**
+             * Down Mm
+             * @description Ink offset downwards, mm.
+             */
+            down_mm: number;
+            /**
+             * Row Gap
+             * @description Horizontal gap Z1, Z2, ... counted from 1.
+             */
+            row_gap: number;
         };
         /**
          * ReasonRead
@@ -3274,6 +3478,146 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["app__schemas__printer__PrinterRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_calibration_api_printers__printer_id__calibration_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_calibration_api_printers__printer_id__calibration__tray__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_calibration_api_printers__printer_id__calibration__tray__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fit_calibration_api_printers__printer_id__calibration__tray__fit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FitResponse"];
                 };
             };
             /** @description Validation Error */

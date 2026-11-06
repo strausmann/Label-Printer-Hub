@@ -243,3 +243,44 @@ class IppBadResponseApiError(SheetApiError):
     status = 502
     error_code = "ipp_bad_response"
     message = "The printer's answer could not be used."
+
+
+# ---------------------------------------------------------------------------- calibration
+
+
+class PrinterNotFoundError(SheetApiError):
+    status = 404
+    error_code = "printer_not_found"
+    message = "Printer not found."
+
+
+class CalibrationOutOfRangeError(SheetApiError):
+    """A calibration value is outside its allowed range or has too many decimals."""
+
+    status = 422
+    error_code = "calibration_out_of_range"
+    message = "A calibration value is outside the allowed range."
+
+    def __init__(
+        self,
+        field: str,
+        *,
+        minimum: float,
+        maximum: float,
+        reason: str = "out_of_range",
+    ) -> None:
+        super().__init__(
+            f"Calibration value {field} is not acceptable ({reason}).",
+            detail={"field": field, "min": minimum, "max": maximum, "reason": reason},
+        )
+
+
+class ReadingsInsufficientError(SheetApiError):
+    """Fewer than three readings, or all on one line: no deviation can be fitted."""
+
+    status = 422
+    error_code = "readings_insufficient"
+    message = "The readings are not enough to fit a calibration."
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(detail={"reason": reason})
