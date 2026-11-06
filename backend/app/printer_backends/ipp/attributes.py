@@ -552,7 +552,9 @@ def map_status(attrs: Mapping[str, list[Value]]) -> IppStatusRecord:
         printer_state=state or "stopped",
         reasons=shown,
         blocking_reason=blocking,
-        warnings=list(dict.fromkeys(r.keyword for r in reasons if r.severity == "warning")),
+        warnings=list(dict.fromkeys(r.keyword for r in reasons if r.severity == "warning"))[
+            :MAX_REASONS
+        ],
         markers=_markers(attrs, reasons),
         trays=_trays(attrs),
         jobs_ahead=jobs if jobs is not None and jobs >= 0 else None,

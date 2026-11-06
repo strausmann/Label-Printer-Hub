@@ -800,3 +800,11 @@ def test_waste_is_recognised_by_name_when_the_type_is_missing() -> None:
 def test_pdf_versions_are_summarised() -> None:
     attrs = _base(document_format_version_supported=["1.4", "1.7"])
     assert map_status(attrs).summary.pdf_versions == ["1.4", "1.7"]
+
+
+def test_warnings_are_bounded_like_the_displayed_reasons() -> None:
+    """Thousands of distinct warning keywords must not grow the status record unbounded."""
+    reasons: list[Value] = [f"vendor-thing-{i}-warning" for i in range(500)]
+    rec = map_status(_base(printer_state_reasons=reasons))
+    assert len(rec.warnings) == 32
+    assert rec.warnings[0] == "vendor-thing-0"
