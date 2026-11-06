@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## 1.2.0 (2026-11-06)
+
+* feat(api): sheet archive with versioned types, seed, numbered sheets and cell usage (#203) ([7085e06](https://github.com/strausmann/Label-Printer-Hub/commit/7085e06)), closes [#203](https://github.com/strausmann/Label-Printer-Hub/issues/203) [#150](https://github.com/strausmann/Label-Printer-Hub/issues/150)
+* docs(release): note the licence change in the 1.1.0 changelog ([49bcf23](https://github.com/strausmann/Label-Printer-Hub/commit/49bcf23)), closes [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+
 ## 1.1.0 (2026-11-05)
 
 **Licence:** Releases up to and including `1.0.3` are MIT; from 1.1.0 on AGPL-3.0-or-later.
