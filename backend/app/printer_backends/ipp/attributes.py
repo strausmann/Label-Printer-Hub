@@ -41,6 +41,7 @@ PRINTER_ATTRS: tuple[str, ...] = (
     "printer-make-and-model",
     "ipp-versions-supported",
     "document-format-supported",
+    "document-format-version-supported",
     "printer-resolution-supported",
     "media-supported",
     "media-size-supported",
@@ -108,6 +109,7 @@ _STATES: dict[int, Literal["idle", "printing", "stopped"]] = {
 }
 _DPCM_TO_DPI = 2.54
 _SOME_REMAINING = -3
+_MAX_REASON_LENGTH = 64
 
 
 # ---------------------------------------------------------------------------- models
@@ -233,10 +235,10 @@ def _strings(attrs: Mapping[str, list[Value]], name: str) -> list[str]:
         if not _usable_text(value):
             _warn_once(name, "unusable-text")
             continue
-        out.append(value)
         if len(out) == MAX_ENTRIES:
             _warn_once(name, "too-many-values")
             break
+        out.append(value)
     return out
 
 
@@ -254,9 +256,9 @@ def _first_int(attrs: Mapping[str, list[Value]], name: str) -> int | None:
     values = attrs.get(name, [])
     if not values or isinstance(values[0], OutOfBand):
         return None
-    if _is_int(values[0]):
-        assert isinstance(values[0], int)
-        return values[0]
+    first = values[0]
+    if isinstance(first, int) and not isinstance(first, bool):
+        return first
     _warn_once(name, "wrong-type")
     return None
 
@@ -369,16 +371,17 @@ def summarise(attrs: Mapping[str, list[Value]]) -> ProbeSummary:
 # ---------------------------------------------------------------------------- map_status
 
 
-def _reasons(attrs: Mapping[str, list[Value]], limit: int) -> list[Reason]:
+def _reasons(attrs: Mapping[str, list[Value]]) -> list[Reason]:
+    """Every valid reason in wire order. Not cut: the blocking decision is made over all of
+    them (the codec already bounds the count); only the display list is cut."""
     out: list[Reason] = []
     for value in attrs.get("printer-state-reasons", []):
-        if len(out) == limit:
-            break
         if isinstance(value, OutOfBand):
             continue
         if not isinstance(value, str):
             _warn_once("printer-state-reasons", "wrong-type")
             continue
+        value = value.lower() if len(value) <= _MAX_REASON_LENGTH else value
         if _REASON.fullmatch(value) is None:
             _warn_once("printer-state-reasons", "unusable-keyword")
             continue
@@ -394,6 +397,8 @@ def _reasons(attrs: Mapping[str, list[Value]], limit: int) -> list[Reason]:
             continue
         if severity is None:
             severity = "warning" if base in _LOW_SUPPLY else "error"  # OC-20
+        # Any explicit "-error" blocks, also "toner-low-error" (spec 11.3: a printer that states
+        # an error is not reporting a mere low supply). Blocking only keeps a job queued.
         out.append(
             Reason(
                 keyword=base,
@@ -404,62 +409,79 @@ def _reasons(attrs: Mapping[str, list[Value]], limit: int) -> list[Reason]:
     return out
 
 
-def _column(
-    attrs: Mapping[str, list[Value]], name: str, *, numbers: bool
-) -> list[int | str | None] | None:
-    """One ``marker-*`` list, index-aligned (an unusable entry becomes ``None``), or ``None``
-    when the attribute is absent or holds no usable entry at all."""
-    out: list[int | str | None] = []
+def _text_column(attrs: Mapping[str, list[Value]], name: str) -> list[str | None] | None:
+    """One text ``marker-*`` list, index-aligned (an unusable entry is ``None``); ``None``
+    when the attribute is absent or holds no usable entry."""
+    out: list[str | None] = []
     for value in attrs.get(name, [])[:MAX_ENTRIES]:
-        if numbers and _is_int(value):
-            assert isinstance(value, int)
-            out.append(value)
-        elif not numbers and isinstance(value, str):
+        if isinstance(value, str):
             out.append(_cut(value) or None)
         else:
             if not isinstance(value, OutOfBand):
                 _warn_once(name, "wrong-type")
             out.append(None)
-    if all(v is None for v in out):
-        return None
-    return out
+    return None if all(v is None for v in out) else out
+
+
+def _int_column(attrs: Mapping[str, list[Value]], name: str) -> list[int | None] | None:
+    """Like ``_text_column`` for integer lists."""
+    out: list[int | None] = []
+    for value in attrs.get(name, [])[:MAX_ENTRIES]:
+        if isinstance(value, int) and not isinstance(value, bool):
+            out.append(value)
+        else:
+            if not isinstance(value, OutOfBand):
+                _warn_once(name, "wrong-type")
+            out.append(None)
+    return None if all(v is None for v in out) else out
+
+
+def _is_waste(name: str | None, kind: str | None) -> bool:
+    return any("waste" in (text or "").lower() for text in (name, kind))
 
 
 def _markers(attrs: Mapping[str, list[Value]], reasons: list[Reason]) -> list[Marker]:
-    names = _column(attrs, "marker-names", numbers=False)
-    colors = _column(attrs, "marker-colors", numbers=False)
-    types = _column(attrs, "marker-types", numbers=False)
-    levels = _column(attrs, "marker-levels", numbers=True)
-    lows = _column(attrs, "marker-low-levels", numbers=True)
+    names = _text_column(attrs, "marker-names")
+    colors = _text_column(attrs, "marker-colors")
+    types = _text_column(attrs, "marker-types")
+    levels = _int_column(attrs, "marker-levels")
+    lows = _int_column(attrs, "marker-low-levels")
     present = [c for c in (names, colors, types, levels, lows) if c is not None]
     if not present:
         return []
     keywords = {r.keyword for r in reasons}
     reason_low = bool(keywords & _LOW_REASONS)
     reason_empty = bool(keywords & _EMPTY_REASONS)
+    count = min(len(c) for c in present)
 
-    def at(column: list[int | str | None] | None, i: int) -> int | str | None:
+    def at(column: list[str | None] | None, i: int) -> str | None:
         return column[i] if column is not None and i < len(column) else None
 
+    def level_at(i: int) -> int | None:
+        return levels[i] if levels is not None and i < len(levels) else None
+
+    supplies = sum(1 for i in range(count) if not _is_waste(at(names, i), at(types, i)))
     out: list[Marker] = []
-    for i in range(min(len(c) for c in present)):
-        name, color, kind = at(names, i), at(colors, i), at(types, i)
-        level, low_level = at(levels, i), at(lows, i)
-        assert level is None or isinstance(level, int)
-        assert low_level is None or isinstance(low_level, int)
+    for i in range(count):
+        name, kind = at(names, i), at(types, i)
+        level = level_at(i)
+        low_level = lows[i] if lows is not None and i < len(lows) else None
         percent = level if level is not None and 0 <= level <= 100 else None
         if level is not None and level > 100:
             _warn_once("marker-levels", "out-of-range")
+        # A printer-wide reason names no marker. It is applied to a supply whose own level is
+        # unknown, or to the only supply; a known level wins, waste containers are never marked.
+        by_reason = not _is_waste(name, kind) and (percent is None or supplies == 1)
         out.append(
             Marker(
-                name=name if isinstance(name, str) else f"marker-{i + 1}",
-                color=color if isinstance(color, str) else None,
-                type=kind if isinstance(kind, str) else None,
+                name=name or f"marker-{i + 1}",
+                color=at(colors, i),
+                type=kind,
                 level_percent=percent,
                 some_remaining=level == _SOME_REMAINING,
-                low=reason_low
+                low=(by_reason and reason_low)
                 or (percent is not None and low_level is not None and percent <= low_level),
-                empty=reason_empty or percent == 0,
+                empty=(by_reason and reason_empty) or percent == 0,
             )
         )
     return out
@@ -518,15 +540,17 @@ def map_status(attrs: Mapping[str, list[Value]]) -> IppStatusRecord:
     An answer exists, so ``online`` is true; a failed request is the caller's ``online=false``.
     """
     state = _state_name(attrs)
-    reasons = _reasons(attrs, MAX_REASONS if state is not None else MAX_REASONS - 1)
+    reasons = _reasons(attrs)
     if state is None:
         reasons.insert(0, Reason(keyword="unknown-state", severity="error", blocking=True))
     blocking = next((r.keyword for r in reasons if r.blocking), None)
+    # Decided over all reasons above; only the displayed list is cut, blockers first.
+    shown = sorted(reasons, key=lambda r: not r.blocking)[:MAX_REASONS]
     jobs = _first_int(attrs, "queued-job-count")
     return IppStatusRecord(
         online=True,
         printer_state=state or "stopped",
-        reasons=reasons,
+        reasons=shown,
         blocking_reason=blocking,
         warnings=list(dict.fromkeys(r.keyword for r in reasons if r.severity == "warning")),
         markers=_markers(attrs, reasons),

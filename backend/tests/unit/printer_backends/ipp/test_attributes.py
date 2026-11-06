@@ -74,7 +74,8 @@ def test_printer_attrs_cover_the_brief() -> None:
         "media-right-margin-supported",
     ):
         assert name in PRINTER_ATTRS
-    assert len(PRINTER_ATTRS) == 28
+    assert len(PRINTER_ATTRS) == 29
+    assert "document-format-version-supported" in PRINTER_ATTRS
 
 
 # ---------------------------------------------------------------- map_status
@@ -160,7 +161,8 @@ def test_first_blocking_reason_is_reported_and_none_is_ignored() -> None:
         )
     )
     assert rec.blocking_reason == "door-open"
-    assert [r.keyword for r in rec.reasons] == ["toner-low", "door-open", "media-jam"]
+    # blockers first in the displayed list, wire order inside each group
+    assert [r.keyword for r in rec.reasons] == ["door-open", "media-jam", "toner-low"]
 
 
 def test_state_mapping() -> None:
@@ -263,7 +265,7 @@ def _(rec: Any) -> None:
         "printer-state-reasons",
         "bad reason!",
         "x" * 300,
-        "UPPER-case",
+        "UPPER case",
         "",
         "door-open",
         "x" * 64,
@@ -691,3 +693,110 @@ def test_media_col_is_found_beyond_the_list_cut() -> None:
     listed: list[Value] = [f"attr-{i}" for i in range(200)] + ["media-col"]
     summary = summarise(_base(job_creation_attributes_supported=listed))
     assert summary.media_col_supported is True
+
+
+# ---------------------------------------------------------------- fix round 1
+
+
+def test_blocker_beyond_the_display_cut_still_blocks() -> None:
+    reasons: list[Value] = (
+        ["toner-low-warning"] * 40 + ["media-jam-error"] + ["sleep-mode-report"] * 20
+    )
+    rec = map_status(_base(printer_state_reasons=reasons))
+    assert rec.blocking_reason == "media-jam"
+    assert len(rec.reasons) == 32
+    assert rec.reasons[0].keyword == "media-jam"  # blockers first in the displayed list
+    assert rec.warnings == ["toner-low"]
+
+
+def test_unknown_state_stays_within_the_display_cut() -> None:
+    attrs = _base(printer_state_reasons=["door-open-error"] * 100)
+    del attrs["printer-state"]
+    rec = map_status(attrs)
+    assert len(rec.reasons) == 32
+    assert rec.blocking_reason == "unknown-state"
+
+
+def test_reason_keywords_are_case_insensitive() -> None:
+    rec = map_status(_base(printer_state_reasons=["Media-Jam-Error", "TONER-LOW-WARNING"]))
+    assert rec.blocking_reason == "media-jam"
+    assert rec.warnings == ["toner-low"]
+
+
+def test_toner_low_error_blocks_by_design() -> None:
+    """Spec 11.3: only bare ``toner-low`` and ``-warning`` are non-blocking; a printer that
+    states ``-error`` is not reporting a mere low supply. Blocking only keeps the job queued."""
+    rec = map_status(_base(printer_state_reasons=["toner-low-error"]))
+    assert rec.blocking_reason == "toner-low"
+
+
+def test_exactly_64_values_is_not_an_anomaly(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="app.printer_backends.ipp.attributes"):
+        summarise(_base(media_supported=[f"m{i}" for i in range(64)]))
+        assert caplog.records == []
+        summarise(_base(media_supported=[f"m{i}" for i in range(65)]))
+    assert len(caplog.records) == 1
+
+
+def _color_printer(**over: list[Value]) -> Attrs:
+    return _base(
+        marker_names=["black", "cyan", "magenta", "yellow", "waste"],
+        marker_types=["toner", "toner", "toner", "toner", "waste-toner"],
+        **over,
+    )
+
+
+def test_reason_marks_only_the_toner_with_unknown_level_on_a_colour_printer() -> None:
+    rec = map_status(
+        _color_printer(
+            marker_levels=[80, 5, -1, 60, -1],
+            marker_low_levels=[10, 10, 10, 10, 10],
+            printer_state_reasons=["toner-low-warning"],
+        )
+    )
+    assert [m.low for m in rec.markers] == [False, True, True, False, False]  # cyan by level
+    assert [m.empty for m in rec.markers] == [False] * 5
+
+
+def test_reason_marks_every_toner_when_no_level_is_known_but_never_the_waste_container() -> None:
+    rec = map_status(_color_printer(printer_state_reasons=["toner-empty-error"]))
+    assert [m.empty for m in rec.markers] == [True, True, True, True, False]
+    low = map_status(
+        _color_printer(marker_levels=[-1] * 5, printer_state_reasons=["marker-supply-low-report"])
+    )
+    assert [m.low for m in low.markers] == [True, True, True, True, False]
+
+
+def test_known_levels_win_over_the_reason_on_a_colour_printer() -> None:
+    rec = map_status(
+        _color_printer(
+            marker_levels=[80, 70, 60, 50, 10], printer_state_reasons=["toner-empty-error"]
+        )
+    )
+    assert not any(m.empty or m.low for m in rec.markers)
+
+
+def test_reason_applies_to_the_only_supply_even_beside_a_waste_container() -> None:
+    rec = map_status(
+        _base(
+            marker_names=["black", "waste"],
+            marker_types=["toner", "waste-toner"],
+            marker_levels=[50, 20],
+            printer_state_reasons=["toner-low-warning"],
+        )
+    )
+    assert [m.low for m in rec.markers] == [True, False]
+
+
+def test_waste_is_recognised_by_name_when_the_type_is_missing() -> None:
+    rec = map_status(
+        _base(
+            marker_names=["black", "Waste Toner Box"], printer_state_reasons=["toner-empty-error"]
+        )
+    )
+    assert [m.empty for m in rec.markers] == [True, False]
+
+
+def test_pdf_versions_are_summarised() -> None:
+    attrs = _base(document_format_version_supported=["1.4", "1.7"])
+    assert map_status(attrs).summary.pdf_versions == ["1.4", "1.7"]
