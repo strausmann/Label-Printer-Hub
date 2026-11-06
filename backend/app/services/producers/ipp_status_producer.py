@@ -287,9 +287,14 @@ class IppStatusProducer:
         )
 
     async def _maybe_resume(self, record: IppStatusRecord) -> None:
-        """OC-22: lift a pause the printer's own error caused; never a user pause."""
+        """OC-22: lift a pause the printer's own error caused; never a user pause.
+
+        Only when the printer is online, reports no blocking reason and accepts jobs.
+        """
         if self._pause is None or not record.online or record.blocking_reason is not None:
             return
+        if record.summary.accepting_jobs is False:
+            return  # resuming would only defer the held job again (not_accepting)
         try:
             info = self._pause.pause_info(self._printer_id)
             if info is not None and info.source == "printer_error":

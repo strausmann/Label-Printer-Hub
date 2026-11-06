@@ -357,3 +357,76 @@ async def test_stop_does_not_wait_for_a_tracked_job(handler: RecordingHandler) -
     assert await env.db_state(jid) == DbJobState.PRINTING.value
     assert handler.calls == []
     assert env.state.own_job_ids == set()
+
+
+async def test_user_pause_during_preflight_survives_deferral(handler: RecordingHandler) -> None:
+    """The user pauses while the pre-flight is in flight; the pre-flight then defers. The pause
+    stays a user pause, a healthy probe does not lift it, and the job does not print."""
+    from app.services.event_bus import EventBus
+    from app.services.producers.ipp_status_producer import IppStatusProducer
+
+    fake = FakeIppPrinter(job_script=[9])
+    holder: dict[str, _Env] = {}
+
+    class _PauseThenUnreachable(httpx.AsyncBaseTransport):
+        def __init__(self) -> None:
+            self.inner = httpx.ASGITransport(app=fake)
+            self.armed = True
+
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            if self.armed:
+                self.armed = False
+                env = holder["env"]
+                await env.queue.pause_printer(env.page.id, reason="user", source="user")
+                raise httpx.ConnectError("printer not reachable", request=request)
+            return await self.inner.handle_async_request(request)
+
+    async with _env(fake, _PauseThenUnreachable()) as env:
+        holder["env"] = env
+        jid = await _submit(env)
+        await env.until(lambda: env.queue.pause_info(env.page.id) is not None)
+        await asyncio.sleep(0.05)  # let the worker handle the Deferred
+        info = env.queue.pause_info(env.page.id)
+        assert info is not None and info.source == "user"
+
+        producer = IppStatusProducer(
+            bus=EventBus(),
+            printer_id=env.page.id,
+            client=IppClient(FAKE_URI, transport=httpx.ASGITransport(app=fake)),
+            session_factory=None,  # type: ignore[arg-type]  # cache write fails, logged
+            state=env.state,
+            pause_control=env.queue,
+            interval_s=30,
+        )
+        await producer.probe_once()
+        await producer.stop()
+        await asyncio.sleep(0.05)
+        assert env.queue.is_paused(env.page.id)
+        assert env.ops("Print-Job") == []
+        assert await env.db_state(jid) == DbJobState.QUEUED.value
+
+
+async def test_printer_error_pause_may_become_user_pause(env: _Env) -> None:
+    await env.queue.pause_printer(env.page.id, reason="ipp_unreachable", source="printer_error")
+    await env.queue.pause_printer(env.page.id, reason="user", source="user")
+    info = env.queue.pause_info(env.page.id)
+    assert info is not None and info.source == "user"
+
+
+async def test_no_pause_when_deferred_job_was_cancelled(handler: RecordingHandler) -> None:
+    fake = FakeIppPrinter(job_script=[9])
+    holder: dict[str, Any] = {}
+
+    class _CancelThenUnreachable(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            await holder["env"].queue.cancel(str(holder["jid"]))
+            raise httpx.ConnectError("printer not reachable", request=request)
+
+    async with _env(fake, _CancelThenUnreachable()) as env:
+        holder["env"] = env
+        await env.queue.pause_printer(env.page.id, reason="user", source="user")
+        holder["jid"] = await _submit(env)
+        await env.queue.resume_printer(env.page.id)
+        await env.wait_db(holder["jid"], DbJobState.CANCELLED.value)
+        await asyncio.sleep(0.05)
+        assert not env.queue.is_paused(env.page.id)

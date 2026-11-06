@@ -18,7 +18,7 @@ from app.models.job import JobState as DbJobState
 from app.printer_backends.ipp.client import IppClient
 from app.services.job_lifecycle import Job, JobState
 from app.services.job_store import MemoryJobStore
-from app.services.page_job_runner import Deferred, PageJobRunner
+from app.services.page_job_runner import MAX_CONSECUTIVE_POLL_ERRORS, Deferred, PageJobRunner
 from app.services.page_jobs import IppPagePrinter, PageJob, PagePayload
 from app.services.producers.ipp_status_producer import IppPrinterState
 
@@ -596,3 +596,105 @@ async def test_unreachable_for_long_never_times_out(handler: RecordingHandler) -
     fake.job_script = [9]
     await task
     assert handler.names(jid) == ["started", "completed"]
+
+
+async def test_blocking_reason_while_idle_defers(handler: RecordingHandler) -> None:
+    """Any blocking reason defers, whatever the printer state (consistent with auto-resume)."""
+    env = _Env(FakeIppPrinter(printer_state=3, reasons=["media-empty-error"]))
+    pj = await env.job()
+    with pytest.raises(Deferred) as info:
+        await env.run(pj)
+    assert info.value.reason_code == "media-empty"
+    assert env.ops("Print-Job") == 0
+
+
+class _BadAnswerTransport(httpx.AsyncBaseTransport):
+    """Get-Job-Attributes reaches the printer, the answer is not IPP (bad content type)."""
+
+    def __init__(self, fake: FakeIppPrinter, failures: int) -> None:
+        self.inner = httpx.ASGITransport(app=fake)
+        self.fake = fake
+        self.failures = failures
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        await request.aread()
+        response = await self.inner.handle_async_request(request)
+        if self.fake.received[-1].operation != "Get-Job-Attributes" or self.failures <= 0:
+            return response
+        await response.aread()
+        self.failures -= 1
+        return httpx.Response(200, headers={"content-type": "text/html"}, content=b"<html/>")
+
+
+@pytest.mark.parametrize("kind", ["status_error", "bad_answer"])
+async def test_persistent_poll_errors_end_interrupted(handler: RecordingHandler, kind: str) -> None:
+    """Not a reachability problem (OC-23 does not apply): five failures in a row end the job."""
+    fake = FakeIppPrinter(job_script=[5])
+    transport: httpx.AsyncBaseTransport | None = None
+    if kind == "bad_answer":
+        transport = _BadAnswerTransport(fake, failures=10_000)
+    env = _Env(fake, transport=transport)
+    pj = await env.job()
+    original = fake._get_job
+    polls = {"n": 0}
+
+    def first_ok_then_forbidden(ops: dict[str, Any]) -> Any:
+        polls["n"] += 1
+        if polls["n"] == 1:
+            return original(ops)  # observed processing: started
+        return 0x0401, []  # client-error-forbidden
+
+    if kind == "status_error":
+        fake._get_job = first_ok_then_forbidden  # type: ignore[method-assign]
+    else:
+        transport.failures = 0  # type: ignore[union-attr]
+
+        async def on_started(job_id: UUID) -> None:
+            # the first poll observed processing; from now on every answer is unusable
+            transport.failures = 10_000  # type: ignore[union-attr]
+
+        handler.on_started = on_started  # type: ignore[method-assign]
+    await env.run(pj)
+    row = await env.row(pj)
+    assert row.state == DbJobState.FAILED.value
+    assert row.error is not None and row.error.startswith("interrupted: ")
+    assert row.result is not None and row.result["started"] is True
+    assert pj.job.error_code == "interrupted"
+    assert env.ops("Get-Job-Attributes") == 1 + MAX_CONSECUTIVE_POLL_ERRORS
+
+
+async def test_persistent_poll_errors_before_start_keep_started_false(
+    handler: RecordingHandler,
+) -> None:
+    fake = FakeIppPrinter(job_script=[3], fail_get_job_with=0x0400)
+    env = _Env(fake)
+    pj = await env.job()
+    await env.run(pj)
+    assert handler.ended(UUID(pj.job.id)) == {
+        "state": "failed",
+        "started": False,
+        "error_code": "interrupted",
+    }
+    assert env.ops("Get-Job-Attributes") == MAX_CONSECUTIVE_POLL_ERRORS
+
+
+async def test_successful_poll_resets_the_error_count(handler: RecordingHandler) -> None:
+    fake = FakeIppPrinter(job_script=[3])
+    env = _Env(fake)
+    pj = await env.job()
+    original = fake._get_job
+    polls = {"n": 0}
+    good = {MAX_CONSECUTIVE_POLL_ERRORS, 2 * MAX_CONSECUTIVE_POLL_ERRORS}
+
+    def mostly_bad(ops: dict[str, Any]) -> Any:
+        polls["n"] += 1
+        if polls["n"] == 2 * MAX_CONSECUTIVE_POLL_ERRORS + 1:
+            fake.job_script = [9]
+            return original(ops)
+        if polls["n"] in good:
+            return original(ops)
+        return 0x0400, []  # client-error-bad-request
+
+    fake._get_job = mostly_bad  # type: ignore[method-assign]
+    await env.run(pj)
+    assert (await env.row(pj)).state == DbJobState.DONE.value

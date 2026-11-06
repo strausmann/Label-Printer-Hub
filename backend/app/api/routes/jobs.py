@@ -389,6 +389,10 @@ async def retry_job(
                 "Job payload cannot be re-rendered",
                 str(exc),
             ) from exc
+        except MediaKindMismatchError as exc:
+            # A tape row whose printer is now a page printer (D18).
+            await _fail_unqueued(session, new_job.id, "retry_media_kind_mismatch")
+            raise exc.to_http() from exc
         except KeyError as exc:
             await _fail_unqueued(session, new_job.id, "retry_printer_unavailable")
             raise _retry_rejected(

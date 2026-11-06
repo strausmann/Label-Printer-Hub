@@ -4,7 +4,7 @@
 at the printer). The sequence:
 
 1. **Pre-flight** (OC-21): a live Get-Printer-Attributes *before* ``mark_printing``. Any IPP
-   error, a stopped printer with a blocking reason, or ``printer-is-accepting-jobs = false``
+   error, any blocking reason, or ``printer-is-accepting-jobs = false``
    raises ``Deferred``; the job never left ``queued`` (there is no ``PRINTING -> QUEUED``
    edge) and the queue holds it and pauses the printer.
 2. ``mark_printing`` and ``result = {"phase": "uploading", "started": false}``.
@@ -16,8 +16,11 @@ at the printer). The sequence:
 5. Accepted: ``result`` gets the IPP job id; the id joins the printer's ``own_job_ids``.
 6. Poll Get-Job-Attributes until a final state. ``started`` turns true at the first state
    5/6/9 or ``impressions_completed > 0`` and is persisted before any outcome is reported.
-   An unreachable printer, a broken exchange or an unusable answer while polling never ends
-   the job: the runner keeps polling with a doubling back-off (OC-23). ``client-error-not-found``
+   An unreachable printer or a broken exchange while polling never ends the job: the runner
+   keeps polling with a doubling back-off (OC-23). Answers the printer gives but the hub cannot
+   use (an error status, a malformed body) end the job ``failed/interrupted`` after
+   ``MAX_CONSECUTIVE_POLL_ERRORS`` in a row, so a misbehaving printer cannot hold the queue
+   forever. ``client-error-not-found``
    (the printer forgot the job) ends ``failed/interrupted`` with ``started`` as observed.
 
 Final states: 9 -> ``done``; 7 -> ``cancelled`` if never started, else ``failed/interrupted``;
@@ -28,7 +31,10 @@ Cancel (``request_cancel``) is asynchronous at the printer (spike S2): Cancel-Jo
 the polling decides the outcome. Right after Cancel-Job a printer reports ``processing`` with
 ``processing-to-stop-point``; that interim state is not taken as evidence that the page started.
 ``client-error-not-possible`` on Cancel-Job means the job already finished; the next poll
-reads its final state. A cancel that arrives before the upload skips the Print-Job.
+reads its final state. A cancel that arrives before the upload skips the Print-Job. A page
+that was being fed when the cancel arrived and ends ``canceled`` with
+``job-impressions-completed = 0`` counts as not started: the printer's counter is the evidence
+the hub has (a partly fed sheet the printer does not count is not seen).
 
 Messages are fixed text; a printer's own text never reaches the job record (spec 18).
 """
@@ -80,6 +86,10 @@ _AT_PRINTER = {_PENDING: "waiting", _HELD: "waiting", _PROCESSING: "printing", _
 _STARTED_STATES = frozenset({_PROCESSING, _STOPPED, _COMPLETED})
 _NOT_POSSIBLE = 0x0404
 _STOP_POINT = "processing-to-stop-point"
+MAX_CONSECUTIVE_POLL_ERRORS = 5
+"""Polls in a row that the printer answered unusably (an IPP error status other than
+not-found, a non-IPP or malformed or oversized answer) before the job ends
+``failed/interrupted``. Reachability problems never count (OC-23); a good poll resets it."""
 _MIN_BACKOFF_S = 0.5
 """First back-off step when ``poll_interval_s`` is 0 (tests); doubled up to ``max_backoff_s``."""
 
@@ -90,10 +100,12 @@ _MAYBE_SENT: tuple[type[IppError], ...] = (
     IppDecodeError,
     IppResponseTooLargeError,
 )
-# Polling errors that never end the job (OC-23).
-_TRANSIENT: tuple[type[IppError], ...] = (
-    IppUnreachableError,
-    IppTransportError,
+# Polling errors that never end the job: the printer is not reachable (OC-23).
+_UNREACHABLE: tuple[type[IppError], ...] = (IppUnreachableError, IppTransportError)
+# Polling errors where the printer answered, but unusably: counted, see
+# MAX_CONSECUTIVE_POLL_ERRORS.
+_UNUSABLE: tuple[type[IppError], ...] = (
+    IppStatusError,
     IppBadResponseError,
     IppDecodeError,
     IppResponseTooLargeError,
@@ -221,7 +233,9 @@ class PageJobRunner:
             _log.info("Page job deferred: printer not usable (%s)", type(exc).__name__)
             raise Deferred("ipp_unreachable") from None
         record = map_status(attrs)
-        if record.printer_state == "stopped" and record.blocking_reason is not None:
+        # Any blocking reason defers, whatever the printer state: the status producer resumes
+        # exactly when no blocking reason is left (OC-22), so the held job is retried then.
+        if record.blocking_reason is not None:
             raise Deferred(record.blocking_reason)
         if record.summary.accepting_jobs is False:
             raise Deferred("not_accepting")
@@ -292,6 +306,7 @@ class PageJobRunner:
         assert ipp_job_id is not None
         client = active.printer.client
         delay = self._poll_interval_s
+        unusable = 0
         while True:
             await self._sleep(delay)
             if active.cancel_pending():
@@ -302,14 +317,22 @@ class PageJobRunner:
                 _log.warning("Page job %s: the printer no longer knows the job", job_id)
                 await self._fail(page_job, result, "interrupted", started=result["started"])
                 return
-            except _TRANSIENT as exc:
+            except _UNREACHABLE as exc:
                 delay = self._backoff(delay)
                 _log.debug("Page job %s: poll failed (%s)", job_id, type(exc).__name__)
                 continue
-            except IppStatusError as exc:
+            except _UNUSABLE as exc:
+                unusable += 1
+                _log.debug("Page job %s: unusable answer (%s)", job_id, type(exc).__name__)
+                if unusable >= MAX_CONSECUTIVE_POLL_ERRORS:
+                    _log.warning(
+                        "Page job %s: %d unusable answers in a row; giving up", job_id, unusable
+                    )
+                    await self._fail(page_job, result, "interrupted", started=result["started"])
+                    return
                 delay = self._backoff(delay)
-                _log.debug("Page job %s: poll refused (%s)", job_id, exc.name)
                 continue
+            unusable = 0
             delay = self._poll_interval_s
             job.at_printer_reasons = list(info.reasons)
             stopping = active.cancel_sent and _STOP_POINT in info.reasons

@@ -424,3 +424,16 @@ async def test_sse_snapshot_describes_a_page_printer(async_session_factory) -> N
     assert status["data"]["blocking_reason"] == "media-empty"
     assert status["data"]["reasons"] == ["media-empty"]
     assert all(e["type"] != "printer.tape_changed" for e in events)
+
+
+async def test_no_auto_resume_while_not_accepting(async_session_factory) -> None:
+    """A printer that refuses jobs stays paused; resuming would only defer the job again."""
+    fake = FakeIppPrinter(reasons=["none"], accepting_jobs=False)
+    err = _pause("printer_error", "not_accepting")
+    producer, pid, _b, _state = _make(fake, async_session_factory, pause=err)
+    await producer.probe_once()
+    assert err.resumed == []
+    fake.accepting_jobs = True
+    await producer.probe_once()
+    assert err.resumed == [pid]
+    await producer.stop()

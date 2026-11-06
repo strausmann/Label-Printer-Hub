@@ -232,3 +232,21 @@ async def test_retry_route_refuses_sheet_page(env: _Env) -> None:
 
         rows = (await s.execute(select(Job))).scalars().all()
     assert len(rows) == 1  # no new row was created
+
+
+@pytest.mark.asyncio
+async def test_retry_route_tape_payload_on_page_printer_is_409(env: _Env) -> None:
+    """A tape row whose printer became a page printer: a clean 409, never a 500."""
+    async with env.factory() as s:
+        row = Job(
+            printer_id=env.printer_id,
+            payload={"content_type": "qr_two_lines", "label_data": {}, "rendered_tape_mm": 24},
+            state=JobState.FAILED.value,
+        )
+        s.add(row)
+        await s.commit()
+        old_id = row.id
+    async with env.client() as c:
+        r = await c.post(f"/api/jobs/{old_id}/retry")
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["error_code"] == "media_kind_mismatch"

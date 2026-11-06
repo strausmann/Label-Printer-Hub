@@ -829,7 +829,10 @@ class PrintQueue:
         self._worker_states[printer_id] = PrinterWorkerState.PAUSED
         self._worker_resume_events[printer_id].clear()
         previous = self._pause_info.get(printer_id)
-        if previous is None or previous.source != source:
+        # A user pause is never turned into an automatic one (which the status producer may
+        # lift on its own); an automatic pause may become a user pause.
+        keep_user = previous is not None and previous.source == "user"
+        if previous is None or (previous.source != source and not keep_user):
             info = PauseInfo(
                 source=source,
                 reason_code="user" if source == "user" else (reason or "unknown"),
@@ -1238,8 +1241,9 @@ class PrintQueue:
             try:
                 await self._page_runner.run(printer, item)
             except Deferred as deferred:
-                if item.job.state == JobState.QUEUED:
-                    self._held[printer_id] = item
+                if _state_of(item.job) != JobState.QUEUED:
+                    continue  # cancelled during the pre-flight: nothing to hold, no pause
+                self._held[printer_id] = item
                 await self.pause_printer(
                     printer_id, reason=deferred.reason_code, source="printer_error"
                 )
