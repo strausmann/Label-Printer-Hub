@@ -123,6 +123,7 @@ from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
+from app.services.page_jobs import IppPagePrinter
 from app.services.print_queue import PrintQueue, load_manual_pauses
 from app.services.print_service import PrintService
 from app.services.producers.ipp_status_producer import IppPrinterState, IppStatusProducer
@@ -451,6 +452,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     shared_engine = LayoutEngine()
     app.state.engine = shared_engine
 
+    # D18: IPP page printers. Each gets an in-memory state (written by its status producer,
+    # read by the page-job path) and its own client for the page jobs; the producer has
+    # another one, so a long upload never delays a status probe.
+    ipp_states: dict[Any, IppPrinterState] = {}
+    page_printers: list[IppPagePrinter] = []
+    ipp_transport_factory = getattr(app.state, "ipp_transport_factory", None)
+    for spec in _ipp_specs:
+        try:
+            queue_timeout = float(spec.queue_timeout_s)
+            page_client = IppClient(
+                spec.uri,
+                tls_verify=spec.tls_verify,
+                query_timeout_s=min(5.0, queue_timeout),
+                upload_timeout_s=queue_timeout,
+                transport=ipp_transport_factory(spec.uri) if ipp_transport_factory else None,
+            )
+        except Exception as ipp_exc:
+            # A bad stored URI must not stop the hub (degraded start, like the SNMP probes).
+            _log.warning(
+                "Degraded start: IPP printer slug=%s not wired (%s)",
+                spec.slug,
+                type(ipp_exc).__name__,
+            )
+            continue
+        ipp_state = IppPrinterState()
+        ipp_states[spec.id] = ipp_state
+        page_printers.append(IppPagePrinter(id=spec.id, client=page_client, state=ipp_state))
+
     pq_producer = PrintQueueProducer(bus=event_bus)
     pause_producer = PrinterPauseProducer(bus=event_bus)
     queue = PrintQueue(
@@ -459,6 +488,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         store=job_store,
         engine=shared_engine,
         on_pause_change=pause_producer.handle_change,
+        page_printers=page_printers,
     )
     # Persisted manual pauses must be in place before any worker task exists.
     async with async_session() as _pause_session:
@@ -504,15 +534,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     probe_exc,
                 )
 
-    # D18: IPP page printers get the IPP status producer instead of the SNMP one. The queue is
-    # handed over (auto-resume) once page jobs exist (Task 7), hence pause_control=None.
-    ipp_states: dict[Any, IppPrinterState] = {}
+    # D18: IPP page printers get the IPP status producer instead of the SNMP one; it lifts a
+    # pause the printer's own error caused (OC-22), so the queue is its pause control.
     ipp_producers: list[IppStatusProducer] = []
     ipp_limiter = asyncio.Semaphore(_IPP_PROBE_CONCURRENCY)
-    ipp_transport_factory = getattr(app.state, "ipp_transport_factory", None)
     for spec in _ipp_specs:
+        if spec.id not in ipp_states:
+            continue
         try:
-            ipp_state = IppPrinterState()
             probe_timeout = min(5.0, float(spec.queue_timeout_s))
             ipp_producer = IppStatusProducer(
                 bus=event_bus,
@@ -525,22 +554,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     transport=ipp_transport_factory(spec.uri) if ipp_transport_factory else None,
                 ),
                 session_factory=async_session,
-                state=ipp_state,
-                pause_control=None,
+                state=ipp_states[spec.id],
+                pause_control=queue,
                 interval_s=settings.sse_probe_interval_s,
                 limiter=ipp_limiter,
                 log_name=spec.slug,
             )
             await ipp_producer.start()
         except Exception as ipp_exc:
-            # A bad stored URI must not stop the hub (degraded start, like the SNMP probes).
             _log.warning(
                 "Degraded start: IPP status producer for slug=%s not started (%s)",
                 spec.slug,
                 type(ipp_exc).__name__,
             )
             continue
-        ipp_states[spec.id] = ipp_state
         ipp_producers.append(ipp_producer)
     app.state.ipp_printer_states = ipp_states
 
@@ -600,6 +627,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             default=30,
         )
         await queue.stop(timeout_s=float(max_timeout))
+        for page_printer in page_printers:
+            try:
+                await page_printer.client.aclose()
+            except Exception as close_exc:  # one failing close must not skip the rest
+                _log.warning("IPP page client close failed (%s)", type(close_exc).__name__)
         await cleanup_task.stop()
         await engine.dispose()
         # Close shared HTTP clients held by integration plugins that support it.

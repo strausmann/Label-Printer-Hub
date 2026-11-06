@@ -37,11 +37,21 @@ def test_invalid_transition_completed_to_printing() -> None:
         JobStateMachine.transition(job, JobState.PRINTING)
 
 
-def test_cancel_only_from_queued_or_paused() -> None:
-    """Brother Raster Spec: no mid-print cancel."""
+def test_printing_to_cancelled_is_a_valid_edge() -> None:
+    """Page jobs (IPP) end ``cancelled`` after a confirmed Cancel-Job at the printer.
+
+    Tape jobs still cannot be cancelled once printing: the queue's cancel paths refuse
+    them (ADR 0005, ``test_tape_printing_job_still_not_cancellable``)."""
+    job = Job(id="abc", printer_id=_P, state=JobState.PRINTING)
+    JobStateMachine.transition(job, JobState.CANCELLED)
+    assert job.state == JobState.CANCELLED
+    assert job._done_event.is_set()
+
+
+def test_printing_never_goes_back_to_queued() -> None:
     job = Job(id="abc", printer_id=_P, state=JobState.PRINTING)
     with pytest.raises(InvalidStateTransitionError, match="printing"):
-        JobStateMachine.transition(job, JobState.CANCELLED)
+        JobStateMachine.transition(job, JobState.QUEUED)
 
 
 def test_pause_from_queued_to_paused() -> None:

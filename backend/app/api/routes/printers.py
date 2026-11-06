@@ -584,7 +584,9 @@ async def resume_printer(
         "to the printer.  "
         "Jobs in ``printing`` state are intentionally **not** cancelled — "
         "a mid-print abort is unsafe over TCP/9100 because the raster data is "
-        "already on the wire.  Returns 204 even when there are no queued jobs."
+        "already on the wire; a page job the IPP printer already holds is left to "
+        "finish as well (cancel it with ``POST /api/jobs/{id}/cancel``).  "
+        "Returns 204 even when there are no queued jobs."
     ),
 )
 async def clear_printer_queue(

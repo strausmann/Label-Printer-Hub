@@ -149,7 +149,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a queued job
-         * @description Cancels a job that is in ``queued`` state.  Returns 409 ProblemDetail when the job is in ``printing`` (or any other non-QUEUED) state — mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.
+         * @description Cancels a job that is in ``queued`` state.  Returns 409 ProblemDetail when the job is in ``printing`` (or any other non-QUEUED) state — mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Exception: a page job (IPP printer) that the printer already holds is cancelled at the printer: the hub sends Cancel-Job and answers ``202`` with the job still ``printing``; the job ends ``cancelled`` (or ``failed``/``interrupted`` when the page had started) once the printer confirms.
          */
         post: operations["cancel_job_api_jobs__job_id__cancel_post"];
         delete?: never;
@@ -209,7 +209,7 @@ export interface paths {
         put?: never;
         /**
          * Retry a failed job
-         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).
+         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from its payload; a sheet page answers 409 ``job_not_retryable`` (its cells need the cell-aware retry).
          */
         post: operations["retry_job_api_jobs__job_id__retry_post"];
         delete?: never;
@@ -349,7 +349,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel all queued jobs for a printer
-         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Returns 204 even when there are no queued jobs.
+         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire; a page job the IPP printer already holds is left to finish as well (cancel it with ``POST /api/jobs/{id}/cancel``).  Returns 204 even when there are no queued jobs.
          */
         post: operations["clear_printer_queue_api_printers__printer_id__queue_clear_post"];
         delete?: never;
@@ -3036,6 +3036,15 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Cancel requested at the printer (page job) */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

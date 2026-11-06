@@ -193,6 +193,14 @@ class MediaKindMismatchError(SheetApiError):
     message = "This printer does not print this kind of media."
 
 
+class PageJobNotRetryableError(SheetApiError):
+    """A sheet page cannot be re-sent as is: its cells need the cell-aware path (Plan 3)."""
+
+    status = 409
+    error_code = "job_not_retryable"
+    message = "This page job cannot be retried."
+
+
 class TrayUnknownError(SheetApiError):
     status = 422
     error_code = "tray_unknown"

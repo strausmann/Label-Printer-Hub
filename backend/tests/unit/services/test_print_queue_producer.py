@@ -114,3 +114,31 @@ def test_handle_transition_queue_depth_zero_when_empty() -> None:
 
     event: BusEvent = bus.publish.call_args[0][1]
     assert event.data["queue_depth"] == 0
+
+
+def test_page_job_event_carries_kind_at_printer_and_summary() -> None:
+    bus = MagicMock(spec=EventBus)
+    bus.next_event_id.return_value = 1
+    producer = PrintQueueProducer(bus=bus)
+    job = Job(id="j", printer_id="p", kind="sheet_page", summary={"sheet": "A123", "cells": 4})
+    job.at_printer = "stopped"
+    job.at_printer_reasons = ["media-jam"]
+
+    producer.handle_transition(job, JobState.PRINTING, JobState.PRINTING)
+
+    data = bus.publish.call_args[0][1].data
+    assert data["kind"] == "sheet_page"
+    assert data["at_printer"] == "stopped"
+    assert data["at_printer_reasons"] == ["media-jam"]
+    assert data["summary"] == {"sheet": "A123", "cells": 4}
+
+
+def test_tape_job_event_has_no_page_fields() -> None:
+    bus = MagicMock(spec=EventBus)
+    bus.next_event_id.return_value = 1
+    producer = PrintQueueProducer(bus=bus)
+
+    producer.handle_transition(_make_job(), JobState.QUEUED, JobState.PRINTING)
+
+    data = bus.publish.call_args[0][1].data
+    assert "kind" not in data and "at_printer" not in data and "summary" not in data

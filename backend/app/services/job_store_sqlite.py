@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -66,9 +67,8 @@ class SQLiteJobStore(JobStore):
     async def mark_done(self, job_id: UUID) -> None:
         """Transition PRINTING -> DONE.
 
-        Delegiert an jobs_repo.mark_done mit result={} — JobStore-Protocol
-        speichert kein structured result (Phase-2 YAGNI; ergänzbar via
-        `set_result` Methode wenn Hangar das später braucht).
+        Keeps the stored ``result`` (page jobs write it through ``set_result``);
+        a job without one ends with ``result={}`` as before.
         """
         async with self._session_factory() as session:
             job = await jobs_repo.get(session, job_id)
@@ -81,7 +81,7 @@ class SQLiteJobStore(JobStore):
                     job.state,
                 )
                 return
-            await jobs_repo.mark_done(session, job_id, result={})
+            await jobs_repo.mark_done(session, job_id, result=job.result or {})
 
     async def mark_failed(self, job_id: UUID, error: str) -> None:
         """Transition any non-terminal -> FAILED. Silently no-op if job not found."""
@@ -104,13 +104,19 @@ class SQLiteJobStore(JobStore):
                 return
             await jobs_repo.mark_failed(session, job_id, error)
 
-    async def mark_cancelled(self, job_id: UUID) -> None:
-        """Transition QUEUED -> CANCELLED. Silently no-op if not found or not QUEUED."""
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+        """Transition QUEUED -> CANCELLED (page jobs: also PRINTING, ``allow_printing``).
+
+        Silently no-op if not found or in another state.
+        """
+        allowed = {JobState.QUEUED.value}
+        if allow_printing:
+            allowed.add(JobState.PRINTING.value)
         async with self._session_factory() as session:
             job = await jobs_repo.get(session, job_id)
             if job is None:
                 return  # silent no-op (Protocol contract)
-            if job.state != JobState.QUEUED.value:
+            if job.state not in allowed:
                 logger.warning(
                     "mark_cancelled called on job %s in state %s (expected queued)",
                     job_id,
@@ -118,6 +124,30 @@ class SQLiteJobStore(JobStore):
                 )
                 return
             await jobs_repo.mark_cancelled(session, job_id)
+
+    async def set_result(self, job_id: UUID, result: dict[str, Any]) -> None:
+        """Replace the job's ``result``. Silently no-op if not found."""
+        async with self._session_factory() as session:
+            await jobs_repo.set_result(session, job_id, result)
+
+    async def mark_failed_code(
+        self, job_id: UUID, code: str, message: str, detail: dict[str, Any] | None
+    ) -> None:
+        """Non-terminal -> FAILED with ``"<code>: <message>"``; ``detail`` into ``result``."""
+        async with self._session_factory() as session:
+            job = await jobs_repo.get(session, job_id)
+            if job is None:
+                return
+            if job.state not in (JobState.QUEUED.value, JobState.PRINTING.value):
+                logger.warning(
+                    "mark_failed_code called on job %s in terminal state %s", job_id, job.state
+                )
+                return
+            if detail is not None:
+                await jobs_repo.set_result(
+                    session, job_id, {**(job.result or {}), "error_detail": dict(detail)}
+                )
+            await jobs_repo.mark_failed(session, job_id, f"{code}: {message}")
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: mark all PRINTING jobs of this printer as FAILED_RESTART."""

@@ -106,6 +106,7 @@ _SCHEMES = {"ipp": "http", "ipps": "https", "http": "http", "https": "https"}
 _DEFAULT_IPP_PORT = 631
 _OWNED_OPERATION_ATTRIBUTES = {"attributes-charset", "attributes-natural-language", "printer-uri"}
 _SUCCESS_MAX = 0x00FF
+_SUBSTITUTED_STATUSES = frozenset({0x0001, 0x0002})
 _NOT_FOUND = 0x0406
 _BUSY = 0x0507
 
@@ -155,10 +156,16 @@ def to_http_url(uri: str) -> str:
 
 @dataclass(frozen=True)
 class PrintAccepted:
-    """Print-Job was accepted. ``job_uri`` is stored, never requested."""
+    """Print-Job was accepted. ``job_uri`` is stored, never requested.
+
+    ``substituted``: the printer answered ``successful-ok-ignored-or-substituted-attributes``
+    or ``successful-ok-conflicting-attributes`` — it took the job but did not honour every
+    job attribute as sent (spike S2), so the page may not match the request.
+    """
 
     job_id: int
     job_uri: str | None
+    substituted: bool = False
 
 
 @dataclass(frozen=True)
@@ -269,7 +276,9 @@ class IppClient:
         uri = next((v for v in attrs.get("job-uri", []) if isinstance(v, str)), None)
         if uri is not None and len(uri) > MAX_JOB_URI_LENGTH:
             uri = None
-        return PrintAccepted(job_id=job_id, job_uri=uri)
+        return PrintAccepted(
+            job_id=job_id, job_uri=uri, substituted=msg.code in _SUBSTITUTED_STATUSES
+        )
 
     async def validate_job(self, job_attrs: list[Attr]) -> None:
         ops = self._target()

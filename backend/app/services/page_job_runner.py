@@ -1,0 +1,437 @@
+"""Sends, tracks and cancels one page job at an IPP printer (spec 11.3-11.5, OC-21, OC-23).
+
+``PageJobRunner.run`` is awaited by the queue worker for one page job at a time (one hub job
+at the printer). The sequence:
+
+1. **Pre-flight** (OC-21): a live Get-Printer-Attributes *before* ``mark_printing``. Any IPP
+   error, a stopped printer with a blocking reason, or ``printer-is-accepting-jobs = false``
+   raises ``Deferred``; the job never left ``queued`` (there is no ``PRINTING -> QUEUED``
+   edge) and the queue holds it and pauses the printer.
+2. ``mark_printing`` and ``result = {"phase": "uploading", "started": false}``.
+3. Render the page from the payload (in a thread). A render error ends ``failed/render_failed``.
+4. Print-Job. The error contract is in ``app.printer_backends.ipp.errors``: nothing sent or a
+   refusal ends ``failed`` with ``started=False`` (``ipp_unreachable``, ``ipp_busy``,
+   ``ipp_rejected``); an exchange that broke after the document went out, or an unusable
+   answer, ends ``failed/interrupted`` with ``started=True`` persisted (the page may print).
+5. Accepted: ``result`` gets the IPP job id; the id joins the printer's ``own_job_ids``.
+6. Poll Get-Job-Attributes until a final state. ``started`` turns true at the first state
+   5/6/9 or ``impressions_completed > 0`` and is persisted before any outcome is reported.
+   An unreachable printer, a broken exchange or an unusable answer while polling never ends
+   the job: the runner keeps polling with a doubling back-off (OC-23). ``client-error-not-found``
+   (the printer forgot the job) ends ``failed/interrupted`` with ``started`` as observed.
+
+Final states: 9 -> ``done``; 7 -> ``cancelled`` if never started, else ``failed/interrupted``;
+8 -> ``failed/ipp_aborted`` if never started, else ``failed/interrupted`` (plan decision: a
+started page whose outcome is unknown leaves its cells unconfirmed).
+
+Cancel (``request_cancel``) is asynchronous at the printer (spike S2): Cancel-Job is sent, and
+the polling decides the outcome. Right after Cancel-Job a printer reports ``processing`` with
+``processing-to-stop-point``; that interim state is not taken as evidence that the page started.
+``client-error-not-possible`` on Cancel-Job means the job already finished; the next poll
+reads its final state. A cancel that arrives before the upload skips the Print-Job.
+
+Messages are fixed text; a printer's own text never reaches the job record (spec 18).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, Literal
+from uuid import UUID
+
+from app.printer_backends.ipp.attributes import PRINTER_ATTRS, ProbeSummary, map_status
+from app.printer_backends.ipp.client import PrintAccepted
+from app.printer_backends.ipp.errors import (
+    IppBadResponseError,
+    IppBusyError,
+    IppDecodeError,
+    IppEncodeError,
+    IppError,
+    IppNotFoundError,
+    IppResponseTooLargeError,
+    IppStatusError,
+    IppTransportError,
+    IppUnreachableError,
+)
+from app.printer_backends.ipp.job_attrs import print_job_attributes
+from app.services.job_lifecycle import (
+    InvalidStateTransitionError,
+    Job,
+    JobState,
+    JobStateMachine,
+)
+from app.services.job_store import JobStore
+from app.services.page_jobs import (
+    PageJob,
+    PagePrinter,
+    notify_ended,
+    outcome_handler,
+    render_page,
+)
+
+_log = logging.getLogger(__name__)
+
+# IPP job-state values (RFC 8011 5.3.7)
+_PENDING, _HELD, _PROCESSING, _STOPPED, _CANCELED, _ABORTED, _COMPLETED = 3, 4, 5, 6, 7, 8, 9
+_AT_PRINTER = {_PENDING: "waiting", _HELD: "waiting", _PROCESSING: "printing", _STOPPED: "stopped"}
+_STARTED_STATES = frozenset({_PROCESSING, _STOPPED, _COMPLETED})
+_NOT_POSSIBLE = 0x0404
+_STOP_POINT = "processing-to-stop-point"
+_MIN_BACKOFF_S = 0.5
+"""First back-off step when ``poll_interval_s`` is 0 (tests); doubled up to ``max_backoff_s``."""
+
+# Upload errors after which the document may have reached the printer (errors.py contract).
+_MAYBE_SENT: tuple[type[IppError], ...] = (
+    IppTransportError,
+    IppBadResponseError,
+    IppDecodeError,
+    IppResponseTooLargeError,
+)
+# Polling errors that never end the job (OC-23).
+_TRANSIENT: tuple[type[IppError], ...] = (
+    IppUnreachableError,
+    IppTransportError,
+    IppBadResponseError,
+    IppDecodeError,
+    IppResponseTooLargeError,
+)
+
+_MESSAGES = {
+    "render_failed": "The page could not be drawn.",
+    "ipp_unreachable": "The printer could not be reached.",
+    "ipp_busy": "The printer was busy and did not take the job.",
+    "ipp_rejected": "The printer refused the document.",
+    "ipp_request_invalid": "The print request could not be built.",
+    "interrupted": "The printer may have printed the page; its outcome is unknown.",
+    "ipp_aborted": "The printer aborted the job before printing.",
+}
+
+
+class Deferred(Exception):  # noqa: N818 - the plan's interface name
+    """The printer is not ready (pre-flight); the job stays ``queued`` and is retried later."""
+
+    def __init__(self, reason_code: str) -> None:
+        super().__init__(reason_code)
+        self.reason_code = reason_code
+
+
+@dataclass
+class _Active:
+    """A page job between ``mark_printing`` and its final state."""
+
+    printer: PagePrinter
+    ipp_job_id: int | None = None
+    cancel_requested: bool = False
+    cancel_sent: bool = False
+
+    def cancel_pending(self) -> bool:
+        """A cancel was asked for and not yet delivered (read across awaits: a method)."""
+        return self.cancel_requested and not self.cancel_sent
+
+
+Notify = Callable[..., None]
+Sleep = Callable[[float], Awaitable[None]]
+
+
+class PageJobRunner:
+    """Runs page jobs; one ``run`` per job, awaited by the printer's queue worker."""
+
+    def __init__(
+        self,
+        *,
+        store: JobStore,
+        notify: Notify,
+        poll_interval_s: float = 2.0,
+        max_backoff_s: float = 10.0,
+        sleep: Sleep = asyncio.sleep,
+    ) -> None:
+        self._store = store
+        self._notify = notify
+        self._poll_interval_s = poll_interval_s
+        self._max_backoff_s = max_backoff_s
+        self._sleep = sleep
+        self._active: dict[UUID, _Active] = {}
+
+    # ------------------------------------------------------------------ public
+
+    def is_tracking(self, job_id: UUID) -> bool:
+        """True while the printer holds the job (accepted, not yet final)."""
+        active = self._active.get(job_id)
+        return active is not None and active.ipp_job_id is not None
+
+    def is_active(self, job_id: UUID) -> bool:
+        """True from ``mark_printing`` until the job is final (uploading or tracked)."""
+        return job_id in self._active
+
+    async def request_cancel(self, job_id: UUID) -> bool:
+        """Ask the printer to cancel an active job. ``False``: the runner does not hold it.
+
+        The outcome is decided by the polling, never assumed here.
+        """
+        active = self._active.get(job_id)
+        if active is None:
+            return False
+        active.cancel_requested = True
+        if active.ipp_job_id is not None and not active.cancel_sent:
+            await self._send_cancel(job_id, active)
+        return True
+
+    async def run(self, printer: PagePrinter, page_job: PageJob) -> None:
+        """Send and track ``page_job``. Raises ``Deferred`` when the pre-flight says not now."""
+        job = page_job.job
+        job_id = UUID(job.id)
+        summary = await self._preflight(printer)
+        # No await between this check and the transition: a concurrent queue cancel either ran
+        # before (the job is no longer QUEUED; the queue persisted it) or sees PRINTING.
+        if job.state != JobState.QUEUED:
+            return
+        JobStateMachine.transition(job, JobState.PRINTING)
+        active = _Active(printer=printer)
+        self._active[job_id] = active
+        try:
+            self._emit(job, JobState.QUEUED, JobState.PRINTING)
+            if not await self._store.mark_printing(job_id):
+                # The row was ended elsewhere (cancelled through the database): never send.
+                self._end_in_memory(job, JobState.CANCELLED)
+                await notify_ended(
+                    page_job.payload.kind,
+                    job_id,
+                    state="cancelled",
+                    started=False,
+                    error_code="cancelled",
+                )
+                return
+            result: dict[str, Any] = {"phase": "uploading", "started": False}
+            await self._store.set_result(job_id, result)
+            await self._upload_and_track(page_job, active, summary, result)
+        finally:
+            self._active.pop(job_id, None)
+            if active.ipp_job_id is not None:
+                printer.own_job_ids.discard(active.ipp_job_id)
+
+    # ------------------------------------------------------------------ steps
+
+    async def _preflight(self, printer: PagePrinter) -> ProbeSummary:
+        try:
+            attrs = await printer.client.get_printer_attributes(PRINTER_ATTRS)
+        except IppError as exc:
+            _log.info("Page job deferred: printer not usable (%s)", type(exc).__name__)
+            raise Deferred("ipp_unreachable") from None
+        record = map_status(attrs)
+        if record.printer_state == "stopped" and record.blocking_reason is not None:
+            raise Deferred(record.blocking_reason)
+        if record.summary.accepting_jobs is False:
+            raise Deferred("not_accepting")
+        return record.summary
+
+    async def _upload_and_track(
+        self,
+        page_job: PageJob,
+        active: _Active,
+        summary: ProbeSummary,
+        result: dict[str, Any],
+    ) -> None:
+        job, payload = page_job.job, page_job.payload
+        job_id = UUID(job.id)
+        try:
+            pdf = await asyncio.to_thread(render_page, payload)
+        except Exception as exc:
+            _log.warning("Page job %s: rendering failed (%s)", job_id, type(exc).__name__)
+            await self._fail(page_job, result, "render_failed", started=False)
+            return
+        if active.cancel_requested:
+            await self._cancelled(page_job)
+            return
+        ops, job_attrs = print_job_attributes(
+            summary, media=payload.media, tray=payload.tray, job_name=payload.job_name
+        )
+        try:
+            accepted: PrintAccepted = await active.printer.client.print_job(pdf, job_attrs, ops)
+        except IppUnreachableError:
+            await self._fail(page_job, result, "ipp_unreachable", started=False)
+            return
+        except IppBusyError:
+            await self._fail(page_job, result, "ipp_busy", started=False)
+            return
+        except IppStatusError as exc:
+            await self._fail(
+                page_job, result, "ipp_rejected", started=False, detail={"ipp_status": exc.name}
+            )
+            return
+        except IppEncodeError:
+            await self._fail(page_job, result, "ipp_request_invalid", started=False)
+            return
+        except _MAYBE_SENT as exc:
+            _log.warning("Page job %s: upload interrupted (%s)", job_id, type(exc).__name__)
+            await self._fail(page_job, result, "interrupted", started=True)
+            return
+        except Exception as exc:  # unknown failure after the upload began: assume it may print
+            _log.exception("Page job %s: upload failed (%s)", job_id, type(exc).__name__)
+            await self._fail(page_job, result, "interrupted", started=True)
+            return
+        active.ipp_job_id = accepted.job_id
+        active.printer.own_job_ids.add(accepted.job_id)
+        result.update(
+            {"phase": "tracking", "ipp_job_id": accepted.job_id, "job_uri": accepted.job_uri}
+        )
+        if accepted.substituted:
+            # The printer ignored or replaced some job attributes (spike S2); the UI can warn.
+            result["attributes_substituted"] = True
+        await self._store.set_result(job_id, result)
+        if active.cancel_pending():
+            await self._send_cancel(job_id, active)
+        await self._track(page_job, active, result)
+
+    async def _track(self, page_job: PageJob, active: _Active, result: dict[str, Any]) -> None:
+        job = page_job.job
+        job_id = UUID(job.id)
+        ipp_job_id = active.ipp_job_id
+        assert ipp_job_id is not None
+        client = active.printer.client
+        delay = self._poll_interval_s
+        while True:
+            await self._sleep(delay)
+            if active.cancel_pending():
+                await self._send_cancel(job_id, active)
+            try:
+                info = await client.get_job(ipp_job_id)
+            except IppNotFoundError:
+                _log.warning("Page job %s: the printer no longer knows the job", job_id)
+                await self._fail(page_job, result, "interrupted", started=result["started"])
+                return
+            except _TRANSIENT as exc:
+                delay = self._backoff(delay)
+                _log.debug("Page job %s: poll failed (%s)", job_id, type(exc).__name__)
+                continue
+            except IppStatusError as exc:
+                delay = self._backoff(delay)
+                _log.debug("Page job %s: poll refused (%s)", job_id, exc.name)
+                continue
+            delay = self._poll_interval_s
+            job.at_printer_reasons = list(info.reasons)
+            stopping = active.cancel_sent and _STOP_POINT in info.reasons
+            evidence = (info.impressions_completed or 0) > 0 or (
+                info.state in _STARTED_STATES and not stopping
+            )
+            if evidence and not result["started"]:
+                result["started"] = True
+                await self._store.set_result(job_id, result)
+                await self._handler_call(page_job, "on_started")
+            if info.state == _COMPLETED:
+                await self._complete(page_job)
+                return
+            if info.state == _CANCELED:
+                if result["started"]:
+                    await self._fail(page_job, result, "interrupted", started=True)
+                else:
+                    await self._cancelled(page_job)
+                return
+            if info.state == _ABORTED:
+                code = "interrupted" if result["started"] else "ipp_aborted"
+                await self._fail(page_job, result, code, started=result["started"])
+                return
+            self._at_printer(job, _AT_PRINTER.get(info.state, "waiting"))
+
+    def _backoff(self, delay: float) -> float:
+        return min(self._max_backoff_s, max(delay * 2, self._poll_interval_s, _MIN_BACKOFF_S))
+
+    async def _send_cancel(self, job_id: UUID, active: _Active) -> None:
+        assert active.ipp_job_id is not None
+        try:
+            await active.printer.client.cancel_job(active.ipp_job_id)
+        except IppNotFoundError:
+            active.cancel_sent = True  # the polling reports the forgotten job
+        except IppStatusError as exc:
+            if exc.status == _NOT_POSSIBLE:
+                active.cancel_sent = True  # already finished: the polling reads the final state
+            else:
+                _log.warning("Page job %s: Cancel-Job refused (%s)", job_id, exc.name)
+        except IppError as exc:
+            # Not sent or answer lost: retried from the polling loop.
+            _log.warning("Page job %s: Cancel-Job failed (%s)", job_id, type(exc).__name__)
+        else:
+            active.cancel_sent = True
+
+    # ------------------------------------------------------------------ outcomes
+
+    async def _complete(self, page_job: PageJob) -> None:
+        job = page_job.job
+        self._end_in_memory(job, JobState.COMPLETED)
+        await self._store.mark_done(UUID(job.id))
+        await self._handler_call(page_job, "on_completed")
+
+    async def _cancelled(self, page_job: PageJob) -> None:
+        job = page_job.job
+        job.error_code = "cancelled"
+        self._end_in_memory(job, JobState.CANCELLED)
+        await self._store.mark_cancelled(UUID(job.id), allow_printing=True)
+        await notify_ended(
+            page_job.payload.kind,
+            UUID(job.id),
+            state="cancelled",
+            started=False,
+            error_code="cancelled",
+        )
+
+    async def _fail(
+        self,
+        page_job: PageJob,
+        result: dict[str, Any],
+        code: str,
+        *,
+        started: bool,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        job = page_job.job
+        job_id = UUID(job.id)
+        message = _MESSAGES[code]
+        if started and not result.get("started"):
+            result["started"] = True
+        result["phase"] = "ended"
+        await self._store.set_result(job_id, result)  # started persisted before on_ended
+        job.error_code = code
+        job.error_message = message
+        job.error_detail = detail
+        job.error_msg = message
+        self._end_in_memory(job, JobState.FAILED)
+        await self._store.mark_failed_code(job_id, code, message, detail)
+        await notify_ended(
+            page_job.payload.kind, job_id, state="failed", started=started, error_code=code
+        )
+
+    async def _handler_call(
+        self, page_job: PageJob, name: Literal["on_started", "on_completed"]
+    ) -> None:
+        job_id = UUID(page_job.job.id)
+        try:
+            await getattr(outcome_handler(page_job.payload.kind), name)(job_id)
+        except Exception:
+            _log.exception("Page outcome handler %s failed for job %s", name, job_id)
+
+    # ------------------------------------------------------------------ in-memory + events
+
+    def _emit(self, job: Job, from_state: JobState, to_state: JobState) -> None:
+        try:
+            self._notify(job, from_state, to_state)
+        except Exception:
+            _log.exception("Page job event failed for job %s", job.id)
+
+    def _end_in_memory(self, job: Job, to_state: JobState) -> None:
+        from_state = job.state
+        try:
+            JobStateMachine.transition(job, to_state)
+        except InvalidStateTransitionError:
+            _log.warning("Page job %s: unexpected state %s at %s", job.id, from_state, to_state)
+            job._done_event.set()
+            return
+        self._emit(job, from_state, to_state)
+
+    def _at_printer(self, job: Job, where: str) -> None:
+        """Record where the printer reports the job; an event only when it changes."""
+        changed = where != job.at_printer
+        job.at_printer = where
+        if changed:
+            self._emit(job, JobState.PRINTING, JobState.PRINTING)

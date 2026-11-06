@@ -69,6 +69,7 @@ class _Job:
     job_id: int
     step: int = 0
     final: int | None = None  # 7 after Cancel-Job
+    stopping: int = 0  # polls left that report processing-to-stop-point after Cancel-Job
 
 
 def _media_size(x: int, y: int) -> Collection:
@@ -103,8 +104,16 @@ class FakeIppPrinter:
     resolutions: list[int] = field(default_factory=lambda: [600])
     job_script: list[int] = field(default_factory=lambda: [3, 5, 9])
     """Job states returned by successive Get-Job-Attributes; the last one sticks."""
+    impressions_script: list[int] | None = None
+    """``job-impressions-completed`` per step like ``job_script``.
+
+    ``None``: 1 in state 9, else 0."""
+    cancel_steps: int = 0
+    """Cancel-Job is asynchronous on real printers (spike S2): after it, this many polls report
+    ``processing`` with ``processing-to-stop-point`` before ``canceled``."""
     print_status: int = 0
-    """Status answered to Print-Job and Validate-Job (0 = accept)."""
+    """Status answered to Print-Job and Validate-Job (0 = accept; a successful-ok-* status such
+    as 0x0001 accepts the job and answers that status)."""
     busy: bool = False
     """Answer ``server-error-busy`` to Print-Job and Validate-Job."""
     fail_get_job_with: int | None = None
@@ -257,19 +266,19 @@ class FakeIppPrinter:
 
     def _print_job(self, ops: dict[str, list[Value]]) -> tuple[int, list[Group]]:
         status = self._submission_status(ops)
-        if status:
+        if status > 0x00FF:
             return status, []
         job = _Job(self._next_job_id)
         self._next_job_id += 1
         self._jobs[job.job_id] = job
-        return 0, [Group(Tag.JOB, self._job_attrs(job, include_uri=True))]
+        return status, [Group(Tag.JOB, self._job_attrs(job, include_uri=True))]
 
     def _validate_job(self, ops: dict[str, list[Value]]) -> tuple[int, list[Group]]:
         return self._submission_status(ops), []
 
     def _state(self, job: _Job) -> int:
         if job.final is not None:
-            return job.final
+            return 5 if job.stopping > 0 else job.final
         script = self.job_script or [3]
         return script[min(job.step, len(script) - 1)]
 
@@ -284,11 +293,17 @@ class FakeIppPrinter:
             8: "aborted-by-system",
             9: "job-completed-successfully",
         }.get(state, "none")
+        if job.final is not None and job.stopping > 0:
+            reasons = "processing-to-stop-point"
+        if self.impressions_script:
+            impressions = self.impressions_script[min(job.step, len(self.impressions_script) - 1)]
+        else:
+            impressions = 1 if state == 9 else 0
         attrs = [
             Attr("job-id", Tag.INTEGER, [job.job_id]),
             Attr("job-state", Tag.ENUM, [state]),
             Attr("job-state-reasons", Tag.KEYWORD, [reasons]),
-            Attr("job-impressions-completed", Tag.INTEGER, [1 if state == 9 else 0]),
+            Attr("job-impressions-completed", Tag.INTEGER, [impressions]),
         ]
         if include_uri:
             attrs.insert(1, Attr("job-uri", Tag.URI, [f"{FAKE_URI}/jobs/{job.job_id}"]))
@@ -305,7 +320,10 @@ class FakeIppPrinter:
         if job is None:
             return 0x0406, []
         attrs = self._job_attrs(job)
-        job.step += 1
+        if job.final is not None and job.stopping > 0:
+            job.stopping -= 1
+        else:
+            job.step += 1
         return 0, [Group(Tag.JOB, attrs)]
 
     def _count(self, states: set[int]) -> int:
@@ -327,6 +345,7 @@ class FakeIppPrinter:
         if self._state(job) in _COMPLETED:
             return 0x0404, []  # client-error-not-possible
         job.final = 7
+        job.stopping = self.cancel_steps
         return 0, []
 
 
@@ -399,3 +418,47 @@ async def serve_on_loopback(fake: FakeIppPrinter) -> tuple[str, Callable[[], Awa
             sock.close()
 
     return f"ipp://127.0.0.1:{port}/ipp/print", stop
+
+
+_UNSENT = (httpx.ConnectError, httpx.ConnectTimeout)
+
+
+class FlakyTransport(httpx.AsyncBaseTransport):
+    """Wraps a transport; the next calls of an operation fail with the scripted exceptions.
+
+    ``plan`` maps an operation name to the exceptions its next calls raise, one per call,
+    then the operation works again. A connect error is raised **before** the request reaches
+    ``inner`` (nothing was sent, as with a printer that is switched off); any other error is
+    raised after ``inner`` has seen the request (as ``FailingTransport`` does).
+    """
+
+    def __init__(
+        self,
+        inner: httpx.AsyncBaseTransport,
+        plan: dict[str, list[type[httpx.RequestError]]],
+    ) -> None:
+        self.inner = inner
+        self.plan = {op: list(excs) for op, excs in plan.items()}
+        self.failures: list[str] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        body = await request.aread()
+        try:
+            msg, _ = decode(body)
+            name = _OPERATION_NAMES.get(msg.code, "")
+        except IppDecodeError:  # pragma: no cover - the client sends well-formed requests
+            name = ""
+        pending = self.plan.get(name)
+        if not pending:
+            return await self.inner.handle_async_request(request)
+        exc = pending.pop(0)
+        self.failures.append(name)
+        if issubclass(exc, _UNSENT):
+            raise exc("printer not reachable", request=request)
+        response = await self.inner.handle_async_request(request)
+        await response.aread()
+        await response.aclose()
+        raise exc("connection lost after the request was sent", request=request)
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()

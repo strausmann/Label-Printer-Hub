@@ -128,6 +128,18 @@ async def mark_failed(session: AsyncSession, job_id: UUID, error: str) -> Job:
     return job
 
 
+async def set_result(session: AsyncSession, job_id: UUID, result: dict[str, Any]) -> Job | None:
+    """Replace ``result`` of a job (any state). Returns ``None`` when the job is unknown."""
+    job = await session.get(Job, job_id)
+    if job is None:
+        return None
+    job.result = dict(result)
+    session.add(job)
+    await session.commit()
+    await session.refresh(job)
+    return job
+
+
 async def mark_cancelled(session: AsyncSession, job_id: UUID) -> Job:
     """Transition QUEUED|PRINTING → CANCELLED. Sets finished_at."""
     job = await _get_or_raise(session, job_id)

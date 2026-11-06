@@ -14,18 +14,28 @@ app.services.job_lifecycle.Job (Dataclass, str-id). Bridge:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
 from app.models.job import Job, JobState
 
 _NON_TERMINAL = (JobState.QUEUED.value, JobState.PRINTING.value)
+_CANCELLABLE_PAGE = (JobState.QUEUED.value, JobState.PRINTING.value)
 _TERMINAL = (
     JobState.DONE.value,
     JobState.FAILED.value,
     JobState.FAILED_RESTART.value,
     JobState.CANCELLED.value,
 )
+
+
+def _with_detail(
+    result: dict[str, Any] | None, detail: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """``result`` with ``error_detail`` merged in (unchanged when there is no detail)."""
+    if detail is None:
+        return result
+    return {**(result or {}), "error_detail": dict(detail)}
 
 
 @runtime_checkable
@@ -72,12 +82,30 @@ class JobStore(Protocol):
         must NOT raise on missing jobs — callers may race against eviction.
         """
 
-    async def mark_cancelled(self, job_id: UUID) -> None:
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
         """Transition QUEUED -> CANCELLED. Called by PrintQueue.cancel()/clear_queue().
 
-        Only a QUEUED job can be cancelled: a PRINTING job is already on the wire
+        Only a QUEUED job can be cancelled: a PRINTING tape job is already on the wire
         (mid-print abort is unsafe over TCP/9100) and terminal jobs stay as they
         are.  Silently no-op if job_id does not exist or is not QUEUED.
+
+        ``allow_printing=True`` also ends a PRINTING row: only the page-job runner passes
+        it, after the IPP printer confirmed the cancel of a job that never started.
+        """
+
+    async def set_result(self, job_id: UUID, result: dict[str, Any]) -> None:
+        """Replace the job's ``result`` (page jobs: phase, IPP job id, ``started``).
+
+        Silently no-op if job_id does not exist.
+        """
+
+    async def mark_failed_code(
+        self, job_id: UUID, code: str, message: str, detail: dict[str, Any] | None
+    ) -> None:
+        """Transition any non-terminal -> FAILED with ``error = "<code>: <message>"``.
+
+        ``detail`` (when given) is merged into ``result`` as ``error_detail``.  Silently
+        no-op if job_id does not exist or the row is already terminal.
         """
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
@@ -145,11 +173,28 @@ class MemoryJobStore(JobStore):
         job.error = error
         job.finished_at = datetime.now(UTC)
 
-    async def mark_cancelled(self, job_id: UUID) -> None:
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
         job = self._jobs.get(job_id)
-        if job is None or job.state != JobState.QUEUED.value:
+        allowed = _CANCELLABLE_PAGE if allow_printing else (JobState.QUEUED.value,)
+        if job is None or job.state not in allowed:
             return
         job.state = JobState.CANCELLED.value
+        job.finished_at = datetime.now(UTC)
+
+    async def set_result(self, job_id: UUID, result: dict[str, Any]) -> None:
+        job = self._jobs.get(job_id)
+        if job is not None:
+            job.result = dict(result)
+
+    async def mark_failed_code(
+        self, job_id: UUID, code: str, message: str, detail: dict[str, Any] | None
+    ) -> None:
+        job = self._jobs.get(job_id)
+        if job is None or job.state in _TERMINAL:
+            return
+        job.state = JobState.FAILED.value
+        job.error = f"{code}: {message}"
+        job.result = _with_detail(job.result, detail)
         job.finished_at = datetime.now(UTC)
 
     async def mark_interrupted(self, printer_id: UUID) -> int:

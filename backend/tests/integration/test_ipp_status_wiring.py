@@ -103,3 +103,61 @@ async def test_bad_stored_uri_does_not_stop_startup() -> None:
     inner = app._app
     async with inner.router.lifespan_context(inner):
         assert inner.state.ipp_printer_states == {}
+
+
+async def test_ipp_printer_is_a_page_printer_of_the_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The lifespan builds the page printer, the queue prints page jobs, and the status
+    producer lifts a printer-error pause (pause control = the queue, OC-22)."""
+    import app.db.engine as eng
+    from app.config import get_settings
+    from app.main import create_app
+    from app.models.job import Job as DbJob
+
+    from tests.helpers.page_jobs import RecordingHandler, payload, registered
+
+    monkeypatch.setenv("PRINTER_HUB_SSE_PROBE_INTERVAL_S", "0.05")
+    get_settings.cache_clear()
+    fake = FakeIppPrinter(job_script=[9])
+    async with eng.async_session() as s:
+        printer = Printer(
+            name="Page",
+            slug="page-q",
+            model="x",
+            backend="ipp",
+            connection={"uri": FAKE_URI, "tls_verify": True},
+            enabled=True,
+        )
+        s.add(printer)
+        await s.commit()
+        pid = printer.id
+    app = create_app()
+    inner = app._app
+    inner.state.ipp_transport_factory = lambda _uri: ASGITransport(app=fake)
+    try:
+        with registered(RecordingHandler()) as handler:
+            async with inner.router.lifespan_context(inner):
+                queue = inner.state.print_queue
+                assert queue.is_page_printer(pid)
+                jid = await queue.submit_page_job(pid, payload(), api_key_id=None, source_ip=None)
+                await queue.wait_for_job(str(jid), timeout_s=10)
+
+                async def _done() -> bool:
+                    async with eng.async_session() as s:
+                        row = await s.get(DbJob, jid)
+                        return row is not None and row.state == "done"
+
+                await _until(_done)
+                await _until(lambda: _async_true("completed" in handler.names(jid)))
+
+                await queue.pause_printer(pid, reason="ipp_unreachable", source="printer_error")
+
+                async def _resumed() -> bool:
+                    return not queue.is_paused(pid)
+
+                await _until(_resumed)
+    finally:
+        get_settings.cache_clear()
+
+
+async def _async_true(value: bool) -> bool:
+    return value
