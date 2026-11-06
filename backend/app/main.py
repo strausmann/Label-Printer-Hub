@@ -801,6 +801,10 @@ class _LifespanManager:
         await self._app(scope, receive, send)
 
 
+# Once per process, at import: a page job of this kind is drawn by this renderer (spec 13.2).
+register_page_renderer("calibration_page", render_calibration_page)
+
+
 def create_app() -> _LifespanManager:
     """Build the FastAPI app. Kept as a factory so tests can re-instantiate."""
     install_log_buffer()
@@ -900,7 +904,6 @@ def create_app() -> _LifespanManager:
     app.include_router(sheet_types_router)
     app.include_router(sheets_router)
     app.include_router(calibration_router)
-    register_page_renderer("calibration_page", render_calibration_page)
     app.include_router(info_routes.router)
 
     # D1: the same process serves the web app. Mounted after every router so the
