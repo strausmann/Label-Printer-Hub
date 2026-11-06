@@ -35,6 +35,7 @@ from app.schemas.capabilities import (
     TrayCapability,
 )
 from app.schemas.tape_geometry import TAPE_GEOMETRY
+from app.services.producers.ipp_status_producer import _empty_summary
 from app.sheets.errors import PrinterNotFoundError
 
 router = APIRouter(prefix="/api/printers", tags=["printers"])
@@ -120,10 +121,9 @@ def _tape(printer: Printer, parsed: dict[str, Any], captured: datetime | None) -
     width = parsed.get("loaded_tape_mm")
     geometry = TAPE_GEOMETRY.get(width) if isinstance(width, int) else None
     if isinstance(width, int) and geometry is not None:
-        media_type = parsed.get("media_type")
         media = TapeMedia(
             width_mm=width,
-            type=media_type if isinstance(media_type, str) else None,
+            type=None,  # the status cache carries no tape type
             printable_px=geometry.printable_px,
             printable_mm=round(geometry.printable_px / dpi_y * 25.4, 2),
         )
@@ -156,6 +156,9 @@ async def _page(
         .all()
     )
     calibrations = {c.tray: c for c in await calibration_service.get_all(session, printer.id)}
+    never_answered = record is not None and not record.online and record.summary == _empty_summary()
+    if never_answered:  # the producer's placeholder: nothing is known about the printer yet
+        record, captured = None, None
     loaded = {t.key: t.media for t in record.trays} if record else {}
     trays = []
     for t in rows:
@@ -188,12 +191,21 @@ async def _page(
 @router.get(
     "/{printer_id}/capabilities",
     response_model=Capabilities,
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "description": (
+                "No driver is registered for the tape printer's model (`printer_model_unknown`)."
+            )
+        }
+    },
     summary="Capabilities of a tape or page printer (cache only)",
     description=(
         "Resolution, media, trays with their calibration and accepted document formats. Served "
         "from the status cache: the printer is never contacted, so a printer that has not been "
         "probed yet answers 200 with ``media`` and ``captured_at`` null. No connection detail "
-        "is part of the answer."
+        "is part of the answer. A page printer that never answered a probe is reported as unknown "
+        "(``media``, ``document_formats`` and ``captured_at`` null). A tape width without a "
+        "geometry entry also gives ``media`` null. Only enabled trays carry a calibration."
     ),
 )
 async def get_capabilities(

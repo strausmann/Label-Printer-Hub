@@ -12,6 +12,7 @@ from app.calibration import service as calibration_service
 from app.calibration.model import CalibrationIn
 from app.models.api_key import ApiKey
 from app.models.printer import Printer
+from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_status_cache import PrinterStatusCache
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import (
@@ -21,6 +22,7 @@ from app.printer_backends.ipp.attributes import (
     TrayLoad,
 )
 from app.schemas.tape_geometry import TAPE_GEOMETRY
+from app.services.producers.ipp_status_producer import _empty_summary
 
 pytestmark = pytest.mark.asyncio
 
@@ -106,7 +108,13 @@ def _record() -> IppStatusRecord:
     )
 
 
-async def _ipp_printer(*, cached: bool = True, calibrate: bool = True) -> UUID:
+async def _ipp_printer(
+    *,
+    cached: bool = True,
+    calibrate: bool = True,
+    record: IppStatusRecord | None = None,
+    disabled_calibrated: bool = False,
+) -> UUID:
     async with _factory()() as s:
         p = Printer(
             name=f"i-{uuid4().hex[:6]}",
@@ -122,8 +130,22 @@ async def _ipp_printer(*, cached: bool = True, calibrate: bool = True) -> UUID:
             s.add(
                 PrinterStatusCache(
                     printer_id=p.id,
-                    parsed=_record().model_dump(mode="json"),
+                    parsed=(record or _record()).model_dump(mode="json"),
                     captured_at=datetime.now(UTC),
+                )
+            )
+        if disabled_calibrated:
+            s.add(PrinterTray(printer_id=p.id, tray_key="off", label="Off", enabled=False))
+            s.add(
+                PrinterCalibration(
+                    printer_id=p.id,
+                    tray_key="off",
+                    method="manual",
+                    offset_x_hmm=300,
+                    offset_y_hmm=0,
+                    scale_x_ppm=1_000_000,
+                    scale_y_ppm=1_000_000,
+                    rotation_udeg=0,
                 )
             )
         await s.commit()
@@ -237,3 +259,63 @@ async def test_access_control(api_client_with_seed):
     missing = await c.get(f"/api/printers/{uuid4()}/capabilities", headers=free)
     assert missing.status_code == 404
     assert missing.json()["detail"]["error_code"] == "printer_not_found"
+
+
+async def test_printer_that_never_answered_has_unknown_capabilities(api_client_with_seed):
+    """The producer's placeholder (offline, empty summary) means unknown, not "accepts nothing"."""
+    c, reader = api_client_with_seed, await _key(["read"])
+    placeholder = IppStatusRecord(
+        online=False,
+        printer_state="stopped",
+        reasons=[],
+        blocking_reason=None,
+        warnings=[],
+        markers=[],
+        trays=[],
+        jobs_ahead=None,
+        summary=_empty_summary(),
+    )
+    pid = await _ipp_printer(record=placeholder)
+    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    assert body["media"] is None
+    assert body["document_formats"] is None
+    assert body["captured_at"] is None
+    assert {t["key"] for t in body["trays"]} == {"main", "auto"}
+    main = next(t for t in body["trays"] if t["key"] == "main")
+    assert main["calibration"]["offset_x_mm"] == 1.25
+
+
+async def test_answered_printer_without_pdf_lists_no_formats(api_client_with_seed):
+    c, reader = api_client_with_seed, await _key(["read"])
+    record = _record()
+    record.summary.pdf_supported = False
+    pid = await _ipp_printer(record=record)
+    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    assert body["document_formats"] == []
+    assert body["media"] is not None and body["captured_at"] is not None
+
+
+async def test_unknown_printer_model_is_409_without_echo(api_client_with_seed):
+    c, reader = api_client_with_seed, await _key(["read"])
+    await c.get("/healthz")  # start the app first: startup refuses stored printers of unknown model
+    pid = await _tape_printer("ZZ-NOSUCH-9000", 12)
+    resp = await c.get(f"/api/printers/{pid}/capabilities", headers=reader)
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["error_code"] == "printer_model_unknown"
+    assert "NOSUCH" not in resp.text
+
+
+async def test_tape_width_without_geometry_has_no_media(api_client_with_seed):
+    c, reader = api_client_with_seed, await _key(["read"])
+    assert 3 not in TAPE_GEOMETRY
+    pid = await _tape_printer("PT-P750W", 3)
+    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    assert body["media"] is None and body["captured_at"] is not None
+
+
+async def test_disabled_tray_lists_without_calibration(api_client_with_seed):
+    c, reader = api_client_with_seed, await _key(["read"])
+    pid = await _ipp_printer(calibrate=False, disabled_calibrated=True)
+    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    off = next(t for t in body["trays"] if t["key"] == "off")
+    assert off["enabled"] is False and off["calibration"] is None

@@ -57,7 +57,7 @@ class TrayCapability(BaseModel):
     is_default: bool
     media: str | None = Field(description="Media the printer reports in this tray, if any.")
     calibration: CalibrationRead | None = Field(
-        description="Stored calibration; None while the tray has none."
+        description="Stored calibration; None while the tray has none or is disabled."
     )
 
 
@@ -67,7 +67,10 @@ class Capabilities(BaseModel):
     kind: Literal["tape", "page"]
     resolution_dpi: TapeResolution | PageResolution
     media: TapeMedia | PageMedia | None = Field(
-        description="None while nothing is cached (page) or no tape is loaded (tape)."
+        description=(
+            "None while nothing is known (page printer that never answered), when no tape "
+            "is loaded, or when the loaded tape width has no geometry entry (tape)."
+        )
     )
     trays: list[TrayCapability] | None = Field(description="Page printers only.")
     document_formats: list[str] | None = Field(description="Page printers only.")

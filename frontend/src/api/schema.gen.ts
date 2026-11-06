@@ -393,7 +393,7 @@ export interface paths {
         };
         /**
          * Capabilities of a tape or page printer (cache only)
-         * @description Resolution, media, trays with their calibration and accepted document formats. Served from the status cache: the printer is never contacted, so a printer that has not been probed yet answers 200 with ``media`` and ``captured_at`` null. No connection detail is part of the answer.
+         * @description Resolution, media, trays with their calibration and accepted document formats. Served from the status cache: the printer is never contacted, so a printer that has not been probed yet answers 200 with ``media`` and ``captured_at`` null. No connection detail is part of the answer. A page printer that never answered a probe is reported as unknown (``media``, ``document_formats`` and ``captured_at`` null). A tape width without a geometry entry also gives ``media`` null. Only enabled trays carry a calibration.
          */
         get: operations["get_capabilities_api_printers__printer_id__capabilities_get"];
         put?: never;
@@ -1501,7 +1501,7 @@ export interface components {
             kind: "tape" | "page";
             /**
              * Media
-             * @description None while nothing is cached (page) or no tape is loaded (tape).
+             * @description None while nothing is known (page printer that never answered), when no tape is loaded, or when the loaded tape width has no geometry entry (tape).
              */
             media: components["schemas"]["TapeMedia"] | components["schemas"]["PageMedia"] | null;
             /** Resolution Dpi */
@@ -2900,7 +2900,7 @@ export interface components {
         };
         /** TrayCapability */
         TrayCapability: {
-            /** @description Stored calibration; None while the tray has none. */
+            /** @description Stored calibration; None while the tray has none or is disabled. */
             calibration: components["schemas"]["CalibrationRead"] | null;
             /** Enabled */
             enabled: boolean;
@@ -3953,6 +3953,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Capabilities"];
                 };
+            };
+            /** @description No driver is registered for the tape printer's model (`printer_model_unknown`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
