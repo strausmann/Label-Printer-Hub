@@ -114,3 +114,13 @@ def test_fit_collapsed_map_is_insufficient() -> None:
     with pytest.raises(ReadingsInsufficientError) as err:
         fit(G48, "A4", collapsed)
     assert err.value.detail == {"reason": "degenerate_fit"}
+
+
+def test_gap_outside_the_sheet_names_the_reading() -> None:
+    readings = [_reading(G48, KNOWN, c, r) for c, r in OUTER]
+    readings[2] = Reading(9, 11, 0.0, 0.0)
+    with pytest.raises(InvalidFieldError) as err:
+        fit(G48, "A4", readings)
+    assert err.value.detail is not None
+    assert err.value.detail["reading"] == 2
+    assert err.value.detail["field"] == "col_gap"

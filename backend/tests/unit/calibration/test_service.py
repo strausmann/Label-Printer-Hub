@@ -180,3 +180,47 @@ async def test_unknown_printer_and_unknown_measured_type(session: AsyncSession) 
     with pytest.raises(SheetTypeNotFoundError):
         await service.put(session, pid, "auto", VALUES, measured_on=("nope", 1), actor="a")
     assert await session.get(PrinterCalibration, (pid, "auto")) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_clears_a_row_whose_tray_is_now_disabled(session: AsyncSession) -> None:
+    pid = await _printer(session)
+    await service.put(session, pid, "tray-2", VALUES, measured_on=None, actor="a")
+    tray = await session.get(PrinterTray, (pid, "tray-2"))
+    assert tray is not None
+    tray.enabled = False
+    await session.commit()
+    await service.delete(session, pid, "tray-2", actor="a")
+    assert await session.get(PrinterCalibration, (pid, "tray-2")) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_clears_a_row_whose_tray_was_removed(session: AsyncSession) -> None:
+    pid = await _printer(session)
+    await service.put(session, pid, "tray-2", VALUES, measured_on=None, actor="a")
+    tray = await session.get(PrinterTray, (pid, "tray-2"))
+    assert tray is not None
+    await session.delete(tray)
+    await session.commit()
+    await service.delete(session, pid, "tray-2", actor="a")
+    assert await session.get(PrinterCalibration, (pid, "tray-2")) is None
+    with pytest.raises(TrayUnknownError):  # no row and no tray: still an error
+        await service.delete(session, pid, "tray-2", actor="a")
+
+
+def test_measured_on_is_bounded() -> None:
+    from app.calibration.model import MeasuredOn
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        MeasuredOn(type_key="k" * 201, version=1)
+    with pytest.raises(ValidationError):
+        MeasuredOn(type_key="k", version=0)
+    assert MeasuredOn(type_key="k" * 200, version=1).version == 1
+
+
+def test_schema_states_the_bounds_without_enforcing_them() -> None:
+    props = CalibrationIn.model_json_schema()["properties"]
+    assert (props["offset_x_mm"]["minimum"], props["offset_x_mm"]["maximum"]) == (-10.0, 10.0)
+    assert props["scale_x"]["x-decimals"] == 6
+    assert CalibrationIn(offset_x_mm=50).offset_x_mm == 50  # the fit may return such values

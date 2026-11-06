@@ -10,6 +10,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from pydantic import BaseModel, Field
+from pydantic.config import JsonDict
 
 from app.models.printer_calibration import PrinterCalibration
 from app.page_render.transform import IDENTITY, Deviation
@@ -34,6 +35,18 @@ _FACTOR: dict[str, int] = {
 }
 
 
+def _doc(field: str, unit: str) -> str:
+    lo, hi, decimals = BOUNDS[field]
+    return f"{unit}; allowed {lo} to {hi}, at most {decimals} decimals (checked by the service)."
+
+
+def _extra(field: str) -> JsonDict:
+    # Informative only: the bounds are not enforced by the model, so the fit can return values
+    # outside them. The service refuses them with calibration_out_of_range.
+    lo, hi, decimals = BOUNDS[field]
+    return {"minimum": lo, "maximum": hi, "x-decimals": decimals}
+
+
 class CalibrationIn(BaseModel):
     """A printer's measured deviation; the hub applies the inverse when it renders (D17).
 
@@ -43,16 +56,28 @@ class CalibrationIn(BaseModel):
     fit endpoint returns values of this shape even when they are outside the bounds.
     """
 
-    offset_x_mm: float = 0.0
-    offset_y_mm: float = 0.0
-    scale_x: float = 1.0
-    scale_y: float = 1.0
-    rotation_deg: float = 0.0
+    offset_x_mm: float = Field(
+        default=0.0, description=_doc("offset_x_mm", "mm"), json_schema_extra=_extra("offset_x_mm")
+    )
+    offset_y_mm: float = Field(
+        default=0.0, description=_doc("offset_y_mm", "mm"), json_schema_extra=_extra("offset_y_mm")
+    )
+    scale_x: float = Field(
+        default=1.0, description=_doc("scale_x", "factor"), json_schema_extra=_extra("scale_x")
+    )
+    scale_y: float = Field(
+        default=1.0, description=_doc("scale_y", "factor"), json_schema_extra=_extra("scale_y")
+    )
+    rotation_deg: float = Field(
+        default=0.0,
+        description=_doc("rotation_deg", "degrees, positive is clockwise"),
+        json_schema_extra=_extra("rotation_deg"),
+    )
 
 
 class MeasuredOn(BaseModel):
-    type_key: str
-    version: int
+    type_key: str = Field(min_length=1, max_length=200)
+    version: int = Field(ge=1, le=1_000_000)
 
 
 class CalibrationPut(CalibrationIn):

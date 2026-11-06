@@ -52,7 +52,9 @@ class FitRequest(BaseModel):
 class FitResponse(BaseModel):
     values: CalibrationIn
     residuals_mm: list[float]
-    flagged: list[int] = Field(description="Indices of readings further than 0.3 mm from the fit.")
+    flagged: list[int] = Field(
+        description="0-based indices into `readings` of those further than 0.3 mm from the fit."
+    )
     out_of_range: list[str] = Field(description="Names of values outside the allowed ranges.")
 
 

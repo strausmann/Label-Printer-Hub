@@ -116,11 +116,11 @@ async def put(
     """Store (replace) the manual calibration of a tray. Nothing is stored on any error."""
     await _page_printer(session, printer_id)
     dev = to_deviation(values)  # raises calibration_out_of_range before any write
-    await _check_tray(session, printer_id, tray)
     version_id = (
         (await ts.get_version(session, measured_on[0], measured_on[1])).id if measured_on else None
     )
     async with ts.write_transaction(session):
+        await _check_tray(session, printer_id, tray)  # inside the lock: no race with a tray edit
         row = await session.get(PrinterCalibration, (printer_id, tray))
         if row is None:
             row = PrinterCalibration(
@@ -148,12 +148,15 @@ async def put(
 
 
 async def delete(session: AsyncSession, printer_id: UUID, tray: str, *, actor: str) -> None:  # noqa: ARG001 - kept for the call contract; not logged
-    """Reset a tray to the identity. A tray without a calibration is left as it is."""
+    """Reset a tray to the identity; a stored row is removed even if its tray is gone."""
     await _page_printer(session, printer_id)
-    await _check_tray(session, printer_id, tray)
     async with ts.write_transaction(session):
         row = await session.get(PrinterCalibration, (printer_id, tray))
-        if row is not None:
+        if row is None:
+            # Nothing to clear: an unknown tray is still an error, a known one is a no-op.
+            await _check_tray(session, printer_id, tray)
+        else:
+            # A stored row is always clearable, even when its tray was disabled or removed since.
             await session.delete(row)
         await session.commit()
 

@@ -76,8 +76,17 @@ def fit(g: Geometry, page: str, readings: Sequence[Reading]) -> FitResult:
     v: list[float] = []
     px: list[float] = []
     py: list[float] = []
-    for r in readings:
-        qx, qy = crossing_point(g, r.col_gap, r.row_gap)
+    for index, r in enumerate(readings):
+        try:
+            qx, qy = crossing_point(g, r.col_gap, r.row_gap)
+        except InvalidFieldError as exc:
+            # Name the reading (0-based) so a client can point at the bad one.
+            err = InvalidFieldError(
+                f"readings[{index}].{(exc.detail or {})['field']}",
+                str((exc.detail or {})["reason"]),
+            )
+            err.detail = {**(exc.detail or {}), "reading": index}
+            raise err from None
         u.append(qx - cx)
         v.append(qy - cy)
         px.append(qx + r.across_mm - cx)

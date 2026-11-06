@@ -1336,26 +1336,31 @@ export interface components {
         CalibrationIn: {
             /**
              * Offset X Mm
+             * @description mm; allowed -10.0 to 10.0, at most 2 decimals (checked by the service).
              * @default 0
              */
             offset_x_mm: number;
             /**
              * Offset Y Mm
+             * @description mm; allowed -10.0 to 10.0, at most 2 decimals (checked by the service).
              * @default 0
              */
             offset_y_mm: number;
             /**
              * Rotation Deg
+             * @description degrees, positive is clockwise; allowed -2.0 to 2.0, at most 6 decimals (checked by the service).
              * @default 0
              */
             rotation_deg: number;
             /**
              * Scale X
+             * @description factor; allowed 0.95 to 1.05, at most 6 decimals (checked by the service).
              * @default 1
              */
             scale_x: number;
             /**
              * Scale Y
+             * @description factor; allowed 0.95 to 1.05, at most 6 decimals (checked by the service).
              * @default 1
              */
             scale_y: number;
@@ -1366,26 +1371,31 @@ export interface components {
             measured_on?: components["schemas"]["MeasuredOn"] | null;
             /**
              * Offset X Mm
+             * @description mm; allowed -10.0 to 10.0, at most 2 decimals (checked by the service).
              * @default 0
              */
             offset_x_mm: number;
             /**
              * Offset Y Mm
+             * @description mm; allowed -10.0 to 10.0, at most 2 decimals (checked by the service).
              * @default 0
              */
             offset_y_mm: number;
             /**
              * Rotation Deg
+             * @description degrees, positive is clockwise; allowed -2.0 to 2.0, at most 6 decimals (checked by the service).
              * @default 0
              */
             rotation_deg: number;
             /**
              * Scale X
+             * @description factor; allowed 0.95 to 1.05, at most 6 decimals (checked by the service).
              * @default 1
              */
             scale_x: number;
             /**
              * Scale Y
+             * @description factor; allowed 0.95 to 1.05, at most 6 decimals (checked by the service).
              * @default 1
              */
             scale_y: number;
@@ -1519,7 +1529,7 @@ export interface components {
         FitResponse: {
             /**
              * Flagged
-             * @description Indices of readings further than 0.3 mm from the fit.
+             * @description 0-based indices into `readings` of those further than 0.3 mm from the fit.
              */
             flagged: number[];
             /**

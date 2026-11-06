@@ -258,9 +258,13 @@ async def test_fit_errors(api_client_with_seed):
     )
     bad_version = await c.post(url, json={**good, "version": 9}, headers=reader)
     assert bad_version.status_code == 404
+    # type_service.get_version answers a missing version with sheet_type_not_found
+    assert _err(bad_version)["error_code"] == "sheet_type_not_found"
     gap = {**good, "readings": [*good["readings"][:3], {**good["readings"][3], "col_gap": 9}]}
     outside = await c.post(url, json=gap, headers=reader)
     assert outside.status_code == 422
+    assert _err(outside)["error_code"] == "invalid_geometry"
+    assert _err(outside)["error_detail"]["reading"] == 3
     tray = await c.post(f"/api/printers/{pid}/calibration/off/fit", json=good, headers=reader)
     assert tray.status_code == 422 and _err(tray)["error_code"] == "tray_unknown"
     tape = await _printer("brother_ql")
@@ -277,3 +281,16 @@ async def test_fit_with_explicit_version(api_client_with_seed):
     resp = await c.post(f"/api/printers/{pid}/calibration/auto/fit", json=body, headers=reader)
     assert resp.status_code == 200, resp.text
     assert resp.json()["values"]["offset_y_mm"] == pytest.approx(-0.4, abs=0.01)
+
+
+async def test_measured_on_is_validated(api_client_with_seed):
+    c = api_client_with_seed
+    admin = await _key(["admin"])
+    pid = await _printer()
+    for measured in ({"type_key": "k" * 201, "version": 1}, {"type_key": "k", "version": 0}):
+        resp = await c.put(
+            f"/api/printers/{pid}/calibration/auto",
+            json={**BODY, "measured_on": measured},
+            headers=admin,
+        )
+        assert resp.status_code == 422, measured
