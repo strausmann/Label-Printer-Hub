@@ -6,6 +6,7 @@ import pytest
 from app.page_render.transform import (
     IDENTITY,
     PT_PER_MM,
+    Affine,
     Deviation,
     apply_deviation,
     correction_mm,
@@ -53,6 +54,56 @@ def test_scale_acts_around_the_page_centre() -> None:
     dev = Deviation(scale_x_ppm=1_010_000)
     assert apply_deviation(dev, "A4", (105.0, 20.0))[0] == pytest.approx(105.0, abs=1e-9)
     assert apply_deviation(dev, "A4", (205.0, 20.0))[0] == pytest.approx(105.0 + 100.0 * 1.01)
+
+
+# Hand-computed expectations: plain numbers, not the module's own formula. The page centre of
+# A4 is (105, 148.5); y points down, a positive rotation is clockwise as seen.
+
+
+def test_rotation_one_degree_literal() -> None:
+    # (105, 98.5) is 50 mm above the centre; it swings to the right and down a little
+    x, y = apply_deviation(Deviation(rotation_udeg=1_000_000), "A4", (105.0, 98.5))
+    assert (x, y) == pytest.approx((105.872620, 98.507615), abs=1e-6)
+
+
+def test_scale_y_only_literal() -> None:
+    x, y = apply_deviation(Deviation(scale_y_ppm=990_000), "A4", (20.0, 248.5))
+    assert (x, y) == pytest.approx((20.0, 148.5 + 100.0 * 0.99), abs=1e-9)
+
+
+def test_scale_x_only_literal() -> None:
+    x, y = apply_deviation(Deviation(scale_x_ppm=1_010_000), "A4", (205.0, 20.0))
+    assert (x, y) == pytest.approx((105.0 + 100.0 * 1.01, 20.0), abs=1e-9)
+
+
+def test_rotation_and_scale_combined_literal() -> None:
+    dev = Deviation(scale_x_ppm=1_010_000, scale_y_ppm=990_000, rotation_udeg=1_000_000)
+    x, y = apply_deviation(dev, "A4", (155.0, 98.5))
+    assert (x, y) == pytest.approx((156.356203, 99.888886), abs=1e-6)
+
+
+def test_rotation_one_degree_pdf_matrix_literal() -> None:
+    m = correction_pdf_matrix(Deviation(rotation_udeg=1_000_000), "A4")
+    assert m == pytest.approx(
+        (0.999848, 0.017452, -0.017452, 0.999848, 7.391833, -5.130384), abs=1e-5
+    )
+
+
+def test_offset_is_added_after_the_rotation() -> None:
+    dev = Deviation(offset_x_hmm=100, offset_y_hmm=-50, rotation_udeg=1_000_000)
+    x, y = apply_deviation(dev, "A4", (105.0, 98.5))
+    assert (x, y) == pytest.approx((105.872620 + 1.0, 98.507615 - 0.5), abs=1e-6)
+
+
+def test_non_positive_scale_is_rejected() -> None:
+    for kw in ({"scale_x_ppm": 0}, {"scale_y_ppm": 0}, {"scale_x_ppm": -1}, {"scale_y_ppm": -1}):
+        with pytest.raises(ValueError, match="positive"):
+            Deviation(**kw)  # type: ignore[arg-type]
+
+
+def test_hand_built_singular_affine_is_rejected() -> None:
+    with pytest.raises(ValueError, match="singular"):
+        Affine(1, 0, 2, 0, 0, 0).inverse()
 
 
 def test_unknown_page_is_rejected() -> None:

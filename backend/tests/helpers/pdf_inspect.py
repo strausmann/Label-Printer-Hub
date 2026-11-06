@@ -196,7 +196,7 @@ def texts(pdf: bytes) -> list[str]:
         elif op == "Tj":
             if current not in cmaps:
                 cmaps[current] = _to_unicode(pdf, fonts[current])
-            result.append("".join(cmaps[current][c] for c in _unescape(args[0])))
+            result.append("".join(cmaps[current].get(c, "\ufffd") for c in _unescape(args[0])))
     return result
 
 
@@ -209,7 +209,12 @@ def _to_unicode(pdf: bytes, font_object: int) -> dict[int, str]:
     # Only the bfchar blocks: the codespacerange line has the same <xx> <yy> shape.
     for block in re.findall(rb"beginbfchar(.*?)endbfchar", cmap, re.DOTALL):
         for code, uni in re.findall(rb"<([0-9A-Fa-f]{2})>\s*<([0-9A-Fa-f]+)>", block):
-            mapping[int(code, 16)] = bytes.fromhex(uni.decode()).decode("utf-16-be")
+            try:
+                mapping[int(code, 16)] = bytes.fromhex(uni.decode()).decode("utf-16-be")
+            except ValueError:
+                # reportlab writes a character outside the BMP as an odd-length <1F600>, which
+                # is not valid UTF-16BE; leave the code unmapped (texts() shows U+FFFD).
+                continue
     return mapping
 
 

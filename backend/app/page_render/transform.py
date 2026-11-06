@@ -55,6 +55,8 @@ class Affine(NamedTuple):
     def inverse(self) -> Affine:
         det = self.a * self.d - self.b * self.c
         if det == 0.0:
+            # Unreachable for a valid Deviation (scales are positive, so det > 0); kept as the
+            # guard for an Affine built by hand.
             raise ValueError("affine map is singular")
         ia, ib, ic, id_ = self.d / det, -self.b / det, -self.c / det, self.a / det
         return Affine(
@@ -80,6 +82,10 @@ class Deviation:
     scale_x_ppm: int = 1_000_000
     scale_y_ppm: int = 1_000_000
     rotation_udeg: int = 0
+
+    def __post_init__(self) -> None:
+        if self.scale_x_ppm <= 0 or self.scale_y_ppm <= 0:
+            raise ValueError("scale_x_ppm and scale_y_ppm must be positive")
 
 
 IDENTITY = Deviation()

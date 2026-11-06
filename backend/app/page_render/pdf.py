@@ -69,6 +69,8 @@ def resolve_font_path() -> Path:
 
 def _register_font(path: Path) -> str:
     """Register the font once per distinct file and return its reportlab name."""
+    # The font is registered once per path per process; replacing the file at the same path
+    # while the process runs keeps the old registration.
     digest = hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:12]
     name = f"PrintHubPdf-{digest}"
     if name not in pdfmetrics.getRegisteredFontNames():

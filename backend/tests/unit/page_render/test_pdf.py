@@ -185,6 +185,25 @@ def test_image_pixels_are_not_resampled_or_inverted() -> None:
     assert zlib.decompress(match.group(1)) == im.tobytes()
 
 
+def test_rejects_non_positive_image_size() -> None:
+    for w, h in ((0, 100), (100, 0), (-5, 100), (100, -5)):
+        with pytest.raises(ValueError, match="positive"):
+            PageImage(0, 0, w, h, _bilevel())
+
+
+def test_same_image_twice_shares_one_xobject_drawn_twice() -> None:
+    im = _bilevel()
+    pdf = _render(
+        images=[PageImage(1000, 1000, 2000, 1000, im), PageImage(5000, 3000, 2000, 1000, im)]
+    )
+    assert len(inspect.images(pdf)) == 1
+    ops = inspect.operations(pdf)
+    assert [op for op, _ in ops].count("Do") == 2
+    first, second = inspect.cm_matrices(pdf)
+    assert first[4] != second[4]  # drawn at two different places
+    assert (first[0], first[3]) == (second[0], second[3])
+
+
 def test_rejects_non_1bit_image() -> None:
     for mode in ("L", "RGB", "P"):
         with pytest.raises(ValueError, match="1"):
@@ -211,6 +230,12 @@ def test_vector_text_is_literal_and_anchored() -> None:
 def test_non_ascii_text_round_trips() -> None:
     pdf = _render(texts=[PageText(1000, 2000, 10.0, "Größe é")])
     assert inspect.texts(pdf) == ["Größe é"]
+
+
+def test_text_outside_the_bmp_does_not_break_the_inspector() -> None:
+    # reportlab writes <1F600> (odd length) into the CMap; the helper must skip that entry
+    pdf = _render(texts=[PageText(1000, 2000, 10.0, "a\U0001f600b")])
+    assert inspect.texts(pdf) == ["a\ufffdb"]
 
 
 def test_vector_pen_has_no_colour_parameter() -> None:
@@ -266,21 +291,30 @@ def test_text_anchors() -> None:
 # --- determinism ------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("compress", [True, False])
-def test_pdf_is_deterministic(compress: bool) -> None:
-    kw: dict[str, object] = {
-        "images": [PageImage(985, 6370, 4570, 2120, _bilevel())],
-        "texts": [PageText(2000, 5000, 9.0, "x")],
-        "vector": _draw_all,
-        "correction": Deviation(150, -80),
-        "compress": compress,
-        "title": "Sheet 1",
-    }
-    first = write_pdf("A4", **kw)  # type: ignore[arg-type]
+def test_pdf_is_deterministic() -> None:
+    """Equal input gives equal bytes, in both compression modes.
+
+    One 1.1 s sleep between the two rounds is kept on purpose: without ``invariant=True``
+    reportlab embeds the wall clock to the second, so two renders in the same second would be
+    equal anyway and the test could not fail.
+    """
     import time
 
-    time.sleep(1.1)  # the default reportlab output embeds the wall clock, to the second
-    assert write_pdf("A4", **kw) == first  # type: ignore[arg-type]
+    def render(compress: bool) -> bytes:
+        return write_pdf(
+            "A4",
+            images=[PageImage(985, 6370, 4570, 2120, _bilevel())],
+            texts=[PageText(2000, 5000, 9.0, "x")],
+            vector=_draw_all,
+            correction=Deviation(150, -80),
+            compress=compress,
+            title="Sheet 1",
+        )
+
+    first = {c: render(c) for c in (True, False)}
+    time.sleep(1.1)
+    for compress in (True, False):
+        assert render(compress) == first[compress]
 
 
 def test_no_wall_clock_in_the_pdf() -> None:
