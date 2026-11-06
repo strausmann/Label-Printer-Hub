@@ -384,6 +384,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/printers/{printer_id}/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capabilities of a tape or page printer (cache only)
+         * @description Resolution, media, trays with their calibration and accepted document formats. Served from the status cache: the printer is never contacted, so a printer that has not been probed yet answers 200 with ``media`` and ``captured_at`` null. No connection detail is part of the answer.
+         */
+        get: operations["get_capabilities_api_printers__printer_id__capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/printers/{printer_id}/pause": {
         parameters: {
             query?: never;
@@ -1459,6 +1479,39 @@ export interface components {
             /** Updated By */
             updated_by?: string | null;
         };
+        /**
+         * Capabilities
+         * @description Served from the status cache; the printer is never contacted.
+         */
+        Capabilities: {
+            /**
+             * Captured At
+             * @description When the cache row was written.
+             */
+            captured_at: string | null;
+            /**
+             * Document Formats
+             * @description Page printers only.
+             */
+            document_formats: string[] | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tape" | "page";
+            /**
+             * Media
+             * @description None while nothing is cached (page) or no tape is loaded (tape).
+             */
+            media: components["schemas"]["TapeMedia"] | components["schemas"]["PageMedia"] | null;
+            /** Resolution Dpi */
+            resolution_dpi: components["schemas"]["TapeResolution"] | components["schemas"]["PageResolution"];
+            /**
+             * Trays
+             * @description Page printers only.
+             */
+            trays: components["schemas"]["TrayCapability"][] | null;
+        };
         /** CellHitRead */
         CellHitRead: {
             /** Cell */
@@ -1635,6 +1688,17 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HardwareMargins */
+        HardwareMargins: {
+            /** Bottom */
+            bottom: number;
+            /** Left */
+            left: number;
+            /** Right */
+            right: number;
+            /** Top */
+            top: number;
         };
         /**
          * Healthz
@@ -1939,6 +2003,16 @@ export interface components {
              */
             job_id: string;
         };
+        /** PageMedia */
+        PageMedia: {
+            hardware_margins_mm: components["schemas"]["HardwareMargins"] | null;
+            /** Media Type Settable */
+            media_type_settable: boolean;
+            /** Media Types */
+            media_types: string[];
+            /** Page Sizes */
+            page_sizes: components["schemas"]["PageSize"][];
+        };
         /** PageRequest */
         PageRequest: {
             /**
@@ -1957,6 +2031,28 @@ export interface components {
              * @description Defaults to the current version.
              */
             version?: number | null;
+        };
+        /** PageResolution */
+        PageResolution: {
+            /**
+             * Max
+             * @description Highest resolution the printer reports; None if unknown.
+             */
+            max: number | null;
+            /**
+             * Supported
+             * @description Every reported resolution in dpi, as reported.
+             */
+            supported: number[];
+        };
+        /** PageSize */
+        PageSize: {
+            /** Height Mm */
+            height_mm: number;
+            /** Name */
+            name: string;
+            /** Width Mm */
+            width_mm: number;
         };
         /**
          * PauseRead
@@ -2771,6 +2867,56 @@ export interface components {
              * @description Event type string (e.g. 'updated', 'created', 'consumed')
              */
             type: string;
+        };
+        /** TapeMedia */
+        TapeMedia: {
+            /**
+             * Printable Mm
+             * @description printable_px / dpi_y * 25.4, two decimals.
+             */
+            printable_mm: number;
+            /** Printable Px */
+            printable_px: number;
+            /**
+             * Type
+             * @description Tape type; None while the status cache does not carry it.
+             */
+            type: string | null;
+            /** Width Mm */
+            width_mm: number;
+        };
+        /** TapeResolution */
+        TapeResolution: {
+            /**
+             * X
+             * @description Dots per inch across the print head.
+             */
+            x: number;
+            /**
+             * Y
+             * @description Dots per inch along the tape.
+             */
+            y: number;
+        };
+        /** TrayCapability */
+        TrayCapability: {
+            /** @description Stored calibration; None while the tray has none. */
+            calibration: components["schemas"]["CalibrationRead"] | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Is Default */
+            is_default: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Load Hint */
+            load_hint: string | null;
+            /**
+             * Media
+             * @description Media the printer reports in this tray, if any.
+             */
+            media: string | null;
         };
         /**
          * TrayIn
@@ -3774,6 +3920,38 @@ export interface operations {
                 };
                 content: {
                     "application/pdf": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_capabilities_api_printers__printer_id__capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id. */
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Capabilities"];
                 };
             };
             /** @description Validation Error */

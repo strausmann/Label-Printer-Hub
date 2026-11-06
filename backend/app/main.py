@@ -93,6 +93,7 @@ from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.admin_printers_api import router as admin_printers_api_router
 from app.api.routes.calibration import router as calibration_router
+from app.api.routes.capabilities import router as capabilities_router
 from app.api.routes.print import render_router
 from app.api.routes.print import router as print_router
 from app.api.routes.settings_api import router as settings_api_router
@@ -904,6 +905,7 @@ def create_app() -> _LifespanManager:
     app.include_router(sheet_types_router)
     app.include_router(sheets_router)
     app.include_router(calibration_router)
+    app.include_router(capabilities_router)
     app.include_router(info_routes.router)
 
     # D1: the same process serves the web app. Mounted after every router so the

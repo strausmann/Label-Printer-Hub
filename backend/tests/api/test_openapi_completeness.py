@@ -150,15 +150,15 @@ def test_endpoint_count_in_range(openapi_schema: dict[str, Any]) -> None:
       + /api/templates/{key}/preview-svg (1) = Phase-1i D
       Total = 29+
 
-    The range 28-87 is intentionally wide to tolerate minor additions
+    The range 28-88 is intentionally wide to tolerate minor additions
     (e.g. a future ``/healthz/db`` probe) without requiring this test to be
     updated.  It will still catch the case where an entire router is
     accidentally unregistered (count drops below 28) or a rogue batch of
-    undocumented endpoints lands (count exceeds 87).
+    undocumented endpoints lands (count exceeds 88).
     """
     count = sum(1 for _ in _iter_operations(openapi_schema))
-    assert 28 <= count <= 87, (
-        f"Operation count {count} is outside the expected 28-87 range.  "
+    assert 28 <= count <= 88, (
+        f"Operation count {count} is outside the expected 28-88 range.  "
         "If you intentionally added or removed endpoints, update this test."
     )
 
