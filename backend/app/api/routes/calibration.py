@@ -164,6 +164,14 @@ class PageJobAccepted(BaseModel):
     "/{printer_id}/calibration/{tray}/page",
     response_model=PageJobAccepted,
     status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "description": (
+                "The printer is a tape printer (`media_kind_mismatch`) or is not known to the "
+                "print queue (`printer-unavailable`)."
+            )
+        }
+    },
     summary="Print the calibration page (no sheet is created)",
 )
 async def print_calibration_page(

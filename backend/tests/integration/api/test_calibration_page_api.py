@@ -132,60 +132,25 @@ async def test_scopes_and_printer_restriction(api_client_with_seed: httpx.AsyncC
     pid, other = await _printer(_factory()), await _printer(_factory())
     url = f"/api/printers/{pid}/calibration/auto/page"
     body = {"type": "cal-sc"}
-    for scopes in (["read"], []):  # printing needs the print scope
-        denied = await c.post(url, json=body, headers=await _key(scopes))
-        assert denied.status_code in (401, 403), denied.text
+
+    def refused(r: Any, status: int, code: str) -> None:
+        assert r.status_code == status and _err(r)["error_code"] == code, r.text
+
+    # Printing needs the print scope: a read key is refused by the scope layer.
+    refused(await c.post(url, json=body, headers=await _key(["read"])), 403, "insufficient_scope")
+    # A key with no scope at all is refused as structurally invalid; no key at all as anonymous.
+    refused(await c.post(url, json=body, headers=await _key([])), 401, "key_no_scopes")
+    refused(await c.get(f"{url}/pdf?type=cal-sc", headers=await _key([])), 401, "key_no_scopes")
+    refused(await c.post(url, json=body), 401, "missing_credentials")
+    refused(await c.get(f"{url}/pdf?type=cal-sc"), 401, "missing_credentials")
     # A key bound to another printer is refused on both routes, with the stable error code.
     bound = await _key(["admin"], allowed=[str(other)])
-    post = await c.post(url, json=body, headers=bound)
-    get = await c.get(f"{url}/pdf?type=cal-sc", headers=bound)
-    for r in (post, get):
-        assert r.status_code == 403 and _err(r)["error_code"] == "printer_not_allowed"
-    # The download needs only read; a key with no scope at all is refused.
-    assert (await c.get(f"{url}/pdf?type=cal-sc", headers=await _key(["read"]))).status_code == 200
-    assert (await c.get(f"{url}/pdf?type=cal-sc", headers=await _key([]))).status_code in (401, 403)
-    assert (await c.get(f"{url}/pdf?type=cal-sc")).status_code in (401, 403)
-
-
-async def test_errors(api_client_with_seed: httpx.AsyncClient) -> None:
-    c = api_client_with_seed
-    f = _factory()
-    hdr = await _key(["admin"])
-    # The app starts on its first request, and only knows the printers that exist by then.
-    assert (await c.get(f"/api/printers/{uuid4()}/calibration", headers=hdr)).status_code == 404
-    await _type(f, "cal-ok")
-    await _type(f, "cal-one", ONE_COL)
-    pid, tape = await _printer(f), await _printer(f, "brother_ql")
-
-    async def post(printer: Any, tray: str, **body: Any) -> Any:
-        return await c.post(
-            f"/api/printers/{printer}/calibration/{tray}/page", json=body, headers=hdr
-        )
-
-    unsuitable = await post(pid, "auto", type="cal-one")
-    assert unsuitable.status_code == 422
-    assert _err(unsuitable)["error_code"] == "calibration_type_unsuitable"
-    as_download = await c.get(
-        f"/api/printers/{pid}/calibration/auto/page/pdf?type=cal-one", headers=hdr
-    )
-    assert (
-        as_download.status_code == 422
-        and _err(as_download)["error_code"] == "calibration_type_unsuitable"
-    )
-    cases = [
-        (await post(pid, "auto", type="nope"), 404, "sheet_type_not_found"),
-        (await post(pid, "auto", type="cal-ok", version=9), 404, "sheet_type_not_found"),
-        (await post(pid, "nope", type="cal-ok"), 422, "tray_unknown"),
-        (await post(pid, "off", type="cal-ok"), 422, "tray_unknown"),
-        (await post(tape, "auto", type="cal-ok"), 409, "media_kind_mismatch"),
-        (await post(uuid4(), "auto", type="cal-ok"), 404, "printer_not_found"),
-    ]
-    for resp, status, code in cases:
-        assert resp.status_code == status and _err(resp)["error_code"] == code, resp.text
-    # The app under test has no running print queue: a valid request cannot be queued.
-    queued = await post(pid, "auto", type="cal-ok")
-    assert queued.status_code == 409
-    assert (await post(pid, "auto", type="")).status_code == 422  # empty key is a validation error
+    refused(await c.post(url, json=body, headers=bound), 403, "printer_not_allowed")
+    refused(await c.get(f"{url}/pdf?type=cal-sc", headers=bound), 403, "printer_not_allowed")
+    # The download needs only read, and print implies read.
+    for scopes in (["read"], ["print"]):
+        r = await c.get(f"{url}/pdf?type=cal-sc", headers=await _key(scopes))
+        assert r.status_code == 200 and r.content.startswith(b"%PDF"), scopes
 
 
 # ---------------------------------------------------------------------------- queue + fake printer
@@ -334,3 +299,50 @@ async def test_corrected_page_of_an_uncalibrated_tray_does_not_crash(env: _Env) 
             f"/api/printers/{env.printer_id}/calibration/auto/page/pdf?type=cal-job&corrected=true"
         )
     assert r.status_code == 200 and r.content.startswith(b"%PDF")
+
+
+async def test_errors(env: _Env) -> None:
+    f = env.factory
+    await _type(f, "cal-one", ONE_COL)
+    tape = await _printer(f, "brother_ql")
+
+    async def post(printer: Any, tray: str, **body: Any) -> Any:
+        async with env.client() as c:
+            return await c.post(f"/api/printers/{printer}/calibration/{tray}/page", json=body)
+
+    pid = env.printer_id
+    unsuitable = await post(pid, "auto", type="cal-one")
+    assert unsuitable.status_code == 422
+    assert _err(unsuitable)["error_code"] == "calibration_type_unsuitable"
+    async with env.client() as c:
+        as_download = await c.get(f"/api/printers/{pid}/calibration/auto/page/pdf?type=cal-one")
+    assert as_download.status_code == 422
+    assert _err(as_download)["error_code"] == "calibration_type_unsuitable"
+    cases = [
+        (await post(pid, "auto", type="nope"), 404, "sheet_type_not_found"),
+        # Spec 15: a missing version of an existing type has its own code.
+        (await post(pid, "auto", type="cal-job", version=9), 404, "sheet_type_version_not_found"),
+        (await post(pid, "nope", type="cal-job"), 422, "tray_unknown"),
+        (await post(pid, "off", type="cal-job"), 422, "tray_unknown"),
+        (await post(tape, "auto", type="cal-job"), 409, "media_kind_mismatch"),
+        (await post(uuid4(), "auto", type="cal-job"), 404, "printer_not_found"),
+    ]
+    for resp, status, code in cases:
+        assert resp.status_code == status and _err(resp)["error_code"] == code, resp.text
+    assert (await post(pid, "auto", type="")).status_code == 422  # validation, not a crash
+    assert env.documents() == []  # none of these reached the printer
+
+
+async def test_a_printer_the_queue_does_not_know_is_a_409(env: _Env) -> None:
+    unknown = await _printer(env.factory)  # in the database, never registered with the queue
+    async with env.client() as c:
+        r = await c.post(f"/api/printers/{unknown}/calibration/auto/page", json={"type": "cal-job"})
+    assert r.status_code == 409, r.text
+    assert _err(r)["type"] == "printer-unavailable"
+    assert env.documents() == []
+
+
+async def test_the_409_is_part_of_the_documented_contract(env: _Env) -> None:
+    spec = env.app.openapi()
+    post = spec["paths"]["/api/printers/{printer_id}/calibration/{tray}/page"]["post"]
+    assert "409" in post["responses"] and "202" in post["responses"]

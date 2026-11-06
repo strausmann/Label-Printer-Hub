@@ -78,6 +78,12 @@ def _register_font(path: Path) -> str:
     return name
 
 
+def text_width_mm(s: str, size_pt: float) -> float:
+    """Width of ``s`` in the embedded font at ``size_pt``: what ``VectorPen.text`` really draws."""
+    width: float = pdfmetrics.stringWidth(s, _register_font(resolve_font_path()), size_pt)
+    return width / PT_PER_MM
+
+
 @dataclass
 class PageImage:
     """A bilevel image placed on the page; the rectangle is in hundredths of a millimetre."""

@@ -270,16 +270,18 @@ def _payload(
     corrected: bool = False,
     snapshot: CalibrationSnapshot | None = None,
     name: str = "Office",
+    key: str = "t",
+    tray: str = "auto",
 ) -> PagePayload:
     return PagePayload(
         kind="calibration_page",
         media="A4",
-        tray="auto",
+        tray=tray,
         render_dpi=600,
         job_name="Calibration page · t v1",
         calibration=snapshot if corrected else None,
         detail={
-            "type_key": "t",
+            "type_key": key,
             "version": 1,
             "printer_name": name,
             "date": "2026-11-05",
@@ -357,3 +359,119 @@ def test_unsuitable_type(g: Geometry) -> None:
     with pytest.raises(CalibrationTypeUnsuitableError) as e:
         _pdf(g)
     assert e.value.error_code == "calibration_type_unsuitable" and e.value.status == 422
+
+
+# ---------------------------------------------------------------------------- footer fit (I1, I2)
+
+
+def _footer_extent(pdf: bytes) -> tuple[str, float, float]:
+    """The footer line (the text ending in the outcome) with its real left and right edge in mm."""
+    texts = pi.texts(pdf)
+    [i] = [i for i, t in enumerate(texts) if "Calibration page —" in t]
+    width = pdfmetrics.stringWidth(texts[i], _register_font(resolve_font_path()), 6) / PT_PER_MM
+    left = pi.text_positions(pdf)[i][0] / PT_PER_MM
+    return texts[i], left, left + width
+
+
+@pytest.mark.parametrize("glyph", ["W", "M", "m", "0"])
+@pytest.mark.parametrize("corrected", [False, True])
+def test_footer_with_wide_glyphs_stays_clear_of_both_squares(glyph: str, corrected: bool) -> None:
+    pdf = render_calibration_page(
+        _payload(
+            corrected=corrected,
+            snapshot=CalibrationSnapshot(method="none"),
+            key=glyph * 200,
+            name=glyph * 255,
+            tray=glyph * 100,
+        ),
+        compress=False,
+    )
+    text, left, right = _footer_extent(pdf)
+    assert left >= SQUARE and right <= A4_W - SQUARE, (left, right)
+    # Whatever is shortened, the fixed parts stay.
+    assert " v1 " in text and "2026-11-05" in text
+    assert text.endswith(
+        "check print with correction" if corrected else "printed without correction"
+    )
+
+
+def test_footer_of_the_longest_ordinary_names_is_present_and_marked() -> None:
+    snap = CalibrationSnapshot(method="manual", dx_hmm=10)
+    pdf = render_calibration_page(
+        _payload(corrected=True, snapshot=snap, key="k" * 40, name="n" * 24, tray="t" * 24),
+        compress=False,
+    )
+    text, left, right = _footer_extent(pdf)
+    assert text.endswith("Calibration page — check print with correction")
+    assert left >= SQUARE and right <= A4_W - SQUARE
+    assert "k" * 40 in text  # 179 mm: fits, so nothing is cut
+
+
+def test_a_footer_that_cannot_fit_is_an_error_not_a_missing_footer() -> None:
+    with pytest.raises(ValueError, match="footer"):
+        _pdf(L4736, footer="W" * 200)
+
+
+# ---------------------------------------------------------------------------- boundary (M1, M2)
+
+# A label corner exactly on x = 15 / y = 15 (kept), and the same 0.01 mm further in (dropped).
+ON_EDGE = Geometry("A4", 21000, 29700, 1000, 1100, 3, 3, 1000, 1100, 1500, 1500, None, "rectangle")
+JUST_IN = Geometry("A4", 21000, 29700, 1000, 1100, 3, 3, 1000, 1100, 1499, 1499, None, "rectangle")
+# Gap lines exactly on x = 15 and y = 15 (kept whole), and 0.01 mm inside (clipped).
+LINE_ON_EDGE = Geometry(
+    "A4", 21000, 29700, 1000, 1100, 3, 3, 1000, 1100, 400, 500, None, "rectangle"
+)
+LINE_JUST_IN = Geometry(
+    "A4", 21000, 29700, 1000, 1100, 3, 3, 1000, 1100, 399, 499, None, "rectangle"
+)
+
+
+def _marks_at(pdf: bytes, x: float, y: float) -> list[dict]:
+    return [
+        s
+        for s in _strokes(pdf)
+        if _len(s) == 1.5 and any(abs(p[0] - x) < 0.005 and abs(p[1] - y) < 0.005 for p in s["pts"])
+    ]
+
+
+def test_an_element_touching_a_square_edge_is_kept() -> None:
+    assert len(_marks_at(_pdf(ON_EDGE), 15.0, 15.0)) == 2
+
+
+def test_an_element_0_01_mm_inside_a_square_is_dropped() -> None:
+    assert _marks_at(_pdf(JUST_IN), 14.99, 14.99) == []
+
+
+def test_a_gap_line_on_the_edge_is_not_clipped_and_one_0_01_mm_inside_is() -> None:
+    def vertical(g: Geometry, x: float) -> list[dict]:
+        return [
+            s
+            for s in _strokes(_pdf(g))
+            if _vertical(s) and abs(s["pts"][0][0] - x) < 0.005 and _len(s) > 20
+        ]
+
+    [on] = vertical(LINE_ON_EDGE, 15.0)
+    assert round(min(p[1] for p in on["pts"]), 2) == 4.0  # starts at the grid top: not clipped
+    [inside] = vertical(LINE_JUST_IN, 14.99)
+    assert round(min(p[1] for p in inside["pts"]), 2) == 15.0  # clipped at the square
+
+
+def test_a_mark_whose_legs_point_away_from_the_square_is_kept() -> None:
+    # The label's bottom right corner is at (16, 16): legs run to -x and -y, both outside the
+    # square. Only the bounding box of the L overlaps it, which is not "a point inside".
+    g = Geometry("A4", 21000, 29700, 1000, 1000, 3, 3, 1000, 1000, 600, 600, None, "rectangle")
+    pdf = _pdf(g)
+
+    # Neighbouring labels share this corner, so each leg is drawn twice: once by the corner
+    # of the label whose box overlaps the square, once by the neighbour whose box does not.
+    def legs(to: tuple[float, float]) -> int:
+        return sum(
+            1
+            for s in _strokes(pdf)
+            if any(abs(p[0] - 16.0) < 0.005 and abs(p[1] - 16.0) < 0.005 for p in s["pts"])
+            and any(abs(p[0] - to[0]) < 0.005 and abs(p[1] - to[1]) < 0.005 for p in s["pts"])
+        )
+
+    assert legs((14.5, 16.0)) == 2
+    assert legs((16.0, 14.5)) == 2
+    assert _marks_at(pdf, 6.0, 6.0) == []  # the top left corner of that label is inside

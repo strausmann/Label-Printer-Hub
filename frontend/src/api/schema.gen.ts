@@ -3729,6 +3729,13 @@ export interface operations {
                     "application/json": components["schemas"]["PageJobAccepted"];
                 };
             };
+            /** @description The printer is a tape printer (`media_kind_mismatch`) or is not known to the print queue (`printer-unavailable`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Validation Error */
             422: {
                 headers: {

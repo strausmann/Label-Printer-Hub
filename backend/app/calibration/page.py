@@ -24,10 +24,14 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from app.calibration.fit import crossing_point
-from app.page_render.pdf import VectorPen, write_pdf
+from app.page_render.pdf import VectorPen, text_width_mm, write_pdf
 from app.page_render.transform import IDENTITY, Deviation
 from app.services.page_jobs import PagePayload
-from app.sheets.errors import CalibrationTypeUnsuitableError
+from app.sheets.errors import (
+    CalibrationTypeUnsuitableError,
+    SheetTypeNotFoundError,
+    SheetTypeVersionNotFoundError,
+)
 from app.sheets.geometry import Geometry
 
 if TYPE_CHECKING:
@@ -44,11 +48,10 @@ FOOTER_BASELINE_MM = 7.0
 CHECKERBOARD_SENTENCE = "Peel every other label (checkerboard) if the cut is hard to see."
 _SENTENCE_BASELINE_FROM_BOTTOM_MM = 11.0
 _PT_MM = 25.4 / 72
-#: A glyph is never wider than this many em: the omission test for text must not underestimate.
-_EM_WIDTH = 0.6
-
-_KEY_MAX = 40
-_NAME_MAX = 24
+#: Float noise (a coordinate that is 15 mm up to rounding) must not turn "touching" into "inside".
+_EPS = 1e-9
+#: Room kept between the footer and a corner square, so rounding in the PDF cannot touch it.
+_FOOTER_SLACK_MM = 0.01
 
 # Mini scale at a crossing: ±2 mm, a tick every 0.2 mm.
 _SCALE_HALF_MM = 2.0
@@ -69,18 +72,85 @@ def today_iso() -> str:
 
 
 def _short(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[: limit - 3] + "..."
+    if limit >= len(text):
+        return text
+    return text[: limit - 3] + "..." if limit > 3 else text[: max(limit, 0)]
 
 
 def footer_text(
     type_key: str, version: int, printer_name: str, tray: str, day: str, *, corrected: bool
 ) -> str:
-    """The footer line. Long names are shortened so the line stays clear of the corner squares."""
+    """The footer line, in full."""
     outcome = "check print with correction" if corrected else "printed without correction"
     return (
-        f"{_short(type_key, _KEY_MAX)} v{version} · {_short(printer_name, _NAME_MAX)}"
-        f" · tray {_short(tray, _NAME_MAX)} · {day} · Calibration page — {outcome}"
+        f"{type_key} v{version} · {printer_name}"
+        f" · tray {tray} · {day} · Calibration page — {outcome}"
     )
+
+
+def footer_room_mm(page_w_mm: float) -> float:
+    """The width between the two bottom corner squares that the footer may take."""
+    return page_w_mm - 2 * CORNER_SQUARE_MM - _FOOTER_SLACK_MM * 2
+
+
+def fit_footer_text(
+    type_key: str,
+    version: int,
+    printer_name: str,
+    tray: str,
+    day: str,
+    *,
+    corrected: bool,
+    room_mm: float,
+) -> str:
+    """The footer line, with the variable fields shortened until it fits in ``room_mm``.
+
+    Measured with the embedded font. The version, the date and the outcome are never touched;
+    the printer name, the type key and the tray give way (down to nothing) in order of their
+    current length. Raises ``ValueError`` if even the bare line is too wide.
+    """
+    fields = [type_key, printer_name, tray]
+    keep = [len(f) for f in fields]
+
+    def build() -> str:
+        k, n, t = (_short(f, m) for f, m in zip(fields, keep, strict=True))
+        return footer_text(k, version, n, t, day, corrected=corrected)
+
+    while text_width_mm(build(), FOOTER_PT) > room_mm:
+        shown = [min(m, len(f)) for f, m in zip(fields, keep, strict=True)]
+        longest = max(range(3), key=lambda i: shown[i])
+        if shown[longest] == 0:
+            raise ValueError("footer: the fixed part alone does not fit between the corner squares")
+        keep[longest] = shown[longest] - 1
+    return build()
+
+
+def _hits_open_square(seg: tuple[float, float, float, float], square: _Box) -> bool:
+    """True if some point of the segment lies strictly inside the open ``square``.
+
+    Liang-Barsky against the square shrunk by ``_EPS``: a segment that only touches the edge
+    (or ends on it) leaves an empty interval and does not count.
+    """
+    x1, y1, x2, y2 = seg
+    sx0, sy0, sx1, sy1 = square
+    dx, dy = x2 - x1, y2 - y1
+    t0, t1 = 0.0, 1.0
+    for p, q in (
+        (-dx, x1 - (sx0 + _EPS)),
+        (dx, (sx1 - _EPS) - x1),
+        (-dy, y1 - (sy0 + _EPS)),
+        (dy, (sy1 - _EPS) - y1),
+    ):
+        if p == 0:
+            if q <= 0:
+                return False
+        else:
+            r = q / p
+            if p < 0:
+                t0 = max(t0, r)
+            else:
+                t1 = min(t1, r)
+    return t0 < t1 or (t0 == t1 and dx == 0 and dy == 0)
 
 
 class _Page:
@@ -99,10 +169,11 @@ class _Page:
         )
 
     def clear(self, box: _Box) -> bool:
-        """True if no point of ``box`` lies strictly inside a corner square."""
+        """True if the open interior of no corner square overlaps ``box`` (used for text)."""
         x0, y0, x1, y1 = box
         return not any(
-            x0 < sx1 and x1 > sx0 and y0 < sy1 and y1 > sy0 for sx0, sy0, sx1, sy1 in self._squares
+            x0 < sx1 - _EPS and x1 > sx0 + _EPS and y0 < sy1 - _EPS and y1 > sy0 + _EPS
+            for sx0, sy0, sx1, sy1 in self._squares
         )
 
     def segments(
@@ -110,10 +181,9 @@ class _Page:
         segs: Sequence[tuple[float, float, float, float]],
         dash: tuple[float, ...] | None = None,
     ) -> None:
-        """One element made of several segments; omitted as a whole if its box is not clear."""
-        xs = [v for s in segs for v in (s[0], s[2])]
-        ys = [v for s in segs for v in (s[1], s[3])]
-        if not self.clear((min(xs), min(ys), max(xs), max(ys))):
+        """One element made of segments; omitted as a whole if any point of any of them lies
+        strictly inside a corner square."""
+        if any(_hits_open_square(seg, sq) for seg in segs for sq in self._squares):
             return
         for x1, y1, x2, y2 in segs:
             self._pen.line(x1, y1, x2, y2, width_mm=LINE_MM, dash=dash)
@@ -145,15 +215,33 @@ class _Page:
         size_pt: float,
         anchor: Literal["start", "middle", "end"],
     ) -> None:
-        em = size_pt * _PT_MM
-        width = len(s) * em * _EM_WIDTH
-        left = {"start": x, "middle": x - width / 2, "end": x - width}[anchor]
-        if self.clear((left, y - em, left + width, y + em * 0.25)):
+        left, right, top, bottom = self._text_box(x, y, s, size_pt, anchor)
+        if self.clear((left, top, right, bottom)):
             self._pen.text(x, y, s, size_pt=size_pt, anchor=anchor)
+
+    @staticmethod
+    def _text_box(
+        x: float, y: float, s: str, size_pt: float, anchor: str
+    ) -> tuple[float, float, float, float]:
+        width = text_width_mm(s, size_pt)
+        em = size_pt * _PT_MM
+        left = {"start": x, "middle": x - width / 2, "end": x - width}[anchor]
+        return left, left + width, y - em, y + em * 0.25
+
+    def footer(self, x: float, y: float, s: str) -> None:
+        """The footer is never dropped: if it does not fit between the squares, that is a bug."""
+        left, right, top, bottom = self._text_box(x, y, s, FOOTER_PT, "middle")
+        if not self.clear((left, top, right, bottom)):
+            raise ValueError("footer does not fit between the corner squares")
+        self._pen.text(x, y, s, size_pt=FOOTER_PT, anchor="middle")
 
 
 def _mini_scale(page: _Page, cx: float, cy: float, *, along_x: bool) -> None:
-    """Ticks of a ±2 mm scale; one element, so it is left out whole if it touches a square."""
+    """The ±2 mm scale of a crossing.
+
+    Deliberately all or nothing: a scale with some ticks missing would be counted wrongly by
+    whoever reads it, so one tick touching a corner square omits the whole scale.
+    """
     segs: list[tuple[float, float, float, float]] = []
     for k in range(-10, 11):
         off = k * _SCALE_STEP_MM
@@ -164,12 +252,7 @@ def _mini_scale(page: _Page, cx: float, cy: float, *, along_x: bool) -> None:
             if along_x
             else (cx - h, cy + off, cx + h, cy + off)
         )
-    xs = [v for s in segs for v in (s[0], s[2])]
-    ys = [v for s in segs for v in (s[1], s[3])]
-    if not page.clear((min(xs), min(ys), max(xs), max(ys))):
-        return
-    for s in segs:
-        page.segments([s])
+    page.segments(segs)
 
 
 def _ruler(page: _Page, pos: float, edge: float, *, horizontal: bool, outward: int) -> None:
@@ -219,7 +302,8 @@ def draw_calibration_page(pen: VectorPen, g: Geometry, *, footer: str) -> None:
         for c in range(g.cols):
             lx0 = (g.margin_left + c * g.pitch_x) / 100
             ly0 = (g.margin_top + r * g.pitch_y) / 100
-            lx1, ly1 = lx0 + g.label_w / 100, ly0 + g.label_h / 100
+            lx1 = (g.margin_left + c * g.pitch_x + g.label_w) / 100
+            ly1 = (g.margin_top + r * g.pitch_y + g.label_h) / 100
             _corner_mark(page, lx0, ly0, 1, 1)
             _corner_mark(page, lx1, ly0, -1, 1)
             _corner_mark(page, lx0, ly1, 1, -1)
@@ -242,13 +326,7 @@ def draw_calibration_page(pen: VectorPen, g: Geometry, *, footer: str) -> None:
             size_pt=FOOTER_PT,
             anchor="middle",
         )
-    page.text(
-        g.page_w / 200,
-        g.page_h / 100 - FOOTER_BASELINE_MM,
-        footer,
-        size_pt=FOOTER_PT,
-        anchor="middle",
-    )
+    page.footer(g.page_w / 200, g.page_h / 100 - FOOTER_BASELINE_MM, footer)
 
 
 # ---------------------------------------------------------------------------- payload, renderer
@@ -265,8 +343,14 @@ def render_calibration_page(payload: PagePayload, *, compress: bool = True) -> b
         if snap is not None
         else IDENTITY
     )
-    footer = footer_text(
-        d["type_key"], d["version"], d["printer_name"], payload.tray, d["date"], corrected=corrected
+    footer = fit_footer_text(
+        d["type_key"],
+        d["version"],
+        d["printer_name"],
+        payload.tray,
+        d["date"],
+        corrected=corrected,
+        room_mm=footer_room_mm(g.page_w / 100),
     )
     return write_pdf(
         payload.media,
@@ -299,11 +383,13 @@ async def build_payload(
     printer = await session.get(Printer, printer_id)
     assert printer is not None  # snapshot() found it
     sheet_type = await ts.get_type(session, type_key)
-    v = (
-        await ts.current_version(session, sheet_type.id)
-        if version is None
-        else await ts.get_version(session, type_key, version)
-    )
+    if version is None:
+        v = await ts.current_version(session, sheet_type.id)
+    else:
+        try:
+            v = await ts.get_version(session, type_key, version)
+        except SheetTypeNotFoundError:  # the type exists (just read): the version does not
+            raise SheetTypeVersionNotFoundError() from None
     g = ts.version_geometry(v)
     if g.cols < 2 or g.rows < 2:
         raise CalibrationTypeUnsuitableError(g.cols, g.rows)
