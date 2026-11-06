@@ -150,9 +150,19 @@ class SQLiteJobStore(JobStore):
             await jobs_repo.mark_failed(session, job_id, f"{code}: {message}")
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
-        """Recovery: mark all PRINTING jobs of this printer as FAILED_RESTART."""
+        """Recovery: mark all PRINTING tape jobs of this printer as FAILED_RESTART."""
         async with self._session_factory() as session:
             return await jobs_repo.mark_printing_as_failed_restart(session, printer_id)
+
+    async def list_page_jobs_in_flight(self, printer_id: UUID) -> list[Job]:
+        """PRINTING page jobs of this printer, oldest first."""
+        async with self._session_factory() as session:
+            return await jobs_repo.list_page_jobs_in_flight(session, printer_id)
+
+    async def mark_failed_restart(self, job_id: UUID, error: str) -> None:
+        """PRINTING -> FAILED_RESTART with *error*. Silently no-op otherwise."""
+        async with self._session_factory() as session:
+            await jobs_repo.mark_failed_restart(session, job_id, error)
 
     async def list_pending(self, printer_id: UUID) -> list[Job]:
         """Return all non-terminal jobs for this printer, sorted by created_at (FIFO)."""

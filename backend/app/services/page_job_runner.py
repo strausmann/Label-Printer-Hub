@@ -220,9 +220,36 @@ class PageJobRunner:
             await self._store.set_result(job_id, result)
             await self._upload_and_track(page_job, active, summary, result)
         finally:
-            self._active.pop(job_id, None)
-            if active.ipp_job_id is not None:
-                printer.own_job_ids.discard(active.ipp_job_id)
+            self._release(job_id, active, printer)
+
+    async def resume(self, printer: PagePrinter, page_job: PageJob) -> None:
+        """Track a job the printer already holds, after a hub restart.
+
+        ``page_job.resume_result`` is the stored ``result`` (IPP job id, ``started``); the
+        polling is the one a freshly sent job gets, so the outcomes are the same. The in-memory
+        job is ``printing`` already; nothing is sent.
+        """
+        job_id = UUID(page_job.job.id)
+        result = dict(page_job.resume_result or {})
+        ipp_job_id = result["ipp_job_id"]
+        result.setdefault("started", False)
+        active = _Active(printer=printer, ipp_job_id=ipp_job_id)
+        self._active[job_id] = active
+        printer.own_job_ids.add(ipp_job_id)
+        try:
+            await self._track(page_job, active, result)
+        finally:
+            self._release(job_id, active, printer)
+
+    async def end_forgotten(self, page_job: PageJob) -> None:
+        """End a job the printer no longer knows: ``failed/interrupted``, ``started`` as stored."""
+        result = dict(page_job.resume_result or {})
+        await self._fail(page_job, result, "interrupted", started=bool(result.get("started")))
+
+    def _release(self, job_id: UUID, active: _Active, printer: PagePrinter) -> None:
+        self._active.pop(job_id, None)
+        if active.ipp_job_id is not None:
+            printer.own_job_ids.discard(active.ipp_job_id)
 
     # ------------------------------------------------------------------ steps
 

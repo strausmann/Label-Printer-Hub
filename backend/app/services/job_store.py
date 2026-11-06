@@ -29,6 +29,11 @@ _TERMINAL = (
 )
 
 
+def _is_page_job(job: Job) -> bool:
+    """A page-job row names a ``kind`` in its payload; a tape row has none."""
+    return bool(job.payload) and "kind" in job.payload
+
+
 def _with_detail(
     result: dict[str, Any] | None, detail: dict[str, Any] | None
 ) -> dict[str, Any] | None:
@@ -109,12 +114,25 @@ class JobStore(Protocol):
         """
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
-        """Recovery: set all PRINTING jobs of this printer to FAILED_RESTART
+        """Recovery: set all PRINTING *tape* jobs of this printer to FAILED_RESTART
         with error='printer_interrupted'.
+
+        Page jobs (``payload.kind`` set) are left alone: the IPP printer still holds them
+        and ``PrintQueue.start()`` resumes or settles each one (``list_page_jobs_in_flight``,
+        ``mark_failed_restart``).
 
         Called from PrintQueue.start() BEFORE list_pending.
 
         Returns the count of affected rows.
+        """
+
+    async def list_page_jobs_in_flight(self, printer_id: UUID) -> list[Job]:
+        """PRINTING page jobs (``payload.kind`` set) of this printer, oldest first."""
+
+    async def mark_failed_restart(self, job_id: UUID, error: str) -> None:
+        """PRINTING -> FAILED_RESTART with *error* (a page job whose outcome is unknown).
+
+        Silently no-op if job_id does not exist or the row is not PRINTING.
         """
 
     async def list_pending(self, printer_id: UUID) -> list[Job]:
@@ -200,12 +218,32 @@ class MemoryJobStore(JobStore):
     async def mark_interrupted(self, printer_id: UUID) -> int:
         count = 0
         for job in self._jobs.values():
-            if job.printer_id == printer_id and job.state == JobState.PRINTING.value:
+            if (
+                job.printer_id == printer_id
+                and job.state == JobState.PRINTING.value
+                and not _is_page_job(job)
+            ):
                 job.state = JobState.FAILED_RESTART.value
                 job.error = "printer_interrupted"
                 job.finished_at = datetime.now(UTC)
                 count += 1
         return count
+
+    async def list_page_jobs_in_flight(self, printer_id: UUID) -> list[Job]:
+        items = [
+            j
+            for j in self._jobs.values()
+            if j.printer_id == printer_id and j.state == JobState.PRINTING.value and _is_page_job(j)
+        ]
+        return sorted(items, key=lambda j: j.created_at)
+
+    async def mark_failed_restart(self, job_id: UUID, error: str) -> None:
+        job = self._jobs.get(job_id)
+        if job is None or job.state != JobState.PRINTING.value:
+            return
+        job.state = JobState.FAILED_RESTART.value
+        job.error = error
+        job.finished_at = datetime.now(UTC)
 
     async def list_pending(self, printer_id: UUID) -> list[Job]:
         items = [

@@ -176,6 +176,9 @@ class PageJob:
 
     job: Job
     payload: PagePayload
+    resume_result: dict[str, Any] | None = None
+    """Restart recovery: the stored ``result`` of a job the printer already holds (it names
+    the IPP job id). ``None`` for a job that still has to be sent."""
 
 
 class PagePrinter(Protocol):
