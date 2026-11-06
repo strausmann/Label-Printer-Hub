@@ -174,7 +174,7 @@ class IppStatusProducer:
                 await self.probe_once()
             except asyncio.CancelledError:
                 raise
-            except Exception:  # pragma: no cover - probe_once handles its own errors
+            except Exception:  # backstop: nothing may end the loop
                 _log.exception("IPP status loop for %s: unexpected error", self._log_name)
             await asyncio.sleep(self.next_delay())
 

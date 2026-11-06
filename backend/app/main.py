@@ -591,7 +591,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         for sp in status_producers:
             await sp.stop()
         for ipp_sp in ipp_producers:
-            await ipp_sp.stop()
+            try:
+                await ipp_sp.stop()
+            except Exception as stop_exc:  # one failing stop must not skip the rest
+                _log.warning("IPP status producer stop failed (%s)", type(stop_exc).__name__)
         max_timeout = max(
             (c.queue.timeout_s for c in _printer_configs),
             default=30,

@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 import app.models  # noqa: F401
 import httpx
+import pytest
 from app.models.printer_status_cache import PrinterStatusCache
 from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.ipp.codec import Attr, Tag
@@ -27,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tests.helpers.fake_ipp_printer import FAKE_URI, FailingTransport, FakeIppPrinter
 
 PDF = b"%PDF-1.4\n%%EOF\n"
+TEST_TIMEOUT_S = 10.0  # a hang must fail the test, not the run (no pytest-timeout)
 
 
 def _bus() -> MagicMock:
@@ -63,6 +65,7 @@ def _make(
     transport: httpx.AsyncBaseTransport | None = None,
     state: IppPrinterState | None = None,
     interval_s: float = 30.0,
+    limiter: asyncio.Semaphore | None = None,
 ) -> tuple[IppStatusProducer, uuid4, MagicMock, IppPrinterState]:
     pid = uuid4()
     bus = bus or _bus()
@@ -76,6 +79,7 @@ def _make(
         state=state,
         pause_control=pause,
         interval_s=interval_s,
+        limiter=limiter,
     )
     return producer, pid, bus, state
 
@@ -298,11 +302,14 @@ async def test_limiter_bounds_concurrent_probes(async_session_factory) -> None:
     producers = []
     for _ in range(3):
         p, *_rest = _make(
-            fake, async_session_factory, transport=Slow(httpx.ASGITransport(app=fake))
+            fake,
+            async_session_factory,
+            transport=Slow(httpx.ASGITransport(app=fake)),
+            limiter=limiter,
         )
-        p._limiter = limiter
         producers.append(p)
-    await asyncio.gather(*(p.probe_once() for p in producers))
+    async with asyncio.timeout(TEST_TIMEOUT_S):
+        await asyncio.gather(*(p.probe_once() for p in producers))
     assert peak == 1
     for p in producers:
         await p.stop()
@@ -311,10 +318,96 @@ async def test_limiter_bounds_concurrent_probes(async_session_factory) -> None:
 async def test_loop_survives_and_stops(async_session_factory) -> None:
     fake = FakeIppPrinter()
     producer, _pid, bus, _s = _make(fake, async_session_factory, interval_s=0.01)
-    await producer.start()
-    await asyncio.sleep(0.15)
-    await producer.stop()
+    async with asyncio.timeout(TEST_TIMEOUT_S):
+        await producer.start()
+        await asyncio.sleep(0.15)
+        await producer.stop()
     assert bus.publish.call_count == 1
+
+
+async def test_loop_backs_off_between_failed_probes(
+    async_session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = FakeIppPrinter()
+    producer, _pid, _b, _s = _make(
+        fake,
+        async_session_factory,
+        interval_s=0.01,
+        transport=FailingTransport(
+            httpx.ASGITransport(app=fake), "Get-Printer-Attributes", httpx.ConnectError
+        ),
+    )
+    delays: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def spy(delay: float, *a: object) -> None:
+        delays.append(delay)
+        await real_sleep(0)
+
+    monkeypatch.setattr("app.services.producers.ipp_status_producer.asyncio.sleep", spy)
+    async with asyncio.timeout(TEST_TIMEOUT_S):
+        await producer.start()
+        while len(delays) < 4:
+            await real_sleep(0.01)
+        await producer.stop()
+    assert delays[:4] == pytest.approx([0.02, 0.04, 0.08, 0.16])
+
+
+async def test_loop_survives_an_unexpected_error(async_session_factory) -> None:
+    producer, _pid, _b, _s = _make(FakeIppPrinter(), async_session_factory, interval_s=0.01)
+    calls = 0
+    real = producer.probe_once
+
+    async def flaky() -> object:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("boom")
+        return await real()
+
+    producer.probe_once = flaky  # type: ignore[method-assign]
+    async with asyncio.timeout(TEST_TIMEOUT_S):
+        await producer.start()
+        while calls < 3:
+            await asyncio.sleep(0.01)
+        await producer.stop()
+    assert calls >= 3  # the loop kept going after the first call raised
+
+
+async def test_hanging_printer_does_not_block_the_others(
+    async_session_factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.services.producers.ipp_status_producer as mod
+
+    monkeypatch.setattr(mod, "PROBE_GUARD_S", 0.1)
+
+    class Never(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+            await asyncio.sleep(3600)
+            raise AssertionError("unreachable")  # pragma: no cover
+
+    limiter = asyncio.Semaphore(1)  # the hung probe holds the only slot until the guard fires
+    hung, hung_id, _hung_bus, hung_state = _make(
+        FakeIppPrinter(), async_session_factory, transport=Never(), limiter=limiter
+    )
+    healthy, healthy_id, _hb, healthy_state = _make(
+        FakeIppPrinter(), async_session_factory, limiter=limiter
+    )
+    async with asyncio.timeout(TEST_TIMEOUT_S):
+        hung_task = asyncio.create_task(hung.probe_once())
+        await asyncio.sleep(0)  # the hung probe takes the slot first
+        healthy_result = await healthy.probe_once()
+        hung_result = await hung_task
+    assert hung_result is None
+    assert healthy_result is not None and healthy_state.status is not None
+    row = await _cache(async_session_factory, hung_id)
+    assert row.parsed["online"] is False and row.parsed["last_error"] == "TimeoutError"
+    assert hung_state.status is not None and hung_state.status.online is False
+    assert (await _cache(async_session_factory, healthy_id)).parsed["online"] is True
+    # and the healthy one is polled again afterwards
+    assert await healthy.probe_once() is not None
+    for p in (hung, healthy):
+        await p.stop()
 
 
 async def test_sse_snapshot_describes_a_page_printer(async_session_factory) -> None:
