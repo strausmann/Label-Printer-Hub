@@ -66,6 +66,18 @@ def _pause_view(
     return db_paused or queue.is_paused(printer_id), pause
 
 
+def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object]:
+    """The ``connection`` a caller may see.
+
+    For an ``ipp`` printer the URI is connection detail (spec 14, 18): only admin callers
+    see it; everyone else gets ``{"tls_verify": ...}``. Tape rows are returned unchanged.
+    """
+    connection = dict(printer.connection or {})
+    if printer.backend != "ipp" or (auth is not None and auth.scope == "admin"):
+        return connection
+    return {"tls_verify": bool(connection.get("tls_verify", True))}
+
+
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
@@ -149,7 +161,7 @@ async def list_printers(
                 slug=p.slug,
                 model=p.model,
                 backend=p.backend,
-                connection=dict(p.connection),
+                connection=_connection_view(p, _auth),
                 enabled=p.enabled,
                 paused=paused,
                 pause=pause,
@@ -192,7 +204,7 @@ async def get_printer(
         name=printer.name,
         model=printer.model,
         backend=printer.backend,
-        connection=dict(printer.connection),
+        connection=_connection_view(printer, _auth),
         enabled=printer.enabled,
         paused=paused,
         pause=pause,

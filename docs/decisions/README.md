@@ -44,6 +44,7 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0017](0017-settings-in-database-env-locks-encrypted-secrets.md) | Settings in the database; environment locks fields; secrets encrypted | Accepted |
 | [0018](0018-decision-register.md) | Public decision register with D/V/L labels | Accepted |
 | [0019](0019-proxy-headers-need-trust-token.md) | Proxy identity headers are trusted only with the trust token | Accepted |
+| [0020](0020-backend-kinds-ipp-page-printers.md) | Page printers are a backend kind (IPP) with the hub's own client | Proposed |
 
 The [decision register](register.md) lists the short `D<n>` labels cited in code.
 

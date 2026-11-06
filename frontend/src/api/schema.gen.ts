@@ -249,7 +249,7 @@ export interface paths {
         put?: never;
         /**
          * Submit a batch of print jobs
-         * @description Atomic batch print. Validates all items and enqueues the entire batch as a unit — no per-item errors are returned. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code.
+         * @description Atomic batch print. Validates all items and enqueues the entire batch as a unit — no per-item errors are returned. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch.
          */
         post: operations["create_batch_api_print__printer_key__batch_post"];
         delete?: never;
@@ -729,9 +729,29 @@ export interface paths {
         put?: never;
         /**
          * Neuen Drucker anlegen
-         * @description Legt einen neuen Drucker an. Slug und Name müssen eindeutig sein. Gibt 409 zurück wenn Slug oder Name bereits vergeben ist.
+         * @description Legt einen neuen Drucker an. Slug und Name müssen eindeutig sein. Gibt 409 zurück wenn Slug oder Name bereits vergeben ist. An ``ipp`` printer is probed first; nothing is saved when it is unreachable (409 ``ipp_unreachable``), accepts no PDF (409 ``ipp_pdf_unsupported``) or does not report a configured tray (422 ``tray_unknown``).
          */
         post: operations["create_printer_api_v1_admin_printers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/printers/ipp/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read an IPP printer
+         * @description Runs Get-Printer-Attributes against the given URI now and returns a bounded summary (make and model, IPP and PDF versions, resolutions, media, trays, colour modes, margins, state); never the raw attributes. Errors: 502 ``ipp_unreachable``, ``ipp_rejected`` (IPP status name in ``error_detail``) or ``ipp_bad_response``. Admin only.
+         */
+        post: operations["probe_ipp_printer_api_v1_admin_printers_ipp_probe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -752,7 +772,7 @@ export interface paths {
         get: operations["get_printer_api_v1_admin_printers__slug__get"];
         /**
          * Drucker aktualisieren
-         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert.
+         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). An ``ipp`` printer is probed again when its URI changes or a tray key is new.
          */
         put: operations["update_printer_api_v1_admin_printers__slug__put"];
         post?: never;
@@ -1497,6 +1517,22 @@ export interface components {
             status?: number | null;
         };
         /**
+         * IppConnection
+         * @description Connection of an IPP page printer (spec 11.1): URI and TLS verification (OC-17).
+         *
+         *     Only ``ipp``, ``ipps``, ``http`` and ``https``; no user info, no fragment
+         *     (``validate_ipp_uri``). IPP authentication is out of scope (OC-2).
+         */
+        IppConnection: {
+            /**
+             * Tls Verify
+             * @default true
+             */
+            tls_verify: boolean;
+            /** Uri */
+            uri: string;
+        };
+        /**
          * JobRead
          * @description Serialised view of a Job DB row.
          */
@@ -1609,6 +1645,20 @@ export interface components {
              * @description Deep-link URL to the entity in the integration's web UI (e.g. Snipe-IT asset page, Grocy product page, Spoolman spool page)
              */
             url?: string | null;
+        };
+        /**
+         * Margins
+         * @description Smallest unprintable margin per side, hundredths of mm.
+         */
+        Margins: {
+            /** Bottom */
+            bottom: number;
+            /** Left */
+            left: number;
+            /** Right */
+            right: number;
+            /** Top */
+            top: number;
         };
         /** MarkRequest */
         MarkRequest: {
@@ -1768,14 +1818,19 @@ export interface components {
         /**
          * PrinterCreatePayload
          * @description Payload für das Anlegen eines neuen Druckers via Admin-API.
+         *
+         *     ``ipp`` printers take an ``IppConnection`` and a required ``trays`` list; their
+         *     ``model`` is optional (filled from the probe) and SNMP and cut defaults do not
+         *     apply. Tape backends keep a required ``model`` and must not send ``trays``.
          */
         PrinterCreatePayload: {
             /**
              * Backend
              * @enum {string}
              */
-            backend: "ptouch" | "brother_ql";
-            connection: components["schemas"]["PrinterConnection"];
+            backend: "ptouch" | "brother_ql" | "ipp";
+            /** Connection */
+            connection: components["schemas"]["PrinterConnection"] | components["schemas"]["IppConnection"];
             cut_defaults?: components["schemas"]["PrinterCutDefaults"];
             /**
              * Enabled
@@ -1783,12 +1838,14 @@ export interface components {
              */
             enabled: boolean;
             /** Model */
-            model: string;
+            model?: string | null;
             /** Name */
             name: string;
             queue?: components["schemas"]["PrinterQueueSettings"];
             /** Slug */
             slug: string;
+            /** Trays */
+            trays?: components["schemas"]["TrayIn"][] | null;
         };
         /**
          * PrinterCutDefaults
@@ -1878,15 +1935,60 @@ export interface components {
          *
          *     Der Service ignoriert stillschweigend: slug, model, backend, id.
          *     Alle Felder sind optional — ein leerer Body ist ein gültiger PATCH.
+         *
+         *     The payload carries no backend, so the service checks ``connection`` against the
+         *     stored row's backend; ``trays`` (replace-all) are for ``ipp`` printers only.
          */
         PrinterUpdatePayload: {
-            connection?: components["schemas"]["PrinterConnection"] | null;
+            /** Connection */
+            connection?: components["schemas"]["PrinterConnection"] | components["schemas"]["IppConnection"] | null;
             cut_defaults?: components["schemas"]["PrinterCutDefaults"] | null;
             /** Enabled */
             enabled?: boolean | null;
             /** Name */
             name?: string | null;
             queue?: components["schemas"]["PrinterQueueSettings"] | null;
+            /** Trays */
+            trays?: components["schemas"]["TrayIn"][] | null;
+        };
+        /**
+         * ProbeSummary
+         * @description What "Read printer" shows (spec 11.1) and what Print-Job attributes are chosen from.
+         */
+        ProbeSummary: {
+            /** Accepting Jobs */
+            accepting_jobs: boolean | null;
+            /** Color Modes */
+            color_modes: string[];
+            /** Ipp Versions */
+            ipp_versions: string[];
+            /** Make And Model */
+            make_and_model: string | null;
+            margins_hmm: components["schemas"]["Margins"] | null;
+            /** Media Col Members */
+            media_col_members: string[];
+            /** Media Col Supported */
+            media_col_supported: boolean;
+            /** Media Sizes */
+            media_sizes: string[];
+            /** Media Sources */
+            media_sources: string[];
+            /** Media Types */
+            media_types: string[];
+            /** Monochrome Supported */
+            monochrome_supported: boolean;
+            /** One Sided Supported */
+            one_sided_supported: boolean;
+            /** Pdf Supported */
+            pdf_supported: boolean;
+            /** Pdf Versions */
+            pdf_versions: string[];
+            /** Resolutions Dpi */
+            resolutions_dpi: number[];
+            /** Scaling None Supported */
+            scaling_none_supported: boolean;
+            /** State */
+            state: string;
         };
         /**
          * ProblemDetail
@@ -2342,6 +2444,44 @@ export interface components {
              */
             type: string;
         };
+        /**
+         * TrayIn
+         * @description One tray of a page printer as the admin configures it.
+         */
+        TrayIn: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Load Hint */
+            load_hint?: string | null;
+        };
+        /**
+         * TrayRead
+         * @description A configured tray of a page printer.
+         */
+        TrayRead: {
+            /** Enabled */
+            enabled: boolean;
+            /** Is Default */
+            is_default: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Load Hint */
+            load_hint: string | null;
+        };
         /** TypeDoc */
         TypeDoc: {
             /** Allow Qr */
@@ -2455,6 +2595,7 @@ export interface components {
          * @description Lesbare Darstellung eines Druckers.
          *
          *     Enthält alle DB-Felder — keine internen Implementierungsdetails.
+         *     ``trays`` is the tray list of a page printer and ``null`` for tape printers.
          */
         app__api__routes__admin_printers_api__PrinterRead: {
             /** Backend */
@@ -2486,6 +2627,8 @@ export interface components {
             };
             /** Slug */
             slug: string;
+            /** Trays */
+            trays?: components["schemas"]["TrayRead"][] | null;
             /** Updated At */
             updated_at: string;
         };
@@ -4220,6 +4363,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["app__api__routes__admin_printers_api__PrinterRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    probe_ipp_printer_api_v1_admin_printers_ipp_probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IppConnection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProbeSummary"];
                 };
             };
             /** @description Validation Error */

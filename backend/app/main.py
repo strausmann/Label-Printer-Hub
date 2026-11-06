@@ -234,6 +234,8 @@ def _build_configs_from_db(
 
     configs: list[PrinterYAMLConfig] = []
     for p in db_printers:
+        if p.backend == "ipp":
+            continue  # page printers are not tape-wired (no backend, model, SNMP)
         conn: dict[str, Any] = p.connection or {}
         snmp_raw: dict[str, Any] = conn.get("snmp", {})
         snmp = SNMPConfig(
@@ -358,6 +360,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _db_printers = list(
             (await s.execute(_select(_Printer).where(_col(_Printer.enabled).is_(True)))).scalars()
         )
+        # Page printers (IPP) never reach the tape wiring: no PrinterYAMLConfig, no model
+        # resolution, no SNMP producer, no PrintService. The page-job path wires them.
+        _db_printers = [p for p in _db_printers if p.backend != "ipp"]
         _printer_configs = _build_configs_from_db(_db_printers)
         db_printer_ids = [p.id for p in _db_printers]
         await ensure_printer_state(s)

@@ -62,6 +62,8 @@ def register_error_handlers(app: FastAPI) -> None:
 
 
 SHEET_PREFIXES = ("/api/sheet-types", "/api/sheets", "/api/sheet-cells")
+ADMIN_PRINTERS_PREFIX = "/api/v1/admin/printers"
+"""Admin printer payloads carry IPP URIs: their 422 keeps FastAPI's shape without the input."""
 
 # JSON schema of the sheet API error envelope (also used for the 422 documented in OpenAPI).
 SHEET_ERROR_SCHEMA_NAME = "SheetApiErrorResponse"
@@ -95,6 +97,14 @@ async def _validation_handler(request: Request, exc: Exception) -> JSONResponse:
     """
     if not isinstance(exc, RequestValidationError):
         raise TypeError("validation handler registered for another exception type")
+    if request.url.path.startswith(ADMIN_PRINTERS_PREFIX):
+        # Same list shape as FastAPI's default, minus ``input`` and ``ctx``: a rejected IPP
+        # URI (user info, a host) is not repeated in the error (spec 18).
+        errors = [
+            {"type": err["type"], "loc": list(err["loc"]), "msg": err["msg"]}
+            for err in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": errors})
     if not request.url.path.startswith(SHEET_PREFIXES):
         return await request_validation_exception_handler(request, exc)
     paths: list[str] = []

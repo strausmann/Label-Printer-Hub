@@ -178,3 +178,60 @@ class InvalidImportError(SheetApiError):
 
     def __init__(self, errors: list[str]) -> None:
         super().__init__(detail={"errors": errors})
+
+
+# ---------------------------------------------------------------------------- page printers
+# Messages are fixed text: an error never names the IPP URI or repeats the printer's answer
+# beyond the IPP status name (spec 18).
+
+
+class MediaKindMismatchError(SheetApiError):
+    """A tape route was called for a page printer (or the other way round)."""
+
+    status = 409
+    error_code = "media_kind_mismatch"
+    message = "This printer does not print this kind of media."
+
+
+class TrayUnknownError(SheetApiError):
+    status = 422
+    error_code = "tray_unknown"
+    message = "The printer does not report some of these trays."
+
+    def __init__(self, trays: list[str]) -> None:
+        super().__init__(detail={"trays": trays})
+
+
+class IppUnreachableApiError(SheetApiError):
+    """409 when saving a printer (nothing was saved), 502 for the live probe."""
+
+    status = 409
+    error_code = "ipp_unreachable"
+    message = "The printer could not be reached."
+
+    def __init__(self, status: int = 409) -> None:
+        super().__init__()
+        self.status = status
+
+
+class IppPdfUnsupportedError(SheetApiError):
+    """OC-18: the hub sends nothing but PDF, so a printer without PDF cannot be saved."""
+
+    status = 409
+    error_code = "ipp_pdf_unsupported"
+    message = "The printer does not accept PDF documents."
+
+
+class IppRejectedError(SheetApiError):
+    status = 502
+    error_code = "ipp_rejected"
+    message = "The printer refused the request."
+
+    def __init__(self, ipp_status: str) -> None:
+        super().__init__(detail={"ipp_status": ipp_status})
+
+
+class IppBadResponseApiError(SheetApiError):
+    status = 502
+    error_code = "ipp_bad_response"
+    message = "The printer's answer could not be used."
