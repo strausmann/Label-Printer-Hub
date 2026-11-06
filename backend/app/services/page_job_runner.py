@@ -222,18 +222,22 @@ class PageJobRunner:
         finally:
             self._release(job_id, active, printer)
 
-    async def resume(self, printer: PagePrinter, page_job: PageJob) -> None:
+    async def resume(
+        self, printer: PagePrinter, page_job: PageJob, *, cancel_requested: bool = False
+    ) -> None:
         """Track a job the printer already holds, after a hub restart.
 
         ``page_job.resume_result`` is the stored ``result`` (IPP job id, ``started``); the
         polling is the one a freshly sent job gets, so the outcomes are the same. The in-memory
-        job is ``printing`` already; nothing is sent.
+        job is ``printing`` already; nothing is sent. ``cancel_requested``: a cancel arrived
+        while the job waited to resume; Cancel-Job goes out at the first poll, with the usual
+        retry when the printer cannot be reached.
         """
         job_id = UUID(page_job.job.id)
         result = dict(page_job.resume_result or {})
         ipp_job_id = result["ipp_job_id"]
         result.setdefault("started", False)
-        active = _Active(printer=printer, ipp_job_id=ipp_job_id)
+        active = _Active(printer=printer, ipp_job_id=ipp_job_id, cancel_requested=cancel_requested)
         self._active[job_id] = active
         printer.own_job_ids.add(ipp_job_id)
         try:

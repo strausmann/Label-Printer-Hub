@@ -67,11 +67,6 @@ class PagePayload(BaseModel):
     detail: dict[str, Any] = {}
 
 
-def is_page_payload(payload: dict[str, Any] | None) -> bool:
-    """True for a stored page-job payload (it names a ``kind``); tape payloads have none."""
-    return bool(payload) and "kind" in (payload or {})
-
-
 # ---------------------------------------------------------------------------- renderers
 
 PageRenderer = Callable[[PagePayload], bytes]
@@ -98,6 +93,15 @@ def render_page(payload: PagePayload) -> bytes:
 
 
 class PageOutcomeHandler(Protocol):
+    """How a page job ended, as the kind's owner wants to hear it.
+
+    ``on_started`` is best-effort and at most once: the hub persists ``started`` before it
+    calls the handler, so a crash in between leaves the callback undelivered (a restart sees
+    ``started`` already true and does not replay it). Never depend on having seen it.
+    The terminal callbacks are authoritative: ``on_completed`` means the page printed,
+    ``on_ended`` carries ``started``, and ``on_unknown`` means the outcome cannot be known.
+    """
+
     async def on_started(self, job_id: UUID) -> None: ...
 
     async def on_completed(self, job_id: UUID) -> None: ...

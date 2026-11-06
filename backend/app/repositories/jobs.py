@@ -10,7 +10,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from app.models.job import Job, JobState
+from app.models.job import Job, JobState, is_page_payload
 
 
 async def get(session: AsyncSession, job_id: UUID) -> Job | None:
@@ -195,20 +195,17 @@ async def list_active(
     return list(result.scalars())
 
 
-def _is_page_payload(payload: dict[str, Any] | None) -> bool:
-    """A page-job payload names a ``kind``; a tape payload has none (see ``page_jobs``)."""
-    return bool(payload) and "kind" in (payload or {})
-
-
-async def list_page_jobs_in_flight(session: AsyncSession, printer_id: UUID) -> list[Job]:
-    """PRINTING page jobs (``payload.kind`` set) of one printer, oldest first."""
-    stmt = (
-        select(Job)
-        .where(col(Job.printer_id) == printer_id, col(Job.state) == JobState.PRINTING.value)
-        .order_by(col(Job.created_at))
-    )
+async def list_page_jobs_in_flight(
+    session: AsyncSession, printer_id: UUID | None = None
+) -> list[Job]:
+    """PRINTING page jobs (``payload.kind`` set) of one printer (``None``: of every printer),
+    oldest first."""
+    stmt = select(Job).where(col(Job.state) == JobState.PRINTING.value)
+    if printer_id is not None:
+        stmt = stmt.where(col(Job.printer_id) == printer_id)
+    stmt = stmt.order_by(col(Job.created_at))
     result = await session.execute(stmt)
-    return [j for j in result.scalars() if _is_page_payload(j.payload)]
+    return [j for j in result.scalars() if is_page_payload(j.payload)]
 
 
 async def mark_printing_as_failed_restart(
@@ -233,7 +230,7 @@ async def mark_printing_as_failed_restart(
         col(Job.state) == JobState.PRINTING.value,
     )
     rows = (await session.execute(stmt)).scalars()
-    tape_ids = [job.id for job in rows if not _is_page_payload(job.payload)]
+    tape_ids = [job.id for job in rows if not is_page_payload(job.payload)]
     if not tape_ids:
         return 0
     update_stmt = (

@@ -65,6 +65,9 @@ from app.services.page_jobs import (
 )
 from app.sheets.errors import MediaKindMismatchError
 
+_ON_UNKNOWN_TIMEOUT_S = 5.0
+"""A handler's ``on_unknown`` runs inside ``start()``; a hanging one must not block startup."""
+
 
 # Callback type: called after each state transition.  The optional queue_depth
 # kwarg carries the number of non-terminal jobs still in the printer queue at
@@ -246,6 +249,8 @@ class PrintQueue:
         # Per page printer: jobs the printer already holds after a restart; the worker
         # resumes their tracking before it takes anything else.
         self._to_resume: dict[UUID, list[PageJob]] = {}
+        # Job ids waiting in ``_to_resume`` -> a cancel arrived before the tracking resumed.
+        self._resuming: dict[UUID, bool] = {}
         all_ids = [*self._printers, *self._page_printers]
         # Queue type is Job | BatchJob | PageJob | None — None is the sentinel used by
         # stop() to wake workers that are blocked at queue.get().
@@ -287,9 +292,17 @@ class PrintQueue:
                 if paused_id in self._worker_states:
                     # No real suspension here: state is set before any worker is created.
                     await self.pause_printer(paused_id, reason="user", source="user", since=since)
+            # A PRINTING page job whose printer is not a page printer of this run (disabled,
+            # deleted, or its backend changed) is not seen by the loop below: its outcome is
+            # unknown, as it would be for a tape job (R1).
+            for orphan in await self._store.list_page_jobs_in_flight():
+                if orphan.printer_id not in self._page_printers:
+                    await self._settle_unknown_page_job(orphan)
             # Phase 2 Recovery: unterbrochene PRINTING-Jobs markieren + QUEUED re-enqueuen.
             # mark_interrupted MUSS vor list_pending aufgerufen werden, damit die alten
-            # PRINTING-Jobs NICHT in list_pending zurückkommen.
+            # PRINTING-*Tape*-Jobs NICHT in list_pending zurückkommen. PRINTING *page* jobs
+            # bleiben (mark_interrupted lässt sie aus) und kommen zurück: _recover_page_jobs
+            # nimmt sie auf und filtert den Rest nach QUEUED.
             for printer_id in self._queues:
                 interrupted = await self._store.mark_interrupted(printer_id)
                 if interrupted > 0:
@@ -425,6 +438,7 @@ class PrintQueue:
             job = self._new_page_job(row.id, printer_id, payload)
             JobStateMachine.transition(job, JobState.PRINTING)
             resumable.append(PageJob(job=job, payload=payload, resume_result=result))
+            self._resuming[row.id] = False
             logger.info("Recovery: page job %s on %s resumes tracking", row.id, printer_id)
         self._to_resume[printer_id] = resumable
 
@@ -434,7 +448,8 @@ class PrintQueue:
         await self._store.mark_failed_restart(row.id, "page_outcome_unknown")
         kind = str((row.payload or {}).get("kind"))
         try:
-            await outcome_handler(kind).on_unknown(row.id)
+            async with asyncio.timeout(_ON_UNKNOWN_TIMEOUT_S):
+                await outcome_handler(kind).on_unknown(row.id)
         except Exception:
             logger.exception("Page outcome handler on_unknown failed for job %s", row.id)
 
@@ -773,6 +788,11 @@ class PrintQueue:
             # A page job at the printer: send Cancel-Job; the tracking decides the outcome
             # (cancelled, or failed/interrupted when the page had started). The job stays
             # PRINTING until then. A tape job on the wire is never cancelled (ADR 0005).
+            if UUID(job_id) in self._resuming:
+                # Recovered, tracking not resumed yet: the runner sends Cancel-Job when it
+                # picks the job up (``_resume_page_jobs``).
+                self._resuming[UUID(job_id)] = True
+                return True
             return await self._page_runner.request_cancel(UUID(job_id))
         if job.state not in (JobState.QUEUED, JobState.PAUSED):
             return False
@@ -1323,6 +1343,15 @@ class PrintQueue:
         if not items:
             return
         try:
+            await self._resume_listed(printer, printer_id, items)
+        finally:
+            for item in items:
+                self._resuming.pop(UUID(item.job.id), None)
+
+    async def _resume_listed(
+        self, printer: PagePrinter, printer_id: UUID, items: list[PageJob]
+    ) -> None:
+        try:
             listed: set[int] | None = {j.job_id for j in await printer.client.get_jobs()}
         except IppError as exc:
             logger.info("Recovery: %s could not list its jobs (%s)", printer_id, type(exc).__name__)
@@ -1339,7 +1368,10 @@ class PrintQueue:
                 ):
                     await self._page_runner.end_forgotten(item)
                     continue
-                await self._page_runner.resume(printer, item)
+                # No await between this read and ``resume`` registering the job: a cancel
+                # either landed before (and is passed on) or finds the job active.
+                cancel = self._resuming.pop(UUID(item.job.id), False)
+                await self._page_runner.resume(printer, item, cancel_requested=cancel)
             except asyncio.CancelledError:
                 raise
             except Exception:

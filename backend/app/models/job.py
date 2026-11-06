@@ -11,6 +11,15 @@ from sqlalchemy import JSON, CheckConstraint, DateTime, Index, String
 from sqlmodel import Column, Field, SQLModel
 
 
+def is_page_payload(payload: dict[str, Any] | None) -> bool:
+    """True for a stored page-job payload (it names a ``kind``); tape payloads have none.
+
+    The one definition of "is a page job": the queue, the stores, the repository and the
+    API all ask this function.
+    """
+    return bool(payload) and "kind" in (payload or {})
+
+
 class JobState(StrEnum):
     QUEUED = "queued"
     PRINTING = "printing"

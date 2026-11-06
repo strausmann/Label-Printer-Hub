@@ -49,11 +49,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
-from app.models.job import Job, JobState
+from app.models.job import Job, JobState, is_page_payload
 from app.repositories import jobs as jobs_repo
 from app.schemas.job import JobRead
 from app.schemas.problem import ProblemDetail
-from app.services.page_jobs import PagePayload, is_page_payload
+from app.services.page_jobs import PagePayload
 from app.services.print_queue import UnrenderableJobError
 from app.sheets.errors import MediaKindMismatchError, PageJobNotRetryableError
 

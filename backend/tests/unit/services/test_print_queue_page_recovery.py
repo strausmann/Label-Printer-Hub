@@ -17,6 +17,7 @@ import pytest
 from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.printer_backends.ipp.client import IppClient
+from app.printer_backends.ipp.codec import OPERATIONS, decode
 from app.services.job_lifecycle import JobState
 from app.services.job_store import JobStore, MemoryJobStore
 from app.services.job_store_sqlite import SQLiteJobStore
@@ -331,7 +332,10 @@ async def test_restart_after_printer_forgot_job(
         "started": started,
         "error_code": "interrupted",
     }
-    assert "Print-Job" not in [r.operation for r in fake.received]
+    ops = [r.operation for r in fake.received]
+    assert "Print-Job" not in ops
+    # Exactly the cross-check lookup, no poll: the job ended at startup (spec 11.5).
+    assert ops.count("Get-Jobs") == 1 and ops.count("Get-Job-Attributes") == 1
 
 
 # ---------------------------------------------------------------------------- unreachable
@@ -342,17 +346,24 @@ async def test_unreachable_during_tracking_keeps_waiting(handler: RecordingHandl
     fake = FakeIppPrinter(job_script=[3])
     page_id = uuid4()
     flaky = FlakyTransport(
-        httpx.ASGITransport(app=fake), {"Get-Job-Attributes": [httpx.ConnectError] * 20}
+        httpx.ASGITransport(app=fake),
+        {
+            "Get-Job-Attributes": [httpx.ConnectError] * 20,
+            "Cancel-Job": [httpx.ConnectError] * 2,  # the cancel is retried by the polling
+        },
     )
     async with _running(_side(store, fake, page_id, flaky)) as side:
         jid = await side.queue.submit_page_job(page_id, payload(), api_key_id=None, source_ip=None)
-        await _until(lambda: len(flaky.failures) >= 20)
+        await _until(lambda: flaky.failures.count("Get-Job-Attributes") >= 20)
         assert (await _row(store, jid)).state == DbJobState.PRINTING.value
         assert (await side.queue.get(jid)).state == JobState.PRINTING
         assert handler.names(jid) == []  # no outcome, not even a started
-        fake.job_script = [5, 9]
+        assert await side.queue.cancel(str(jid)) is True  # still cancellable
         job = await side.queue.wait_for_job(str(jid), timeout_s=TEST_TIMEOUT_S)
-        assert job.state == JobState.COMPLETED
+        assert job.state == JobState.CANCELLED
+        await _wait_db(store, jid, DbJobState.CANCELLED.value)
+    assert flaky.failures.count("Cancel-Job") == 2
+    assert [r.operation for r in fake.received].count("Cancel-Job") == 1
 
 
 async def test_unreachable_at_restart_keeps_waiting(
@@ -424,6 +435,97 @@ async def test_resumed_job_can_be_cancelled(store: JobStore, handler: RecordingH
     assert [r.operation for r in fake.received].count("Cancel-Job") == 1
 
 
+class _GatedGetJobs(httpx.AsyncBaseTransport):
+    """Holds every Get-Jobs request until ``gate`` is set (the cross-check is "in flight")."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport) -> None:
+        self.inner = inner
+        self.gate = asyncio.Event()
+        self.entered = asyncio.Event()
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        msg, _ = decode(await request.aread())
+        if msg.code == OPERATIONS["Get-Jobs"]:
+            self.entered.set()
+            await self.gate.wait()
+        return await self.inner.handle_async_request(request)
+
+
+async def test_cancel_before_the_crosscheck_completes(
+    store: JobStore, handler: RecordingHandler
+) -> None:
+    """A recovered job is cancellable while the worker is still asking the printer."""
+    fake = FakeIppPrinter(job_script=[3])
+    page_id = uuid4()
+    first = _side(store, fake, page_id)
+    async with _running(first):
+        jid = await first.queue.submit_page_job(page_id, payload(), api_key_id=None, source_ip=None)
+        await _tracked_in_db(store, jid)
+    gated = _GatedGetJobs(httpx.ASGITransport(app=fake))
+    async with _running(_side(store, fake, page_id, gated)) as second:
+        async with asyncio.timeout(TEST_TIMEOUT_S):
+            await gated.entered.wait()
+        assert [r.operation for r in fake.received].count("Cancel-Job") == 0
+        assert await second.queue.cancel(str(jid)) is True
+        gated.gate.set()
+        job = await second.queue.wait_for_job(str(jid), timeout_s=TEST_TIMEOUT_S)
+        assert job.state == JobState.CANCELLED
+        await _wait_db(store, jid, DbJobState.CANCELLED.value)
+        await _until(lambda: handler.names(jid)[-1:] == ["ended"])
+    assert handler.ended(jid) == {"state": "cancelled", "started": False, "error_code": "cancelled"}
+    assert [r.operation for r in fake.received].count("Cancel-Job") == 1
+
+
+async def test_restart_with_a_printer_that_is_no_page_printer_any_more(
+    store: JobStore, handler: RecordingHandler
+) -> None:
+    """Disabled, deleted or re-typed printer: its in-flight page job cannot be tracked, so
+    the outcome is unknown (R1). A job of a loaded page printer is not touched."""
+    fake = FakeIppPrinter(job_script=[3])
+    page_id, gone_id = uuid4(), uuid4()
+    orphan = await _seed_printing(
+        store, gone_id, {"phase": "tracking", "ipp_job_id": 3, "started": True}
+    )
+    mine = await _seed_printing(
+        store, page_id, {"phase": "tracking", "ipp_job_id": 9, "started": False}
+    )
+    async with _running(_side(store, fake, page_id)):
+        await _wait_db(store, orphan, DbJobState.FAILED_RESTART.value)
+        assert handler.names(orphan) == ["unknown"]
+        assert (await _row(store, orphan)).error == "page_outcome_unknown"
+        assert handler.names(mine) == []  # its own printer's job went the resume way
+
+
+async def test_hanging_unknown_handler_does_not_block_startup(
+    store: JobStore, handler: RecordingHandler, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services import print_queue
+
+    monkeypatch.setattr(print_queue, "_ON_UNKNOWN_TIMEOUT_S", 0.05)
+    release = asyncio.Event()
+
+    async def hang(_job_id: UUID) -> None:
+        await release.wait()
+
+    handler.on_unknown = hang  # type: ignore[method-assign]
+    page_id = uuid4()
+    jid = await _seed_printing(store, page_id, {"phase": "uploading", "started": False})
+    queued = DbJob(
+        id=uuid4(), printer_id=page_id, template_key=None, payload=payload().model_dump()
+    )
+    await store.save_queued(queued)
+    side = _side(store, FakeIppPrinter(job_script=[9]), page_id)
+    async with asyncio.timeout(TEST_TIMEOUT_S):
+        await side.queue.start()  # returns although the handler never does
+    try:
+        job = await side.queue.wait_for_job(str(queued.id), timeout_s=TEST_TIMEOUT_S)
+        assert job.state == JobState.COMPLETED
+    finally:
+        release.set()
+        await side.queue.stop(timeout_s=2)
+    assert (await _row(store, jid)).state == DbJobState.FAILED_RESTART.value
+
+
 # ---------------------------------------------------------------------------- store
 
 
@@ -453,6 +555,8 @@ async def test_list_page_jobs_in_flight(store: JobStore) -> None:
         assert await store.mark_printing(row.id)
     found = await store.list_page_jobs_in_flight(printer)
     assert [j.id for j in found] == [page.id]
+    everywhere = await store.list_page_jobs_in_flight()  # every printer
+    assert {j.id for j in everywhere} == {page.id, elsewhere.id}
 
 
 async def test_mark_failed_restart(store: JobStore) -> None:

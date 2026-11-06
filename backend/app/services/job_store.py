@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
-from app.models.job import Job, JobState
+from app.models.job import Job, JobState, is_page_payload
 
 _NON_TERMINAL = (JobState.QUEUED.value, JobState.PRINTING.value)
 _CANCELLABLE_PAGE = (JobState.QUEUED.value, JobState.PRINTING.value)
@@ -27,11 +27,6 @@ _TERMINAL = (
     JobState.FAILED_RESTART.value,
     JobState.CANCELLED.value,
 )
-
-
-def _is_page_job(job: Job) -> bool:
-    """A page-job row names a ``kind`` in its payload; a tape row has none."""
-    return bool(job.payload) and "kind" in job.payload
 
 
 def _with_detail(
@@ -126,8 +121,9 @@ class JobStore(Protocol):
         Returns the count of affected rows.
         """
 
-    async def list_page_jobs_in_flight(self, printer_id: UUID) -> list[Job]:
-        """PRINTING page jobs (``payload.kind`` set) of this printer, oldest first."""
+    async def list_page_jobs_in_flight(self, printer_id: UUID | None = None) -> list[Job]:
+        """PRINTING page jobs (``payload.kind`` set) of this printer (``None``: of every
+        printer), oldest first."""
 
     async def mark_failed_restart(self, job_id: UUID, error: str) -> None:
         """PRINTING -> FAILED_RESTART with *error* (a page job whose outcome is unknown).
@@ -221,7 +217,7 @@ class MemoryJobStore(JobStore):
             if (
                 job.printer_id == printer_id
                 and job.state == JobState.PRINTING.value
-                and not _is_page_job(job)
+                and not is_page_payload(job.payload)
             ):
                 job.state = JobState.FAILED_RESTART.value
                 job.error = "printer_interrupted"
@@ -229,11 +225,13 @@ class MemoryJobStore(JobStore):
                 count += 1
         return count
 
-    async def list_page_jobs_in_flight(self, printer_id: UUID) -> list[Job]:
+    async def list_page_jobs_in_flight(self, printer_id: UUID | None = None) -> list[Job]:
         items = [
             j
             for j in self._jobs.values()
-            if j.printer_id == printer_id and j.state == JobState.PRINTING.value and _is_page_job(j)
+            if (printer_id is None or j.printer_id == printer_id)
+            and j.state == JobState.PRINTING.value
+            and is_page_payload(j.payload)
         ]
         return sorted(items, key=lambda j: j.created_at)
 

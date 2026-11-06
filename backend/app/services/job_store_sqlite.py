@@ -154,8 +154,8 @@ class SQLiteJobStore(JobStore):
         async with self._session_factory() as session:
             return await jobs_repo.mark_printing_as_failed_restart(session, printer_id)
 
-    async def list_page_jobs_in_flight(self, printer_id: UUID) -> list[Job]:
-        """PRINTING page jobs of this printer, oldest first."""
+    async def list_page_jobs_in_flight(self, printer_id: UUID | None = None) -> list[Job]:
+        """PRINTING page jobs of this printer (``None``: of every printer), oldest first."""
         async with self._session_factory() as session:
             return await jobs_repo.list_page_jobs_in_flight(session, printer_id)
 
