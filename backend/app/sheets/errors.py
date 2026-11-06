@@ -284,3 +284,16 @@ class ReadingsInsufficientError(SheetApiError):
 
     def __init__(self, reason: str) -> None:
         super().__init__(detail={"reason": reason})
+
+
+class CalibrationTypeUnsuitableError(SheetApiError):
+    """A calibration page needs crossings: at least two columns and two rows."""
+
+    status = 422
+    error_code = "calibration_type_unsuitable"
+    message = (
+        "This sheet type has no crossings to measure: it needs at least two columns and two rows."
+    )
+
+    def __init__(self, cols: int, rows: int) -> None:
+        super().__init__(detail={"cols": cols, "rows": rows})

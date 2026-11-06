@@ -6,17 +6,19 @@ key's printer restriction (``403 printer_not_allowed`` for another printer's cal
 
 from __future__ import annotations
 
+import asyncio
+import re
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.sheet_common import actor, mapped
 from app.auth.dependencies import AuthContext, check_printer_access
-from app.auth.scope_deps import require_admin, require_read
-from app.calibration import service
+from app.auth.scope_deps import require_admin, require_print, require_read
+from app.calibration import page, service
 from app.calibration.fit import Reading, fit
 from app.calibration.model import (
     CalibrationIn,
@@ -25,6 +27,7 @@ from app.calibration.model import (
     deviation_to_values,
 )
 from app.db.session import get_session
+from app.schemas.problem import ProblemDetail
 from app.sheets import type_service as ts
 
 router = APIRouter(prefix="/api/printers", tags=["calibration"])
@@ -32,6 +35,7 @@ router = APIRouter(prefix="/api/printers", tags=["calibration"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]
 AdminDep = Annotated[AuthContext, Depends(require_admin)]
+PrintDep = Annotated[AuthContext, Depends(require_print)]
 PrinterPath = Annotated[UUID, Path(description="Printer id (a page printer).")]
 TrayPath = Annotated[str, Path(min_length=1, max_length=100, description="Tray key.")]
 
@@ -140,4 +144,96 @@ async def fit_calibration(
         residuals_mm=result.residuals_mm,
         flagged=result.flagged,
         out_of_range=result.out_of_range,
+    )
+
+
+class PageRequest(BaseModel):
+    type: str = Field(min_length=1, max_length=200, description="Sheet type key.")
+    version: int | None = Field(default=None, ge=1, description="Defaults to the current version.")
+    corrected: bool = Field(
+        default=False,
+        description="Print with the tray's stored correction, to check it (not to measure).",
+    )
+
+
+class PageJobAccepted(BaseModel):
+    job_id: UUID
+
+
+@router.post(
+    "/{printer_id}/calibration/{tray}/page",
+    response_model=PageJobAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Print the calibration page (no sheet is created)",
+)
+async def print_calibration_page(
+    request: Request,
+    printer_id: PrinterPath,
+    tray: TrayPath,
+    body: PageRequest,
+    session: SessionDep,
+    auth: PrintDep,
+) -> PageJobAccepted:
+    check_printer_access(auth, printer_id)
+    with mapped():
+        payload = await page.build_payload(
+            session, printer_id, tray, type_key=body.type, version=body.version,
+            corrected=body.corrected,
+        )  # fmt: skip
+        queue = getattr(request.app.state, "print_queue", None)
+        if queue is None:
+            raise _printer_unavailable(printer_id)
+        try:
+            job_id = await queue.submit_page_job(
+                printer_id, payload, api_key_id=auth.api_key_id, source_ip=auth.ip
+            )
+        except KeyError:
+            raise _printer_unavailable(printer_id) from None
+    return PageJobAccepted(job_id=job_id)
+
+
+@router.get(
+    "/{printer_id}/calibration/{tray}/page/pdf",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}, "description": "The calibration page."}},
+    summary="Download the calibration page as a PDF",
+)
+async def download_calibration_page(
+    printer_id: PrinterPath,
+    tray: TrayPath,
+    session: SessionDep,
+    auth: ReadDep,
+    type_key: Annotated[
+        str, Query(alias="type", min_length=1, max_length=200, description="Sheet type key.")
+    ],
+    version: Annotated[
+        int | None, Query(ge=1, description="Defaults to the current version.")
+    ] = None,
+    corrected: bool = False,
+) -> Response:
+    check_printer_access(auth, printer_id)
+    with mapped():
+        payload = await page.build_payload(
+            session, printer_id, tray, type_key=type_key, version=version, corrected=corrected
+        )
+    pdf = await asyncio.to_thread(page.render_calibration_page, payload)  # what the job renders
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", f"calibration-{payload.detail['type_key']}")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}-v{payload.detail["version"]}.pdf"'
+        },
+    )
+
+
+def _printer_unavailable(printer_id: UUID) -> HTTPException:
+    problem = ProblemDetail(
+        type="printer-unavailable",
+        title="Printer is not available to the print queue",
+        status=status.HTTP_409_CONFLICT,
+        detail=f"Printer {printer_id} is not known to the print queue",
+    )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT, detail=problem.model_dump(exclude_none=True)
     )

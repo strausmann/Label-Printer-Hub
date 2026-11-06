@@ -103,6 +103,7 @@ from app.auth.scope_deps import require_read
 from app.auth.sessions import purge_expired as purge_expired_sessions
 from app.auth.sessions import warn_if_insecure as warn_if_insecure_cookies
 from app.build_info import PROJECT_LICENSE, public_repo_url
+from app.calibration.page import render_calibration_page
 from app.config import get_settings
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
@@ -124,7 +125,7 @@ from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
-from app.services.page_jobs import IppPagePrinter
+from app.services.page_jobs import IppPagePrinter, register_page_renderer
 from app.services.print_queue import PrintQueue, load_manual_pauses
 from app.services.print_service import PrintService
 from app.services.producers.ipp_status_producer import IppPrinterState, IppStatusProducer
@@ -899,6 +900,7 @@ def create_app() -> _LifespanManager:
     app.include_router(sheet_types_router)
     app.include_router(sheets_router)
     app.include_router(calibration_router)
+    register_page_renderer("calibration_page", render_calibration_page)
     app.include_router(info_routes.router)
 
     # D1: the same process serves the web app. Mounted after every router so the
