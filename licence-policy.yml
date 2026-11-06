@@ -67,6 +67,11 @@
       "reason": "Bare BSD License classifier; the licence file is the BSD 3-clause text."
     },
     {
+      "purl": "pkg:pypi/reportlab",
+      "licence": "BSD-3-Clause",
+      "reason": "Metadata only declares 'BSD license'; shipped LICENSE is BSD-3-Clause."
+    },
+    {
       "purl": "pkg:pypi/ptouch",
       "licence": "LGPL-2.1-or-later",
       "reason": "Classifier LGPLv2+; the shipped text is the GNU LGPL version 2.1."

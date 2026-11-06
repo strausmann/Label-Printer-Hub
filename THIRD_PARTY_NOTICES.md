@@ -14,8 +14,16 @@ covers the direct runtime dependencies this release added.
 
 | Package | Licence | Why |
 |---|---|---|
+| charset-normalizer | MIT | Pulled in by reportlab (transitive dependency) |
 | cryptography | Apache-2.0 OR BSD-3-Clause | AES-GCM encryption of stored integration secrets |
 | greenlet | MIT AND PSF-2.0 | Required by SQLAlchemy's async engine (declared explicitly) |
+| reportlab | BSD-3-Clause | PDF pages for page printers |
+
+## Fonts bundled in the backend
+
+| Font | Licence | Notes |
+|---|---|---|
+| DejaVu Sans (`DejaVuSans.ttf`, Debian `fonts-dejavu-core` 2.37) | Bitstream Vera licence (DejaVu changes are public domain) | Embedded as a subset in the PDF pages for page printers. The file and its licence text ship in the package as `app/page_render/fonts/DejaVuSans.ttf` and `app/page_render/fonts/LICENSE-DejaVu.txt` |
 
 ## Web app (npm, bundled into `dist`)
 
