@@ -40,7 +40,14 @@ from app.repositories import jobs as jobs_repo
 from app.repositories import printer_state as printer_state_repo
 from app.repositories import printer_status_cache as cache_repo
 from app.repositories import printers as printers_repo
-from app.schemas.printer import PauseRead, PrinterRead, PrinterStatus
+from app.schemas.printer import (
+    MarkerRead,
+    PauseRead,
+    PrinterRead,
+    PrinterStatus,
+    ReasonRead,
+    TrayStatusRead,
+)
 from app.services.print_queue import PrinterAlreadyActiveError
 from app.services.status_block import MediaType, PrinterError, StatusBlockParser
 from app.services.tape_registry import TapeRegistry, UnknownTapeError
@@ -273,12 +280,80 @@ def _error_label(block: Any) -> str | None:
     return ", ".join(active) if active else None
 
 
+async def _page_status(
+    session: AsyncSession,
+    printer_id: UUID,
+    parsed: dict[str, Any],
+    captured_at: datetime,
+    age_s: int,
+) -> PrinterStatus:
+    """Status of an IPP page printer from the cache row written by ``IppStatusProducer``."""
+    from pydantic import ValidationError
+    from sqlalchemy import select
+    from sqlmodel import col
+
+    from app.models.printer_tray import PrinterTray
+    from app.printer_backends.ipp.attributes import IppStatusRecord
+
+    last_error = parsed.get("last_error")
+    try:
+        record = IppStatusRecord.model_validate(parsed)
+    except ValidationError:
+        return PrinterStatus(
+            printer_id=printer_id,
+            online=parsed.get("online"),
+            kind="page",
+            captured_at=captured_at,
+            last_probe_age_s=age_s,
+            last_error=last_error,
+        )
+    rows = (
+        (
+            await session.execute(
+                select(PrinterTray)
+                .where(col(PrinterTray.printer_id) == printer_id)
+                .order_by(col(PrinterTray.tray_key))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    media = {t.key: t.media for t in record.trays}
+    return PrinterStatus(
+        printer_id=printer_id,
+        online=record.online,
+        tape_loaded=None,
+        error_state=record.blocking_reason,
+        captured_at=captured_at,
+        last_probe_age_s=age_s,
+        last_error=last_error,
+        kind="page",
+        printer_state=record.printer_state,
+        state_reasons=[ReasonRead(**r.model_dump()) for r in record.reasons],
+        markers=[MarkerRead(**m.model_dump()) for m in record.markers],
+        trays=[
+            TrayStatusRead(
+                key=t.tray_key,
+                label=t.label,
+                load_hint=t.load_hint,
+                enabled=t.enabled,
+                is_default=t.is_default,
+                media=media.get(t.tray_key),
+            )
+            for t in rows
+        ],
+        jobs_ahead=record.jobs_ahead,
+    )
+
+
 @router.get(
     "/{printer_id}/status",
     response_model=PrinterStatus,
     summary="Return the latest cached printer status",
     description=(
-        "Returns the most recent status written by the background SNMP probe worker. "
+        "Returns the most recent status written by the background probe worker "
+        "(SNMP for tape printers, IPP for page printers; page printers add ``kind``, "
+        "``printer_state``, reasons, markers, trays and ``jobs_ahead``). "
         "The response is served from ``printer_status_cache`` — no synchronous SNMP "
         "probe is performed, so the response always returns in <10 ms. "
         "When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. "
@@ -309,6 +384,9 @@ async def get_printer_status(
     if captured.tzinfo is None:
         captured = captured.replace(tzinfo=UTC)
     age_s = int((datetime.now(UTC) - captured).total_seconds())
+
+    if parsed.get("kind") == "page":
+        return await _page_status(session, printer_id, parsed, row.captured_at, age_s)
 
     loaded_tape_mm = parsed.get("loaded_tape_mm")
     tape_loaded = f"{loaded_tape_mm}mm" if loaded_tape_mm else None

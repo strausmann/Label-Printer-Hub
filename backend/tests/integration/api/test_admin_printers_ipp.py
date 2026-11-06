@@ -608,7 +608,9 @@ async def test_lifespan_ignores_ipp_rows_for_tape_wiring(hub: Hub) -> None:
     assert probes == []
     assert set(state.slug_to_printer_id) == {"workshop"}
     assert state.backend_router.get("office-laser") is None
-    assert hub.uris == []  # nothing talks to the page printer at start
+    # Only the IPP status producer (Task 6) reaches for the page printer at start; the tape
+    # wiring does not, and no second client is created for it.
+    assert hub.uris == [URI]
 
 
 @pytest.mark.asyncio

@@ -56,6 +56,39 @@ class PrinterRead(BaseModel):
         return serialize_datetime_utc(dt, _info)
 
 
+class ReasonRead(BaseModel):
+    """One ``printer-state-reasons`` keyword of a page printer (severity suffix removed)."""
+
+    keyword: str
+    severity: Literal["report", "warning", "error"]
+    blocking: bool
+
+
+class MarkerRead(BaseModel):
+    """One supply (toner, ink, waste container) of a page printer."""
+
+    name: str
+    color: str | None
+    type: str | None
+    level_percent: int | None
+    some_remaining: bool
+    low: bool
+    empty: bool
+
+
+class TrayStatusRead(BaseModel):
+    """A configured tray of a page printer plus what the printer reports as loaded in it."""
+
+    key: str
+    label: str
+    load_hint: str | None
+    enabled: bool
+    is_default: bool
+    media: str | None = Field(
+        default=None, description="Loaded media as the printer reports it; None when not reported"
+    )
+
+
 class PrinterStatus(BaseModel):
     """Printer status sourced from the printer_status_cache table.
 
@@ -102,6 +135,17 @@ class PrinterStatus(BaseModel):
     note: str | None = Field(
         default=None,
         description="Human-readable hint, e.g. 'No probe yet'",
+    )
+    # Page printers (IPP) only; all ``None`` for tape printers.
+    kind: Literal["tape", "page"] | None = Field(
+        default=None, description="'page' for IPP page printers; None for tape printers"
+    )
+    printer_state: Literal["idle", "printing", "stopped"] | None = None
+    state_reasons: list[ReasonRead] | None = None
+    markers: list[MarkerRead] | None = None
+    trays: list[TrayStatusRead] | None = None
+    jobs_ahead: int | None = Field(
+        default=None, description="Jobs on the printer ahead of the hub's own"
     )
 
     @field_serializer("captured_at")

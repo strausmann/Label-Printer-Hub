@@ -387,7 +387,7 @@ export interface paths {
         };
         /**
          * Return the latest cached printer status
-         * @description Returns the most recent status written by the background SNMP probe worker. The response is served from ``printer_status_cache`` — no synchronous SNMP probe is performed, so the response always returns in <10 ms. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Returns 404 when the printer is not registered.
+         * @description Returns the most recent status written by the background probe worker (SNMP for tape printers, IPP for page printers; page printers add ``kind``, ``printer_state``, reasons, markers, trays and ``jobs_ahead``). The response is served from ``printer_status_cache`` — no synchronous SNMP probe is performed, so the response always returns in <10 ms. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Returns 404 when the printer is not registered.
          */
         get: operations["get_printer_status_api_printers__printer_id__status_get"];
         put?: never;
@@ -1675,6 +1675,26 @@ export interface components {
              */
             purpose?: string | null;
         };
+        /**
+         * MarkerRead
+         * @description One supply (toner, ink, waste container) of a page printer.
+         */
+        MarkerRead: {
+            /** Color */
+            color: string | null;
+            /** Empty */
+            empty: boolean;
+            /** Level Percent */
+            level_percent: number | null;
+            /** Low */
+            low: boolean;
+            /** Name */
+            name: string;
+            /** Some Remaining */
+            some_remaining: boolean;
+            /** Type */
+            type: string | null;
+        };
         /** NextCode */
         NextCode: {
             /** Code */
@@ -1899,6 +1919,16 @@ export interface components {
              */
             error_state?: string | null;
             /**
+             * Jobs Ahead
+             * @description Jobs on the printer ahead of the hub's own
+             */
+            jobs_ahead?: number | null;
+            /**
+             * Kind
+             * @description 'page' for IPP page printers; None for tape printers
+             */
+            kind?: ("tape" | "page") | null;
+            /**
              * Last Error
              * @description Exception message from the most recent failed probe
              */
@@ -1908,6 +1938,8 @@ export interface components {
              * @description Age of the cached reading in seconds
              */
             last_probe_age_s?: number | null;
+            /** Markers */
+            markers?: components["schemas"]["MarkerRead"][] | null;
             /**
              * Note
              * @description Human-readable hint, e.g. 'No probe yet'
@@ -1923,11 +1955,17 @@ export interface components {
              * Format: uuid
              */
             printer_id: string;
+            /** Printer State */
+            printer_state?: ("idle" | "printing" | "stopped") | null;
+            /** State Reasons */
+            state_reasons?: components["schemas"]["ReasonRead"][] | null;
             /**
              * Tape Loaded
              * @description e.g. "12mm laminated black/clear"; None when no tape is loaded
              */
             tape_loaded?: string | null;
+            /** Trays */
+            trays?: components["schemas"]["TrayStatusRead"][] | null;
         };
         /**
          * PrinterUpdatePayload
@@ -2074,6 +2112,21 @@ export interface components {
             status: "ready" | "degraded" | "not-ready";
             /** Version */
             version: string;
+        };
+        /**
+         * ReasonRead
+         * @description One ``printer-state-reasons`` keyword of a page printer (severity suffix removed).
+         */
+        ReasonRead: {
+            /** Blocking */
+            blocking: boolean;
+            /** Keyword */
+            keyword: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "report" | "warning" | "error";
         };
         /** ResolveRequest */
         ResolveRequest: {
@@ -2481,6 +2534,27 @@ export interface components {
             label: string;
             /** Load Hint */
             load_hint: string | null;
+        };
+        /**
+         * TrayStatusRead
+         * @description A configured tray of a page printer plus what the printer reports as loaded in it.
+         */
+        TrayStatusRead: {
+            /** Enabled */
+            enabled: boolean;
+            /** Is Default */
+            is_default: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Load Hint */
+            load_hint: string | null;
+            /**
+             * Media
+             * @description Loaded media as the printer reports it; None when not reported
+             */
+            media?: string | null;
         };
         /** TypeDoc */
         TypeDoc: {

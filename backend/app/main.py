@@ -24,7 +24,9 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
 from typing import Annotated, Any, cast
+from uuid import UUID
 
 # ---------------------------------------------------------------------------
 # F3 — Early settings validation with a friendly error message.
@@ -111,6 +113,7 @@ from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
 from app.observability.log_buffer import install_log_buffer
 from app.printer_backends.exceptions import SnmpDiscoveryError
+from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
 from app.schemas.readiness import ReadinessResponse
@@ -122,6 +125,7 @@ from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrintQueue, load_manual_pauses
 from app.services.print_service import PrintService
+from app.services.producers.ipp_status_producer import IppPrinterState, IppStatusProducer
 from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.printer_pause_producer import PrinterPauseProducer
 from app.services.producers.status_probe_producer import StatusProbeProducer
@@ -146,6 +150,20 @@ HUB_REPO_URL: str = os.environ.get(
 )
 
 _log = logging.getLogger(__name__)
+
+# At most this many IPP printers are probed at the same moment.
+_IPP_PROBE_CONCURRENCY = 4
+
+
+@dataclass(frozen=True)
+class _IppSpec:
+    """What the IPP status producer needs of a stored page printer (no ORM object kept)."""
+
+    id: UUID
+    slug: str
+    uri: str
+    tls_verify: bool
+    queue_timeout_s: int
 
 
 class Healthz(BaseModel):
@@ -362,6 +380,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         # Page printers (IPP) never reach the tape wiring: no PrinterYAMLConfig, no model
         # resolution, no SNMP producer, no PrintService. The page-job path wires them.
+        _ipp_specs = [
+            _IppSpec(
+                id=p.id,
+                slug=p.slug,
+                uri=str((p.connection or {}).get("uri", "")),
+                tls_verify=bool((p.connection or {}).get("tls_verify", True)),
+                queue_timeout_s=int(getattr(p, "queue_timeout_s", 30)),
+            )
+            for p in _db_printers
+            if p.backend == "ipp"
+        ]
         _db_printers = [p for p in _db_printers if p.backend != "ipp"]
         _printer_configs = _build_configs_from_db(_db_printers)
         db_printer_ids = [p.id for p in _db_printers]
@@ -475,6 +504,46 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     probe_exc,
                 )
 
+    # D18: IPP page printers get the IPP status producer instead of the SNMP one. The queue is
+    # handed over (auto-resume) once page jobs exist (Task 7), hence pause_control=None.
+    ipp_states: dict[Any, IppPrinterState] = {}
+    ipp_producers: list[IppStatusProducer] = []
+    ipp_limiter = asyncio.Semaphore(_IPP_PROBE_CONCURRENCY)
+    ipp_transport_factory = getattr(app.state, "ipp_transport_factory", None)
+    for spec in _ipp_specs:
+        try:
+            ipp_state = IppPrinterState()
+            probe_timeout = min(5.0, float(spec.queue_timeout_s))
+            ipp_producer = IppStatusProducer(
+                bus=event_bus,
+                printer_id=spec.id,
+                client=IppClient(
+                    spec.uri,
+                    tls_verify=spec.tls_verify,
+                    query_timeout_s=probe_timeout,
+                    upload_timeout_s=probe_timeout,
+                    transport=ipp_transport_factory(spec.uri) if ipp_transport_factory else None,
+                ),
+                session_factory=async_session,
+                state=ipp_state,
+                pause_control=None,
+                interval_s=settings.sse_probe_interval_s,
+                limiter=ipp_limiter,
+                log_name=spec.slug,
+            )
+            await ipp_producer.start()
+        except Exception as ipp_exc:
+            # A bad stored URI must not stop the hub (degraded start, like the SNMP probes).
+            _log.warning(
+                "Degraded start: IPP status producer for slug=%s not started (%s)",
+                spec.slug,
+                type(ipp_exc).__name__,
+            )
+            continue
+        ipp_states[spec.id] = ipp_state
+        ipp_producers.append(ipp_producer)
+    app.state.ipp_printer_states = ipp_states
+
     app.state.print_queue = queue
     app.state.slug_to_printer_id = slug_to_printer_id
 
@@ -521,6 +590,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         for sp in status_producers:
             await sp.stop()
+        for ipp_sp in ipp_producers:
+            await ipp_sp.stop()
         max_timeout = max(
             (c.queue.timeout_s for c in _printer_configs),
             default=30,
