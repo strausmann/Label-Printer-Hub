@@ -39,6 +39,7 @@ from app.sheets.errors import (
     PrintInterruptedError,
     TrayUnknownError,
 )
+from app.sheets.geometry import Geometry
 from app.sheets.planner import MARGIN_TEXT_GAP_HMM
 from app.sheets.print_service import page_margin_id_payload
 from app.sheets.sheet_page import SheetPageDetail
@@ -755,12 +756,14 @@ async def test_the_margin_qr_of_the_preview_has_the_size_the_job_prints(
     pdf = tmp_path / "job.pdf"
     pdf.write_bytes(render_sheet_page(queue.payloads[0], DEFAULT_CELL_RENDERER))
     subprocess.run(
-        ["pdftoppm", "-r", "150", "-png", "-singlefile", str(pdf), str(tmp_path / "job")],
+        ["pdftoppm", "-r", "600", "-png", "-singlefile", str(pdf), str(tmp_path / "job")],
         check=True,
     )
     job_img = Image.open(tmp_path / "job.png")
     preview_img = Image.open(io.BytesIO(spy_pngs[0]))
-    assert abs(ink_width_px(preview_img, 150) - ink_width_px(job_img, 150)) <= 1
+    preview_mm = ink_width_px(preview_img, 150) / 150 * 25.4
+    job_mm = ink_width_px(job_img, 600) / 600 * 25.4
+    assert abs(preview_mm - job_mm) <= 25.4 / 150  # within one preview pixel
 
 
 async def test_unknown_printer_in_the_queue_answers_unavailable_and_releases(
@@ -952,3 +955,84 @@ async def test_uuid_job_ids_are_fresh_per_print(
         ids.add(out.pages[0].job_id)
     assert len(ids) == 2 and uuid4() not in ids
     assert reservation.release is not None
+
+
+# ---------------------------------------------------------------------------- cell QR size
+
+CELL_GEOMETRIES = {
+    "wide": Geometry(
+        "A4", 21000, 29700, 4570, 2120, 4, 12, 4820, 2120, 2130, 985, None, "rectangle"
+    ),
+    "small": Geometry(
+        "A4", 21000, 29700, 3000, 2000, 6, 13, 3200, 2100, 1500, 900, None, "rectangle"
+    ),
+    "large": Geometry(
+        "A4", 21000, 29700, 6350, 3810, 3, 7, 6500, 3900, 1200, 800, None, "rectangle"
+    ),
+}
+
+
+@pytest.mark.parametrize("dpi", [300, 600])
+@pytest.mark.parametrize("shape", sorted(CELL_GEOMETRIES))
+async def test_a_cell_qr_has_the_same_size_in_the_preview_and_the_job_pdf(
+    factory: async_sessionmaker[AsyncSession],
+    session: AsyncSession,
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    shape: str,
+    dpi: int,
+) -> None:
+    import io
+    import subprocess
+
+    from app.sheets.cell_render import DEFAULT_CELL_RENDERER, content_box, qr_edge_px
+    from app.sheets.sheet_page import render_sheet_page
+    from PIL import Image
+
+    g = CELL_GEOMETRIES[shape]
+    await ts.create_type(
+        session,
+        ts.TypeFields(f"acme-{shape}", f"Q{shape[:3].upper()}", "Acme", ["Q-1"], None, True),
+        g,
+        actor="t",
+    )
+    printer = await make_printer(session, record(dpis=[dpi]))
+    code = await make_sheet(session, key=f"acme-{shape}")
+    request = req([raw(0)], [on(code)])
+    pngs: list[bytes] = []
+    original = print_service.render_preview_png
+
+    def capture(*a: Any, **kw: Any) -> bytes:
+        out = original(*a, **kw)
+        pngs.append(out)
+        return out
+
+    monkeypatch.setattr(print_service, "render_preview_png", capture)
+    await run_preview(session, printer, request)
+    monkeypatch.undo()
+    queue = FakeQueue()
+    await run_print(factory, printer, request, queue=queue)
+
+    pdf = tmp_path / "job.pdf"
+    pdf.write_bytes(render_sheet_page(queue.payloads[0], DEFAULT_CELL_RENDERER))
+    subprocess.run(
+        ["pdftoppm", "-r", "600", "-png", "-singlefile", str(pdf), str(tmp_path / "job")],
+        check=True,
+    )
+    box = content_box(g, 1)
+    edge_mm = qr_edge_px(box.w / 100, box.h / 100, 1000) / 1000 * 25.4  # the square, in mm
+
+    def ink_mm(img: Image.Image, dpi: int) -> tuple[float, float]:
+        """Width and height of the ink in the cell's QR square, in mm (measured at ``dpi``)."""
+        x0, y0 = round(box.x / 2540 * dpi), round(box.y / 2540 * dpi)
+        edge = round(edge_mm / 25.4 * dpi)
+        mask = img.convert("L").point(lambda v: 255 if v < 128 else 0)
+        found = mask.crop((x0, y0, x0 + edge, y0 + edge)).getbbox()
+        assert found is not None
+        return (found[2] - found[0]) / dpi * 25.4, (found[3] - found[1]) / dpi * 25.4
+
+    preview = ink_mm(Image.open(io.BytesIO(pngs[0])), 150)
+    job = ink_mm(Image.open(tmp_path / "job.png"), 600)
+    one_preview_pixel = 25.4 / 150
+    assert abs(preview[0] - job[0]) <= one_preview_pixel, (preview, job)
+    assert abs(preview[1] - job[1]) <= one_preview_pixel, (preview, job)

@@ -66,6 +66,7 @@ from app.sheets.cell_render import (
     BoxHmm,
     CellImage,
     CellRenderer,
+    build_qr_preview,
     check_required,
     content_box,
     load_cell_font,
@@ -472,11 +473,11 @@ def _qr_fits_at(payload: str, w_mm: float, h_mm: float, dpi: int) -> bool:
 def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi: int) -> CellImage:
     """One cell at preview resolution (150 dpi, never more).
 
-    A dense QR can need modules finer than one pixel at 150 dpi and still print at the job's
-    resolution. The preview does not render at the job's resolution (CPU); it draws the cell with
-    a hatched "QR" box where the symbol goes. Whether the job could draw it is decided by
-    arithmetic: if not even the job's resolution can, the item is drawn normally, which refuses
-    it as a content mismatch (spec 12.5).
+    The text is drawn by the renderer. A QR is drawn by ``build_qr_preview``: the symbol of the
+    job, at the size the job prints it (whole-pixel modules at the job's resolution), scaled to
+    150 dpi. A symbol too fine for 150 dpi gets a hatched "QR" box of the same size instead.
+    Whether the job could draw it at all is arithmetic: if not even the job's resolution can, the
+    item is drawn normally, which refuses it as a content mismatch (spec 12.5).
     """
     w_mm, h_mm = box.w / 100, box.h / 100
 
@@ -491,16 +492,19 @@ def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi:
 
     payload = job.data.qr_payload
     if (
-        payload
-        and job.content_type.value.startswith("qr_")
-        and render_dpi > PREVIEW_DPI
-        and not _qr_fits_at(payload, w_mm, h_mm, PREVIEW_DPI)
-        and _qr_fits_at(payload, w_mm, h_mm, render_dpi)
+        not payload
+        or not job.content_type.value.startswith("qr_")
+        or not _qr_fits_at(payload, w_mm, h_mm, render_dpi)
     ):
-        cell = draw(job.data.model_copy(update={"qr_payload": "QR"}))
+        return draw(job.data)
+    cell = draw(job.data.model_copy(update={"qr_payload": "QR"}))  # the text, and the checks
+    if _qr_fits_at(payload, w_mm, h_mm, PREVIEW_DPI):
+        symbol = build_qr_preview(payload, w_mm, h_mm, render_dpi, PREVIEW_DPI)
+        assert symbol is not None  # the arithmetic above said it fits
+        cell.image.paste(symbol, (0, 0))
+    else:
         _qr_placeholder(cell.image, qr_edge_px(w_mm, h_mm, PREVIEW_DPI))
-        return cell
-    return draw(job.data)
+    return cell
 
 
 def _draw_page(

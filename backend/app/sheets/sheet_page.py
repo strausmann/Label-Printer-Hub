@@ -43,6 +43,7 @@ from app.sheets.cell_render import (
     CellImage,
     CellRenderer,
     build_qr,
+    build_qr_preview,
     content_box,
     load_cell_font,
     qr_edge_px,
@@ -316,21 +317,10 @@ def render_sheet_page(
 
 
 def _preview_qr(payload: str, usable_hmm: int, render_dpi: int) -> Image.Image:
-    """The margin QR at preview size: the symbol the job prints, reduced to 150 dpi.
-
-    The job draws whole-pixel modules at ``render_dpi``; whole-pixel modules at 150 dpi would
-    leave a visibly smaller symbol inside the same square (a 2 px module cannot grow to 2.6).
-    So the symbol is built the job's way and then scaled to the preview's square, which keeps
-    its proportions. Only the margin QR is built this way: one per page."""
-    edge = qr_edge_px(usable_hmm / 100, usable_hmm / 100, PREVIEW_DPI)
-    job_edge = max(edge, qr_edge_px(usable_hmm / 100, usable_hmm / 100, render_dpi))
-    qr = build_qr(payload, job_edge)
-    if qr is None:  # the job could draw it, so a symbol of this payload exists at some size
-        qr = build_qr(payload, max(job_edge, edge * 8))
-    assert qr is not None
-    if qr.size == (edge, edge):
-        return qr
-    return qr.convert("L").resize((edge, edge), Image.Resampling.BOX).convert("1")
+    """The margin QR at preview size: the symbol the job prints (see ``build_qr_preview``)."""
+    qr = build_qr_preview(payload, usable_hmm / 100, usable_hmm / 100, render_dpi, PREVIEW_DPI)
+    assert qr is not None  # the job could draw it, so the symbol exists
+    return qr
 
 
 def _paste_turned_text(

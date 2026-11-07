@@ -55,6 +55,7 @@ __all__ = [
     "QrDoesNotFitError",
     "RasterCellRenderer",
     "build_qr",
+    "build_qr_preview",
     "cap_height_px",
     "check_required",
     "content_box",
@@ -183,13 +184,8 @@ it (a picture does not need the best mask, and the search is most of the cost of
 never does, so what is printed keeps the best mask."""
 
 
-def build_qr(payload: str, edge_px: int) -> Image.Image | None:
-    """QR in an ``edge_px`` square, mode ``"1"``; ``None`` if it cannot fit.
-
-    Modules are a whole number of pixels (``edge_px // (n + 8)``, never resampled) and the four
-    module quiet zone lies inside the square; the symbol is centred. A module below one pixel,
-    or a payload larger than any QR symbol holds, returns ``None``.
-    """
+def _qr_matrix(payload: str) -> list[list[bool]] | None:
+    """The module matrix of the symbol, quiet zone included; ``None`` if no QR holds it."""
     version = qr_version(payload)
     if version is None:
         return None
@@ -204,22 +200,64 @@ def build_qr(payload: str, edge_px: int) -> Image.Image | None:
         qr.make(fit=False)  # the version is known: no second size search
     except (qrcode.exceptions.DataOverflowError, ValueError):
         return None
-    modules = len(qr.get_matrix()) - 2 * _QUIET_MODULES
-    box_size = edge_px // (modules + 2 * _QUIET_MODULES)
-    if box_size < 1:
-        return None
-    # The library draws every module with its own rectangle call (thousands per symbol). The
-    # matrix is the same information: one pixel per module, enlarged without resampling.
-    matrix = qr.get_matrix()
+    return list(qr.get_matrix())
+
+
+def _matrix_image(matrix: list[list[bool]]) -> Image.Image:
+    """One pixel per module, mode ``"L"``. The library draws every module with its own
+    rectangle call (thousands per symbol); the matrix is the same information."""
     side = len(matrix)
     flat = bytes(0 if dark else 255 for row in matrix for dark in row)
+    return Image.frombytes("L", (side, side), flat)
+
+
+def build_qr(payload: str, edge_px: int) -> Image.Image | None:
+    """QR in an ``edge_px`` square, mode ``"1"``; ``None`` if it cannot fit.
+
+    Modules are a whole number of pixels (``edge_px // (n + 8)``, never resampled) and the four
+    module quiet zone lies inside the square; the symbol is centred. A module below one pixel,
+    or a payload larger than any QR symbol holds, returns ``None``.
+    """
+    matrix = _qr_matrix(payload)
+    if matrix is None:
+        return None
+    side = len(matrix)  # modules plus the quiet zone on both sides
+    box_size = edge_px // side
+    if box_size < 1:
+        return None
     symbol = (
-        Image.frombytes("L", (side, side), flat)
+        _matrix_image(matrix)
         .resize((side * box_size, side * box_size), Image.Resampling.NEAREST)
         .convert("1")
     )
     canvas = Image.new("1", (edge_px, edge_px), 1)
     canvas.paste(symbol, ((edge_px - symbol.width) // 2, (edge_px - symbol.height) // 2))
+    return canvas
+
+
+def build_qr_preview(
+    payload: str, box_w_mm: float, box_h_mm: float, job_dpi: int, preview_dpi: int
+) -> Image.Image | None:
+    """The QR as the job prints it, drawn at ``preview_dpi`` (the one function of the margin QR
+    and the cell QRs, so the preview cannot drift from the job again).
+
+    The job's symbol is whole-pixel modules at ``job_dpi`` inside the box's square; its size in
+    mm follows by arithmetic from the version and the dpi. Here the module matrix is scaled
+    (nearest neighbour) to that size at ``preview_dpi`` and centred in the preview's square, which
+    is ``qr_edge_px`` at ``preview_dpi``. ``None`` if the job cannot draw it at all.
+    """
+    matrix = _qr_matrix(payload)
+    if matrix is None:
+        return None
+    side = len(matrix)
+    job_box = qr_edge_px(box_w_mm, box_h_mm, job_dpi) // side
+    if job_box < 1:
+        return None
+    edge = qr_edge_px(box_w_mm, box_h_mm, preview_dpi)
+    size = min(edge, max(1, round(job_box * side * preview_dpi / job_dpi)))
+    symbol = _matrix_image(matrix).resize((size, size), Image.Resampling.NEAREST).convert("1")
+    canvas = Image.new("1", (edge, edge), 1)
+    canvas.paste(symbol, ((edge - size) // 2, (edge - size) // 2))
     return canvas
 
 
