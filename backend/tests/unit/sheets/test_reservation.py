@@ -397,16 +397,23 @@ async def test_no_event_when_plan_changed(session: AsyncSession) -> None:
 
 
 def _fail_first_cell_flush(monkeypatch: pytest.MonkeyPatch, times: int) -> list[int]:
-    real = AsyncSession.flush
+    """Make the first ``times`` bulk inserts of ``sheet_cells`` fail like the composite key."""
+    from sqlalchemy import Insert
+
+    real = AsyncSession.execute
     calls = [0]
 
-    async def flush(self: AsyncSession, objects: Any = None) -> None:
-        if any(isinstance(o, SheetCell) for o in self.new) and calls[0] < times:
+    async def execute(self: AsyncSession, statement: Any, *args: Any, **kwargs: Any) -> Any:
+        if (
+            isinstance(statement, Insert)
+            and statement.table.name == SheetCell.__tablename__
+            and calls[0] < times
+        ):
             calls[0] += 1
             raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed"))
-        await real(self, objects)
+        return await real(self, statement, *args, **kwargs)
 
-    monkeypatch.setattr(AsyncSession, "flush", flush)
+    monkeypatch.setattr(AsyncSession, "execute", execute)
     return calls
 
 
@@ -602,3 +609,45 @@ async def test_feed_mark_in_flight_rules(session: AsyncSession) -> None:
     )
     await session.commit()
     assert await feed_mark_in_flight(session, sheet_id) is True
+
+
+# ---- R10-2: the work done while the write lock is held does not grow per page ----------------
+
+
+async def _statements_of_reserve(session: AsyncSession, pages: int) -> int:
+    """SQL statements one reservation of ``pages`` new sheets sends (the lock is held for all)."""
+    from sqlalchemy import event
+
+    sync_engine = session.bind.sync_engine  # type: ignore[union-attr]
+    seen: list[str] = []
+
+    def count(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+        seen.append(statement)
+
+    event.listen(sync_engine, "before_cursor_execute", count)
+    try:
+        await do_reserve(session, [new("margin", count=1) for _ in range(pages)], pages)
+    finally:
+        event.remove(sync_engine, "before_cursor_execute", count)
+    return len(seen)
+
+
+async def test_creating_many_sheets_costs_a_fixed_number_of_statements(
+    session: AsyncSession,
+) -> None:
+    """Type, version and counter are read once per request, and the sheets and cells go out in
+    bulk: 50 pages must not send ten times the statements of 5 (each is a thread hop under the
+    global write lock)."""
+    five = await _statements_of_reserve(session, 5)
+    fifty = await _statements_of_reserve(session, 50)
+    assert fifty <= five + 12, (five, fifty)
+
+
+async def test_codes_of_a_batch_of_new_sheets_are_consecutive_and_the_counter_follows(
+    session: AsyncSession,
+) -> None:
+    pages = await do_reserve(session, [new("manual", count=1) for _ in range(3)], 3)
+    codes = [p.sheet_code for p in pages]
+    assert codes == ["L4736-0001", "L4736-0002", "L4736-0003"]
+    nxt = await do_reserve(session, [new("manual", count=1)], 1)
+    assert nxt[0].sheet_code == "L4736-0004"

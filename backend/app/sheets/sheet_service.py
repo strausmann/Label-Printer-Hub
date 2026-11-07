@@ -224,6 +224,91 @@ async def get_sheet(session: AsyncSession, code: str) -> SheetDetail:
     return await _detail(session, await _sheet(session, code))
 
 
+class NewSheetBatch:
+    """Creates sheets in the caller's write transaction, reading what they share once.
+
+    A print can create up to 50 sheets while the global write lock is held (R10-2), so the
+    type, its version and the prefix counter are read once for the batch, not once per sheet,
+    and nothing is flushed until ``flush``. The caller holds the sheet write lock and commits;
+    nothing here takes a lock, so the counter in memory is the only view of it. A rollback
+    un-burns the codes.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+        self._types: dict[str, SheetType] = {}
+        self._versions: dict[tuple[UUID, int | None], SheetTypeVersion] = {}
+        self._counters: dict[str, SheetIdCounter] = {}
+
+    async def _type(self, type_key: str) -> SheetType:
+        t = self._types.get(type_key)
+        if t is None:
+            t = await repo.get_type_by_key(self._session, type_key)
+            if t is None:
+                raise SheetTypeNotFoundError()
+            self._types[type_key] = t
+        if t.archived_at is not None:
+            raise SheetTypeArchivedError()
+        return t
+
+    async def _version(self, t: SheetType, version: int | None) -> SheetTypeVersion:
+        v = self._versions.get((t.id, version))
+        if v is None:
+            v = (
+                await types_repo.current_version(self._session, t.id)
+                if version is None
+                else await types_repo.get_version(self._session, t.id, version)
+            )
+            if v is None:  # the type exists, so only the pinned version can be missing
+                raise SheetTypeVersionNotFoundError()
+            self._versions[(t.id, version)] = v
+        return v
+
+    async def _next_code(self, prefix: str) -> str:
+        row = self._counters.get(prefix)
+        if row is None:
+            existing = await repo.counter(self._session, prefix)
+            if existing is None:
+                row = SheetIdCounter(prefix=prefix, next_value=1)
+                self._session.add(row)
+            else:
+                row = existing
+            self._counters[prefix] = row
+        value = row.next_value
+        row.next_value = value + 1
+        return format_code(prefix, value)
+
+    async def add(
+        self,
+        *,
+        type_key: str,
+        version: int | None,
+        id_placement: str,
+        marks: dict[int, str],
+        note: str | None,
+        actor: str,
+    ) -> tuple[Sheet, SheetType, SheetTypeVersion]:
+        """Add one sheet pinned to a version (C8); ``marks`` and ``note`` are already sanitised."""
+        t = await self._type(type_key)
+        v = await self._version(t, version)
+        _check_range(list(marks), _total(v))
+        sheet = Sheet(
+            code=await self._next_code(t.prefix),
+            type_id=t.id,
+            type_version_id=v.id,
+            id_placement=id_placement,
+            note=note,
+            created_by=actor,
+            last_used_at=_now() if marks else None,
+        )
+        self._session.add(sheet)
+        _add_hand_marks(self._session, sheet.id, marks, actor)
+        return sheet, t, v
+
+    async def flush(self) -> None:
+        await self._session.flush()
+
+
 async def create_sheet_locked(
     session: AsyncSession,
     *,
@@ -239,33 +324,17 @@ async def create_sheet_locked(
     The caller holds the sheet write lock and commits; ``marks`` and ``note`` are already
     sanitised. The counter step happens here, so a rollback un-burns the code.
     """
-    t = await repo.get_type_by_key(session, type_key)
-    if t is None:
-        raise SheetTypeNotFoundError()
-    if t.archived_at is not None:
-        raise SheetTypeArchivedError()
-    v = (
-        await types_repo.current_version(session, t.id)
-        if version is None
-        else await types_repo.get_version(session, t.id, version)
-    )
-    if v is None:  # the type exists, so only the pinned version can be missing
-        raise SheetTypeVersionNotFoundError()
-    _check_range(list(marks), _total(v))
-    sheet = Sheet(
-        code=await allocate_code(session, t.prefix),
-        type_id=t.id,
-        type_version_id=v.id,
+    batch = NewSheetBatch(session)
+    created = await batch.add(
+        type_key=type_key,
+        version=version,
         id_placement=id_placement,
+        marks=marks,
         note=note,
-        created_by=actor,
-        last_used_at=_now() if marks else None,
+        actor=actor,
     )
-    session.add(sheet)
-    await session.flush()
-    _add_hand_marks(session, sheet.id, marks, actor)
-    await session.flush()
-    return sheet, t, v
+    await batch.flush()
+    return created
 
 
 async def create_sheet(

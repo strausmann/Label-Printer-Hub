@@ -15,14 +15,10 @@ from dataclasses import dataclass, field
 from typing import Final, Literal
 from uuid import UUID
 
-import qrcode
-import qrcode.constants
-import qrcode.exceptions
-
 from app.page_render.pdf import text_width_mm
 from app.page_render.transform import PT_PER_MM, Deviation
 from app.printer_backends.ipp.attributes import Margins
-from app.sheets.cell_render import qr_edge_px
+from app.sheets.cell_render import qr_edge_px, qr_version
 from app.sheets.errors import (
     CellOutOfRangeError,
     CellsTakenError,
@@ -225,14 +221,15 @@ def margin_qr_allowed(usable_hmm: int, payload: str, dpi: int) -> bool:
     """
     if usable_hmm < MIN_MARGIN_QR_HMM or dpi <= 0:
         return False
-    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=0)
-    try:
-        qr.add_data(payload)
-        qr.make(fit=True)
-    except (qrcode.exceptions.DataOverflowError, ValueError):
+    # Only the symbol's size matters, and it follows from the QR version alone (``best_fit``,
+    # cached): a full build would search eight masks, about 15 ms a page, and the plan runs
+    # under the global write lock (R10-2).
+    version = qr_version(payload)
+    if version is None:
         return False
     edge = qr_edge_px(usable_hmm / 100, usable_hmm / 100, dpi)
-    module_px = edge // (len(qr.get_matrix()) + 2 * _QUIET_MODULES)
+    modules = 17 + 4 * version  # the side of the symbol in modules, quiet zone excluded
+    module_px = edge // (modules + 2 * _QUIET_MODULES)
     # module_px * 25.4 / dpi >= 0.25 mm, in integers: module_px * 2540 >= 25 * dpi
     return module_px >= 1 and module_px * 2540 >= MIN_QR_MODULE_HMM * dpi
 
@@ -361,6 +358,7 @@ def decide_margin_and_mark(
     *,
     id_done: bool = False,
     mark_done: bool = False,
+    feed_marks: dict[Geometry, FeedMarkPlacement | None] | None = None,
 ) -> MarginDecision:
     """The one rule for the margin ID and the feed mark of a page, shared by ``plan`` and by the
     retry of a page job (which re-decides both for the printer it is sent to).
@@ -368,6 +366,10 @@ def decide_margin_and_mark(
     The mark has its own flag and is due for every ID placement (OC-56, OC-58). It is decided
     before the margin ID, which then sees the shorter top band (OC-57). ``margin=None`` means
     there is no printer context: the ID is still due, but no band is chosen.
+
+    ``feed_marks`` memoises the mark by geometry for one planning pass: the hardware margins,
+    the calibration and the language are the same for all of its pages, so fifty new sheets of
+    one type measure the mark's text once (the plan runs under the write lock, R10-2).
     """
     g = view.geometry
     due = (
@@ -383,12 +385,17 @@ def decide_margin_and_mark(
     feed_mark: FeedMarkPlacement | None = None
     top_taken = 0
     if mark_due and margin is not None:
-        feed_mark = choose_feed_mark(
-            g,
-            hw=hw_margins_hmm,
-            dev=margin.deviation,
-            text=feed_mark_text(margin.language),
-        )
+        if feed_marks is not None and g in feed_marks:
+            feed_mark = feed_marks[g]
+        else:
+            feed_mark = choose_feed_mark(
+                g,
+                hw=hw_margins_hmm,
+                dev=margin.deviation,
+                text=feed_mark_text(margin.language),
+            )
+            if feed_marks is not None:
+                feed_marks[g] = feed_mark
         if feed_mark is not None:
             top_taken = feed_mark_top_taken_hmm(g, feed_mark)
     if due and margin is not None:
@@ -478,6 +485,7 @@ def _draft(
     id_done: bool,
     mark_done: bool,
     hw_margins_hmm: Margins | None,
+    feed_marks: dict[Geometry, FeedMarkPlacement | None],
 ) -> _Draft:
     """Plan one placement. ``id_done``: this sheet's ID label already went to an earlier page;
     ``mark_done``: so did its feed-direction mark."""
@@ -513,7 +521,7 @@ def _draft(
     id_missing = needs_id_cell and id_cell is None
 
     decision = decide_margin_and_mark(
-        view, margin, hw_margins_hmm, id_done=id_done, mark_done=mark_done
+        view, margin, hw_margins_hmm, id_done=id_done, mark_done=mark_done, feed_marks=feed_marks
     )
     due = decision.id_was_due
     margin_id = decision.margin_id
@@ -580,10 +588,13 @@ def plan(
     id_done: set[int] = set()
     mark_done: set[int] = set()
     drafts: list[_Draft] = []
+    feed_marks: dict[Geometry, FeedMarkPlacement | None] = {}
     for p, count in zip(placements, counts, strict=True):
         key = id(p.sheet)
         taken = taken_by_sheet.setdefault(key, set())
-        d = _draft(p, count, taken, margin, key in id_done, key in mark_done, hw_margins_hmm)
+        d = _draft(
+            p, count, taken, margin, key in id_done, key in mark_done, hw_margins_hmm, feed_marks
+        )
         drafts.append(d)
         if d.id_missing or len(d.item_cells) != count:
             continue

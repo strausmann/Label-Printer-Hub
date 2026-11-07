@@ -203,3 +203,38 @@ async def test_parallel_new_sheets_get_distinct_codes_and_counter_steps(
     pages = [p for batch in await asyncio.gather(*(create(i) for i in range(6))) for p in batch]
     assert sorted(p.sheet_code for p in pages) == [f"L4736-{n:04d}" for n in range(1, 7)]
     assert all(p.id_cell == 1 for p in pages)
+
+
+async def test_a_burst_of_maximal_prints_does_not_starve_the_write_lock(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """R10-2: six parallel 50-page prints. The reservations are serialised by the write lock, so
+    the last one waits for five holds; with a hold of 1.5 s that is more than ``busy_timeout``
+    (5 s) and requests failed with ``database is locked``. The hold is a fraction of that now."""
+
+    async def big() -> list[ReservedPage]:
+        async with factory() as s:
+            return await reserve(
+                s,
+                placements=[
+                    PlacementRequest(
+                        sheet_code=None,
+                        new_sheet=NewSheetIn(KEY, None, "margin"),
+                        count=10,
+                    )
+                    for _ in range(50)
+                ],
+                items=[ItemMeta("api", f"item {i}", None) for i in range(500)],
+                expected=None,
+                hw_margins_hmm=None,
+                margin=MARGIN,
+                required_type_key=None,
+                actor="tester",
+            )
+
+    results = await asyncio.gather(*(big() for _ in range(6)), return_exceptions=True)
+
+    failures = [r for r in results if isinstance(r, BaseException)]
+    assert failures == []
+    codes = [p.sheet_code for r in results if not isinstance(r, BaseException) for p in r]
+    assert len(codes) == len(set(codes)) == 300  # every sheet got its own code

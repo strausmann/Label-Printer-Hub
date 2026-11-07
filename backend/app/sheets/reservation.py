@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
+from sqlalchemy import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,7 +54,7 @@ from app.sheets.planner import (
     decide_margin_and_mark,
     plan,
 )
-from app.sheets.sheet_service import MarkedCell, create_sheet_locked, prepare_new_sheet
+from app.sheets.sheet_service import MarkedCell, NewSheetBatch, prepare_new_sheet
 from app.sheets.text import log_value
 from app.sheets.type_service import version_geometry, write_transaction
 
@@ -236,11 +237,10 @@ async def load_sheet_view(session: AsyncSession, code: str) -> SheetView:
     return await _view_of(session, sheet)
 
 
-async def _create_sheet_view(session: AsyncSession, new: NewSheetIn, actor: str) -> SheetView:
-    """Create a sheet (counter step included) in the caller's transaction and view it."""
+async def _create_sheet_view(batch: NewSheetBatch, new: NewSheetIn, actor: str) -> SheetView:
+    """Add a sheet (counter step included) to the caller's transaction and view it."""
     marks, note = prepare_new_sheet(new.used_cells, new.note)
-    sheet, sheet_type, version = await create_sheet_locked(
-        session,
+    sheet, sheet_type, version = await batch.add(
         type_key=new.type_key,
         version=new.version,
         id_placement=new.id_placement,
@@ -303,6 +303,9 @@ async def _resolve_views(
     by_code: dict[str, SheetView] = {}
     new_views: set[int] = set()
     out: list[PlacementIn] = []
+    # The write lock is held while this runs (R10-2): what the new sheets share is read once and
+    # they go to the database in one flush, not one round trip per sheet.
+    batch = NewSheetBatch(session)
     for p in placements:
         if (p.sheet_code is None) == (p.new_sheet is None):
             raise InvalidPlacementsError("sheet_or_new_sheet")
@@ -317,9 +320,10 @@ async def _resolve_views(
             assert p.new_sheet is not None
             if required_type_key is not None and p.new_sheet.type_key != required_type_key:
                 raise SheetTypeMismatchError(required_type_key, p.new_sheet.type_key)
-            view = await _create_sheet_view(session, p.new_sheet, actor)
+            view = await _create_sheet_view(batch, p.new_sheet, actor)
             new_views.add(id(view))
         out.append(PlacementIn(sheet=view, cells=p.cells, skip=list(p.skip), count=p.count))
+    await batch.flush()
     return out, new_views
 
 
@@ -343,7 +347,7 @@ async def _attempt(
             raise PlanChangedError(_plan_detail(fresh))  # write_transaction rolls it all back
 
         now = datetime.now(UTC)
-        rows: list[SheetCell] = []
+        rows: list[dict[str, Any]] = []
         pages: list[ReservedPage] = []
         touched: dict[UUID, SheetTouched] = {}
         next_item = 0
@@ -363,18 +367,18 @@ async def _attempt(
                 )
                 next_item += 1
             rows.extend(
-                SheetCell(
-                    sheet_id=sheet_id,
-                    cell_no=a.cell,
-                    state="reserved",  # D15
-                    job_id=job_id,
-                    source=a.source,
-                    purpose=a.purpose,
-                    ref=a.ref,
-                    marked_by_hand=False,
-                    updated_at=now,
-                    updated_by=actor,
-                )
+                {
+                    "sheet_id": sheet_id,
+                    "cell_no": a.cell,
+                    "state": "reserved",  # D15
+                    "job_id": job_id,
+                    "source": a.source,
+                    "purpose": a.purpose,
+                    "ref": a.ref,
+                    "marked_by_hand": False,
+                    "updated_at": now,
+                    "updated_by": actor,
+                }
                 for a in assignments
             )
             pages.append(
@@ -403,10 +407,13 @@ async def _attempt(
             )
             t.changed.extend(a.cell for a in assignments)
         try:
-            session.add_all(rows)
-            await session.flush()  # the composite key is the last guard (spec 8)
+            # One bulk statement under the write lock (R10-2); the composite key is the last
+            # guard (spec 8).
+            await session.execute(insert(SheetCell), rows)
         except IntegrityError:
-            raise _InsertConflictError(sorted(r.cell_no for r in rows), explicit=explicit) from None
+            raise _InsertConflictError(
+                sorted(r["cell_no"] for r in rows), explicit=explicit
+            ) from None
         for t in touched.values():
             t.free -= len(t.changed)
         await session.commit()

@@ -878,3 +878,68 @@ def test_id_leaves_a_top_band_the_mark_has_used_up() -> None:
         margin=margin_ctx(),
     ).pages[0]
     assert again.margin_placement is not None and again.margin_placement.band == "top"
+
+
+# ---- R10-2: planning is cheap enough to run while the write lock is held -----------------
+
+
+def _reference_qr_allowed(usable_hmm: int, payload: str, dpi: int) -> bool:
+    """The original decision: build the whole symbol (mask search included) and count modules."""
+    import qrcode
+    import qrcode.constants
+    from app.sheets.cell_render import qr_edge_px
+
+    if usable_hmm < 900 or dpi <= 0:
+        return False
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=0)
+    try:
+        qr.add_data(payload)
+        qr.make(fit=True)
+    except (qrcode.exceptions.DataOverflowError, ValueError):
+        return False
+    edge = qr_edge_px(usable_hmm / 100, usable_hmm / 100, dpi)
+    module_px = edge // (len(qr.get_matrix()) + 2 * 4)
+    return module_px >= 1 and module_px * 2540 >= 25 * dpi
+
+
+@pytest.mark.parametrize("dpi", [150, 300, 600])
+@pytest.mark.parametrize("usable", [900, 1100, 1500, 2000])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "L4736-0001",
+        "https://hub.example/sheet/L4736-0001",
+        "https://hub.example/sheet/" + "x" * 120,
+        "https://hub.example/s/" + "A1" * 300,
+        "äöü" * 40,
+        "9" * 200,
+        "x" * 5000,  # more than any symbol holds
+    ],
+)
+def test_margin_qr_decision_equals_the_full_symbol_decision(
+    payload: str, usable: int, dpi: int
+) -> None:
+    assert margin_qr_allowed(usable, payload, dpi) is _reference_qr_allowed(usable, payload, dpi)
+
+
+def test_planning_builds_no_qr_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R10-2: the plan runs under the global write lock; a full QR build (eight masks) per page
+    cost about 15 ms each. The fit decision needs only the symbol size."""
+    import qrcode
+
+    built: list[int] = []
+    real = qrcode.QRCode.make
+
+    def counting(self: qrcode.QRCode, fit: bool = True) -> None:  # type: ignore[type-arg]
+        built.append(1)
+        real(self, fit)
+
+    monkeypatch.setattr(qrcode.QRCode, "make", counting)
+    views = [sheet(code=f"L4736-{n:04d}", id_placement="margin") for n in range(1, 21)]
+    plan(
+        [first_free(v, 1) for v in views],
+        20,
+        hw_margins_hmm=None,
+        margin=margin_ctx(),
+    )
+    assert built == []
