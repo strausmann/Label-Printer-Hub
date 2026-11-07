@@ -377,3 +377,99 @@ async def test_hub_without_any_printer_keeps_its_degraded_answer(
     assert body.checks["printer_db_sync"].status == "skipped"
     assert body.checks["snmp_discovery"].status == "skipped"
     assert body.status == "degraded"
+
+
+# ---------------------------------------------------------------------------
+# Mixed hub: a tape printer and page printers are judged together
+# ---------------------------------------------------------------------------
+
+
+async def _mixed(session, *, tape_fresh=True, ipp_captured_at=None, ipp_row=True):
+    tape_id = uuid4()
+    session.add(
+        Printer(
+            id=tape_id,
+            name="tape",
+            model="pt-p750w",
+            backend="mock",
+            connection={"host": "192.0.2.50", "port": 9100},
+            enabled=True,
+        )
+    )
+    if tape_fresh:
+        session.add(
+            PrinterStatusCache(
+                printer_id=tape_id, captured_at=datetime.now(UTC), parsed={"online": True}
+            )
+        )
+    await session.flush()
+    state = _state_with_queue_and_bus(printer_id=tape_id)
+    ipp_state = await _ipp_only(session, captured_at=ipp_captured_at if ipp_row else None)
+    state.ipp_printer_states = ipp_state.ipp_printer_states
+    return state
+
+
+async def test_mixed_hub_all_healthy_is_ready(async_session_with_one_printer, settings_at_head):
+    from app.services.readiness import build_readiness_response
+
+    state = await _mixed(async_session_with_one_printer, ipp_captured_at=datetime.now(UTC))
+    body = await build_readiness_response(
+        async_session_with_one_printer, state, settings_at_head, version="v", revision="r"
+    )
+    assert body.checks["printer_runtime"].status == "ok"
+    assert body.checks["snmp_discovery"].status == "ok"
+    assert body.status == "ready"
+
+
+async def test_mixed_hub_with_a_page_printer_that_never_answered_is_degraded(
+    async_session_with_one_printer, settings_at_head
+):
+    from app.services.readiness import build_readiness_response
+
+    state = await _mixed(async_session_with_one_printer)
+    body = await build_readiness_response(
+        async_session_with_one_printer, state, settings_at_head, version="v", revision="r"
+    )
+    assert body.checks["snmp_discovery"].status == "fail"
+    assert body.status == "degraded"
+
+
+async def test_mixed_hub_with_a_stale_page_printer_reports_stale(
+    async_session_with_one_printer, settings_at_head
+):
+    from app.services.readiness import build_readiness_response
+
+    state = await _mixed(
+        async_session_with_one_printer, ipp_captured_at=datetime.now(UTC) - timedelta(seconds=200)
+    )
+    body = await build_readiness_response(
+        async_session_with_one_printer, state, settings_at_head, version="v", revision="r"
+    )
+    assert body.checks["snmp_discovery"].status == "stale"
+
+
+async def test_mixed_hub_with_a_missing_page_printer_row_fails_the_db_sync(
+    async_session_with_one_printer, settings_at_head
+):
+    from app.services.readiness import build_readiness_response
+
+    state = await _mixed(async_session_with_one_printer, ipp_captured_at=datetime.now(UTC))
+    state.ipp_printer_states = {uuid4(): object()}  # no row
+    body = await build_readiness_response(
+        async_session_with_one_printer, state, settings_at_head, version="v", revision="r"
+    )
+    assert body.checks["printer_db_sync"].status == "fail"
+
+
+async def test_tape_only_hub_ignores_an_empty_page_printer_map(
+    async_session_with_one_printer, settings_at_head
+):
+    from app.services.readiness import build_readiness_response
+
+    state = await _mixed(async_session_with_one_printer)
+    state.ipp_printer_states = {}
+    body = await build_readiness_response(
+        async_session_with_one_printer, state, settings_at_head, version="v", revision="r"
+    )
+    assert body.checks["snmp_discovery"].status == "ok"
+    assert body.status == "ready"

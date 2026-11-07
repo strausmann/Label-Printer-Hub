@@ -51,24 +51,36 @@ async def _check_alembic(settings: Settings) -> CheckStatus:
 
 
 def _runtime_printer_ids(app_state: Any) -> list[Any]:
-    """The printers the hub runs: the first tape printer, else the page (IPP) printers.
+    """The printers the hub runs: the first tape printer and every page (IPP) printer.
 
-    A hub whose only enabled printers are page printers has no ``printer_id`` but is
-    still a working hub; a hub without any printer has neither.
+    Both kinds are judged together (the worst answer wins). A hub whose only enabled
+    printers are page printers has no ``printer_id`` but is still a working hub; a hub
+    without any printer has neither.
     """
+    ids: list[Any] = []
     pid = getattr(app_state, "printer_id", None)
     if pid is not None:
-        return [pid]
-    return list((getattr(app_state, "ipp_printer_states", None) or {}).keys())
+        ids.append(pid)
+    ids.extend(
+        ipp_id
+        for ipp_id in (getattr(app_state, "ipp_printer_states", None) or {})
+        if ipp_id not in ids
+    )
+    return ids
 
 
 def _check_printer_runtime(app_state: Any) -> CheckStatus:
     ids = _runtime_printer_ids(app_state)
     if not ids:
         return CheckStatus(status="fail", detail="app.state.printer_id is None")
-    if getattr(app_state, "printer_id", None) is not None:
-        return CheckStatus(status="ok", metric={"printer_id": str(ids[0])})
-    return CheckStatus(status="ok", metric={"page_printers": len(ids)})
+    metric: dict[str, Any] = {}
+    pid = getattr(app_state, "printer_id", None)
+    if pid is not None:
+        metric["printer_id"] = str(pid)
+    page_printers = len(ids) - (1 if pid is not None else 0)
+    if page_printers:
+        metric["page_printers"] = page_printers
+    return CheckStatus(status="ok", metric=metric)
 
 
 async def _check_printer_db_sync(session: AsyncSession, app_state: Any) -> CheckStatus:
