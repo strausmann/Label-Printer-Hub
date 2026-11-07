@@ -136,3 +136,46 @@ async def reserved_cells_of_job(session: AsyncSession, job_id: UUID) -> list[She
         .execution_options(**_FRESH)
     )
     return list(result.scalars().all())
+
+
+async def all_reserved_cells(session: AsyncSession) -> list[SheetCell]:
+    """Every ``reserved`` cell of every sheet (the startup sweep)."""
+    result = await session.execute(
+        select(SheetCell)
+        .where(col(SheetCell.state) == "reserved")
+        .order_by(col(SheetCell.sheet_id), col(SheetCell.cell_no))
+        .execution_options(**_FRESH)
+    )
+    return list(result.scalars().all())
+
+
+_JOB_CHUNK = 500  # well below SQLite's bound-variable limit
+
+
+async def jobs_by_id(session: AsyncSession, job_ids: Sequence[UUID]) -> dict[UUID, Job]:
+    """The ``jobs`` rows that exist among ``job_ids`` (a missing id has no entry)."""
+    found: dict[UUID, Job] = {}
+    ids = list(job_ids)
+    for start in range(0, len(ids), _JOB_CHUNK):
+        result = await session.execute(
+            select(Job)
+            .where(col(Job.id).in_(ids[start : start + _JOB_CHUNK]))
+            .execution_options(**_FRESH)
+        )
+        found.update({j.id: j for j in result.scalars().all()})
+    return found
+
+
+def margin_id_sheet(job: Job | None) -> str | None:
+    """The sheet id a ``sheet_page`` job's margin ID belongs to; ``None``: it carries none.
+
+    A job row already deleted by retention (``job is None``) counts as not carrying one.
+    """
+    if job is None or not isinstance(job.payload, dict):
+        return None
+    if job.payload.get("kind") != "sheet_page":
+        return None
+    detail = job.payload.get("detail")
+    if not isinstance(detail, dict) or not detail.get("margin_id"):
+        return None
+    return str(detail.get("sheet_id"))

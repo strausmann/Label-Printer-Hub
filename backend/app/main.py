@@ -126,7 +126,11 @@ from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
-from app.services.page_jobs import IppPagePrinter, register_page_renderer
+from app.services.page_jobs import (
+    IppPagePrinter,
+    register_outcome_handler,
+    register_page_renderer,
+)
 from app.services.print_queue import PrintQueue, load_manual_pauses
 from app.services.print_service import PrintService
 from app.services.producers.ipp_status_producer import IppPrinterState, IppStatusProducer
@@ -137,6 +141,7 @@ from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.readiness import build_readiness_response
 from app.services.tape_registry import TapeRegistry
 from app.settings_store import SettingsStore
+from app.sheets.outcome import SheetCellsOutcome, sweep_orphan_reservations
 from app.sheets.sheet_page import render_sheet_page
 from app.web.api_docs import mount_api_docs
 from app.web.spa import add_security_headers, mount_spa
@@ -505,7 +510,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Persisted manual pauses must be in place before any worker task exists.
     async with async_session() as _pause_session:
         _initially_paused = await load_manual_pauses(_pause_session)
+    # D15: restart recovery calls the handler's ``on_unknown`` from inside ``start()``, so the
+    # handler is registered first (a registry without it would hand the call to a no-op).
+    register_outcome_handler("sheet_page", SheetCellsOutcome(async_session, event_bus))
     await queue.start(initially_paused=_initially_paused)
+    try:  # cells of jobs that ended, or vanished, while the hub was down
+        await sweep_orphan_reservations(async_session, bus=event_bus)
+    except Exception:
+        _log.exception("Sheet orphan sweep failed; the next start tries again")
     if _initially_paused:
         _log.info("Restored %d manual printer pause(s) from the database", len(_initially_paused))
 

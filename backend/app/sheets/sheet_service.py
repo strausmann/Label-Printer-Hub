@@ -19,6 +19,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.job import Job
 from app.models.sheet import Sheet, SheetCell, SheetIdCounter, SheetType, SheetTypeVersion
 from app.repositories import sheet_types as types_repo
 from app.repositories import sheets as repo
@@ -389,6 +390,10 @@ async def resolve_cells(
         if bad:
             raise CellsNotUnconfirmedError(bad)
         now = _now()
+        margin_jobs: dict[UUID, Job] = {}
+        if outcome == "printed":  # a job row already purged by retention carries no margin ID
+            job_ids = sorted({jid for n in wanted if (jid := rows[n].job_id) is not None})
+            margin_jobs = await repo.jobs_by_id(session, job_ids)
         for n in wanted:
             row = rows[n]
             if outcome == "not_printed":
@@ -400,6 +405,8 @@ async def resolve_cells(
             row.updated_by = actor
             if row.source == "hub":  # the ID label is on the sheet now (spec 7.1)
                 before.sheet.id_printed = True
+            elif row.job_id is not None and repo.margin_id_sheet(margin_jobs.get(row.job_id)):
+                before.sheet.id_printed = True  # the job carried the margin ID
         await session.flush()
         detail = await _detail(session, before.sheet)
         await session.commit()
