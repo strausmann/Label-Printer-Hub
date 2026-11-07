@@ -1,7 +1,7 @@
 # Sheet archive, numbered sheets and IPP page printers (Part A)
 
 - **Date:** 2026-11-05
-- **Status:** Draft, awaiting maintainer review. Builder check done on 2026-11-05; its questions are answered in the text (OC-38 to OC-44).
+- **Status:** Draft, awaiting maintainer review. Builder check done on 2026-11-05; its questions are answered in the text (OC-38 to OC-44). Amended 2026-11-07 (operator decision on where the sheet ID is printed): requirement 17, sections 7, 10.1, 10.2, 15, 17.1, 17.4, 19 and 25 (OC-16, OC-40, OC-45 to OC-51).
 - **Issue:** #150 (this document is **Part A**). Related: #151 (Paperless ASN, builds on this), #149 (parts and partial retry), #155 (QL continuous and die-cut media), #178 (label rendering redesign), #179 (printer choice with status and media), #173 (Kept lookup in the hub)
 - **Builds on:** [`2026-11-03-web-ui-redesign-design.md`](2026-11-03-web-ui-redesign-design.md) (slots `/sheets`, `/sheets/archive`, `/calibration`, feature flags `sheets` and `calibration` in `GET /api/info`, design system, scan resolver hook, sessions/CSRF)
 - **Mockups:** <https://claude.ai/artifact/BLKZ7Vhe1RkksXuwptB5ha> (screens 1–3 sheets, screen 4 `#calibrate`)
@@ -108,7 +108,7 @@ These are taken as requirements. Section 24 lists where this document departs fr
 14. **Discard** a sheet: hidden from the picker, ID never reused.
 15. **Mark the used cells** of a sheet that was started before the hub knew it.
 16. Small cells: at 25.4 × 10 mm a QR gets about 8 mm; that type defaults to **code only** until a test print proves a QR scans.
-17. The sheet prints its own ID, three options on first use: (1) on the **first free cell** (default), with ID, sheet type and a QR of the ID, stored as used; (2) in the **sheet margin**, printed once on the sheet's first job, only where the margin is wide enough; (3) **by hand**, no print. On 25.4 × 10 mm cells the ID label is text only; scanning needs option 2 there.
+17. The sheet prints its own ID, three options on first use: (1) on the **first free cell**, only when chosen for the sheet, with ID, sheet type and a QR of the ID, stored as used; (2) in the **sheet margin** (**default**), printed once on the sheet's first job, in the margin band where name and QR fit largest for the sheet type and printer, text only where the band is narrower, not printed at all where no band is wide enough, never moved into a cell (section 10.2); (3) **by hand**, no print. On 25.4 × 10 mm cells the ID label is text only; scanning needs option 2 there. *Changed 2026-11-07 (operator decision): the margin is the default, most label sheets carry their name in a corner and the ID should not use up a label cell; the margin ID goes into the best of the four margin bands instead of the top margin only. This replaces "(1) on the first free cell (default) … (2) in the sheet margin … only where the margin is wide enough".*
 18. Scanning the sheet ID selects that sheet in the print dialog; a scan target clients can resolve and a lookup `GET /api/sheets/{id}`; a discarded sheet resolves to "discarded", not to nothing.
 19. Manual calibration: print a calibration page, read the offset and enter it.
 20. The calibration page: a **centre line in every gap**, **mini scales at every gap crossing** (±2 mm, 0.2 mm ticks), gap lines **numbered** (S1… column gaps, Z1… row gaps), **0.5 mm rulers** at every gap on all four edges, **black only** (lines told apart by number and line style, never colour). Sheets without gaps: labels peeled in a checkerboard.
@@ -163,8 +163,8 @@ Validation on insert: `pitch_x ≥ label_w`, `pitch_y ≥ label_h`, `cols, rows 
 | `code` | unique, e.g. `L4736-0002`: prefix, hyphen, counter zero-padded to four digits (`L4736-0100`; above 9999 the number simply grows: `L4736-10000`). *Changed 2026-11-05 (operator decision): four-digit codes, replacing "at least 2 digits".* |
 | `type_id`, `type_version_id` | the version is pinned for life |
 | `state` | `active` or `discarded` (+ `discarded_at`, `discarded_by`) |
-| `id_placement` | `cell`, `margin`, `manual` |
-| `id_printed` | for `margin`: set when the first job completes; for `cell`: set when the ID cell is used |
+| `id_placement` | `cell`, `margin`, `manual`; **default `margin`** when a sheet is created without a choice. *Changed 2026-11-07 (operator decision): the default was `cell`.* |
+| `id_printed` | for `margin`: set when the first job that carries the margin ID completes; stays false while every job was printed without it because no margin band was wide enough (10.2); for `cell`: set when the ID cell is used |
 | `note` | optional, plain text |
 | `created_at`, `created_by`, `last_used_at` | |
 
@@ -279,10 +279,10 @@ A sheet comes into existence in one of three ways, all through the same service:
 1. **New sheet in the print dialog** ("+ New L4736REV sheet (becomes L4736-0004)"): created inside the print transaction (section 8). With ID placement `cell`, the first free cell holds the ID label in the same job; with `margin`, the ID is drawn in the margin of that same job.
 2. **Add sheet** (mockup screen 3) without printing: type, version, cells already used (tapped on the grid, stored as `manual`, purpose "marked by hand" unless typed), ID placement.
    - `cell`: needs a printer and tray; a job printing only the ID label into the first free cell is queued at once. This is what makes "creating a sheet with option 1 prints the ID label into the first free cell" true.
-   - `margin`: the ID is printed with the sheet's first job.
-   - If the ID-only job fails cleanly, the ID cell is free again and `id_printed` stays false; the next job printed onto that sheet puts the ID label into its first free cell (OC-40).
+   - `margin` (the default): the ID is printed with the sheet's first job, in the band section 10.2 chooses for that job's printer and tray.
+   - If the ID-only job fails cleanly, the ID cell is free again and `id_printed` stays false; the next job printed onto that sheet puts the ID label into its first free cell (OC-40, `cell` sheets only; a `margin` sheet whose first job fails gets the margin ID on its next job instead, 10.2).
    - `manual`: nothing printed.
-3. **API** (`POST /api/sheets`), same options.
+3. **API** (`POST /api/sheets`), same options; `id_placement` may be left out and is then `margin`. The same default holds for a new sheet inside a print request (section 15). *Changed 2026-11-07 (operator decision).*
 
 The ID shown before creation ("becomes L4736-0004") comes from `GET /api/sheets/next-code?type=…`. It is a hint, not a reservation; under concurrency the actual ID may be higher, and the UI says so only if it happens (the response of the create call is authoritative).
 
@@ -290,8 +290,25 @@ The ID shown before creation ("becomes L4736-0004") comes from `GET /api/sheets/
 
 - **Scan payload (OC-15):** the public hub URL `{PRINTER_HUB_PUBLIC_URL}/sheet/{code}` (the public URL is a required setting since the foundation; if it is empty, e.g. in a test setup, the short form is encoded instead). A phone camera opens the hub directly. The scan resolver also accepts the short form `sheet:{code}` so clients and people can type it.
 - **ID label in a cell:** content `qr_two_lines` with `primary_id` = code, `title` = vendor and first product code + "· sheet ID", QR = payload. On types with `allow_qr=false` it becomes `text_two_lines` (maintainer: text only on 25.4 × 10). The cell is reserved with `source=hub`, purpose "Sheet ID".
-- **ID in the margin (OC-16):** drawn in the **top margin**, left-aligned with the grid, once, on the sheet's first job. Available height = `margin_top` − printer's hardware top margin (from capabilities; 5 mm assumed if the printer does not report it) − calibration offset Y (if it moves content up) − 1 mm safety. Below 4 mm the option is disabled with the reason ("the top margin is too narrow for this printer"). From 9 mm on, a QR (payload as above) is drawn next to the text, if the encoded QR fits at a module size of at least 0.25 mm with its quiet zone; otherwise text only. On L4731REV (13.5 mm top margin) this gives a QR on typical lasers, which is exactly why the maintainer points to option 2 for that type.
-- `id_printed` makes "only on the first job" hold across retries: a job that fails leaves it false, so the next job draws the ID again.
+- **ID in the margin (OC-16, OC-45 to OC-51):** drawn once, on the sheet's first job, in the **best of the four margin bands**. Content: the code, the vendor and first product code (as the ID cell's title), and a QR of the payload above where it fits. *Changed 2026-11-07 (operator decision): the margin ID was always drawn in the top margin, and the margin option was refused below 4 mm. It now goes into whichever band fits it largest, and below 4 mm everywhere it is simply not printed.* The rules:
+  - **Bands.** The four strips between the label grid and the page edges. With `grid_right = margin_left + (cols − 1) × pitch_x + label_w` and `grid_bottom = margin_top + (rows − 1) × pitch_y + label_h`, each band has a **depth** (its size across, which is the QR edge and the text height) of:
+
+    | Band | Room | minus hardware margin | minus calibration shift toward that edge | minus safety |
+    |---|---|---|---|---|
+    | top | `margin_top` | top | `max(0, −dy)` | 1.0 mm |
+    | bottom | `page_h − grid_bottom` | bottom | `max(0, dy)` | 1.0 mm |
+    | right | `page_w − grid_right` | right | `max(0, dx)` | 1.0 mm |
+    | left | `margin_left` | left | `max(0, −dx)` | 1.0 mm |
+
+    The hardware margin of a side is the printer's reported minimum margin for that side (`hardware_margins_mm` in the capabilities, section 14); a printer that reports none counts **5.0 mm on every side**. `dx` and `dy` are the stored deviation of the printer and tray (13.1); scale and rotation are not counted (OC-51). The 1.0 mm safety lies between the band and the grid, so the band ends 1.0 mm before the nearest cell.
+  - **Length.** Top and bottom bands run along the grid width (`margin_left` … `grid_right`), left and right bands along the grid height (`margin_top` … `grid_bottom`). The square where two bands meet outside the grid is not used (OC-45).
+  - **What fits.** Depth **≥ 4.0 mm**: text. Depth **≥ 9.0 mm**, and the encoded QR fits a square of the band depth at the job's render resolution with a module of at least 0.25 mm and its four-module quiet zone (the rule the first version already used, at render dpi), and the band is at least `depth + 2 mm + 10 mm` long: a QR next to the text (OC-48). Otherwise text only.
+  - **Choice.** Among the bands with depth ≥ 4.0 mm, the hub takes the first by (1) a QR fits, (2) the larger depth, (3) the order **top, bottom, right, left** (OC-46). Depths compare exactly, in hundredths of a millimetre.
+  - **Corner and layout.** The corner is fixed per band: top → top-left, bottom → bottom-left, right → top-right, left → top-left. In the top and bottom bands the QR sits at the left end of the grid and the text runs to its right after a 2 mm gap, centred across the band, shrunk and then shortened with an ellipsis so that it never passes the grid's far end (as in the first version). In the left and right bands the same layout is turned a quarter turn clockwise: the QR at the top end, the text below it reading top to bottom, centred across the band, never past `grid_bottom`. The QR itself is not rotated (OC-47).
+  - **No band wide enough.** Below 4.0 mm in every band the margin ID is **not printed**, and no cell is taken instead. The job prints without it, `id_printed` stays false, and the next job onto the sheet tries again (another printer or tray may have room). For that page the preview and the print response say "Sheet ID not printed, add it by hand"; the sheet detail shows "Sheet ID not printed yet" while a `margin` sheet has `id_printed=false`. Nothing is refused, and the error code `margin_too_small` is retired (OC-49).
+  - **Decided once.** Band, corner, depth and QR yes/no are decided when the page job is created, at the job's render resolution, inside the reservation, and stored in the page payload. The PDF renderer and the preview draw what is stored and never choose again. The preview of a print request makes the same choice for its own plan; the job agrees with it unless the printer, tray, calibration or the length of the code changed in between (OC-50).
+  - **Examples.** L4736REV on a printer that reports no margins: top and bottom 15.3 mm, left and right 3.85 mm → top-left, QR next to the text. The same sheet with `dy = −0.8 mm` (printed too high): top 14.5 mm, bottom 15.3 mm → bottom-left. L4731REV on a printer with 4.23 mm on every side: top and bottom 8.27 mm, left and right 3.37 mm → top-left, text only; with 3.0 mm on every side the top band is 9.5 mm and a QR fits at 600 dpi.
+- `id_printed` makes "only on the first job" hold across retries: a job that fails leaves it false, so the next job draws the ID again. The same holds for a job that was printed without the ID because no band was wide enough.
 
 ### 10.3 Lookup, scanning, discarded sheets
 
@@ -494,7 +511,7 @@ All under `/api`, Pydantic models, complete OpenAPI (ADR 0011), errors in the ex
 | `GET /sheets` | read | list; `type`, `free_at_least`, `state` (`active` default, `full`, `discarded`, `all`), `q` (code) ; sorted: fits first, then most free (OC-34) |
 | `GET /sheets/next-code?type=` | read | the ID a new sheet would probably get |
 | `GET /sheets/{code}` | read | sheet with all non-free cells |
-| `POST /sheets` | print | create (type, version, id placement, cells already used, printer/tray for option 1) |
+| `POST /sheets` | print | create (type, version, id placement — `margin` if left out —, cells already used, printer/tray for option 1) |
 | `POST /sheets/{code}/discard` | print | |
 | `POST /sheets/{code}/cells/mark` | print | mark cells used by hand (`[{cell, purpose?}]`) |
 | `POST /sheets/{code}/cells/unmark` | print | only cells marked by hand |
@@ -516,11 +533,11 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 **Sheet print request** (shape decided, names left to the builder):
 
 - `items`: up to 500 (as batch), each a `PrintRequest` (content type + data or lookup) plus optional `purpose`, `source` (for raw data; lookups use the app name) and `ref`.
-- `placements`: an ordered list; each is either an existing sheet `{sheet: code, cells: "first_free" | [numbers], skip?, count?}` or a new sheet `{new_sheet: {type, version?, id_placement}, count?}`. Items fill placements in order. A single placement without `count` takes all items.
+- `placements`: an ordered list; each is either an existing sheet `{sheet: code, cells: "first_free" | [numbers], skip?, count?}` or a new sheet `{new_sheet: {type, version?, id_placement?}, count?}` (`id_placement` defaults to `margin`, *changed 2026-11-07, operator decision*). Items fill placements in order. A single placement without `count` takes all items.
 - `tray` (default tray if omitted), `expected_cells` (from the preview).
 - **Capacity:** if the items do not fit the placements, `409 insufficient_cells` with `free_cells` per placement and the shortfall. The UI then offers: rest onto another sheet of the type, rest onto a new sheet, or a sheet with enough room (mockup screen 2).
 
-**Error codes added:** `sheet_type_not_found`, `sheet_type_version_not_found`, `sheet_type_archived`, `type_exists`, `prefix_taken`, `invalid_geometry`, `sheet_not_found`, `sheet_discarded`, `sheet_busy`, `sheet_type_mismatch`, `cells_taken`, `cell_out_of_range`, `plan_changed`, `insufficient_cells`, `media_kind_mismatch`, `tray_unknown`, `margin_too_small`, `calibration_out_of_range`, `calibration_type_unsuitable`, `readings_insufficient`, `printer_not_found`, `ipp_unreachable`, `ipp_pdf_unsupported`, `ipp_rejected`. Existing ones (`content_type_data_mismatch`, `printer_disabled`, `printer_not_allowed`) are reused.
+**Error codes added:** `sheet_type_not_found`, `sheet_type_version_not_found`, `sheet_type_archived`, `type_exists`, `prefix_taken`, `invalid_geometry`, `sheet_not_found`, `sheet_discarded`, `sheet_busy`, `sheet_type_mismatch`, `cells_taken`, `cell_out_of_range`, `plan_changed`, `insufficient_cells`, `media_kind_mismatch`, `tray_unknown`, ~~`margin_too_small`~~ (retired 2026-11-07, OC-49), `calibration_out_of_range`, `calibration_type_unsuitable`, `readings_insufficient`, `printer_not_found`, `ipp_unreachable`, `ipp_pdf_unsupported`, `ipp_rejected`. Existing ones (`content_type_data_mismatch`, `printer_disabled`, `printer_not_allowed`) are reused.
 
 *Added 2026-11-05 with the sheet API (Plan 1, Task 8): the codes that the type and sheet routes of Plan 1 answer with, as built.*
 
@@ -562,7 +579,7 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 *Not in this table, by design:*
 
 - `POST …/calibration/{tray}/page` and `POST /api/jobs/{id}/retry` answer a printer the print queue does not know (`409`) in the **ProblemDetail** shape, `detail.type = "printer-unavailable"`, like the other job routes. Retry also answers `job-not-retryable` (`422`) in that shape when the stored payload is invalid. Every other calibration error uses the envelope above.
-- `margin_too_small` (in the list above) is not answered by Plan 2; it belongs to the sheet print (Plan 3).
+- `margin_too_small` (in the list above) is not answered by Plan 2. *Changed 2026-11-07 (operator decision):* it is not answered by Plan 3 either; a sheet whose margins are too narrow is printed without its ID (10.2, OC-49).
 - A *job* that ends `failed` carries its own `error_code`, not an HTTP status: `render_failed`, `ipp_unreachable`, `ipp_busy`, `ipp_rejected` (`{ipp_status}` in `result.error_detail`), `ipp_request_invalid`, `ipp_aborted` (the printer aborted a job that never started), `interrupted` (it may have printed), `recovery_invalid_page_payload` (restart found an unusable payload) and `cancelled`. None carries printer text or the printer's address.
 - Check order of the calibration routes with a path and a body: printer and tray first (`tray_unknown`), then the sheet type of `measured_on`/`type` (`sheet_type_not_found`, `sheet_type_version_not_found`), then the value ranges. `fit`, `page` and `PUT` all use it.
 
@@ -584,7 +601,8 @@ Follows the foundation's design system and layout; the mockups show the intent. 
 
 - Table: number (mono), sheet type with label size, used n/N with bar, last used, state (`used up`, `discarded`), Discard (with the confirmation text from the mockup: "leaves the picker; its number is never given out again; labels already printed stay printed").
 - Filters: hide used up (default on), sheet type, search by code. Discarded sheets behind a filter.
-- "+ New sheet" opens **Add a sheet** (mockup 3): type select (current version), cells already used (tap on the grid), dimensions panel with the geometry diagram (read-only), ID placement radios (margin disabled with the reason when too narrow), for "first free cell" a printer and tray choice and "Add and print ID label", small-cell hint when `allow_qr=false`.
+- "+ New sheet" opens **Add a sheet** (mockup 3): type select (current version), cells already used (tap on the grid), dimensions panel with the geometry diagram (read-only), ID placement radios with **margin preselected** (when a printer is chosen: the band the ID will go into, "with QR" or "text only", or, when no band is wide enough, "The ID will not be printed on this printer, add it by hand"; the option stays selectable), for "first free cell" a printer and tray choice and "Add and print ID label", small-cell hint when `allow_qr=false`. *Changed 2026-11-07 (operator decision): the margin option is the default and is no longer disabled when the margin is narrow.*
+- Sheet detail of a `margin` or `cell` sheet with `id_printed=false`: "Sheet ID not printed yet".
 - **Sheet detail** `/sheets/$code` (and the scan route `/sheet/$code`): the grid to scale with every cell's state, purpose on focus/tap, list of cells with purpose, actions: mark cells used, resolve unconfirmed cells, discard, "Print onto this sheet" (opens the cart with this sheet preselected).
 
 ### 17.2 `/sheets/archive`
@@ -613,7 +631,7 @@ In the item view and the cart, the existing printer choice decides (#179 builds 
   - sheet type (default: the type last used on this printer in this browser, OC-36), sheet picker (combobox: type to search by code; sheets of the type that fit first, with free count and "fits 9" / "too small"; "+ New … sheet (becomes …)"; scan button);
   - fill: first free cells, or choose cells (tap cells in the preview);
   - capacity alert with the split choices (15);
-  - preview: whole page and 200 % zoom, legend with counts (used / printed now / free), list "Cell 5 → …", reprint hints, "code only on this sheet type" where mapped, shortened text marked;
+  - preview: whole page and 200 % zoom, legend with counts (used / printed now / free), list "Cell 5 → …", reprint hints, "code only on this sheet type" where mapped, shortened text marked; the margin ID drawn in its band with the band named ("Sheet ID in the bottom margin"), or the warning "Sheet ID not printed, add it by hand" when no band is wide enough (10.2; *added 2026-11-07, operator decision*);
   - footer note "PDF on A4, media type labels, no scaling".
 - After printing: link to the job(s); when the job completes the sheet view shows the new cells as used.
 
@@ -651,8 +669,8 @@ From #150, adapted to Part A. Items marked **(hardware)** are verified by the op
 3. A job larger than the free cells is refused with the free count, unless placements split it.
 4. A discarded sheet's ID is never issued again, also not after archiving and unarchiving its type.
 5. **(hardware)** The CP1525N prints an L4736REV sheet from PDF with no dialog, aligned within ±0.5 mm at every cell after calibration.
-6. Creating a sheet with option 1 queues the ID label into the first free cell, and that cell is used once the job completes.
-7. Option 2 draws the ID only on the sheet's first completed job; a failed first job draws it again on the next.
+6. Creating a sheet with option 1 (chosen explicitly) queues the ID label into the first free cell, and that cell is used once the job completes.
+7. Option 2 draws the ID only on the sheet's first completed job; a failed first job draws it again on the next. It is the default when no placement is given, it lands in the band chosen by 10.2, and on a printer where every band is below 4 mm the job prints without it, takes no cell for it and leaves `id_printed` false. *Changed 2026-11-07 (operator decision).*
 8. Scanning the ID payload (URL and short form) resolves to the sheet; a discarded sheet resolves to "discarded".
 9. A sheet started under version 1 of a type still prints into version-1 positions after the type is edited to version 2.
 10. An exported type imports on another hub with identical geometry (same hash).
@@ -745,7 +763,7 @@ Only one question would change what gets built; a default is chosen so the plan 
 | OC-13 | Seed ships 36 types; the four flagged Avery types and Avery 7161 / Avery Zweckform 3475 (fail the geometry rules as researched) are held back (Operator question 1). |
 | OC-14 | Seeder inserts missing types; only untouched, unused seed types get new seed geometry as a new version. |
 | OC-15 | Sheet-ID QR payload is `{public_url}/sheet/{code}`; `sheet:{code}` also resolves. |
-| OC-16 | Margin ID in the top margin; ≥ 4 mm usable height for text, ≥ 9 mm and a fitting QR for a QR; 5 mm hardware margin assumed if unknown. |
+| OC-16 | Margin ID in the best of the four margin bands (10.2); depth = room − hardware margin of that side − calibration shift toward that edge − 1 mm; ≥ 4 mm for text, ≥ 9 mm and a fitting QR (0.25 mm module, quiet zone, render dpi) for a QR; 5 mm hardware margin per side assumed if unknown. *Changed 2026-11-07 (operator decision): was "in the top margin".* |
 | OC-17 | `ipps` with TLS verification on by default; can be switched off per printer with a warning. |
 | OC-18 | Saving an IPP printer that does not accept PDF is refused. |
 | OC-19 | Print-Job attributes as listed (media-col when supported, else media keyword; `print-scaling=none` and `print-color-mode=monochrome` when supported). |
@@ -769,8 +787,15 @@ Only one question would change what gets built; a default is chosen so the plan 
 | OC-37 | Sheets and sheet types are readable by any `read` key, regardless of printer restriction. |
 | OC-38 | `first_free` is ascending row-major; a placement may skip cells for this print without storing it. |
 | OC-39 | `sheet_cells.job_id` does not block job retention; cells keep state and purpose when the job row is gone. |
-| OC-40 | A sheet whose ID label has not printed yet gets it on the next job's first free cell. |
+| OC-40 | A sheet whose ID label has not printed yet gets it on the next job's first free cell. Applies to `cell` sheets only (*clarified 2026-11-07*): a `margin` sheet never falls back to a cell; it gets the margin ID again on its next job. |
 | OC-41 | `queue_timeout_s` bounds each IPP request, not the wait at the printer. |
 | OC-42 | Retry of a page job re-reserves the same cells or fails with `cells_taken`; no retry while cells are unconfirmed. |
 | OC-43 | Default cell purpose: request purpose, else title, else primary id; source `api` for raw data without one. |
 | OC-44 | Cells in the printer's hardware margin are flagged in the preview, not refused. |
+| OC-45 | A margin band runs along the grid only (grid width for top and bottom, grid height for left and right); the corner square where two bands meet is never used, because its edge is never larger than the deeper band. A "corner" placement is a band with its fixed corner end: top → top-left, bottom → bottom-left, right → top-right, left → top-left. *Added 2026-11-07.* |
+| OC-46 | Tie-break between bands of equal depth and equal QR outcome: top, bottom, right, left. *Added 2026-11-07.* |
+| OC-47 | Left and right bands use the horizontal layout turned a quarter turn clockwise: QR at the top end (not rotated), text below it reading top to bottom. Rotated text keeps the code at full height in a narrow band; a short code stacked under the QR would have to shrink below the minimum text size (6 pt) in bands under about 13 mm. *Added 2026-11-07.* |
+| OC-48 | A QR in a band also needs the band to be at least `depth + 2 mm + 10 mm` long, so that the QR stays within the grid's span and the text keeps at least 10 mm; otherwise that band is text only. *Added 2026-11-07.* |
+| OC-49 | No band ≥ 4 mm: the job prints without the margin ID, takes no cell, leaves `id_printed` false; preview and print response flag the page ("Sheet ID not printed, add it by hand"); `margin_too_small` is retired. *Added 2026-11-07.* |
+| OC-50 | Band, corner, depth and QR are decided in the reservation at the job's render dpi and stored in the page payload; the renderer and the preview obey the stored values. A payload stored before this change (no band) is drawn in the top band. *Added 2026-11-07.* |
+| OC-51 | The calibration shift per side follows the first version's top rule (`max(0, −dy)` for the top band): the stored offset toward an edge narrows that band, an offset away from it gives nothing back; scale and rotation are not counted. *Added 2026-11-07.* |
