@@ -37,7 +37,7 @@ from app.sheets.errors import (
     SheetNotFoundError,
     SheetTypeMismatchError,
 )
-from app.sheets.events import publish_sheet_updated
+from app.sheets.events import SheetTouched, publish_touched
 from app.sheets.geometry import cell_count
 from app.sheets.planner import MarginContext, PlacementIn, Plan, SheetView, plan
 from app.sheets.sheet_service import create_sheet_locked
@@ -225,26 +225,6 @@ class _InsertConflictError(Exception):
         self.explicit = explicit
 
 
-@dataclass
-class _Touched:
-    code: str
-    total: int
-    free: int
-    changed: list[int]
-    state: str = "active"
-
-
-def _publish_all(bus: EventBus | None, touched: Sequence[_Touched]) -> None:
-    """Publish after the commit. A failing subscriber must not hide a committed reservation."""
-    for t in touched:
-        try:
-            publish_sheet_updated(
-                bus, code=t.code, free=t.free, total=t.total, changed=t.changed, state=t.state
-            )
-        except Exception:
-            logger.exception("sheet.updated for %s could not be published", log_value(t.code))
-
-
 def _expected_of(pl: Plan, new_views: set[int]) -> list[ExpectedPage]:
     return [
         ExpectedPage(
@@ -300,7 +280,7 @@ async def _attempt(
     margin: MarginContext,
     required_type_key: str | None,
     actor: str,
-) -> tuple[list[ReservedPage], list[_Touched]]:
+) -> tuple[list[ReservedPage], list[SheetTouched]]:
     explicit = any(isinstance(p.cells, list) for p in placements)
     async with write_transaction(session):
         views, new_views = await _resolve_views(session, placements, required_type_key, actor)
@@ -312,7 +292,7 @@ async def _attempt(
         now = datetime.now(UTC)
         rows: list[SheetCell] = []
         pages: list[ReservedPage] = []
-        touched: dict[UUID, _Touched] = {}
+        touched: dict[UUID, SheetTouched] = {}
         next_item = 0
         for page in pl.pages:
             sheet_id = page.sheet.sheet_id
@@ -358,7 +338,7 @@ async def _attempt(
             )
             t = touched.setdefault(
                 sheet_id,
-                _Touched(
+                SheetTouched(
                     code=page.sheet.code,
                     total=cell_count(page.sheet.geometry),
                     free=cell_count(page.sheet.geometry) - len(page.sheet.non_free),
@@ -417,7 +397,7 @@ async def reserve(
             pages, touched = await _attempt(session, **kwargs)
         except _InsertConflictError as again:
             raise CellsTakenError(again.cells) from None
-    _publish_all(bus, touched)
+    publish_touched(bus, touched)
     logger.info("reserved %d cells on %d pages", sum(len(p.assignments) for p in pages), len(pages))
     return pages
 
@@ -427,7 +407,7 @@ async def release(session: AsyncSession, job_id: UUID, *, bus: EventBus | None =
 
     Cells the job already turned into used or unconfirmed are not touched.
     """
-    touched: list[_Touched] = []
+    touched: list[SheetTouched] = []
     freed: list[int] = []
     async with write_transaction(session):
         rows = await repo.reserved_cells_of_job(session, job_id)
@@ -449,7 +429,7 @@ async def release(session: AsyncSession, job_id: UUID, *, bus: EventBus | None =
             total = cell_count(version_geometry(version))
             remaining = len(await repo.cells_of(session, sheet_id))
             touched.append(
-                _Touched(
+                SheetTouched(
                     code=sheet.code,
                     total=total,
                     free=total - remaining,
@@ -458,7 +438,7 @@ async def release(session: AsyncSession, job_id: UUID, *, bus: EventBus | None =
                 )
             )
         await session.commit()
-    _publish_all(bus, touched)
+    publish_touched(bus, touched)
     if freed:
         logger.info("released %d reserved cells of job %s", len(freed), log_value(str(job_id)))
     return sorted(freed)

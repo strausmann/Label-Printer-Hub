@@ -130,6 +130,7 @@ from app.services.page_jobs import (
     IppPagePrinter,
     register_outcome_handler,
     register_page_renderer,
+    unregister_outcome_handler,
 )
 from app.services.print_queue import PrintQueue, load_manual_pauses
 from app.services.print_service import PrintService
@@ -435,7 +436,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         retention_days=lambda: int(settings_store.get("jobs.retention_days")),
         session_purge=lambda: purge_expired_sessions(async_session),
     )
-    await cleanup_task.start()
+    # Started after the orphan sweep below: its first eviction must not delete a job row the
+    # sweep still has to read (T5-1).
     app.state.cleanup_task = cleanup_task
 
     # Phase 1i H — Multi-Printer-Wiring (Task 7b)
@@ -512,12 +514,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         _initially_paused = await load_manual_pauses(_pause_session)
     # D15: restart recovery calls the handler's ``on_unknown`` from inside ``start()``, so the
     # handler is registered first (a registry without it would hand the call to a no-op).
-    register_outcome_handler("sheet_page", SheetCellsOutcome(async_session, event_bus))
+    sheet_outcome = SheetCellsOutcome(async_session, event_bus)
+    register_outcome_handler("sheet_page", sheet_outcome)
     await queue.start(initially_paused=_initially_paused)
     try:  # cells of jobs that ended, or vanished, while the hub was down
         await sweep_orphan_reservations(async_session, bus=event_bus)
     except Exception:
         _log.exception("Sheet orphan sweep failed; the next start tries again")
+    await cleanup_task.start()
     if _initially_paused:
         _log.info("Restored %d manual printer pause(s) from the database", len(_initially_paused))
 
@@ -658,6 +662,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception as close_exc:  # one failing close must not skip the rest
                 _log.warning("IPP page client close failed (%s)", type(close_exc).__name__)
         await cleanup_task.stop()
+        unregister_outcome_handler("sheet_page", sheet_outcome)
         await engine.dispose()
         # Close shared HTTP clients held by integration plugins that support it.
         # Plugins that pre-date connection pooling may not have aclose(); skip them.

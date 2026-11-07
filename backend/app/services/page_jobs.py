@@ -157,6 +157,12 @@ def register_outcome_handler(kind: PageKind, handler: PageOutcomeHandler) -> Non
     _HANDLERS[kind] = handler
 
 
+def unregister_outcome_handler(kind: PageKind, handler: PageOutcomeHandler) -> None:
+    """Remove ``handler`` if it is still the one registered (a later owner's stays)."""
+    if _HANDLERS.get(kind) is handler:
+        del _HANDLERS[kind]
+
+
 def outcome_handler(kind: str) -> PageOutcomeHandler:
     """The handler registered for ``kind``; a no-op handler when there is none."""
     return _HANDLERS.get(kind, _NOOP)

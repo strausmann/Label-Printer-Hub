@@ -62,6 +62,7 @@ async def add_job(
     sheet_id: UUID | None = None,
     result: dict[str, Any] | None = None,
     error: str | None = None,
+    finished_at: datetime | None = None,
 ) -> None:
     detail: dict[str, Any] = {"margin_id": margin_id}
     if sheet_id is not None:
@@ -74,6 +75,7 @@ async def add_job(
             payload={"kind": "sheet_page", "detail": detail},
             result=result,
             error=error,
+            finished_at=finished_at,
         )
     )
     await session.commit()
@@ -483,7 +485,7 @@ async def test_sweep_orphan_reservations(
 
     got = states(await read_cells(async_session_factory))
     expected = {
-        "missing": None,
+        "missing": "unconfirmed",  # T5-1: the job row may have been purged after it printed
         "done": "used",
         "cancelled": None,
         "failed_clean": None,
@@ -494,7 +496,7 @@ async def test_sweep_orphan_reservations(
         "printing": "reserved",
     }
     assert {name: got.get(cell) for name, cell in world.items()} == expected
-    assert (report.used, report.unconfirmed, report.freed) == (1, 3, 3)
+    assert (report.used, report.unconfirmed, report.freed) == (1, 4, 2)
     assert report.untouched == 2
     (event,) = bus.events
     changed = sorted(c for name, c in world.items() if name not in ("queued", "printing"))
@@ -540,21 +542,24 @@ async def test_sweep_spares_a_fresh_reservation_without_a_jobs_row(
     report = await sweep_orphan_reservations(async_session_factory)
 
     got = states(await read_cells(async_session_factory))
-    assert got == {1: "reserved", 2: "reserved"}  # the old orphan is gone, the fresh one stays
+    # the old job-less row is unconfirmed (never free), the fresh one stays reserved
+    assert got == {1: "reserved", 2: "reserved", 10: "unconfirmed"}
     assert report.spared == 2
-    assert {r.job_id for r in await read_cells(async_session_factory)} == {fresh.job_id}
+    assert {r.job_id for r in await read_cells(async_session_factory) if r.cell_no < 10} == {
+        fresh.job_id
+    }
 
 
 async def test_sweep_grace_period_is_what_spares_it(
     session: AsyncSession, async_session_factory: Factory
 ) -> None:
-    """Counter-check: with a zero grace period the same fresh reservation is deleted."""
+    """Counter-check: with a zero grace period the same fresh reservation is settled."""
     code = await make_sheet(session)
     await do_reserve(session, [existing(code, count=2)], 2)
 
     await sweep_orphan_reservations(async_session_factory, grace=timedelta(0))
 
-    assert await read_cells(async_session_factory) == []
+    assert set(states(await read_cells(async_session_factory)).values()) == {"unconfirmed"}
 
 
 async def test_sweep_job_saved_after_the_read_is_not_deleted(
@@ -584,3 +589,98 @@ async def test_sweep_done_job_sets_id_printed(
 
     assert (await read_sheet(async_session_factory)).id_printed is True
     assert (await read_sheet(async_session_factory)).last_used_at is not None
+
+
+async def age_cells(factory: Factory, days: int = 40) -> None:
+    async with factory() as s:
+        await s.execute(
+            update(SheetCell).values(updated_at=datetime.now(UTC) - timedelta(days=days))
+        )
+        await s.commit()
+
+
+async def test_purged_job_row_never_frees_a_printed_page(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    """T5-1: retention deletes the row of a done job whose handler call was lost; the sweep
+    must then say "unconfirmed", not free cells that carry a printed label."""
+    code = await make_sheet(session)
+    (page,) = await do_reserve(session, [existing(code)], 3)
+    await age_cells(async_session_factory)
+    assert page.job_id  # the jobs row never exists here: it was purged before the sweep
+
+    await sweep_orphan_reservations(async_session_factory)
+
+    assert set(states(await read_cells(async_session_factory)).values()) == {"unconfirmed"}
+
+
+async def test_retention_keeps_a_job_with_reserved_cells(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    from app.repositories import jobs as jobs_repo
+
+    code = await make_sheet(session)
+    (page,) = await do_reserve(session, [existing(code)], 3)
+    old = datetime.now(UTC) - timedelta(days=40)
+    await add_job(session, page.job_id, "done", finished_at=old)
+    plain = uuid4()
+    await add_job(session, plain, "done", finished_at=old)  # no cells: nothing protects it
+
+    async with async_session_factory() as s:
+        deleted = await jobs_repo.evict_terminal_older_than(s, timedelta(days=30))
+
+    assert deleted == 1
+    async with async_session_factory() as s:
+        ids = set((await s.execute(select(Job.id))).scalars().all())
+    assert ids == {page.job_id}
+
+
+async def test_retention_evicts_once_the_cells_are_settled(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    """Counter-check: the protection ends with the reservation."""
+    from app.repositories import jobs as jobs_repo
+
+    code = await make_sheet(session)
+    (page,) = await do_reserve(session, [existing(code)], 3)
+    await add_job(session, page.job_id, "done", finished_at=datetime.now(UTC) - timedelta(days=40))
+    await SheetCellsOutcome(async_session_factory, None).on_completed(page.job_id)
+
+    async with async_session_factory() as s:
+        assert await jobs_repo.evict_terminal_older_than(s, timedelta(days=30)) == 1
+
+
+@pytest.mark.parametrize("first", ["clean_failure", "unknown"])
+async def test_late_completed_changes_nothing_for_a_margin_job(
+    session: AsyncSession, async_session_factory: Factory, first: str
+) -> None:
+    """T5-2: id_printed is set only by the call that moves cells reserved -> used."""
+    (page,) = await do_reserve(session, [new("margin")], 2)
+    await add_job(session, page.job_id, margin_id=True, sheet_id=page.sheet_id)
+    handler = SheetCellsOutcome(async_session_factory, None)
+    if first == "clean_failure":
+        await handler.on_ended(page.job_id, state="failed", started=False, error_code="ipp_aborted")
+    else:
+        await handler.on_unknown(page.job_id)
+    before = states(await read_cells(async_session_factory))
+
+    await handler.on_completed(page.job_id)
+
+    assert states(await read_cells(async_session_factory)) == before
+    assert (await read_sheet(async_session_factory)).id_printed is False
+
+
+async def test_sweep_stamps_last_used_with_the_jobs_finish_time(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    code = await make_sheet(session)
+    (page,) = await do_reserve(session, [existing(code)], 2)
+    finished = datetime.now(UTC) - timedelta(days=2)
+    await add_job(session, page.job_id, "done", finished_at=finished)
+    await age_cells(async_session_factory, days=2)
+
+    await sweep_orphan_reservations(async_session_factory)
+
+    stamp = (await read_sheet(async_session_factory)).last_used_at
+    assert stamp is not None
+    assert abs(stamp.replace(tzinfo=UTC) - finished) < timedelta(seconds=5)

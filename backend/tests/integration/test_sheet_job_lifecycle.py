@@ -263,3 +263,38 @@ async def test_startup_sweep_settles_a_job_that_ended_while_the_hub_was_down() -
         await _until(_cells_are(*["used"] * 9))
     async with eng.async_session() as s:
         assert (await s.execute(select(Sheet))).scalar_one().last_used_at is not None
+
+
+async def test_startup_sweep_runs_before_the_first_retention_eviction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T5-1 b: retention must not delete a job row the sweep still has to read."""
+    import app.main as main_module
+    from app.services.cleanup_task import CleanupTask
+
+    order: list[str] = []
+    real_sweep = main_module.sweep_orphan_reservations
+    real_start = CleanupTask.start
+
+    async def sweep(*a: Any, **k: Any) -> Any:
+        order.append("sweep")
+        return await real_sweep(*a, **k)
+
+    async def start(self: CleanupTask) -> None:
+        order.append("cleanup")
+        await real_start(self)
+
+    monkeypatch.setattr(main_module, "sweep_orphan_reservations", sweep)
+    monkeypatch.setattr(CleanupTask, "start", start)
+    app = _app(FakeIppPrinter())
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert order == ["sweep", "cleanup"]
+
+
+async def test_lifespan_unregisters_its_handler_at_shutdown() -> None:
+    app = _app(FakeIppPrinter())
+    async with app.router.lifespan_context(app):
+        assert "sheet_page" in page_jobs._HANDLERS
+    assert "sheet_page" not in page_jobs._HANDLERS

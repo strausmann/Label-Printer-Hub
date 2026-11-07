@@ -37,8 +37,9 @@ from app.models.job import Job, JobState
 from app.models.sheet import Sheet, SheetCell, SheetTypeVersion
 from app.repositories import sheets as repo
 from app.services.event_bus import EventBus
+from app.sheets.events import SheetTouched, publish_touched
 from app.sheets.geometry import cell_count
-from app.sheets.reservation import HUB_SOURCE, _publish_all, _Touched
+from app.sheets.reservation import HUB_SOURCE
 from app.sheets.text import log_value
 from app.sheets.type_service import version_geometry, write_transaction
 
@@ -52,7 +53,12 @@ INTERRUPTED = "interrupted"
 
 SWEEP_GRACE = timedelta(seconds=30)
 """A reservation commits before its page job is saved (C26). In that window the rows have no
-``jobs`` row yet and are not orphans: the sweep spares rows younger than this."""
+``jobs`` row yet and are not orphans: the sweep spares rows younger than this.
+
+Only safe at startup: the sweep runs in the lifespan before the app serves a request, so no
+live request owns a job-less row; age is merely a belt. A periodic sweep must not decide by
+age alone (a slow ``submit_page_job`` under load would lose its reservation while the job
+prints): it has to ask the in-memory queue (``queue.has_job``) as well."""
 
 __all__ = ["SWEEP_GRACE", "SheetCellsOutcome", "SweepReport", "sweep_orphan_reservations"]
 
@@ -60,12 +66,12 @@ __all__ = ["SWEEP_GRACE", "SheetCellsOutcome", "SweepReport", "sweep_orphan_rese
 # ---------------------------------------------------------------------------- shared core
 
 
-async def _summary(session: AsyncSession, sheet: Sheet, changed: list[int]) -> _Touched:
+async def _summary(session: AsyncSession, sheet: Sheet, changed: list[int]) -> SheetTouched:
     version = await session.get(SheetTypeVersion, sheet.type_version_id)
     assert version is not None  # a foreign key
     total = cell_count(version_geometry(version))
     remaining = len(await repo.cells_of(session, sheet.id))
-    return _Touched(
+    return SheetTouched(
         code=sheet.code, total=total, free=total - remaining, changed=changed, state=sheet.state
     )
 
@@ -74,18 +80,17 @@ async def _settle_locked(
     session: AsyncSession,
     decisions: Sequence[tuple[SheetCell, Outcome]],
     jobs: dict[UUID, Job],
-    *,
-    margin_only: Sequence[UUID] = (),
-) -> list[_Touched]:
+) -> list[SheetTouched]:
     """Apply the decisions. The caller holds the write lock and commits.
 
-    ``margin_only`` are sheets whose completed job carried the margin ID but reserved no row.
-    Nothing is committed here, so cells and ``id_printed`` always land together.
+    ``id_printed`` is set only by a decision that moves a cell reserved -> used (T5-2): a late
+    or contradicting call finds no reserved row and changes nothing. Nothing is committed here,
+    so cells and ``id_printed`` always land together.
     """
     now = datetime.now(UTC)
     changed: dict[UUID, list[int]] = {}
-    used_on: set[UUID] = set()
-    id_printed_on: set[UUID] = set(margin_only)
+    used_at: dict[UUID, datetime] = {}
+    id_printed_on: set[UUID] = set()
     for row, outcome in decisions:
         changed.setdefault(row.sheet_id, []).append(row.cell_no)
         if outcome == "free":
@@ -96,25 +101,27 @@ async def _settle_locked(
         row.updated_by = ACTOR
         if outcome != "used":
             continue
-        used_on.add(row.sheet_id)
-        carries_margin = row.job_id is not None and repo.margin_id_sheet(jobs.get(row.job_id))
+        job = jobs.get(row.job_id) if row.job_id is not None else None
+        finished = job.finished_at if job is not None else None
+        stamp = _aware(finished) if finished is not None else now
+        used_at[row.sheet_id] = max(used_at.get(row.sheet_id, stamp), stamp)
+        carries_margin = repo.margin_id_sheet(job)
         if row.source == HUB_SOURCE or carries_margin:
             id_printed_on.add(row.sheet_id)  # the ID label is on the sheet now
     await session.flush()
-    touched: list[_Touched] = []
-    for sheet_id in sorted(changed.keys() | id_printed_on, key=str):
+    touched: list[SheetTouched] = []
+    for sheet_id in sorted(changed, key=str):
         sheet = await session.get(Sheet, sheet_id, populate_existing=True)
         if sheet is None:  # foreign keys make this unreachable
             continue
-        if sheet_id in used_on:
-            sheet.last_used_at = now
-        flipped = sheet_id in id_printed_on and not sheet.id_printed
+        if sheet_id in used_at:
+            known = _aware(sheet.last_used_at) if sheet.last_used_at is not None else None
+            if known is None or used_at[sheet_id] > known:
+                sheet.last_used_at = used_at[sheet_id]  # the job's finish time, never earlier
         if sheet_id in id_printed_on:
             sheet.id_printed = True
-        if sheet_id not in changed and not flipped:
-            continue  # nothing changed for this sheet: no event
         await session.flush()
-        touched.append(await _summary(session, sheet, sorted(changed.get(sheet_id, []))))
+        touched.append(await _summary(session, sheet, sorted(changed[sheet_id])))
     return touched
 
 
@@ -160,17 +167,9 @@ class SheetCellsOutcome:
         async with self._factory() as session, write_transaction(session):
             rows = await repo.reserved_cells_of_job(session, job_id)
             jobs = await repo.jobs_by_id(session, [job_id])
-            margin_only: list[UUID] = []
-            if outcome == "used" and not rows:
-                # A completed margin-ID job without a reserved cell still prints the ID.
-                sheet_id = repo.margin_id_sheet(jobs.get(job_id))
-                if sheet_id is not None:
-                    margin_only = [UUID(sheet_id)]
-            touched = await _settle_locked(
-                session, [(r, outcome) for r in rows], jobs, margin_only=margin_only
-            )
+            touched = await _settle_locked(session, [(r, outcome) for r in rows], jobs)
             await session.commit()
-        _publish_all(self._bus, touched)
+        publish_touched(self._bus, touched)
         if touched:
             logger.info("job %s ended: cells %s", log_value(str(job_id)), outcome)
 
@@ -238,7 +237,9 @@ async def sweep_orphan_reservations(
                 if _aware(row.updated_at) > cutoff:
                     report.spared += 1
                 else:
-                    decisions.append((row, "free"))
+                    # T5-1: the row may have been purged by retention after the page printed,
+                    # so "never saved" cannot be told from "printed and forgotten": say so.
+                    decisions.append((row, "unconfirmed"))
                 continue
             outcome = _decide(job)
             if outcome is None:
@@ -254,7 +255,7 @@ async def sweep_orphan_reservations(
             report.unconfirmed += 1
         else:
             report.freed += 1
-    _publish_all(bus, touched)
+    publish_touched(bus, touched)
     if decisions or report.spared:
         logger.info(
             "orphan sweep: %d used, %d unconfirmed, %d freed, %d untouched, %d spared",

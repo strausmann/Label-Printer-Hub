@@ -7,9 +7,15 @@ subscribes to this channel.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from app.services.event_bus import BusEvent, EventBus
+from app.sheets.text import log_value
+
+logger = logging.getLogger(__name__)
 
 SHEETS_CHANNEL = "sheets"
 SHEET_UPDATED = "sheet.updated"
@@ -36,3 +42,25 @@ def publish_sheet_updated(
             },
         ),
     )
+
+
+@dataclass
+class SheetTouched:
+    """One sheet changed by a committed write: what ``sheet.updated`` is built from."""
+
+    code: str
+    total: int
+    free: int
+    changed: list[int]
+    state: str = "active"
+
+
+def publish_touched(bus: EventBus | None, touched: Sequence[SheetTouched]) -> None:
+    """Publish after the commit. A failing subscriber must not hide a committed write."""
+    for t in touched:
+        try:
+            publish_sheet_updated(
+                bus, code=t.code, free=t.free, total=t.total, changed=t.changed, state=t.state
+            )
+        except Exception:
+            logger.exception("sheet.updated for %s could not be published", log_value(t.code))
