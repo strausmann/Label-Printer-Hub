@@ -65,6 +65,7 @@ __all__ = [
     "NewSheetIn",
     "PlacementRequest",
     "ReservedPage",
+    "expected_of",
     "feed_mark_in_flight",
     "load_sheet_view",
     "margin_id_in_flight",
@@ -270,7 +271,7 @@ class _InsertConflictError(Exception):
         self.explicit = explicit
 
 
-def _expected_of(pl: Plan, new_views: set[int]) -> list[ExpectedPage]:
+def expected_of(pl: Plan, new_views: set[int]) -> list[ExpectedPage]:
     return [
         ExpectedPage(
             sheet=NEW_SHEET if id(p.sheet) in new_views else str(p.sheet.code),
@@ -330,7 +331,7 @@ async def _attempt(
     async with write_transaction(session):
         views, new_views = await _resolve_views(session, placements, required_type_key, actor)
         pl = plan(views, len(items), hw_margins_hmm=hw_margins_hmm, margin=margin)
-        fresh = _expected_of(pl, new_views)
+        fresh = expected_of(pl, new_views)
         if expected is not None and list(expected) != fresh:
             raise PlanChangedError(_plan_detail(fresh))  # write_transaction rolls it all back
 

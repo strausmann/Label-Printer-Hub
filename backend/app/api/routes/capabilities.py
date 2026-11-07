@@ -8,7 +8,6 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
@@ -20,7 +19,7 @@ from app.db.session import get_session
 from app.models.printer import Printer
 from app.models.printer_status_cache import PrinterStatusCache
 from app.models.printer_tray import PrinterTray
-from app.printer_backends.ipp.attributes import IppStatusRecord, ProbeSummary
+from app.printer_backends.ipp.attributes import Margins, ProbeSummary
 from app.printer_models.pt import PTP750WDriver
 from app.printer_models.ql import QL820NWBDriver
 from app.printer_models.registry import ModelNotFoundError, ModelRegistry
@@ -35,8 +34,8 @@ from app.schemas.capabilities import (
     TrayCapability,
 )
 from app.schemas.tape_geometry import TAPE_GEOMETRY
-from app.services.producers.ipp_status_producer import _empty_summary
 from app.sheets.errors import PrinterNotFoundError
+from app.sheets.printer_facts import facts_of, read_status
 
 router = APIRouter(prefix="/api/printers", tags=["printers"])
 
@@ -68,8 +67,7 @@ def _page_sizes(names: list[str]) -> list[PageSize]:
     return sizes
 
 
-def _page_media(summary: ProbeSummary) -> PageMedia:
-    margins = summary.margins_hmm
+def _page_media(summary: ProbeSummary, margins: Margins | None) -> PageMedia:
     return PageMedia(
         page_sizes=_page_sizes(summary.media_sizes),
         media_type_settable=summary.media_col_supported
@@ -140,10 +138,9 @@ def _tape(printer: Printer, parsed: dict[str, Any], captured: datetime | None) -
 async def _page(
     session: AsyncSession, printer: Printer, parsed: dict[str, Any], captured: datetime | None
 ) -> Capabilities:
-    try:
-        record: IppStatusRecord | None = IppStatusRecord.model_validate(parsed)
-    except ValidationError:
-        record = None
+    status_read = read_status(parsed)
+    record = status_read.record
+    facts = facts_of(status_read)
     rows = (
         (
             await session.execute(
@@ -156,9 +153,8 @@ async def _page(
         .all()
     )
     calibrations = {c.tray: c for c in await calibration_service.get_all(session, printer.id)}
-    never_answered = record is not None and not record.online and record.summary == _empty_summary()
-    if never_answered:  # the producer's placeholder: nothing is known about the printer yet
-        record, captured = None, None
+    if status_read.never_answered:  # the producer's placeholder: nothing is known yet
+        captured = None
     loaded = {t.key: t.media for t in record.trays} if record else {}
     trays = []
     for t in rows:
@@ -175,11 +171,11 @@ async def _page(
             )
         )
     summary = record.summary if record else None
-    dpis = summary.resolutions_dpi if summary else []
+    dpis = facts.resolutions_dpi
     return Capabilities(
         kind="page",
         resolution_dpi=PageResolution(max=max(dpis) if dpis else None, supported=dpis),
-        media=_page_media(summary) if summary else None,
+        media=_page_media(summary, facts.margins_hmm) if summary else None,
         trays=trays,
         document_formats=None
         if summary is None

@@ -77,7 +77,7 @@ from app import __version__
 from app.api.error_handlers import (
     SHEET_ERROR_SCHEMA,
     SHEET_ERROR_SCHEMA_NAME,
-    SHEET_PREFIXES,
+    is_sheet_path,
     register_error_handlers,
 )
 from app.api.routes import auth_session as auth_session_routes
@@ -89,6 +89,7 @@ from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
+from app.api.routes import sheet_print as sheet_print_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.admin_printers_api import router as admin_printers_api_router
@@ -249,7 +250,7 @@ def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
         "application/json": {"schema": {"$ref": f"#/components/schemas/{SHEET_ERROR_SCHEMA_NAME}"}}
     }
     for path, item in schema.get("paths", {}).items():
-        if not path.startswith(SHEET_PREFIXES):
+        if not is_sheet_path(path):
             continue
         for operation in item.values():
             for status_code, response in operation.get("responses", {}).items():
@@ -932,6 +933,7 @@ def create_app() -> _LifespanManager:
     app.include_router(settings_api_router)
     app.include_router(sheet_types_router)
     app.include_router(sheets_router)
+    app.include_router(sheet_print_routes.router)
     app.include_router(calibration_router)
     app.include_router(capabilities_router)
     app.include_router(info_routes.router)

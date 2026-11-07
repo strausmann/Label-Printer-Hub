@@ -7,7 +7,7 @@ import tempfile
 from typing import Any
 
 import pytest
-from app.api.error_handlers import SHEET_ERROR_SCHEMA_NAME, SHEET_PREFIXES
+from app.api.error_handlers import SHEET_ERROR_SCHEMA_NAME, is_sheet_path
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def test_sheet_routes_declare_the_envelope_for_422(schema: dict[str, Any]) -> No
     ref = f"#/components/schemas/{SHEET_ERROR_SCHEMA_NAME}"
     seen = 0
     for path, item in schema["paths"].items():
-        if not path.startswith(SHEET_PREFIXES):
+        if not is_sheet_path(path):
             continue
         for operation in item.values():
             response = operation["responses"].get("422")
@@ -44,7 +44,7 @@ def test_other_routes_keep_the_default_validation_schema(schema: dict[str, Any])
     others = [
         op["responses"]["422"]
         for path, item in schema["paths"].items()
-        if not path.startswith(SHEET_PREFIXES)
+        if not is_sheet_path(path)
         for op in item.values()
         if "content" in op["responses"].get("422", {})
     ]
@@ -60,7 +60,7 @@ def test_every_4xx_of_the_sheet_routes_carries_the_envelope(schema: dict[str, An
     ref = f"#/components/schemas/{SHEET_ERROR_SCHEMA_NAME}"
     codes: set[str] = set()
     for path, item in schema["paths"].items():
-        if not path.startswith(SHEET_PREFIXES):
+        if not is_sheet_path(path):
             continue
         for operation in item.values():
             for code, response in operation["responses"].items():

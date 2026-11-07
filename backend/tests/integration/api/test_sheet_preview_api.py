@@ -1,0 +1,373 @@
+"""HTTP tests of POST /api/print/{printer}/sheet/preview: scopes, errors, no echo, no writes."""
+
+from __future__ import annotations
+
+import base64
+import io
+from datetime import UTC, datetime
+from typing import Any
+from uuid import uuid4
+
+import app.models  # noqa: F401
+import httpx
+import pytest
+from app.models.printer import Printer
+from app.models.printer_status_cache import PrinterStatusCache
+from app.models.printer_tray import PrinterTray
+from app.models.sheet import Sheet, SheetCell
+from app.printer_backends.ipp.attributes import IppStatusRecord
+from app.services.producers.ipp_status_producer import _empty_summary
+from app.sheets import sheet_service as ss
+from app.sheets import type_service as ts
+from app.sheets.geometry import Geometry
+from app.sheets.sheet_service import MarkedCell
+from PIL import Image
+from sqlalchemy import func, select
+
+from tests.integration.api.test_sheet_types_api import _factory, _insert_key
+
+pytestmark = pytest.mark.asyncio
+
+G48 = Geometry("A4", 21000, 29700, 4570, 2120, 4, 12, 4850, 2120, 2150, 840, None, "rectangle")
+SENTINEL = "ZQX-private-label-text"
+
+
+def _record() -> IppStatusRecord:
+    summary = _empty_summary().model_copy(
+        update={"resolutions_dpi": [600], "pdf_supported": True, "state": "idle"}
+    )
+    return IppStatusRecord(
+        online=True,
+        printer_state="idle",
+        reasons=[],
+        blocking_reason=None,
+        warnings=[],
+        markers=[],
+        trays=[],
+        jobs_ahead=0,
+        summary=summary,
+    )
+
+
+async def _printer(
+    *, backend: str = "ipp", enabled: bool = True, slug: str | None = None, model: str = "m"
+) -> tuple[str, str]:
+    async with _factory()() as s:
+        p = Printer(
+            id=uuid4(),
+            name=f"P {uuid4().hex[:6]}",
+            slug=slug or f"p-{uuid4().hex[:6]}",
+            model=model,
+            backend=backend,
+            connection={"uri": "ipp://printer.example.invalid/ipp"},
+            enabled=enabled,
+        )
+        s.add(p)
+        s.add(PrinterTray(printer_id=p.id, tray_key="auto", label="Auto", is_default=True))
+        s.add(PrinterTray(printer_id=p.id, tray_key="off", label="Off", enabled=False))
+        s.add(
+            PrinterStatusCache(
+                printer_id=p.id,
+                parsed=_record().model_dump(mode="json"),
+                captured_at=datetime.now(UTC),
+            )
+        )
+        await s.commit()
+        return str(p.id), p.slug
+
+
+async def _sheet(used: int = 0) -> str:
+    async with _factory()() as s:
+        try:
+            await ts.create_type(
+                s, ts.TypeFields("acme-t1", "AT1", "Acme", ["T-1"], None, None), G48, actor="t"
+            )
+        except Exception:
+            await s.rollback()
+        sheet = await ss.create_sheet(
+            s,
+            type_key="acme-t1",
+            version=None,
+            id_placement="manual",
+            used_cells=[MarkedCell(n) for n in range(1, used + 1)],
+            note=None,
+            actor="t",
+        )
+        return sheet.code
+
+
+def _item(i: int, **kw: Any) -> dict[str, Any]:
+    return {
+        "content_type": "qr_two_lines",
+        "data": {
+            "title": f"Item {i}",
+            "primary_id": f"R-{i}",
+            "qr_payload": f"https://r.example.invalid/{i}",
+        },
+        **kw,
+    }
+
+
+def _body(code: str, n: int = 3, **kw: Any) -> dict[str, Any]:
+    return {"items": [_item(i) for i in range(n)], "placements": [{"sheet": code}], **kw}
+
+
+def _url(printer: str) -> str:
+    return f"/api/print/{printer}/sheet/preview"
+
+
+def _err(resp: httpx.Response) -> dict[str, Any]:
+    detail = resp.json()["detail"]
+    assert set(detail) == {"error_code", "error_message", "error_detail"}, detail
+    return detail
+
+
+@pytest.fixture
+async def reader() -> dict[str, str]:
+    return {"X-Label-Hub-Key": await _insert_key(["read"])}
+
+
+async def test_read_scope_gets_the_preview_by_id_and_by_slug(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    pid, slug = await _printer()
+    code = await _sheet(used=4)
+
+    for key in (pid, slug):
+        resp = await api_client_with_seed.post(_url(key), json=_body(code), headers=reader)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        (page,) = body["pages"]
+        assert page["sheet_code"] == code and page["feed_mark"] is True
+        assert [c["cell"] for c in page["cells"] if c["state"] == "new"] == [5, 6, 7]
+        assert body["free_after"] == [41]
+        assert body["expected_cells"] == [{"sheet": code, "cells": [5, 6, 7], "id_cell": None}]
+        png = Image.open(io.BytesIO(base64.b64decode(page["png_base64"])))
+        assert (png.size, png.mode) == ((1240, 1754), "1")
+        assert page["geometry"]["cols"] == 4
+
+
+async def test_preview_leaves_the_sheet_untouched(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    pid, _ = await _printer()
+    code = await _sheet(used=2)
+
+    resp = await api_client_with_seed.post(
+        _url(pid),
+        json={
+            "items": [_item(i) for i in range(4)],
+            "placements": [{"sheet": code, "count": 2}, {"new_sheet": {"type": "acme-t1"}}],
+        },
+        headers=reader,
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert [p["new_code_hint"] for p in resp.json()["pages"]] == [None, "AT1-0002"]
+    async with _factory()() as s:
+        assert (await s.execute(select(func.count()).select_from(Sheet))).scalar() == 1
+        assert (await s.execute(select(func.count()).select_from(SheetCell))).scalar() == 2
+
+
+async def test_a_key_for_another_printer_is_refused(
+    api_client_with_seed: httpx.AsyncClient,
+) -> None:
+    pid, _ = await _printer()
+    other, _ = await _printer()
+    code = await _sheet()
+    key = {"X-Label-Hub-Key": await _insert_key(["read"], [other])}
+
+    resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=key)
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error_code"] == "printer_not_allowed"
+
+
+async def test_no_key_is_refused(api_client_with_seed: httpx.AsyncClient) -> None:
+    pid, _ = await _printer()
+
+    resp = await api_client_with_seed.post(_url(pid), json=_body("AT1-0001"))
+
+    assert resp.status_code in (401, 403)
+
+
+async def test_unknown_printer_is_404(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    resp = await api_client_with_seed.post(
+        _url(str(uuid4())), json=_body("AT1-0001"), headers=reader
+    )
+
+    assert resp.status_code == 404
+    assert _err(resp)["error_code"] == "printer_not_found"
+
+
+async def test_a_tape_printer_is_a_media_kind_mismatch(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    pid, _ = await _printer(backend="mock", model="PT-P750W")
+    code = await _sheet()
+
+    resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=reader)
+
+    assert resp.status_code == 409
+    assert _err(resp)["error_code"] == "media_kind_mismatch"
+
+
+async def test_a_disabled_printer_is_refused_at_the_route(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    pid, _ = await _printer(enabled=False)
+    code = await _sheet()
+
+    resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=reader)
+
+    assert resp.status_code == 409
+    assert _err(resp)["error_code"] == "printer_disabled"
+
+
+@pytest.mark.parametrize("tray", ["nope", "off"])
+async def test_an_unknown_or_disabled_tray_is_422(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str], tray: str
+) -> None:
+    pid, _ = await _printer()
+    code = await _sheet()
+
+    resp = await api_client_with_seed.post(_url(pid), json=_body(code, tray=tray), headers=reader)
+
+    assert resp.status_code == 422
+    detail = _err(resp)
+    assert detail["error_code"] == "tray_unknown" and detail["error_detail"] == {"trays": [tray]}
+
+
+async def test_501_items_are_refused_without_echoing_the_input(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    pid, _ = await _printer()
+    code = await _sheet()
+    body = {
+        "items": [
+            {"content_type": "text_one_line", "data": {"primary_id": SENTINEL}} for _ in range(501)
+        ],
+        "placements": [{"sheet": code}],
+    }
+
+    resp = await api_client_with_seed.post(_url(pid), json=body, headers=reader)
+
+    assert resp.status_code == 422
+    detail = _err(resp)
+    assert detail["error_code"] == "invalid_request"
+    assert detail["error_detail"] == {"errors": ["items"]}
+    assert SENTINEL not in resp.text
+
+
+async def test_a_130_character_purpose_is_refused_without_echoing_it(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    pid, _ = await _printer()
+    code = await _sheet()
+    body = _body(code)
+    body["items"][1]["purpose"] = SENTINEL + "x" * 130
+
+    resp = await api_client_with_seed.post(_url(pid), json=body, headers=reader)
+
+    assert resp.status_code == 422
+    assert _err(resp)["error_detail"] == {"errors": ["items.1.purpose"]}
+    assert SENTINEL not in resp.text
+
+
+async def test_unknown_fields_and_options_are_refused_by_path_only(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    pid, _ = await _printer()
+    code = await _sheet()
+    body = _body(code)
+    body["items"][0]["options"] = {"copies": 3, SENTINEL: 1}
+
+    resp = await api_client_with_seed.post(_url(pid), json=body, headers=reader)
+
+    assert resp.status_code == 422
+    assert _err(resp)["error_detail"] == {"errors": ["items.0.<unknown field>"]}
+    assert SENTINEL not in resp.text
+
+
+async def test_placement_needs_exactly_one_target(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    pid, _ = await _printer()
+    code = await _sheet()
+    body = _body(code)
+    body["placements"] = [{"sheet": code, "new_sheet": {"type": "acme-t1"}}]
+
+    resp = await api_client_with_seed.post(_url(pid), json=body, headers=reader)
+
+    assert resp.status_code == 422
+    assert _err(resp)["error_code"] == "invalid_request"
+
+
+async def test_lookup_failure_names_the_item(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    pid, _ = await _printer()
+    code = await _sheet()
+    body = _body(code, 2)
+    body["items"].append(
+        {"content_type": "qr_two_lines", "lookup": {"app": "no-such-app", "identifier": "7"}}
+    )
+
+    resp = await api_client_with_seed.post(_url(pid), json=body, headers=reader)
+
+    assert resp.status_code == 422
+    detail = _err(resp)
+    assert detail["error_code"] == "integration_unknown_app"
+    assert detail["error_detail"] == {"item_index": 2}
+
+
+async def test_the_route_passes_the_hubs_language_setting(
+    api_client_with_seed: httpx.AsyncClient,
+    reader: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.sheets import print_service
+
+    await api_client_with_seed.get("/healthz")  # the lifespan starts on the first request
+    store = api_client_with_seed._transport.app._app.state.settings_store  # type: ignore[attr-defined]
+    original_get = store.get
+    monkeypatch.setattr(
+        store, "get", lambda key: "de" if key == "general.language" else original_get(key)
+    )
+    seen: list[str | None] = []
+    original = print_service.preview
+
+    async def spy(*args: Any, **kw: Any) -> Any:
+        seen.append(kw["language"])
+        return await original(*args, **kw)
+
+    monkeypatch.setattr(print_service, "preview", spy)
+    pid, _ = await _printer()
+    code = await _sheet()
+
+    resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=reader)
+
+    assert resp.status_code == 200, resp.text
+    assert seen == ["de"]
+
+
+async def test_openapi_documents_the_route_and_its_error_envelope(
+    api_client_with_seed: httpx.AsyncClient,
+) -> None:
+    schema = (await api_client_with_seed.get("/openapi.json")).json()
+
+    op = schema["paths"]["/api/print/{printer_key}/sheet/preview"]["post"]
+    assert op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/SheetPreview"
+    )
+    assert op["responses"]["422"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/SheetApiErrorResponse"
+    )
+    assert op["summary"] and op["description"]
+    # the tape batch route keeps FastAPI's own validation error
+    batch = schema["paths"]["/api/print/{printer_key}/batch"]["post"]
+    assert not batch["responses"]["422"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/SheetApiErrorResponse"
+    )

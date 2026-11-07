@@ -19,6 +19,7 @@ References:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -62,6 +63,16 @@ def register_error_handlers(app: FastAPI) -> None:
 
 
 SHEET_PREFIXES = ("/api/sheet-types", "/api/sheets", "/api/sheet-cells")
+_SHEET_PRINT_PATH = re.compile(r"^/api/print/[^/]+/sheet(/preview)?$")
+"""Sheet print and its preview (pre-flight C19). Their bodies carry label text and purposes, so
+a validation error must not repeat them. The tape routes under ``/api/print`` are not matched."""
+
+
+def is_sheet_path(path: str) -> bool:
+    """Whether the sheet error envelope (field paths, no input) applies to ``path``."""
+    return path.startswith(SHEET_PREFIXES) or _SHEET_PRINT_PATH.match(path) is not None
+
+
 ADMIN_PRINTERS_PREFIX = "/api/v1/admin/printers"
 """Admin printer payloads carry IPP URIs: their 422 keeps FastAPI's shape without the input."""
 
@@ -105,7 +116,7 @@ async def _validation_handler(request: Request, exc: Exception) -> JSONResponse:
             for err in exc.errors()
         ]
         return JSONResponse(status_code=422, content={"detail": errors})
-    if not request.url.path.startswith(SHEET_PREFIXES):
+    if not is_sheet_path(request.url.path):
         return await request_validation_exception_handler(request, exc)
     paths: list[str] = []
     for err in exc.errors():

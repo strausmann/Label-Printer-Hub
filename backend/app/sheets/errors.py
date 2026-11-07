@@ -343,3 +343,47 @@ class CalibrationTypeUnsuitableError(SheetApiError):
 
     def __init__(self, cols: int, rows: int) -> None:
         super().__init__(detail={"cols": cols, "rows": rows})
+
+
+# ---------------------------------------------------------------------------- sheet printing
+
+
+class SheetPrinterDisabledError(SheetApiError):
+    """The printer is switched off; sheet prints are refused at the route (pre-flight C18)."""
+
+    status = 409
+    error_code = "printer_disabled"
+    message = "This printer is disabled."
+
+
+class ItemLookupFailedError(SheetApiError):
+    """An item's integration lookup failed. It keeps the status and the code of the error the
+    lookup raised (pre-flight C10) and names the item; the message is fixed text, because the
+    lookup's own text can carry URLs and upstream detail."""
+
+    def __init__(self, *, status: int, code: str, message: str, item_index: int) -> None:
+        super().__init__(message, detail={"item_index": item_index})
+        self.status = status
+        self.error_code = code
+
+
+class ItemContentMismatchError(SheetApiError):
+    """An item lacks what its (mapped) content type needs; nothing is reserved (spec 12.5)."""
+
+    status = 422
+    error_code = "content_type_data_mismatch"
+    message = "An item lacks the data its content type needs."
+
+    def __init__(self, item_index: int, missing_fields: tuple[str, ...]) -> None:
+        super().__init__(detail={"item_index": item_index, "missing_fields": list(missing_fields)})
+
+
+class PreviewTooLargeError(SheetApiError):
+    """The plan has more pages than a preview renders (a load bound, spec 18)."""
+
+    status = 422
+    error_code = "preview_too_large"
+    message = "The plan has too many pages for a preview."
+
+    def __init__(self, pages: int, maximum: int) -> None:
+        super().__init__(detail={"pages": pages, "max": maximum})
