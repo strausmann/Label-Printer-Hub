@@ -1,4 +1,4 @@
-"""Printing onto sheets: item resolution and the read-only preview (spec 12.6, 15).
+"""Printing onto sheets: item resolution, the read-only preview and the print (spec 12.6, 15).
 
 ``resolve_items`` turns each requested item into label data, by an integration lookup or from
 the raw data of the request. It runs before anything is written and outside any lock.
@@ -8,25 +8,36 @@ takes the write lock and never writes: a sheet that does not exist yet is a view
 ``code_hint``, and the counter is only read. The result is a plan plus a 150 dpi PNG of the new
 content per page. Calibration is not applied to the picture; the tray's deviation only decides
 the margin band, as it does for the job (OC-50).
+
+``print_sheets`` is the print: it resolves the items, checks every one against the cell it would
+get (nothing is reserved for an item the cell cannot show), takes the tray's calibration once,
+reserves the cells in one transaction (``reservation.reserve``), builds one ``sheet_page``
+payload per planned page and submits the page jobs to the queue. Whatever fails after the
+reservation releases the reservations of the pages that were not submitted; the outcome handler
+settles the rest (D15).
 """
 
 from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from typing import Any, Final
+from dataclasses import asdict, dataclass
+from typing import Any, Final, Protocol
+from uuid import UUID
 
 from PIL import Image, ImageDraw
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.calibration import service as calibration_service
 from app.config import get_settings
+from app.models.print_batch import PrintBatch
 from app.models.printer import Printer
 from app.models.printer_tray import PrinterTray
 from app.models.sheet import SheetType, SheetTypeVersion
 from app.printer_backends.exceptions import ContentTypeDataMismatchError
+from app.repositories import print_batches as batches_repo
 from app.repositories import sheet_types as types_repo
 from app.repositories import sheets as repo
 from app.schemas.content_type import ContentType
@@ -38,20 +49,23 @@ from app.schemas.sheet_print import (
     PlacementInModel,
     PreviewCell,
     PreviewPage,
+    PrintedPage,
     ReprintHint,
     SheetItem,
     SheetPreview,
     SheetPrintRequest,
+    SheetPrintResponse,
 )
 from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
 from app.services.lookup_service import AppLookupService, LookupFailedError, UnknownAppError
-from app.services.page_jobs import snapshot_to_deviation
+from app.services.page_jobs import PagePayload, snapshot_to_deviation
 from app.sheets import sheet_service as ss
 from app.sheets.cell_render import (
     PREVIEW_QR_MASK,
     BoxHmm,
     CellImage,
     CellRenderer,
+    _check_required,
     content_box,
     load_cell_font,
     map_content_type,
@@ -63,6 +77,7 @@ from app.sheets.errors import (
     ItemLookupFailedError,
     MediaKindMismatchError,
     PreviewTooLargeError,
+    PrinterUnavailableError,
     SheetTypeArchivedError,
     SheetTypeNotFoundError,
     SheetTypeVersionNotFoundError,
@@ -71,18 +86,33 @@ from app.sheets.exchange import geometry_to_doc
 from app.sheets.geometry import Geometry, cell_count
 from app.sheets.planner import (
     MARGIN_TEXT_GAP_HMM,
+    FeedMarkPlacement,
     MarginContext,
+    MarginPlacement,
     PagePlan,
     PlacementIn,
     SheetView,
     plan,
 )
 from app.sheets.printer_facts import PrinterFacts, load_printer_facts
-from app.sheets.reservation import ID_CELL_PURPOSE, ItemMeta, expected_of, load_sheet_view
+from app.sheets.reservation import (
+    ID_CELL_PURPOSE,
+    ExpectedPage,
+    ItemMeta,
+    NewSheetIn,
+    PlacementRequest,
+    ReservedPage,
+    expected_of,
+    load_sheet_view,
+    release,
+    reserve,
+)
 from app.sheets.sheet_page import (
     PREVIEW_DPI,
     FeedMarkPayload,
     MarginIdPayload,
+    SheetCellPayload,
+    SheetPageDetail,
     feed_mark_payload,
     margin_id_payload,
     render_preview_png,
@@ -98,10 +128,14 @@ __all__ = [
     "margin_id_text",
     "page_margin_id_payload",
     "preview",
+    "print_sheets",
+    "reserved_margin_id_payload",
     "resolve_items",
     "scan_payload_builder",
     "sheet_type_label",
 ]
+
+logger = logging.getLogger(__name__)
 
 LOOKUP_CONCURRENCY: Final = 8
 MAX_QR_PAYLOAD: Final = QR_PAYLOAD_MAX  # request-level cap on a cell's QR payload
@@ -518,28 +552,65 @@ async def draw_page_bounded(*args: Any) -> Any:
         return await asyncio.to_thread(_draw_page, *args)
 
 
-def page_margin_id_payload(
-    page: PagePlan, type_label: str, scan: Callable[[str], str]
+def _margin_payload(
+    *,
+    code: str,
+    margin_id: bool,
+    placement: MarginPlacement | None,
+    feed_mark: FeedMarkPlacement | None,
+    type_label: str,
+    scan: Callable[[str], str],
 ) -> MarginIdPayload | None:
-    """The margin ID of a planned page, as the preview draws it and as a job must store it.
+    """The one rule for a margin ID (OC-50), whoever asks.
 
-    One rule for both (OC-50): the text is ``margin_id_text``, the QR encodes ``scan(code)`` of
-    the sheet's code or, for a sheet not created yet, its hint, and when the feed-direction mark
-    shares the top band the text ends ``MARGIN_TEXT_GAP_HMM`` before it. ``None`` when the page
-    carries no margin ID.
+    The text is ``margin_id_text``, the QR encodes ``scan(code)``, and when the feed-direction
+    mark shares the top band the text ends ``MARGIN_TEXT_GAP_HMM`` before it. ``None`` when the
+    page carries no margin ID.
     """
-    placement = page.margin_placement
-    if not page.margin_id or placement is None:
+    if not margin_id or placement is None:
         return None
-    code = page.sheet.code or page.sheet.code_hint
-    assert code is not None  # a view without a code carries its hint
     text_end = (
-        page.feed_mark.x_hmm - MARGIN_TEXT_GAP_HMM
-        if page.feed_mark is not None and placement.band == "top"
+        feed_mark.x_hmm - MARGIN_TEXT_GAP_HMM
+        if feed_mark is not None and placement.band == "top"
         else None
     )
     return margin_id_payload(
         margin_id_text(code, type_label), scan(code), placement, text_end_hmm=text_end
+    )
+
+
+def page_margin_id_payload(
+    page: PagePlan, type_label: str, scan: Callable[[str], str]
+) -> MarginIdPayload | None:
+    """The margin ID of a planned page, as the preview draws it.
+
+    A sheet not created yet is named by its hint. The job builds the same payload from the
+    reservation with ``reserved_margin_id_payload``; both go through one rule.
+    """
+    code = page.sheet.code or page.sheet.code_hint
+    assert code is not None  # a view without a code carries its hint
+    return _margin_payload(
+        code=code,
+        margin_id=page.margin_id,
+        placement=page.margin_placement,
+        feed_mark=page.feed_mark,
+        type_label=type_label,
+        scan=scan,
+    )
+
+
+def reserved_margin_id_payload(
+    page: ReservedPage, type_label: str, scan: Callable[[str], str]
+) -> MarginIdPayload | None:
+    """The margin ID a job stores: the same rule as ``page_margin_id_payload``, applied to the
+    reservation's decision (the sheet's code is known by now)."""
+    return _margin_payload(
+        code=page.sheet_code,
+        margin_id=page.margin_id,
+        placement=page.margin_placement,
+        feed_mark=page.feed_mark,
+        type_label=type_label,
+        scan=scan,
     )
 
 
@@ -701,3 +772,310 @@ async def preview(
         ],
         reprint_hints=await _reprint_hints(session, items),
     )
+
+
+# ---------------------------------------------------------------------------- print
+
+
+class PageQueue(Protocol):
+    """What the print needs of the print queue."""
+
+    async def submit_page_job(
+        self,
+        printer_id: UUID,
+        payload: PagePayload,
+        *,
+        api_key_id: UUID | None,
+        source_ip: str | None,
+        job_id: UUID | None = None,
+    ) -> UUID: ...
+
+    def has_job(self, job_id: str | UUID) -> bool: ...
+
+
+def check_item_fits(
+    item: ResolvedItem,
+    index: int,
+    *,
+    allow_qr: bool,
+    geometry: Geometry,
+    cell: int,
+    render_dpi: int,
+) -> None:
+    """Whether ``item`` can be drawn in ``cell`` of a sheet of this geometry (spec 12.5, C16).
+
+    Maps the content type for the sheet type, checks the required fields exactly as the renderer
+    does, and for a QR content type asks whether a symbol fits the cell's content box at the
+    job's resolution. A failure names the item; the renderer would raise the same later, after
+    the cells were reserved. The ID cell is not checked: the hub makes its label, and its QR
+    is a short URL.
+    """
+    content_type, _ = map_content_type(item.content_type, allow_qr)
+    try:
+        _check_required(content_type, item.label)
+    except ContentTypeDataMismatchError as exc:
+        raise ItemContentMismatchError(index, exc.missing_fields) from None
+    if content_type.value.startswith("qr_"):
+        box = content_box(geometry, cell)
+        if not _qr_fits_at(item.label.qr_payload or "", box.w / 100, box.h / 100, render_dpi):
+            raise ItemContentMismatchError(index, ("qr_payload",))
+
+
+def _check_plan_items(
+    plan_pages: Sequence[PagePlan], items: Sequence[ResolvedItem], dpi: int
+) -> None:
+    """``check_item_fits`` for every item at the cell the plan gives it (CPU: run in a thread)."""
+    index = 0
+    for page in plan_pages:
+        for cell in page.item_cells:
+            check_item_fits(
+                items[index],
+                index,
+                allow_qr=page.sheet.allow_qr,
+                geometry=page.sheet.geometry,
+                cell=cell,
+                render_dpi=dpi,
+            )
+            index += 1
+
+
+def _placement_request(p: PlacementInModel) -> PlacementRequest:
+    new = p.new_sheet
+    return PlacementRequest(
+        sheet_code=p.sheet,
+        new_sheet=None
+        if new is None
+        else NewSheetIn(type_key=new.type, version=new.version, id_placement=new.id_placement),
+        cells=p.cells if isinstance(p.cells, str) else list(p.cells),
+        skip=list(p.skip),
+        count=p.count,
+    )
+
+
+@dataclass(frozen=True)
+class _TypeInfo:
+    key: str
+    label: str
+    allow_qr: bool
+    geometry: Geometry
+
+
+async def _type_info(
+    session: AsyncSession, version_id: UUID, cache: dict[UUID, _TypeInfo]
+) -> _TypeInfo:
+    """Type key, label and the **pinned** version's geometry (D14: never the current one)."""
+    found = cache.get(version_id)
+    if found is not None:
+        return found
+    version = await session.get(SheetTypeVersion, version_id)
+    sheet_type = None if version is None else await session.get(SheetType, version.type_id)
+    if version is None or sheet_type is None:  # foreign keys make this unreachable
+        raise SheetTypeNotFoundError()
+    info = _TypeInfo(
+        sheet_type.key,
+        sheet_type_label(sheet_type.vendor, sheet_type.product_codes, sheet_type.key),
+        sheet_type.allow_qr,
+        version_geometry(version),
+    )
+    cache[version_id] = info
+    return info
+
+
+def _cell_payload(
+    item: ResolvedItem, index: int, cell: int, info: _TypeInfo, render_dpi: int
+) -> SheetCellPayload:
+    check_item_fits(
+        item,
+        index,
+        allow_qr=info.allow_qr,
+        geometry=info.geometry,
+        cell=cell,
+        render_dpi=render_dpi,
+    )
+    content_type, mapped = map_content_type(item.content_type, info.allow_qr)
+    return SheetCellPayload(
+        cell=cell,
+        content_type=content_type,
+        label_data=item.label.model_dump(mode="json"),
+        mapped=mapped,
+    )
+
+
+def _page_payload(
+    page: ReservedPage,
+    items: Sequence[ResolvedItem],
+    info: _TypeInfo,
+    *,
+    tray: str,
+    render_dpi: int,
+    calibration: Any,
+    scan: Callable[[str], str],
+) -> PagePayload:
+    """The ``sheet_page`` payload of one reserved page: everything the runner draws from."""
+    cells: list[SheetCellPayload] = []
+    id_cell: SheetCellPayload | None = None
+    for a in page.assignments:
+        if a.item_index is None:
+            id_type, mapped = map_content_type(ContentType.QR_TWO_LINES, info.allow_qr)
+            label = id_cell_label(page.sheet_code, info.label, scan(page.sheet_code))
+            id_cell = SheetCellPayload(
+                cell=a.cell,
+                content_type=id_type,
+                label_data=label.model_dump(mode="json"),
+                mapped=mapped,
+            )
+        else:
+            cells.append(_cell_payload(items[a.item_index], a.item_index, a.cell, info, render_dpi))
+    mark = feed_mark_payload(page.feed_mark) if page.feed_mark is not None else None
+    detail = SheetPageDetail(
+        sheet_id=page.sheet_id,
+        sheet_code=page.sheet_code,
+        type_key=info.key,
+        type_version_id=page.type_version_id,
+        geometry=asdict(info.geometry),
+        allow_qr=info.allow_qr,
+        cells=cells,
+        id_cell=id_cell,
+        margin_id=reserved_margin_id_payload(page, info.label, scan),
+        feed_mark=mark,
+        job_summary={"sheet_code": page.sheet_code, "cell_count": len(cells)},
+    )
+    return PagePayload(
+        kind="sheet_page",
+        media=info.geometry.page_size,
+        tray=tray,
+        render_dpi=render_dpi,
+        job_name=f"Sheet {page.sheet_code} · {len(cells)} labels",
+        calibration=calibration,
+        detail=detail.model_dump(mode="json"),
+    )
+
+
+async def _release_all(
+    session_factory: async_sessionmaker[AsyncSession], job_ids: Sequence[UUID], bus: Any
+) -> None:
+    """Free the reservations of jobs that never reached the queue. One session each, so a
+    failed one cannot hold up the next; a release that fails is logged (the startup sweep
+    repairs what is left)."""
+    for job_id in job_ids:
+        try:
+            async with session_factory() as session:
+                await release(session, job_id, bus=bus)
+        except Exception:
+            logger.exception("could not release the reservation of job %s", job_id)
+
+
+def _printed_page(page: ReservedPage) -> PrintedPage:
+    return PrintedPage(
+        job_id=page.job_id,
+        sheet_code=page.sheet_code,
+        cells=[a.cell for a in page.assignments if a.item_index is not None],
+        id_cell=page.id_cell,
+        margin_id=page.margin_id,
+        margin_band=page.margin_placement.band if page.margin_placement else None,
+        id_not_printed=page.id_not_printed,
+        feed_mark=page.feed_mark is not None,
+    )
+
+
+async def print_sheets(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    printer: Printer,
+    request: SheetPrintRequest,
+    lookup: AppLookupService,
+    queue: PageQueue,
+    actor: str,
+    api_key_id: UUID | None,
+    source_ip: str | None,
+    language: str | None,
+    bus: Any = None,
+) -> SheetPrintResponse:
+    """Print the items onto sheets: one page job per planned page, one batch for all of them.
+
+    Order: printer kind, tray and the calibration snapshot (once, before anything is reserved),
+    a dry plan for the cheap refusals, the integration lookups, the per-item check against the
+    cell each item would get, then ``reserve`` (which compares ``expected_cells``), then per page
+    payload and ``submit_page_job``. A failure after the reservation frees the reservations of
+    the page that failed and of every later one; pages already submitted stay, and their
+    outcome handler settles them. ``language`` is the hub's ``general.language``.
+    """
+    if printer.backend != "ipp":
+        raise MediaKindMismatchError()
+    scan = scan_payload_builder(str(get_settings().public_url))
+    async with session_factory() as session:
+        tray = await calibration_service.resolve_tray(session, printer.id, request.tray)
+        snapshot = await calibration_service.snapshot(session, printer.id, tray)
+        facts = await load_printer_facts(session, printer.id)
+        margin = MarginContext(
+            deviation=snapshot_to_deviation(snapshot),
+            scan_payload=scan,
+            render_dpi=facts.render_dpi,
+            language=language,
+        )
+        # A plan on views read without the lock: it tells which cell each item would get, so a
+        # sheet that does not exist or does not fit is refused before any lookup.
+        views, _, _ = await _placements(session, request)
+        dry = plan(views, len(request.items), hw_margins_hmm=facts.margins_hmm, margin=margin)
+        items = await resolve_items(request.items, lookup)
+        await asyncio.to_thread(_check_plan_items, dry.pages, items, facts.render_dpi)
+
+        expected = (
+            None
+            if request.expected_cells is None
+            else [ExpectedPage(e.sheet, list(e.cells), e.id_cell) for e in request.expected_cells]
+        )
+        reserved = await reserve(
+            session,
+            placements=[_placement_request(p) for p in request.placements],
+            items=[i.meta for i in items],
+            expected=expected,
+            hw_margins_hmm=facts.margins_hmm,
+            margin=margin,
+            required_type_key=None,
+            actor=actor,
+            bus=bus,
+        )
+
+        printed: list[PrintedPage] = []
+        types: dict[UUID, _TypeInfo] = {}
+        try:
+            for page in reserved:
+                info = await _type_info(session, page.type_version_id, types)
+                payload = _page_payload(
+                    page,
+                    items,
+                    info,
+                    tray=tray,
+                    render_dpi=facts.render_dpi,
+                    calibration=snapshot,
+                    scan=scan,
+                )
+                try:
+                    await queue.submit_page_job(
+                        printer.id,
+                        payload,
+                        api_key_id=api_key_id,
+                        source_ip=source_ip,
+                        job_id=page.job_id,
+                    )
+                except KeyError:
+                    raise PrinterUnavailableError() from None
+                printed.append(_printed_page(page))
+        except BaseException:
+            unsubmitted = reserved[len(printed) :]
+            if unsubmitted and queue.has_job(unsubmitted[0].job_id):
+                # An interrupted call can leave the failing page saved and queued: its cells
+                # belong to that job now.
+                unsubmitted = unsubmitted[1:]
+            await asyncio.shield(
+                _release_all(session_factory, [p.job_id for p in unsubmitted], bus)
+            )
+            raise
+        batch = await batches_repo.create(
+            session,
+            PrintBatch(
+                printer_id=printer.id, job_ids=[str(p.job_id) for p in printed], created_by=actor
+            ),
+        )
+    return SheetPrintResponse(batch_id=batch.id, pages=printed)

@@ -913,11 +913,16 @@ async def test_resolve_items_cleans_an_explicit_purpose() -> None:
 
 
 async def test_resolve_items_cuts_a_long_default_purpose_instead_of_refusing() -> None:
-    items = [raw(0, title="T" * 10_000)]
+    # A raw title is capped at 512 by the request schema; a lookup's title is not (OC-43, C13).
+    class LongTitle(FakeLookup):
+        async def lookup(self, source_app: str, identifier: str) -> LabelData:
+            return LabelData(source_app=source_app, title="T" * 10_000, primary_id="P")
 
-    out = await resolve_items(items, FakeLookup())  # type: ignore[arg-type]
+    items = [raw(0, title="T" * 512), grocy(1)]
 
-    assert out[0].meta.purpose == "T" * 120
+    out = await resolve_items(items, LongTitle())  # type: ignore[arg-type]
+
+    assert [o.meta.purpose for o in out] == ["T" * 120, "T" * 120]
 
 
 async def test_resolve_items_runs_at_most_eight_lookups_at_once() -> None:

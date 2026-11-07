@@ -1,23 +1,27 @@
-"""Print onto sheets (spec 12.6, 15): the read-only preview.
+"""Print onto sheets (spec 12.6, 15): the read-only preview and the print.
 
 ``POST /api/print/{printer_key}/sheet/preview`` needs ``read`` scope and access to the printer.
-It plans and draws; it writes nothing and takes no lock. Domain errors answer in the sheet API's
-error envelope, and validation errors name field paths only (pre-flight C19).
+It plans and draws; it writes nothing and takes no lock.
+
+``POST /api/print/{printer_key}/sheet`` needs ``print`` scope and access to the printer. It
+reserves the cells and queues one page job per planned page (202). Domain errors answer in the
+sheet API's error envelope, and validation errors name field paths only (pre-flight C19).
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Request
+from fastapi import APIRouter, Depends, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.routes.sheet_common import mapped
+from app.api.routes.sheet_common import actor, mapped
 from app.auth.dependencies import AuthContext, check_printer_access
-from app.auth.scope_deps import require_read
+from app.auth.scope_deps import require_print, require_read
+from app.db import engine as db_engine
 from app.db.session import get_session
 from app.repositories import printers as printers_repo
-from app.schemas.sheet_print import SheetPreview, SheetPrintRequest
+from app.schemas.sheet_print import SheetPreview, SheetPrintRequest, SheetPrintResponse
 from app.services.lookup_service import AppLookupService
 from app.sheets import print_service
 from app.sheets.cell_render import DEFAULT_CELL_RENDERER
@@ -27,6 +31,7 @@ router = APIRouter(prefix="/api", tags=["sheets"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]
+PrintDep = Annotated[AuthContext, Depends(require_print)]
 PrinterKey = Annotated[str, Path(max_length=100, description="Printer slug or UUID.")]
 
 # Stateless, like the lookup route's: one instance for the process.
@@ -104,4 +109,75 @@ async def preview_sheet_print(
             lookup=lookup,
             renderer=DEFAULT_CELL_RENDERER,
             language=None if language is None else str(language),
+        )
+
+
+_PRINT_ERRORS: dict[int | str, dict[str, Any]] = {
+    **_PREVIEW_ERRORS,
+    403: {
+        "description": (
+            "The key lacks the `print` scope, or may not use this printer (`printer_not_allowed`)."
+        )
+    },
+    409: {
+        "description": (
+            "Not a page printer (`media_kind_mismatch`), the printer is disabled "
+            "(`printer_disabled`) or unknown to the print queue (`printer-unavailable`), the "
+            "sheet is discarded or archived, the cells do not fit (`insufficient_cells`, "
+            "`cells_taken`), or the plan differs from `expected_cells` (`plan_changed`, with the "
+            "new plan)."
+        )
+    },
+    422: {
+        "description": (
+            "Invalid request (`invalid_request`, field paths only), an unknown or disabled tray "
+            "(`tray_unknown`), an item the cell cannot show (`content_type_data_mismatch`), or an "
+            "unknown integration (`integration_unknown_app`). Item errors carry `item_index`."
+        )
+    },
+}
+
+
+@router.post(
+    "/print/{printer_key}/sheet",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SheetPrintResponse,
+    summary="Print labels onto sheets",
+    description=(
+        "Reserves the cells for the items and queues one page job per planned page; the cells "
+        "turn `used` when a page has printed. Send the preview's `expected_cells` to be refused "
+        "(`plan_changed`) if the plan moved since. Nothing is reserved if an item fails: a "
+        "lookup, or a cell that cannot show the item (the error names `item_index`). A sheet "
+        "job has no copies. The response names the job of each page, where its sheet ID and "
+        "feed-direction mark are printed, and one batch id for all of them."
+    ),
+    responses=_PRINT_ERRORS,
+)
+async def print_sheet(
+    printer_key: PrinterKey,
+    body: SheetPrintRequest,
+    http: Request,
+    session: SessionDep,
+    auth: PrintDep,
+    lookup: LookupDep,
+) -> SheetPrintResponse:
+    printer = await printers_repo.resolve_by_slug_or_uuid(session, printer_key)
+    if printer is None:
+        raise PrinterNotFoundError().to_http()
+    check_printer_access(auth, printer.id)
+    if not printer.enabled:
+        raise SheetPrinterDisabledError().to_http()
+    language = http.app.state.settings_store.get("general.language")
+    with mapped():
+        return await print_service.print_sheets(
+            db_engine.async_session,
+            printer=printer,
+            request=body,
+            lookup=lookup,
+            queue=http.app.state.print_queue,
+            actor=actor(auth),
+            api_key_id=auth.api_key_id,
+            source_ip=auth.ip,
+            language=None if language is None else str(language),
+            bus=getattr(http.app.state, "event_bus", None),
         )

@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated, Any, Literal, Self
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.content_type import ContentType
+from app.schemas.label_data_item import LabelDataItem
 from app.schemas.print_request import PrintLookupRequest, RawLabelData
 from app.sheets.exchange import GeometryMm
 from app.sheets.naming import KEY_PATTERN
@@ -25,10 +27,12 @@ __all__ = [
     "PlacementInModel",
     "PreviewCell",
     "PreviewPage",
+    "PrintedPage",
     "ReprintHint",
     "SheetItem",
     "SheetPreview",
     "SheetPrintRequest",
+    "SheetPrintResponse",
     "SheetRawLabelData",
 ]
 
@@ -38,6 +42,9 @@ MAX_CELLS = 400
 TEXT_MAX = 120
 
 QR_PAYLOAD_MAX = 512  # keeps a preview's cost bounded; a scan URL is far shorter
+RAW_TEXT_MAX = 512  # one raw text field (title, id, a secondary line, a listing row)
+RAW_SECONDARY_MAX = 10  # secondary lines per label
+RAW_LISTING_MAX = 100  # listing rows per label
 
 _Cell = Annotated[int, Field(ge=1, le=MAX_CELLS)]
 _SOURCE_PATTERN = r"^[a-z][a-z0-9_-]{0,31}$"
@@ -48,10 +55,30 @@ class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class SheetRawLabelData(RawLabelData):
-    """Raw label data of a sheet item: the same fields, with a bounded QR payload."""
+_RawText = Annotated[str, Field(max_length=RAW_TEXT_MAX)]
 
+
+class SheetRawListingItem(LabelDataItem):
+    """One listing row of a raw item, with bounded text."""
+
+    item: _RawText
     qr_payload: str | None = Field(default=None, max_length=QR_PAYLOAD_MAX)
+
+
+class SheetRawLabelData(RawLabelData):
+    """Raw label data of a sheet item: the same fields, every free text bounded.
+
+    A page job stores its labels in the job row, and a preview renders them, so the sizes are
+    capped at the request: ``qr_payload`` at 512 characters, every other text at 512, at most
+    10 ``secondary`` lines and 100 ``items`` (listing rows). A cell shows far less than that;
+    the renderer shortens what does not fit.
+    """
+
+    title: _RawText | None = None
+    primary_id: _RawText | None = None
+    qr_payload: str | None = Field(default=None, max_length=QR_PAYLOAD_MAX)
+    secondary: tuple[_RawText, ...] = Field(default=(), max_length=RAW_SECONDARY_MAX)
+    items: tuple[SheetRawListingItem, ...] = Field(default=(), max_length=RAW_LISTING_MAX)
 
 
 class SheetItem(_Body):
@@ -178,3 +205,25 @@ class SheetPreview(BaseModel):
         description="Send this back as `expected_cells` when printing."
     )
     reprint_hints: list[ReprintHint]
+
+
+class PrintedPage(BaseModel):
+    """One page job of a sheet print (the counterpart of ``PreviewPage``)."""
+
+    job_id: UUID
+    sheet_code: str
+    cells: list[int] = Field(description="The cells the request's items take, in item order.")
+    id_cell: int | None = Field(description="The cell of a `cell` sheet's ID label, if any.")
+    margin_id: bool = Field(description="The sheet ID is printed in a margin band on this page.")
+    margin_band: Literal["top", "bottom", "right", "left"] | None = Field(
+        description="The band stored for this job; it can differ from the preview's."
+    )
+    id_not_printed: bool = Field(description="No margin band is deep enough: no ID on this page.")
+    feed_mark: bool = Field(description="The feed-direction mark is printed on this page.")
+
+
+class SheetPrintResponse(BaseModel):
+    """The accepted print: one batch of page jobs, one per planned page, in plan order."""
+
+    batch_id: UUID
+    pages: list[PrintedPage]

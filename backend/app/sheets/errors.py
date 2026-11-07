@@ -387,3 +387,12 @@ class PreviewTooLargeError(SheetApiError):
 
     def __init__(self, pages: int, maximum: int) -> None:
         super().__init__(detail={"pages": pages, "max": maximum})
+
+
+class PrinterUnavailableError(SheetApiError):
+    """The print queue does not know the printer (for example a page printer added after the
+    start); nothing was printed and the reserved cells are free again (pre-flight C24)."""
+
+    status = 409
+    error_code = "printer-unavailable"
+    message = "Printer is not available to the print queue."
