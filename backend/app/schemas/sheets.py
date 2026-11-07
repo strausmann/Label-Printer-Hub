@@ -181,7 +181,7 @@ class SheetCreate(_Body):
     version: int | None = Field(
         default=None, ge=1, le=1_000_000, description="Left out: the current version."
     )
-    id_placement: Literal["margin", "manual"]
+    id_placement: Literal["margin", "manual"] = "margin"
     used_cells: list[MarkedCellIn] = Field(default=[], max_length=MAX_CELLS)
     note: Annotated[str, Field(max_length=500)] | None = None
 

@@ -260,7 +260,7 @@ async def create_sheet(
     *,
     type_key: str,
     version: int | None,
-    id_placement: Literal["margin", "manual"],
+    id_placement: Literal["margin", "manual"] = "margin",
     used_cells: list[MarkedCell],
     note: str | None,
     actor: str,

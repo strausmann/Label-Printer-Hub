@@ -16,7 +16,7 @@ from app.services.page_jobs import CalibrationSnapshot, PagePayload, snapshot_to
 from app.sheets import cell_render
 from app.sheets.cell_render import DEFAULT_CELL_RENDERER, CellImage, content_box
 from app.sheets.geometry import Geometry
-from app.sheets.planner import margin_qr_allowed
+from app.sheets.planner import BAND_CORNER, MarginBand, MarginPlacement, margin_qr_allowed
 from app.sheets.sheet_page import (
     MarginIdPayload,
     SheetCellPayload,
@@ -32,6 +32,12 @@ from tests.helpers import pdf_inspect as pi
 L4736 = Geometry("A4", 21000, 29700, 4570, 2120, 4, 12, 4820, 2120, 2130, 985, None, "rectangle")
 V1_OTHER = Geometry("A4", 21000, 29700, 4570, 2120, 4, 12, 4900, 2200, 2000, 900, None, "rectangle")
 L4731 = Geometry("A4", 21000, 29700, 2540, 1000, 7, 27, 2790, 1000, 1350, 860, 150, "rectangle")
+# A4, 4 x 13 labels of 40 x 20 mm, 14 rows: the right margin is 20 mm wide.
+WIDE_RIGHT = Geometry(
+    "A4", 21000, 29700, 4000, 2000, 4, 14, 4600, 2050, 600, 600, None, "rectangle"
+)
+# A4, 3 x 14 labels of 40 x 20 mm: 39 mm left and right of the grid.
+SIDES = Geometry("A4", 21000, 29700, 4000, 2000, 3, 14, 4600, 2050, 600, 3900, None, "rectangle")
 SHEET_ID = uuid4()
 
 
@@ -432,11 +438,11 @@ def test_detail_rejects_bad_cell_numbers_and_ignores_unknown_keys() -> None:
 # ---------------------------------------------------------------- one decision, stored (T4-2)
 
 
-def _preview_has_qr(margin: MarginIdPayload) -> bool:
-    """A QR moves the text to its right and fills the square: the page differs from the same
+def _preview_has_qr(margin: MarginIdPayload, g: Geometry = L4736) -> bool:
+    """A QR moves the text next to it and fills the square: the page differs from the same
     margin ID without a payload."""
     text_only = margin.model_copy(update={"qr_payload": None, "qr_allowed": None})
-    return render_preview_png(L4736, [], margin) != render_preview_png(L4736, [], text_only)
+    return render_preview_png(g, [], margin) != render_preview_png(g, [], text_only)
 
 
 def test_preview_and_pdf_agree_for_eleven_mm_at_600_dpi() -> None:
@@ -445,18 +451,64 @@ def test_preview_and_pdf_agree_for_eleven_mm_at_600_dpi() -> None:
     assert _preview_has_qr(margin)  # and the preview shows one
 
 
+def _band_rect(g: Geometry, band: MarginBand, d: int) -> tuple[int, int, int, int]:
+    """(x, y, w, h) of the band's QR square or text strip, written out from the layout table."""
+    safety = 100
+    grid_right = g.margin_left + (g.cols - 1) * g.pitch_x + g.label_w
+    grid_bottom = g.margin_top + (g.rows - 1) * g.pitch_y + g.label_h
+    width = grid_right - g.margin_left
+    height = grid_bottom - g.margin_top
+    return {
+        "top": (g.margin_left, g.margin_top - safety - d, width, d),
+        "bottom": (g.margin_left, grid_bottom + safety, width, d),
+        "right": (grid_right + safety, g.margin_top, d, height),
+        "left": (g.margin_left - safety - d, g.margin_top, d, height),
+    }[band]
+
+
+def _band_pdf(g: Geometry, margin: MarginIdPayload, dpi: int) -> bytes:
+    p = _payload(_detail(g, cells=(), margin=margin)).model_copy(update={"render_dpi": dpi})
+    return render_sheet_page(p, compress=False)
+
+
+def _ink_box(png: bytes) -> tuple[int, int, int, int]:
+    inv = Image.eval(Image.open(io.BytesIO(png)).convert("L"), lambda v: 255 - v)
+    bbox = inv.getbbox()
+    assert bbox is not None
+    return bbox
+
+
+@pytest.mark.parametrize("band", ["top", "bottom", "right", "left"])
 @pytest.mark.parametrize("dpi", [150, 200, 300, 600])
 @pytest.mark.parametrize("usable", [800, 950, 1100, 1300, 1530])
 @pytest.mark.parametrize("payload", [_URL, _URL33])
-def test_preview_matches_job_on_margin_qr(payload: str, usable: int, dpi: int) -> None:
-    margin = margin_id_payload("L4736-0001", payload, usable, dpi)
-    assert margin.qr_allowed == margin_qr_allowed(usable, payload, dpi)
-    job = render_sheet_page(
-        _payload(_detail(cells=(), margin=margin)).model_copy(update={"render_dpi": dpi}),
-        compress=False,
+def test_preview_matches_job_on_margin_band_and_qr(
+    payload: str, usable: int, dpi: int, band: MarginBand
+) -> None:
+    g = L4736 if band in ("top", "bottom") else SIDES
+    placement = MarginPlacement(
+        band, BAND_CORNER[band], usable, margin_qr_allowed(usable, payload, dpi)
     )
-    assert (len(_image_cms(job)) == 1) == margin.qr_allowed
-    assert _preview_has_qr(margin) == margin.qr_allowed
+    margin = margin_id_payload("L4736-0001", payload, placement)
+    assert margin.band == band
+    assert margin.corner == BAND_CORNER[band]
+    assert margin.usable_hmm == usable
+    assert margin.qr_allowed == placement.qr
+
+    cms = _image_cms(_band_pdf(g, margin, dpi))
+    assert (len(cms) == 1) == placement.qr
+    x, y, w, h = _band_rect(g, band, usable)
+    k = PT_PER_MM / 100
+    if placement.qr:
+        assert cms[0] == pytest.approx(
+            (usable * k, 0, 0, usable * k, x * k, (g.page_h - y - usable) * k), abs=1e-3
+        )
+    assert _preview_has_qr(margin, g) == placement.qr
+
+    left, top, right, bottom = _ink_box(render_preview_png(g, [], margin))
+    s = 150 / 2540
+    assert left >= round(x * s) - 1 and right <= round((x + w) * s) + 1
+    assert top >= round(y * s) - 1 and bottom <= round((y + h) * s) + 1
 
 
 def test_flag_is_what_both_renderers_obey() -> None:
@@ -478,3 +530,92 @@ def test_payload_without_flag_falls_back_to_the_rule_at_render_dpi() -> None:
 def _margin_pdf_of(margin: MarginIdPayload, dpi: int) -> bytes:
     p = _payload(_detail(cells=(), margin=margin)).model_copy(update={"render_dpi": dpi})
     return render_sheet_page(p, compress=False)
+
+
+# ---------------------------------------------------------------- the four bands (Task 5b)
+
+
+def test_margin_id_payload_takes_planner_decision() -> None:
+    url = "https://h/sheet/L4736-0001"
+    off = margin_id_payload("X", url, MarginPlacement("bottom", "bottom_left", 1530, False))
+    assert off.qr_payload is None
+    assert off.qr_allowed is False
+    assert (off.band, off.corner, off.usable_hmm) == ("bottom", "bottom_left", 1530)
+    on = margin_id_payload("X", url, MarginPlacement("bottom", "bottom_left", 1530, True))
+    assert on.qr_payload == url
+    assert on.qr_allowed is True
+
+
+def _text_origin_mm(pdf: bytes) -> tuple[float, float]:
+    """The text origin as (x, y from the top of the page) in millimetres."""
+    x, y = pi.text_positions(pdf)[0]
+    return x / PT_PER_MM, L4736.page_h / 100 - y / PT_PER_MM
+
+
+def test_margin_id_bottom_band_geometry() -> None:
+    margin = MarginIdPayload(
+        text="L4736-0001", qr_payload=_URL, usable_hmm=1530, qr_allowed=True, band="bottom"
+    )
+    pdf = _band_pdf(L4736, margin, 300)
+    k = PT_PER_MM / 100
+    assert _image_cms(pdf) == [
+        pytest.approx((1530 * k, 0, 0, 1530 * k, 985 * k, 500 * k), abs=1e-3)
+    ]
+    x, y = _text_origin_mm(pdf)
+    assert x > (985 + 1530) / 100
+    assert 276.70 < y < 292.00
+
+
+def test_margin_id_right_band_rotated() -> None:
+    margin = MarginIdPayload(
+        text="L4736-0001",
+        qr_payload=_URL,
+        usable_hmm=2000,
+        qr_allowed=True,
+        band="right",
+        corner="top_right",
+    )
+    pdf = _band_pdf(WIDE_RIGHT, margin, 300)
+    k = PT_PER_MM / 100
+    assert _image_cms(pdf) == [
+        pytest.approx((2000 * k, 0, 0, 2000 * k, 18500 * k, (29700 - 600 - 2000) * k), abs=1e-3)
+    ]
+    (rotated,) = [m for m in pi.cm_matrices(pdf) if m[1] == -1]
+    assert rotated[:4] == (0, -1, 1, 0)
+    x_pt, y_pt = pi.text_positions(pdf)[0]
+    assert (rotated[4], rotated[5]) == pytest.approx((x_pt, y_pt), abs=1e-6)
+    assert 185.0 < x_pt / PT_PER_MM < 205.0
+    assert 297.0 - y_pt / PT_PER_MM == pytest.approx(28.0, abs=0.01)
+
+
+def test_margin_id_left_band_text_only() -> None:
+    margin = MarginIdPayload(text="L4736-0001", usable_hmm=585, band="left", corner="top_left")
+    pdf = _band_pdf(L4736, margin, 300)
+    assert pi.texts(pdf) == ["L4736-0001"]
+    assert len([m for m in pi.cm_matrices(pdf) if m[1] == -1]) == 1
+    x, y = _text_origin_mm(pdf)
+    assert 3.0 < x < 8.85
+    assert y == pytest.approx(21.3, abs=0.01)
+
+
+def test_stored_band_wins() -> None:
+    # Top and bottom are equally deep here; the renderer reads no hardware margins and makes
+    # no choice of its own, it draws where the payload says.
+    margin = margin_id_payload(
+        "L4736-0001", _URL, MarginPlacement("bottom", "bottom_left", 1530, True)
+    )
+    (cm,) = _image_cms(_band_pdf(L4736, margin, 600))
+    k = PT_PER_MM / 100
+    assert cm == pytest.approx((1530 * k, 0, 0, 1530 * k, 985 * k, 500 * k), abs=1e-3)
+
+
+def test_preview_draws_stored_band() -> None:
+    s = 150 / 2540
+    bottom = margin_id_payload(
+        "L4736-0001", _URL, MarginPlacement("bottom", "bottom_left", 1530, True)
+    )
+    _, top, _, low = _ink_box(render_preview_png(L4736, [], bottom))
+    assert top >= round(27670 * s) - 1 and low <= round(29200 * s) + 1
+    right = margin_id_payload("L4736-0001", _URL, MarginPlacement("right", "top_right", 2000, True))
+    left, _, edge, _ = _ink_box(render_preview_png(WIDE_RIGHT, [], right))
+    assert left >= round(18500 * s) - 1 and edge <= round(20500 * s) + 1

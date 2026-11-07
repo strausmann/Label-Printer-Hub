@@ -1,7 +1,8 @@
 """Pure placement planner: which items go into which cells (spec 8, 10.1, 10.2).
 
 Decides ``first_free`` and explicit placements, skipped cells, overflow onto further sheets,
-the ID cell and the margin ID. It reads ``SheetView`` values and writes nothing; reserving the
+the ID cell and the margin ID, including the band of the sheet margin (top, bottom, right or
+left) it is drawn in. It reads ``SheetView`` values and writes nothing; reserving the
 cells atomically is the job of the reservation service.
 
 All lengths are hundredths of a millimetre (hmm).
@@ -26,28 +27,49 @@ from app.sheets.errors import (
     CellsTakenError,
     InsufficientCellsError,
     InvalidPlacementsError,
-    MarginTooSmallError,
     SheetDiscardedError,
 )
-from app.sheets.geometry import Geometry, cell_count, cell_origin, hmm_to_mm
+from app.sheets.geometry import Geometry, cell_count, cell_origin, remaining_margins
 
 __all__ = [
+    "BAND_CORNER",
+    "BAND_ORDER",
+    "MarginBand",
     "MarginContext",
+    "MarginCorner",
+    "MarginPlacement",
     "PagePlan",
     "PlacementIn",
     "Plan",
     "SheetView",
+    "band_length_hmm",
+    "choose_margin_placement",
+    "margin_bands_hmm",
     "margin_qr_allowed",
     "margin_qr_fits",
-    "margin_usable_hmm",
     "plan",
 ]
 
-DEFAULT_HW_TOP_HMM: Final = 500  # 5.0 mm assumed when the printer does not report it (OC-16)
+MarginBand = Literal["top", "bottom", "right", "left"]
+MarginCorner = Literal["top_left", "top_right", "bottom_left"]
+
+BAND_ORDER: Final[tuple[MarginBand, ...]] = ("top", "bottom", "right", "left")  # OC-46
+BAND_CORNER: Final[dict[MarginBand, MarginCorner]] = {  # OC-45
+    "top": "top_left",
+    "bottom": "bottom_left",
+    "right": "top_right",
+    "left": "top_left",
+}
+
+DEFAULT_HW_HMM: Final = 500  # 5.0 mm per side assumed when the printer does not report it (OC-16)
 SAFETY_HMM: Final = 100  # 1.0 mm
 MIN_MARGIN_TEXT_HMM: Final = 400  # below: margin ID impossible
 MIN_MARGIN_QR_HMM: Final = 900  # from here a QR may sit next to the text
 MIN_QR_MODULE_HMM: Final = 25  # 0.25 mm
+MARGIN_TEXT_GAP_HMM: Final = 200  # 2 mm between the margin QR and the text
+MIN_MARGIN_TEXT_RUN_HMM: Final = 1000  # 10 mm of text beside a QR (OC-48)
+MAX_MARGIN_ID_HMM: Final = 2000  # usable size cap, 20 mm (OC-52)
+VERTICAL_BAND_LEAD_HMM: Final = 200  # a side band must be 2 mm deeper to beat top or bottom
 _QUIET_MODULES: Final = 4
 
 
@@ -73,6 +95,8 @@ class SheetView:
     state: Literal["active", "discarded"]
     # The database id of an existing or just created sheet; the planner ignores it.
     sheet_id: UUID | None = None
+    # The probable code of a sheet that does not exist yet (a preview); used for the QR payload.
+    code_hint: str | None = None
 
 
 @dataclass
@@ -91,6 +115,8 @@ class PagePlan:
     id_cell: int | None
     margin_id: bool
     hw_margin_cells: list[int]
+    margin_placement: MarginPlacement | None = None
+    id_not_printed: bool = False
 
 
 @dataclass
@@ -103,16 +129,51 @@ class Plan:
 
 @dataclass(frozen=True)
 class MarginContext:
-    hw_top_hmm: int | None
     deviation: Deviation
     scan_payload: Callable[[str], str]
+    render_dpi: int
 
 
-def margin_usable_hmm(g: Geometry, *, hw_top_hmm: int | None, dev: Deviation) -> int:
-    """Height available for the margin ID: ``margin_top`` minus the printer's hardware top
-    margin (5 mm if unknown), minus a calibration shift upwards, minus 1 mm of safety."""
-    hw = DEFAULT_HW_TOP_HMM if hw_top_hmm is None else hw_top_hmm
-    return g.margin_top - hw - max(0, -dev.offset_y_hmm) - SAFETY_HMM
+@dataclass(frozen=True)
+class MarginPlacement:
+    """Where the margin ID goes. ``depth_hmm`` is the usable size that is drawn (capped)."""
+
+    band: MarginBand
+    corner: MarginCorner
+    depth_hmm: int
+    qr: bool
+
+
+def margin_bands_hmm(g: Geometry, *, hw: Margins | None, dev: Deviation) -> dict[MarginBand, int]:
+    """Room of each margin band after the printer's hardware margin of that side (5 mm if
+    unknown), the calibration shift on that axis and 1 mm of safety.
+
+    Every band of an axis loses the full ``|offset|`` of the axis, whatever its sign (ruling
+    A-1). Values may be negative; scale and rotation are ignored (OC-51).
+    """
+    m = (
+        hw
+        if hw is not None
+        else Margins(
+            top=DEFAULT_HW_HMM, left=DEFAULT_HW_HMM, bottom=DEFAULT_HW_HMM, right=DEFAULT_HW_HMM
+        )
+    )
+    right, bottom = remaining_margins(g)
+    dx = abs(dev.offset_x_hmm)
+    dy = abs(dev.offset_y_hmm)
+    return {
+        "top": g.margin_top - m.top - dy - SAFETY_HMM,
+        "bottom": bottom - m.bottom - dy - SAFETY_HMM,
+        "right": right - m.right - dx - SAFETY_HMM,
+        "left": g.margin_left - m.left - dx - SAFETY_HMM,
+    }
+
+
+def band_length_hmm(g: Geometry, band: MarginBand) -> int:
+    """Length of the grid along ``band``: the room a text beside the QR can run."""
+    if band in ("top", "bottom"):
+        return (g.cols - 1) * g.pitch_x + g.label_w
+    return (g.rows - 1) * g.pitch_y + g.label_h
 
 
 def margin_qr_allowed(usable_hmm: int, payload: str, dpi: int) -> bool:
@@ -139,6 +200,52 @@ def margin_qr_allowed(usable_hmm: int, payload: str, dpi: int) -> bool:
 
 margin_qr_fits = margin_qr_allowed
 """Name the plan uses; the same function."""
+
+
+def choose_margin_placement(
+    g: Geometry, *, hw: Margins | None, dev: Deviation, payload: str | None, dpi: int
+) -> MarginPlacement | None:
+    """The band the margin ID goes into, or ``None`` if no band is deep enough (OC-46).
+
+    A band with a QR beats any text-only band; then depth decides, with the tie-break top,
+    bottom, right, left. A side band beats the best of top and bottom only if it is
+    ``VERTICAL_BAND_LEAD_HMM`` deeper (ruling A-2). Decided once, at render dpi.
+    """
+    usable = {
+        band: min(depth, MAX_MARGIN_ID_HMM)
+        for band, depth in margin_bands_hmm(g, hw=hw, dev=dev).items()
+    }
+    qr_of: dict[MarginBand, bool] = {}
+    for band in BAND_ORDER:
+        if usable[band] < MIN_MARGIN_TEXT_HMM:
+            continue
+        qr_of[band] = (
+            payload is not None
+            and margin_qr_allowed(usable[band], payload, dpi)
+            and band_length_hmm(g, band)
+            >= usable[band] + MARGIN_TEXT_GAP_HMM + MIN_MARGIN_TEXT_RUN_HMM
+        )
+    if not qr_of:
+        return None
+    if any(qr_of.values()):
+        qr_of = {band: qr for band, qr in qr_of.items() if qr}
+
+    def deepest(bands: tuple[MarginBand, ...]) -> MarginBand | None:
+        best_of: MarginBand | None = None
+        for b in bands:  # strict ">" keeps the first of equal bands
+            if b in qr_of and (best_of is None or usable[b] > usable[best_of]):
+                best_of = b
+        return best_of
+
+    h = deepest(("top", "bottom"))
+    v = deepest(("right", "left"))
+    if h is not None and v is not None:
+        best: MarginBand = v if usable[v] >= usable[h] + VERTICAL_BAND_LEAD_HMM else h
+    else:
+        only = h or v
+        assert only is not None  # qr_of is not empty
+        best = only
+    return MarginPlacement(best, BAND_CORNER[best], usable[best], qr_of[best])
 
 
 def _hw_margin_cells(g: Geometry, cells: Sequence[int], hw: Margins | None) -> list[int]:
@@ -198,6 +305,9 @@ class _Draft:
     margin_id: bool
     available: int
     free_after: int
+    margin_placement: MarginPlacement | None = None
+    id_not_printed: bool = False
+    id_was_due: bool = False
 
 
 def _draft(
@@ -206,6 +316,7 @@ def _draft(
     taken: set[int],
     margin: MarginContext | None,
     id_done: bool,
+    hw_margins_hmm: Margins | None,
 ) -> _Draft:
     """Plan one placement. ``id_done``: this sheet's ID label already went to an earlier page."""
     view = p.sheet
@@ -239,16 +350,26 @@ def _draft(
         id_cell = next((n for n in free if n not in skip and n not in explicit), None)
     id_missing = needs_id_cell and id_cell is None
 
-    margin_id = (
+    due = (
         view.id_placement == "margin"
         and not view.id_printed
         and not view.margin_id_in_flight
         and not id_done
     )
-    if margin_id and margin is not None:
-        usable = margin_usable_hmm(g, hw_top_hmm=margin.hw_top_hmm, dev=margin.deviation)
-        if usable < MIN_MARGIN_TEXT_HMM:
-            raise MarginTooSmallError(hmm_to_mm(usable))
+    margin_id = due
+    placement: MarginPlacement | None = None
+    id_not_printed = False
+    if due and margin is not None:
+        code = view.code or view.code_hint
+        placement = choose_margin_placement(
+            g,
+            hw=hw_margins_hmm,
+            dev=margin.deviation,
+            payload=margin.scan_payload(code) if code else None,
+            dpi=margin.render_dpi,
+        )
+        margin_id = placement is not None
+        id_not_printed = placement is None
 
     if isinstance(p.cells, list):
         # Item i goes to cells[i]: the caller's order is kept.
@@ -271,6 +392,9 @@ def _draft(
         margin_id=margin_id,
         available=available,
         free_after=len(free) - len(used),
+        margin_placement=placement,
+        id_not_printed=id_not_printed,
+        id_was_due=due,
     )
 
 
@@ -285,8 +409,8 @@ def plan(
 
     ``n_items == 0`` is valid when an ID cell or a margin ID is due (an ID-only job); with
     nothing to print at all the request is ``empty``. ``margin=None`` means there is no printer
-    context, so margin availability is not checked. A placement that would print nothing is
-    ``empty_placement``.
+    context, so the band is not chosen (the ID is still due). A placement that would print
+    nothing is ``empty_placement``.
 
     Caller contract: one ``SheetView`` object stands for one sheet. Passing the same object in
     several placements shares its cells and its ID label (the ID goes out once, on the sheet's
@@ -305,14 +429,14 @@ def plan(
     for p, count in zip(placements, counts, strict=True):
         key = id(p.sheet)
         taken = taken_by_sheet.setdefault(key, set())
-        d = _draft(p, count, taken, margin, key in id_done)
+        d = _draft(p, count, taken, margin, key in id_done, hw_margins_hmm)
         drafts.append(d)
         if d.id_missing or len(d.item_cells) != count:
             continue
         taken.update(d.item_cells)
         if d.id_cell is not None:
             taken.add(d.id_cell)
-        if d.id_cell is not None or d.margin_id:
+        if d.id_cell is not None or d.id_was_due:
             id_done.add(key)
 
     short = [d for d in drafts if d.id_missing or len(d.item_cells) != d.count]
@@ -341,6 +465,8 @@ def plan(
                 d.item_cells + ([d.id_cell] if d.id_cell is not None else []),
                 hw_margins_hmm,
             ),
+            margin_placement=d.margin_placement,
+            id_not_printed=d.id_not_printed,
         )
         for i, d in enumerate(drafts)
     ]

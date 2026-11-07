@@ -211,17 +211,6 @@ class InvalidPlacementsError(SheetApiError):
         super().__init__(detail={"reason": reason})
 
 
-class MarginTooSmallError(SheetApiError):
-    """The top margin leaves too little room for the margin ID on this printer (OC-16)."""
-
-    status = 422
-    error_code = "margin_too_small"
-    message = "The top margin is too narrow for this printer."
-
-    def __init__(self, usable_mm: float) -> None:
-        super().__init__(detail={"usable_mm": usable_mm})
-
-
 class ImportTooLargeError(SheetApiError):
     status = 413
     error_code = "import_too_large"

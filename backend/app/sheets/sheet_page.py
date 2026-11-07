@@ -1,5 +1,8 @@
 """The ``sheet_page`` payload and its renderers (spec 10.2, 11.4, 12.4 and 13).
 
+The margin ID sits in one of four bands (top, bottom, right or left of the grid); the planner
+chooses the band and the payload stores it, the renderers only draw it (OC-50).
+
 ``SheetPageDetail`` is stored in ``PagePayload.detail``. It carries everything the page needs:
 the geometry of the sheet's pinned type version (never re-read), the cells with their mapped
 content type and label data, the ID cell and the margin ID. ``render_sheet_page`` is a pure
@@ -17,7 +20,7 @@ from __future__ import annotations
 import io
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Literal
 from uuid import UUID
 
 from PIL import Image, ImageDraw
@@ -38,8 +41,15 @@ from app.sheets.cell_render import (
     load_cell_font,
     qr_edge_px,
 )
-from app.sheets.geometry import Geometry, cell_count
-from app.sheets.planner import SAFETY_HMM, margin_qr_allowed
+from app.sheets.geometry import Geometry, cell_count, remaining_margins
+from app.sheets.planner import (
+    MARGIN_TEXT_GAP_HMM,
+    SAFETY_HMM,
+    MarginBand,
+    MarginCorner,
+    MarginPlacement,
+    margin_qr_allowed,
+)
 
 __all__ = [
     "PREVIEW_DPI",
@@ -52,7 +62,6 @@ __all__ = [
 ]
 
 PREVIEW_DPI: Final = 150
-_TEXT_GAP_HMM: Final = 200  # 2 mm between the margin QR and the text
 _MAX_PT: Final = 11.0
 _MIN_PT: Final = 6.0
 _CAP_EM: Final = 0.72  # cap height as a fraction of the font size
@@ -70,13 +79,18 @@ class SheetCellPayload(BaseModel):
 
 
 class MarginIdPayload(BaseModel):
-    """The sheet ID in the top margin; ``qr_payload`` is set only if the QR fits (OC-16)."""
+    """The sheet ID in a margin band; ``qr_payload`` is set only if the QR fits (OC-16).
+
+    ``usable_hmm`` is the usable size of the band (at most 20 mm). A payload stored without
+    ``band`` and ``corner`` is a top-band payload and renders exactly as before (OC-50)."""
 
     model_config = ConfigDict(extra="forbid")
 
     text: str
     qr_payload: str | None = None
     usable_hmm: int
+    band: MarginBand = "top"
+    corner: MarginCorner = "top_left"
     qr_allowed: bool | None = None
     """The one decision, taken at the job's render dpi when the payload is built (T4-2).
     ``None`` only in payloads stored before the flag existed: the rule is then evaluated at
@@ -92,14 +106,19 @@ class MarginIdPayload(BaseModel):
 
 
 def margin_id_payload(
-    text: str, qr_payload: str | None, usable_hmm: int, render_dpi: int
+    text: str, qr_payload: str | None, placement: MarginPlacement
 ) -> MarginIdPayload:
-    """Builds the margin ID and takes the QR decision once, at ``render_dpi``."""
-    allowed = bool(qr_payload) and margin_qr_allowed(usable_hmm, qr_payload or "", render_dpi)
+    """Builds the margin ID from the planner's decision; the QR rule is not evaluated again.
+
+    ``qr_payload`` is ``margin.scan_payload(code)``, the string the planner decided on.
+    """
+    allowed = placement.qr and bool(qr_payload)
     return MarginIdPayload(
         text=text,
         qr_payload=qr_payload if allowed else None,
-        usable_hmm=usable_hmm,
+        usable_hmm=placement.depth_hmm,
+        band=placement.band,
+        corner=placement.corner,
         qr_allowed=allowed,
     )
 
@@ -142,6 +161,7 @@ class _MarginLayout:
     text_x: int
     baseline_y: int
     size_pt: float
+    rotation: Literal[0, 90] = 0
 
 
 def _fit_margin_text(text: str, size_pt: float, room_mm: float) -> tuple[str, float]:
@@ -163,21 +183,34 @@ def _fit_margin_text(text: str, size_pt: float, room_mm: float) -> tuple[str, fl
 
 
 def _margin_layout(g: Geometry, margin: MarginIdPayload, *, with_qr: bool) -> _MarginLayout:
-    """Where the margin ID goes: left-aligned with the grid, centred in the usable band.
+    """Where the margin ID goes, by the stored band (spec 10.2).
 
-    The band ends ``SAFETY_HMM`` above the grid and is ``usable_hmm`` tall; a QR is a square of
-    that height, the text sits to its right (or at the grid edge without a QR).
+    The band starts ``SAFETY_HMM`` outside the grid and is ``usable_hmm`` deep. A QR is a square
+    of that size at the grid's start of the band; the text follows it after a gap (or starts at
+    the grid edge without a QR), centred across the band. Top and bottom text runs along the
+    page; right and left text is turned a quarter turn clockwise and runs down the page.
     """
-    bottom = g.margin_top - SAFETY_HMM
-    top = bottom - margin.usable_hmm
-    qr = BoxHmm(g.margin_left, top, margin.usable_hmm, margin.usable_hmm) if with_qr else None
-    text_x = g.margin_left + (margin.usable_hmm + _TEXT_GAP_HMM if with_qr else 0)
-    grid_right = g.margin_left + (g.cols - 1) * g.pitch_x + g.label_w
-    start = min(_MAX_PT, max(7.0, margin.usable_hmm / 100 * 1.4))
-    text, size = _fit_margin_text(margin.text, start, (grid_right - text_x) / 100)
+    d = margin.usable_hmm
+    right, bottom = remaining_margins(g)
+    grid_right = g.page_w - right
+    grid_bottom = g.page_h - bottom
+    lead = d + MARGIN_TEXT_GAP_HMM if with_qr else 0
+    start = min(_MAX_PT, max(7.0, d / 100 * 1.4))
+    if margin.band in ("top", "bottom"):
+        top = g.margin_top - SAFETY_HMM - d if margin.band == "top" else grid_bottom + SAFETY_HMM
+        qr = BoxHmm(g.margin_left, top, d, d) if with_qr else None
+        text_x = g.margin_left + lead
+        text, size = _fit_margin_text(margin.text, start, (grid_right - text_x) / 100)
+        em_hmm = size / PT_PER_MM * 100
+        return _MarginLayout(qr, text, text_x, round(top + d / 2 + _CAP_EM * em_hmm / 2), size)
+    edge = grid_right + SAFETY_HMM if margin.band == "right" else g.margin_left - SAFETY_HMM - d
+    qr = BoxHmm(edge, g.margin_top, d, d) if with_qr else None
+    text_y = g.margin_top + lead
+    text, size = _fit_margin_text(margin.text, start, (grid_bottom - text_y) / 100)
     em_hmm = size / PT_PER_MM * 100
-    centre = top + margin.usable_hmm / 2
-    return _MarginLayout(qr, text, text_x, round(centre + _CAP_EM * em_hmm / 2), size)
+    # Turned clockwise, the glyphs rise to the right of the baseline: the baseline is the
+    # centre line minus half the cap height.
+    return _MarginLayout(qr, text, round(edge + d / 2 - _CAP_EM * em_hmm / 2), text_y, size, 90)
 
 
 def render_sheet_page(
@@ -189,7 +222,7 @@ def render_sheet_page(
     """The PDF of a ``sheet_page`` payload (spec 12.4).
 
     Geometry comes only from the payload. Cells are drawn at their content boxes at
-    ``payload.render_dpi``, the margin ID (if present) in the top margin, and the printer/tray
+    ``payload.render_dpi``, the margin ID (if present) in its stored band, and the printer/tray
     correction is applied once to the whole page.
     """
     d = SheetPageDetail.model_validate(payload.detail)
@@ -216,7 +249,7 @@ def render_sheet_page(
         lay = _margin_layout(g, m, with_qr=qr_image is not None)
         if qr_image is not None and lay.qr is not None:
             images.append(PageImage(lay.qr.x, lay.qr.y, lay.qr.w, lay.qr.h, qr_image))
-        texts.append(PageText(lay.text_x, lay.baseline_y, lay.size_pt, lay.text))
+        texts.append(PageText(lay.text_x, lay.baseline_y, lay.size_pt, lay.text, lay.rotation))
     return write_pdf(
         payload.media,
         images=images,
@@ -237,6 +270,22 @@ def _preview_qr(payload: str, usable_hmm: int) -> Image.Image:
     big = build_qr(payload, edge * 8)
     assert big is not None  # the job could draw it, so a symbol of this payload exists
     return big.convert("L").resize((edge, edge), Image.Resampling.BOX).convert("1")
+
+
+def _paste_turned_text(
+    page: Image.Image, lay: _MarginLayout, font: Any, origin: tuple[int, int]
+) -> None:
+    """Draw ``lay.text`` into its own image and paste it turned a quarter turn clockwise, so
+    that the text origin (its baseline start) lands on ``origin``."""
+    width = round(font.getlength(lay.text)) + 2
+    height = round(font.size * 1.5)
+    base = round(font.size * 1.1)  # the baseline row inside the strip
+    strip = Image.new("1", (width, height), 1)
+    ImageDraw.Draw(strip).text((0, base), lay.text, font=font, fill=0, anchor="ls")
+    turned = strip.transpose(Image.Transpose.ROTATE_270)  # clockwise
+    # After the turn, strip (x, y) lands at (height - 1 - y, x): the baseline row becomes the
+    # column ``height - 1 - base`` and the text start the row 0.
+    page.paste(turned, (origin[0] - (height - 1 - base), origin[1]))
 
 
 def render_preview_png(
@@ -273,9 +322,12 @@ def render_preview_png(
         if qr is not None and lay.qr is not None:
             page.paste(qr, (px(lay.qr.x), px(lay.qr.y)))
         font = load_cell_font(max(1, round(lay.size_pt * PREVIEW_DPI / 72)))
-        ImageDraw.Draw(page).text(
-            (px(lay.text_x), px(lay.baseline_y)), lay.text, font=font, fill=0, anchor="ls"
-        )
+        if lay.rotation == 90:
+            _paste_turned_text(page, lay, font, (px(lay.text_x), px(lay.baseline_y)))
+        else:
+            ImageDraw.Draw(page).text(
+                (px(lay.text_x), px(lay.baseline_y)), lay.text, font=font, fill=0, anchor="ls"
+            )
     out = io.BytesIO()
     page.save(out, format="PNG")
     return out.getvalue()

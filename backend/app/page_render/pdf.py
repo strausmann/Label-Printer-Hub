@@ -103,12 +103,17 @@ class PageImage:
 
 @dataclass
 class PageText:
-    """A single line of literal text; ``baseline_y_hmm`` is measured from the top of the page."""
+    """A single line of literal text; ``baseline_y_hmm`` is measured from the top of the page.
+
+    ``rotation`` 90 turns the line a quarter turn clockwise as seen on the page, about the text
+    origin ``(x_hmm, baseline_y_hmm)``: it then reads from top to bottom.
+    """
 
     x_hmm: int
     baseline_y_hmm: int
     size_pt: float
     text: str
+    rotation: Literal[0, 90] = 0
 
 
 class VectorPen:
@@ -257,7 +262,15 @@ def write_pdf(
         c.saveState()
         c.setFillGray(0)
         c.setFont(font_name(), t.size_pt)
-        c.drawString(t.x_hmm * PT_PER_MM / 100, h_pt - t.baseline_y_hmm * PT_PER_MM / 100, t.text)
+        x_pt = t.x_hmm * PT_PER_MM / 100
+        y_pt = h_pt - t.baseline_y_hmm * PT_PER_MM / 100
+        if t.rotation == 90:
+            # One matrix (translate and rotate by -90 degrees in PDF space): a separate
+            # translate would look like an image placement to anything counting ``cm``.
+            c.transform(0, -1, 1, 0, x_pt, y_pt)
+            c.drawString(0, 0, t.text)
+        else:
+            c.drawString(x_pt, y_pt, t.text)
         c.restoreState()
     c.showPage()
     c.save()

@@ -105,6 +105,14 @@ async def test_create_and_get_sheet(ready, printer, reader):
     assert got.json() == created
 
 
+async def test_create_sheet_defaults_to_margin(ready, printer):
+    resp = await ready.post("/api/sheets", json={"type": "acme-t1"}, headers=printer)
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["id_placement"] == "margin"
+    assert body["id_printed"] is False
+
+
 async def test_create_pins_the_version_and_validates_cells(ready, printer, admin):
     new_geometry = _body()["geometry"] | {"cols": 3}
     resp = await ready.post(

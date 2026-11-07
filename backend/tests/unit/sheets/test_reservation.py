@@ -18,7 +18,6 @@ from app.sheets import sheet_service as ss
 from app.sheets import type_service as ts
 from app.sheets.errors import (
     CellsTakenError,
-    MarginTooSmallError,
     PlanChangedError,
     SheetDiscardedError,
     SheetTypeArchivedError,
@@ -69,7 +68,7 @@ def _fields(key: str = KEY, prefix: str = "L4736") -> ts.TypeFields:
     )
 
 
-MARGIN = MarginContext(hw_top_hmm=None, deviation=Deviation(), scan_payload=lambda c: f"sheet:{c}")
+MARGIN = MarginContext(deviation=Deviation(), scan_payload=lambda c: f"sheet:{c}", render_dpi=600)
 
 
 def meta(n: int) -> list[ItemMeta]:
@@ -252,16 +251,33 @@ async def test_release_deletes_only_that_jobs_reserved_rows(session: AsyncSessio
     assert await release(session, first.job_id) == []  # idempotent
 
 
-async def test_margin_context_is_required_and_checked(session: AsyncSession) -> None:
-    tight = replace(G48, margin_top=900)  # 9 mm - 5 mm hardware - 1 mm = 3 mm < 4 mm
+async def test_reserve_carries_margin_placement(session: AsyncSession) -> None:
+    code = await make_sheet(session, placement="margin")
+
+    page = (await do_reserve(session, [existing(code)], 1))[0]
+
+    assert page.margin_id is True
+    assert page.margin_placement is not None
+    assert page.margin_placement.band == "top"
+    assert page.margin_placement.depth_hmm == 1550
+    assert page.id_not_printed is False
+
+
+async def test_margin_context_is_required_and_unprintable_reserves_without_id(
+    session: AsyncSession,
+) -> None:
+    tight = replace(
+        G48, label_w=19900, label_h=28600, cols=1, rows=1, pitch_x=19900, pitch_y=28600,
+        margin_top=550, margin_left=550,
+    )  # fmt: skip
     await ts.create_type(session, _fields("tight", "TIGHT"), tight, actor="tester")
     code = await make_sheet(session, placement="margin", key="tight")
 
-    with pytest.raises(MarginTooSmallError):
-        await do_reserve(session, [existing(code)], 1)
+    page = (await do_reserve(session, [existing(code)], 1))[0]
 
     assert inspect.signature(reserve).parameters["margin"].default is inspect.Parameter.empty
-    assert (await session.execute(select(func.count()).select_from(SheetCell))).scalar_one() == 0
+    assert [c.cell_no for c in await cells(session)] == [1]
+    assert (page.margin_id, page.margin_placement, page.id_not_printed) == (False, None, True)
 
 
 async def test_margin_id_drawn_once_across_requests(session: AsyncSession) -> None:

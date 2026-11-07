@@ -39,7 +39,14 @@ from app.sheets.errors import (
 )
 from app.sheets.events import SheetTouched, publish_touched
 from app.sheets.geometry import cell_count
-from app.sheets.planner import MarginContext, PlacementIn, Plan, SheetView, plan
+from app.sheets.planner import (
+    MarginContext,
+    MarginPlacement,
+    PlacementIn,
+    Plan,
+    SheetView,
+    plan,
+)
 from app.sheets.sheet_service import create_sheet_locked
 from app.sheets.text import log_value
 from app.sheets.type_service import version_geometry, write_transaction
@@ -108,6 +115,8 @@ class ReservedPage:
     id_cell: int | None
     margin_id: bool
     hw_margin_cells: list[int]
+    margin_placement: MarginPlacement | None = None
+    id_not_printed: bool = False
 
 
 @dataclass
@@ -334,6 +343,8 @@ async def _attempt(
                     id_cell=page.id_cell,
                     margin_id=page.margin_id,
                     hw_margin_cells=list(page.hw_margin_cells),
+                    margin_placement=page.margin_placement,
+                    id_not_printed=page.id_not_printed,
                 )
             )
             t = touched.setdefault(
@@ -371,9 +382,9 @@ async def reserve(
 ) -> list[ReservedPage]:
     """Plan and reserve in one write transaction; publish ``sheet.updated`` after the commit.
 
-    ``margin`` is required on purpose: without a printer's margin context the planner skips
-    the margin-too-small check, which a real print must never do (ruling T2-1). A preview
-    without a printer calls ``plan`` directly.
+    ``margin`` is required on purpose: the margin context chooses the band of the margin ID, and
+    a print without it would store no band (ruling T2-1). A preview without a printer calls
+    ``plan`` directly.
 
     An ``IntegrityError`` on insert cannot happen between two lock holders; it is kept as a
     defence. Explicit cells answer ``cells_taken``; ``first_free`` re-plans once in a fresh

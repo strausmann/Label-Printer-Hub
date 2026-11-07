@@ -2590,6 +2590,7 @@ export interface components {
         SheetCreate: {
             /**
              * Id Placement
+             * @default margin
              * @enum {string}
              */
             id_placement: "margin" | "manual";

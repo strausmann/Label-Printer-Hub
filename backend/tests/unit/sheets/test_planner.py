@@ -12,16 +12,18 @@ from app.sheets.errors import (
     CellsTakenError,
     InsufficientCellsError,
     InvalidPlacementsError,
-    MarginTooSmallError,
     SheetDiscardedError,
 )
 from app.sheets.geometry import Geometry
 from app.sheets.planner import (
     MarginContext,
+    MarginPlacement,
     PlacementIn,
     SheetView,
-    margin_qr_fits,
-    margin_usable_hmm,
+    band_length_hmm,
+    choose_margin_placement,
+    margin_bands_hmm,
+    margin_qr_allowed,
     plan,
 )
 
@@ -62,11 +64,11 @@ def first_free(
     return PlacementIn(sheet=view, cells="first_free", skip=skip or [], count=count)
 
 
-def margin_ctx(hw_top: int | None, dev: Deviation | None = None) -> MarginContext:
+def margin_ctx(dev: Deviation | None = None, dpi: int = 600) -> MarginContext:
     return MarginContext(
-        hw_top_hmm=hw_top,
         deviation=dev or Deviation(),
         scan_payload=lambda code: f"https://hub.example/sheet/{code}",
+        render_dpi=dpi,
     )
 
 
@@ -305,39 +307,249 @@ def test_discarded_sheet() -> None:
         plan([first_free(sheet(state="discarded"), 1)], 1, hw_margins_hmm=None, margin=None)
 
 
-def test_margin_usable() -> None:
-    assert margin_usable_hmm(L4731, hw_top_hmm=423, dev=Deviation(offset_y_hmm=-50)) == 777
-    assert margin_usable_hmm(L4736, hw_top_hmm=None, dev=Deviation()) == 1530
-    # A shift down (positive) does not give margin back.
-    assert margin_usable_hmm(L4736, hw_top_hmm=None, dev=Deviation(offset_y_hmm=80)) == 1530
-    assert margin_qr_fits(777, "https://hub.example/sheet/L4731-0001", 600) is False  # < 9 mm
-    assert margin_qr_fits(1530, "https://hub.example/sheet/L4736-0001", 600) is True
-    assert margin_qr_fits(1530, "x" * 3000, 600) is False  # no QR holds it at >= 0.25 mm
+PAYLOAD = "https://hub.example/sheet/L4736-0001"
 
 
-def test_margin_too_small_raises_only_when_an_id_is_due() -> None:
-    narrow = replace(L4736, margin_top=800)
-    view = sheet(narrow, id_placement="margin")
-    with pytest.raises(MarginTooSmallError) as exc:
-        plan([first_free(view, 1)], 1, hw_margins_hmm=None, margin=margin_ctx(500))
-    assert (exc.value.status, exc.value.error_code) == (422, "margin_too_small")
-    assert exc.value.detail == {"usable_mm": 2.0}
-    # margin=None: availability is not checked.
-    plan([first_free(view, 1)], 1, hw_margins_hmm=None, margin=None)
-    # ID already printed: nothing to draw, so no error.
-    plan(
-        [first_free(replace(view, id_printed=True), 1)],
-        1,
-        hw_margins_hmm=None,
-        margin=margin_ctx(500),
+def _syn(**kw: int) -> Geometry:
+    """A synthetic A4 type; every field can be overridden."""
+    base: dict[str, int] = {
+        "label_w": 4000,
+        "label_h": 2000,
+        "cols": 4,
+        "rows": 13,
+        "pitch_x": 4600,
+        "pitch_y": 2050,
+        "margin_top": 600,
+        "margin_left": 600,
+    }
+    base.update(kw)
+    return Geometry(
+        "A4",
+        21000,
+        29700,
+        base["label_w"],
+        base["label_h"],
+        base["cols"],
+        base["rows"],
+        base["pitch_x"],
+        base["pitch_y"],
+        base["margin_top"],
+        base["margin_left"],
+        None,
+        "rectangle",
     )
-    # Enough room.
-    plan(
-        [first_free(sheet(id_placement="margin"), 1)],
-        1,
-        hw_margins_hmm=None,
-        margin=margin_ctx(None),
+
+
+TIGHT = Geometry("A4", 21000, 29700, 19900, 28600, 1, 1, 19900, 28600, 550, 550, None, "rectangle")
+
+
+def _bands(g: Geometry, hw: Margins | None, dev: Deviation | None = None) -> list[int]:
+    b = margin_bands_hmm(g, hw=hw, dev=dev or Deviation())
+    assert list(b) == ["top", "bottom", "right", "left"]
+    return list(b.values())
+
+
+def test_margin_bands_l4736_unknown_hw() -> None:
+    assert _bands(L4736, None) == [1530, 1530, 385, 385]
+
+
+def test_margin_bands_per_side_hw_and_calibration() -> None:
+    hw = Margins(top=423, left=300, bottom=600, right=450)
+    assert _bands(L4736, hw, Deviation(offset_x_hmm=120, offset_y_hmm=-80)) == [
+        1527,
+        1350,
+        315,
+        465,
+    ]
+    # The sign of the shift does not matter (ruling A-1).
+    assert _bands(L4736, hw, Deviation(offset_x_hmm=-120, offset_y_hmm=80)) == [
+        1527,
+        1350,
+        315,
+        465,
+    ]
+    assert _bands(L4736, hw, Deviation(offset_x_hmm=-50, offset_y_hmm=30)) == [
+        1577,
+        1400,
+        385,
+        535,
+    ]
+    assert _bands(
+        L4731, Margins(top=423, left=423, bottom=423, right=423), Deviation(offset_y_hmm=-50)
+    ) == [
+        777,
+        777,
+        337,
+        337,
+    ]
+
+
+def test_margin_bands_dy_minus_0_8() -> None:
+    dev = Deviation(offset_y_hmm=-80)
+    full = Margins(top=423, left=423, bottom=423, right=423)
+    assert _bands(L4736, None, dev) == [1450, 1450, 385, 385]
+    assert _bands(L4736, full, dev) == [1527, 1527, 462, 462]
+    assert _bands(L4731, None, dev) == [670, 670, 260, 260]
+    assert _bands(L4731, full, dev) == [747, 747, 337, 337]
+    cases = [
+        (L4736, None, MarginPlacement("top", "top_left", 1450, True)),
+        (L4736, full, MarginPlacement("top", "top_left", 1527, True)),
+        (L4731, None, MarginPlacement("top", "top_left", 670, False)),
+        (L4731, full, MarginPlacement("top", "top_left", 747, False)),
+    ]
+    for g, hw, want in cases:
+        got = choose_margin_placement(g, hw=hw, dev=dev, payload=PAYLOAD, dpi=600)
+        assert got == want
+
+
+def test_band_length() -> None:
+    assert [band_length_hmm(L4736, b) for b in ("top", "bottom", "right", "left")] == [
+        19030,
+        19030,
+        25440,
+        25440,
+    ]
+
+
+def _choose(
+    g: Geometry,
+    hw: Margins | None = None,
+    dev: Deviation | None = None,
+    payload: str | None = PAYLOAD,
+    dpi: int = 600,
+) -> MarginPlacement | None:
+    return choose_margin_placement(g, hw=hw, dev=dev or Deviation(), payload=payload, dpi=dpi)
+
+
+def test_choose_top_on_l4736_with_qr() -> None:
+    assert _choose(L4736) == MarginPlacement("top", "top_left", 1530, True)
+
+
+def test_choose_bottom_when_the_printer_clips_more_at_the_top() -> None:
+    hw = Margins(top=600, left=500, bottom=423, right=500)
+    assert _choose(L4736, hw) == MarginPlacement("bottom", "bottom_left", 1607, True)
+    got = _choose(L4736, hw, Deviation(offset_y_hmm=-80))
+    assert got == MarginPlacement("bottom", "bottom_left", 1527, True)
+
+
+def test_vertical_band_needs_a_two_mm_lead() -> None:
+    payload = "https://hub.example/sheet/LEAD-0001"
+    assert margin_qr_allowed(1800, payload, 600) is True
+    g = _syn(margin_top=2401)
+    assert _bands(g, None) == [1801, 99, 2000, 0]
+    assert _choose(g, payload=payload) == MarginPlacement("top", "top_left", 1801, True)
+    g = _syn(margin_top=2400)
+    assert _bands(g, None)[:3] == [1800, 100, 2000]
+    assert _choose(g, payload=payload) == MarginPlacement("right", "top_right", 2000, True)
+
+
+def test_usable_size_capped_at_twenty_mm() -> None:
+    g = replace(L4736, rows=10)
+    assert _bands(g, None)[:2] == [1530, 5770]
+    assert _choose(g) == MarginPlacement("bottom", "bottom_left", 2000, True)
+    g = replace(g, margin_top=3000)
+    assert _bands(g, None)[:2] == [2400, 4900]
+    assert _choose(g) == MarginPlacement("top", "top_left", 2000, True)
+
+
+def test_choose_right_on_wide_right_margin() -> None:
+    g = _syn(rows=14, margin_top=600, margin_left=600)
+    assert _bands(g, None) == [0, -150, 2000, 0]
+    assert _choose(g) == MarginPlacement("right", "top_right", 2000, True)
+
+
+def test_qr_band_beats_a_larger_text_only_band() -> None:
+    payload = "https://hub.example/sheet/TEST-0001"
+    g = _syn(
+        label_w=2500,
+        label_h=2500,
+        cols=1,
+        rows=1,
+        pitch_x=2500,
+        pitch_y=2500,
+        margin_top=1700,
+        margin_left=1000,
     )
+    assert margin_qr_allowed(1100, payload, 600) is True
+    assert _bands(g, None) == [1100, 24900, 16900, 400]
+    assert _choose(g, payload=payload) == MarginPlacement("top", "top_left", 1100, True)
+
+
+def test_text_only_from_four_mm() -> None:
+    hw = Margins(top=1630, left=500, bottom=1630, right=500)
+    assert _choose(L4736, hw) == MarginPlacement("top", "top_left", 400, False)
+    hw = Margins(top=1631, left=500, bottom=1631, right=500)
+    assert _choose(L4736, hw) is None
+
+
+def test_l4731_text_only_on_typical_laser() -> None:
+    got = _choose(L4731, Margins(top=423, left=423, bottom=423, right=423))
+    assert got == MarginPlacement("top", "top_left", 827, False)
+    assert margin_qr_allowed(950, PAYLOAD, 600) is True
+    got = _choose(L4731, Margins(top=300, left=300, bottom=300, right=300))
+    assert got == MarginPlacement("top", "top_left", 950, True)
+
+
+def test_no_payload_means_text_only() -> None:
+    assert _choose(L4736, payload=None) == MarginPlacement("top", "top_left", 1530, False)
+
+
+def test_plan_carries_margin_placement() -> None:
+    view = sheet(id_placement="margin")
+    page = plan([first_free(view, 1)], 1, hw_margins_hmm=None, margin=margin_ctx()).pages[0]
+    assert page.margin_id is True
+    assert page.margin_placement == MarginPlacement("top", "top_left", 1530, True)
+    assert page.id_not_printed is False
+
+
+def test_plan_margin_unprintable_prints_without_id() -> None:
+    view = sheet(TIGHT, id_placement="margin")
+    page = plan([first_free(view, 1)], 1, hw_margins_hmm=None, margin=margin_ctx()).pages[0]
+    assert page.item_cells == [1]
+    assert page.margin_id is False
+    assert page.margin_placement is None
+    assert page.id_not_printed is True
+    # Without a printer context nothing is checked.
+    page = plan([first_free(view, 1)], 1, hw_margins_hmm=None, margin=None).pages[0]
+    assert page.margin_id is True
+    assert page.margin_placement is None
+    assert page.id_not_printed is False
+
+
+def test_unprintable_flag_once_per_sheet() -> None:
+    view = sheet(id_placement="margin")
+    result = plan(
+        [first_free(view, 1), first_free(view, 1)],
+        2,
+        hw_margins_hmm=Margins(top=2000, left=2000, bottom=2000, right=2000),
+        margin=margin_ctx(),
+    )
+    assert [p.id_not_printed for p in result.pages] == [True, False]
+
+
+def test_unprintable_margin_id_alone_is_empty() -> None:
+    view = sheet(TIGHT, id_placement="margin")
+    with pytest.raises(InvalidPlacementsError) as exc:
+        plan([first_free(view, None)], 0, hw_margins_hmm=None, margin=margin_ctx())
+    assert exc.value.detail == {"reason": "empty"}
+
+
+def test_payload_code_falls_back_to_code_hint() -> None:
+    seen: list[str] = []
+
+    def record(code: str) -> str:
+        seen.append(code)
+        return f"https://hub.example/sheet/{code}"
+
+    ctx = MarginContext(deviation=Deviation(), scan_payload=record, render_dpi=600)
+    view = replace(sheet(id_placement="margin", code=None), code_hint="L4736-0003")
+    plan([first_free(view, 1)], 1, hw_margins_hmm=None, margin=ctx)
+    assert seen == ["L4736-0003"]
+    seen.clear()
+    bare = sheet(id_placement="margin", code=None)
+    page = plan([first_free(bare, 1)], 1, hw_margins_hmm=None, margin=ctx).pages[0]
+    assert seen == []
+    assert page.margin_placement is not None and page.margin_placement.qr is False
 
 
 def test_hw_margin_flags() -> None:
