@@ -795,7 +795,9 @@ async def test_preview_refuses_a_disabled_or_unknown_tray(session: AsyncSession,
     with pytest.raises(TrayUnknownError) as err:
         await run_preview(session, printer, req([raw(0)], [on(code)], tray=tray))
 
-    assert err.value.detail == {"trays": []}  # C19: the caller's key is not echoed
+    # C19: the caller's key is echoed nowhere; the detail keeps its shape with an empty list
+    assert err.value.detail == {"trays": []}
+    assert tray not in f"{err.value.detail} {err.value.message} {err.value}"
 
 
 # ---------------------------------------------------------------------------- resolve_tray
