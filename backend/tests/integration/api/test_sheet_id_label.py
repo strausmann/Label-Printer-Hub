@@ -110,7 +110,7 @@ async def test_create_cell_queues_id_label() -> None:
 
         assert text_only.status_code == 201, text_only.text
         id_cell = (await rig.job_payload(text_only.json()["job_id"]))["detail"]["id_cell"]
-        assert id_cell["content_type"] != "qr_two_lines" and id_cell["mapped"] is True
+        assert id_cell["content_type"] == "text_two_lines" and id_cell["mapped"] is True
         assert id_cell["cell"] == 1
 
 
@@ -258,6 +258,23 @@ async def test_cell_needs_a_printer_the_caller_may_use_and_leaves_nothing_behind
         assert off.status_code == 422 and _err(off)["error_code"] == "tray_unknown"
 
         assert await _count(Sheet) == sheets and await _cells() == []
+        assert await _count(PrintBatch) == 0
+
+
+async def test_a_tape_printer_is_a_media_kind_mismatch_on_both_routes() -> None:
+    """P8-4: the ID-only job and the margin check refuse a printer that is not a page printer
+    (409), and the refusal leaves no sheet and no cell behind."""
+    async with running() as rig:
+        await _printer("tape-1", backend="brother_ql")
+
+        created = await _create(rig, _create_body(QR_KEY, printer="tape-1"))
+        checked = await _margin_check(rig, QR_KEY, printer="tape-1")
+
+        assert created.status_code == 409, created.text
+        assert _err(created)["error_code"] == "media_kind_mismatch"
+        assert checked.status_code == 409, checked.text
+        assert _err(checked)["error_code"] == "media_kind_mismatch"
+        assert await _count(Sheet) == 0 and await _cells() == []
         assert await _count(PrintBatch) == 0
 
 
