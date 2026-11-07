@@ -1066,3 +1066,52 @@ async def test_the_dry_plan_of_a_print_runs_off_the_event_loop(
     await run_print(factory, printer, req([raw(0)], [on(code)]))
 
     assert seen and seen[0] != loop_thread  # the dry plan; the locked one runs in reserve
+
+
+# ---------------------------------------------------------------------------- tiny labels
+
+
+@pytest.mark.parametrize("label_hmm", [300, 320, 350])
+async def test_a_label_too_small_for_a_line_is_refused_before_anything_is_reserved(
+    factory: async_sessionmaker[AsyncSession],
+    session: AsyncSession,
+    label_hmm: int,
+) -> None:
+    """Codex P2 / review item P1-1: a 3 mm label with an unknown radius has a content box of
+    -0.2 mm (3.2 mm: exactly 0; 3.5 mm: 0.3 mm, no line). Refused like a QR that does not fit:
+    ``content_type_data_mismatch`` with the item's index, nothing reserved, nothing queued."""
+    g = Geometry(
+        "A4", 21000, 29700, label_hmm, label_hmm, 4, 8, label_hmm + 50, label_hmm + 50, 1500, 900,
+        None, "rectangle",
+    )  # fmt: skip
+    await ts.create_type(
+        session, ts.TypeFields("acme-tiny", "TNY", "Acme", ["T-1"], None, True), g, actor="t"
+    )
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, key="acme-tiny")
+    queue = FakeQueue()
+
+    with pytest.raises(ItemContentMismatchError) as err:
+        await run_print(factory, printer, req([raw(0), raw(1)], [on(code)]), queue=queue)
+
+    assert err.value.detail == {"item_index": 0, "missing_fields": ["label_size"]}
+    assert await cell_rows(factory) == []
+    assert queue.submitted == []
+
+
+async def test_the_preview_of_a_tiny_label_is_refused_the_same_way(
+    session: AsyncSession,
+) -> None:
+    g = Geometry(
+        "A4", 21000, 29700, 300, 300, 4, 8, 350, 350, 1500, 900, None, "rectangle"
+    )  # fmt: skip
+    await ts.create_type(
+        session, ts.TypeFields("acme-tiny2", "TN2", "Acme", ["T-1"], None, True), g, actor="t"
+    )
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, key="acme-tiny2")
+
+    with pytest.raises(ItemContentMismatchError) as err:
+        await run_preview(session, printer, req([raw(0)], [on(code)]))
+
+    assert err.value.detail["item_index"] == 0

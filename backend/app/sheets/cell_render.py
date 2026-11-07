@@ -54,6 +54,7 @@ __all__ = [
     "CellRenderer",
     "QrDoesNotFitError",
     "RasterCellRenderer",
+    "box_fits_a_line",
     "build_qr",
     "build_qr_preview",
     "cap_height_px",
@@ -135,14 +136,29 @@ def content_box(g: Geometry, n: int) -> BoxHmm:
     """
     ox, oy = cell_origin(g, n)
     if g.shape == "round":
-        side = round(g.label_w / math.sqrt(2)) - 2 * _BASE_INSET_HMM
+        side = max(0, round(g.label_w / math.sqrt(2)) - 2 * _BASE_INSET_HMM)
         return BoxHmm(ox + (g.label_w - side) // 2, oy + (g.label_h - side) // 2, side, side)
     inset = (
         _UNKNOWN_RADIUS_INSET_HMM
         if g.corner_radius is None
         else _BASE_INSET_HMM + round(_RADIUS_FACTOR * g.corner_radius)
     )
-    return BoxHmm(ox + inset, oy + inset, g.label_w - 2 * inset, g.label_h - 2 * inset)
+    # A label no larger than twice its inset has no room inside: an empty box, never a negative
+    # one (``box_fits_a_line`` then refuses it).
+    return BoxHmm(
+        ox + inset, oy + inset, max(0, g.label_w - 2 * inset), max(0, g.label_h - 2 * inset)
+    )
+
+
+def box_fits_a_line(box: BoxHmm) -> bool:
+    """Whether a content box can hold anything: both sides reach the minimum cap height.
+
+    Below that not even one line of text is legible, and a QR would be smaller than a letter.
+    ``check_item_fits`` refuses such an item before anything is reserved, and the renderer
+    refuses to draw into one.
+    """
+    minimum = round(MIN_CAP_HEIGHT_MM * 100)
+    return box.w >= minimum and box.h >= minimum
 
 
 def map_content_type(ct: ContentType, allow_qr: bool) -> tuple[ContentType, bool]:
@@ -376,6 +392,10 @@ class RasterCellRenderer:
         data: LabelData,
     ) -> CellImage:
         check_required(content_type, data)
+        if box_w_mm <= 0 or box_h_mm <= 0:  # defensive: the caller refuses these first
+            raise ContentTypeDataMismatchError(
+                content_type=str(content_type), missing_fields=("label_size",)
+            )
         width, height = _box_px(box_w_mm, box_h_mm, dpi)
         canvas = Image.new("1", (width, height), 1)
         text_x = 0

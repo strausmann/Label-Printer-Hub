@@ -438,3 +438,42 @@ def test_primary_id_empty_after_cleaning_is_mismatch(value: str) -> None:
     with pytest.raises(ContentTypeDataMismatchError) as exc:
         _render(ContentType.TEXT_ONE_LINE, _data(primary_id=value))
     assert exc.value.missing_fields == ("primary_id",)
+
+
+# ---- a label too small to hold anything (Codex P2, review item P1-1) --------------------------
+
+
+@pytest.mark.parametrize("label_mm", [3.0, 3.2, 1.0])
+def test_a_tiny_rectangular_label_has_an_empty_content_box_never_a_negative_one(
+    label_mm: float,
+) -> None:
+    """3 mm with an unknown radius is inset 1.6 mm per side: 3 - 3.2 was -0.2 mm."""
+    size = round(label_mm * 100)
+    box = content_box(_geometry(label_w=size, label_h=size), 1)
+    assert box.w >= 0 and box.h >= 0
+    if size <= 320:
+        assert (box.w, box.h) == (0, 0)
+
+
+def test_a_tiny_round_label_has_an_empty_content_box_too() -> None:
+    box = content_box(_geometry(shape="round", label_w=250, label_h=250), 1)
+    assert box.w >= 0 and box.h >= 0
+
+
+@pytest.mark.parametrize(
+    ("w", "h", "fits"),
+    [(0, 0, False), (160, 159, False), (159, 160, False), (160, 160, True), (4000, 1000, True)],
+)
+def test_a_box_fits_a_line_from_the_minimum_cap_height(w: int, h: int, fits: bool) -> None:
+    from app.sheets.cell_render import box_fits_a_line
+
+    assert box_fits_a_line(BoxHmm(0, 0, w, h)) is fits
+
+
+@pytest.mark.parametrize("w_mm", [0.0, -0.2])
+def test_the_renderer_refuses_an_empty_or_negative_box_instead_of_drawing_one(
+    w_mm: float,
+) -> None:
+    with pytest.raises(ContentTypeDataMismatchError) as err:
+        _render(ContentType.TEXT_ONE_LINE, LabelData(source_app="x", primary_id="A"), w_mm=w_mm)
+    assert err.value.missing_fields == ("label_size",)

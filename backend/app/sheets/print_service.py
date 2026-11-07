@@ -70,6 +70,7 @@ from app.sheets.cell_render import (
     BoxHmm,
     CellImage,
     CellRenderer,
+    box_fits_a_line,
     build_qr_preview,
     check_required,
     content_box,
@@ -901,10 +902,14 @@ def check_item_fits(
         check_required(content_type, item.label)
     except ContentTypeDataMismatchError as exc:
         raise ItemContentMismatchError(index, exc.missing_fields) from None
-    if content_type.value.startswith("qr_"):
-        box = content_box(geometry, cell)
-        if not _qr_fits_at(item.label.qr_payload or "", box.w / 100, box.h / 100, render_dpi):
-            raise ItemContentMismatchError(index, ("qr_payload",))
+    box = content_box(geometry, cell)
+    if not box_fits_a_line(box):  # a label too small to hold a line (or a negative box)
+        raise ItemContentMismatchError(index, ("label_size",))
+    qr_does_not_fit = content_type.value.startswith("qr_") and not _qr_fits_at(
+        item.label.qr_payload or "", box.w / 100, box.h / 100, render_dpi
+    )
+    if qr_does_not_fit:
+        raise ItemContentMismatchError(index, ("qr_payload",))
 
 
 def _check_plan_items(

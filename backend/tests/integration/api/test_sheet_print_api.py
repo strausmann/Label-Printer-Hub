@@ -658,3 +658,21 @@ async def test_every_documented_error_of_the_sheet_print_routes_has_the_envelope
         for code, response in errors.items():
             ref = response["content"]["application/json"]["schema"]["$ref"]
             assert ref.endswith("/SheetApiErrorResponse"), code
+
+
+async def test_a_print_onto_a_label_too_small_for_a_line_is_422_and_reserves_nothing() -> None:
+    """Codex P2 / review item P1-1: a 3 mm label (unknown radius, content box -0.2 mm)."""
+    g = Geometry("A4", 21000, 29700, 300, 300, 4, 8, 350, 350, 1500, 900, None, "rectangle")
+    async with running() as rig:
+        await _type("acme-tiny", "TNY", g)
+        code = await _sheet(key="acme-tiny")
+
+        resp = await rig.print(_body(code, 2))
+
+        assert resp.status_code == 422, resp.text
+        detail = _err(resp)
+        assert detail["error_code"] == "content_type_data_mismatch"
+        assert detail["error_detail"] == {"item_index": 0, "missing_fields": ["label_size"]}
+        assert "r.example.invalid" not in resp.text  # no echo of the item
+        assert await _cells() == []
+        assert not [r for r in rig.fake.received if r.operation == "Print-Job"]
