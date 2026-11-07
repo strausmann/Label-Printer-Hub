@@ -290,3 +290,90 @@ async def test_check_sse_bus_fail_when_subscribers_at_max(
         revision="r",
     )
     assert body.checks["sse_bus"].status == "fail"
+
+
+# ---------------------------------------------------------------------------
+# Page-printer-only hub: no tape runtime printer, but healthy IPP printers
+# ---------------------------------------------------------------------------
+
+
+async def _ipp_only(session, *, captured_at=None):
+    pid = uuid4()
+    session.add(
+        Printer(
+            id=pid,
+            name="page",
+            slug=f"page-{pid.hex[:6]}",
+            model="x",
+            backend="ipp",
+            connection={"uri": "ipp://printer.example.invalid/ipp/print"},
+            enabled=True,
+        )
+    )
+    if captured_at is not None:
+        session.add(
+            PrinterStatusCache(
+                printer_id=pid, captured_at=captured_at, parsed={"online": True, "kind": "page"}
+            )
+        )
+    await session.flush()
+    state = _state_with_queue_and_bus(printer_id=None)
+    state.ipp_printer_states = {pid: object()}
+    return state
+
+
+async def test_ipp_only_hub_is_ready_when_the_page_printers_are_healthy(
+    async_session_with_one_printer, settings_at_head
+):
+    from app.services.readiness import build_readiness_response
+
+    state = await _ipp_only(async_session_with_one_printer, captured_at=datetime.now(UTC))
+    body = await build_readiness_response(
+        async_session_with_one_printer, state, settings_at_head, version="v", revision="r"
+    )
+    assert body.checks["printer_runtime"].status == "ok"
+    assert body.checks["printer_db_sync"].status == "ok"
+    assert body.checks["snmp_discovery"].status == "ok"
+    assert body.status == "ready"
+
+
+async def test_ipp_only_hub_without_any_probe_yet_is_degraded(
+    async_session_with_one_printer, settings_at_head
+):
+    from app.services.readiness import build_readiness_response
+
+    state = await _ipp_only(async_session_with_one_printer)
+    body = await build_readiness_response(
+        async_session_with_one_printer, state, settings_at_head, version="v", revision="r"
+    )
+    assert body.checks["printer_runtime"].status == "ok"
+    assert body.checks["snmp_discovery"].status == "fail"
+    assert body.status == "degraded"
+
+
+async def test_ipp_only_hub_reports_a_stale_probe(async_session_with_one_printer, settings_at_head):
+    from app.services.readiness import build_readiness_response
+
+    state = await _ipp_only(
+        async_session_with_one_printer, captured_at=datetime.now(UTC) - timedelta(seconds=200)
+    )
+    body = await build_readiness_response(
+        async_session_with_one_printer, state, settings_at_head, version="v", revision="r"
+    )
+    assert body.checks["snmp_discovery"].status == "stale"
+
+
+async def test_hub_without_any_printer_keeps_its_degraded_answer(
+    async_session_with_one_printer, settings_at_head
+):
+    from app.services.readiness import build_readiness_response
+
+    state = _state_with_queue_and_bus(printer_id=None)
+    state.ipp_printer_states = {}
+    body = await build_readiness_response(
+        async_session_with_one_printer, state, settings_at_head, version="v", revision="r"
+    )
+    assert body.checks["printer_runtime"].status == "fail"
+    assert body.checks["printer_db_sync"].status == "skipped"
+    assert body.checks["snmp_discovery"].status == "skipped"
+    assert body.status == "degraded"
