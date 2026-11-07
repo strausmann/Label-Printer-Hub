@@ -49,6 +49,7 @@ __all__ = [
     "BoxHmm",
     "CellImage",
     "CellRenderer",
+    "QrDoesNotFitError",
     "RasterCellRenderer",
     "build_qr",
     "cap_height_px",
@@ -56,6 +57,8 @@ __all__ = [
     "load_cell_font",
     "map_content_type",
     "min_font_px",
+    "qr_edge_px",
+    "qr_fits",
 ]
 
 MIN_CAP_HEIGHT_MM: Final = 1.6
@@ -89,6 +92,22 @@ _FRACTIONS: Final[dict[ContentType, tuple[float, ...]]] = {
 _LISTING_ITEM_FRACTION: Final = 0.17
 _LINE_GAP_EM: Final = 0.30  # space between lines, in em
 _DESCENT_EM: Final = 0.25  # room under the baseline for descenders
+
+
+class QrDoesNotFitError(ContentTypeDataMismatchError):
+    """The QR payload is present but too large for the box (module < 1 px, or no QR holds it).
+
+    Still a ``ContentTypeDataMismatchError`` with ``missing_fields=("qr_payload",)`` so the 422
+    envelope and existing callers are unchanged, but the message does not ask to populate it.
+    """
+
+    def __init__(self, *, content_type: str) -> None:
+        super().__init__(content_type=content_type, missing_fields=("qr_payload",))
+        self.args = (
+            f"ContentType '{content_type}': qr_payload is too long to fit a QR code into the "
+            f"cell (it does not fit with modules of at least one device pixel) - shorten it "
+            f"or use a larger label type.",
+        )
 
 
 @dataclass(frozen=True)
@@ -156,6 +175,24 @@ def build_qr(payload: str, edge_px: int) -> Image.Image | None:
     return canvas
 
 
+def _box_px(box_w_mm: float, box_h_mm: float, dpi: int) -> tuple[int, int]:
+    return max(1, round(box_w_mm / 25.4 * dpi)), max(1, round(box_h_mm / 25.4 * dpi))
+
+
+def qr_edge_px(box_w_mm: float, box_h_mm: float, dpi: int) -> int:
+    """Edge of the QR square in a box: the shorter side of the rendered image, in pixels."""
+    return min(_box_px(box_w_mm, box_h_mm, dpi))
+
+
+def qr_fits(payload: str, box_w_mm: float, box_h_mm: float, dpi: int) -> bool:
+    """Whether the renderer can draw ``payload`` as a QR in this box.
+
+    The renderer calls the same ``qr_edge_px`` and ``build_qr``, so Task 7's pre-check before
+    reserving cells cannot drift from what the runner later does.
+    """
+    return build_qr(payload, qr_edge_px(box_w_mm, box_h_mm, dpi)) is not None
+
+
 @lru_cache(maxsize=256)
 def load_cell_font(size_px: int) -> ImageFont.FreeTypeFont:
     """The bundled PDF font at ``size_px`` (never a machine-dependent fallback), cached."""
@@ -204,11 +241,16 @@ def _clean(value: str | None) -> str:
 
 
 def _check_required(content_type: ContentType, data: LabelData) -> None:
-    missing = tuple(
-        name
-        for name in REQUIRED_FIELDS[content_type]
-        if (value := getattr(data, name)) is None or len(value) == 0
-    )
+    def empty(name: str) -> bool:
+        value = getattr(data, name)
+        if value is None or len(value) == 0:
+            return True
+        # Text that is only whitespace or control characters draws nothing: also missing.
+        if name in ("primary_id", "title"):
+            return not _clean(value)
+        return False
+
+    missing = tuple(name for name in REQUIRED_FIELDS[content_type] if empty(name))
     if missing:
         raise ContentTypeDataMismatchError(content_type=str(content_type), missing_fields=missing)
 
@@ -248,17 +290,14 @@ class RasterCellRenderer:
         data: LabelData,
     ) -> CellImage:
         _check_required(content_type, data)
-        width = max(1, round(box_w_mm / 25.4 * dpi))
-        height = max(1, round(box_h_mm / 25.4 * dpi))
+        width, height = _box_px(box_w_mm, box_h_mm, dpi)
         canvas = Image.new("1", (width, height), 1)
         text_x = 0
         if content_type.value.startswith("qr_"):
-            edge = min(width, height)
+            edge = qr_edge_px(box_w_mm, box_h_mm, dpi)
             qr = build_qr(data.qr_payload or "", edge)
             if qr is None:
-                raise ContentTypeDataMismatchError(
-                    content_type=str(content_type), missing_fields=("qr_payload",)
-                )
+                raise QrDoesNotFitError(content_type=str(content_type))
             canvas.paste(qr, (0, 0))
             text_x = edge + max(2, height // 20)
         truncated = False
@@ -321,11 +360,24 @@ class RasterCellRenderer:
             shown, size, cut = _fit_line(text, round(start * scale), floor, max_w)
             fitted.append((shown, size))
             truncated = truncated or cut
-        total = sum(
-            round(load_cell_font(s).size * (_LINE_GAP_EM + _DESCENT_EM))
-            + cap_height_px(load_cell_font(s))
-            for _, s in fitted
-        )
+
+        def pitch(size: int) -> int:
+            return cap_height_px(load_cell_font(size)) + round(size * (_LINE_GAP_EM + _DESCENT_EM))
+
+        def block_height(items: list[tuple[str, int]]) -> int:
+            # the last line needs room for its descenders only, not for a following line
+            return sum(pitch(s) for _, s in items[:-1]) + (
+                cap_height_px(load_cell_font(items[-1][1])) + round(items[-1][1] * _DESCENT_EM)
+            )
+
+        # At the minimum cap height the lines may still not fit: drop trailing lines and flag
+        # it, never clip at the image border.
+        while len(fitted) > 1 and block_height(fitted) > height:
+            fitted.pop()
+            truncated = True
+        if block_height(fitted) > height:  # not even one line fits
+            return True
+        total = block_height(fitted)
         y = max(0, (height - total) // 2)
         draw = ImageDraw.Draw(canvas)
         for text, size in fitted:
@@ -333,7 +385,7 @@ class RasterCellRenderer:
             cap = cap_height_px(font)
             if text:
                 draw.text((x, y + cap), text, font=font, fill=0, anchor="ls")
-            y += cap + round(size * (_LINE_GAP_EM + _DESCENT_EM))
+            y += pitch(size)
         return truncated
 
 

@@ -306,3 +306,135 @@ def test_text_one_line_empty_primary_id_is_mismatch() -> None:
 
 def test_default_renderer_is_the_raster_renderer() -> None:
     assert isinstance(DEFAULT_CELL_RENDERER, RasterCellRenderer)
+
+
+# --- Fix round 1 -----------------------------------------------------------------------------
+
+
+def _text_row_runs(img: Image.Image, x0: int) -> list[tuple[int, int]]:
+    """Vertical ink runs (start, end) of the columns from ``x0`` on, i.e. the text lines."""
+    inverted = Image.eval(img.convert("L"), lambda v: 255 - v)
+    runs: list[tuple[int, int]] = []
+    start = None
+    for y in range(img.height + 1):
+        has = y < img.height and inverted.crop((x0, y, img.width, y + 1)).getbbox() is not None
+        if has and start is None:
+            start = y
+        if not has and start is not None:
+            runs.append((start, y))
+            start = None
+    return runs
+
+
+def test_qr_edge_px_is_the_shorter_side() -> None:
+    import app.sheets.cell_render as cr
+
+    assert cr.qr_edge_px(42.5, 18.0, 600) == 425  # wider than tall: height
+    assert cr.qr_edge_px(10.0, 18.0, 600) == 236  # narrower than tall: width
+
+
+def test_qr_fits_agrees_with_render() -> None:
+    import app.sheets.cell_render as cr
+
+    for payload, w_mm, h_mm in [
+        ("https://example.test/s/1", 42.5, 18.0),
+        ("x" * 200, 25.4, 10.0),
+        ("x" * 800, 25.4, 10.0),
+        ("x" * 3000, 10.0, 10.0),
+        ("https://example.test/s/1", 10.0, 18.0),
+    ]:
+        data = _data(qr_payload=payload)
+        try:
+            _render(ContentType.QR_ONLY, data, w_mm=w_mm, h_mm=h_mm)
+            rendered = True
+        except ContentTypeDataMismatchError:
+            rendered = False
+        assert cr.qr_fits(payload, w_mm, h_mm, 600) is rendered
+
+
+def test_oversized_qr_message_does_not_claim_the_field_is_missing() -> None:
+    import app.sheets.cell_render as cr
+
+    with pytest.raises(ContentTypeDataMismatchError) as exc:
+        _render(ContentType.QR_ONLY, _data(qr_payload="x" * 3000), w_mm=10.0, h_mm=10.0)
+    assert isinstance(exc.value, cr.QrDoesNotFitError)
+    assert exc.value.missing_fields == ("qr_payload",)
+    assert "populate" not in str(exc.value)
+    assert "too long" in str(exc.value) or "does not fit" in str(exc.value)
+
+
+def test_qr_three_lines_renders_all_three_lines() -> None:
+    cell = _render(
+        ContentType.QR_THREE_LINES,
+        _data(qr_payload="x", primary_id="ID-7", title="Title", secondary=("WWWW",)),
+    )
+    assert len(_text_row_runs(cell.image, 425)) == 3
+    assert cell.truncated is False
+
+
+def test_qr_two_lines_renders_two_lines() -> None:
+    cell = _render(
+        ContentType.QR_TWO_LINES, _data(qr_payload="x", primary_id="ID-7", title="Title")
+    )
+    assert len(_text_row_runs(cell.image, 425)) == 2
+
+
+def test_qr_edge_narrow_box_uses_width() -> None:
+    cell = _render(
+        ContentType.QR_ONLY, _data(qr_payload="https://example.test/s/1"), w_mm=10.0, h_mm=18.0
+    )
+    assert cell.image.size == (236, 425)
+    assert _qr_flaws(cell.image.crop((0, 0, 236, 236))) == []
+    assert _ink_bbox(cell.image)[3] <= 236  # nothing below the square
+
+
+def test_qr_edge_wide_box_uses_height() -> None:
+    cell = _render(ContentType.QR_ONLY, _data(qr_payload="https://example.test/s/1"))
+    assert _ink_bbox(cell.image)[2] <= 425  # QR stays inside the height square
+
+
+@pytest.mark.parametrize(
+    ("ct", "data", "w_mm", "h_mm", "text_x", "lines"),
+    [
+        (
+            ContentType.QR_THREE_LINES,
+            _data(qr_payload="x", primary_id="ID", title="Title", secondary=("sec",)),
+            42.5,
+            7.1,
+            168,
+            2,
+        ),
+        (ContentType.TEXT_TWO_LINES, _data(primary_id="ID", title="Title"), 20.0, 3.0, 0, 1),
+    ],
+    ids=["three-lines-in-7.1mm", "two-lines-in-3mm"],
+)
+def test_lines_that_do_not_fit_are_dropped_and_flagged(
+    ct: ContentType, data: LabelData, w_mm: float, h_mm: float, text_x: int, lines: int
+) -> None:
+    cell = _render(ct, data, w_mm=w_mm, h_mm=h_mm)
+    assert cell.truncated is True
+    runs = _text_row_runs(cell.image, text_x + 2 if text_x else 0)
+    assert len(runs) == lines  # trailing lines dropped, the rest drawn whole
+    assert runs[0][0] > 0  # nothing touches or crosses the image border
+    assert runs[-1][1] < cell.image.height
+
+
+def test_qr_fit_boundary_follows_the_exact_edge() -> None:
+    import app.sheets.cell_render as cr
+
+    # Version 40 has 177 modules + 8 quiet = 185: an edge of 184 px cannot hold it, 185 can.
+    payload = "x" * 2300
+    h_184 = 184 / 600 * 25.4
+    h_185 = 185 / 600 * 25.4
+    assert cr.qr_fits(payload, 42.5, h_184, 600) is False
+    assert cr.qr_fits(payload, 42.5, h_185, 600) is True
+    with pytest.raises(cr.QrDoesNotFitError):
+        _render(ContentType.QR_ONLY, _data(qr_payload=payload), w_mm=42.5, h_mm=h_184)
+    _render(ContentType.QR_ONLY, _data(qr_payload=payload), w_mm=42.5, h_mm=h_185)
+
+
+@pytest.mark.parametrize("value", ["   ", "\x07\x07", "‮"])
+def test_primary_id_empty_after_cleaning_is_mismatch(value: str) -> None:
+    with pytest.raises(ContentTypeDataMismatchError) as exc:
+        _render(ContentType.TEXT_ONE_LINE, _data(primary_id=value))
+    assert exc.value.missing_fields == ("primary_id",)
