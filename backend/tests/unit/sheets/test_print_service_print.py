@@ -46,6 +46,7 @@ from app.sheets.sheet_page import SheetPageDetail
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from tests.helpers.pdf_inspect import placed_images
 from tests.unit.sheets.test_print_service_preview import (
     G48,
     G_SMALL,
@@ -708,11 +709,9 @@ async def test_no_database_transaction_is_open_while_the_lookups_run(
 async def test_the_margin_qr_of_the_preview_has_the_size_the_job_prints(
     factory: async_sessionmaker[AsyncSession],
     session: AsyncSession,
-    tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import io
-    import subprocess
 
     from app.sheets.cell_render import DEFAULT_CELL_RENDERER
     from app.sheets.sheet_page import render_sheet_page
@@ -753,16 +752,14 @@ async def test_the_margin_qr_of_the_preview_has_the_size_the_job_prints(
         assert bbox is not None
         return bbox[2] - bbox[0]
 
-    pdf = tmp_path / "job.pdf"
-    pdf.write_bytes(render_sheet_page(queue.payloads[0], DEFAULT_CELL_RENDERER))
-    subprocess.run(
-        ["pdftoppm", "-r", "600", "-png", "-singlefile", str(pdf), str(tmp_path / "job")],
-        check=True,
-    )
-    job_img = Image.open(tmp_path / "job.png")
+    pdf = render_sheet_page(queue.payloads[0], DEFAULT_CELL_RENDERER, compress=False)
+    # The margin QR is the last image the job draws. Its ink is measured from the image's own
+    # pixels and its placement on the page: no rasteriser (tests must not need poppler).
+    qr = placed_images(pdf)[-1]
+    x0, _, x1, _ = ink_box_px(qr.image)
+    job_mm = (x1 - x0) * qr.mm_per_pixel
     preview_img = Image.open(io.BytesIO(spy_pngs[0]))
     preview_mm = ink_width_px(preview_img, 150) / 150 * 25.4
-    job_mm = ink_width_px(job_img, 600) / 600 * 25.4
     assert abs(preview_mm - job_mm) <= 25.4 / 150  # within one preview pixel
 
 
@@ -957,6 +954,16 @@ async def test_uuid_job_ids_are_fresh_per_print(
     assert reservation.release is not None
 
 
+def ink_box_px(
+    img: Any, crop: tuple[int, int, int, int] | None = None
+) -> tuple[int, int, int, int]:
+    """Bounding box of the dark pixels of a 1-bit PDF image (0 = black), inside ``crop``."""
+    mask = img.convert("L").point(lambda v: 255 if v < 128 else 0)
+    box = (mask if crop is None else mask.crop(crop)).getbbox()
+    assert box is not None
+    return box
+
+
 # ---------------------------------------------------------------------------- cell QR size
 
 CELL_GEOMETRIES = {
@@ -977,13 +984,11 @@ CELL_GEOMETRIES = {
 async def test_a_cell_qr_has_the_same_size_in_the_preview_and_the_job_pdf(
     factory: async_sessionmaker[AsyncSession],
     session: AsyncSession,
-    tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
     shape: str,
     dpi: int,
 ) -> None:
     import io
-    import subprocess
 
     from app.sheets.cell_render import DEFAULT_CELL_RENDERER, content_box, qr_edge_px
     from app.sheets.sheet_page import render_sheet_page
@@ -1013,12 +1018,7 @@ async def test_a_cell_qr_has_the_same_size_in_the_preview_and_the_job_pdf(
     queue = FakeQueue()
     await run_print(factory, printer, request, queue=queue)
 
-    pdf = tmp_path / "job.pdf"
-    pdf.write_bytes(render_sheet_page(queue.payloads[0], DEFAULT_CELL_RENDERER))
-    subprocess.run(
-        ["pdftoppm", "-r", "600", "-png", "-singlefile", str(pdf), str(tmp_path / "job")],
-        check=True,
-    )
+    pdf = render_sheet_page(queue.payloads[0], DEFAULT_CELL_RENDERER, compress=False)
     box = content_box(g, 1)
     edge_mm = qr_edge_px(box.w / 100, box.h / 100, 1000) / 1000 * 25.4  # the square, in mm
 
@@ -1031,8 +1031,13 @@ async def test_a_cell_qr_has_the_same_size_in_the_preview_and_the_job_pdf(
         assert found is not None
         return (found[2] - found[0]) / dpi * 25.4, (found[3] - found[1]) / dpi * 25.4
 
+    # The job's cell image: the QR square is its top-left corner. Its scale is the image's pixel
+    # size against the rectangle the page draws it in (no rasteriser).
+    cell = placed_images(pdf)[0]
+    edge_px = round(edge_mm / cell.mm_per_pixel)
+    x0, y0, x1, y1 = ink_box_px(cell.image, (0, 0, edge_px, edge_px))
+    job = ((x1 - x0) * cell.mm_per_pixel, (y1 - y0) * cell.mm_per_pixel)
     preview = ink_mm(Image.open(io.BytesIO(pngs[0])), 150)
-    job = ink_mm(Image.open(tmp_path / "job.png"), 600)
     one_preview_pixel = 25.4 / 150
     assert abs(preview[0] - job[0]) <= one_preview_pixel, (preview, job)
     assert abs(preview[1] - job[1]) <= one_preview_pixel, (preview, job)
