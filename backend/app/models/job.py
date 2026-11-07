@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Index, String
+from sqlalchemy import JSON, CheckConstraint, DateTime, Index, String, text
 from sqlmodel import Column, Field, SQLModel
 
 
@@ -36,6 +36,9 @@ class Job(SQLModel, table=True):
     __table_args__ = (
         Index("ix_jobs_state", "state"),
         Index("ix_jobs_api_key_id", "api_key_id"),
+        # The sheet of a page job, for the in-flight rules (R11-1). The text must equal
+        # ``repositories.sheets.PAGE_SHEET_EXPR`` or SQLite does not use the index.
+        Index("ix_jobs_page_sheet", text("json_extract(payload, '$.detail.sheet_id')")),
         CheckConstraint(
             f"state IN ({','.join(repr(s.value) for s in JobState)})",
             name="ck_jobs_state",

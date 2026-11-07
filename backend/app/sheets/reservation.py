@@ -194,7 +194,7 @@ async def _in_flight_flags(session: AsyncSession, sheet_id: UUID) -> tuple[bool,
     if await repo.has_unattached_reservation(session, sheet_id):
         return True, True
     payloads = [
-        *await repo.active_job_payloads(session),
+        *await repo.active_job_payloads(session, sheet_id),
         *await repo.unconfirmed_job_payloads(session, sheet_id),
         *await repo.unsettled_job_payloads(session, sheet_id),
     ]

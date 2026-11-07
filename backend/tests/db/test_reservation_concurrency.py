@@ -238,3 +238,76 @@ async def test_a_burst_of_maximal_prints_does_not_starve_the_write_lock(
     assert failures == []
     codes = [p.sheet_code for r in results if not isinstance(r, BaseException) for p in r]
     assert len(codes) == len(set(codes)) == 300  # every sheet got its own code
+
+
+async def _timed_reserve_on_existing(
+    factory: async_sessionmaker[AsyncSession], codes: list[str]
+) -> float:
+    import time
+
+    async with factory() as s:
+        t = time.perf_counter()
+        await reserve(
+            s,
+            placements=[PlacementRequest(sheet_code=c, new_sheet=None, count=1) for c in codes],
+            items=[ItemMeta("api", f"item {i}", None) for i in range(len(codes))],
+            expected=None,
+            hw_margins_hmm=None,
+            margin=MARGIN,
+            required_type_key=None,
+            actor="tester",
+        )
+        return time.perf_counter() - t
+
+
+async def test_the_lock_hold_does_not_grow_with_unrelated_queued_payloads(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """R11-1: the in-flight check read and decoded every queued payload of the hub for each
+    existing sheet of a request, under the write lock. 200 unrelated queued jobs of about
+    300 KB (60 MB, what one print key can queue) took the lock for tens of seconds. Only the
+    jobs of the sheet are read now, by index, and only the two entries the rules look at."""
+    import json
+    from uuid import uuid4
+
+    from app.models.job import Job
+
+    # Fresh sheets for each run: a reservation without a job row makes the check answer at once.
+    codes = [await new_sheet(factory, used=0, placement="margin") for _ in range(50)]
+    more = [await new_sheet(factory, used=0, placement="margin") for _ in range(50)]
+    quiet = await _timed_reserve_on_existing(factory, more)
+
+    cell = {"label_data": {"title": "T" * 512, "secondary": ["S" * 512] * 10}}
+    other_sheet = {
+        "kind": "sheet_page",
+        "detail": {
+            "sheet_id": str(uuid4()),
+            "margin_id": {"text": "x"},
+            "feed_mark": {"x": 1},
+            "cells": [cell] * 150,
+        },
+    }
+    assert len(json.dumps(other_sheet)) > 250_000
+    async with factory() as s:
+        printer_id = uuid4()
+        from app.models.printer import Printer
+
+        s.add(
+            Printer(
+                id=printer_id,
+                name="p",
+                slug="p",
+                model="m",
+                backend="ipp",
+                connection={"uri": "ipp://x.invalid/ipp"},
+                enabled=True,
+            )
+        )
+        await s.flush()
+        for _ in range(200):
+            s.add(Job(printer_id=printer_id, state="queued", payload=other_sheet))
+        await s.commit()
+
+    loaded = await _timed_reserve_on_existing(factory, codes)
+
+    assert loaded < quiet * 3 + 0.5, (quiet, loaded)
