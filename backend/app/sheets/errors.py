@@ -165,6 +165,41 @@ class CellOutOfRangeError(SheetApiError):
         super().__init__(detail={"cells": cells, "max": max_cell})
 
 
+class InsufficientCellsError(SheetApiError):
+    """The free cells of the chosen sheets do not hold all items (spec 8)."""
+
+    status = 409
+    error_code = "insufficient_cells"
+    message = "Not enough free cells for these items."
+
+    def __init__(self, free_cells: list[int], needed: int, shortfall: int) -> None:
+        super().__init__(
+            detail={"free_cells": free_cells, "needed": needed, "shortfall": shortfall}
+        )
+
+
+class InvalidPlacementsError(SheetApiError):
+    """The placements contradict each other or the item count; ``reason`` names the rule."""
+
+    status = 422
+    error_code = "invalid_placements"
+    message = "The placements are not valid."
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(detail={"reason": reason})
+
+
+class MarginTooSmallError(SheetApiError):
+    """The top margin leaves too little room for the margin ID on this printer (OC-16)."""
+
+    status = 422
+    error_code = "margin_too_small"
+    message = "The top margin is too narrow for this printer."
+
+    def __init__(self, usable_mm: float) -> None:
+        super().__init__(detail={"usable_mm": usable_mm})
+
+
 class ImportTooLargeError(SheetApiError):
     status = 413
     error_code = "import_too_large"
