@@ -122,12 +122,12 @@ async def test_export_document_shape(session: AsyncSession) -> None:
 
 
 async def test_export_unknown_type_or_version(session: AsyncSession) -> None:
-    from app.sheets.errors import SheetTypeNotFoundError
+    from app.sheets.errors import SheetTypeNotFoundError, SheetTypeVersionNotFoundError
 
     with pytest.raises(SheetTypeNotFoundError):
         await exchange.export_type(session, "nope-nope", None)
     await ts.create_type(session, _fields(), G, actor="tester")
-    with pytest.raises(SheetTypeNotFoundError):
+    with pytest.raises(SheetTypeVersionNotFoundError):
         await exchange.export_type(session, "avery-l4736", 7)
 
 

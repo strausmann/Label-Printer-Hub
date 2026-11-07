@@ -17,6 +17,7 @@ from app.sheets.errors import (
     PrefixTakenError,
     SheetTypeInUseError,
     SheetTypeNotFoundError,
+    SheetTypeVersionNotFoundError,
     TypeExistsError,
 )
 from app.sheets.geometry import Geometry, cell_count
@@ -191,8 +192,10 @@ async def test_get_type_not_found_and_get_version(session: AsyncSession) -> None
         await ts.get_type(session, "nope")
     t, v1 = await ts.create_type(session, fields(), G_4X12, actor="tester")
     assert (await ts.get_version(session, t.key, 1)).id == v1.id
-    with pytest.raises(SheetTypeNotFoundError):
+    with pytest.raises(SheetTypeVersionNotFoundError):  # the type exists, the version does not
         await ts.get_version(session, t.key, 7)
+    with pytest.raises(SheetTypeNotFoundError):
+        await ts.get_version(session, "nope", 1)
 
 
 async def test_new_version_does_not_move_existing_sheets(session: AsyncSession) -> None:
