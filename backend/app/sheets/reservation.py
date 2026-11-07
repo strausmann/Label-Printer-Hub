@@ -150,7 +150,7 @@ class ExpectedPage:
 def _active_sheet_page_carries(
     payloads: Sequence[dict[str, Any]], sheet_id: UUID, key: str
 ) -> bool:
-    """Whether a queued or printing page payload of the sheet has a truthy ``detail[key]``."""
+    """Whether a ``sheet_page`` payload of the sheet in the list has a truthy ``detail[key]``."""
     for payload in payloads:
         if payload.get("kind") != "sheet_page":
             continue
@@ -163,42 +163,36 @@ def _active_sheet_page_carries(
 
 
 async def margin_id_in_flight(session: AsyncSession, sheet_id: UUID) -> bool:
-    """Whether another job already carries (or is about to carry) the sheet's margin ID.
+    """Whether another job already carries (or may have printed) the sheet's margin ID.
 
-    True if a queued or printing ``sheet_page`` job of the sheet has ``detail.margin_id``, or
-    if the sheet has ``reserved`` cells whose job has no ``jobs`` row yet: the page job is
-    saved after the reservation commits, and in that window a second request must not draw the
-    margin ID again (C26). The second rule is conservative: at worst the margin ID moves to a
-    later job (OC-40).
+    True if a queued or printing ``sheet_page`` job of the sheet has ``detail.margin_id``; if
+    a job that still owns an ``unconfirmed`` cell of the sheet carried it (it may have printed,
+    so it stays in flight until a human resolves the cell, F3-1); or if the sheet has
+    ``reserved`` cells whose job has no ``jobs`` row yet: the page job is saved after the
+    reservation commits, and in that window a second request must not draw the margin ID again
+    (C26). The last rule is conservative: at worst the margin ID moves to a later job (OC-40).
     """
-    if await repo.has_unattached_reservation(session, sheet_id):
-        return True
-    return _active_sheet_page_carries(
-        await repo.active_job_payloads(session), sheet_id, "margin_id"
-    )
+    return (await _in_flight_flags(session, sheet_id))[0]
 
 
 async def feed_mark_in_flight(session: AsyncSession, sheet_id: UUID) -> bool:
-    """Whether another job already carries (or is about to carry) the sheet's feed mark.
+    """Whether another job already carries (or may have printed) the sheet's feed mark.
 
-    The same two rules as ``margin_id_in_flight``, keyed on ``detail.feed_mark``: a queued or
-    printing page job of the sheet carries it, or a ``reserved`` cell of the sheet points at a
-    job that has no ``jobs`` row yet (C26). Conservative: at worst the mark moves to a later
-    job (OC-56).
+    The same three rules as ``margin_id_in_flight``, keyed on ``detail.feed_mark`` (OC-56).
     """
-    if await repo.has_unattached_reservation(session, sheet_id):
-        return True
-    return _active_sheet_page_carries(
-        await repo.active_job_payloads(session), sheet_id, "feed_mark"
-    )
+    return (await _in_flight_flags(session, sheet_id))[1]
 
 
 async def _in_flight_flags(session: AsyncSession, sheet_id: UUID) -> tuple[bool, bool]:
-    """``(margin ID, feed mark)`` in flight, from one read of the unattached reservations and
-    of the active payloads (the same rules as the two public functions)."""
+    """``(margin ID, feed mark)`` in flight, from one read of each source: a reservation
+    without a job row yet, queued or printing payloads, and the payloads of jobs that still own
+    unconfirmed cells of the sheet."""
     if await repo.has_unattached_reservation(session, sheet_id):
         return True, True
-    payloads = await repo.active_job_payloads(session)
+    payloads = [
+        *await repo.active_job_payloads(session),
+        *await repo.unconfirmed_job_payloads(session, sheet_id),
+    ]
     return (
         _active_sheet_page_carries(payloads, sheet_id, "margin_id"),
         _active_sheet_page_carries(payloads, sheet_id, "feed_mark"),

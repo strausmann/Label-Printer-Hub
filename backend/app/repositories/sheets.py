@@ -128,6 +128,29 @@ async def active_job_payloads(session: AsyncSession) -> list[dict[str, Any]]:
     return [p for p in result.scalars().all() if isinstance(p, dict)]
 
 
+async def unconfirmed_job_payloads(session: AsyncSession, sheet_id: UUID) -> list[dict[str, Any]]:
+    """Payloads of the jobs that still own an ``unconfirmed`` cell of the sheet.
+
+    Such a job may have printed its page, so what it carried (margin ID, feed mark) counts as
+    maybe printed until a human resolves the cells (spec 10.2a, F3-1). Retention spares these
+    jobs, so their rows exist; a cell whose row is gone contributes nothing.
+    """
+    result = await session.execute(
+        select(col(Job.payload))
+        .where(
+            col(Job.id).in_(
+                select(col(SheetCell.job_id)).where(
+                    col(SheetCell.sheet_id) == sheet_id,
+                    col(SheetCell.state) == "unconfirmed",
+                    col(SheetCell.job_id).is_not(None),
+                )
+            )
+        )
+        .execution_options(**_FRESH)
+    )
+    return [p for p in result.scalars().all() if isinstance(p, dict)]
+
+
 async def reserved_cells_of_job(session: AsyncSession, job_id: UUID) -> list[SheetCell]:
     result = await session.execute(
         select(SheetCell)

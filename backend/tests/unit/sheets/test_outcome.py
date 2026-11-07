@@ -840,3 +840,109 @@ async def test_completed_cell_sheet_job_sets_both_flags(
 
     after = await read_sheet(async_session_factory)
     assert (after.id_printed, after.feed_mark_printed) == (True, True)
+
+
+# ------------------------------------------------- unconfirmed carriers (F3-1, review I1)
+
+
+async def _interrupted_margin_job(
+    session: AsyncSession, factory: Factory, placement: str = "margin"
+) -> Any:
+    """A new sheet's first page, carrying the margin ID and the feed mark, interrupted."""
+    (page,) = await do_reserve(session, [new(placement)], 2)
+    await add_job(
+        session,
+        page.job_id,
+        "failed",
+        margin_id=placement == "margin",
+        feed_mark=True,
+        sheet_id=page.sheet_id,
+        result={"started": True},
+        error="print_interrupted",
+        finished_at=datetime.now(UTC),
+    )
+    await SheetCellsOutcome(factory, None).on_ended(
+        page.job_id, state="failed", started=True, error_code="print_interrupted"
+    )
+    assert set(states(await read_cells(factory)).values()) == {"unconfirmed"}
+    return page
+
+
+async def test_interrupted_margin_job_blocks_a_second_id_and_mark(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    """Review I1: the first page may be on the sheet, so a second print before anyone resolves
+    the cells draws neither the margin ID nor the feed mark again (spec 10.2a)."""
+    page = await _interrupted_margin_job(session, async_session_factory)
+
+    (second,) = await do_reserve(session, [existing(page.sheet_code)], 1)
+
+    assert second.margin_id is False
+    assert second.feed_mark is None
+
+
+async def test_resolving_printed_sets_the_flags_and_nothing_is_reprinted(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    page = await _interrupted_margin_job(session, async_session_factory)
+    unconfirmed = sorted(states(await read_cells(async_session_factory)))
+
+    await ss.resolve_cells(session, page.sheet_code, unconfirmed, "printed", actor="tester")
+
+    sheet = await read_sheet(async_session_factory)
+    assert (sheet.id_printed, sheet.feed_mark_printed) == (True, True)
+    (later,) = await do_reserve(session, [existing(page.sheet_code)], 1)
+    assert later.margin_id is False
+    assert later.feed_mark is None
+
+
+async def test_resolving_not_printed_makes_the_next_job_print_both(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    page = await _interrupted_margin_job(session, async_session_factory)
+    unconfirmed = sorted(states(await read_cells(async_session_factory)))
+
+    await ss.resolve_cells(session, page.sheet_code, unconfirmed, "not_printed", actor="tester")
+
+    sheet = await read_sheet(async_session_factory)
+    assert (sheet.id_printed, sheet.feed_mark_printed) == (False, False)
+    (next_page,) = await do_reserve(session, [existing(page.sheet_code)], 1)
+    assert next_page.margin_id is True
+    assert next_page.feed_mark is not None
+
+
+async def test_unconfirmed_id_cell_job_blocks_a_second_feed_mark_on_a_cell_sheet(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    """The ``cell`` placement: the hub cell already blocks a second ID cell; the feed mark the
+    same job carried must not come back either."""
+    page = await _interrupted_margin_job(session, async_session_factory, placement="cell")
+
+    (second,) = await do_reserve(session, [existing(page.sheet_code)], 1)
+
+    assert second.id_cell is None
+    assert second.feed_mark is None
+
+
+async def test_retention_keeps_a_job_with_unconfirmed_cells(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    """F3-1: the row stays until the cells are resolved, so "printed" can still read it."""
+    from app.repositories import jobs as jobs_repo
+
+    page = await _interrupted_margin_job(session, async_session_factory)
+    async with async_session_factory() as s:
+        await s.execute(
+            update(Job)
+            .where(Job.id == page.job_id)
+            .values(finished_at=datetime.now(UTC) - timedelta(days=40))
+        )
+        await s.commit()
+
+    async with async_session_factory() as s:
+        assert await jobs_repo.evict_terminal_older_than(s, timedelta(days=30)) == 0
+    unconfirmed = sorted(states(await read_cells(async_session_factory)))
+    await ss.resolve_cells(session, page.sheet_code, unconfirmed, "printed", actor="tester")
+    assert (await read_sheet(async_session_factory)).id_printed is True
+    async with async_session_factory() as s:  # counter-check: resolved cells end the protection
+        assert await jobs_repo.evict_terminal_older_than(s, timedelta(days=30)) == 1
