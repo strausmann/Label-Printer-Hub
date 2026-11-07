@@ -1,0 +1,341 @@
+"""Cell renderer: draws one label into one sheet cell (spec 12.1 and 12.3).
+
+The renderer is a small protocol, separate from the tape ``LayoutEngine``, so that the sheet
+code never depends on how a cell is drawn (the hook for #178). ``DEFAULT_CELL_RENDERER`` is the
+single place a better implementation is swapped in.
+
+Rules every implementation follows (spec 12.3):
+
+* same content types and required fields as the tape engine (``REQUIRED_FIELDS``), one
+  ``ContentTypeDataMismatchError`` for missing fields;
+* QR module size a whole number of device pixels, a quiet zone of four modules inside the box;
+* text shrinks down to a minimum cap height of 1.6 mm (OC-27), then is shortened with an
+  ellipsis and flagged ``truncated``;
+* nothing is drawn outside the box.
+
+Deviation from the spec's implementation hint ("reuses the existing QR generation"): the tape
+builder ``LayoutEngine._build_qr_image`` renders with ``border=0`` and a ``NEAREST`` resize, so
+modules are not whole device pixels and there is no quiet zone. ``build_qr`` here follows the
+rules of 12.3 instead; the tape path is untouched.
+
+Stable names for Task 7's pre-check before anything is reserved: ``REQUIRED_FIELDS`` (re-exported
+from ``app.services.layout_engine``), ``map_content_type`` and ``build_qr``.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Final, Protocol
+
+import qrcode
+import qrcode.constants
+import qrcode.exceptions
+from PIL import Image, ImageDraw, ImageFont
+
+from app.page_render.pdf import resolve_font_path
+from app.printer_backends.exceptions import ContentTypeDataMismatchError
+from app.schemas.content_type import ContentType
+from app.schemas.label_data import LabelData
+from app.services.layout_engine import REQUIRED_FIELDS
+from app.sheets.geometry import Geometry, cell_origin
+from app.sheets.text import sanitise_text
+
+__all__ = [
+    "DEFAULT_CELL_RENDERER",
+    "MIN_CAP_HEIGHT_MM",
+    "REQUIRED_FIELDS",
+    "BoxHmm",
+    "CellImage",
+    "CellRenderer",
+    "RasterCellRenderer",
+    "build_qr",
+    "cap_height_px",
+    "content_box",
+    "load_cell_font",
+    "map_content_type",
+    "min_font_px",
+]
+
+MIN_CAP_HEIGHT_MM: Final = 1.6
+"""Smallest text cap height (OC-27); below it text is shortened instead of shrunk."""
+
+_BASE_INSET_HMM: Final = 100  # 1.0 mm
+_UNKNOWN_RADIUS_INSET_HMM: Final = 160  # unknown radius counts as 2.0 mm: 1.0 + 0.3 * 2.0
+_RADIUS_FACTOR: Final = 0.3
+_QUIET_MODULES: Final = 4
+_ELLIPSIS: Final = "…"
+_MAX_TEXT_CHARS: Final = 2000  # input is cut before any measuring (hostile 10 000-char titles)
+
+_MAPPED_WITHOUT_QR: Final[dict[ContentType, ContentType]] = {
+    ContentType.QR_ONLY: ContentType.TEXT_ONE_LINE,
+    ContentType.QR_ONE_LINE: ContentType.TEXT_ONE_LINE,
+    ContentType.QR_TWO_LINES: ContentType.TEXT_TWO_LINES,
+    ContentType.QR_THREE_LINES: ContentType.TEXT_TWO_LINES,
+    ContentType.QR_WITH_LISTING: ContentType.TEXT_TWO_LINES,
+}
+
+# Font sizes (em, in px) as fractions of the box height; the cap height is about 0.73 em.
+_FRACTIONS: Final[dict[ContentType, tuple[float, ...]]] = {
+    ContentType.QR_ONLY: (),
+    ContentType.QR_ONE_LINE: (0.50,),
+    ContentType.TEXT_ONE_LINE: (0.55,),
+    ContentType.QR_TWO_LINES: (0.38, 0.27),
+    ContentType.TEXT_TWO_LINES: (0.40, 0.28),
+    ContentType.QR_THREE_LINES: (0.30, 0.22, 0.17),
+    ContentType.QR_WITH_LISTING: (0.26,),
+}
+_LISTING_ITEM_FRACTION: Final = 0.17
+_LINE_GAP_EM: Final = 0.30  # space between lines, in em
+_DESCENT_EM: Final = 0.25  # room under the baseline for descenders
+
+
+@dataclass(frozen=True)
+class BoxHmm:
+    """Content box on the page, in hundredths of a millimetre."""
+
+    x: int
+    y: int
+    w: int
+    h: int
+
+
+def content_box(g: Geometry, n: int) -> BoxHmm:
+    """Content box of cell ``n`` (OC-25).
+
+    Rectangles are inset by ``1.0 mm + 0.3 x corner_radius`` per side (unknown radius counts as
+    2.0 mm, inset 1.6 mm); round cells use the square inscribed in the circle, inset by 1.0 mm,
+    centred in the cell.
+    """
+    ox, oy = cell_origin(g, n)
+    if g.shape == "round":
+        side = round(g.label_w / math.sqrt(2)) - 2 * _BASE_INSET_HMM
+        return BoxHmm(ox + (g.label_w - side) // 2, oy + (g.label_h - side) // 2, side, side)
+    inset = (
+        _UNKNOWN_RADIUS_INSET_HMM
+        if g.corner_radius is None
+        else _BASE_INSET_HMM + round(_RADIUS_FACTOR * g.corner_radius)
+    )
+    return BoxHmm(ox + inset, oy + inset, g.label_w - 2 * inset, g.label_h - 2 * inset)
+
+
+def map_content_type(ct: ContentType, allow_qr: bool) -> tuple[ContentType, bool]:
+    """Content type to draw on a type with ``allow_qr``, and whether it was mapped (spec 12.5)."""
+    if allow_qr:
+        return ct, False
+    mapped = _MAPPED_WITHOUT_QR.get(ct, ct)
+    return mapped, mapped is not ct
+
+
+def build_qr(payload: str, edge_px: int) -> Image.Image | None:
+    """QR in an ``edge_px`` square, mode ``"1"``; ``None`` if it cannot fit.
+
+    Modules are a whole number of pixels (``edge_px // (n + 8)``, never resampled) and the four
+    module quiet zone lies inside the square; the symbol is centred. A module below one pixel,
+    or a payload larger than any QR symbol holds, returns ``None``.
+    """
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        border=_QUIET_MODULES,
+    )
+    try:
+        qr.add_data(payload)
+        qr.make(fit=True)
+    except (qrcode.exceptions.DataOverflowError, ValueError):
+        return None
+    modules = len(qr.get_matrix()) - 2 * _QUIET_MODULES
+    box_size = edge_px // (modules + 2 * _QUIET_MODULES)
+    if box_size < 1:
+        return None
+    qr.box_size = box_size
+    symbol = qr.make_image(fill_color="black", back_color="white").convert("1")
+    canvas = Image.new("1", (edge_px, edge_px), 1)
+    canvas.paste(symbol, ((edge_px - symbol.width) // 2, (edge_px - symbol.height) // 2))
+    return canvas
+
+
+@lru_cache(maxsize=256)
+def load_cell_font(size_px: int) -> ImageFont.FreeTypeFont:
+    """The bundled PDF font at ``size_px`` (never a machine-dependent fallback), cached."""
+    return ImageFont.truetype(str(resolve_font_path()), size_px)
+
+
+def cap_height_px(font: ImageFont.FreeTypeFont) -> int:
+    """Height of a capital letter in ``font``, in pixels."""
+    _, top, _, bottom = font.getbbox("H")
+    return int(bottom - top)
+
+
+@lru_cache(maxsize=16)
+def min_font_px(dpi: int) -> int:
+    """Smallest font size whose cap height reaches ``MIN_CAP_HEIGHT_MM`` at ``dpi``."""
+    target = math.ceil(MIN_CAP_HEIGHT_MM / 25.4 * dpi)
+    size = 1
+    while cap_height_px(load_cell_font(size)) < target:
+        size += 1
+    return size
+
+
+@dataclass
+class CellImage:
+    image: Image.Image
+    truncated: bool
+
+
+class CellRenderer(Protocol):
+    def render(
+        self,
+        *,
+        box_w_mm: float,
+        box_h_mm: float,
+        dpi: int,
+        content_type: ContentType,
+        data: LabelData,
+    ) -> CellImage:
+        """Draw ``data`` as ``content_type`` into a 1-bit image of exactly the box at ``dpi``."""
+        ...
+
+
+def _clean(value: str | None) -> str:
+    text = (value or "")[:_MAX_TEXT_CHARS]
+    return sanitise_text(text, max_len=_MAX_TEXT_CHARS)
+
+
+def _check_required(content_type: ContentType, data: LabelData) -> None:
+    missing = tuple(
+        name
+        for name in REQUIRED_FIELDS[content_type]
+        if (value := getattr(data, name)) is None or len(value) == 0
+    )
+    if missing:
+        raise ContentTypeDataMismatchError(content_type=str(content_type), missing_fields=missing)
+
+
+def _fit_line(text: str, start_px: int, min_px: int, max_w: int) -> tuple[str, int, bool]:
+    """Shrink one pixel at a time to ``min_px``, then shorten with an ellipsis.
+
+    Returns the text to draw, the font size used and whether the text was shortened.
+    """
+    size = max(start_px, min_px)
+    while size > min_px and load_cell_font(size).getlength(text) > max_w:
+        size -= 1
+    font = load_cell_font(size)
+    if font.getlength(text) <= max_w:
+        return text, size, False
+    lo, hi = 0, len(text)  # longest prefix that fits together with the ellipsis
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if font.getlength(text[:mid].rstrip() + _ELLIPSIS) <= max_w:
+            lo = mid
+        else:
+            hi = mid - 1
+    shortened = text[:lo].rstrip() + _ELLIPSIS
+    return (shortened if font.getlength(shortened) <= max_w else ""), size, True
+
+
+class RasterCellRenderer:
+    """Raster renderer: QR edge = box height, text column to its right, sizes as fractions."""
+
+    def render(
+        self,
+        *,
+        box_w_mm: float,
+        box_h_mm: float,
+        dpi: int,
+        content_type: ContentType,
+        data: LabelData,
+    ) -> CellImage:
+        _check_required(content_type, data)
+        width = max(1, round(box_w_mm / 25.4 * dpi))
+        height = max(1, round(box_h_mm / 25.4 * dpi))
+        canvas = Image.new("1", (width, height), 1)
+        text_x = 0
+        if content_type.value.startswith("qr_"):
+            edge = min(width, height)
+            qr = build_qr(data.qr_payload or "", edge)
+            if qr is None:
+                raise ContentTypeDataMismatchError(
+                    content_type=str(content_type), missing_fields=("qr_payload",)
+                )
+            canvas.paste(qr, (0, 0))
+            text_x = edge + max(2, height // 20)
+        truncated = False
+        max_w = width - text_x
+        if _FRACTIONS[content_type] and max_w > 0:
+            truncated = self._draw_text(canvas, content_type, data, text_x, max_w, dpi)
+        return CellImage(canvas, truncated)
+
+    def _lines(
+        self, content_type: ContentType, data: LabelData, height: int
+    ) -> tuple[list[tuple[str, int]], int]:
+        """Lines to draw as (text, start size); second value: items left out of a listing."""
+        starts = [max(1, round(f * height)) for f in _FRACTIONS[content_type]]
+        primary = _clean(data.primary_id)
+        match content_type:
+            case ContentType.QR_ONE_LINE | ContentType.TEXT_ONE_LINE:
+                return [(primary, starts[0])], 0
+            case ContentType.QR_TWO_LINES | ContentType.TEXT_TWO_LINES:
+                return [(primary, starts[0]), (_clean(data.title), starts[1])], 0
+            case ContentType.QR_THREE_LINES:
+                return [
+                    (primary, starts[0]),
+                    (_clean(data.title), starts[1]),
+                    (_clean(data.secondary[0]), starts[2]),
+                ], 0
+            case _:  # QR_WITH_LISTING
+                item_px = max(1, round(_LISTING_ITEM_FRACTION * height))
+                per_line = item_px * (1 + _LINE_GAP_EM)
+                room = height - starts[0] * (1 + _LINE_GAP_EM)
+                fit = max(1, int(room // per_line))
+                items = [_clean(i.item) for i in data.items]
+                shown = items
+                omitted = 0
+                if len(items) > fit:
+                    shown = items[: fit - 1]
+                    omitted = len(items) - len(shown)
+                lines = [(primary, starts[0])] + [(t, item_px) for t in shown]
+                if omitted:
+                    lines.append((f"+{omitted} more", item_px))
+                return lines, omitted
+
+    def _draw_text(
+        self,
+        canvas: Image.Image,
+        content_type: ContentType,
+        data: LabelData,
+        x: int,
+        max_w: int,
+        dpi: int,
+    ) -> bool:
+        height = canvas.height
+        lines, omitted = self._lines(content_type, data, height)
+        floor = min_font_px(dpi)
+        # Scale the start sizes down together if the stacked block would not fit the height.
+        block = sum(s * (1 + _LINE_GAP_EM + _DESCENT_EM) for _, s in lines)
+        scale = min(1.0, height / block) if block else 1.0
+        fitted: list[tuple[str, int]] = []
+        truncated = omitted > 0
+        for text, start in lines:
+            shown, size, cut = _fit_line(text, round(start * scale), floor, max_w)
+            fitted.append((shown, size))
+            truncated = truncated or cut
+        total = sum(
+            round(load_cell_font(s).size * (_LINE_GAP_EM + _DESCENT_EM))
+            + cap_height_px(load_cell_font(s))
+            for _, s in fitted
+        )
+        y = max(0, (height - total) // 2)
+        draw = ImageDraw.Draw(canvas)
+        for text, size in fitted:
+            font = load_cell_font(size)
+            cap = cap_height_px(font)
+            if text:
+                draw.text((x, y + cap), text, font=font, fill=0, anchor="ls")
+            y += cap + round(size * (_LINE_GAP_EM + _DESCENT_EM))
+        return truncated
+
+
+DEFAULT_CELL_RENDERER: CellRenderer = RasterCellRenderer()
+"""The single place #178 swaps in a better renderer."""

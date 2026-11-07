@@ -11,8 +11,9 @@ The _render_*() methods are implemented in subsequent tasks (7-13).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from functools import lru_cache
-from typing import ClassVar
+from typing import Final
 
 import qrcode
 import qrcode.constants
@@ -26,26 +27,27 @@ from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.tape_geometry import TAPE_GEOMETRY, TapeGeometry
 
+REQUIRED_FIELDS: Final[Mapping[ContentType, tuple[str, ...]]] = {
+    ContentType.QR_ONLY: ("qr_payload",),
+    ContentType.QR_ONE_LINE: ("qr_payload", "primary_id"),
+    ContentType.QR_TWO_LINES: ("qr_payload", "primary_id", "title"),
+    ContentType.QR_THREE_LINES: ("qr_payload", "primary_id", "title", "secondary"),
+    ContentType.TEXT_ONE_LINE: ("primary_id",),
+    ContentType.TEXT_TWO_LINES: ("primary_id", "title"),
+    ContentType.QR_WITH_LISTING: ("qr_payload", "primary_id", "items"),
+}
+"""ContentType -> ordered tuple of LabelData field names that must be set.
+
+Shared by the tape LayoutEngine and the sheet cell renderer (one required-field table, one
+``ContentTypeDataMismatchError`` with the complete missing-fields list). An empty string or
+empty tuple counts as missing.
+"""
+
 
 class LayoutEngine:
     """Tape-independent semantic label renderer.
 
     Stateless — safe to instantiate once and reuse across requests.
-    """
-
-    _REQUIRED_FIELDS: ClassVar[dict[ContentType, tuple[str, ...]]] = {
-        ContentType.QR_ONLY: ("qr_payload",),
-        ContentType.QR_ONE_LINE: ("qr_payload", "primary_id"),
-        ContentType.QR_TWO_LINES: ("qr_payload", "primary_id", "title"),
-        ContentType.QR_THREE_LINES: ("qr_payload", "primary_id", "title", "secondary"),
-        ContentType.TEXT_ONE_LINE: ("primary_id",),
-        ContentType.TEXT_TWO_LINES: ("primary_id", "title"),
-        ContentType.QR_WITH_LISTING: ("qr_payload", "primary_id", "items"),
-    }
-    """ContentType -> ordered tuple of LabelData field names that must be set.
-
-    Used by _validate_data to produce ContentTypeDataMismatchError with a
-    complete missing-fields list (one 422 instead of multiple round-trips).
     """
 
     def render(
@@ -90,7 +92,7 @@ class LayoutEngine:
         return geom
 
     def _validate_data(self, content_type: ContentType, data: LabelData) -> None:
-        required = self._REQUIRED_FIELDS[content_type]
+        required = REQUIRED_FIELDS[content_type]
         missing: list[str] = []
         for field_name in required:
             value = getattr(data, field_name)
