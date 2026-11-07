@@ -76,6 +76,14 @@ def is_sheet_path(path: str) -> bool:
 WEBHOOK_PREFIX = "/api/webhook/"
 """Webhook bodies are the integrations' own: a rejected value is not repeated (run-12 R12-1)."""
 
+
+def answers_with_envelope(path: str) -> bool:
+    """Whether a validation error on ``path`` is answered with the error envelope (field paths,
+    no input). The one predicate for the answer (``_validation_handler``) and for the OpenAPI
+    document (``app.main._declare_sheet_error_envelope``), so they cannot drift apart."""
+    return is_sheet_path(path) or path.startswith(WEBHOOK_PREFIX)
+
+
 ADMIN_PRINTERS_PREFIX = "/api/v1/admin/printers"
 """Admin printer payloads carry IPP URIs: their 422 keeps FastAPI's shape without the input."""
 
@@ -119,7 +127,7 @@ async def _validation_handler(request: Request, exc: Exception) -> JSONResponse:
             for err in exc.errors()
         ]
         return JSONResponse(status_code=422, content={"detail": errors})
-    if not (is_sheet_path(request.url.path) or request.url.path.startswith(WEBHOOK_PREFIX)):
+    if not answers_with_envelope(request.url.path):
         return await request_validation_exception_handler(request, exc)
     paths: list[str] = []
     for err in exc.errors():

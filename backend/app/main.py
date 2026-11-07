@@ -77,6 +77,7 @@ from app import __version__
 from app.api.error_handlers import (
     SHEET_ERROR_SCHEMA,
     SHEET_ERROR_SCHEMA_NAME,
+    answers_with_envelope,
     is_sheet_path,
     register_error_handlers,
 )
@@ -250,13 +251,16 @@ def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
         "application/json": {"schema": {"$ref": f"#/components/schemas/{SHEET_ERROR_SCHEMA_NAME}"}}
     }
     for path, item in schema.get("paths", {}).items():
-        if not is_sheet_path(path):
+        if not answers_with_envelope(path):
             continue
+        sheet = is_sheet_path(path)
         for operation in item.values():
             for status_code, response in operation.get("responses", {}).items():
-                # Every documented 4xx and 5xx of these routes carries the same error envelope
-                # (a 502 for an integration or a stopped print is one too).
-                if status_code.startswith(("4", "5")):
+                # Every documented 4xx and 5xx of a sheet route carries the same error envelope
+                # (a 502 for an integration or a stopped print is one too). A webhook route
+                # answers only its validation error (422) that way; its other errors keep
+                # their own shapes.
+                if status_code == "422" or (sheet and status_code.startswith(("4", "5"))):
                     response["content"] = ref
 
 

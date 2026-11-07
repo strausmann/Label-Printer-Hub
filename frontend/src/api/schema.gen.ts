@@ -6331,7 +6331,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -6366,7 +6366,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
