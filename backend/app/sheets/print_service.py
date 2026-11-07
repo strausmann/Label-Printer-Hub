@@ -411,10 +411,21 @@ def _qr_placeholder(image: Image.Image, edge_px: int) -> None:
     draw.text((x, y), label, font=font, fill=0, anchor="lm")
 
 
-@lru_cache(maxsize=512)
+MAX_QR_CHARS: Final = 4296  # the most any QR symbol holds; a longer payload can never fit
+
+
 def _qr_modules(payload: str) -> int | None:
     """Modules per side of the symbol ``build_qr`` makes for ``payload``; ``None`` if no QR
-    holds it. Cached: making a dense symbol is the slow part of a preview."""
+    holds it. A payload longer than ``MAX_QR_CHARS`` is answered here and never reaches the
+    cache, so every cache key is at most that long (512 keys cannot pin much memory)."""
+    if len(payload) > MAX_QR_CHARS:
+        return None
+    return _qr_modules_cached(payload)
+
+
+@lru_cache(maxsize=512)
+def _qr_modules_cached(payload: str) -> int | None:
+    """Cached: making a dense symbol is the slow part of a preview."""
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=0)
     try:
         qr.add_data(payload)

@@ -1056,6 +1056,26 @@ async def test_public_margin_payload_builder_matches_what_the_preview_draws(
     assert built is not None and built.text_end_hmm is not None  # shares the top band
 
 
+def test_qr_module_cache_never_holds_an_oversized_payload() -> None:
+    cache = print_service._qr_modules_cached
+    cache.cache_clear()
+
+    assert print_service._qr_modules("x" * 5000) is None
+    assert cache.cache_info().currsize == 0  # not cached, not even as a key
+
+
+def test_qr_module_cache_keeps_a_normal_payload() -> None:
+    cache = print_service._qr_modules_cached
+    cache.cache_clear()
+    payload = "https://r.example.invalid/1"
+
+    first = print_service._qr_modules(payload)
+    second = print_service._qr_modules(payload)
+
+    assert first == second and first is not None
+    assert (cache.cache_info().currsize, cache.cache_info().hits) == (1, 1)
+
+
 def test_an_item_cannot_claim_the_sheet_id_source() -> None:
     with pytest.raises(ValueError, match="reserved"):
         raw(0, source="hub")
