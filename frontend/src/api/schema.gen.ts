@@ -2158,7 +2158,7 @@ export interface components {
             cell: number;
             /**
              * Hw Margin
-             * @description May be cut off by this printer's hardware margins.
+             * @description New cells only: may be cut off by this printer's hardware margins.
              */
             hw_margin: boolean;
             /**

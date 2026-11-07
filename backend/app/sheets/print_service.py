@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Final
+from functools import lru_cache
+from typing import Any, Final
 
-from PIL import Image
+import qrcode
+import qrcode.constants
+import qrcode.exceptions
+from PIL import Image, ImageDraw
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.calibration import service as calibration_service
@@ -52,7 +55,9 @@ from app.sheets.cell_render import (
     CellImage,
     CellRenderer,
     content_box,
+    load_cell_font,
     map_content_type,
+    qr_edge_px,
 )
 from app.sheets.errors import (
     ItemContentMismatchError,
@@ -86,14 +91,13 @@ from app.sheets.sheet_page import (
 from app.sheets.text import sanitise_text
 from app.sheets.type_service import version_geometry
 
-logger = logging.getLogger(__name__)
-
 __all__ = [
     "LOOKUP_CONCURRENCY",
     "MAX_PREVIEW_PAGES",
     "ResolvedItem",
     "id_cell_label",
     "margin_id_text",
+    "page_margin_id_payload",
     "preview",
     "resolve_items",
     "scan_payload_builder",
@@ -101,11 +105,12 @@ __all__ = [
 ]
 
 LOOKUP_CONCURRENCY: Final = 8
+MAX_CONCURRENT_RENDERS: Final = 2  # preview renders at once, process-wide (spec 18, CPU)
 MAX_PREVIEW_PAGES: Final = 10  # a plan decision, not the spec's (spec 18, CPU)
 MAX_HINTS_PER_ITEM: Final = 5
 PURPOSE_MAX: Final = 120
 _DEFAULT_PURPOSE_SCAN: Final = 480  # a default purpose is cut, never refused (OC-43)
-_FALLBACK_PURPOSE: Final = "Label"
+_FALLBACK_PURPOSE: Final = "Label"  # plan decision: OC-43 names no fallback
 _DEFAULT_SOURCE: Final = "api"
 
 # The status, code and message of each lookup failure (pre-flight C10). The text is fixed: the
@@ -211,7 +216,8 @@ def _lookup_error(exc: Exception, index: int) -> ItemLookupFailedError | None:
 async def resolve_items(items: Sequence[SheetItem], lookup: AppLookupService) -> list[ResolvedItem]:
     """Label data and record keeping per item, in request order.
 
-    Lookups run with at most ``LOOKUP_CONCURRENCY`` in flight. All of them finish before the
+    Identical lookups (same app and identifier) run once. Lookups run with at most
+    ``LOOKUP_CONCURRENCY`` in flight. All of them finish before the
     answer: when several fail, the lowest index is reported, not the first to come back
     (pre-flight C11). An error that is none of the four lookup classes is a bug and propagates.
     """
@@ -221,9 +227,20 @@ async def resolve_items(items: Sequence[SheetItem], lookup: AppLookupService) ->
         async with gate:
             return await lookup.lookup(request.app, request.identifier)
 
-    async def one(item: SheetItem) -> LabelData:
+    # One lookup per distinct (app, identifier); the answer fans out to every item that asked.
+    wanted: dict[tuple[str, str], PrintLookupRequest] = {}
+    for item in items:
         if item.lookup is not None:
-            return await fetch(item.lookup)
+            wanted.setdefault((item.lookup.app, item.lookup.identifier), item.lookup)
+    fetched = dict(
+        zip(
+            wanted,
+            await asyncio.gather(*(fetch(r) for r in wanted.values()), return_exceptions=True),
+            strict=True,
+        )
+    )
+
+    def raw_label(item: SheetItem) -> LabelData:
         assert item.data is not None  # the schema: exactly one of data and lookup
         raw = item.data
         return LabelData(
@@ -235,7 +252,10 @@ async def resolve_items(items: Sequence[SheetItem], lookup: AppLookupService) ->
             items=raw.items,
         )
 
-    results = await asyncio.gather(*(one(it) for it in items), return_exceptions=True)
+    results: list[LabelData | BaseException] = [
+        raw_label(it) if it.lookup is None else fetched[(it.lookup.app, it.lookup.identifier)]
+        for it in items
+    ]
     resolved: list[ResolvedItem] = []
     for index, (item, result) in enumerate(zip(items, results, strict=True)):
         if isinstance(result, BaseException):
@@ -246,7 +266,8 @@ async def resolve_items(items: Sequence[SheetItem], lookup: AppLookupService) ->
             raise result
         ref: str | None
         if item.lookup is not None:
-            source, ref = item.lookup.app, item.lookup.identifier
+            source = item.lookup.app
+            ref = sanitise_text(item.lookup.identifier, max_len=PURPOSE_MAX) or None
         else:
             source = item.source or _DEFAULT_SOURCE
             ref = (sanitise_text(item.ref, max_len=PURPOSE_MAX) or None) if item.ref else None
@@ -374,38 +395,74 @@ def _px(mm: float, dpi: int) -> int:
     return max(1, round(mm / 25.4 * dpi))
 
 
+def _qr_placeholder(image: Image.Image, edge_px: int) -> None:
+    """Hatch the QR square of a cell image and write "QR" in it (the preview's stand-in for a
+    symbol too fine for 150 dpi)."""
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, edge_px - 1, edge_px - 1), fill=1, outline=0)
+    step = max(4, edge_px // 10)
+    for offset in range(-edge_px, edge_px, step):
+        draw.line((offset, edge_px, offset + edge_px, 0), fill=0)
+    font = load_cell_font(max(8, edge_px // 4))
+    label = "QR"
+    w = round(font.getlength(label))
+    x, y = (edge_px - w) // 2, edge_px // 2
+    draw.rectangle((x - 2, y - edge_px // 6, x + w + 2, y + edge_px // 6), fill=1)
+    draw.text((x, y), label, font=font, fill=0, anchor="lm")
+
+
+@lru_cache(maxsize=512)
+def _qr_modules(payload: str) -> int | None:
+    """Modules per side of the symbol ``build_qr`` makes for ``payload``; ``None`` if no QR
+    holds it. Cached: making a dense symbol is the slow part of a preview."""
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=0)
+    try:
+        qr.add_data(payload)
+        qr.make(fit=True)
+    except (qrcode.exceptions.DataOverflowError, ValueError):
+        return None
+    return len(qr.get_matrix())
+
+
+def _qr_fits_at(payload: str, w_mm: float, h_mm: float, dpi: int) -> bool:
+    """The rule of ``build_qr`` by arithmetic: a whole-pixel module of at least one pixel
+    inside four quiet modules per side."""
+    modules = _qr_modules(payload)
+    return modules is not None and qr_edge_px(w_mm, h_mm, dpi) >= modules + 8
+
+
 def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi: int) -> CellImage:
-    """One cell at preview resolution.
+    """One cell at preview resolution (150 dpi, never more).
 
     A dense QR can need modules finer than one pixel at 150 dpi and still print at the job's
-    resolution. Such a cell is drawn at the job's resolution and reduced, so that the preview
-    never refuses what the print would draw; if the job's resolution cannot draw it either, the
-    item is refused as a content mismatch (spec 12.5).
+    resolution. The preview does not render at the job's resolution (CPU); it draws the cell with
+    a hatched "QR" box where the symbol goes. Whether the job could draw it is decided by
+    arithmetic: if not even the job's resolution can, the item is drawn normally, which refuses
+    it as a content mismatch (spec 12.5).
     """
     w_mm, h_mm = box.w / 100, box.h / 100
-    try:
+
+    def draw(data: LabelData) -> CellImage:
         return renderer.render(
             box_w_mm=w_mm,
             box_h_mm=h_mm,
             dpi=PREVIEW_DPI,
             content_type=job.content_type,
-            data=job.data,
+            data=data,
         )
-    except ContentTypeDataMismatchError as first:
-        if render_dpi <= PREVIEW_DPI or "qr_payload" not in first.missing_fields:
-            raise
-        if job.data.qr_payload in (None, ""):
-            raise
-    sharp = renderer.render(
-        box_w_mm=w_mm,
-        box_h_mm=h_mm,
-        dpi=render_dpi,
-        content_type=job.content_type,
-        data=job.data,
-    )
-    size = (_px(w_mm, PREVIEW_DPI), _px(h_mm, PREVIEW_DPI))
-    small = sharp.image.convert("L").resize(size, Image.Resampling.BOX).convert("1")
-    return CellImage(small, sharp.truncated)
+
+    payload = job.data.qr_payload
+    if (
+        payload
+        and job.content_type.value.startswith("qr_")
+        and render_dpi > PREVIEW_DPI
+        and not _qr_fits_at(payload, w_mm, h_mm, PREVIEW_DPI)
+        and _qr_fits_at(payload, w_mm, h_mm, render_dpi)
+    ):
+        cell = draw(job.data.model_copy(update={"qr_payload": "QR"}))
+        _qr_placeholder(cell.image, qr_edge_px(w_mm, h_mm, PREVIEW_DPI))
+        return cell
+    return draw(job.data)
 
 
 def _draw_page(
@@ -435,10 +492,35 @@ def _draw_page(
 
 # ---------------------------------------------------------------------------- preview
 
+_render_gate: asyncio.Semaphore | None = None
+_render_gate_loop: asyncio.AbstractEventLoop | None = None
 
-def _margin_payload(
-    page: PagePlan, info: _SheetInfo, scan: Callable[[str], str]
+
+def _gate() -> asyncio.Semaphore:
+    """The process-wide cap on preview renders; rebuilt if the event loop changed (tests)."""
+    global _render_gate, _render_gate_loop
+    loop = asyncio.get_running_loop()
+    if _render_gate is None or _render_gate_loop is not loop:
+        _render_gate, _render_gate_loop = asyncio.Semaphore(MAX_CONCURRENT_RENDERS), loop
+    return _render_gate
+
+
+async def draw_page_bounded(*args: Any) -> Any:
+    """``_draw_page`` in a thread, at most ``MAX_CONCURRENT_RENDERS`` at once in the process."""
+    async with _gate():
+        return await asyncio.to_thread(_draw_page, *args)
+
+
+def page_margin_id_payload(
+    page: PagePlan, type_label: str, scan: Callable[[str], str]
 ) -> MarginIdPayload | None:
+    """The margin ID of a planned page, as the preview draws it and as a job must store it.
+
+    One rule for both (OC-50): the text is ``margin_id_text``, the QR encodes ``scan(code)`` of
+    the sheet's code or, for a sheet not created yet, its hint, and when the feed-direction mark
+    shares the top band the text ends ``MARGIN_TEXT_GAP_HMM`` before it. ``None`` when the page
+    carries no margin ID.
+    """
     placement = page.margin_placement
     if not page.margin_id or placement is None:
         return None
@@ -450,7 +532,7 @@ def _margin_payload(
         else None
     )
     return margin_id_payload(
-        margin_id_text(code, info.type_label), scan(code), placement, text_end_hmm=text_end
+        margin_id_text(code, type_label), scan(code), placement, text_end_hmm=text_end
     )
 
 
@@ -461,7 +543,9 @@ async def _reprint_hints(session: AsyncSession, items: Sequence[ResolvedItem]) -
     for index, item in enumerate(items):
         if item.lookup is None:
             continue
-        key = (item.lookup.app, item.lookup.identifier)
+        if item.meta.ref is None:
+            continue
+        key = (item.meta.source, item.meta.ref)
         if key not in found:
             found[key] = [
                 h
@@ -486,17 +570,18 @@ async def preview(
 ) -> SheetPreview:
     """The plan and the pictures of a sheet print, written nowhere.
 
-    Order: printer kind and tray (cheap, nothing looked up for a printer that cannot print
-    this), the items, the plan, the page bound, then the pictures. ``language`` is the hub's
-    ``general.language``; it picks the feed-direction mark's text.
+    Order: printer kind and tray, sheets and the plan (only the item count is needed), the page
+    bound, then the integration lookups, then the pictures. A refused request makes no lookup.
+    ``language`` is the hub's ``general.language``; it picks the feed-direction mark's text.
     """
     if printer.backend != "ipp":
         raise MediaKindMismatchError()
     tray = await calibration_service.resolve_tray(session, printer.id, request.tray)
     snapshot = await calibration_service.snapshot(session, printer.id, tray)
     facts: PrinterFacts = await load_printer_facts(session, printer.id)
-    items = await resolve_items(request.items, lookup)
 
+    # Everything that needs only the item count comes before any integration call: a refused
+    # request must not fire up to 500 lookups first.
     placements, infos, new_views = await _placements(session, request)
     scan = scan_payload_builder(str(get_settings().public_url))
     margin = MarginContext(
@@ -505,9 +590,10 @@ async def preview(
         render_dpi=facts.render_dpi,
         language=language,
     )
-    result = plan(placements, len(items), hw_margins_hmm=facts.margins_hmm, margin=margin)
+    result = plan(placements, len(request.items), hw_margins_hmm=facts.margins_hmm, margin=margin)
     if len(result.pages) > MAX_PREVIEW_PAGES:
         raise PreviewTooLargeError(len(result.pages), MAX_PREVIEW_PAGES)
+    items = await resolve_items(request.items, lookup)
 
     tray_row = await session.get(PrinterTray, (printer.id, tray))
     load_hint = tray_row.load_hint if tray_row is not None else None
@@ -543,10 +629,10 @@ async def preview(
                 mapped_cells.add(cell)
             next_item += 1
 
-        margin_payload = _margin_payload(page, info, scan)
+        margin_payload = page_margin_id_payload(page, info.type_label, scan)
         mark = feed_mark_payload(page.feed_mark) if page.feed_mark is not None else None
-        drawn = await asyncio.to_thread(
-            _draw_page, renderer, view.geometry, jobs, margin_payload, mark, facts.render_dpi
+        drawn = await draw_page_bounded(
+            renderer, view.geometry, jobs, margin_payload, mark, facts.render_dpi
         )
         flagged = set(page.hw_margin_cells)
         cells: list[PreviewCell] = []

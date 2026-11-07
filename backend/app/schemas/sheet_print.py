@@ -130,7 +130,9 @@ class PreviewCell(BaseModel):
     item_index: int | None = Field(description="Index into the request's items; new cells only.")
     truncated: bool = Field(description="Text had to be shortened to fit.")
     mapped: bool = Field(description="Drawn as text because the sheet type has no QR (spec 12.5).")
-    hw_margin: bool = Field(description="May be cut off by this printer's hardware margins.")
+    hw_margin: bool = Field(
+        description="New cells only: may be cut off by this printer's hardware margins."
+    )
 
 
 class PreviewPage(BaseModel):

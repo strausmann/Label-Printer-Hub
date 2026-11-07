@@ -20,6 +20,7 @@ from app.models.printer import Printer
 from app.models.printer_status_cache import PrinterStatusCache
 from app.models.printer_tray import PrinterTray
 from app.models.sheet import Sheet, SheetCell, SheetIdCounter
+from app.page_render.transform import Deviation
 from app.printer_backends.ipp.attributes import IppStatusRecord, Margins
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
@@ -36,13 +37,15 @@ from app.services.producers.ipp_status_producer import _empty_summary, _offline_
 from app.sheets import print_service
 from app.sheets import sheet_service as ss
 from app.sheets import type_service as ts
-from app.sheets.cell_render import DEFAULT_CELL_RENDERER
+from app.sheets.cell_render import DEFAULT_CELL_RENDERER, content_box
 from app.sheets.errors import (
+    InsufficientCellsError,
     ItemContentMismatchError,
     ItemLookupFailedError,
     MediaKindMismatchError,
     PreviewTooLargeError,
     SheetDiscardedError,
+    SheetNotFoundError,
     TrayUnknownError,
 )
 from app.sheets.geometry import Geometry
@@ -387,9 +390,17 @@ async def test_preview_content_mismatch_names_the_item(session: AsyncSession) ->
     assert set(err.value.detail["missing_fields"]) == {"qr_payload", "title"}
 
 
-async def test_preview_draws_a_dense_qr_that_only_fits_at_the_job_resolution(
-    session: AsyncSession,
+async def test_preview_draws_a_placeholder_for_a_qr_too_fine_for_150_dpi(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    dpis: list[int] = []
+    original = DEFAULT_CELL_RENDERER.render
+
+    def spy(**kw: Any) -> Any:
+        dpis.append(kw["dpi"])
+        return original(**kw)
+
+    monkeypatch.setattr(DEFAULT_CELL_RENDERER, "render", spy, raising=False)
     printer = await make_printer(session, record(dpis=[600]))
     code = await make_sheet(session)
     dense = raw(0, qr_payload="https://r.example.invalid/" + "x" * 900)
@@ -397,9 +408,16 @@ async def test_preview_draws_a_dense_qr_that_only_fits_at_the_job_resolution(
     out = await run_preview(session, printer, req([dense], [on(code)]))
 
     (cell,) = [c for c in out.pages[0].cells if c.state == "new"]
-    box = (px(840), px(2150), px(840 + 4850), px(2150 + 2120))
-    assert png_of(out.pages[0]).convert("L").crop(box).getextrema()[0] == 0  # it was drawn
     assert cell.item_index == 0
+    assert set(dpis) == {150}  # the preview never renders at the job's resolution
+    # the placeholder is a hatched box with ink on both diagonals of the QR square
+    box = content_box(G48, 1)
+    edge = min(px(box.w), px(box.h))
+    left, top = px(box.x), px(box.y)
+    img = png_of(out.pages[0]).convert("L")
+    square = img.crop((left, top, left + edge, top + edge))
+    dark = sum(1 for v in square.getdata() if v == 0)
+    assert 0.05 * edge * edge < dark < 0.6 * edge * edge
 
 
 async def test_preview_refuses_a_qr_no_resolution_can_draw(session: AsyncSession) -> None:
@@ -735,6 +753,28 @@ async def test_preview_renders_exactly_the_bound(session: AsyncSession) -> None:
     assert len(out.pages) == 10
 
 
+async def test_preview_refusals_make_no_lookups(session: AsyncSession) -> None:
+    printer = await make_printer(session, record())
+    nearly_full = await make_sheet(session, used=47)
+    lookup = FakeLookup()
+
+    with pytest.raises(PreviewTooLargeError):
+        await run_preview(
+            session,
+            printer,
+            req([grocy(i) for i in range(11)], [fresh(count=1) for _ in range(11)]),
+            lookup=lookup,
+        )
+    with pytest.raises(SheetNotFoundError):
+        await run_preview(session, printer, req([grocy(1)], [on("L4736-9999")]), lookup=lookup)
+    with pytest.raises(InsufficientCellsError):
+        await run_preview(
+            session, printer, req([grocy(1), grocy(2)], [on(nearly_full)]), lookup=lookup
+        )
+
+    assert lookup.calls == []
+
+
 async def test_preview_refuses_a_tape_printer(session: AsyncSession) -> None:
     tape = await make_printer(session, backend="mock")
     code = await make_sheet(session)
@@ -915,8 +955,16 @@ async def test_resolve_items_reports_the_lowest_failing_index() -> None:
             502,
             "integration_lookup_failed",
         ),
-        (AppLookupNotFoundError("nothing"), 404, "app-lookup-not-found"),
-        (IntegrationNotConfiguredError("no url"), 503, "integration_not_configured"),
+        (
+            AppLookupNotFoundError("secret-host.example.invalid has no such item"),
+            404,
+            "app-lookup-not-found",
+        ),
+        (
+            IntegrationNotConfiguredError("secret-host.example.invalid has no url"),
+            503,
+            "integration_not_configured",
+        ),
     ],
 )
 async def test_resolve_items_carries_status_and_code_of_the_underlying_error(
@@ -937,6 +985,75 @@ async def test_resolve_items_unexpected_error_is_not_swallowed() -> None:
 
     with pytest.raises(RuntimeError):
         await resolve_items([grocy(0), grocy(1)], lookup)  # type: ignore[arg-type]
+
+
+async def test_identical_lookups_run_once_and_fan_out() -> None:
+    lookup = FakeLookup()
+
+    out = await resolve_items([grocy(42) for _ in range(40)], lookup)  # type: ignore[arg-type]
+
+    assert lookup.calls == [("grocy", "42")]
+    assert [o.label.primary_id for o in out] == ["G-42"] * 40
+    assert [o.meta.ref for o in out] == ["42"] * 40
+
+
+async def test_deduplicated_lookups_still_report_the_lowest_failing_index() -> None:
+    # "9" fails fast, "4" fails slowly; item 1 is the first copy of "4", item 0 is fine.
+    lookup = FakeLookup(
+        fail={"4": LookupFailedError("x"), "9": LookupFailedError("x")}, delays={"4": 0.05}
+    )
+    items = [grocy(1), grocy(4), grocy(9), grocy(4), grocy(9)]
+
+    with pytest.raises(ItemLookupFailedError) as err:
+        await resolve_items(items, lookup)  # type: ignore[arg-type]
+
+    assert err.value.detail == {"item_index": 1}
+    assert sorted(lookup.calls) == [("grocy", "1"), ("grocy", "4"), ("grocy", "9")]
+
+
+async def test_preview_renders_at_most_two_pages_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+    import time
+
+    lock = threading.Lock()
+    state = {"now": 0, "max": 0}
+
+    def slow(*_a: Any, **_k: Any) -> Any:
+        with lock:
+            state["now"] += 1
+            state["max"] = max(state["max"], state["now"])
+        time.sleep(0.15)
+        with lock:
+            state["now"] -= 1
+        return "drawn"
+
+    monkeypatch.setattr(print_service, "_draw_page", slow)
+
+    results = await asyncio.gather(*(print_service.draw_page_bounded() for _ in range(5)))
+
+    assert results == ["drawn"] * 5
+    assert state["max"] == 2
+
+
+async def test_public_margin_payload_builder_matches_what_the_preview_draws(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spy = Spy(monkeypatch)
+    printer = await make_printer(session, record())
+    await run_preview(session, printer, req([raw(0)], [fresh()]))
+    drawn = spy.margins[0]
+    placements, infos, _ = await print_service._placements(session, req([raw(0)], [fresh()]))
+    scan = print_service.scan_payload_builder("http://localhost:8000")
+    from app.sheets.planner import MarginContext, plan
+
+    margin = MarginContext(deviation=Deviation(), scan_payload=scan, render_dpi=600, language="en")
+    pl = plan(placements, 1, hw_margins_hmm=None, margin=margin)
+    built = print_service.page_margin_id_payload(
+        pl.pages[0], infos[id(placements[0].sheet)].type_label, scan
+    )
+
+    assert built == drawn
+    assert built is not None and built.text_end_hmm is not None  # shares the top band
 
 
 def test_an_item_cannot_claim_the_sheet_id_source() -> None:
