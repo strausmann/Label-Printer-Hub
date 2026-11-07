@@ -25,7 +25,7 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any, Final, Protocol
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from PIL import Image, ImageDraw
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -60,6 +60,7 @@ from app.schemas.sheet_print import (
 from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
 from app.services.lookup_service import AppLookupService, LookupFailedError, UnknownAppError
 from app.services.page_jobs import PagePayload, snapshot_to_deviation
+from app.settings_store import SettingsStore
 from app.sheets import sheet_service as ss
 from app.sheets.cell_render import (
     PREVIEW_QR_MASK,
@@ -75,6 +76,7 @@ from app.sheets.cell_render import (
     qr_version,
 )
 from app.sheets.errors import (
+    CellsUnconfirmedError,
     ItemContentMismatchError,
     ItemLookupFailedError,
     MediaKindMismatchError,
@@ -118,6 +120,7 @@ from app.sheets.reservation import (
     load_sheet_view,
     release,
     reserve,
+    reserve_exact,
 )
 from app.sheets.sheet_page import (
     PREVIEW_DPI,
@@ -147,6 +150,7 @@ __all__ = [
     "print_sheets",
     "reserved_margin_id_payload",
     "resolve_items",
+    "retry_sheet_page",
     "scan_payload_builder",
     "sheet_type_label",
 ]
@@ -915,6 +919,9 @@ def _cell_payload(
         content_type=content_type,
         label_data=item.label.model_dump(mode="json"),
         mapped=mapped,
+        source=item.meta.source,
+        purpose=item.meta.purpose,
+        ref=item.meta.ref,
     )
 
 
@@ -1365,3 +1372,108 @@ async def margin_check(
         reason=NO_MARGIN_BAND_REASON if placement is None else None,
         feed_mark=mark is not None,
     )
+
+
+# ---------------------------------------------------------------------------- retry
+
+
+def _retry_meta(cell: SheetCellPayload) -> ItemMeta:
+    """The record keeping of a cell of the failed job, from its payload. A payload stored before
+    the record was kept falls back to what the label says (no ``ref``)."""
+    label = cell.label_data
+    purpose = cell.purpose
+    if not purpose:
+        for candidate in (label.get("title"), label.get("primary_id")):
+            if isinstance(candidate, str) and candidate.strip():
+                purpose = sanitise_text(candidate[:_DEFAULT_PURPOSE_SCAN], max_len=PURPOSE_MAX)
+                if purpose:
+                    break
+    return ItemMeta(
+        source=cell.source or str(label.get("source_app") or _DEFAULT_SOURCE),
+        purpose=purpose or _FALLBACK_PURPOSE,
+        ref=cell.ref,
+    )
+
+
+async def retry_sheet_page(
+    session_factory: async_sessionmaker[AsyncSession],
+    queue: PageQueue,
+    job: Job,
+    *,
+    actor: str,
+    settings_store: SettingsStore,
+    api_key_id: UUID | None = None,
+    source_ip: str | None = None,
+    bus: Any = None,
+) -> UUID:
+    """Retry a failed or cancelled ``sheet_page`` job: the same cells on the same sheet, a new job.
+
+    Allowed when no cell is still waiting for confirmation (OC-42, ``cells_unconfirmed``); the
+    labels stay as the first attempt stored them (no new lookup). The cells are reserved again
+    for a new job id, the ID cell where it was (``cells_taken`` with the numbers if any is no
+    longer free). Everything that depends on the printer is decided again: a fresh calibration
+    snapshot (spec 11.4; a removed or disabled tray answers ``tray_unknown``), the render dpi, and
+    whether the margin ID and the feed mark are still due and where they go. The page is queued
+    at once. A failure after the reservation frees it unless the job row exists.
+    """
+    payload = PagePayload.model_validate(job.payload)  # ValueError: not a usable stored payload
+    detail = SheetPageDetail.model_validate(payload.detail)
+    if detail.sheet_code is None:
+        raise ValueError("the stored page names no sheet")
+    scan = scan_payload_builder(str(get_settings().public_url))
+    language = settings_store.get("general.language")
+    new_id = uuid4()
+    async with session_factory() as session:
+        unconfirmed = await repo.unconfirmed_cells_of_job(session, job.id)
+        if unconfirmed:
+            raise CellsUnconfirmedError(unconfirmed)
+        snapshot = await calibration_service.snapshot(session, job.printer_id, payload.tray)
+        facts = await load_printer_facts(session, job.printer_id)
+        margin = MarginContext(
+            deviation=snapshot_to_deviation(snapshot),
+            scan_payload=scan,
+            render_dpi=facts.render_dpi,
+            language=None if language is None else str(language),
+        )
+        page = await reserve_exact(
+            session,
+            job_id=new_id,
+            sheet_code=detail.sheet_code,
+            cells=[(c.cell, _retry_meta(c)) for c in detail.cells],
+            id_cell=None if detail.id_cell is None else detail.id_cell.cell,
+            hw_margins_hmm=facts.margins_hmm,
+            margin=margin,
+            actor=actor,
+            bus=bus,
+        )
+        try:
+            info = await _type_info(session, page.type_version_id, {})
+            new_detail = detail.model_copy(
+                update={
+                    "margin_id": reserved_margin_id_payload(page, info.label, scan),
+                    "feed_mark": (
+                        feed_mark_payload(page.feed_mark) if page.feed_mark is not None else None
+                    ),
+                }
+            )
+            new_payload = payload.model_copy(
+                update={
+                    "render_dpi": facts.render_dpi,
+                    "calibration": snapshot,
+                    "detail": new_detail.model_dump(mode="json"),
+                }
+            )
+            try:
+                await queue.submit_page_job(
+                    job.printer_id,
+                    new_payload,
+                    api_key_id=api_key_id,
+                    source_ip=source_ip,
+                    job_id=new_id,
+                )
+            except KeyError:
+                raise PrinterUnavailableError() from None
+        except BaseException as exc:
+            await asyncio.shield(_undo_partial_print(session_factory, [page], [], None, bus, exc))
+            raise
+    return new_id

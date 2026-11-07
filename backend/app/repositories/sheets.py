@@ -138,6 +138,17 @@ async def reserved_cells_of_job(session: AsyncSession, job_id: UUID) -> list[She
     return list(result.scalars().all())
 
 
+async def unconfirmed_cells_of_job(session: AsyncSession, job_id: UUID) -> list[int]:
+    """The numbers of the ``unconfirmed`` cells that still point at the job (OC-42)."""
+    result = await session.execute(
+        select(col(SheetCell.cell_no))
+        .where(col(SheetCell.job_id) == job_id, col(SheetCell.state) == "unconfirmed")
+        .order_by(col(SheetCell.cell_no))
+        .execution_options(**_FRESH)
+    )
+    return list(result.scalars().all())
+
+
 async def all_reserved_cells(session: AsyncSession) -> list[SheetCell]:
     """Every ``reserved`` cell of every sheet (the startup sweep)."""
     result = await session.execute(

@@ -86,6 +86,11 @@ class SheetCellPayload(BaseModel):
     content_type: ContentType
     label_data: dict[str, Any]
     mapped: bool
+    # What the cell's record keeping holds (source, purpose, ref), kept so that the retry of a
+    # failed job re-reserves the cell with the same record. Absent in a payload stored before.
+    source: str | None = None
+    purpose: str | None = None
+    ref: str | None = None
 
 
 class MarginIdPayload(BaseModel):

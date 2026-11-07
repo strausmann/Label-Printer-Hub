@@ -31,9 +31,11 @@ from app.printer_backends.ipp.attributes import Margins
 from app.repositories import sheets as repo
 from app.services.event_bus import EventBus
 from app.sheets.errors import (
+    CellOutOfRangeError,
     CellsTakenError,
     InvalidPlacementsError,
     PlanChangedError,
+    SheetDiscardedError,
     SheetNotFoundError,
     SheetTypeMismatchError,
 )
@@ -46,6 +48,8 @@ from app.sheets.planner import (
     PlacementIn,
     Plan,
     SheetView,
+    _hw_margin_cells,
+    decide_margin_and_mark,
     plan,
 )
 from app.sheets.sheet_service import MarkedCell, create_sheet_locked, prepare_new_sheet
@@ -71,6 +75,7 @@ __all__ = [
     "margin_id_in_flight",
     "release",
     "reserve",
+    "reserve_exact",
 ]
 
 
@@ -456,6 +461,100 @@ async def reserve(
     publish_touched(bus, touched)
     logger.info("reserved %d cells on %d pages", sum(len(p.assignments) for p in pages), len(pages))
     return pages
+
+
+async def reserve_exact(
+    session: AsyncSession,
+    *,
+    job_id: UUID,
+    sheet_code: str,
+    cells: Sequence[tuple[int, ItemMeta]],
+    id_cell: int | None,
+    hw_margins_hmm: Margins | None,
+    margin: MarginContext,
+    actor: str,
+    bus: EventBus | None = None,
+) -> ReservedPage:
+    """Reserve exactly these cells of one sheet for ``job_id`` (the retry of a page job).
+
+    The planner is not asked where the cells go: they are the ones the failed job had, and the
+    ID cell stays where it was (pre-flight C21). One write transaction: if any cell is no longer
+    free, nothing is written and the answer is ``cells_taken`` with every conflicting cell.
+
+    The margin ID and the feed mark are decided again with the rule ``plan`` uses
+    (``decide_margin_and_mark``), for the printer, the tray and the calibration of ``margin``:
+    the band chosen for the failed job is not reused. ``load_sheet_view`` reads whether another
+    job carries them **before** this call inserts its own rows, because rows without a job row
+    count as "in flight" (C26) and the retry's own would suppress the margin ID for good.
+    """
+    async with write_transaction(session):
+        view = await load_sheet_view(session, sheet_code)  # in-flight flags: before the insert
+        if view.state == "discarded":
+            raise SheetDiscardedError()
+        assert view.sheet_id is not None
+        wanted = [n for n, _ in cells] + ([id_cell] if id_cell is not None else [])
+        total = cell_count(view.geometry)
+        out = sorted(n for n in wanted if n < 1 or n > total)
+        if out:
+            raise CellOutOfRangeError(out, total)
+        taken = sorted(n for n in wanted if n in view.non_free)
+        if taken:
+            raise CellsTakenError(taken)
+        decision = decide_margin_and_mark(view, margin, hw_margins_hmm)
+
+        assignments: list[CellAssignment] = []
+        if id_cell is not None:
+            assignments.append(CellAssignment(id_cell, None, HUB_SOURCE, ID_CELL_PURPOSE, None))
+        assignments.extend(
+            CellAssignment(n, i, meta.source, meta.purpose, meta.ref)
+            for i, (n, meta) in enumerate(cells)
+        )
+        now = datetime.now(UTC)
+        try:
+            session.add_all(
+                SheetCell(
+                    sheet_id=view.sheet_id,
+                    cell_no=a.cell,
+                    state="reserved",  # D15
+                    job_id=job_id,
+                    source=a.source,
+                    purpose=a.purpose,
+                    ref=a.ref,
+                    marked_by_hand=False,
+                    updated_at=now,
+                    updated_by=actor,
+                )
+                for a in assignments
+            )
+            await session.flush()  # the composite key is the last guard (spec 8)
+        except IntegrityError:
+            raise CellsTakenError(sorted(wanted)) from None
+        await session.commit()
+    publish_touched(
+        bus,
+        [
+            SheetTouched(
+                code=sheet_code,
+                total=total,
+                free=total - len(view.non_free) - len(assignments),
+                changed=[a.cell for a in assignments],
+            )
+        ],
+    )
+    logger.info("re-reserved %d cells of job %s", len(assignments), log_value(str(job_id)))
+    return ReservedPage(
+        job_id=job_id,
+        sheet_id=view.sheet_id,
+        sheet_code=sheet_code,
+        type_version_id=view.type_version_id,
+        assignments=assignments,
+        id_cell=id_cell,
+        margin_id=decision.margin_id,
+        hw_margin_cells=_hw_margin_cells(view.geometry, wanted, hw_margins_hmm),
+        margin_placement=decision.placement,
+        id_not_printed=decision.id_not_printed,
+        feed_mark=decision.feed_mark,
+    )
 
 
 async def release(session: AsyncSession, job_id: UUID, *, bus: EventBus | None = None) -> list[int]:

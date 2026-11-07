@@ -30,6 +30,7 @@ from app.services.page_jobs import IppPagePrinter
 from app.services.print_queue import PrintQueue
 from app.services.producers.ipp_status_producer import IppPrinterState
 from app.services.producers.print_queue_producer import PrintQueueProducer
+from app.settings_store import SettingsStore
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -138,6 +139,7 @@ async def env(async_session_factory: async_sessionmaker[AsyncSession]) -> AsyncI
         app.include_router(jobs_router)
         app.include_router(printers_router)
         app.state.print_queue = queue
+        app.state.settings_store = SettingsStore()  # the sheet page retry reads the language
 
         async def _session() -> AsyncIterator[AsyncSession]:
             async with async_session_factory() as s:
@@ -235,14 +237,16 @@ async def test_retry_route_calibration_page_resubmits(env: _Env) -> None:
 
 
 @pytest.mark.asyncio
-async def test_retry_route_refuses_sheet_page(env: _Env) -> None:
+async def test_retry_route_sheet_page_without_a_usable_payload_is_422(env: _Env) -> None:
+    """A sheet page goes to the cell-aware retry (Task 9); a stored payload that does not
+    describe a sheet cannot be retried and no row is created."""
     env.fake.print_status = 0x040A
     jid = await env.submit("sheet_page")
     await env.wait_state(jid, JobState.FAILED.value)
     async with env.client() as c:
         r = await c.post(f"/api/jobs/{jid}/retry")
-    assert r.status_code == 409, r.text
-    assert r.json()["detail"]["error_code"] == "job_not_retryable"
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["type"] == "job-not-retryable"
     async with env.factory() as s:
         from sqlalchemy import select
 

@@ -240,7 +240,7 @@ class MediaKindMismatchError(SheetApiError):
 
 
 class PageJobNotRetryableError(SheetApiError):
-    """A sheet page cannot be re-sent as is: its cells need the cell-aware path (Plan 3)."""
+    """A page job that cannot be retried: a sheet page that is ``done`` (its labels came out)."""
 
     status = 409
     error_code = "job_not_retryable"
@@ -346,6 +346,18 @@ class CalibrationTypeUnsuitableError(SheetApiError):
 
 
 # ---------------------------------------------------------------------------- sheet printing
+
+
+class CellsUnconfirmedError(SheetApiError):
+    """A page job whose cells wait for confirmation cannot be retried (OC-42): the labels may
+    have come out, so the person decides first (resolve as printed or not printed)."""
+
+    status = 409
+    error_code = "cells_unconfirmed"
+    message = "Some cells of this job are waiting for confirmation."
+
+    def __init__(self, cells: list[int]) -> None:
+        super().__init__(detail={"cells": cells})
 
 
 class SheetPrinterDisabledError(SheetApiError):

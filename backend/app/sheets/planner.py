@@ -42,6 +42,7 @@ __all__ = [
     "MarginBand",
     "MarginContext",
     "MarginCorner",
+    "MarginDecision",
     "MarginPlacement",
     "PagePlan",
     "PlacementIn",
@@ -50,6 +51,7 @@ __all__ = [
     "band_length_hmm",
     "choose_feed_mark",
     "choose_margin_placement",
+    "decide_margin_and_mark",
     "feed_mark_text",
     "feed_mark_top_taken_hmm",
     "margin_bands_hmm",
@@ -340,6 +342,70 @@ def choose_margin_placement(
     return MarginPlacement(best, BAND_CORNER[best], usable[best], qr_of[best])
 
 
+@dataclass(frozen=True)
+class MarginDecision:
+    """Whether the sheet's margin ID and feed mark are due on a page, and where they go."""
+
+    id_was_due: bool
+    margin_id: bool
+    placement: MarginPlacement | None
+    id_not_printed: bool
+    mark_was_due: bool
+    feed_mark: FeedMarkPlacement | None
+
+
+def decide_margin_and_mark(
+    view: SheetView,
+    margin: MarginContext | None,
+    hw_margins_hmm: Margins | None,
+    *,
+    id_done: bool = False,
+    mark_done: bool = False,
+) -> MarginDecision:
+    """The one rule for the margin ID and the feed mark of a page, shared by ``plan`` and by the
+    retry of a page job (which re-decides both for the printer it is sent to).
+
+    The mark has its own flag and is due for every ID placement (OC-56, OC-58). It is decided
+    before the margin ID, which then sees the shorter top band (OC-57). ``margin=None`` means
+    there is no printer context: the ID is still due, but no band is chosen.
+    """
+    g = view.geometry
+    due = (
+        view.id_placement == "margin"
+        and not view.id_printed
+        and not view.margin_id_in_flight
+        and not id_done
+    )
+    margin_id = due
+    placement: MarginPlacement | None = None
+    id_not_printed = False
+    mark_due = not view.feed_mark_printed and not view.feed_mark_in_flight and not mark_done
+    feed_mark: FeedMarkPlacement | None = None
+    top_taken = 0
+    if mark_due and margin is not None:
+        feed_mark = choose_feed_mark(
+            g,
+            hw=hw_margins_hmm,
+            dev=margin.deviation,
+            text=feed_mark_text(margin.language),
+        )
+        if feed_mark is not None:
+            top_taken = feed_mark_top_taken_hmm(g, feed_mark)
+    if due and margin is not None:
+        code = view.code or view.code_hint
+        placement = choose_margin_placement(
+            g,
+            hw=hw_margins_hmm,
+            dev=margin.deviation,
+            payload=margin.scan_payload(code) if code else None,
+            dpi=margin.render_dpi,
+            top_taken_hmm=top_taken,
+        )
+        margin_id = placement is not None
+        id_not_printed = placement is None
+    return MarginDecision(due, margin_id, placement, id_not_printed, mark_due, feed_mark)
+
+
 def _hw_margin_cells(g: Geometry, cells: Sequence[int], hw: Margins | None) -> list[int]:
     """Cells whose rectangle reaches into a hardware-margin band (OC-44: flagged, not refused)."""
     if hw is None:
@@ -446,41 +512,15 @@ def _draft(
         id_cell = next((n for n in free if n not in skip and n not in explicit), None)
     id_missing = needs_id_cell and id_cell is None
 
-    due = (
-        view.id_placement == "margin"
-        and not view.id_printed
-        and not view.margin_id_in_flight
-        and not id_done
+    decision = decide_margin_and_mark(
+        view, margin, hw_margins_hmm, id_done=id_done, mark_done=mark_done
     )
-    margin_id = due
-    placement: MarginPlacement | None = None
-    id_not_printed = False
-    # The mark has its own flag and is due for every ID placement (OC-56, OC-58). It is decided
-    # before the margin ID, which then sees the shorter top band (OC-57).
-    mark_due = not view.feed_mark_printed and not view.feed_mark_in_flight and not mark_done
-    feed_mark: FeedMarkPlacement | None = None
-    top_taken = 0
-    if mark_due and margin is not None:
-        feed_mark = choose_feed_mark(
-            g,
-            hw=hw_margins_hmm,
-            dev=margin.deviation,
-            text=feed_mark_text(margin.language),
-        )
-        if feed_mark is not None:
-            top_taken = feed_mark_top_taken_hmm(g, feed_mark)
-    if due and margin is not None:
-        code = view.code or view.code_hint
-        placement = choose_margin_placement(
-            g,
-            hw=hw_margins_hmm,
-            dev=margin.deviation,
-            payload=margin.scan_payload(code) if code else None,
-            dpi=margin.render_dpi,
-            top_taken_hmm=top_taken,
-        )
-        margin_id = placement is not None
-        id_not_printed = placement is None
+    due = decision.id_was_due
+    margin_id = decision.margin_id
+    placement = decision.placement
+    id_not_printed = decision.id_not_printed
+    mark_due = decision.mark_was_due
+    feed_mark = decision.feed_mark
 
     if isinstance(p.cells, list):
         # Item i goes to cells[i]: the caller's order is kept.
