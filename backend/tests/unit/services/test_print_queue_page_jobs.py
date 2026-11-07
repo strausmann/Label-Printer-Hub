@@ -430,3 +430,42 @@ async def test_no_pause_when_deferred_job_was_cancelled(handler: RecordingHandle
         await env.wait_db(holder["jid"], DbJobState.CANCELLED.value)
         await asyncio.sleep(0.05)
         assert not env.queue.is_paused(env.page.id)
+
+
+class _GatedStore(MemoryJobStore):
+    """``save_queued`` stops at a gate: the row does not exist while the gate is closed."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.entered = asyncio.Event()
+        self.gate = asyncio.Event()
+
+    async def save_queued(self, job: Any) -> None:
+        self.entered.set()
+        await self.gate.wait()
+        await super().save_queued(job)
+
+
+async def test_clear_queue_during_the_row_insert_is_not_undone(handler: RecordingHandler) -> None:
+    """The job is registered in memory before its row is saved. A clear in between cancels the
+    in-memory job; its cancellation finds no row to persist. The insert that follows must not
+    leave the row ``queued`` (a restart would resurrect the cancelled job)."""
+    fake = FakeIppPrinter(job_script=[9])
+    async with _env(fake) as env:
+        gated = _GatedStore()
+        env.queue._store = gated  # type: ignore[assignment]
+        await env.queue.pause_printer(env.page.id, reason="user", source="user")
+        submit = asyncio.create_task(
+            env.queue.submit_page_job(env.page.id, payload(), api_key_id=None, source_ip=None)
+        )
+        async with asyncio.timeout(TEST_TIMEOUT_S):
+            await gated.entered.wait()
+        assert await env.queue.clear_queue(env.page.id) == 1  # the in-memory job, no row yet
+        gated.gate.set()
+        jid = await submit
+        row = await gated.get(jid)
+        assert row is not None
+        assert row.state == DbJobState.CANCELLED.value
+        await env.queue.resume_printer(env.page.id)
+        await asyncio.sleep(0)  # the worker has nothing to take
+        assert env.ops("Print-Job") == []

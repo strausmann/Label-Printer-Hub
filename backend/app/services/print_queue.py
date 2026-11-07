@@ -744,7 +744,13 @@ class PrintQueue:
             self._drop_unqueued(job)
             raise
         if job.state != JobState.QUEUED:
-            return row.id  # cancelled meanwhile; cancel() persisted it
+            # Cancelled (or cleared) while the row was being saved. The cancellation found no
+            # row to persist then, and the insert has just written it as ``queued``: persist
+            # it again, or a restart would resurrect the cancelled job. (The tape paths save
+            # the row first, so their cancel always finds it.)
+            if job.state == JobState.CANCELLED:
+                await self._store.mark_cancelled(row.id)
+            return row.id
         await self._queues[printer_id].put(PageJob(job=job, payload=payload))
         logger.info("Page job %s queued on %s", row.id, printer_id)
         return row.id
