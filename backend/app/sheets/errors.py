@@ -398,6 +398,19 @@ class PrinterUnavailableError(SheetApiError):
     message = "Printer is not available to the print queue."
 
 
+class SheetIdJobFailedError(SheetApiError):
+    """Something unexpected stopped the ID-only job of a new ``cell`` sheet after the sheet was
+    committed. The sheet stays without a reservation; the detail names it. The cause is logged,
+    never returned."""
+
+    status = 500
+    error_code = "sheet_id_job_failed"
+    message = "The sheet was created, but its ID label could not be queued."
+
+    def __init__(self, sheet_code: str) -> None:
+        super().__init__(detail={"sheet_code": sheet_code})
+
+
 class PrintInterruptedError(SheetApiError):
     """A sheet print failed after some of its pages were queued (pre-flight ruling T7-2).
 

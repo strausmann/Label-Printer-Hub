@@ -427,3 +427,45 @@ async def test_scan_payload_short_form_without_public_url() -> None:
         scan_payload_builder("https://hub.example.invalid/")("L4736-0001")
         == "https://hub.example.invalid/sheet/L4736-0001"
     )
+
+
+async def test_cell_unexpected_error_after_the_commit_keeps_the_sheet_and_names_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with running() as rig:
+
+        async def boom(*args: Any, **kwargs: Any) -> None:
+            raise RuntimeError("ZQX-internal-detail")
+
+        monkeypatch.setattr(rig.app.state.print_queue, "submit_page_job", boom)
+
+        resp = await _create(rig, _create_body(QR_KEY, used_cells=[{"cell": 1}]))
+
+        assert resp.status_code == 500, resp.text
+        detail = _err(resp)
+        assert detail["error_code"] == "sheet_id_job_failed"
+        assert "ZQX-internal-detail" not in resp.text  # the cause is logged, not returned
+        sheet = await rig.sheet(detail["error_detail"]["sheet_code"])
+        assert sheet["reserved"] == 0 and sheet["used"] == 1 and sheet["id_printed"] is False
+
+
+async def test_margin_check_counts_the_space_the_feed_mark_takes() -> None:
+    # A narrow 1 x 12 type whose side bands are dead: the top band would win with a QR, but the
+    # feed mark shortens it, so the bottom band wins. The check must say what the job does.
+    narrow = Geometry(
+        "A4", 21000, 29700, 5000, 2000, 1, 12, 5000, 2000, 3000, 8000, None, "rectangle"
+    )
+    margins = Margins(top=500, left=7900, bottom=500, right=7900)
+    async with running(margins=margins) as rig:
+        await _type("narrow-1", "NR1", narrow)
+        check = await _margin_check(rig, "narrow-1")
+        assert check.status_code == 200, check.text
+
+        code = await _sheet(placement="margin", key="narrow-1")
+        resp = await rig.print(_body(code, 1))
+
+        assert resp.status_code == 202, resp.text
+        stored = (await rig.job_payload(resp.json()["pages"][0]["job_id"]))["detail"]
+        assert stored["margin_id"]["band"] == "bottom"
+        assert check.json()["band"] == stored["margin_id"]["band"]
+        assert check.json()["feed_mark"] is True

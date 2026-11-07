@@ -82,6 +82,7 @@ from app.sheets.errors import (
     PrinterUnavailableError,
     PrintInterruptedError,
     SheetApiError,
+    SheetIdJobFailedError,
     SheetTypeArchivedError,
     SheetTypeNotFoundError,
     SheetTypeVersionNotFoundError,
@@ -1279,6 +1280,10 @@ async def create_sheet_with_id_label(
         except SheetApiError as exc:
             exc.detail = {**(exc.detail or {}), "sheet_code": page.sheet_code}
             raise
+        except Exception as exc:
+            # The cell is free again (``_undo_partial_print``); the client still gets the sheet.
+            logger.exception("ID-only job of sheet %s failed unexpectedly", page.sheet_code)
+            raise SheetIdJobFailedError(page.sheet_code) from exc
     return page.sheet_code, page.job_id
 
 
