@@ -254,8 +254,9 @@ def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
             continue
         for operation in item.values():
             for status_code, response in operation.get("responses", {}).items():
-                # Every documented 4xx of these routes carries the same error envelope.
-                if status_code.startswith("4"):
+                # Every documented 4xx and 5xx of these routes carries the same error envelope
+                # (a 502 for an integration or a stopped print is one too).
+                if status_code.startswith(("4", "5")):
                     response["content"] = ref
 
 

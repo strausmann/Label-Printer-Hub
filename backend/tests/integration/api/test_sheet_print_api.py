@@ -644,3 +644,17 @@ async def test_openapi_documents_the_print_route() -> None:
         assert "202" in op["responses"]
         assert {"403", "404", "409", "422", "502", "503"} <= set(op["responses"])
         assert "SheetPrintResponse" in schema["components"]["schemas"]
+
+
+@pytest.mark.parametrize("suffix", ["", "/preview"])
+async def test_every_documented_error_of_the_sheet_print_routes_has_the_envelope_body(
+    suffix: str,
+) -> None:
+    async with running() as rig:
+        schema = (await rig.client.get("/openapi.json")).json()
+        op = schema["paths"][f"/api/print/{{printer_key}}/sheet{suffix}"]["post"]
+        errors = {code: r for code, r in op["responses"].items() if code[0] in "45"}
+        assert {"403", "404", "409", "422", "502", "503"} <= set(errors)
+        for code, response in errors.items():
+            ref = response["content"]["application/json"]["schema"]["$ref"]
+            assert ref.endswith("/SheetApiErrorResponse"), code

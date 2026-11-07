@@ -4058,14 +4058,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description An integration is not configured (`integration_not_configured`). */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
         };
     };
@@ -4135,14 +4139,18 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
             /** @description An integration is not configured (`integration_not_configured`). */
             503: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
             };
         };
     };
