@@ -36,9 +36,10 @@ from app.sheets.reservation import (
     reserve,
 )
 from app.sheets.sheet_service import MarkedCell
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlmodel import col
 
 G48 = Geometry(
     page_size="A4",
@@ -666,3 +667,47 @@ async def test_a_cell_less_margin_page_reserves_nothing_and_burns_no_code(
     assert await cells(session) == []
     pages = await do_reserve(session, [new("margin")], 1)
     assert pages[0].sheet_code == "L4736-0002"  # the failed request's new sheet was rolled back
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        JobState.DONE.value,
+        JobState.FAILED.value,
+        JobState.FAILED_RESTART.value,
+        JobState.CANCELLED.value,
+    ],
+)
+async def test_a_finished_job_whose_cells_are_not_settled_still_carries_id_and_mark(
+    session: AsyncSession, state: str
+) -> None:
+    """R10-4: ``mark_done`` commits before the outcome handler settles the cells in a second
+    transaction. In between the job is over but its cells are still ``reserved``; a print
+    planned then must not draw the margin ID and the feed mark a second time."""
+    code = await make_sheet(session, placement="margin")
+    sheet_id = (await session.execute(select(Sheet.id))).scalar_one()
+    job_id = uuid4()
+    await _job(
+        session,
+        job_id,
+        state,
+        {"sheet_id": str(sheet_id), "margin_id": {"text": code}, "feed_mark": {"x": 1}},
+    )
+    session.add(
+        SheetCell(sheet_id=sheet_id, cell_no=1, state="reserved", job_id=job_id, source="api")
+    )
+    await session.commit()
+
+    assert await margin_id_in_flight(session, sheet_id) is True
+    assert await feed_mark_in_flight(session, sheet_id) is True
+    (page,) = await do_reserve(session, [existing(code)], 1)
+    assert page.margin_id is False and page.feed_mark is None  # the plan sees both in flight
+    await session.execute(delete(SheetCell).where(col(SheetCell.job_id) == page.job_id))
+
+    # settled: the outcome handler turned the cell used (and set the flags, tested elsewhere)
+    row = await session.get(SheetCell, (sheet_id, 1))
+    assert row is not None
+    row.state = "used"
+    await session.commit()
+    assert await margin_id_in_flight(session, sheet_id) is False
+    assert await feed_mark_in_flight(session, sheet_id) is False

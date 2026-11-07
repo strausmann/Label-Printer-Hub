@@ -171,7 +171,9 @@ async def margin_id_in_flight(session: AsyncSession, sheet_id: UUID) -> bool:
     so it stays in flight until a human resolves the cell, F3-1); or if the sheet has
     ``reserved`` cells whose job has no ``jobs`` row yet: the page job is saved after the
     reservation commits, and in that window a second request must not draw the margin ID again
-    (C26). The last rule is conservative: at worst the margin ID moves to a later job (OC-40).
+    (C26); or if a job that has ended still owns ``reserved`` cells, because its outcome handler
+    has not settled them yet (R10-4). The last two rules are conservative: at worst the margin
+    ID moves to a later job (OC-40).
     """
     return (await _in_flight_flags(session, sheet_id))[0]
 
@@ -186,13 +188,15 @@ async def feed_mark_in_flight(session: AsyncSession, sheet_id: UUID) -> bool:
 
 async def _in_flight_flags(session: AsyncSession, sheet_id: UUID) -> tuple[bool, bool]:
     """``(margin ID, feed mark)`` in flight, from one read of each source: a reservation
-    without a job row yet, queued or printing payloads, and the payloads of jobs that still own
-    unconfirmed cells of the sheet."""
+    without a job row yet, queued or printing payloads, the payloads of jobs that still own
+    unconfirmed cells of the sheet, and those of finished jobs whose cells are not settled yet
+    (R10-4)."""
     if await repo.has_unattached_reservation(session, sheet_id):
         return True, True
     payloads = [
         *await repo.active_job_payloads(session),
         *await repo.unconfirmed_job_payloads(session, sheet_id),
+        *await repo.unsettled_job_payloads(session, sheet_id),
     ]
     return (
         _active_sheet_page_carries(payloads, sheet_id, "margin_id"),

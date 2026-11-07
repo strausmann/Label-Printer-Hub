@@ -151,6 +151,32 @@ async def unconfirmed_job_payloads(session: AsyncSession, sheet_id: UUID) -> lis
     return [p for p in result.scalars().all() if isinstance(p, dict)]
 
 
+async def unsettled_job_payloads(session: AsyncSession, sheet_id: UUID) -> list[dict[str, Any]]:
+    """Payloads of the jobs that are over but still own a ``reserved`` cell of the sheet.
+
+    A page job's end is committed first and its cells are settled by the outcome handler in a
+    second transaction. Between the two the job is no longer queued or printing and its cells
+    are not yet ``used`` or ``unconfirmed``, so neither of the other rules sees what it carried
+    (R10-4). A job that ended cleanly without printing counts too until its cells are freed: at
+    worst the margin ID moves to a later job.
+    """
+    result = await session.execute(
+        select(col(Job.payload))
+        .where(
+            col(Job.state).not_in((JobState.QUEUED.value, JobState.PRINTING.value)),
+            col(Job.id).in_(
+                select(col(SheetCell.job_id)).where(
+                    col(SheetCell.sheet_id) == sheet_id,
+                    col(SheetCell.state) == "reserved",
+                    col(SheetCell.job_id).is_not(None),
+                )
+            ),
+        )
+        .execution_options(**_FRESH)
+    )
+    return [p for p in result.scalars().all() if isinstance(p, dict)]
+
+
 async def reserved_cells_of_job(session: AsyncSession, job_id: UUID) -> list[SheetCell]:
     result = await session.execute(
         select(SheetCell)
