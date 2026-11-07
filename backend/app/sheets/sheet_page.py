@@ -78,9 +78,12 @@ _MIN_PT: Final = 6.0
 
 
 class SheetCellPayload(BaseModel):
-    """One label on the page: the cell, the content type to draw (already mapped) and its data."""
+    """One label on the page: the cell, the content type to draw (already mapped) and its data.
 
-    model_config = ConfigDict(extra="forbid")
+    Unknown keys are ignored, like ``SheetPageDetail``: a job stored by a later version still
+    renders after a rollback."""
+
+    model_config = ConfigDict(extra="ignore")
 
     cell: int
     content_type: ContentType

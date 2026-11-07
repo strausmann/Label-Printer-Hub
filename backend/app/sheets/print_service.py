@@ -242,13 +242,11 @@ class ResolvedItem:
     lookup: PrintLookupRequest | None
 
 
-def _purpose(item: SheetItem, label: LabelData) -> str:
-    """The request's purpose, cleaned; else the title, else the primary id, cut to 120."""
-    if item.purpose is not None:
-        cleaned = sanitise_text(item.purpose, max_len=PURPOSE_MAX)
-        if cleaned:
-            return cleaned
-    for candidate in (label.title, label.primary_id):
+def default_purpose(title: str | None, primary_id: str | None) -> str:
+    """A cell's purpose when the request gave none: the title, else the primary id, cleaned and
+    cut to 120, never refused (OC-43). One rule for the print and for the retry of an old
+    payload."""
+    for candidate in (title, primary_id):
         if candidate:
             cleaned = sanitise_text(
                 candidate[:_DEFAULT_PURPOSE_SCAN], max_len=_DEFAULT_PURPOSE_SCAN
@@ -256,6 +254,15 @@ def _purpose(item: SheetItem, label: LabelData) -> str:
             if cleaned:
                 return cleaned[:PURPOSE_MAX]
     return _FALLBACK_PURPOSE
+
+
+def _purpose(item: SheetItem, label: LabelData) -> str:
+    """The request's purpose, cleaned; else the title, else the primary id, cut to 120."""
+    if item.purpose is not None:
+        cleaned = sanitise_text(item.purpose, max_len=PURPOSE_MAX)
+        if cleaned:
+            return cleaned
+    return default_purpose(label.title, label.primary_id)
 
 
 def _lookup_error(exc: Exception, index: int) -> ItemLookupFailedError | None:
@@ -1381,16 +1388,14 @@ def _retry_meta(cell: SheetCellPayload) -> ItemMeta:
     """The record keeping of a cell of the failed job, from its payload. A payload stored before
     the record was kept falls back to what the label says (no ``ref``)."""
     label = cell.label_data
-    purpose = cell.purpose
-    if not purpose:
-        for candidate in (label.get("title"), label.get("primary_id")):
-            if isinstance(candidate, str) and candidate.strip():
-                purpose = sanitise_text(candidate[:_DEFAULT_PURPOSE_SCAN], max_len=PURPOSE_MAX)
-                if purpose:
-                    break
+    title, primary_id = label.get("title"), label.get("primary_id")
     return ItemMeta(
         source=cell.source or str(label.get("source_app") or _DEFAULT_SOURCE),
-        purpose=purpose or _FALLBACK_PURPOSE,
+        purpose=cell.purpose
+        or default_purpose(
+            title if isinstance(title, str) else None,
+            primary_id if isinstance(primary_id, str) else None,
+        ),
         ref=cell.ref,
     )
 
@@ -1450,6 +1455,7 @@ async def retry_sheet_page(
             info = await _type_info(session, page.type_version_id, {})
             new_detail = detail.model_copy(
                 update={
+                    "id_cell": detail.id_cell if page.id_cell is not None else None,
                     "margin_id": reserved_margin_id_payload(page, info.label, scan),
                     "feed_mark": (
                         feed_mark_payload(page.feed_mark) if page.feed_mark is not None else None

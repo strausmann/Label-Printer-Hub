@@ -34,6 +34,7 @@ from app.sheets.errors import (
     CellOutOfRangeError,
     CellsTakenError,
     InvalidPlacementsError,
+    PageJobNotRetryableError,
     PlanChangedError,
     SheetDiscardedError,
     SheetNotFoundError,
@@ -478,8 +479,11 @@ async def reserve_exact(
     """Reserve exactly these cells of one sheet for ``job_id`` (the retry of a page job).
 
     The planner is not asked where the cells go: they are the ones the failed job had, and the
-    ID cell stays where it was (pre-flight C21). One write transaction: if any cell is no longer
-    free, nothing is written and the answer is ``cells_taken`` with every conflicting cell.
+    ID cell stays where it was (pre-flight C21), unless the sheet's ID has been printed or has a
+    cell since (ruling T9-1): then it is dropped, and a job with nothing left is
+    ``job_not_retryable``. One write transaction: if any cell is no longer free, nothing is
+    written and the answer is ``cells_taken`` with every conflicting cell. (The insert's own
+    ``IntegrityError`` is unreachable under the lock; it names all requested cells.)
 
     The margin ID and the feed mark are decided again with the rule ``plan`` uses
     (``decide_margin_and_mark``), for the printer, the tray and the calibration of ``margin``:
@@ -492,6 +496,12 @@ async def reserve_exact(
         if view.state == "discarded":
             raise SheetDiscardedError()
         assert view.sheet_id is not None
+        if id_cell is not None and (view.id_printed or view.has_hub_cell):
+            # The planner's own rule (needs_id_cell): the ID goes out once. Another job printed
+            # it, or holds a cell for it, since the first attempt (ruling T9-1).
+            id_cell = None
+        if not cells and id_cell is None:
+            raise PageJobNotRetryableError()  # an ID-only job with nothing left to print
         wanted = [n for n, _ in cells] + ([id_cell] if id_cell is not None else [])
         total = cell_count(view.geometry)
         out = sorted(n for n in wanted if n < 1 or n > total)

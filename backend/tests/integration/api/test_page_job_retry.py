@@ -20,6 +20,7 @@ from app.calibration.model import CalibrationIn
 from app.models.job import Job
 from app.models.printer import Printer
 from app.models.printer_tray import PrinterTray
+from app.services.page_jobs import PagePayload
 from app.sheets import print_service
 from sqlalchemy import func, select
 
@@ -457,3 +458,121 @@ async def test_retry_meta_falls_back_for_a_payload_stored_before_the_record_was_
     meta = print_service._retry_meta(old)
 
     assert (meta.source, meta.purpose, meta.ref) == ("grocy", "Flour", None)
+
+
+# ------------------------------------------------------------------ ID printed since (T9-1)
+
+
+async def _id_cell_sheet_failed(rig: Rig) -> tuple[str, str]:
+    """A ``cell`` sheet whose ID-only job failed cleanly: the ID is not printed, cell 1 is free."""
+    rig.fake.print_status = REJECTED
+    resp = await rig.client.post(
+        "/api/sheets",
+        json={"type": "acme-t1", "id_placement": "cell", "printer": "page-1"},
+        headers=rig.key,
+    )
+    assert resp.status_code == 201, resp.text
+    job_id, code = resp.json()["job_id"], resp.json()["code"]
+    await _until_job(job_id, "failed")
+    await rig.until_sheet(code, lambda s: s["reserved"] == 0 and s["unconfirmed"] == 0)
+    rig.fake.print_status = 0
+    return job_id, code
+
+
+async def test_retry_of_an_id_only_job_whose_id_was_printed_elsewhere_is_refused() -> None:
+    async with running() as rig:
+        job_id, code = await _id_cell_sheet_failed(rig)
+        again = await rig.print(
+            _body(code, 1, placements=[{"sheet": code, "skip": [1]}])
+        )  # the ID goes to cell 2, the item to cell 3
+        assert again.status_code == 202, again.text
+        assert again.json()["pages"][0]["id_cell"] == 2
+        await rig.until_sheet(code, lambda s: s["id_printed"] and _used(2, 3)(s))
+        jobs = await _job_count()
+
+        refused = await _retry(rig, job_id)
+
+        assert refused.status_code == 409, refused.text
+        assert _err(refused)["error_code"] == "job_not_retryable"  # no second ID label
+        assert await _job_count() == jobs
+        sheet = await rig.sheet(code)
+        assert [c["cell"] for c in sheet["cells"]] == [2, 3]  # cell 1 stays free
+
+
+async def test_retry_drops_the_id_cell_when_the_id_was_printed_elsewhere() -> None:
+    async with running() as rig:
+        body = {
+            "items": [_item(i) for i in range(2)],
+            "placements": [{"new_sheet": {"type": "acme-t1", "id_placement": "cell"}}],
+        }
+        first_id, code = await _fail_cleanly(rig, body)  # ID cell 1, items 2 and 3
+        other = await rig.print(_body(code, 1, placements=[{"sheet": code, "skip": [1, 2, 3]}]))
+        assert other.status_code == 202, other.text
+        assert other.json()["pages"][0]["id_cell"] == 4
+        await rig.until_sheet(code, lambda s: s["id_printed"] and _used(4, 5)(s))
+
+        resp = await _retry(rig, first_id)
+
+        detail = await _retried_detail(rig, resp)
+        assert detail["id_cell"] is None and _cell_numbers(detail) == [2, 3]
+        sheet = await rig.until_sheet(code, _used(2, 3, 4, 5))
+        assert 1 not in {c["cell"] for c in sheet["cells"]}
+
+
+async def test_retry_of_a_calibration_page_on_a_disabled_printer_is_refused() -> None:
+    async with running() as rig:
+        stored = PagePayload(
+            kind="calibration_page",
+            media="A4",
+            tray="auto",
+            render_dpi=600,
+            job_name="Calibration page",
+            calibration=None,
+            detail={},
+        ).model_dump(mode="json")
+        async with _factory()() as s:
+            row = Job(printer_id=rig.printer_id, payload=stored, state="failed")
+            s.add(row)
+            printer = await s.get(Printer, rig.printer_id)
+            assert printer is not None
+            printer.enabled = False
+            await s.commit()
+            job_id = row.id
+        jobs = await _job_count()
+
+        refused = await _retry(rig, str(job_id))
+
+        assert refused.status_code == 409, refused.text
+        assert _err(refused)["error_code"] == "printer_disabled"
+        assert await _job_count() == jobs
+
+
+async def test_retry_meta_cuts_a_long_default_purpose() -> None:
+    from app.sheets.sheet_page import SheetCellPayload
+
+    old = SheetCellPayload(
+        cell=3,
+        content_type="qr_two_lines",  # type: ignore[arg-type]
+        label_data={"source_app": "manual", "title": "T" * 200, "primary_id": "P-1"},
+        mapped=False,
+    )
+
+    meta = print_service._retry_meta(old)
+
+    assert meta.purpose == "T" * 120  # OC-43: cut, never refused
+
+
+async def test_a_cell_payload_with_unknown_keys_still_loads() -> None:
+    from app.sheets.sheet_page import SheetCellPayload
+
+    cell = SheetCellPayload.model_validate(
+        {
+            "cell": 1,
+            "content_type": "qr_two_lines",
+            "label_data": {},
+            "mapped": False,
+            "from_a_later_version": 1,
+        }
+    )
+
+    assert cell.cell == 1  # a rollback must not strand a stored job

@@ -354,11 +354,13 @@ async def resume_job(
         "calibration-page request.  A sheet page is retried onto the same cells of the same "
         "sheet as a new job, with a fresh calibration snapshot and the margin ID and feed "
         "mark decided again for the printer.  It answers 409 ``job_not_retryable`` for a "
-        "``done`` job, 409 ``cells_unconfirmed`` while a cell of the job waits for "
-        "confirmation, 409 ``cells_taken`` (with the cell numbers) when a cell is no longer "
-        "free, 409 ``printer_disabled`` for a disabled printer, 422 ``tray_unknown`` when the "
-        "tray was removed or disabled since, and 409 ``sheet_discarded`` for a discarded "
-        "sheet; nothing is reserved or created in any of these cases."
+        "``done`` job (or an ID-only job whose ID was printed since), 409 "
+        "``cells_unconfirmed`` while a cell of the job waits for confirmation, 409 "
+        "``cells_taken`` (with the cell numbers) when a cell is no longer free, 409 "
+        "``printer_disabled`` for a disabled printer (a calibration page too), 422 "
+        "``tray_unknown`` when the tray was removed or disabled since, and 409 "
+        "``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of "
+        "these cases."
     ),
 )
 async def retry_job(
@@ -401,7 +403,7 @@ async def retry_job(
         except UnrenderableJobError as exc:
             await _fail_unqueued(session, new_job.id, "retry_unrenderable_payload")
             raise _retry_rejected(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "job-not-retryable",
                 "Job payload cannot be re-rendered",
                 str(exc),
@@ -491,7 +493,7 @@ async def _retry_sheet_page(
 
 def _stored_page_invalid() -> HTTPException:
     return _retry_rejected(
-        status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
         "job-not-retryable",
         "Job payload cannot be re-rendered",
         "The stored page payload is not valid",
