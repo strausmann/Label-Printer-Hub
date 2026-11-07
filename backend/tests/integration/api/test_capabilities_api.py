@@ -61,7 +61,7 @@ async def _tape_printer(model: str, loaded_mm: int | None) -> UUID:
             slug=f"t-{uuid4().hex[:6]}",
             model=model,
             backend="mock",
-            connection={"host": "10.9.8.7"},
+            connection={"host": "192.0.2.10"},
         )
         s.add(p)
         if loaded_mm is not None:
@@ -219,6 +219,33 @@ async def test_ipp_printer_reports_page_capabilities(api_client_with_seed):
     assert trays["main"]["calibration"]["offset_x_mm"] == 1.25
     assert trays["main"]["calibration"]["offset_y_mm"] == -0.5
     assert trays["auto"]["calibration"] is None
+
+
+async def test_restart_with_the_printer_down_keeps_the_last_real_capabilities(
+    api_client_with_seed,
+):
+    """The printer is stored with a real cached answer and is unreachable when the app starts.
+
+    The app's status producer fails its first probe and writes the offline row; that write
+    must keep the cached summary (CI saw the placeholder win, which reads as "unknown").
+    Waits on the row itself, bounded, not on a sleep.
+    """
+    import asyncio
+
+    c, reader = api_client_with_seed, await _key(["read"])
+    pid = await _ipp_printer()  # seeded before the first request, so the app starts a producer
+    assert (await c.get("/healthz")).status_code == 200  # starts the app and its producers
+    async with asyncio.timeout(20):
+        while True:
+            async with _factory()() as s:
+                row = await s.get(PrinterStatusCache, pid)
+                if row is not None and (row.parsed or {}).get("last_error"):
+                    break
+            await asyncio.sleep(0.05)
+    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    assert body["resolution_dpi"] == {"max": 600, "supported": [300, 600]}
+    assert body["document_formats"] == ["application/pdf"]
+    assert body["media"] is not None
 
 
 async def test_ipp_response_leaks_no_connection_detail(api_client_with_seed):

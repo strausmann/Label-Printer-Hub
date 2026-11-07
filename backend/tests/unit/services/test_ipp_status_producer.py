@@ -186,6 +186,34 @@ async def test_offline_write_keeps_the_time_the_values_were_read(async_session_f
     await producer.stop()
 
 
+async def test_offline_at_startup_keeps_the_cached_real_summary(async_session_factory) -> None:
+    """After a restart (empty in-memory state) the first failed probe must not replace the
+    last real answer in the cache with the "nothing known" placeholder."""
+    fake = FakeIppPrinter(markers=[{"name": "Black Toner", "level": 40, "type": "toner"}])
+    first, pid, _bus1, _s1 = _make(fake, async_session_factory)
+    assert await first.probe_once() is not None
+    await first.stop()
+    before = await _cache(async_session_factory, pid)
+
+    second, _other, _bus2, state = _make(
+        fake,
+        async_session_factory,
+        transport=FailingTransport(
+            httpx.ASGITransport(app=fake), "Get-Printer-Attributes", httpx.ConnectError
+        ),
+    )
+    second._printer_id = pid  # the same printer, a new process
+    assert state.status is None
+    assert await second.probe_once() is None
+    row = await _cache(async_session_factory, pid)
+    assert row.parsed["online"] is False
+    assert row.parsed["summary"]["pdf_supported"] is True
+    assert row.parsed["summary"]["resolutions_dpi"] == before.parsed["summary"]["resolutions_dpi"]
+    assert row.parsed["markers"]
+    assert row.captured_at == before.captured_at
+    await second.stop()
+
+
 async def test_first_probe_failing_still_stamps_the_row(async_session_factory) -> None:
     fake = FakeIppPrinter()
     producer, pid, _bus, _state = _make(

@@ -228,7 +228,10 @@ class IppStatusProducer:
     async def _on_failure(self, exc: Exception) -> None:
         first = self._failures == 0
         self._failures += 1
-        offline = _offline_record(self._state.status)
+        previous = self._state.status
+        if previous is None:  # after a restart: the last real answer is still in the cache
+            previous = await self._cached_record()
+        offline = _offline_record(previous)
         self._state.status = offline
         if self._state.summary is None:
             self._state.summary = offline.summary
@@ -240,6 +243,25 @@ class IppStatusProducer:
         self._publish_if_changed(offline)
 
     # ------------------------------------------------------------------ outputs
+
+    async def _cached_record(self) -> IppStatusRecord | None:
+        """The cached record of an earlier run, if there is a usable one.
+
+        A printer that is down at startup must not turn its last real summary into the
+        "nothing known" placeholder: capabilities would call it unknown until it answers.
+        """
+        from app.models.printer_status_cache import PrinterStatusCache
+
+        try:
+            async with self._session_factory() as s:
+                row = await s.get(PrinterStatusCache, self._printer_id)
+            if row is None or not row.parsed:
+                return None
+            return IppStatusRecord.model_validate(row.parsed)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return None
 
     async def _write_cache(
         self, record: IppStatusRecord, *, last_error: str | None, keep_captured_at: bool = False
