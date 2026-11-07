@@ -469,3 +469,33 @@ async def test_clear_queue_during_the_row_insert_is_not_undone(handler: Recordin
         await env.queue.resume_printer(env.page.id)
         await asyncio.sleep(0)  # the worker has nothing to take
         assert env.ops("Print-Job") == []
+
+
+class _DoneFails(MemoryJobStore):
+    async def mark_done(self, job_id: UUID) -> None:
+        raise RuntimeError("db down")
+
+
+async def test_backstop_ends_the_job_completely(handler: RecordingHandler) -> None:
+    """The runner raises (the completion write fails): the job ends failed with its event,
+    its outcome call and its waiters released, not just a silent in-memory change."""
+    async with _env(FakeIppPrinter(job_script=[5, 9])) as env:
+        failing = _DoneFails()
+        failing._jobs = env.store._jobs  # type: ignore[attr-defined]
+        env.queue._store = failing  # type: ignore[assignment]
+        env.runner._store = failing  # type: ignore[assignment]
+        jid = await _submit(env)
+        job = await env.wait_terminal(jid)  # a waiter is released
+        assert job.state == JobState.FAILED
+        assert job.error_code == "interrupted"
+        assert any(
+            e[0] == str(jid) and e[1] == JobState.PRINTING and e[2] == JobState.FAILED
+            for e in env.events
+        )
+        await env.until(lambda: "ended" in handler.names(jid))
+        assert handler.ended(jid) == {
+            "state": "failed",
+            "started": True,
+            "error_code": "interrupted",
+        }
+        await env.wait_db(jid, DbJobState.FAILED.value)

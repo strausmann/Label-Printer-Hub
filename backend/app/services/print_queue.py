@@ -1328,20 +1328,33 @@ class PrintQueue:
         """The runner ends every job itself; this is the backstop for a bug in it."""
         logger.exception("Page job %s: runner failed on %s", item.job.id, printer_id)
         if _state_of(item.job) == JobState.PRINTING:
-            item.job.error_code = "interrupted"
-            with contextlib.suppress(InvalidStateTransitionError):
-                JobStateMachine.transition(item.job, JobState.FAILED)
+            message = "The printer may have printed the page; its outcome is unknown."
+            # 1. persist, best effort
             try:
-                await self._store.mark_failed_code(
-                    UUID(item.job.id),
-                    "interrupted",
-                    "The printer may have printed the page; its outcome is unknown.",
-                    None,
-                )
+                await self._store.mark_failed_code(UUID(item.job.id), "interrupted", message, None)
             except Exception:
                 # The database is failing too; the row stays ``printing`` and the next
                 # start settles it. The worker must not die of it.
                 logger.exception("Page job %s: backstop could not persist the end", item.job.id)
+            # 2. the terminal state in memory (this releases the waiters), 3. the same event a
+            # normal failure emits, 4. the outcome handler: the page may have printed.
+            item.job.error_code = "interrupted"
+            item.job.error_message = message
+            item.job.error_msg = message
+            with contextlib.suppress(InvalidStateTransitionError):
+                JobStateMachine.transition(item.job, JobState.FAILED)
+            if _state_of(item.job) == JobState.FAILED:
+                self._notify_page_change(item.job, JobState.PRINTING, JobState.FAILED)
+                try:
+                    await notify_ended(
+                        item.payload.kind,
+                        UUID(item.job.id),
+                        state="failed",
+                        started=True,
+                        error_code="interrupted",
+                    )
+                except Exception:
+                    logger.exception("Page job %s: backstop outcome call failed", item.job.id)
 
     async def _resume_page_jobs(self, printer: PagePrinter, printer_id: UUID) -> None:
         """Resume tracking of the jobs the printer held across a hub restart.
