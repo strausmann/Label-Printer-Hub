@@ -1346,3 +1346,33 @@ async def test_the_plan_runs_off_the_event_loop(
 
     assert seen and all(t != loop_thread for t in seen)
 
+
+async def test_a_dense_qr_is_a_placeholder_in_the_preview_and_builds_no_symbol(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R10-5: with 512-character payloads in all 480 cells the maximal preview took 15 s, most
+    of it in the symbols (pure-Python Reed-Solomon). A symbol of more than 65 modules a side
+    (version 12) is below two pixels a module in a cell at 150 dpi, no picture to scan or to
+    check; the preview draws the hatched placeholder and does not build it. The job still
+    prints the real symbol."""
+    built: list[str] = []
+    real = print_service.build_qr_preview
+
+    def counting(payload: str, *args: Any, **kwargs: Any) -> Any:
+        built.append(payload)
+        return real(payload, *args, **kwargs)
+
+    monkeypatch.setattr(print_service, "build_qr_preview", counting)
+    printer = await make_printer(session, record())
+    code = await make_sheet(session)
+    dense = "https://r.example.invalid/" + "q" * 400
+    short = "https://r.example.invalid/1"
+
+    out = await run_preview(
+        session, printer, req([raw(0, qr_payload=dense), raw(1, qr_payload=short)], [on(code)])
+    )
+
+    assert built == [short]
+    (page,) = out.pages
+    assert [c.cell for c in page.cells if c.state == "new"] == [1, 2]
+    assert png_of(page).size[0] > 0

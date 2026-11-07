@@ -164,6 +164,7 @@ LOOKUP_CONCURRENCY: Final = 8
 MAX_QR_PAYLOAD: Final = QR_PAYLOAD_MAX  # request-level cap on a cell's QR payload
 MAX_CONCURRENT_RENDERS: Final = 2  # preview renders at once, process-wide (spec 18, CPU)
 MAX_PREVIEW_PAGES: Final = 10  # a plan decision, not the spec's (spec 18, CPU)
+PREVIEW_QR_MAX_MODULES: Final = 65  # version 12; a denser symbol is a placeholder in the preview
 MAX_HINTS_PER_ITEM: Final = 5
 PURPOSE_MAX: Final = 120
 _DEFAULT_PURPOSE_SCAN: Final = 480  # a default purpose is cut, never refused (OC-43)
@@ -553,7 +554,12 @@ def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi:
     ):
         return draw(job.data)
     cell = draw(job.data.model_copy(update={"qr_payload": "QR"}))  # the text, and the checks
-    if _qr_fits_at(payload, w_mm, h_mm, PREVIEW_DPI):
+    modules = _qr_modules(payload)
+    if (
+        modules is not None
+        and modules <= PREVIEW_QR_MAX_MODULES
+        and _qr_fits_at(payload, w_mm, h_mm, PREVIEW_DPI)
+    ):
         symbol = build_qr_preview(payload, w_mm, h_mm, render_dpi, PREVIEW_DPI)
         assert symbol is not None  # the arithmetic above said it fits
         cell.image.paste(symbol, (0, 0))

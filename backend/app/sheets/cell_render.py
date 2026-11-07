@@ -414,12 +414,14 @@ class RasterCellRenderer:
                 per_line = item_px * (1 + _LINE_GAP_EM)
                 room = height - starts[0] * (1 + _LINE_GAP_EM)
                 fit = max(1, int(room // per_line))
-                items = [_clean(i.item) for i in data.items]
-                shown = items
+                # Only the rows that are drawn are cleaned: cleaning all of up to 100 rows of
+                # 512 characters cost more than drawing the cell (R10-5).
                 omitted = 0
-                if len(items) > fit:
-                    shown = items[: fit - 1]
-                    omitted = len(items) - len(shown)
+                if len(data.items) > fit:
+                    omitted = len(data.items) - (fit - 1)
+                    shown = [_clean(i.item) for i in data.items[: fit - 1]]
+                else:
+                    shown = [_clean(i.item) for i in data.items]
                 lines = [(primary, starts[0])] + [(t, item_px) for t in shown]
                 if omitted:
                     lines.append((f"+{omitted} more", item_px))
