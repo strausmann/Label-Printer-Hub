@@ -245,6 +245,57 @@ async def test_restart_does_not_cancel_a_foreign_job_when_a_cancel_waited(
     assert "Cancel-Job" not in [r.operation for r in fake.received]
 
 
+async def test_api_cancel_after_resume_waits_for_the_identity_check(
+    store: JobStore, handler: RecordingHandler
+) -> None:
+    """Listing and Get-Job-Attributes both fail at restart, so the job cannot be verified.
+
+    The id now belongs to a foreign job. An API cancel that arrives while the runner is
+    tracking (not before it resumed) must not send Cancel-Job to that id.
+    """
+    fake = FakeIppPrinter(job_script=[5, 5, 5])
+    page_id = uuid4()
+    first_run = _side(store, fake, page_id)
+    async with _running(first_run):
+        jid = await first_run.queue.submit_page_job(
+            page_id, payload(), api_key_id=None, source_ip=None
+        )
+        await _tracked_in_db(store, jid)
+    ipp_id = (await _row(store, jid)).result["ipp_job_id"]
+    fake.reuse_job_id_for_foreign_job(ipp_id)
+    fake.received.clear()
+    blind = FailingTransport(
+        FailingTransport(httpx.ASGITransport(app=fake), "Get-Jobs", httpx.ConnectError),
+        "Get-Job-Attributes",
+        httpx.ConnectError,
+    )
+    async with _running(_side(store, fake, page_id, transport=blind)) as second:
+        await _until(lambda: second.runner.is_tracking(jid))
+        await _until(lambda: "Get-Job-Attributes" in [r.operation for r in fake.received])
+        assert await second.queue.cancel(str(jid)) is True  # accepted, held back
+        await asyncio.sleep(0.05)  # several polls, all failing: still unverified
+    assert "Cancel-Job" not in [r.operation for r in fake.received]
+
+
+async def test_api_cancel_of_a_verified_resumed_job_is_sent(
+    store: JobStore, handler: RecordingHandler
+) -> None:
+    fake = FakeIppPrinter(job_script=[5, 5, 5])
+    page_id = uuid4()
+    first_run = _side(store, fake, page_id)
+    async with _running(first_run):
+        jid = await first_run.queue.submit_page_job(
+            page_id, payload(), api_key_id=None, source_ip=None
+        )
+        await _tracked_in_db(store, jid)
+    fake.received.clear()
+    async with _running(_side(store, fake, page_id)) as second:
+        await _until(lambda: second.runner.is_tracking(jid))
+        await _until(lambda: "Get-Job-Attributes" in [r.operation for r in fake.received])
+        assert await second.queue.cancel(str(jid)) is True
+        await _until(lambda: "Cancel-Job" in [r.operation for r in fake.received])
+
+
 async def test_restart_still_adopts_its_own_job(store: JobStore, handler: RecordingHandler) -> None:
     """Counter-case: the id is listed with the hub's own name and user, so it is resumed."""
     fake = FakeIppPrinter(job_script=[5, 5, 5])
