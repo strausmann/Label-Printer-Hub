@@ -172,7 +172,7 @@ class PrinterUpdatePayload(BaseModel):
     stored row's backend; ``trays`` (replace-all) are for ``ipp`` printers only.
     """
 
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=255)
     connection: PrinterConnection | IppConnection | None = None
     queue: PrinterQueueSettings | None = None
     cut_defaults: PrinterCutDefaults | None = None

@@ -20,6 +20,7 @@ import pytest
 import pytest_asyncio
 from app.models.api_key import ApiKey
 from app.models.printer import Printer
+from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.codec import Attr, Group, Message, Tag, decode, encode
 from httpx import ASGITransport, AsyncClient
@@ -428,6 +429,20 @@ async def test_update_without_uri_change_does_not_probe(hub: Hub) -> None:
 
 
 @pytest.mark.asyncio
+async def test_update_name_is_bounded_like_create(hub: Hub) -> None:
+    """The footer of a check page is fitted to the name: an unbounded name costs CPU on read."""
+    headers = await _created(hub)
+    too_long = await hub.client.put(
+        f"{ADMIN}/office-laser", json={"name": "n" * 256}, headers=headers
+    )
+    assert too_long.status_code == 422, too_long.text
+    ok = await hub.client.put(f"{ADMIN}/office-laser", json={"name": "n" * 255}, headers=headers)
+    assert ok.status_code == 200, ok.text
+    row = await _db_printer("office-laser")
+    assert row is not None and row.name == "n" * 255
+
+
+@pytest.mark.asyncio
 async def test_update_with_new_uri_probes(hub: Hub) -> None:
     headers = await _created(hub)
     resp = await hub.client.put(
@@ -624,3 +639,135 @@ async def test_create_duplicate_slug_is_409_not_500(hub: Hub) -> None:
     row = await _db_printer("office-laser")
     assert row is not None
     assert len(await _db_trays(row.id)) == 2
+
+
+# ---------------------------------------------------------------------------- calibration vs trays
+
+CAL_BODY = {
+    "offset_x_mm": 1.2,
+    "offset_y_mm": -0.4,
+    "scale_x": 1.001,
+    "scale_y": 0.999,
+    "rotation_deg": 0.3,
+}
+
+
+async def _db_calibration_keys(printer_id: UUID) -> list[str]:
+    async with _factory()() as s:
+        rows = (
+            await s.execute(
+                select(PrinterCalibration.tray_key)
+                .where(PrinterCalibration.printer_id == printer_id)
+                .order_by(PrinterCalibration.tray_key)
+            )
+        ).scalars()
+        return list(rows)
+
+
+async def _calibrate(hub: Hub, headers: dict[str, str], tray: str) -> httpx.Response:
+    return await hub.client.put(
+        f"/api/printers/{await _printer_id()}/calibration/{tray}", json=CAL_BODY, headers=headers
+    )
+
+
+async def _printer_id() -> UUID:
+    row = await _db_printer("office-laser")
+    assert row is not None
+    return row.id
+
+
+@pytest.mark.asyncio
+async def test_removed_tray_loses_its_calibration_and_a_re_added_one_starts_clean(
+    hub: Hub,
+) -> None:
+    headers = await _created(hub)  # trays: auto, tray-2
+    assert (await _calibrate(hub, headers, "tray-2")).status_code == 200
+    assert (await _calibrate(hub, headers, "auto")).status_code == 200
+    pid = await _printer_id()
+    resp = await hub.client.put(f"{ADMIN}/office-laser", json={"trays": _trays()}, headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert await _db_calibration_keys(pid) == ["auto"]  # tray-2 is gone, auto stays
+    resp = await hub.client.put(
+        f"{ADMIN}/office-laser", json={"trays": _trays("tray-2")}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    got = await hub.client.get(f"/api/printers/{pid}/calibration", headers=headers)
+    by_tray = {r["tray"]: r for r in got.json()}
+    assert by_tray["tray-2"]["method"] is None  # not the deviation of the old setup
+    assert by_tray["auto"]["method"] == "manual"
+
+
+@pytest.mark.asyncio
+async def test_disabled_tray_keeps_its_calibration(hub: Hub) -> None:
+    headers = await _created(hub)
+    assert (await _calibrate(hub, headers, "tray-2")).status_code == 200
+    pid = await _printer_id()
+    disabled = [
+        {"key": "auto", "label": "Automatic", "is_default": True},
+        {"key": "tray-2", "label": "Tray tray-2", "enabled": False},
+    ]
+    resp = await hub.client.put(f"{ADMIN}/office-laser", json={"trays": disabled}, headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert await _db_calibration_keys(pid) == ["tray-2"]
+    enabled = [{**disabled[0]}, {**disabled[1], "enabled": True}]
+    resp = await hub.client.put(f"{ADMIN}/office-laser", json={"trays": enabled}, headers=headers)
+    assert resp.status_code == 200, resp.text
+    got = await hub.client.get(f"/api/printers/{pid}/calibration", headers=headers)
+    assert {r["tray"]: r["method"] for r in got.json()}["tray-2"] == "manual"
+
+
+@pytest.mark.asyncio
+async def test_calibration_put_that_loses_the_race_to_a_tray_removal_leaves_no_row(
+    hub: Hub,
+) -> None:
+    """Deterministic interleaving: the PUT passes its first tray check, then the tray goes.
+
+    The re-check inside the write lock must refuse; a row written anyway would be an
+    orphan that comes back when the tray is re-added.
+    """
+    from app.calibration import service
+
+    headers = await _created(hub)
+    pid = await _printer_id()
+    real = service._check_tray
+    calls = 0
+
+    async def removing_after_first_check(session: Any, printer_id: UUID, tray: str) -> None:
+        nonlocal calls
+        calls += 1
+        await real(session, printer_id, tray)
+        if calls == 1:  # the PUT has decided the tray exists; the admin removes it now
+            resp = await hub.client.put(
+                f"{ADMIN}/office-laser", json={"trays": _trays()}, headers=headers
+            )
+            assert resp.status_code == 200, resp.text
+
+    with patch.object(service, "_check_tray", removing_after_first_check):
+        put = await _calibrate(hub, headers, "tray-2")
+    assert put.status_code == 422, put.text
+    assert _error(put)["error_code"] == "tray_unknown"
+    assert calls == 2
+    assert await _db_calibration_keys(pid) == []
+
+
+@pytest.mark.asyncio
+async def test_calibration_put_that_wins_the_race_is_cleaned_by_the_removal(hub: Hub) -> None:
+    """The other order: the PUT commits first, the removal then deletes its row."""
+    from app.calibration import service
+
+    headers = await _created(hub)
+    pid = await _printer_id()
+    real_put = service.put
+
+    async def put_then_remove(*args: Any, **kwargs: Any) -> Any:
+        out = await real_put(*args, **kwargs)  # committed
+        resp = await hub.client.put(
+            f"{ADMIN}/office-laser", json={"trays": _trays()}, headers=headers
+        )
+        assert resp.status_code == 200, resp.text
+        return out
+
+    with patch("app.api.routes.calibration.service.put", put_then_remove):
+        put = await _calibrate(hub, headers, "tray-2")
+    assert put.status_code == 200, put.text
+    assert await _db_calibration_keys(pid) == []

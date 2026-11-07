@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
 from app.models.printer import Printer, PrinterAudit
+from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import PRINTER_ATTRS, ProbeSummary, summarise
 from app.printer_backends.ipp.client import IppClient, to_http_url
@@ -359,6 +360,17 @@ class PrinterAdminService:
     async def _replace_trays(self, printer_id: UUID, trays: Sequence[TrayIn]) -> None:
         await self._session.execute(
             delete(PrinterTray).where(col(PrinterTray.printer_id) == printer_id)
+        )
+        # A calibration belongs to a physical tray set-up: when a tray leaves the list it goes
+        # too, so that re-adding the key months later does not revive an old deviation. A
+        # *disabled* tray stays in the list and keeps its measurement. Same transaction as the
+        # tray delete; a calibration PUT re-checks the tray inside the sheet write lock, so
+        # whichever of the two commits second sees the other's result and no orphan survives.
+        await self._session.execute(
+            delete(PrinterCalibration).where(
+                col(PrinterCalibration.printer_id) == printer_id,
+                col(PrinterCalibration.tray_key).not_in([t.key for t in trays]),
+            )
         )
         self._session.add_all(_tray_rows(printer_id, trays))
 
