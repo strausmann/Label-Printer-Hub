@@ -186,6 +186,30 @@ async def test_terminal_state_is_persisted_before_it_is_published(
     assert handler.names(UUID(pj.job.id)) in ([], ["started"])  # no completion
 
 
+@pytest.mark.parametrize("bad_state", [0, 2, 10, 99, -1])
+async def test_out_of_range_job_state_is_an_unusable_answer(
+    handler: RecordingHandler, bad_state: int
+) -> None:
+    """A printer that keeps answering with a job-state outside 3..9 must not hold the queue."""
+    env = _Env(FakeIppPrinter(job_script=[bad_state]))
+    pj = await env.job()
+    await env.run(pj)  # bounded by the env timeout
+    assert pj.job.state == JobState.FAILED
+    assert env.ops("Get-Job-Attributes") == MAX_CONSECUTIVE_POLL_ERRORS
+    assert pj.job.error_code == "interrupted"
+    assert handler.names(UUID(pj.job.id)) == ["ended"]  # never started, never completed
+
+
+async def test_a_valid_answer_resets_the_unusable_count(handler: RecordingHandler) -> None:
+    script = (
+        [99] * (MAX_CONSECUTIVE_POLL_ERRORS - 1) + [3] + [99] * (MAX_CONSECUTIVE_POLL_ERRORS - 1)
+    )
+    env = _Env(FakeIppPrinter(job_script=[*script, 9]))
+    pj = await env.job()
+    await env.run(pj)
+    assert pj.job.state == JobState.COMPLETED
+
+
 async def test_completed_flow(handler: RecordingHandler) -> None:
     env = _Env(FakeIppPrinter(job_script=[3, 5, 9]))
     pj = await env.job()
