@@ -209,7 +209,7 @@ export interface paths {
         put?: never;
         /**
          * Retry a failed job
-         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from its payload; a sheet page answers 409 ``job_not_retryable`` (its cells need the cell-aware retry).
+         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from its payload, so retry prints the same page again with its original calibration snapshot and date; a fresh check print with the current calibration is a new calibration-page request.  A sheet page answers 409 ``job_not_retryable`` (its cells need the cell-aware retry).
          */
         post: operations["retry_job_api_jobs__job_id__retry_post"];
         delete?: never;
@@ -1486,7 +1486,7 @@ export interface components {
         Capabilities: {
             /**
              * Captured At
-             * @description When the cache row was written.
+             * @description When the values were read. A page printer that went offline keeps the time of its last successful reading.
              */
             captured_at: string | null;
             /**
