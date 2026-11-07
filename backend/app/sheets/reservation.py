@@ -27,7 +27,7 @@ from sqlalchemy import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.sheet import Sheet, SheetCell, SheetType, SheetTypeVersion
+from app.models.sheet import Sheet, SheetCell, SheetTypeVersion
 from app.printer_backends.ipp.attributes import Margins
 from app.repositories import sheets as repo
 from app.services.event_bus import EventBus
@@ -74,6 +74,7 @@ __all__ = [
     "expected_of",
     "feed_mark_in_flight",
     "load_sheet_view",
+    "load_sheet_views",
     "margin_id_in_flight",
     "release",
     "reserve",
@@ -186,47 +187,79 @@ async def feed_mark_in_flight(session: AsyncSession, sheet_id: UUID) -> bool:
     return (await _in_flight_flags(session, sheet_id))[1]
 
 
+async def _in_flight_many(
+    session: AsyncSession, sheet_ids: Sequence[UUID]
+) -> dict[UUID, tuple[bool, bool]]:
+    """``(margin ID, feed mark)`` in flight for each sheet, in a fixed number of statements:
+    a reservation without a job row yet, queued or printing payloads, the payloads of jobs that
+    still own unconfirmed cells of the sheet, and those of finished jobs whose cells are not
+    settled yet (R10-4). A sheet with an unattached reservation answers at once."""
+    unattached = await repo.unattached_reservation_sheets(session, sheet_ids)
+    rest = [sid for sid in sheet_ids if sid not in unattached]
+    payloads: list[dict[str, Any]] = []
+    if rest:
+        payloads = [
+            *await repo.active_job_payloads(session, rest),
+            *await repo.unconfirmed_job_payloads(session, rest),
+            *await repo.unsettled_job_payloads(session, rest),
+        ]
+    return {
+        sid: (
+            (True, True)
+            if sid in unattached
+            else (
+                _active_sheet_page_carries(payloads, sid, "margin_id"),
+                _active_sheet_page_carries(payloads, sid, "feed_mark"),
+            )
+        )
+        for sid in sheet_ids
+    }
+
+
 async def _in_flight_flags(session: AsyncSession, sheet_id: UUID) -> tuple[bool, bool]:
-    """``(margin ID, feed mark)`` in flight, from one read of each source: a reservation
-    without a job row yet, queued or printing payloads, the payloads of jobs that still own
-    unconfirmed cells of the sheet, and those of finished jobs whose cells are not settled yet
-    (R10-4)."""
-    if await repo.has_unattached_reservation(session, sheet_id):
-        return True, True
-    payloads = [
-        *await repo.active_job_payloads(session, sheet_id),
-        *await repo.unconfirmed_job_payloads(session, sheet_id),
-        *await repo.unsettled_job_payloads(session, sheet_id),
-    ]
-    return (
-        _active_sheet_page_carries(payloads, sheet_id, "margin_id"),
-        _active_sheet_page_carries(payloads, sheet_id, "feed_mark"),
-    )
+    return (await _in_flight_many(session, [sheet_id]))[sheet_id]
 
 
-async def _view_of(session: AsyncSession, sheet: Sheet) -> SheetView:
-    sheet_type = await session.get(SheetType, sheet.type_id, populate_existing=True)
-    version = await session.get(SheetTypeVersion, sheet.type_version_id, populate_existing=True)
-    if sheet_type is None or version is None:  # foreign keys make this unreachable
-        raise SheetNotFoundError()
-    cells = await repo.cells_of(session, sheet.id)
-    margin_in_flight, mark_in_flight = await _in_flight_flags(session, sheet.id)
-    return SheetView(
-        code=sheet.code,
-        type_key=sheet_type.key,
-        type_version_id=version.id,
-        geometry=version_geometry(version),
-        allow_qr=sheet_type.allow_qr,
-        non_free={c.cell_no: c.state for c in cells},
-        id_placement=sheet.id_placement,  # type: ignore[arg-type]
-        id_printed=sheet.id_printed,
-        has_hub_cell=any(c.source == HUB_SOURCE for c in cells),
-        margin_id_in_flight=sheet.id_placement == "margin" and margin_in_flight,
-        state=sheet.state,  # type: ignore[arg-type]
-        sheet_id=sheet.id,
-        feed_mark_printed=sheet.feed_mark_printed,
-        feed_mark_in_flight=mark_in_flight,  # every placement
+async def load_sheet_views(session: AsyncSession, codes: Sequence[str]) -> dict[str, SheetView]:
+    """The planner's views of existing sheets, read fresh, in a fixed number of statements
+    whatever the number of sheets (R10-2: this runs under the write lock). A code that does not
+    exist is not in the answer. The sheets' **pinned** versions supply the geometry (D14)."""
+    sheets = await repo.sheets_by_codes(session, list(dict.fromkeys(codes)))
+    if not sheets:
+        return {}
+    ids = [sheet.id for sheet in sheets.values()]
+    types = await repo.types_by_ids(session, list({s.type_id for s in sheets.values()}))
+    versions = await repo.versions_by_ids(
+        session, list({s.type_version_id for s in sheets.values()})
     )
+    cells = await repo.cells_of_many(session, ids)
+    flags = await _in_flight_many(session, ids)
+    geometries = {vid: version_geometry(v) for vid, v in versions.items()}
+    views: dict[str, SheetView] = {}
+    for code, sheet in sheets.items():
+        sheet_type = types.get(sheet.type_id)
+        version = versions.get(sheet.type_version_id)
+        if sheet_type is None or version is None:  # foreign keys make this unreachable
+            raise SheetNotFoundError()
+        rows = cells[sheet.id]
+        margin_in_flight, mark_in_flight = flags[sheet.id]
+        views[code] = SheetView(
+            code=sheet.code,
+            type_key=sheet_type.key,
+            type_version_id=version.id,
+            geometry=geometries[version.id],
+            allow_qr=sheet_type.allow_qr,
+            non_free={c.cell_no: c.state for c in rows},
+            id_placement=sheet.id_placement,  # type: ignore[arg-type]
+            id_printed=sheet.id_printed,
+            has_hub_cell=any(c.source == HUB_SOURCE for c in rows),
+            margin_id_in_flight=sheet.id_placement == "margin" and margin_in_flight,
+            state=sheet.state,  # type: ignore[arg-type]
+            sheet_id=sheet.id,
+            feed_mark_printed=sheet.feed_mark_printed,
+            feed_mark_in_flight=mark_in_flight,  # every placement
+        )
+    return views
 
 
 async def load_sheet_view(session: AsyncSession, code: str) -> SheetView:
@@ -235,10 +268,10 @@ async def load_sheet_view(session: AsyncSession, code: str) -> SheetView:
     The sheet's **pinned** version supplies the geometry (D14). Inside ``write_transaction``
     this is the view a reservation decides on; the preview calls it without the lock.
     """
-    sheet = await repo.get_by_code(session, code)
-    if sheet is None:
+    view = (await load_sheet_views(session, [code])).get(code)
+    if view is None:
         raise SheetNotFoundError()
-    return await _view_of(session, sheet)
+    return view
 
 
 async def _create_sheet_view(batch: NewSheetBatch, new: NewSheetIn, actor: str) -> SheetView:
@@ -304,7 +337,11 @@ async def _resolve_views(
     actor: str,
 ) -> tuple[list[PlacementIn], set[int]]:
     """Views for every placement. One sheet is one object (the planner's caller contract)."""
-    by_code: dict[str, SheetView] = {}
+    # All existing sheets are read together, before any is created; a missing one is reported
+    # where its placement comes in the loop, so the order of the refusals stays the same.
+    by_code: dict[str, SheetView] = await load_sheet_views(
+        session, [p.sheet_code for p in placements if p.sheet_code is not None]
+    )
     new_views: set[int] = set()
     out: list[PlacementIn] = []
     # The write lock is held while this runs (R10-2): what the new sheets share is read once and
@@ -316,8 +353,7 @@ async def _resolve_views(
         if p.sheet_code is not None:
             view = by_code.get(p.sheet_code)
             if view is None:
-                view = await load_sheet_view(session, p.sheet_code)
-                by_code[p.sheet_code] = view
+                raise SheetNotFoundError()
             if required_type_key is not None and view.type_key != required_type_key:
                 raise SheetTypeMismatchError(required_type_key, view.type_key)
         else:

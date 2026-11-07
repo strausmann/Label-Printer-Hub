@@ -46,6 +46,48 @@ async def cells_of(session: AsyncSession, sheet_id: UUID) -> list[SheetCell]:
     return list(result.scalars().all())
 
 
+async def sheets_by_codes(session: AsyncSession, codes: Sequence[str]) -> dict[str, Sheet]:
+    """The sheets with these codes, fresh; a code that does not exist is not in the answer."""
+    result = await session.execute(
+        select(Sheet).where(col(Sheet.code).in_(list(codes))).execution_options(**_FRESH)
+    )
+    return {sheet.code: sheet for sheet in result.scalars().all()}
+
+
+async def types_by_ids(session: AsyncSession, ids: Sequence[UUID]) -> dict[UUID, SheetType]:
+    result = await session.execute(
+        select(SheetType).where(col(SheetType.id).in_(list(ids))).execution_options(**_FRESH)
+    )
+    return {t.id: t for t in result.scalars().all()}
+
+
+async def versions_by_ids(
+    session: AsyncSession, ids: Sequence[UUID]
+) -> dict[UUID, SheetTypeVersion]:
+    result = await session.execute(
+        select(SheetTypeVersion)
+        .where(col(SheetTypeVersion.id).in_(list(ids)))
+        .execution_options(**_FRESH)
+    )
+    return {v.id: v for v in result.scalars().all()}
+
+
+async def cells_of_many(
+    session: AsyncSession, sheet_ids: Sequence[UUID]
+) -> dict[UUID, list[SheetCell]]:
+    """The non-free cells of each sheet, by cell number (one statement for all of them)."""
+    out: dict[UUID, list[SheetCell]] = {sid: [] for sid in sheet_ids}
+    result = await session.execute(
+        select(SheetCell)
+        .where(col(SheetCell.sheet_id).in_(list(sheet_ids)))
+        .order_by(col(SheetCell.sheet_id), col(SheetCell.cell_no))
+        .execution_options(**_FRESH)
+    )
+    for cell in result.scalars().all():
+        out[cell.sheet_id].append(cell)
+    return out
+
+
 async def counter(session: AsyncSession, prefix: str) -> SheetIdCounter | None:
     return await session.get(SheetIdCounter, prefix, populate_existing=True)
 
@@ -102,21 +144,21 @@ async def cells_by_ref(
     return [(code, cell) for code, cell in result.all()]
 
 
-async def has_unattached_reservation(session: AsyncSession, sheet_id: UUID) -> bool:
-    """Whether a ``reserved`` cell of the sheet points at a job that has no ``jobs`` row yet.
-
-    That is the window between the reservation commit and the page job being saved (C26).
-    """
+async def unattached_reservation_sheets(
+    session: AsyncSession, sheet_ids: Sequence[UUID]
+) -> set[UUID]:
+    """Which of the sheets have a ``reserved`` cell whose job has no ``jobs`` row yet."""
     result = await session.execute(
-        select(
-            exists().where(
-                col(SheetCell.sheet_id) == sheet_id,
-                col(SheetCell.state) == "reserved",
-                ~exists().where(col(Job.id) == col(SheetCell.job_id)),
-            )
-        ).execution_options(**_FRESH)
+        select(col(SheetCell.sheet_id))
+        .where(
+            col(SheetCell.sheet_id).in_(list(sheet_ids)),
+            col(SheetCell.state) == "reserved",
+            ~exists().where(col(Job.id) == col(SheetCell.job_id)),
+        )
+        .distinct()
+        .execution_options(**_FRESH)
     )
-    return bool(result.scalar_one())
+    return set(result.scalars().all())
 
 
 # The sheet a stored page payload belongs to, as an expression. The same text builds the index
@@ -162,25 +204,29 @@ async def _carrier_rows(session: AsyncSession, *where: ColumnElement[bool]) -> l
     return out
 
 
-def _of_sheet(sheet_id: UUID) -> ColumnElement[bool]:
-    return literal_column(PAGE_SHEET_EXPR) == str(sheet_id)
+def _of_sheets(sheet_ids: Sequence[UUID]) -> ColumnElement[bool]:
+    return literal_column(PAGE_SHEET_EXPR).in_([str(i) for i in sheet_ids])
 
 
-async def active_job_payloads(session: AsyncSession, sheet_id: UUID) -> list[dict[str, Any]]:
-    """What the queued or printing page jobs of the sheet carry.
+async def active_job_payloads(
+    session: AsyncSession, sheet_ids: Sequence[UUID]
+) -> list[dict[str, Any]]:
+    """What the queued or printing page jobs of these sheets carry.
 
-    Scoped to the sheet by the index on the sheet expression, so the cost does not depend on
+    Scoped to the sheets by the index on the sheet expression, so the cost does not depend on
     how many unrelated jobs are queued (R11-1).
     """
     return await _carrier_rows(
         session,
-        _of_sheet(sheet_id),
+        _of_sheets(sheet_ids),
         col(Job.state).in_((JobState.QUEUED.value, JobState.PRINTING.value)),
     )
 
 
-async def unconfirmed_job_payloads(session: AsyncSession, sheet_id: UUID) -> list[dict[str, Any]]:
-    """What the jobs that still own an ``unconfirmed`` cell of the sheet carry.
+async def unconfirmed_job_payloads(
+    session: AsyncSession, sheet_ids: Sequence[UUID]
+) -> list[dict[str, Any]]:
+    """What the jobs that still own an ``unconfirmed`` cell of these sheets carry.
 
     Such a job may have printed its page, so what it carried (margin ID, feed mark) counts as
     maybe printed until a human resolves the cells (spec 10.2a, F3-1). Retention spares these
@@ -188,10 +234,10 @@ async def unconfirmed_job_payloads(session: AsyncSession, sheet_id: UUID) -> lis
     """
     return await _carrier_rows(
         session,
-        _of_sheet(sheet_id),
+        _of_sheets(sheet_ids),
         col(Job.id).in_(
             select(col(SheetCell.job_id)).where(
-                col(SheetCell.sheet_id) == sheet_id,
+                col(SheetCell.sheet_id).in_(list(sheet_ids)),
                 col(SheetCell.state) == "unconfirmed",
                 col(SheetCell.job_id).is_not(None),
             )
@@ -199,8 +245,10 @@ async def unconfirmed_job_payloads(session: AsyncSession, sheet_id: UUID) -> lis
     )
 
 
-async def unsettled_job_payloads(session: AsyncSession, sheet_id: UUID) -> list[dict[str, Any]]:
-    """What the jobs that are over but still own a ``reserved`` cell of the sheet carry.
+async def unsettled_job_payloads(
+    session: AsyncSession, sheet_ids: Sequence[UUID]
+) -> list[dict[str, Any]]:
+    """What the jobs that are over but still own a ``reserved`` cell of these sheets carry.
 
     A page job's end is committed first and its cells are settled by the outcome handler in a
     second transaction. Between the two the job is no longer queued or printing and its cells
@@ -210,11 +258,11 @@ async def unsettled_job_payloads(session: AsyncSession, sheet_id: UUID) -> list[
     """
     return await _carrier_rows(
         session,
-        _of_sheet(sheet_id),
+        _of_sheets(sheet_ids),
         col(Job.state).not_in((JobState.QUEUED.value, JobState.PRINTING.value)),
         col(Job.id).in_(
             select(col(SheetCell.job_id)).where(
-                col(SheetCell.sheet_id) == sheet_id,
+                col(SheetCell.sheet_id).in_(list(sheet_ids)),
                 col(SheetCell.state) == "reserved",
                 col(SheetCell.job_id).is_not(None),
             )

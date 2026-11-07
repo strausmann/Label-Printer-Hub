@@ -711,3 +711,30 @@ async def test_a_finished_job_whose_cells_are_not_settled_still_carries_id_and_m
     await session.commit()
     assert await margin_id_in_flight(session, sheet_id) is False
     assert await feed_mark_in_flight(session, sheet_id) is False
+
+
+async def test_reading_many_existing_sheets_costs_a_fixed_number_of_statements(
+    session: AsyncSession,
+) -> None:
+    """The views of the sheets of a request are read together, not one sheet at a time."""
+    from sqlalchemy import event
+
+    codes = [await make_sheet(session, placement="margin") for _ in range(20)]
+    sync_engine = session.bind.sync_engine  # type: ignore[union-attr]
+
+    async def statements(n: int) -> int:
+        seen: list[str] = []
+
+        def count(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
+            seen.append(statement)
+
+        event.listen(sync_engine, "before_cursor_execute", count)
+        try:
+            await do_reserve(session, [existing(c, count=1) for c in codes[:n]], n)
+        finally:
+            event.remove(sync_engine, "before_cursor_execute", count)
+        return len(seen)
+
+    two = await statements(2)
+    twenty = await statements(18)  # the remaining sheets
+    assert twenty <= two + 4, (two, twenty)

@@ -311,3 +311,30 @@ async def test_the_lock_hold_does_not_grow_with_unrelated_queued_payloads(
     loaded = await _timed_reserve_on_existing(factory, codes)
 
     assert loaded < quiet * 3 + 0.5, (quiet, loaded)
+
+
+async def test_fifty_placements_on_existing_sheets_hold_the_lock_briefly(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The views of existing sheets were read one sheet at a time (about eight statements
+    each) under the write lock: 1.4 s for 50 sheets. They are read in a fixed number of
+    statements now."""
+    codes = [await new_sheet(factory, used=0, placement="margin") for _ in range(50)]
+
+    held = await _timed_reserve_on_existing(factory, codes)
+
+    assert held < 0.5, held
+
+
+async def test_a_burst_of_prints_onto_existing_sheets_does_not_starve_the_write_lock(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    sets = [
+        [await new_sheet(factory, used=0, placement="margin") for _ in range(50)] for _ in range(6)
+    ]
+
+    results = await asyncio.gather(
+        *(_timed_reserve_on_existing(factory, codes) for codes in sets), return_exceptions=True
+    )
+
+    assert [r for r in results if isinstance(r, BaseException)] == []
