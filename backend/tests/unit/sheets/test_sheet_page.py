@@ -21,6 +21,7 @@ from app.sheets.sheet_page import (
     MarginIdPayload,
     SheetCellPayload,
     SheetPageDetail,
+    margin_id_payload,
     render_preview_png,
     render_sheet_page,
 )
@@ -426,3 +427,54 @@ def test_detail_rejects_bad_cell_numbers_and_ignores_unknown_keys() -> None:
     with pytest.raises(ValueError, match="unique"):
         SheetPageDetail.model_validate({**base, "cells": dup})
     assert SheetPageDetail.model_validate({**base, "from_the_future": 1}).sheet_id == SHEET_ID
+
+
+# ---------------------------------------------------------------- one decision, stored (T4-2)
+
+
+def _preview_has_qr(margin: MarginIdPayload) -> bool:
+    """A QR moves the text to its right and fills the square: the page differs from the same
+    margin ID without a payload."""
+    text_only = margin.model_copy(update={"qr_payload": None, "qr_allowed": None})
+    return render_preview_png(L4736, [], margin) != render_preview_png(L4736, [], text_only)
+
+
+def test_preview_and_pdf_agree_for_eleven_mm_at_600_dpi() -> None:
+    margin = MarginIdPayload(text="L4736-0001", qr_payload=_URL, usable_hmm=1100)
+    assert len(_image_cms(_margin_pdf(1100, _URL, 600))) == 1  # the job prints a QR
+    assert _preview_has_qr(margin)  # and the preview shows one
+
+
+@pytest.mark.parametrize("dpi", [150, 200, 300, 600])
+@pytest.mark.parametrize("usable", [800, 950, 1100, 1300, 1530])
+@pytest.mark.parametrize("payload", [_URL, _URL33])
+def test_preview_matches_job_on_margin_qr(payload: str, usable: int, dpi: int) -> None:
+    margin = margin_id_payload("L4736-0001", payload, usable, dpi)
+    assert margin.qr_allowed == margin_qr_allowed(usable, payload, dpi)
+    job = render_sheet_page(
+        _payload(_detail(cells=(), margin=margin)).model_copy(update={"render_dpi": dpi}),
+        compress=False,
+    )
+    assert (len(_image_cms(job)) == 1) == margin.qr_allowed
+    assert _preview_has_qr(margin) == margin.qr_allowed
+
+
+def test_flag_is_what_both_renderers_obey() -> None:
+    # The flag, not the rule, decides: a stored False wins over a payload the rule would allow.
+    margin = MarginIdPayload(text="X", qr_payload=_URL, usable_hmm=1530, qr_allowed=False)
+    assert _image_cms(_margin_pdf_of(margin, 600)) == []
+    assert not _preview_has_qr(margin)
+
+
+def test_payload_without_flag_falls_back_to_the_rule_at_render_dpi() -> None:
+    old = MarginIdPayload.model_validate(
+        {"text": "X", "qr_payload": _URL, "usable_hmm": 1100}  # as stored before the flag
+    )
+    assert old.qr_allowed is None
+    assert len(_image_cms(_margin_pdf_of(old, 600))) == 1
+    assert _image_cms(_margin_pdf_of(old, 150)) == []
+
+
+def _margin_pdf_of(margin: MarginIdPayload, dpi: int) -> bytes:
+    p = _payload(_detail(cells=(), margin=margin)).model_copy(update={"render_dpi": dpi})
+    return render_sheet_page(p, compress=False)

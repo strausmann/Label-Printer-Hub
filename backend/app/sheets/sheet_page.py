@@ -46,6 +46,7 @@ __all__ = [
     "MarginIdPayload",
     "SheetCellPayload",
     "SheetPageDetail",
+    "margin_id_payload",
     "render_preview_png",
     "render_sheet_page",
 ]
@@ -76,6 +77,31 @@ class MarginIdPayload(BaseModel):
     text: str
     qr_payload: str | None = None
     usable_hmm: int
+    qr_allowed: bool | None = None
+    """The one decision, taken at the job's render dpi when the payload is built (T4-2).
+    ``None`` only in payloads stored before the flag existed: the rule is then evaluated at
+    render dpi."""
+
+    def draws_qr(self, render_dpi: int) -> bool:
+        """Whether the margin carries a QR; the stored flag wins, the rule is the fallback."""
+        if not self.qr_payload:
+            return False
+        if self.qr_allowed is not None:
+            return self.qr_allowed
+        return margin_qr_allowed(self.usable_hmm, self.qr_payload, render_dpi)
+
+
+def margin_id_payload(
+    text: str, qr_payload: str | None, usable_hmm: int, render_dpi: int
+) -> MarginIdPayload:
+    """Builds the margin ID and takes the QR decision once, at ``render_dpi``."""
+    allowed = bool(qr_payload) and margin_qr_allowed(usable_hmm, qr_payload or "", render_dpi)
+    return MarginIdPayload(
+        text=text,
+        qr_payload=qr_payload if allowed else None,
+        usable_hmm=usable_hmm,
+        qr_allowed=allowed,
+    )
 
 
 class SheetPageDetail(BaseModel):
@@ -184,7 +210,7 @@ def render_sheet_page(
     if d.margin_id is not None:
         m = d.margin_id
         qr_image: Image.Image | None = None
-        if m.qr_payload and margin_qr_allowed(m.usable_hmm, m.qr_payload, payload.render_dpi):
+        if m.qr_payload and m.draws_qr(payload.render_dpi):
             edge_mm = m.usable_hmm / 100
             qr_image = build_qr(m.qr_payload, qr_edge_px(edge_mm, edge_mm, payload.render_dpi))
         lay = _margin_layout(g, m, with_qr=qr_image is not None)
@@ -201,15 +227,31 @@ def render_sheet_page(
     )
 
 
+def _preview_qr(payload: str, usable_hmm: int) -> Image.Image:
+    """The margin QR at preview size. It is a picture of what the job prints, so it is drawn
+    even where the symbol is too fine for a 150 dpi raster: rendered larger, then reduced."""
+    edge = qr_edge_px(usable_hmm / 100, usable_hmm / 100, PREVIEW_DPI)
+    qr = build_qr(payload, edge)
+    if qr is not None:
+        return qr
+    big = build_qr(payload, edge * 8)
+    assert big is not None  # the job could draw it, so a symbol of this payload exists
+    return big.convert("L").resize((edge, edge), Image.Resampling.BOX).convert("1")
+
+
 def render_preview_png(
     geometry: Geometry,
     cells: Sequence[tuple[int, CellImage]],
     margin: MarginIdPayload | None,
+    *,
+    render_dpi: int = 600,
 ) -> bytes:
     """1-bit PNG of the page at 150 dpi (spec 12): only the new content, at nominal positions.
 
     The page size comes from ``geometry``. The preview is never calibrated. ``cells`` carry
-    images rendered at ``PREVIEW_DPI`` for their content boxes.
+    images rendered at ``PREVIEW_DPI`` for their content boxes. ``render_dpi`` is the job's
+    resolution (600 if unknown, OC-26); it matters only for a margin ID stored without its QR
+    flag, where the rule is evaluated at that dpi, never at the preview's.
     """
     k = PREVIEW_DPI / 2540
 
@@ -221,11 +263,10 @@ def render_preview_png(
         box = content_box(geometry, n)
         page.paste(cell.image, (px(box.x), px(box.y)))
     if margin is not None:
-        edge_mm = margin.usable_hmm / 100
+        # The decision is the job's (stored flag); the preview only draws it.
         qr = (
-            build_qr(margin.qr_payload, qr_edge_px(edge_mm, edge_mm, PREVIEW_DPI))
-            if margin.qr_payload
-            and margin_qr_allowed(margin.usable_hmm, margin.qr_payload, PREVIEW_DPI)
+            _preview_qr(margin.qr_payload, margin.usable_hmm)
+            if margin.qr_payload and margin.draws_qr(render_dpi)
             else None
         )
         lay = _margin_layout(geometry, margin, with_qr=qr is not None)
