@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 PURPOSE_MAX = 120
 NOTE_MAX = 500
 DEFAULT_HAND_PURPOSE = "marked by hand"
-_ID_PLACEMENTS = ("margin", "manual")  # Plan 3 adds "cell"
+_ID_PLACEMENTS = ("margin", "manual")  # "cell" is created by create_sheet_with_id_label
 _STATE_FILTERS = ("active", "full", "discarded", "all")
 
 
