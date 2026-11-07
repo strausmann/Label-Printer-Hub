@@ -237,7 +237,8 @@ async def test_an_unknown_or_disabled_tray_is_422(
 
     assert resp.status_code == 422
     detail = _err(resp)
-    assert detail["error_code"] == "tray_unknown" and detail["error_detail"] == {"trays": [tray]}
+    assert detail["error_code"] == "tray_unknown" and detail["error_detail"] == {"trays": []}
+    assert tray not in resp.text.replace("tray_unknown", "")  # C19: no echo of the key
 
 
 async def test_501_items_are_refused_without_echoing_the_input(

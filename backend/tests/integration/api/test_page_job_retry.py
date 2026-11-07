@@ -375,7 +375,7 @@ async def test_retry_with_a_removed_tray_is_tray_unknown() -> None:
 
         assert refused.status_code == 422, refused.text
         err = _err(refused)
-        assert err["error_code"] == "tray_unknown" and err["error_detail"] == {"trays": ["auto"]}
+        assert err["error_code"] == "tray_unknown" and err["error_detail"] == {"trays": []}
         assert await _cells() == [] and await _job_count() == jobs
 
 

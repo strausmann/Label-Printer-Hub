@@ -56,7 +56,7 @@ async def resolve_tray(session: AsyncSession, printer_id: UUID, tray: str | None
     enabled = await _enabled_trays(session, printer_id)
     if tray is not None:
         if tray not in {t.tray_key for t in enabled}:
-            raise TrayUnknownError([tray])
+            raise TrayUnknownError([])  # C19: never echo the caller's key
         return tray
     default = next((t.tray_key for t in enabled if t.is_default), None)
     if default is None:
@@ -66,7 +66,7 @@ async def resolve_tray(session: AsyncSession, printer_id: UUID, tray: str | None
 
 async def _check_tray(session: AsyncSession, printer_id: UUID, tray: str) -> None:
     if tray not in {t.tray_key for t in await _enabled_trays(session, printer_id)}:
-        raise TrayUnknownError([tray])
+        raise TrayUnknownError([])  # C19: never echo the caller's key
 
 
 async def _measured_on(session: AsyncSession, version_id: UUID | None) -> MeasuredOn | None:
