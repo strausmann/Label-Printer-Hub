@@ -87,15 +87,22 @@ from app.sheets.errors import (
     SheetTypeVersionNotFoundError,
 )
 from app.sheets.exchange import geometry_to_doc
-from app.sheets.geometry import Geometry, cell_count
+from app.sheets.geometry import Geometry, cell_count, hmm_to_mm
 from app.sheets.planner import (
     MARGIN_TEXT_GAP_HMM,
     FeedMarkPlacement,
+    MarginBand,
     MarginContext,
+    MarginCorner,
     MarginPlacement,
     PagePlan,
     PlacementIn,
     SheetView,
+    choose_feed_mark,
+    choose_margin_placement,
+    feed_mark_text,
+    feed_mark_top_taken_hmm,
+    margin_bands_hmm,
     plan,
 )
 from app.sheets.printer_facts import PrinterFacts, load_printer_facts
@@ -127,8 +134,12 @@ from app.sheets.type_service import version_geometry
 __all__ = [
     "LOOKUP_CONCURRENCY",
     "MAX_PREVIEW_PAGES",
+    "NO_MARGIN_BAND_REASON",
+    "MarginCheck",
     "ResolvedItem",
+    "create_sheet_with_id_label",
     "id_cell_label",
+    "margin_check",
     "margin_id_text",
     "page_margin_id_payload",
     "preview",
@@ -1041,6 +1052,82 @@ def _printed_page(page: ReservedPage) -> PrintedPage:
     )
 
 
+async def _queue_pages(
+    session_factory: async_sessionmaker[AsyncSession],
+    session: AsyncSession,
+    *,
+    printer: Printer,
+    reserved: Sequence[ReservedPage],
+    items: Sequence[ResolvedItem],
+    tray: str,
+    facts: PrinterFacts,
+    snapshot: Any,
+    scan: Callable[[str], str],
+    queue: PageQueue,
+    api_key_id: UUID | None,
+    source_ip: str | None,
+    actor: str,
+    bus: Any,
+) -> tuple[UUID, list[PrintedPage]]:
+    """Payloads, the batch and the page jobs of reserved pages; the part of a print that follows
+    the reservation, shared by ``print_sheets`` and ``create_sheet_with_id_label``.
+
+    Everything that can fail without touching the queue comes first, so that the queue is the
+    only failure point left once the first page is submitted. A failure frees the reservations
+    of the page that failed and of every later one; pages already submitted stay, and their
+    outcome handler settles them (``_undo_partial_print``).
+    """
+    printed: list[PrintedPage] = []
+    batch_id: UUID | None = None
+    try:
+        types: dict[UUID, _TypeInfo] = {}
+        payloads: list[PagePayload] = []
+        for page in reserved:
+            info = await _type_info(session, page.type_version_id, types)
+            payloads.append(
+                _page_payload(
+                    page,
+                    items,
+                    info,
+                    tray=tray,
+                    render_dpi=facts.render_dpi,
+                    calibration=snapshot,
+                    scan=scan,
+                )
+            )
+        # The batch exists before the first job and names all of them (ruling T7-2).
+        batch = await batches_repo.create(
+            session,
+            PrintBatch(
+                printer_id=printer.id,
+                job_ids=[str(p.job_id) for p in reserved],
+                created_by=actor,
+            ),
+        )
+        batch_id = batch.id
+        for page, payload in zip(reserved, payloads, strict=True):
+            try:
+                await queue.submit_page_job(
+                    printer.id,
+                    payload,
+                    api_key_id=api_key_id,
+                    source_ip=source_ip,
+                    job_id=page.job_id,
+                )
+            except KeyError:
+                raise PrinterUnavailableError() from None
+            printed.append(_printed_page(page))
+    except BaseException as exc:
+        await asyncio.shield(
+            _undo_partial_print(
+                session_factory, reserved, [p.job_id for p in printed], batch_id, bus, exc
+            )
+        )
+        raise
+    assert batch_id is not None  # the loop ended without a failure
+    return batch_id, printed
+
+
 async def print_sheets(
     session_factory: async_sessionmaker[AsyncSession],
     *,
@@ -1101,54 +1188,175 @@ async def print_sheets(
             bus=bus,
         )
 
-        printed: list[PrintedPage] = []
-        batch_id: UUID | None = None
-        try:
-            # Everything that can fail without touching the queue comes first, so that the
-            # queue is the only failure point left once the first page is submitted.
-            types: dict[UUID, _TypeInfo] = {}
-            payloads: list[PagePayload] = []
-            for page in reserved:
-                info = await _type_info(session, page.type_version_id, types)
-                payloads.append(
-                    _page_payload(
-                        page,
-                        items,
-                        info,
-                        tray=tray,
-                        render_dpi=facts.render_dpi,
-                        calibration=snapshot,
-                        scan=scan,
-                    )
-                )
-            # The batch exists before the first job and names all of them (ruling T7-2).
-            batch = await batches_repo.create(
-                session,
-                PrintBatch(
-                    printer_id=printer.id,
-                    job_ids=[str(p.job_id) for p in reserved],
-                    created_by=actor,
-                ),
-            )
-            batch_id = batch.id
-            for page, payload in zip(reserved, payloads, strict=True):
-                try:
-                    await queue.submit_page_job(
-                        printer.id,
-                        payload,
-                        api_key_id=api_key_id,
-                        source_ip=source_ip,
-                        job_id=page.job_id,
-                    )
-                except KeyError:
-                    raise PrinterUnavailableError() from None
-                printed.append(_printed_page(page))
-        except BaseException as exc:
-            await asyncio.shield(
-                _undo_partial_print(
-                    session_factory, reserved, [p.job_id for p in printed], batch_id, bus, exc
-                )
-            )
-            raise
-    assert batch_id is not None  # the loop ended without a failure
+        batch_id, printed = await _queue_pages(
+            session_factory,
+            session,
+            printer=printer,
+            reserved=reserved,
+            items=items,
+            tray=tray,
+            facts=facts,
+            snapshot=snapshot,
+            scan=scan,
+            queue=queue,
+            api_key_id=api_key_id,
+            source_ip=source_ip,
+            actor=actor,
+            bus=bus,
+        )
     return SheetPrintResponse(batch_id=batch_id, pages=printed)
+
+
+async def create_sheet_with_id_label(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    printer: Printer,
+    tray: str | None,
+    new: NewSheetIn,
+    queue: PageQueue,
+    actor: str,
+    api_key_id: UUID | None,
+    source_ip: str | None,
+    language: str | None,
+    bus: Any = None,
+) -> tuple[str, UUID]:
+    """Create a sheet with its hand-marked cells and queue its ID-only job (spec 10.1, ``cell``).
+
+    One reservation creates the sheet (counter step, hand marks and note), reserves the lowest
+    free cell for the ID label and nothing else (``items=[]``, pre-flight C2/C31); the job goes
+    through the same payload, batch and queue path as a print (``_queue_pages``). The job carries
+    the feed-direction mark too (OC-58), in ``language`` as read when it is reserved. Returns the
+    sheet's code and the job's id.
+
+    A refusal before the reservation commits (no free cell, an archived type, a bad tray) leaves
+    no sheet: the counter step rolls back with it. A failure after the commit keeps the sheet,
+    frees the ID cell and says so: the error carries ``sheet_code``, and the ID goes onto the
+    next job's first free cell (OC-40).
+    """
+    if printer.backend != "ipp":
+        raise MediaKindMismatchError()
+    scan = scan_payload_builder(str(get_settings().public_url))
+    async with session_factory() as session:
+        tray_key = await calibration_service.resolve_tray(session, printer.id, tray)
+        snapshot = await calibration_service.snapshot(session, printer.id, tray_key)
+        facts = await load_printer_facts(session, printer.id)
+        margin = MarginContext(
+            deviation=snapshot_to_deviation(snapshot),
+            scan_payload=scan,
+            render_dpi=facts.render_dpi,
+            language=language,
+        )
+        await session.commit()  # no read transaction stays open into the reservation
+        reserved = await reserve(
+            session,
+            placements=[PlacementRequest(sheet_code=None, new_sheet=new)],
+            items=[],
+            expected=None,
+            hw_margins_hmm=facts.margins_hmm,
+            margin=margin,
+            required_type_key=None,
+            actor=actor,
+            bus=bus,
+        )
+        (page,) = reserved
+        try:
+            await _queue_pages(
+                session_factory,
+                session,
+                printer=printer,
+                reserved=reserved,
+                items=[],
+                tray=tray_key,
+                facts=facts,
+                snapshot=snapshot,
+                scan=scan,
+                queue=queue,
+                api_key_id=api_key_id,
+                source_ip=source_ip,
+                actor=actor,
+                bus=bus,
+            )
+        except SheetApiError as exc:
+            exc.detail = {**(exc.detail or {}), "sheet_code": page.sheet_code}
+            raise
+    return page.sheet_code, page.job_id
+
+
+# ---------------------------------------------------------------------------- margin check
+
+
+@dataclass(frozen=True)
+class MarginCheck:
+    """Whether, where and how a sheet type's margin ID and feed mark fit a printer and tray.
+
+    ``bands_mm`` are the uncapped depths (they can be negative); ``usable_mm`` is the depth that
+    is drawn (capped). ``reason`` is set exactly when ``printable`` is false.
+    """
+
+    bands_mm: dict[str, float]
+    band: MarginBand | None
+    corner: MarginCorner | None
+    usable_mm: float | None
+    qr: bool
+    printable: bool
+    reason: str | None
+    feed_mark: bool
+
+
+NO_MARGIN_BAND_REASON: Final = "no margin band is 4 mm deep on this printer"
+
+
+async def margin_check(
+    session: AsyncSession,
+    *,
+    printer: Printer,
+    type_key: str,
+    tray: str | None,
+    language: str | None,
+) -> MarginCheck:
+    """Where the margin ID of a new sheet of ``type_key`` would go on ``printer``, read-only.
+
+    The same decisions the first job makes (OC-50), from the same inputs: the printer's hardware
+    margins, the tray's calibration, the render resolution, the feed-direction mark in the hub's
+    current language (it shortens the top band) and, as the QR payload, the code the next sheet
+    of the type will probably get (spec 10.1). Nothing is written and no lock is taken.
+    """
+    if printer.backend != "ipp":
+        raise MediaKindMismatchError()
+    sheet_type = await repo.get_type_by_key(session, type_key)
+    if sheet_type is None:
+        raise SheetTypeNotFoundError()
+    version = await types_repo.current_version(session, sheet_type.id)
+    if version is None:  # every type has a version
+        raise SheetTypeVersionNotFoundError()
+    geometry = version_geometry(version)
+    tray_key = await calibration_service.resolve_tray(session, printer.id, tray)
+    deviation = snapshot_to_deviation(
+        await calibration_service.snapshot(session, printer.id, tray_key)
+    )
+    facts = await load_printer_facts(session, printer.id)
+    payload = scan_payload_builder(str(get_settings().public_url))(
+        await ss.peek_next_code(session, sheet_type.key)
+    )
+    mark = choose_feed_mark(
+        geometry, hw=facts.margins_hmm, dev=deviation, text=feed_mark_text(language)
+    )
+    placement = choose_margin_placement(
+        geometry,
+        hw=facts.margins_hmm,
+        dev=deviation,
+        payload=payload,
+        dpi=facts.render_dpi,
+        top_taken_hmm=0 if mark is None else feed_mark_top_taken_hmm(geometry, mark),
+    )
+    bands = margin_bands_hmm(geometry, hw=facts.margins_hmm, dev=deviation)
+    return MarginCheck(
+        bands_mm={band: hmm_to_mm(depth) for band, depth in bands.items()},
+        band=None if placement is None else placement.band,
+        corner=None if placement is None else placement.corner,
+        usable_mm=None if placement is None else hmm_to_mm(placement.depth_hmm),
+        qr=placement is not None and placement.qr,
+        printable=placement is not None,
+        reason=NO_MARGIN_BAND_REASON if placement is None else None,
+        feed_mark=mark is not None,
+    )

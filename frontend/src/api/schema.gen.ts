@@ -750,8 +750,31 @@ export interface paths {
         /** List sheets */
         get: operations["list_sheets_api_sheets_get"];
         put?: never;
-        /** Create a sheet, with the cells already used marked by hand */
+        /**
+         * Create a sheet, with the cells already used marked by hand
+         * @description `id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also reserves the first free cell for the sheet ID label and queues an ID-only job on the named page printer; `job_id` names it. If the job cannot be queued, the sheet stays without a reservation and the ID goes onto the next job's first free cell; the error names the sheet in `error_detail.sheet_code`.
+         */
         post: operations["create_sheet_api_sheets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sheets/margin-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where the margin ID and the feed mark of a new sheet would go on a printer
+         * @description What the first job of a new sheet of the type would do on this printer and tray: the band and corner of the margin ID, whether a QR is drawn next to it, and whether the feed-direction mark prints (in the hub's current language). `printable=false` means no margin band is deep enough: the sheet can still be created and the ID added by hand. Read-only.
+         */
+        get: operations["margin_check_api_sheets_margin_check_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1983,6 +2006,57 @@ export interface components {
              */
             url?: string | null;
         };
+        /** MarginBandsMm */
+        MarginBandsMm: {
+            /** Bottom */
+            bottom: number;
+            /** Left */
+            left: number;
+            /** Right */
+            right: number;
+            /** Top */
+            top: number;
+        };
+        /**
+         * MarginCheckRead
+         * @description Whether, where and how the margin ID and the feed mark fit a sheet type on a printer.
+         */
+        MarginCheckRead: {
+            /**
+             * Band
+             * @description The band the margin ID goes into, or `null`.
+             */
+            band: ("top" | "bottom" | "right" | "left") | null;
+            /** @description Room of each margin band in mm, uncapped; negative if there is none. */
+            bands_mm: components["schemas"]["MarginBandsMm"];
+            /** Corner */
+            corner: ("top_left" | "top_right" | "bottom_left") | null;
+            /**
+             * Feed Mark
+             * @description Whether the feed-direction mark prints, in the hub's current language.
+             */
+            feed_mark: boolean;
+            /**
+             * Printable
+             * @description Whether the margin ID fits somewhere at all.
+             */
+            printable: boolean;
+            /**
+             * Qr
+             * @description Whether a QR is drawn next to the margin text.
+             */
+            qr: boolean;
+            /**
+             * Reason
+             * @description Why not, when `printable` is false.
+             */
+            reason: string | null;
+            /**
+             * Usable Mm
+             * @description Depth of the chosen band that is drawn (capped).
+             */
+            usable_mm: number | null;
+        };
         /**
          * Margins
          * @description Smallest unprintable margin per side, hundredths of mm.
@@ -2831,12 +2905,23 @@ export interface components {
         SheetCreate: {
             /**
              * Id Placement
+             * @description Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; the margin ID is printed by the first job that prints onto it. `cell` needs a page printer: it reserves the first free cell for the ID label and queues an ID-only job (`job_id` in the response).
              * @default margin
              * @enum {string}
              */
-            id_placement: "margin" | "manual";
+            id_placement: "cell" | "margin" | "manual";
             /** Note */
             note?: string | null;
+            /**
+             * Printer
+             * @description Printer slug or UUID. Required for `cell`, ignored otherwise.
+             */
+            printer?: string | null;
+            /**
+             * Tray
+             * @description Tray of the ID-only job; left out: the printer's default.
+             */
+            tray?: string | null;
             /** Type */
             type: string;
             /**
@@ -2849,6 +2934,69 @@ export interface components {
              * @description Left out: the current version.
              */
             version?: number | null;
+        };
+        /**
+         * SheetCreated
+         * @description The response of ``POST /api/sheets``: the sheet, and the ID-only job of a ``cell`` sheet.
+         */
+        SheetCreated: {
+            /**
+             * Cells
+             * @description Every cell that is not free, by cell number.
+             */
+            cells: components["schemas"]["CellRead"][];
+            /** Code */
+            code: string;
+            /** Discarded At */
+            discarded_at: string | null;
+            /**
+             * Feed Mark Printed
+             * @description Whether the feed-direction mark has been printed on this sheet.
+             */
+            feed_mark_printed: boolean;
+            /** Free */
+            free: number;
+            /** @description Geometry of the version the sheet is pinned to. */
+            geometry: components["schemas"]["GeometryMm"];
+            /**
+             * Id Placement
+             * @enum {string}
+             */
+            id_placement: "cell" | "margin" | "manual";
+            /** Id Printed */
+            id_printed: boolean;
+            /**
+             * Job Id
+             * @description The queued ID-only job (`id_placement` `cell`); otherwise `null`.
+             */
+            job_id: string | null;
+            /** Label H */
+            label_h: number;
+            /** Label W */
+            label_w: number;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Note */
+            note: string | null;
+            /** Reserved */
+            reserved: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "active" | "discarded";
+            /** Total */
+            total: number;
+            /** Type Key */
+            type_key: string;
+            /** Type Label */
+            type_label: string;
+            /** Unconfirmed */
+            unconfirmed: number;
+            /** Used */
+            used: number;
+            /** Version */
+            version: number;
         };
         /**
          * SheetItem
@@ -5263,10 +5411,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SheetRead"];
+                    "application/json": components["schemas"]["SheetCreated"];
                 };
             };
-            /** @description Sheet type not found. */
+            /** @description These credentials may not use the printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet type or printer not found. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -5275,7 +5432,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description Sheet type is archived. */
+            /** @description Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the printer is disabled (`printer_disabled`) or unknown to the queue. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5284,7 +5441,78 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description A cell number is outside the sheet. */
+            /** @description A cell number is outside the sheet, or `cell` without a printer. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description The ID-only job was queued only partly (`print_interrupted`). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    margin_check_api_sheets_margin_check_get: {
+        parameters: {
+            query: {
+                /** @description Sheet type key. */
+                type: string;
+                /** @description Slug or UUID. */
+                printer: string;
+                tray?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarginCheckRead"];
+                };
+            };
+            /** @description These credentials may not use this printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Unknown printer (`printer_not_found`) or sheet type. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Not a page printer (`media_kind_mismatch`) or it is disabled. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Invalid request (`invalid_request`) or an unknown tray. */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -120,6 +120,19 @@ def _clean_marks(cells: list[MarkedCell]) -> dict[int, str]:
     return out
 
 
+def prepare_new_sheet(
+    used_cells: list[MarkedCell], note: str | None
+) -> tuple[dict[int, str], str | None]:
+    """The hand marks and the note of a new sheet, sanitised: what ``create_sheet_locked`` takes.
+
+    Both ways of creating a sheet (``create_sheet`` and a reservation that creates one) clean
+    their input here, so the two cannot disagree about what is stored.
+    """
+    marks = _clean_marks(used_cells)
+    clean_note = None if note is None else _clean("note", note, NOTE_MAX, multiline=True) or None
+    return marks, clean_note
+
+
 def format_code(prefix: str, value: int) -> str:
     """``L4736-0002``; four digits, a counter above 9999 grows to five (spec 7.1)."""
     return f"{prefix}-{value:04d}"
@@ -269,8 +282,7 @@ async def create_sheet(
     """Create a sheet pinned to a version, with the cells already used marked by hand."""
     if id_placement not in _ID_PLACEMENTS:
         raise InvalidFieldError("id_placement", "not supported")
-    marks = _clean_marks(used_cells)
-    clean_note = None if note is None else _clean("note", note, NOTE_MAX, multiline=True) or None
+    marks, clean_note = prepare_new_sheet(used_cells, note)
     async with write_transaction(session):
         sheet, _t, _v = await create_sheet_locked(
             session,

@@ -48,7 +48,7 @@ from app.sheets.planner import (
     SheetView,
     plan,
 )
-from app.sheets.sheet_service import create_sheet_locked
+from app.sheets.sheet_service import MarkedCell, create_sheet_locked, prepare_new_sheet
 from app.sheets.text import log_value
 from app.sheets.type_service import version_geometry, write_transaction
 
@@ -76,9 +76,15 @@ __all__ = [
 
 @dataclass
 class NewSheetIn:
+    """A sheet to create inside the reservation. ``used_cells`` and ``note`` are written in the
+    same transaction as the sheet (pre-flight C2), so an ID-only job of a sheet with hand-marked
+    cells either commits as a whole or leaves nothing."""
+
     type_key: str
     version: int | None
     id_placement: Literal["cell", "margin", "manual"]
+    used_cells: list[MarkedCell] = field(default_factory=list)
+    note: str | None = None
 
 
 @dataclass
@@ -232,13 +238,14 @@ async def load_sheet_view(session: AsyncSession, code: str) -> SheetView:
 
 async def _create_sheet_view(session: AsyncSession, new: NewSheetIn, actor: str) -> SheetView:
     """Create a sheet (counter step included) in the caller's transaction and view it."""
+    marks, note = prepare_new_sheet(new.used_cells, new.note)
     sheet, sheet_type, version = await create_sheet_locked(
         session,
         type_key=new.type_key,
         version=new.version,
         id_placement=new.id_placement,
-        marks={},
-        note=None,
+        marks=marks,
+        note=note,
         actor=actor,
     )
     return SheetView(
@@ -247,7 +254,7 @@ async def _create_sheet_view(session: AsyncSession, new: NewSheetIn, actor: str)
         type_version_id=version.id,
         geometry=version_geometry(version),
         allow_qr=sheet_type.allow_qr,
-        non_free={},
+        non_free=dict.fromkeys(marks, "used"),
         id_placement=new.id_placement,
         id_printed=False,
         has_hub_cell=False,

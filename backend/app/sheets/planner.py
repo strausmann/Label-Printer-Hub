@@ -51,6 +51,7 @@ __all__ = [
     "choose_feed_mark",
     "choose_margin_placement",
     "feed_mark_text",
+    "feed_mark_top_taken_hmm",
     "margin_bands_hmm",
     "margin_qr_allowed",
     "margin_qr_fits",
@@ -270,6 +271,12 @@ def choose_feed_mark(
     return FeedMarkPlacement(text, right_end - width, baseline, size, width)
 
 
+def feed_mark_top_taken_hmm(g: Geometry, mark: FeedMarkPlacement) -> int:
+    """Length of the top band the feed-direction mark takes: from its left end to the grid's right
+    end, plus the gap to a margin ID text (spec 10.2a). The margin ID chooses with the rest."""
+    return g.page_w - remaining_margins(g)[0] - mark.x_hmm + MARGIN_TEXT_GAP_HMM
+
+
 def choose_margin_placement(
     g: Geometry,
     *,
@@ -461,7 +468,7 @@ def _draft(
             text=feed_mark_text(margin.language),
         )
         if feed_mark is not None:
-            top_taken = g.page_w - remaining_margins(g)[0] - feed_mark.x_hmm + MARGIN_TEXT_GAP_HMM
+            top_taken = feed_mark_top_taken_hmm(g, feed_mark)
     if due and margin is not None:
         code = view.code or view.code_hint
         placement = choose_margin_placement(
