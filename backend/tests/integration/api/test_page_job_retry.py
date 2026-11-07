@@ -576,3 +576,48 @@ async def test_a_cell_payload_with_unknown_keys_still_loads() -> None:
     )
 
     assert cell.cell == 1  # a rollback must not strand a stored job
+
+
+async def _until_pool_idle(timeout_s: float = 2.0) -> bool:
+    """Whether the engine's pool is seen with no connection checked out within ``timeout_s``."""
+    import app.db.engine as engine_module
+
+    pool = engine_module.engine.pool
+    async with asyncio.timeout(timeout_s + 1):
+        for _ in range(int(timeout_s / 0.02)):
+            if pool.checkedout() == 0:  # type: ignore[attr-defined]
+                return True
+            await asyncio.sleep(0.02)
+    return False
+
+
+async def test_a_retry_holds_no_connection_while_the_service_works(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex P2 (same class as R10-1): the route kept the connection that loaded the job and the
+    printer while ``retry_sheet_page`` opened its own sessions, so enough concurrent retries
+    used up the pool before the nested sessions could get one."""
+    from app.sheets import print_service
+    from app.sheets.errors import PrinterUnavailableError
+
+    started = 0
+
+    async def slow(*args: Any, **kwargs: Any) -> Any:
+        nonlocal started
+        started += 1
+        await asyncio.sleep(2.5)
+        raise PrinterUnavailableError()
+
+    async with running() as rig:
+        code = await _sheet(used=4)
+        first_id, _ = await _fail_cleanly(rig, _body(code, 3))
+        monkeypatch.setattr(print_service, "retry_sheet_page", slow)
+
+        tasks = [asyncio.create_task(_retry(rig, first_id)) for _ in range(8)]
+        async with asyncio.timeout(10):
+            while started < 8:
+                await asyncio.sleep(0.02)
+        idle = await _until_pool_idle()
+        await asyncio.gather(*tasks)
+
+    assert idle

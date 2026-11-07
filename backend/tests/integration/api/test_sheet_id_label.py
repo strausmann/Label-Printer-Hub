@@ -486,3 +486,37 @@ async def test_margin_check_counts_the_space_the_feed_mark_takes() -> None:
         assert stored["margin_id"]["band"] == "bottom"
         assert check.json()["band"] == stored["margin_id"]["band"]
         assert check.json()["feed_mark"] is True
+
+
+async def test_creating_a_cell_sheet_holds_no_connection_while_the_service_works(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex P2 (same class as R10-1): the route kept the connection that resolved the printer
+    while ``create_sheet_with_id_label`` opened its own sessions."""
+    import app.db.engine as engine_module
+    from app.sheets.errors import PrinterUnavailableError
+
+    started = 0
+
+    async def slow(*args: Any, **kwargs: Any) -> Any:
+        nonlocal started
+        started += 1
+        await asyncio.sleep(2.5)
+        raise PrinterUnavailableError()
+
+    async with running() as rig:
+        monkeypatch.setattr(print_service_module, "create_sheet_with_id_label", slow)
+        tasks = [asyncio.create_task(_create(rig, _create_body(QR_KEY))) for _ in range(8)]
+        async with asyncio.timeout(10):
+            while started < 8:
+                await asyncio.sleep(0.02)
+        pool = engine_module.engine.pool
+        idle = False
+        for _ in range(100):
+            if pool.checkedout() == 0:  # type: ignore[attr-defined]
+                idle = True
+                break
+            await asyncio.sleep(0.02)
+        await asyncio.gather(*tasks)
+
+    assert idle

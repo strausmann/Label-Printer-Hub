@@ -471,6 +471,10 @@ async def _retry_sheet_page(
 ) -> JobRead:
     if queue is None:
         raise _printer_unavailable(job.printer_id)
+    # End this request's read transaction first: the service opens its own sessions (the
+    # R10-1 class). The loaded job stays usable (expire_on_commit=False); the session starts
+    # again when the new job is read.
+    await session.commit()
     try:
         new_id = await print_service.retry_sheet_page(
             db_engine.async_session,
