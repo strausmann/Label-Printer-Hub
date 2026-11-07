@@ -39,6 +39,7 @@ __all__ = [
 MAX_ITEMS = 500
 MAX_PLACEMENTS = 50
 MAX_CELLS = 400
+MAX_TYPE_VERSION = 1_000_000  # far above any real count; keeps the value inside SQLite's integer
 TEXT_MAX = 120
 
 QR_PAYLOAD_MAX = 512  # keeps a preview's cost bounded; a scan URL is far shorter
@@ -109,7 +110,12 @@ class SheetItem(_Body):
 
 class NewSheetModel(_Body):
     type: str = Field(max_length=64, pattern=KEY_PATTERN.pattern, description="Sheet type key.")
-    version: int | None = Field(default=None, ge=1, description="Defaults to the current version.")
+    version: int | None = Field(
+        default=None,
+        ge=1,
+        le=MAX_TYPE_VERSION,
+        description="Defaults to the current version.",
+    )
     id_placement: Literal["cell", "margin", "manual"] = Field(
         default="margin", description="Where the sheet ID is printed; `margin` if left out."
     )

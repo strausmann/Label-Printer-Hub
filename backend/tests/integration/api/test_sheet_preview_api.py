@@ -306,6 +306,27 @@ async def test_placement_needs_exactly_one_target(
     assert _err(resp)["error_code"] == "invalid_request"
 
 
+@pytest.mark.parametrize("version", [2**63, 2**70, 1_000_001])
+async def test_an_oversized_sheet_version_is_a_422_not_a_500(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str], version: int
+) -> None:
+    """R10-7: a version of 2**63 or more reached SQLite as an OverflowError (a bare 500)."""
+    pid, _ = await _printer()
+    await _sheet()  # creates the type
+    body = {
+        "items": [_item(0)],
+        "placements": [{"new_sheet": {"type": "acme-t1", "version": version}}],
+    }
+
+    resp = await api_client_with_seed.post(_url(pid), json=body, headers=reader)
+
+    assert resp.status_code == 422, resp.text
+    detail = _err(resp)
+    assert detail["error_code"] == "invalid_request"
+    assert detail["error_detail"] == {"errors": ["placements.0.new_sheet.version"]}
+    assert str(version) not in resp.text  # C19: no echo
+
+
 async def test_lookup_failure_names_the_item(
     api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
 ) -> None:
