@@ -76,6 +76,7 @@ MIN_QR_MODULE_HMM: Final = 25  # 0.25 mm
 MARGIN_TEXT_GAP_HMM: Final = 200  # 2 mm between the margin QR and the text
 MIN_MARGIN_TEXT_RUN_HMM: Final = 1000  # 10 mm of text beside a QR (OC-48)
 MAX_MARGIN_ID_HMM: Final = 2000  # usable size cap, 20 mm (OC-52)
+MIN_SHARED_TOP_TEXT_HMM: Final = 500  # 5 mm of top band must stay after the feed mark
 VERTICAL_BAND_LEAD_HMM: Final = 200  # a side band must be 2 mm deeper to beat top or bottom
 _QUIET_MODULES: Final = 4
 _CAP_EM: Final = 0.72  # cap height as a fraction of the font size
@@ -293,6 +294,15 @@ def choose_margin_placement(
     qr_of: dict[MarginBand, bool] = {}
     for band in BAND_ORDER:
         if usable[band] < MIN_MARGIN_TEXT_HMM:
+            continue
+        if (
+            band == "top"
+            and top_taken_hmm > 0
+            and band_length_hmm(g, band) - top_taken_hmm < MIN_SHARED_TOP_TEXT_HMM
+        ):
+            # Spec 10.2a: the mark goes first and the ID chooses with the shorter band like
+            # any other. Left with less than 5 mm the top band cannot carry even a cut text,
+            # so it is not a candidate (another band, or no ID on this page).
             continue
         qr_of[band] = (
             payload is not None

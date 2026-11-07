@@ -778,3 +778,98 @@ def test_turned_text_paste_never_erases_ink() -> None:
     font = sheet_page.load_cell_font(20)
     sheet_page._paste_turned_text(page, lay, font, (150, 20))
     assert page.getextrema() == (0, 0)  # an opaque white strip would leave white pixels
+
+
+# ---------------------------------------------------------------- narrow top band (fix round 1, I1)
+
+
+def _narrow(page_w: int) -> Geometry:
+    """A 1-column page ``page_w`` wide; the grid starts 5 mm in and ends 5 mm before the edge."""
+    return Geometry(
+        "A4", page_w, 29700, page_w - 1000, 2600, 1, 10, page_w - 1000, 2700, 1700, 500, None,
+        "rectangle",
+    )  # fmt: skip
+
+
+def _decide(g: Geometry) -> tuple[Any, Any]:
+    from app.page_render.transform import Deviation
+    from app.sheets.planner import MarginContext, PlacementIn, SheetView, plan
+
+    view = SheetView(
+        code="L4736-0001", type_key="t", type_version_id=uuid4(), geometry=g, allow_qr=True,
+        non_free={}, id_placement="margin", id_printed=False, has_hub_cell=False,
+        margin_id_in_flight=False, state="active",
+    )  # fmt: skip
+    ctx = MarginContext(Deviation(), lambda c: f"https://hub.example/sheet/{c}", 600, None)
+    page = plan([PlacementIn(view, "first_free", count=1)], 1, hw_margins_hmm=None, margin=ctx)
+    return page.pages[0].margin_placement, page.pages[0].feed_mark
+
+
+def _id_payload(placement: Any, mark: Any) -> MarginIdPayload:
+    from app.sheets.planner import MARGIN_TEXT_GAP_HMM
+
+    return margin_id_payload(
+        "L4736-0001 · Avery L4736REV-25 · sheet ID",
+        "https://hub.example/sheet/L4736-0001",
+        placement,
+        text_end_hmm=None if mark is None else mark.x_hmm - MARGIN_TEXT_GAP_HMM,
+    )
+
+
+def _detail_for(g: Geometry, mid: Any, mark: Any) -> SheetPageDetail:
+    return SheetPageDetail(
+        sheet_id=SHEET_ID, sheet_code="L4736-0001", type_key="t", type_version_id=uuid4(),
+        geometry=asdict(g), allow_qr=True, cells=[], margin_id=mid, feed_mark=mark,
+        job_summary={},
+    )  # fmt: skip
+
+
+def test_narrow_top_band_collapsed_ellipsis_is_not_drawn_over_the_mark() -> None:
+    """The reviewer's repro: 40 mm page, default hardware margins. The mark starts at 685; the
+    ID text used to collapse to an ellipsis drawn from 500 to 712."""
+    from app.sheets.sheet_page import feed_mark_payload
+
+    g = _narrow(4000)
+    placement, mark = _decide(g)
+    assert mark is not None and mark.x_hmm == 685
+    # Spec 10.2a: the ID chooses with the shorter band like any other; the top has no room left.
+    assert placement is None or placement.band != "top"
+    # Whatever a stored payload says, the text never passes text_end_hmm.
+    forced = MarginIdPayload(
+        text="L4736-0001 · Avery", usable_hmm=1100, text_end_hmm=mark.x_hmm - 200
+    )
+    pdf = _pdf(_detail_for(g, forced, feed_mark_payload(mark)))
+    from app.page_render.pdf import text_width_mm
+
+    drawn = [
+        (x / PT_PER_MM * 100, t)
+        for (x, _), t in zip(pi.text_positions(pdf), pi.texts(pdf), strict=True)
+    ]
+    for x, t in drawn:
+        if t != mark.text:
+            assert x + text_width_mm(t, 6.0) * 100 <= mark.x_hmm - 200 + 1
+
+
+def test_id_and_mark_never_overlap_over_a_sweep_of_narrow_widths() -> None:
+    from app.page_render.pdf import text_width_mm
+    from app.sheets.sheet_page import feed_mark_payload
+
+    for page_w in range(1500, 6100, 100):
+        g = _narrow(page_w)
+        placement, mark = _decide(g)
+        if mark is None:
+            continue
+        mp = feed_mark_payload(mark)
+        mid = _id_payload(placement, mark) if placement is not None else None
+        # PDF: no ID text reaches past the gap in front of the mark
+        pdf = _pdf(_detail_for(g, mid, mp))
+        for (x, _), t in zip(pi.text_positions(pdf), pi.texts(pdf), strict=True):
+            if t == mark.text or placement is None or placement.band != "top":
+                continue
+            assert x / PT_PER_MM * 100 + text_width_mm(t, 6.0) * 100 <= mark.x_hmm - 200 + 1, page_w
+        # Preview: the ID's ink and the mark's ink share no pixel
+        only_mark = _black(render_preview_png(g, [], None, feed_mark=mp))
+        only_id = _black(render_preview_png(g, [], mid, feed_mark=None))
+        both = _black(render_preview_png(g, [], mid, feed_mark=mp))
+        assert only_mark and not (only_mark & only_id), page_w
+        assert both == only_mark | only_id, page_w

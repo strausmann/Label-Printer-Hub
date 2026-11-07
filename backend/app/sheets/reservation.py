@@ -180,12 +180,25 @@ async def feed_mark_in_flight(session: AsyncSession, sheet_id: UUID) -> bool:
     )
 
 
+async def _in_flight_flags(session: AsyncSession, sheet_id: UUID) -> tuple[bool, bool]:
+    """``(margin ID, feed mark)`` in flight, from one read of the unattached reservations and
+    of the active payloads (the same rules as the two public functions)."""
+    if await repo.has_unattached_reservation(session, sheet_id):
+        return True, True
+    payloads = await repo.active_job_payloads(session)
+    return (
+        _active_sheet_page_carries(payloads, sheet_id, "margin_id"),
+        _active_sheet_page_carries(payloads, sheet_id, "feed_mark"),
+    )
+
+
 async def _view_of(session: AsyncSession, sheet: Sheet) -> SheetView:
     sheet_type = await session.get(SheetType, sheet.type_id, populate_existing=True)
     version = await session.get(SheetTypeVersion, sheet.type_version_id, populate_existing=True)
     if sheet_type is None or version is None:  # foreign keys make this unreachable
         raise SheetNotFoundError()
     cells = await repo.cells_of(session, sheet.id)
+    margin_in_flight, mark_in_flight = await _in_flight_flags(session, sheet.id)
     return SheetView(
         code=sheet.code,
         type_key=sheet_type.key,
@@ -196,13 +209,11 @@ async def _view_of(session: AsyncSession, sheet: Sheet) -> SheetView:
         id_placement=sheet.id_placement,  # type: ignore[arg-type]
         id_printed=sheet.id_printed,
         has_hub_cell=any(c.source == HUB_SOURCE for c in cells),
-        margin_id_in_flight=(
-            sheet.id_placement == "margin" and await margin_id_in_flight(session, sheet.id)
-        ),
+        margin_id_in_flight=sheet.id_placement == "margin" and margin_in_flight,
         state=sheet.state,  # type: ignore[arg-type]
         sheet_id=sheet.id,
         feed_mark_printed=sheet.feed_mark_printed,
-        feed_mark_in_flight=await feed_mark_in_flight(session, sheet.id),  # every placement
+        feed_mark_in_flight=mark_in_flight,  # every placement
     )
 
 

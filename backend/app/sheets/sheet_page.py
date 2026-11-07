@@ -23,10 +23,16 @@ from dataclasses import dataclass
 from typing import Any, Final, Literal
 from uuid import UUID
 
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.page_render.pdf import PageImage, PageText, text_width_mm, write_pdf
+from app.page_render.pdf import (
+    PageImage,
+    PageText,
+    resolve_font_path,
+    text_width_mm,
+    write_pdf,
+)
 from app.page_render.transform import PT_PER_MM
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
@@ -203,13 +209,17 @@ class _MarginLayout:
 
 
 def _fit_margin_text(text: str, size_pt: float, room_mm: float) -> tuple[str, float]:
-    """Shrink to ``_MIN_PT``, then shorten with an ellipsis; never draw past the grid."""
+    """Shrink to ``_MIN_PT``, then shorten with an ellipsis; never wider than ``room_mm``.
+
+    Returns an empty text when not even the ellipsis fits: nothing is drawn then."""
     size = size_pt
     while size > _MIN_PT and text_width_mm(text, size) > room_mm:
         size -= 0.5
     size = max(size, _MIN_PT)
     if text_width_mm(text, size) <= room_mm:
         return text, size
+    if text_width_mm("…", size) > room_mm:
+        return "", size
     lo, hi = 0, len(text)
     while lo < hi:
         mid = (lo + hi + 1) // 2
@@ -293,7 +303,8 @@ def render_sheet_page(
         lay = _margin_layout(g, m, with_qr=qr_image is not None)
         if qr_image is not None and lay.qr is not None:
             images.append(PageImage(lay.qr.x, lay.qr.y, lay.qr.w, lay.qr.h, qr_image))
-        texts.append(PageText(lay.text_x, lay.baseline_y, lay.size_pt, lay.text, lay.rotation))
+        if lay.text:  # empty: not even the ellipsis fits its room
+            texts.append(PageText(lay.text_x, lay.baseline_y, lay.size_pt, lay.text, lay.rotation))
     return write_pdf(
         payload.media,
         images=images,
@@ -370,7 +381,9 @@ def render_preview_png(
         if qr is not None and lay.qr is not None:
             page.paste(qr, (px(lay.qr.x), px(lay.qr.y)))
         font = load_cell_font(max(1, round(lay.size_pt * PREVIEW_DPI / 72)))
-        if lay.rotation == 90:
+        if not lay.text:
+            pass
+        elif lay.rotation == 90:
             _paste_turned_text(page, lay, font, (px(lay.text_x), px(lay.baseline_y)))
         else:
             ImageDraw.Draw(page).text(
@@ -378,7 +391,8 @@ def render_preview_png(
             )
     # Last: nothing the ID or a cell drew can cover it.
     if feed_mark is not None:
-        font = load_cell_font(max(1, round(feed_mark.size_pt * PREVIEW_DPI / 72)))
+        # A fractional pixel size, so the preview mark is as wide as the PDF's (6 pt is 12.5 px).
+        font = ImageFont.truetype(str(resolve_font_path()), feed_mark.size_pt * PREVIEW_DPI / 72)
         ImageDraw.Draw(page).text(
             (px(feed_mark.x_hmm), px(feed_mark.baseline_y_hmm)),
             feed_mark.text,

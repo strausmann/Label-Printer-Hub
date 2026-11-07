@@ -709,7 +709,7 @@ def test_feed_mark_l4736_de() -> None:
     real = planner.choose_margin_placement
 
     def spy(*a: object, **kw: object) -> object:
-        seen.append(planner.band_length_hmm(L4736, "top") - int(kw.get("top_taken_hmm", 0)))  # type: ignore[call-overload]
+        seen.append(planner.band_length_hmm(L4736, "top") - int(kw.get("top_taken_hmm", 0)))
         return real(*a, **kw)  # type: ignore[arg-type]
 
     import pytest as _pytest
@@ -722,13 +722,13 @@ def test_feed_mark_l4736_de() -> None:
             hw_margins_hmm=None,
             margin=margin_ctx(language="de"),
         ).pages[0]
-    assert page.feed_mark is not None and page.feed_mark.text == DE_MARK  # type: ignore[attr-defined]
+    assert page.feed_mark is not None and page.feed_mark.text == DE_MARK
     assert seen == [19030 - 3507 - 200]
     assert page.margin_placement is not None and page.margin_placement.qr is True
     fr = plan(
         [first_free(sheet(), 1)], 1, hw_margins_hmm=None, margin=margin_ctx(language="fr")
     ).pages[0]
-    assert fr.feed_mark == planner.FeedMarkPlacement(EN_MARK, 17300, 1354, 7.0, 2715)  # type: ignore[attr-defined]
+    assert fr.feed_mark == planner.FeedMarkPlacement(EN_MARK, 17300, 1354, 7.0, 2715)
 
 
 def test_feed_mark_stops_at_the_right_hardware_margin() -> None:
@@ -757,7 +757,7 @@ def test_feed_mark_not_printed_below_four_mm() -> None:
         hw_margins_hmm=thin,
         margin=margin_ctx(),
     ).pages[0]
-    assert got.feed_mark is None  # type: ignore[attr-defined]
+    assert got.feed_mark is None
     assert got.margin_placement == MarginPlacement("bottom", "bottom_left", 1530, True)
     ok = Margins(top=1630, left=500, bottom=500, right=500)
     mark = planner.choose_feed_mark(L4736, hw=ok, dev=Deviation(), text=EN_MARK)
@@ -773,12 +773,12 @@ def test_feed_mark_shrinks_then_drops() -> None:
         )
 
     en = mark(2400, EN_MARK)
-    assert en == planner.FeedMarkPlacement(EN_MARK, 1073, en.baseline_y_hmm, 6.0, 2327)  # type: ignore[attr-defined]
+    assert en == planner.FeedMarkPlacement(EN_MARK, 1073, en.baseline_y_hmm, 6.0, 2327)
     assert mark(2300, EN_MARK) is None
     de = mark(3200, DE_MARK)
-    assert (de.size_pt, de.width_hmm, de.x_hmm) == (6.0, 3006, 1194)  # type: ignore[attr-defined]
+    assert (de.size_pt, de.width_hmm, de.x_hmm) == (6.0, 3006, 1194)
     assert mark(3000, DE_MARK) is None
-    assert mark(3000, EN_MARK) is not None and mark(3000, EN_MARK).size_pt == 7.0  # type: ignore[attr-defined]
+    assert mark(3000, EN_MARK) is not None and mark(3000, EN_MARK).size_pt == 7.0
 
 
 def test_id_shares_the_top_band_with_the_mark() -> None:
@@ -787,7 +787,7 @@ def test_id_shares_the_top_band_with_the_mark() -> None:
     page = plan(
         [first_free(sheet(id_placement="margin"), 1)], 1, hw_margins_hmm=None, margin=margin_ctx()
     ).pages[0]
-    assert page.feed_mark.x_hmm == 17300  # type: ignore[attr-defined]
+    assert page.feed_mark.x_hmm == 17300
     assert page.margin_placement == MarginPlacement("top", "top_left", 1530, True)
 
     def tight(label_w: int, label_h: int = 27000) -> Geometry:
@@ -829,7 +829,7 @@ def test_feed_mark_for_every_placement() -> None:
     def marks(view: SheetView, n_pages: int = 1) -> list[object]:
         pls = [first_free(view, 1) for _ in range(n_pages)]
         pages = plan(pls, n_pages, hw_margins_hmm=None, margin=margin_ctx()).pages
-        return [p.feed_mark for p in pages]  # type: ignore[attr-defined]
+        return [p.feed_mark for p in pages]
 
     for placement in ("cell", "margin", "manual"):
         (m,) = marks(sheet(id_placement=placement))  # type: ignore[arg-type]
@@ -843,7 +843,7 @@ def test_feed_mark_for_every_placement() -> None:
     assert (
         plan([first_free(sheet(), 1)], 1, hw_margins_hmm=None, margin=None).pages[0].feed_mark
         is None
-    )  # type: ignore[attr-defined]
+    )
 
 
 def test_feed_mark_alone_is_empty() -> None:
@@ -855,3 +855,26 @@ def test_feed_mark_alone_is_empty() -> None:
 def test_margin_context_language_is_required() -> None:
     with pytest.raises(TypeError):
         MarginContext(deviation=Deviation(), scan_payload=str, render_dpi=600)  # type: ignore[call-arg]
+
+
+def test_id_leaves_a_top_band_the_mark_has_used_up() -> None:
+    """Fix round 1, I1 (spec 10.2a: the ID chooses with the shorter band like any other)."""
+    narrow = Geometry(
+        "A4", 4000, 29700, 3000, 2600, 1, 10, 3000, 2700, 1700, 500, None, "rectangle"
+    )
+    page = plan(
+        [first_free(sheet(narrow, id_placement="margin"), 1)],
+        1,
+        hw_margins_hmm=None,
+        margin=margin_ctx(),
+    ).pages[0]
+    assert page.feed_mark is not None and page.feed_mark.x_hmm == 685
+    assert page.margin_placement is not None and page.margin_placement.band == "bottom"
+    # without the mark (already printed) the top band is the ID's again
+    again = plan(
+        [first_free(sheet(narrow, id_placement="margin", feed_mark_printed=True), 1)],
+        1,
+        hw_margins_hmm=None,
+        margin=margin_ctx(),
+    ).pages[0]
+    assert again.margin_placement is not None and again.margin_placement.band == "top"
