@@ -415,7 +415,7 @@ Reasons that stop printing (`media-empty`, `media-jam`, `door-open`, `cover-open
 - Only one hub job is at the printer at a time (per-printer serialisation as today): the worker waits for the job to reach a final IPP state before taking the next.
 - The printer's existing `queue_timeout_s` bounds each IPP request (upload, attribute and job queries), not the time a job may wait at the printer (OC-41).
 - A request spanning several sheets creates one page job per sheet, in placement order, grouped in one `print_batches` row. Each page has its own outcome: page 1 may complete while page 2 fails.
-- **Retry** (`POST /api/jobs/{id}/retry`) of a page job is allowed only for jobs that ended cleanly (`failed` without `interrupted`, or `cancelled` before the printer started them). It re-reserves the **same cells** if they are still free, else answers `409 cells_taken` and the person prints again from the dialog. A job with unconfirmed cells cannot be retried until they are resolved (OC-42).
+- **Retry** (`POST /api/jobs/{id}/retry`) of a page job is allowed only for jobs that ended cleanly (`failed` without `interrupted`, or `cancelled` before the printer started them). It re-reserves the **same cells** (and the ID cell where it was) if they are still free, else answers `409 cells_taken` with the cell numbers and the person prints again from the dialog. A job with unconfirmed cells cannot be retried until they are resolved (OC-42, `409 cells_unconfirmed`). The retry is a new job: it takes a **fresh** calibration snapshot (the snapshot of 'at submit time' is the retry's submit), and it decides again whether the margin ID and the feed-direction mark are still due and where they go, for the printer, tray and calibration it is sent to; the first attempt's band is not reused. The labels are the ones the first attempt stored; nothing is looked up again.
 
 ### 11.5 Job tracking, cancel, failures, restart
 
@@ -606,7 +606,7 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 | `ipp_pdf_unsupported` | 409 | the printer does not accept `application/pdf`; the printer is not saved | create and update of an IPP printer |
 | `ipp_rejected` | 502 | the printer refused the request; `{ipp_status}` is the IPP status name, never printer text | probe, save of a printer |
 | `ipp_unreachable` | 409 / 502 | the printer could not be reached: `409` when saving (nothing is saved), `502` for the probe | admin printer routes |
-| `job_not_retryable` | 409 | retry of a sheet page; its cells need the cell-aware retry (Plan 3). No row is created | `POST /api/jobs/{id}/retry` |
+| `job_not_retryable` | 409 | retry of a sheet page that is `done`: its labels came out, so there is nothing to print again. *Changed in Plan 3:* in Plan 2 every sheet page answered this, because its cells needed the cell-aware retry; a `failed` or `cancelled` sheet page is now retried (see the Plan 3 table). No row is created | `POST /api/jobs/{id}/retry` |
 | `media_kind_mismatch` | 409 | a tape route was called for a page printer, a page job for a tape printer, or a tape payload is retried on a page printer | print, batch, submit, retry |
 | `no_tape_printer` | 503 | no tape printer is wired, for example only IPP page printers are configured | `POST /api/print`, `{error_code, error_message}` |
 | `printer_model_unknown` | 409 | capabilities of a tape printer whose model has no registered driver | `GET /printers/{id}/capabilities` |
@@ -618,9 +618,44 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 *Not in this table, by design:*
 
 - `POST …/calibration/{tray}/page` and `POST /api/jobs/{id}/retry` answer a printer the print queue does not know (`409`) in the **ProblemDetail** shape, `detail.type = "printer-unavailable"`, like the other job routes. Retry also answers `job-not-retryable` (`422`) in that shape when the stored payload is invalid. Every other calibration error uses the envelope above.
-- `margin_too_small` (in the list above) is not answered by Plan 2. *Changed 2026-11-07 (operator decision):* it is not answered by Plan 3 either; a sheet whose margins are too narrow is printed without its ID (10.2, OC-49).
+- `margin_too_small` (in the list above) is retired. It was not answered by Plan 2 and is not answered by Plan 3 either (*changed 2026-11-07, operator decision*): a sheet whose margins are too narrow is printed without its ID (10.2, OC-49), and the preview and the print say so with `id_not_printed`. The code is never emitted.
 - A *job* that ends `failed` carries its own `error_code`, not an HTTP status: `render_failed`, `ipp_unreachable`, `ipp_busy`, `ipp_rejected` (`{ipp_status}` in `result.error_detail`), `ipp_request_invalid`, `ipp_aborted` (the printer aborted a job that never started), `interrupted` (it may have printed), `recovery_invalid_page_payload` (restart found an unusable payload) and `cancelled`. None carries printer text or the printer's address.
 - Check order of the calibration routes with a path and a body: printer and tray first (`tray_unknown`), then the sheet type of `measured_on`/`type` (`sheet_type_not_found`, `sheet_type_version_not_found`), then the value ranges. `fit`, `page` and `PUT` all use it.
+
+*Added 2026-11-07 with printing onto sheets (Plan 3), as built.* Codes of the tables above are not repeated unless Plan 3 changes their meaning. All use the `{error_code, error_message, error_detail}` envelope unless the last column says otherwise. The sheet print routes (`/api/print/{printer_key}/sheet` and `/sheet/preview`) answer a validation error as `invalid_request` with field paths only, like the sheet routes (the request carries label text and purposes, which an error must not repeat).
+
+| Code | Status | Meaning, `error_detail` | Notes |
+|---|---|---|---|
+| `app-lookup-not-found` | 404 | the integration has no such item; `{item_index}` | an item lookup; the message is fixed text |
+| `cells_taken` | 409 | explicit cells of a print are not free (`{cells}`, every conflicting cell, nothing reserved), or a retry finds a cell of the failed job taken since (`{cells}`) | print; retry |
+| `cells_unconfirmed` | 409 | a retry of a page job one or more of whose cells wait for confirmation (OC-42); `{cells}` | retry; also answered for a `failed_restart` job, whose cells are unconfirmed |
+| `content_type_data_mismatch` | 422 | an item lacks what its content type needs in the cell it would get, or its QR payload is above the cap; `{item_index, missing_fields}`. Checked before anything is reserved | preview and print |
+| `insufficient_cells` | 409 | the free cells of the placements do not hold the items; `{free_cells, needed, shortfall}` | preview and print; a missing ID cell adds one to `shortfall` |
+| `integration_lookup_failed` | 502 | the integration failed or could not be reached; `{item_index}` | an item lookup; the lowest index when several fail |
+| `integration_not_configured` | 503 | the integration is not configured; `{item_index}` | an item lookup |
+| `integration_unknown_app` | 422 | the integration is not available; `{item_index}` | an item lookup |
+| `invalid_placements` | 422 | the placements contradict each other or the item count; `{reason}` is `count_mismatch` (the counts do not add up, or one is negative), `count_missing_not_last` (only the last placement may leave `count` out), `duplicate_cells` (an explicit list names a cell twice), `empty` (nothing to print and no ID due), `empty_placement` (a placement would print nothing), `explicit_count_mismatch` (an explicit list and `count` or the item count disagree) or `sheet_or_new_sheet` (a placement needs exactly one of the two) | preview and print. `count_mismatch`, `duplicate_cells` and `empty_placement` were added while building |
+| `plan_changed` | 409 | the fresh plan differs from `expected_cells`; `{plan}` is the new plan as `[{sheet, cells, id_cell}]`. Nothing is written, a new sheet and its counter step vanish with the transaction | print |
+| `preview_too_large` | 422 | the plan has more pages than a preview renders; `{pages, max}`, `max` is 10 (a load bound, not the spec's) | preview |
+| `print_interrupted` | 502 | the print failed after some pages were queued; `{batch_id, job_ids}`. The pages already queued keep printing; the batch is rewritten to the jobs that exist | print and the ID-only job; a `SheetApiError` raised there carries the same two keys |
+| `printer-unavailable` | 409 | the print queue does not know the printer (an IPP printer added after the start); nothing was printed and the reserved cells are free again | the envelope on the sheet routes; on `POST /api/jobs/{id}/retry` the ProblemDetail shape, `detail.type = "printer-unavailable"`, as before |
+| `printer_disabled` | 409 | the printer is switched off. #167 remains the general fix at queue level; the sheet routes refuse at the route (pre-flight C18) | preview, print, create with an ID cell, margin check, and the retry of a page job |
+| `sheet_id_job_failed` | 500 | something unexpected stopped the ID-only job of a new `cell` sheet after the sheet was committed; `{sheet_code}`. The sheet exists without a reservation; the cause is logged, never returned | `POST /api/sheets` with `id_placement` `cell` |
+| `sheet_type_mismatch` | 409 | a placement names a sheet of another type than the request needs; `{expected, actual}` | wired in `reserve` (`required_type_key`), but no Plan 3 route sets a required type, so it is not answered today |
+| `tray_unknown` | 422 | the tray is unknown or disabled, or the printer has no enabled default tray; `{trays}` | print and preview; also a retry whose tray was removed or disabled since the first attempt (the retry takes a fresh snapshot, which needs the tray) |
+
+*Not an error:* `id_not_printed` is a field of the preview and the print response (`true` when no margin band is deep enough for the sheet ID, 10.2, OC-49), next to `margin_band`. A page printed without its ID does not set `sheets.id_printed`, so a later page tries again.
+
+*Decided while building Plan 3 (each checked against the code):*
+
+- **Explicit cell lists keep the caller's order.** Item *i* goes to `cells[i]`; the planner does not sort. The retry keeps the stored order too.
+- **`interrupted` with `started=false` leaves the cells unconfirmed** (ruling T5-3, refining OC-23 on the safe side). `interrupted` means the page may have printed whatever `started` says; the outcome handler and the startup sweep both apply that.
+- **The top band stays a candidate for the sheet ID only if at least 5 mm remain after the feed-direction mark** (ruling T5c-1, `MIN_SHARED_TOP_TEXT_HMM`). Otherwise another band is chosen, or the page prints without its ID.
+- **Raw items are capped** at the request: `qr_payload` 512 characters, `title`, `primary_id` and every other text field 512, at most 10 `secondary` lines and 100 listing rows. A lookup's `qr_payload` above 512 is `content_type_data_mismatch`. Identical lookups (same app and identifier) run once and fan out to every item that asked, with at most 8 in flight.
+- **The preview draws a marked placeholder** (a hatched square with "QR") for a QR that is too fine for 150 dpi; the job draws the real symbol at render dpi.
+- **Reservations without a job row older than 30 seconds become `unconfirmed`** at the startup sweep, not free (ruling T5-1): the row may have been purged by retention after the page printed. Younger ones are spared, because a reservation commits before its page job is saved (C26). **Retention never evicts a job that still has `reserved` cells.**
+- **A page job stores the record of each cell** (`source`, `purpose`, `ref`) next to its label, so that the retry reserves the cell with the same record; a payload stored before has none and falls back to the label (`source_app`, title or primary id, no `ref`).
+- **The retry does not create a batch.** It is one job; the first attempt's batch is left as it was.
 
 *Empty cell lists (decided with Task 8):* `cells/mark`, `unmark` and `resolve` refuse an empty list at the API (`422 invalid_request`, `cells` needs 1 to 400 entries). The service treats an empty list as a no-op — no write lock, no commit, no event — so a caller that skips the HTTP layer gets the sheet back unchanged. Text that is nothing after cleaning is `null` (optional fields) or the default (`marked by hand` for a cell purpose); empty product code entries are dropped.
 
