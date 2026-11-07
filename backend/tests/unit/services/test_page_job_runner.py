@@ -97,6 +97,41 @@ async def _until(predicate: Callable[[], bool]) -> None:
 # ---------------------------------------------------------------------------- happy path
 
 
+class _RecordingStore(MemoryJobStore):
+    """Remembers the order of the writes that matter for a failure."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[tuple[str, dict[str, Any] | None]] = []
+
+    async def set_result(self, job_id: UUID, result: dict[str, Any]) -> None:
+        self.calls.append(("set_result", dict(result)))
+        await super().set_result(job_id, result)
+
+    async def mark_failed_code(self, job_id: UUID, *args: Any, **kwargs: Any) -> None:
+        self.calls.append(("mark_failed_code", kwargs.get("result")))
+        await super().mark_failed_code(job_id, *args, **kwargs)
+
+
+async def test_failure_writes_result_and_state_in_one_call(handler: RecordingHandler) -> None:
+    """M12: no separate ``phase=ended`` write before the state change (two commits on SQLite)."""
+    env = _Env(FakeIppPrinter(print_status=0x040A))
+    env.store = _RecordingStore()
+    env.runner = PageJobRunner(
+        store=env.store, notify=env._notify, poll_interval_s=0.0, max_backoff_s=0.0
+    )
+    pj = await env.job()
+    await env.run(pj)
+
+    calls = env.store.calls
+    assert not any(name == "set_result" and r and r.get("phase") == "ended" for name, r in calls)
+    assert calls[-1][0] == "mark_failed_code"
+    ended = calls[-1][1]
+    assert ended is not None and ended["phase"] == "ended" and ended["started"] is False
+    row = await env.row(pj)
+    assert row.state == DbJobState.FAILED.value and row.result["phase"] == "ended"
+
+
 async def test_completed_flow(handler: RecordingHandler) -> None:
     env = _Env(FakeIppPrinter(job_script=[3, 5, 9]))
     pj = await env.job()

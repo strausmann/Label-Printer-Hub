@@ -100,12 +100,20 @@ class JobStore(Protocol):
         """
 
     async def mark_failed_code(
-        self, job_id: UUID, code: str, message: str, detail: dict[str, Any] | None
+        self,
+        job_id: UUID,
+        code: str,
+        message: str,
+        detail: dict[str, Any] | None,
+        *,
+        result: dict[str, Any] | None = None,
     ) -> None:
         """Transition any non-terminal -> FAILED with ``error = "<code>: <message>"``.
 
-        ``detail`` (when given) is merged into ``result`` as ``error_detail``.  Silently
-        no-op if job_id does not exist or the row is already terminal.
+        ``result`` (when given) replaces the stored result, and ``detail`` (when given) is
+        merged into it as ``error_detail`` — all in the same write as the state change, so a
+        crash leaves either the old row or the finished one, never a half-written mix.
+        Silently no-op if job_id does not exist or the row is already terminal.
         """
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
@@ -201,14 +209,20 @@ class MemoryJobStore(JobStore):
             job.result = dict(result)
 
     async def mark_failed_code(
-        self, job_id: UUID, code: str, message: str, detail: dict[str, Any] | None
+        self,
+        job_id: UUID,
+        code: str,
+        message: str,
+        detail: dict[str, Any] | None,
+        *,
+        result: dict[str, Any] | None = None,
     ) -> None:
         job = self._jobs.get(job_id)
         if job is None or job.state in _TERMINAL:
             return
         job.state = JobState.FAILED.value
         job.error = f"{code}: {message}"
-        job.result = _with_detail(job.result, detail)
+        job.result = _with_detail(dict(result) if result is not None else job.result, detail)
         job.finished_at = datetime.now(UTC)
 
     async def mark_interrupted(self, printer_id: UUID) -> int:

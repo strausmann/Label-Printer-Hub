@@ -74,3 +74,51 @@ async def test_mark_cancelled_from_printing_only_when_allowed(store: JobStore) -
     row = await store.get(job.id)
     assert row is not None and row.state == JobState.CANCELLED.value
     assert row.finished_at is not None
+
+
+async def test_mark_failed_code_with_result_replaces_result_in_the_same_write(
+    store: JobStore,
+) -> None:
+    job = await _printing(store)
+    await store.set_result(job.id, {"phase": "uploading", "started": False})
+    await store.mark_failed_code(
+        job.id,
+        "interrupted",
+        "The page may have been sent.",
+        {"why": "x"},
+        result={"phase": "ended", "started": True},
+    )
+    row = await store.get(job.id)
+    assert row is not None and row.state == JobState.FAILED.value
+    assert row.result == {"phase": "ended", "started": True, "error_detail": {"why": "x"}}
+    await store.mark_failed_code(job.id, "other", "Other.", None, result={"phase": "later"})
+    again = await store.get(job.id)
+    assert again is not None and again.result == row.result  # terminal: untouched
+
+
+async def test_sqlite_mark_failed_code_with_result_is_one_commit(
+    async_session_factory: Any,
+) -> None:
+    """A crash between two commits would leave ``printing`` with ``phase=ended``."""
+    from sqlalchemy import event
+    from sqlalchemy.orm import Session
+
+    store = SQLiteJobStore(async_session_factory)
+    job = await _printing(store)
+    commits: list[str] = []
+
+    def _count(_session: Any) -> None:
+        commits.append("commit")
+
+    event.listen(Session, "after_commit", _count)
+    try:
+        await store.mark_failed_code(
+            job.id,
+            "interrupted",
+            "m",
+            {"why": "x"},
+            result={"phase": "ended", "started": True},
+        )
+    finally:
+        event.remove(Session, "after_commit", _count)
+    assert len(commits) == 1

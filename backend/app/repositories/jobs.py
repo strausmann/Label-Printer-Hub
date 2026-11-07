@@ -111,8 +111,13 @@ async def mark_done(
     return job
 
 
-async def mark_failed(session: AsyncSession, job_id: UUID, error: str) -> Job:
-    """Transition QUEUED|PRINTING → FAILED. Sets finished_at."""
+async def mark_failed(
+    session: AsyncSession, job_id: UUID, error: str, *, result: dict[str, Any] | None = None
+) -> Job:
+    """Transition QUEUED|PRINTING → FAILED. Sets finished_at.
+
+    ``result`` (when given) replaces the stored result in the same commit as the state.
+    """
     job = await _get_or_raise(session, job_id)
     if job.state not in (JobState.QUEUED.value, JobState.PRINTING.value):
         raise ValueError(
@@ -121,6 +126,8 @@ async def mark_failed(session: AsyncSession, job_id: UUID, error: str) -> Job:
         )
     job.state = JobState.FAILED.value
     job.error = error
+    if result is not None:
+        job.result = dict(result)
     job.finished_at = datetime.now(UTC)
     session.add(job)
     await session.commit()

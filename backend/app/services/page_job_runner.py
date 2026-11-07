@@ -446,13 +446,16 @@ class PageJobRunner:
         if started and not result.get("started"):
             result["started"] = True
         result["phase"] = "ended"
-        await self._store.set_result(job_id, result)  # started persisted before on_ended
         job.error_code = code
         job.error_message = message
         job.error_detail = detail
         job.error_msg = message
         self._end_in_memory(job, JobState.FAILED)
-        await self._store.mark_failed_code(job_id, code, message, detail)
+        # One write for result and state: ``started`` is persisted before ``on_ended`` runs,
+        # and a crash leaves either the row as it was (printing: restart recovery settles it
+        # from the printer) or the finished one. Two commits would leave "printing" with
+        # ``phase=ended`` between them, and recovery would track a job that was already decided.
+        await self._store.mark_failed_code(job_id, code, message, detail, result=result)
         await notify_ended(
             page_job.payload.kind, job_id, state="failed", started=started, error_code=code
         )

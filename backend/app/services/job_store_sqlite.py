@@ -131,9 +131,19 @@ class SQLiteJobStore(JobStore):
             await jobs_repo.set_result(session, job_id, result)
 
     async def mark_failed_code(
-        self, job_id: UUID, code: str, message: str, detail: dict[str, Any] | None
+        self,
+        job_id: UUID,
+        code: str,
+        message: str,
+        detail: dict[str, Any] | None,
+        *,
+        result: dict[str, Any] | None = None,
     ) -> None:
-        """Non-terminal -> FAILED with ``"<code>: <message>"``; ``detail`` into ``result``."""
+        """Non-terminal -> FAILED with ``"<code>: <message>"``; ``detail`` into ``result``.
+
+        One commit: the result (``result`` or the stored one, plus ``error_detail``) and the
+        state change land together.
+        """
         async with self._session_factory() as session:
             job = await jobs_repo.get(session, job_id)
             if job is None:
@@ -143,11 +153,15 @@ class SQLiteJobStore(JobStore):
                     "mark_failed_code called on job %s in terminal state %s", job_id, job.state
                 )
                 return
+            merged = dict(result) if result is not None else dict(job.result or {})
             if detail is not None:
-                await jobs_repo.set_result(
-                    session, job_id, {**(job.result or {}), "error_detail": dict(detail)}
-                )
-            await jobs_repo.mark_failed(session, job_id, f"{code}: {message}")
+                merged["error_detail"] = dict(detail)
+            await jobs_repo.mark_failed(
+                session,
+                job_id,
+                f"{code}: {message}",
+                result=merged if (result is not None or detail is not None) else None,
+            )
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: mark all PRINTING tape jobs of this printer as FAILED_RESTART."""
