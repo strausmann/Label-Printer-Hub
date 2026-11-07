@@ -622,14 +622,16 @@ def test_zero_count_placement_never_yields_an_empty_page() -> None:
             margin=None,
         )
     assert exc.value.detail == {"reason": "empty_placement"}
-    # A zero-count placement is fine when it carries the margin ID.
-    ok = plan(
-        [first_free(sheet(id_placement="margin"), 0), first_free(sheet(code=None), None)],
-        3,
-        hw_margins_hmm=None,
-        margin=None,
-    )
-    assert ok.pages[0].margin_id is True
+    # Not even when it would carry the margin ID: nothing records that (R10-3, spec OC-58: the
+    # mark and the ID never cause a job by themselves).
+    with pytest.raises(InvalidPlacementsError) as margin_exc:
+        plan(
+            [first_free(sheet(id_placement="margin"), 0), first_free(sheet(code=None), None)],
+            3,
+            hw_margins_hmm=None,
+            margin=None,
+        )
+    assert margin_exc.value.detail == {"reason": "empty_placement"}
 
 
 def test_hw_margin_flags_bottom_and_right_bands() -> None:
@@ -943,3 +945,51 @@ def test_planning_builds_no_qr_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
         margin=margin_ctx(),
     )
     assert built == []
+
+
+# ---- R10-3: a page without cells is refused when there is something to print -----------------
+
+
+def test_a_cell_less_page_of_a_margin_sheet_is_refused() -> None:
+    """R10-3: ``cells: []`` on a margin sheet gave a page with only the ID and the feed mark.
+    Both are recorded when a cell turns used, and a cell-less page has none, so the next print
+    drew them again. The request is refused; nothing is printed unrecorded."""
+    first = sheet(code="L4736-0001", id_placement="margin")
+    second = sheet(code="L4736-0002", id_placement="margin")
+    with pytest.raises(InvalidPlacementsError) as exc:
+        plan(
+            [
+                PlacementIn(sheet=first, cells=[]),
+                first_free(second, None),
+            ],
+            2,
+            hw_margins_hmm=None,
+            margin=margin_ctx(),
+        )
+    assert exc.value.detail == {"reason": "empty_placement"}
+
+
+def test_a_cell_less_page_is_refused_without_a_printer_context_too() -> None:
+    with pytest.raises(InvalidPlacementsError) as exc:
+        plan(
+            [
+                PlacementIn(sheet=sheet(id_placement="margin"), cells=[]),
+                first_free(sheet(code="L4736-0002"), None),
+            ],
+            1,
+            hw_margins_hmm=None,
+            margin=None,
+        )
+    assert exc.value.detail == {"reason": "empty_placement"}
+
+
+def test_an_id_only_page_is_still_planned_when_there_are_no_items() -> None:
+    """C2 stays: the ID-only job of a margin or cell sheet (``n_items == 0``) is not a
+    cell-less page of a print, it is the job itself."""
+    result = plan(
+        [first_free(sheet(id_placement="margin"), None)],
+        0,
+        hw_margins_hmm=None,
+        margin=margin_ctx(),
+    )
+    assert result.pages[0].item_cells == [] and result.pages[0].margin_id is True

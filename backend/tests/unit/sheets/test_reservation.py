@@ -651,3 +651,18 @@ async def test_codes_of_a_batch_of_new_sheets_are_consecutive_and_the_counter_fo
     assert codes == ["L4736-0001", "L4736-0002", "L4736-0003"]
     nxt = await do_reserve(session, [new("manual", count=1)], 1)
     assert nxt[0].sheet_code == "L4736-0004"
+
+
+async def test_a_cell_less_margin_page_reserves_nothing_and_burns_no_code(
+    session: AsyncSession,
+) -> None:
+    """R10-3: ``cells: []`` on a margin sheet would print its ID and feed mark unrecorded."""
+    from app.sheets.errors import InvalidPlacementsError
+
+    code = await make_sheet(session, placement="margin")
+    with pytest.raises(InvalidPlacementsError) as err:
+        await do_reserve(session, [existing(code, cells=[]), new("margin")], 1)
+    assert err.value.detail == {"reason": "empty_placement"}
+    assert await cells(session) == []
+    pages = await do_reserve(session, [new("margin")], 1)
+    assert pages[0].sheet_code == "L4736-0002"  # the failed request's new sheet was rolled back

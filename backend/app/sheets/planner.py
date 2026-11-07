@@ -614,7 +614,12 @@ def plan(
         )
 
     for d in drafts:
-        if not d.item_cells and d.id_cell is None and not d.margin_id:
+        # With items to print, a page needs a cell: the margin ID and the feed mark are recorded
+        # when a cell of the page turns used, so a page of them alone would print both
+        # unrecorded and the sheet's next print would draw them again (R10-3). Only the
+        # ID-only job (``n_items == 0``) is a page without item cells.
+        carries_nothing = not d.item_cells and d.id_cell is None
+        if carries_nothing and (n_items > 0 or not d.margin_id):
             # n_items == 0 with nothing due is "empty"; otherwise a zero-count placement.
             raise InvalidPlacementsError("empty" if n_items == 0 else "empty_placement")
     if n_items == 0 and not any(d.id_cell is not None or d.margin_id for d in drafts):
