@@ -1,6 +1,7 @@
 # 0004 — Plugin architecture for printer models
 
 - **Status:** Accepted
+- **Amended by:** [0020](0020-backend-kinds-ipp-page-printers.md) — page printers are a separate backend kind (`ipp`), not a model plugin; this ADR still governs the Brother raster families
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 

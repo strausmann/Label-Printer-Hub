@@ -1,6 +1,7 @@
 # 0005 — Print queue is mandatory (printers have none)
 
 - **Status:** Accepted
+- **Amended by:** [0020](0020-backend-kinds-ipp-page-printers.md) — for IPP page printers a job that is printing can be cancelled (Cancel-Job) and may end `cancelled`; the rule below stays for TCP/9100 streams
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
