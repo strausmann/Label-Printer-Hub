@@ -46,7 +46,9 @@ from app.printer_backends.exceptions import (
     TapeEmptyError,
     TapeMismatchError,
 )
+from app.printer_backends.ipp.client import JobInfo
 from app.printer_backends.ipp.errors import IppError, IppNotFoundError
+from app.printer_backends.ipp.job_attrs import is_own_job, wire_job_name
 from app.services.job_lifecycle import (
     InvalidStateTransitionError,
     Job,
@@ -1352,7 +1354,9 @@ class PrintQueue:
         self, printer: PagePrinter, printer_id: UUID, items: list[PageJob]
     ) -> None:
         try:
-            listed: set[int] | None = {j.job_id for j in await printer.client.get_jobs()}
+            listed: dict[int, JobInfo] | None = {
+                j.job_id: j for j in await printer.client.get_jobs()
+            }
         except IppError as exc:
             logger.info("Recovery: %s could not list its jobs (%s)", printer_id, type(exc).__name__)
             listed = None
@@ -1360,14 +1364,19 @@ class PrintQueue:
             if self._stopping:
                 return
             ipp_job_id = (item.resume_result or {})["ipp_job_id"]
+            expected = wire_job_name(item.payload.job_name, item.job.id)
             try:
-                if (
-                    listed is not None
-                    and ipp_job_id not in listed
-                    and await self._printer_forgot(printer, ipp_job_id)
-                ):
-                    await self._page_runner.end_forgotten(item)
-                    continue
+                if listed is not None:
+                    seen = listed.get(ipp_job_id)
+                    if seen is not None:
+                        # Listed under the stored id: ours only if the name and user are the
+                        # hub's (the printer may have reused the id after a reboot).
+                        foreign = not is_own_job(seen.name, seen.originating_user, expected)
+                    else:
+                        foreign = await self._printer_forgot(printer, ipp_job_id, expected)
+                    if foreign:
+                        await self._page_runner.end_forgotten(item)
+                        continue
                 # No await between this read and ``resume`` registering the job: a cancel
                 # either landed before (and is passed on) or finds the job active.
                 cancel = self._resuming.pop(UUID(item.job.id), False)
@@ -1378,15 +1387,15 @@ class PrintQueue:
                 await self._page_backstop(item, printer_id)
 
     @staticmethod
-    async def _printer_forgot(printer: PagePrinter, ipp_job_id: int) -> bool:
-        """True only when Get-Job-Attributes says the printer has no such job."""
+    async def _printer_forgot(printer: PagePrinter, ipp_job_id: int, expected_name: str) -> bool:
+        """True when the printer has no such job, or the id now belongs to another job."""
         try:
-            await printer.client.get_job(ipp_job_id)
+            info = await printer.client.get_job(ipp_job_id)
         except IppNotFoundError:
             return True
         except IppError:
             return False
-        return False
+        return not is_own_job(info.name, info.originating_user, expected_name)
 
     async def _process_batch(
         self,

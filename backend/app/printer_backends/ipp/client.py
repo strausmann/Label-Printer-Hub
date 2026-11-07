@@ -51,7 +51,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Self
 from urllib.parse import urlsplit
 
@@ -100,7 +100,15 @@ IPP_VERSION = (1, 1)
 USER_NAME = "label-printer-hub"
 MAX_REASONS = 32
 MAX_JOB_URI_LENGTH = 1023
-JOB_ATTRIBUTES = ("job-id", "job-state", "job-state-reasons", "job-impressions-completed")
+JOB_ATTRIBUTES = (
+    "job-id",
+    "job-state",
+    "job-state-reasons",
+    "job-impressions-completed",
+    "job-name",
+    "job-originating-user-name",
+)
+MAX_JOB_TEXT_LENGTH = 255
 
 _SCHEMES = {"ipp": "http", "ipps": "https", "http": "http", "https": "https"}
 _DEFAULT_IPP_PORT = 631
@@ -177,6 +185,10 @@ class JobInfo:
     state: int
     reasons: list[str]
     impressions_completed: int | None
+    name: str | None = field(default=None, compare=False)
+    """``job-name`` as the printer reports it (bounded); the hub sends a unique one."""
+    originating_user: str | None = field(default=None, compare=False)
+    """``job-originating-user-name`` (bounded); the hub sends ``requesting-user-name``."""
 
 
 def _int(values: list[Value] | None) -> int | None:
@@ -189,6 +201,12 @@ def _reasons(values: list[Value] | None) -> list[str]:
     """Job state reasons that pass the keyword filter of the status mapping, at most 32."""
     out = [k for v in values or [] if isinstance(v, str) and (k := reason_keyword(v)) is not None]
     return out[:MAX_REASONS]
+
+
+def _text(values: list[Value] | None) -> str | None:
+    if values and isinstance(values[0], str):
+        return values[0][:MAX_JOB_TEXT_LENGTH]
+    return None
 
 
 def _first_wins(group: Group) -> dict[str, list[Value]]:
@@ -208,6 +226,8 @@ def _job_info(attrs: dict[str, list[Value]]) -> JobInfo | None:
         state=state,
         reasons=_reasons(attrs.get("job-state-reasons")),
         impressions_completed=_int(attrs.get("job-impressions-completed")),
+        name=_text(attrs.get("job-name")),
+        originating_user=_text(attrs.get("job-originating-user-name")),
     )
 
 
@@ -294,6 +314,8 @@ class IppClient:
         info = _job_info(msg.attrs(Tag.JOB))
         if info is None:
             raise IppBadResponseError("job_without_id_or_state")
+        if info.job_id != job_id:  # an answer about another job is not an answer to this request
+            raise IppBadResponseError("job_id_mismatch")
         return info
 
     async def get_jobs(

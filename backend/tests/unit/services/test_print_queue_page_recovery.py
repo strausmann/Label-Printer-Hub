@@ -26,7 +26,12 @@ from app.services.page_jobs import IppPagePrinter
 from app.services.print_queue import PrintQueue
 from app.services.producers.ipp_status_producer import IppPrinterState
 
-from tests.helpers.fake_ipp_printer import FAKE_URI, FakeIppPrinter, FlakyTransport
+from tests.helpers.fake_ipp_printer import (
+    FAKE_URI,
+    FailingTransport,
+    FakeIppPrinter,
+    FlakyTransport,
+)
 from tests.helpers.page_jobs import RecordingHandler, payload, registered
 
 TEST_TIMEOUT_S = 10.0
@@ -182,6 +187,78 @@ async def test_resume_asks_the_printer_before_tracking(
     assert ops.count("Get-Jobs") == 1
     assert ops.index("Get-Jobs") < ops.index("Get-Job-Attributes")
     assert "Print-Job" not in ops
+
+
+async def test_restart_does_not_adopt_a_foreign_job_that_reuses_the_ipp_job_id(
+    store: JobStore, handler: RecordingHandler
+) -> None:
+    """The printer rebooted while the hub was down and gave the id to another client's job.
+
+    The listed job has the id but not the hub's job name: it is not ours. The hub's job is
+    settled like a job the printer forgot, and nothing is sent to the foreign job.
+    """
+    fake = FakeIppPrinter(job_script=[5, 5, 5])
+    page_id = uuid4()
+    first_run = _side(store, fake, page_id)
+    async with _running(first_run):
+        jid = await first_run.queue.submit_page_job(
+            page_id, payload(), api_key_id=None, source_ip=None
+        )
+        await _tracked_in_db(store, jid)
+        await _until(lambda: handler.names(jid) == ["started"])
+    ipp_id = (await _row(store, jid)).result["ipp_job_id"]
+    fake.reuse_job_id_for_foreign_job(ipp_id)  # the foreign job is printing, state 5
+    fake.received.clear()
+    async with _running(_side(store, fake, page_id)) as second:
+        job = await second.queue.wait_for_job(str(jid), timeout_s=TEST_TIMEOUT_S)
+        await _wait_db(store, jid, DbJobState.FAILED.value)  # the write follows the event
+        await _until(lambda: "ended" in handler.names(jid))
+    assert job.state == JobState.FAILED
+    row = await _row(store, jid)
+    assert row.error is not None and row.error.startswith("interrupted")
+    assert handler.ended(jid)["error_code"] == "interrupted"
+    assert handler.ended(jid)["started"] is True  # as stored
+    assert "Cancel-Job" not in [r.operation for r in fake.received]
+    assert "completed" not in handler.names(jid)
+
+
+async def test_restart_does_not_cancel_a_foreign_job_when_a_cancel_waited(
+    store: JobStore, handler: RecordingHandler
+) -> None:
+    """Printer not listable at recovery: the identity check precedes any Cancel-Job."""
+    fake = FakeIppPrinter(job_script=[5, 5, 5])
+    page_id = uuid4()
+    first_run = _side(store, fake, page_id)
+    async with _running(first_run):
+        jid = await first_run.queue.submit_page_job(
+            page_id, payload(), api_key_id=None, source_ip=None
+        )
+        await _tracked_in_db(store, jid)
+    ipp_id = (await _row(store, jid)).result["ipp_job_id"]
+    fake.reuse_job_id_for_foreign_job(ipp_id)
+    fake.received.clear()
+    transport = FailingTransport(httpx.ASGITransport(app=fake), "Get-Jobs", httpx.ConnectError)
+    async with _running(_side(store, fake, page_id, transport=transport)) as second:
+        await second.queue.cancel(str(jid))
+        await second.queue.wait_for_job(str(jid), timeout_s=TEST_TIMEOUT_S)
+        await _wait_db(store, jid, DbJobState.FAILED.value)
+    assert "Cancel-Job" not in [r.operation for r in fake.received]
+
+
+async def test_restart_still_adopts_its_own_job(store: JobStore, handler: RecordingHandler) -> None:
+    """Counter-case: the id is listed with the hub's own name and user, so it is resumed."""
+    fake = FakeIppPrinter(job_script=[5, 5, 5])
+    page_id = uuid4()
+    first_run = _side(store, fake, page_id)
+    async with _running(first_run):
+        jid = await first_run.queue.submit_page_job(
+            page_id, payload(), api_key_id=None, source_ip=None
+        )
+        await _tracked_in_db(store, jid)
+    fake.job_script = [5, 9]
+    async with _running(_side(store, fake, page_id)) as second:
+        job = await second.queue.wait_for_job(str(jid), timeout_s=TEST_TIMEOUT_S)
+    assert job.state == JobState.COMPLETED
 
 
 # ---------------------------------------------------------------------------- unknown outcome

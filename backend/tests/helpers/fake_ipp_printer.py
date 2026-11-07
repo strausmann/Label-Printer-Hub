@@ -70,6 +70,15 @@ class _Job:
     step: int = 0
     final: int | None = None  # 7 after Cancel-Job
     stopping: int = 0  # polls left that report processing-to-stop-point after Cancel-Job
+    name: str | None = None  # job-name as received
+    user: str | None = None  # requesting-user-name as received (reported as originating user)
+
+
+def _echoable(value: object) -> str | None:
+    """Text the fake may report back: short and cleanly decoded (it never echoes lossy text)."""
+    if isinstance(value, str) and len(value) <= 255 and "\ufffd" not in value:
+        return value
+    return None
 
 
 def _media_size(x: int, y: int) -> Collection:
@@ -124,6 +133,14 @@ class FakeIppPrinter:
     _next_job_id: int = field(default=1, repr=False)
 
     # ------------------------------------------------------------------ script
+
+    def reuse_job_id_for_foreign_job(
+        self, job_id: int, *, name: str = "Someone else's document", user: str = "other-client"
+    ) -> None:
+        """The printer rebooted and gave ``job_id`` to another client's job (ids are reused)."""
+        self._jobs.clear()
+        self._jobs[job_id] = _Job(job_id, name=name, user=user)
+        self._next_job_id = max(self._next_job_id, job_id + 1)
 
     def forget_jobs(self) -> None:
         """The printer rebooted: it no longer knows any job (ids are not reused)."""
@@ -268,7 +285,13 @@ class FakeIppPrinter:
         status = self._submission_status(ops)
         if status > 0x00FF:
             return status, []
-        job = _Job(self._next_job_id)
+        name = next(iter(ops.get("job-name", [])), None)
+        user = next(iter(ops.get("requesting-user-name", [])), None)
+        job = _Job(
+            self._next_job_id,
+            name=_echoable(name),
+            user=_echoable(user),
+        )
         self._next_job_id += 1
         self._jobs[job.job_id] = job
         return status, [Group(Tag.JOB, self._job_attrs(job, include_uri=True))]
@@ -305,6 +328,10 @@ class FakeIppPrinter:
             Attr("job-state-reasons", Tag.KEYWORD, [reasons]),
             Attr("job-impressions-completed", Tag.INTEGER, [impressions]),
         ]
+        if job.name is not None:
+            attrs.append(Attr("job-name", Tag.NAME, [job.name]))
+        if job.user is not None:
+            attrs.append(Attr("job-originating-user-name", Tag.NAME, [job.user]))
         if include_uri:
             attrs.insert(1, Attr("job-uri", Tag.URI, [f"{FAKE_URI}/jobs/{job.job_id}"]))
         return attrs

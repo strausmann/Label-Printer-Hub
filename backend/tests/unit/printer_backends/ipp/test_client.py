@@ -374,6 +374,8 @@ async def test_get_jobs_sends_limit_and_narrow_attributes() -> None:
         "job-state",
         "job-state-reasons",
         "job-impressions-completed",
+        "job-name",
+        "job-originating-user-name",
     ]
     assert fake.received[4].attributes["which-jobs"] == ["completed"]
 
@@ -571,6 +573,8 @@ async def test_get_job_request_bytes() -> None:
         + wire.more(0x44, b"job-state")
         + wire.more(0x44, b"job-state-reasons")
         + wire.more(0x44, b"job-impressions-completed")
+        + wire.more(0x44, b"job-name")
+        + wire.more(0x44, b"job-originating-user-name")
         + wire.END_OF_ATTRIBUTES
     )
     assert rec.bodies == [expected]
@@ -613,6 +617,8 @@ async def test_cancel_and_get_jobs_request_bytes() -> None:
         + wire.more(0x44, b"job-state")
         + wire.more(0x44, b"job-state-reasons")
         + wire.more(0x44, b"job-impressions-completed")
+        + wire.more(0x44, b"job-name")
+        + wire.more(0x44, b"job-originating-user-name")
         + wire.END_OF_ATTRIBUTES
     )
 
@@ -837,3 +843,34 @@ async def test_request_body_decodes_as_the_operation() -> None:
     msg, document = decode(rec.bodies[0])
     assert msg.code == 0x000B
     assert document == b""
+
+
+async def test_get_job_refuses_an_answer_about_another_job() -> None:
+    """The request names job 9; an answer for job 4 is not an answer."""
+    body = (
+        _ok_header(1)
+        + _op_group_response()
+        + bytes([0x02])
+        + wire.attr(0x21, "job-id", wire.i32(4))
+        + wire.attr(0x23, "job-state", wire.i32(9))
+        + wire.END_OF_ATTRIBUTES
+    )
+    client = IppClient(URI, transport=_Recorder(_ipp(body)))
+    with pytest.raises(IppBadResponseError):
+        await client.get_job(9)
+
+
+async def test_get_job_reports_name_and_originating_user() -> None:
+    body = (
+        _ok_header(1)
+        + _op_group_response()
+        + bytes([0x02])
+        + wire.attr(0x21, "job-id", wire.i32(9))
+        + wire.attr(0x23, "job-state", wire.i32(5))
+        + wire.attr(0x42, "job-name", b"Calibration page")
+        + wire.attr(0x42, "job-originating-user-name", b"label-printer-hub")
+        + wire.END_OF_ATTRIBUTES
+    )
+    client = IppClient(URI, transport=_Recorder(_ipp(body)))
+    info = await client.get_job(9)
+    assert (info.name, info.originating_user) == ("Calibration page", "label-printer-hub")

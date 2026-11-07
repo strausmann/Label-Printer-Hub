@@ -16,6 +16,7 @@ import pytest
 from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.printer_backends.ipp.client import IppClient
+from app.printer_backends.ipp.job_attrs import wire_job_name
 from app.services.job_lifecycle import Job, JobState
 from app.services.job_store import MemoryJobStore
 from app.services.page_job_runner import MAX_CONSECUTIVE_POLL_ERRORS, Deferred, PageJobRunner
@@ -172,7 +173,9 @@ async def test_print_job_attributes_and_document_sent(handler: RecordingHandler)
     await env.run(pj)
     sent = next(r for r in env.fake.received if r.operation == "Print-Job")
     assert sent.document.startswith(b"%PDF")
-    assert sent.attributes["job-name"] == ["Calibration page · test v1"]
+    (name,) = sent.attributes["job-name"]
+    assert name == wire_job_name("Calibration page · test v1", pj.job.id)
+    assert name.startswith("Calibration page · test v1 [") and name.endswith("]")
     assert "media-col" in sent.job_attributes
 
 

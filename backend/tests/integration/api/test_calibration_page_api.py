@@ -229,7 +229,9 @@ async def test_post_queues_a_page_job_the_printer_receives(env: _Env) -> None:
     assert sent.attributes["document-format"] == ["application/pdf"]
     [media] = sent.job_attributes["media-col"]
     assert media.members["media-type"] == ["labels"]
-    assert sent.attributes["job-name"] == ["Calibration page · cal-job v1"]
+    from app.printer_backends.ipp.job_attrs import wire_job_name
+
+    assert sent.attributes["job-name"] == [wire_job_name("Calibration page · cal-job v1", job_id)]
     assert pdf_resp.status_code == 200
     assert pdf_resp.content == sent.document  # OC-35: the download is what the job sent
     job = await env.queue.get(job_id)

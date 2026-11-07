@@ -62,7 +62,7 @@ from app.printer_backends.ipp.errors import (
     IppTransportError,
     IppUnreachableError,
 )
-from app.printer_backends.ipp.job_attrs import print_job_attributes
+from app.printer_backends.ipp.job_attrs import is_own_job, print_job_attributes, wire_job_name
 from app.services.job_lifecycle import (
     InvalidStateTransitionError,
     Job,
@@ -138,6 +138,9 @@ class _Active:
     ipp_job_id: int | None = None
     cancel_requested: bool = False
     cancel_sent: bool = False
+    identity_verified: bool = True
+    """False for a resumed job until a poll showed that the printer's job is the hub's own:
+    nothing (Cancel-Job) is sent to the id before that."""
 
     def cancel_pending(self) -> bool:
         """A cancel was asked for and not yet delivered (read across awaits: a method)."""
@@ -237,7 +240,12 @@ class PageJobRunner:
         result = dict(page_job.resume_result or {})
         ipp_job_id = result["ipp_job_id"]
         result.setdefault("started", False)
-        active = _Active(printer=printer, ipp_job_id=ipp_job_id, cancel_requested=cancel_requested)
+        active = _Active(
+            printer=printer,
+            ipp_job_id=ipp_job_id,
+            cancel_requested=cancel_requested,
+            identity_verified=False,
+        )
         self._active[job_id] = active
         printer.own_job_ids.add(ipp_job_id)
         try:
@@ -291,7 +299,10 @@ class PageJobRunner:
             await self._cancelled(page_job)
             return
         ops, job_attrs = print_job_attributes(
-            summary, media=payload.media, tray=payload.tray, job_name=payload.job_name
+            summary,
+            media=payload.media,
+            tray=payload.tray,
+            job_name=wire_job_name(payload.job_name, job_id),
         )
         try:
             accepted: PrintAccepted = await active.printer.client.print_job(pdf, job_attrs, ops)
@@ -341,7 +352,7 @@ class PageJobRunner:
         unusable = 0
         while True:
             await self._sleep(delay)
-            if active.cancel_pending():
+            if active.cancel_pending() and active.identity_verified:
                 await self._send_cancel(job_id, active)
             try:
                 info = await client.get_job(ipp_job_id)
@@ -364,6 +375,18 @@ class PageJobRunner:
                     return
                 delay = self._backoff(delay)
                 continue
+            if not is_own_job(
+                info.name, info.originating_user, wire_job_name(page_job.payload.job_name, job_id)
+            ):
+                # The printer reused the id for another client's job (it rebooted while the
+                # hub was down): not ours. Same end as a job the printer forgot.
+                _log.warning("Page job %s: the printer's job %s is not ours", job_id, ipp_job_id)
+                await self._fail(page_job, result, "interrupted", started=result["started"])
+                return
+            if not active.identity_verified:
+                active.identity_verified = True
+                if active.cancel_pending():
+                    await self._send_cancel(job_id, active)
             unusable = 0
             delay = self._poll_interval_s
             job.at_printer_reasons = list(info.reasons)

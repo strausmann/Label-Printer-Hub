@@ -25,9 +25,36 @@ _SIZES: dict[str, tuple[int, int, str]] = {
 }
 
 
+def _cut(name: str, max_bytes: int) -> str:
+    return name.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore")
+
+
 def _job_name(name: str) -> str:
     """Cut to 255 octets on a character boundary."""
-    return name.encode("utf-8")[:MAX_JOB_NAME_BYTES].decode("utf-8", errors="ignore")
+    return _cut(name, MAX_JOB_NAME_BYTES)
+
+
+def wire_job_name(name: str, hub_job_id: object) -> str:
+    """The ``job-name`` the hub sends: the readable name plus a token of the hub's own job id.
+
+    After a restart a printer may have reused the numeric IPP job id for another client's
+    job. The token is what tells the hub's job from a foreign one (restart recovery and
+    tracking compare it); the readable part is cut first when the name is too long.
+    """
+    token = f" [{str(hub_job_id).replace('-', '')[:12]}]"
+    room = MAX_JOB_NAME_BYTES - len(token.encode("utf-8"))
+    return _cut(name, room) + token
+
+
+def is_own_job(reported_name: str | None, reported_user: str | None, expected_name: str) -> bool:
+    """False when the printer reports a job-name or originating user that is not the hub's.
+
+    An attribute the printer does not report cannot disprove anything and is not held
+    against the job (``job-name`` is mandatory in RFC 8011, so a conforming printer reports it).
+    """
+    if reported_name is not None and reported_name != expected_name:
+        return False
+    return reported_user is None or reported_user == USER_NAME
 
 
 def print_job_attributes(
