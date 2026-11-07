@@ -12,10 +12,12 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import app.models  # noqa: F401 — registers all models with SQLModel.metadata
+import pytest
 import pytest_asyncio
 from app.db.engine import _apply_pragmas
 from app.models.sheet import SheetCell
 from app.page_render.transform import Deviation
+from app.sheets import reservation as rv
 from app.sheets import sheet_service as ss
 from app.sheets import type_service as ts
 from app.sheets.errors import CellsTakenError
@@ -57,6 +59,23 @@ FIELDS = ts.TypeFields(
     allow_qr=None,
 )
 MARGIN = MarginContext(hw_top_hmm=None, deviation=Deviation(), scan_payload=lambda c: f"sheet:{c}")
+
+
+@pytest.fixture(autouse=True)
+def no_replan(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """The write lock serialises the requests, so the IntegrityError re-plan is never needed.
+
+    Without this the re-plan would rescue a missing lock and the tests would still pass.
+    """
+    taken: list[int] = []
+    real = rv._InsertConflictError.__init__
+
+    def counting(self: Any, *args: Any, **kwargs: Any) -> None:
+        taken.append(1)
+        real(self, *args, **kwargs)
+
+    monkeypatch.setattr(rv._InsertConflictError, "__init__", counting)
+    return taken
 
 
 @pytest_asyncio.fixture
@@ -109,13 +128,14 @@ def cells_of(pages: list[ReservedPage]) -> set[int]:
 
 
 async def test_parallel_first_free_never_overlap(
-    factory: async_sessionmaker[AsyncSession],
+    factory: async_sessionmaker[AsyncSession], no_replan: list[int]
 ) -> None:
     for _ in range(20):
         code = await new_sheet(factory, used=8)
         a, b = await asyncio.gather(one(factory, code, 20), one(factory, code, 20))
         assert cells_of(a).isdisjoint(cells_of(b))
         assert cells_of(a) | cells_of(b) == set(range(9, 49))
+        assert no_replan == []
         async with factory() as s:
             rows = (await s.execute(select(SheetCell))).scalars().all()
         # every cell of the sheet appears once: used ones and the 40 reserved ones
@@ -123,7 +143,7 @@ async def test_parallel_first_free_never_overlap(
 
 
 async def test_parallel_explicit_vs_first_free(
-    factory: async_sessionmaker[AsyncSession],
+    factory: async_sessionmaker[AsyncSession], no_replan: list[int]
 ) -> None:
     outcomes = set()
     for _ in range(20):
@@ -145,10 +165,11 @@ async def test_parallel_explicit_vs_first_free(
             assert cells_of(free) == {11, 12}  # re-planned on the next free cells
             outcomes.add("explicit_won")
     assert outcomes  # either order is allowed; overlap never is
+    assert no_replan == []
 
 
 async def test_parallel_margin_id_is_drawn_once(
-    factory: async_sessionmaker[AsyncSession],
+    factory: async_sessionmaker[AsyncSession], no_replan: list[int]
 ) -> None:
     """C26: no ``jobs`` row exists yet, the other request's reserved cells say it is in flight."""
     for _ in range(10):
@@ -156,6 +177,7 @@ async def test_parallel_margin_id_is_drawn_once(
         a, b = await asyncio.gather(one(factory, code, 2), one(factory, code, 2))
         assert [p.margin_id for p in a + b].count(True) == 1
         assert cells_of(a).isdisjoint(cells_of(b))
+    assert no_replan == []
 
 
 async def test_parallel_new_sheets_get_distinct_codes_and_counter_steps(

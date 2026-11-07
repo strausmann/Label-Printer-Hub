@@ -28,7 +28,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sheet import Sheet, SheetCell, SheetType, SheetTypeVersion
 from app.printer_backends.ipp.attributes import Margins
-from app.repositories import sheet_types as types_repo
 from app.repositories import sheets as repo
 from app.services.event_bus import EventBus
 from app.sheets.errors import (
@@ -36,15 +35,12 @@ from app.sheets.errors import (
     InvalidPlacementsError,
     PlanChangedError,
     SheetNotFoundError,
-    SheetTypeArchivedError,
     SheetTypeMismatchError,
-    SheetTypeNotFoundError,
-    SheetTypeVersionNotFoundError,
 )
 from app.sheets.events import publish_sheet_updated
 from app.sheets.geometry import cell_count
 from app.sheets.planner import MarginContext, PlacementIn, Plan, SheetView, plan
-from app.sheets.sheet_service import allocate_code
+from app.sheets.sheet_service import create_sheet_locked
 from app.sheets.text import log_value
 from app.sheets.type_service import version_geometry, write_transaction
 
@@ -192,27 +188,15 @@ async def load_sheet_view(session: AsyncSession, code: str) -> SheetView:
 
 async def _create_sheet_view(session: AsyncSession, new: NewSheetIn, actor: str) -> SheetView:
     """Create a sheet (counter step included) in the caller's transaction and view it."""
-    sheet_type = await repo.get_type_by_key(session, new.type_key)
-    if sheet_type is None:
-        raise SheetTypeNotFoundError()
-    if sheet_type.archived_at is not None:
-        raise SheetTypeArchivedError()
-    version = (
-        await types_repo.current_version(session, sheet_type.id)
-        if new.version is None
-        else await types_repo.get_version(session, sheet_type.id, new.version)
-    )
-    if version is None:
-        raise SheetTypeVersionNotFoundError()
-    sheet = Sheet(
-        code=await allocate_code(session, sheet_type.prefix),
-        type_id=sheet_type.id,
-        type_version_id=version.id,
+    sheet, sheet_type, version = await create_sheet_locked(
+        session,
+        type_key=new.type_key,
+        version=new.version,
         id_placement=new.id_placement,
-        created_by=actor,
+        marks={},
+        note=None,
+        actor=actor,
     )
-    session.add(sheet)
-    await session.flush()
     return SheetView(
         code=sheet.code,
         type_key=sheet_type.key,
@@ -248,6 +232,17 @@ class _Touched:
     free: int
     changed: list[int]
     state: str = "active"
+
+
+def _publish_all(bus: EventBus | None, touched: Sequence[_Touched]) -> None:
+    """Publish after the commit. A failing subscriber must not hide a committed reservation."""
+    for t in touched:
+        try:
+            publish_sheet_updated(
+                bus, code=t.code, free=t.free, total=t.total, changed=t.changed, state=t.state
+            )
+        except Exception:
+            logger.exception("sheet.updated for %s could not be published", log_value(t.code))
 
 
 def _expected_of(pl: Plan, new_views: set[int]) -> list[ExpectedPage]:
@@ -422,10 +417,7 @@ async def reserve(
             pages, touched = await _attempt(session, **kwargs)
         except _InsertConflictError as again:
             raise CellsTakenError(again.cells) from None
-    for t in touched:
-        publish_sheet_updated(
-            bus, code=t.code, free=t.free, total=t.total, changed=t.changed, state=t.state
-        )
+    _publish_all(bus, touched)
     logger.info("reserved %d cells on %d pages", sum(len(p.assignments) for p in pages), len(pages))
     return pages
 
@@ -454,7 +446,7 @@ async def release(session: AsyncSession, job_id: UUID, *, bus: EventBus | None =
             )
             if sheet is None or version is None:  # foreign keys make this unreachable
                 continue
-            total = version.cols * version.rows
+            total = cell_count(version_geometry(version))
             remaining = len(await repo.cells_of(session, sheet_id))
             touched.append(
                 _Touched(
@@ -466,10 +458,7 @@ async def release(session: AsyncSession, job_id: UUID, *, bus: EventBus | None =
                 )
             )
         await session.commit()
-    for t in touched:
-        publish_sheet_updated(
-            bus, code=t.code, free=t.free, total=t.total, changed=t.changed, state=t.state
-        )
+    _publish_all(bus, touched)
     if freed:
         logger.info("released %d reserved cells of job %s", len(freed), log_value(str(job_id)))
     return sorted(freed)

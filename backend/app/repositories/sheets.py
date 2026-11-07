@@ -101,16 +101,6 @@ async def cells_by_ref(
     return [(code, cell) for code, cell in result.all()]
 
 
-async def has_hub_cell(session: AsyncSession, sheet_id: UUID) -> bool:
-    """Whether the sheet holds an ID label cell of the hub in any state (OC-40)."""
-    result = await session.execute(
-        select(
-            exists().where(col(SheetCell.sheet_id) == sheet_id, col(SheetCell.source) == "hub")
-        ).execution_options(**_FRESH)
-    )
-    return bool(result.scalar_one())
-
-
 async def has_unattached_reservation(session: AsyncSession, sheet_id: UUID) -> bool:
     """Whether a ``reserved`` cell of the sheet points at a job that has no ``jobs`` row yet.
 

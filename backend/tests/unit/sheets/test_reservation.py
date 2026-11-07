@@ -20,6 +20,7 @@ from app.sheets.errors import (
     CellsTakenError,
     MarginTooSmallError,
     PlanChangedError,
+    SheetDiscardedError,
     SheetTypeArchivedError,
     SheetTypeMismatchError,
 )
@@ -435,3 +436,74 @@ async def test_id_only_job_with_no_items(session: AsyncSession) -> None:
     pages = await do_reserve(session, [new("cell")], 0)
     assert pages[0].id_cell == 1
     assert [a.cell for a in pages[0].assignments] == [1]
+
+
+async def test_second_print_does_not_plan_another_id_cell(session: AsyncSession) -> None:
+    """I1: an ID cell that is still reserved counts as the sheet's ID in flight (OC-40)."""
+    first = (await do_reserve(session, [new("cell")], 2))[0]
+    assert first.id_cell == 1
+
+    second = (await do_reserve(session, [existing(first.sheet_code)], 2))[0]
+
+    assert second.id_cell is None
+    assert [a.cell for a in second.assignments] == [4, 5]
+    assert not any(a.source == "hub" for a in second.assignments)
+
+
+async def test_reserve_onto_discarded_sheet_is_refused(session: AsyncSession) -> None:
+    """I2: the sheet state is read under the lock and the planner refuses a discarded sheet."""
+    code = await make_sheet(session)
+    await ss.discard_sheet(session, code, actor="tester")
+
+    with pytest.raises(SheetDiscardedError):
+        await do_reserve(session, [existing(code)], 2)
+
+    assert await cells(session) == []
+
+
+async def test_plan_changed_when_only_the_id_cell_differs(session: AsyncSession) -> None:
+    """I3: ``expected`` that omits or moves the ID cell is a different plan."""
+    for wrong_id in (None, 2):
+        with pytest.raises(PlanChangedError) as err:
+            await do_reserve(
+                session,
+                [new("cell", count=2)],
+                2,
+                expected=[ExpectedPage("new", [2, 3], wrong_id)],
+            )
+        assert err.value.detail["plan"] == [  # type: ignore[index]
+            {"sheet": "new", "cells": [2, 3], "id_cell": 1}
+        ]
+    assert await cells(session) == []
+    # counter-check: the true plan, ID cell included, is accepted
+    pages = await do_reserve(
+        session, [new("cell", count=2)], 2, expected=[ExpectedPage("new", [2, 3], 1)]
+    )
+    assert pages[0].id_cell == 1
+
+
+async def test_integrity_error_with_mixed_placements_is_not_replanned(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Minor 1: one explicit placement makes the whole request explicit; no re-plan."""
+    code = await make_sheet(session)
+    calls = _fail_first_cell_flush(monkeypatch, 5)
+
+    with pytest.raises(CellsTakenError):
+        await do_reserve(session, [existing(code, cells=[7, 8]), new(count=1)], 3)
+
+    assert calls == [1]
+
+
+async def test_failing_event_bus_does_not_lose_the_reservation(session: AsyncSession) -> None:
+    """Minor 6: the rows are committed, so the caller must still get its pages."""
+    code = await make_sheet(session)
+
+    class Broken(FakeBus):
+        def publish(self, channel: str, event: BusEvent) -> None:
+            raise RuntimeError("subscriber exploded")
+
+    pages = await do_reserve(session, [existing(code)], 2, bus=Broken())
+
+    assert [a.cell for a in pages[0].assignments] == [1, 2]
+    assert len([c for c in await cells(session) if c.state == "reserved"]) == 2

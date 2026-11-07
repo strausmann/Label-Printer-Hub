@@ -210,6 +210,50 @@ async def get_sheet(session: AsyncSession, code: str) -> SheetDetail:
     return await _detail(session, await _sheet(session, code))
 
 
+async def create_sheet_locked(
+    session: AsyncSession,
+    *,
+    type_key: str,
+    version: int | None,
+    id_placement: str,
+    marks: dict[int, str],
+    note: str | None,
+    actor: str,
+) -> tuple[Sheet, SheetType, SheetTypeVersion]:
+    """Create a sheet pinned to a version in the caller's write transaction (C8).
+
+    The caller holds the sheet write lock and commits; ``marks`` and ``note`` are already
+    sanitised. The counter step happens here, so a rollback un-burns the code.
+    """
+    t = await repo.get_type_by_key(session, type_key)
+    if t is None:
+        raise SheetTypeNotFoundError()
+    if t.archived_at is not None:
+        raise SheetTypeArchivedError()
+    v = (
+        await types_repo.current_version(session, t.id)
+        if version is None
+        else await types_repo.get_version(session, t.id, version)
+    )
+    if v is None:  # the type exists, so only the pinned version can be missing
+        raise SheetTypeVersionNotFoundError()
+    _check_range(list(marks), _total(v))
+    sheet = Sheet(
+        code=await allocate_code(session, t.prefix),
+        type_id=t.id,
+        type_version_id=v.id,
+        id_placement=id_placement,
+        note=note,
+        created_by=actor,
+        last_used_at=_now() if marks else None,
+    )
+    session.add(sheet)
+    await session.flush()
+    _add_hand_marks(session, sheet.id, marks, actor)
+    await session.flush()
+    return sheet, t, v
+
+
 async def create_sheet(
     session: AsyncSession,
     *,
@@ -227,32 +271,15 @@ async def create_sheet(
     marks = _clean_marks(used_cells)
     clean_note = None if note is None else _clean("note", note, NOTE_MAX, multiline=True) or None
     async with write_transaction(session):
-        t = await repo.get_type_by_key(session, type_key)
-        if t is None:
-            raise SheetTypeNotFoundError()
-        if t.archived_at is not None:
-            raise SheetTypeArchivedError()
-        v = (
-            await types_repo.current_version(session, t.id)
-            if version is None
-            else await types_repo.get_version(session, t.id, version)
-        )
-        if v is None:  # the type exists, so only the pinned version can be missing
-            raise SheetTypeVersionNotFoundError()
-        _check_range(list(marks), _total(v))
-        sheet = Sheet(
-            code=await allocate_code(session, t.prefix),
-            type_id=t.id,
-            type_version_id=v.id,
+        sheet, _t, _v = await create_sheet_locked(
+            session,
+            type_key=type_key,
+            version=version,
             id_placement=id_placement,
+            marks=marks,
             note=clean_note,
-            created_by=actor,
-            last_used_at=_now() if marks else None,
+            actor=actor,
         )
-        session.add(sheet)
-        await session.flush()
-        _add_hand_marks(session, sheet.id, marks, actor)
-        await session.flush()
         detail = await _detail(session, sheet)
         await session.commit()
     logger.info("sheet %s created (%d cells used)", log_value(sheet.code), len(marks))
