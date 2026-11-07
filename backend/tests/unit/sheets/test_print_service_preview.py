@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import random
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -24,17 +25,18 @@ from app.page_render.transform import Deviation
 from app.printer_backends.ipp.attributes import IppStatusRecord, Margins
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
-from app.schemas.print_request import PrintLookupRequest, RawLabelData
+from app.schemas.print_request import PrintLookupRequest
 from app.schemas.sheet_print import (
     NewSheetModel,
     PlacementInModel,
     SheetItem,
     SheetPrintRequest,
+    SheetRawLabelData,
 )
 from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
 from app.services.lookup_service import LookupFailedError, UnknownAppError
 from app.services.producers.ipp_status_producer import _empty_summary, _offline_record
-from app.sheets import print_service
+from app.sheets import cell_render, print_service
 from app.sheets import sheet_service as ss
 from app.sheets import type_service as ts
 from app.sheets.cell_render import DEFAULT_CELL_RENDERER, content_box
@@ -115,7 +117,7 @@ def raw(i: int, ct: ContentType = ContentType.QR_TWO_LINES, **kw: Any) -> SheetI
         "qr_payload": f"https://r.example.invalid/{i}",
     }
     fields.update(kw)
-    return SheetItem(content_type=ct, data=RawLabelData(**fields), **item_keys)
+    return SheetItem(content_type=ct, data=SheetRawLabelData(**fields), **item_keys)
 
 
 def req(items: list[SheetItem], placements: list[PlacementInModel], **kw: Any) -> SheetPrintRequest:
@@ -378,7 +380,7 @@ async def test_preview_flags_truncated_and_hardware_margin_cells(session: AsyncS
 async def test_preview_content_mismatch_names_the_item(session: AsyncSession) -> None:
     printer = await make_printer(session, record())
     code = await make_sheet(session)
-    bad = SheetItem(content_type=ContentType.QR_TWO_LINES, data=RawLabelData(primary_id="X"))
+    bad = SheetItem(content_type=ContentType.QR_TWO_LINES, data=SheetRawLabelData(primary_id="X"))
 
     with pytest.raises(ItemContentMismatchError) as err:
         await run_preview(session, printer, req([raw(0), raw(1), bad], [on(code)]))
@@ -403,7 +405,7 @@ async def test_preview_draws_a_placeholder_for_a_qr_too_fine_for_150_dpi(
     monkeypatch.setattr(DEFAULT_CELL_RENDERER, "render", spy, raising=False)
     printer = await make_printer(session, record(dpis=[600]))
     code = await make_sheet(session)
-    dense = raw(0, qr_payload="https://r.example.invalid/" + "x" * 900)
+    dense = raw(0, qr_payload="".join(random.Random(3).choices("äöüßéñ", k=512)))
 
     out = await run_preview(session, printer, req([dense], [on(code)]))
 
@@ -421,13 +423,12 @@ async def test_preview_draws_a_placeholder_for_a_qr_too_fine_for_150_dpi(
 
 
 async def test_preview_refuses_a_qr_no_resolution_can_draw(session: AsyncSession) -> None:
-    printer = await make_printer(session, record(dpis=[600]))
+    printer = await make_printer(session, record(dpis=[200]))  # 512 emoji need a finer grid
     code = await make_sheet(session)
+    emoji = "".join(random.Random(4).choices("😀😁😂🤣😃😄", k=512))
 
     with pytest.raises(ItemContentMismatchError) as err:
-        await run_preview(
-            session, printer, req([raw(0), raw(1, qr_payload="x" * 6000)], [on(code)])
-        )
+        await run_preview(session, printer, req([raw(0), raw(1, qr_payload=emoji)], [on(code)]))
 
     assert err.value.detail is not None and err.value.detail["item_index"] == 1
     assert err.value.detail["missing_fields"] == ["qr_payload"]
@@ -888,11 +889,11 @@ async def test_resolve_items_default_source_and_purpose_chain() -> None:
         raw(0),  # purpose from the title
         SheetItem(
             content_type=ContentType.QR_ONLY,
-            data=RawLabelData(qr_payload="https://x.example.invalid/1", primary_id="ONLY-ID"),
+            data=SheetRawLabelData(qr_payload="https://x.example.invalid/1", primary_id="ONLY-ID"),
         ),
         SheetItem(
             content_type=ContentType.QR_ONLY,
-            data=RawLabelData(qr_payload="https://x.example.invalid/2"),
+            data=SheetRawLabelData(qr_payload="https://x.example.invalid/2"),
         ),
     ]
 
@@ -1057,7 +1058,7 @@ async def test_public_margin_payload_builder_matches_what_the_preview_draws(
 
 
 def test_qr_module_cache_never_holds_an_oversized_payload() -> None:
-    cache = print_service._qr_modules_cached
+    cache = cell_render._qr_version_cached
     cache.cache_clear()
 
     assert print_service._qr_modules("x" * 5000) is None
@@ -1065,7 +1066,7 @@ def test_qr_module_cache_never_holds_an_oversized_payload() -> None:
 
 
 def test_qr_module_cache_keeps_a_normal_payload() -> None:
-    cache = print_service._qr_modules_cached
+    cache = cell_render._qr_version_cached
     cache.cache_clear()
     payload = "https://r.example.invalid/1"
 
@@ -1074,6 +1075,144 @@ def test_qr_module_cache_keeps_a_normal_payload() -> None:
 
     assert first == second and first is not None
     assert (cache.cache_info().currsize, cache.cache_info().hits) == (1, 1)
+
+
+def test_qr_module_count_is_found_without_building_the_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import qrcode.main
+
+    def boom(self: Any, *a: Any, **k: Any) -> None:
+        raise AssertionError("the matrix must not be built to learn the symbol size")
+
+    monkeypatch.setattr(qrcode.main.QRCode, "make", boom)
+    cell_render._qr_version_cached.cache_clear()
+
+    assert print_service._qr_modules("https://r.example.invalid/1") is not None
+
+
+def test_qr_module_count_equals_the_symbol_build_qr_makes() -> None:
+    import random
+    import string
+
+    import qrcode
+    import qrcode.constants
+
+    rnd = random.Random(20261107)
+    alphabets = [
+        string.digits,
+        string.ascii_uppercase + string.digits + " $%*+-./:",
+        string.ascii_letters + string.digits + "/:.-_?=&%",
+        "äöüß€ñ中文 " + string.ascii_letters,
+    ]
+    for _ in range(2000):
+        alphabet = rnd.choice(alphabets)
+        payload = "".join(rnd.choices(alphabet, k=rnd.randint(1, 512)))
+        qr = qrcode.QRCode(
+            version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, border=4
+        )
+        qr.add_data(payload)
+        qr.make(fit=True)
+        assert print_service._qr_modules(payload) == len(qr.get_matrix()) - 8, payload
+
+
+def test_the_placeholder_hatch_stays_inside_the_qr_square() -> None:
+    image = Image.new("1", (300, 100), 1)
+    for y in range(100):
+        image.putpixel((130, y), 0)  # text just right of a 100 px QR square
+    before = image.copy()
+
+    print_service._qr_placeholder(image, 100)
+
+    outside = (100, 0, 300, 100)
+    assert list(image.crop(outside).getdata()) == list(before.crop(outside).getdata())
+    assert sum(1 for v in image.crop((0, 0, 100, 100)).getdata() if v == 0) > 300  # hatched
+
+
+async def test_a_lookup_qr_payload_over_512_characters_is_refused_with_its_index() -> None:
+    class LongPayload(FakeLookup):
+        async def lookup(self, source_app: str, identifier: str) -> LabelData:
+            label = await super().lookup(source_app, identifier)
+            if identifier == "2":
+                return label.model_copy(update={"qr_payload": "https://g/" + "x" * 600})
+            return label
+
+    with pytest.raises(ItemContentMismatchError) as err:
+        await resolve_items([grocy(1), grocy(2)], LongPayload())  # type: ignore[arg-type]
+
+    assert err.value.detail == {"item_index": 1, "missing_fields": ["qr_payload"]}
+
+
+def test_a_raw_qr_payload_is_capped_at_512_characters() -> None:
+    ok = raw(0, qr_payload="x" * 512)
+    assert ok.data is not None and len(ok.data.qr_payload or "") == 512
+
+    with pytest.raises(ValueError, match="qr_payload"):
+        raw(0, qr_payload="x" * 513)
+
+
+async def test_preview_skips_the_qr_mask_search_but_the_job_renderer_keeps_it(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import qrcode.main
+    from app.sheets.cell_render import build_qr
+
+    searched: list[int] = []
+    original = qrcode.main.QRCode.best_mask_pattern
+
+    def counting(self: Any) -> int:
+        searched.append(1)
+        return original(self)
+
+    monkeypatch.setattr(qrcode.main.QRCode, "best_mask_pattern", counting)
+    printer = await make_printer(session, record())
+    code = await make_sheet(session)
+
+    await run_preview(session, printer, req([raw(0), raw(1)], [on(code)]))
+    assert searched == []  # a picture does not need the best of eight masks
+
+    assert build_qr("https://r.example.invalid/1", 200) is not None
+    assert searched == [1]  # what a job prints still does
+
+
+def test_build_qr_draws_the_same_pixels_as_the_library_image_without_its_slow_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import random
+    import string
+
+    import qrcode
+    import qrcode.constants
+    import qrcode.main
+    from app.sheets.cell_render import build_qr
+
+    rnd = random.Random(7)
+    payloads = [
+        "".join(rnd.choices(string.ascii_letters + string.digits + "/:.-_", k=rnd.randint(1, 400)))
+        for _ in range(25)
+    ]
+
+    def reference(payload: str, edge_px: int) -> Image.Image:
+        qr = qrcode.QRCode(
+            version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, border=4
+        )
+        qr.add_data(payload)
+        qr.make(fit=True)
+        qr.box_size = edge_px // len(qr.get_matrix())
+        symbol = qr.make_image(fill_color="black", back_color="white").convert("1")
+        canvas = Image.new("1", (edge_px, edge_px), 1)
+        canvas.paste(symbol, ((edge_px - symbol.width) // 2, (edge_px - symbol.height) // 2))
+        return canvas
+
+    expected = [reference(p, 425) for p in payloads]
+
+    def boom(self: Any, *a: Any, **k: Any) -> None:
+        raise AssertionError("the library's per-module drawing is the slow path")
+
+    monkeypatch.setattr(qrcode.main.QRCode, "make_image", boom)
+    for payload, want in zip(payloads, expected, strict=True):
+        got = build_qr(payload, 425)
+        assert got is not None and got.tobytes() == want.tobytes()
 
 
 def test_an_item_cannot_claim_the_sheet_id_source() -> None:

@@ -2797,7 +2797,7 @@ export interface components {
          */
         SheetItem: {
             content_type: components["schemas"]["ContentType"];
-            data?: components["schemas"]["RawLabelData"] | null;
+            data?: components["schemas"]["SheetRawLabelData"] | null;
             lookup?: components["schemas"]["PrintLookupRequest"] | null;
             /** Purpose */
             purpose?: string | null;
@@ -2833,6 +2833,28 @@ export interface components {
             placements: components["schemas"]["PlacementInModel"][];
             /** Tray */
             tray?: string | null;
+        };
+        /**
+         * SheetRawLabelData
+         * @description Raw label data of a sheet item: the same fields, with a bounded QR payload.
+         */
+        SheetRawLabelData: {
+            /**
+             * Items
+             * @default []
+             */
+            items: components["schemas"]["LabelDataItem"][];
+            /** Primary Id */
+            primary_id?: string | null;
+            /** Qr Payload */
+            qr_payload?: string | null;
+            /**
+             * Secondary
+             * @default []
+             */
+            secondary: string[];
+            /** Title */
+            title?: string | null;
         };
         /** SheetRead */
         SheetRead: {

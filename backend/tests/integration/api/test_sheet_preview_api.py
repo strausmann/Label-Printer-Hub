@@ -371,3 +371,19 @@ async def test_openapi_documents_the_route_and_its_error_envelope(
     assert not batch["responses"]["422"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/SheetApiErrorResponse"
     )
+
+
+async def test_a_513_character_qr_payload_is_refused_by_path_only(
+    api_client_with_seed: httpx.AsyncClient, reader: dict[str, str]
+) -> None:
+    pid, _ = await _printer()
+    code = await _sheet()
+    body = _body(code)
+    body["items"][2]["data"]["qr_payload"] = SENTINEL + "x" * 600
+
+    resp = await api_client_with_seed.post(_url(pid), json=body, headers=reader)
+
+    assert resp.status_code == 422
+    assert _err(resp)["error_code"] == "invalid_request"
+    assert _err(resp)["error_detail"] == {"errors": ["items.2.data.qr_payload"]}
+    assert SENTINEL not in resp.text

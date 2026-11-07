@@ -19,6 +19,7 @@ from app.sheets.exchange import GeometryMm
 from app.sheets.naming import KEY_PATTERN
 
 __all__ = [
+    "QR_PAYLOAD_MAX",
     "ExpectedPageModel",
     "NewSheetModel",
     "PlacementInModel",
@@ -28,12 +29,15 @@ __all__ = [
     "SheetItem",
     "SheetPreview",
     "SheetPrintRequest",
+    "SheetRawLabelData",
 ]
 
 MAX_ITEMS = 500
 MAX_PLACEMENTS = 50
 MAX_CELLS = 400
 TEXT_MAX = 120
+
+QR_PAYLOAD_MAX = 512  # keeps a preview's cost bounded; a scan URL is far shorter
 
 _Cell = Annotated[int, Field(ge=1, le=MAX_CELLS)]
 _SOURCE_PATTERN = r"^[a-z][a-z0-9_-]{0,31}$"
@@ -42,6 +46,12 @@ RESERVED_SOURCE = "hub"  # the source of the sheet ID label (a cell with it coun
 
 class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class SheetRawLabelData(RawLabelData):
+    """Raw label data of a sheet item: the same fields, with a bounded QR payload."""
+
+    qr_payload: str | None = Field(default=None, max_length=QR_PAYLOAD_MAX)
 
 
 class SheetItem(_Body):
@@ -53,7 +63,7 @@ class SheetItem(_Body):
     """
 
     content_type: ContentType
-    data: RawLabelData | None = None
+    data: SheetRawLabelData | None = None
     lookup: PrintLookupRequest | None = None
     purpose: str | None = Field(default=None, max_length=TEXT_MAX)
     source: str | None = Field(default=None, pattern=_SOURCE_PATTERN)

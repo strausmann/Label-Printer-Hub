@@ -25,6 +25,7 @@ from ``app.services.layout_engine``), ``map_content_type`` and ``build_qr``.
 from __future__ import annotations
 
 import math
+from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Final, Protocol
@@ -44,7 +45,9 @@ from app.sheets.text import sanitise_text
 
 __all__ = [
     "DEFAULT_CELL_RENDERER",
+    "MAX_QR_CHARS",
     "MIN_CAP_HEIGHT_MM",
+    "PREVIEW_QR_MASK",
     "REQUIRED_FIELDS",
     "BoxHmm",
     "CellImage",
@@ -59,6 +62,7 @@ __all__ = [
     "min_font_px",
     "qr_edge_px",
     "qr_fits",
+    "qr_version",
 ]
 
 MIN_CAP_HEIGHT_MM: Final = 1.6
@@ -147,6 +151,37 @@ def map_content_type(ct: ContentType, allow_qr: bool) -> tuple[ContentType, bool
     return mapped, mapped is not ct
 
 
+MAX_QR_CHARS: Final = 4296  # the most any QR symbol holds; a longer payload can never fit
+
+
+def qr_version(payload: str) -> int | None:
+    """The QR version ``make(fit=True)`` would pick for ``payload`` (error correction M), or
+    ``None`` if no symbol holds it. A payload longer than ``MAX_QR_CHARS`` is answered here and
+    never reaches the cache, so every cache key is at most that long."""
+    if len(payload) > MAX_QR_CHARS:
+        return None
+    return _qr_version_cached(payload)
+
+
+@lru_cache(maxsize=512)
+def _qr_version_cached(payload: str) -> int | None:
+    """Cached; the size search is the first of the two encodings a symbol costs, and the
+    preview asks it twice (can it be drawn, then draw it). It is ``best_fit`` alone, which is
+    what ``make(fit=True)`` starts with, so the version is exactly the library's."""
+    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=0)
+    try:
+        qr.add_data(payload)
+        return int(qr.best_fit())
+    except (qrcode.exceptions.DataOverflowError, ValueError):
+        return None
+
+
+PREVIEW_QR_MASK: ContextVar[int | None] = ContextVar("preview_qr_mask", default=None)
+"""When set, ``build_qr`` uses this mask instead of searching the best of eight. The preview sets
+it (a picture does not need the best mask, and the search is most of the cost of a QR); a job
+never does, so what is printed keeps the best mask."""
+
+
 def build_qr(payload: str, edge_px: int) -> Image.Image | None:
     """QR in an ``edge_px`` square, mode ``"1"``; ``None`` if it cannot fit.
 
@@ -154,22 +189,34 @@ def build_qr(payload: str, edge_px: int) -> Image.Image | None:
     module quiet zone lies inside the square; the symbol is centred. A module below one pixel,
     or a payload larger than any QR symbol holds, returns ``None``.
     """
+    version = qr_version(payload)
+    if version is None:
+        return None
     qr = qrcode.QRCode(
-        version=None,
+        version=version,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
         border=_QUIET_MODULES,
+        mask_pattern=PREVIEW_QR_MASK.get(),
     )
     try:
         qr.add_data(payload)
-        qr.make(fit=True)
+        qr.make(fit=False)  # the version is known: no second size search
     except (qrcode.exceptions.DataOverflowError, ValueError):
         return None
     modules = len(qr.get_matrix()) - 2 * _QUIET_MODULES
     box_size = edge_px // (modules + 2 * _QUIET_MODULES)
     if box_size < 1:
         return None
-    qr.box_size = box_size
-    symbol = qr.make_image(fill_color="black", back_color="white").convert("1")
+    # The library draws every module with its own rectangle call (thousands per symbol). The
+    # matrix is the same information: one pixel per module, enlarged without resampling.
+    matrix = qr.get_matrix()
+    side = len(matrix)
+    flat = bytes(0 if dark else 255 for row in matrix for dark in row)
+    symbol = (
+        Image.frombytes("L", (side, side), flat)
+        .resize((side * box_size, side * box_size), Image.Resampling.NEAREST)
+        .convert("1")
+    )
     canvas = Image.new("1", (edge_px, edge_px), 1)
     canvas.paste(symbol, ((edge_px - symbol.width) // 2, (edge_px - symbol.height) // 2))
     return canvas

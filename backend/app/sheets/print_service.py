@@ -16,12 +16,8 @@ import asyncio
 import base64
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any, Final
 
-import qrcode
-import qrcode.constants
-import qrcode.exceptions
 from PIL import Image, ImageDraw
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +33,7 @@ from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.print_request import PrintLookupRequest
 from app.schemas.sheet_print import (
+    QR_PAYLOAD_MAX,
     ExpectedPageModel,
     PlacementInModel,
     PreviewCell,
@@ -51,6 +48,7 @@ from app.services.lookup_service import AppLookupService, LookupFailedError, Unk
 from app.services.page_jobs import snapshot_to_deviation
 from app.sheets import sheet_service as ss
 from app.sheets.cell_render import (
+    PREVIEW_QR_MASK,
     BoxHmm,
     CellImage,
     CellRenderer,
@@ -58,6 +56,7 @@ from app.sheets.cell_render import (
     load_cell_font,
     map_content_type,
     qr_edge_px,
+    qr_version,
 )
 from app.sheets.errors import (
     ItemContentMismatchError,
@@ -105,6 +104,7 @@ __all__ = [
 ]
 
 LOOKUP_CONCURRENCY: Final = 8
+MAX_QR_PAYLOAD: Final = QR_PAYLOAD_MAX  # request-level cap on a cell's QR payload
 MAX_CONCURRENT_RENDERS: Final = 2  # preview renders at once, process-wide (spec 18, CPU)
 MAX_PREVIEW_PAGES: Final = 10  # a plan decision, not the spec's (spec 18, CPU)
 MAX_HINTS_PER_ITEM: Final = 5
@@ -271,6 +271,10 @@ async def resolve_items(items: Sequence[SheetItem], lookup: AppLookupService) ->
         else:
             source = item.source or _DEFAULT_SOURCE
             ref = (sanitise_text(item.ref, max_len=PURPOSE_MAX) or None) if item.ref else None
+        if item.lookup is not None and len(result.qr_payload or "") > MAX_QR_PAYLOAD:
+            # A raw payload is capped by the schema; a lookup's is checked here (a scan URL is
+            # short, so this only fires on an odd integration base URL).
+            raise ItemContentMismatchError(index, ("qr_payload",))
         resolved.append(
             ResolvedItem(
                 label=result,
@@ -397,9 +401,11 @@ def _px(mm: float, dpi: int) -> int:
 
 def _qr_placeholder(image: Image.Image, edge_px: int) -> None:
     """Hatch the QR square of a cell image and write "QR" in it (the preview's stand-in for a
-    symbol too fine for 150 dpi)."""
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((0, 0, edge_px - 1, edge_px - 1), fill=1, outline=0)
+    symbol too fine for 150 dpi). Drawn on a square of its own and pasted, so nothing reaches
+    the text beside it."""
+    square = Image.new("1", (edge_px, edge_px), 1)
+    draw = ImageDraw.Draw(square)
+    draw.rectangle((0, 0, edge_px - 1, edge_px - 1), outline=0)
     step = max(4, edge_px // 10)
     for offset in range(-edge_px, edge_px, step):
         draw.line((offset, edge_px, offset + edge_px, 0), fill=0)
@@ -409,30 +415,14 @@ def _qr_placeholder(image: Image.Image, edge_px: int) -> None:
     x, y = (edge_px - w) // 2, edge_px // 2
     draw.rectangle((x - 2, y - edge_px // 6, x + w + 2, y + edge_px // 6), fill=1)
     draw.text((x, y), label, font=font, fill=0, anchor="lm")
-
-
-MAX_QR_CHARS: Final = 4296  # the most any QR symbol holds; a longer payload can never fit
+    image.paste(square, (0, 0))
 
 
 def _qr_modules(payload: str) -> int | None:
     """Modules per side of the symbol ``build_qr`` makes for ``payload``; ``None`` if no QR
-    holds it. A payload longer than ``MAX_QR_CHARS`` is answered here and never reaches the
-    cache, so every cache key is at most that long (512 keys cannot pin much memory)."""
-    if len(payload) > MAX_QR_CHARS:
-        return None
-    return _qr_modules_cached(payload)
-
-
-@lru_cache(maxsize=512)
-def _qr_modules_cached(payload: str) -> int | None:
-    """Cached: making a dense symbol is the slow part of a preview."""
-    qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=0)
-    try:
-        qr.add_data(payload)
-        qr.make(fit=True)
-    except (qrcode.exceptions.DataOverflowError, ValueError):
-        return None
-    return len(qr.get_matrix())
+    holds it. Shares the version cache with ``build_qr``, so a payload is sized once."""
+    version = qr_version(payload)
+    return None if version is None else 17 + 4 * version
 
 
 def _qr_fits_at(payload: str, w_mm: float, h_mm: float, dpi: int) -> bool:
@@ -485,20 +475,26 @@ def _draw_page(
     render_dpi: int,
 ) -> _Drawn:
     """Everything CPU-bound for one page (run in a thread)."""
-    images: list[tuple[int, CellImage]] = []
-    truncated: set[int] = set()
-    for job in jobs:
-        try:
-            image = _render_cell(renderer, content_box(geometry, job.cell), job, render_dpi)
-        except ContentTypeDataMismatchError as exc:
-            if job.item_index is None:
-                raise
-            raise ItemContentMismatchError(job.item_index, exc.missing_fields) from None
-        images.append((job.cell, image))
-        if image.truncated:
-            truncated.add(job.cell)
-    png = render_preview_png(geometry, images, margin, render_dpi=render_dpi, feed_mark=feed_mark)
-    return _Drawn(images, truncated, png)
+    token = PREVIEW_QR_MASK.set(0)  # a picture needs no mask search; the job's renderer has it
+    try:
+        images: list[tuple[int, CellImage]] = []
+        truncated: set[int] = set()
+        for job in jobs:
+            try:
+                image = _render_cell(renderer, content_box(geometry, job.cell), job, render_dpi)
+            except ContentTypeDataMismatchError as exc:
+                if job.item_index is None:
+                    raise
+                raise ItemContentMismatchError(job.item_index, exc.missing_fields) from None
+            images.append((job.cell, image))
+            if image.truncated:
+                truncated.add(job.cell)
+        png = render_preview_png(
+            geometry, images, margin, render_dpi=render_dpi, feed_mark=feed_mark
+        )
+        return _Drawn(images, truncated, png)
+    finally:
+        PREVIEW_QR_MASK.reset(token)
 
 
 # ---------------------------------------------------------------------------- preview
