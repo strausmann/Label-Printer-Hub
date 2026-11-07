@@ -436,6 +436,8 @@ async def test_update_name_is_bounded_like_create(hub: Hub) -> None:
         f"{ADMIN}/office-laser", json={"name": "n" * 256}, headers=headers
     )
     assert too_long.status_code == 422, too_long.text
+    empty = await hub.client.put(f"{ADMIN}/office-laser", json={"name": ""}, headers=headers)
+    assert empty.status_code == 422, empty.text
     ok = await hub.client.put(f"{ADMIN}/office-laser", json={"name": "n" * 255}, headers=headers)
     assert ok.status_code == 200, ok.text
     row = await _db_printer("office-laser")
