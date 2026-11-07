@@ -22,7 +22,7 @@ import asyncio
 import logging
 import os
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import Annotated, Any, cast
@@ -157,6 +157,14 @@ _log = logging.getLogger(__name__)
 
 # At most this many IPP printers are probed at the same moment.
 _IPP_PROBE_CONCURRENCY = 4
+_DEFAULT_SHUTDOWN_WAIT_S = 30
+
+
+def shutdown_wait_s(tape_timeouts_s: Sequence[int], page_timeouts_s: Sequence[int]) -> float:
+    """How long ``queue.stop`` waits for the workers: the largest queue timeout of any worker,
+    tape or page, so no printer's worker is cut off before its own request limit.
+    """
+    return float(max([*tape_timeouts_s, *page_timeouts_s], default=_DEFAULT_SHUTDOWN_WAIT_S))
 
 
 @dataclass(frozen=True)
@@ -625,11 +633,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await ipp_sp.stop()
             except Exception as stop_exc:  # one failing stop must not skip the rest
                 _log.warning("IPP status producer stop failed (%s)", type(stop_exc).__name__)
-        max_timeout = max(
-            (c.queue.timeout_s for c in _printer_configs),
-            default=30,
+        await queue.stop(
+            timeout_s=shutdown_wait_s(
+                [c.queue.timeout_s for c in _printer_configs],
+                [spec.queue_timeout_s for spec in _ipp_specs],
+            )
         )
-        await queue.stop(timeout_s=float(max_timeout))
         for page_printer in page_printers:
             try:
                 await page_printer.client.aclose()
