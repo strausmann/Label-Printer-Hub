@@ -617,3 +617,60 @@ async def test_resolve_default_printer_id_503_when_only_a_page_printer_exists(se
 
     assert exc_info.value.status_code == 503
     assert "No enabled printers" in exc_info.value.detail
+
+
+# ===========================================================================
+# R12-1: non-finite numbers are refused at the boundary
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route,id_field", [("spoolman", "spool_id"), ("grocy", "product_id")])
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+async def test_a_non_finite_quantity_is_a_422_that_does_not_echo_it(
+    session, route: str, id_field: str, bad: str
+) -> None:
+    """A stored literal NaN is not JSON: SQLite before 3.45 (the production image) rejects the
+    document in every JSON function, which stopped the hub from starting."""
+    from app.api.error_handlers import register_error_handlers
+
+    test_app = _build_app(session)
+    register_error_handlers(test_app)
+    client = TestClient(test_app, raise_server_exceptions=False)
+
+    r = client.post(
+        f"/api/webhook/{route}",
+        content=f'{{"{id_field}": "ZQX-1", "type": "updated", "quantity": {bad}}}',
+        headers={"X-API-Key": _VALID_KEY, "Content-Type": "application/json"},
+    )
+
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert detail["error_code"] == "invalid_request"
+    assert detail["error_detail"] == {"errors": ["quantity"]}
+    assert "NaN" not in r.text and "nfinity" not in r.text and "ZQX-1" not in r.text
+
+
+def test_calibration_values_refuse_non_finite_numbers() -> None:
+    import pytest as _pytest
+    from app.api.routes.calibration import ReadingIn
+    from app.calibration.model import CalibrationIn
+    from pydantic import ValidationError
+
+    for bad in (float("nan"), float("inf")):
+        with _pytest.raises(ValidationError):
+            ReadingIn(col_gap=1, row_gap=1, across_mm=bad, down_mm=0)
+        with _pytest.raises(ValidationError):
+            CalibrationIn(offset_x_mm=bad)
+        with _pytest.raises(ValidationError):
+            CalibrationIn(scale_y=bad)
+
+
+def test_a_job_payload_with_a_non_finite_number_is_not_stored() -> None:
+    from app.models.job import FiniteJSON
+
+    column = FiniteJSON()
+    assert column.process_bind_param({"quantity": 1.5}, None) == {"quantity": 1.5}
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError):
+            column.process_bind_param({"quantity": bad}, None)

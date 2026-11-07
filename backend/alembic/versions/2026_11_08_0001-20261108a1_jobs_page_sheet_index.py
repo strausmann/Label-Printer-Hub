@@ -20,8 +20,11 @@ down_revision: str | Sequence[str] | None = "20261107a1"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Must equal app.repositories.sheets.PAGE_SHEET_EXPR.
-_EXPR = "json_extract(payload, '$.detail.sheet_id')"
+# Must equal app.models.job.PAGE_SHEET_EXPR (a test creates the index from this text and asks
+# SQLite whether the query's text uses it). The guard: SQLite before 3.45 (the production image
+# has 3.40) raises "malformed JSON" on a text such as {"a": NaN}, which would fail the build
+# of an unguarded index and every later insert of such a row. An invalid payload gets NULL.
+_EXPR = "CASE WHEN json_valid(payload) THEN json_extract(payload, '$.detail.sheet_id') END"
 
 
 def upgrade() -> None:

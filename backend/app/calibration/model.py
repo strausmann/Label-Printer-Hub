@@ -57,18 +57,31 @@ class CalibrationIn(BaseModel):
     """
 
     offset_x_mm: float = Field(
-        default=0.0, description=_doc("offset_x_mm", "mm"), json_schema_extra=_extra("offset_x_mm")
+        allow_inf_nan=False,
+        default=0.0,
+        description=_doc("offset_x_mm", "mm"),
+        json_schema_extra=_extra("offset_x_mm"),
     )
     offset_y_mm: float = Field(
-        default=0.0, description=_doc("offset_y_mm", "mm"), json_schema_extra=_extra("offset_y_mm")
+        allow_inf_nan=False,
+        default=0.0,
+        description=_doc("offset_y_mm", "mm"),
+        json_schema_extra=_extra("offset_y_mm"),
     )
     scale_x: float = Field(
-        default=1.0, description=_doc("scale_x", "factor"), json_schema_extra=_extra("scale_x")
+        allow_inf_nan=False,
+        default=1.0,
+        description=_doc("scale_x", "factor"),
+        json_schema_extra=_extra("scale_x"),
     )
     scale_y: float = Field(
-        default=1.0, description=_doc("scale_y", "factor"), json_schema_extra=_extra("scale_y")
+        allow_inf_nan=False,
+        default=1.0,
+        description=_doc("scale_y", "factor"),
+        json_schema_extra=_extra("scale_y"),
     )
     rotation_deg: float = Field(
+        allow_inf_nan=False,
         default=0.0,
         description=_doc("rotation_deg", "degrees, positive is clockwise"),
         json_schema_extra=_extra("rotation_deg"),

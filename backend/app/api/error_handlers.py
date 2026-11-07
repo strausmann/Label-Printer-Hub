@@ -73,6 +73,9 @@ def is_sheet_path(path: str) -> bool:
     return path.startswith(SHEET_PREFIXES) or _SHEET_PRINT_PATH.match(path) is not None
 
 
+WEBHOOK_PREFIX = "/api/webhook/"
+"""Webhook bodies are the integrations' own: a rejected value is not repeated (run-12 R12-1)."""
+
 ADMIN_PRINTERS_PREFIX = "/api/v1/admin/printers"
 """Admin printer payloads carry IPP URIs: their 422 keeps FastAPI's shape without the input."""
 
@@ -116,7 +119,7 @@ async def _validation_handler(request: Request, exc: Exception) -> JSONResponse:
             for err in exc.errors()
         ]
         return JSONResponse(status_code=422, content={"detail": errors})
-    if not is_sheet_path(request.url.path):
+    if not (is_sheet_path(request.url.path) or request.url.path.startswith(WEBHOOK_PREFIX)):
         return await request_validation_exception_handler(request, exc)
     paths: list[str] = []
     for err in exc.errors():

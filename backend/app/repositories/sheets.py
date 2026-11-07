@@ -16,7 +16,7 @@ from sqlalchemy import ColumnElement, case, exists, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from app.models.job import Job, JobState
+from app.models.job import PAGE_SHEET_EXPR, Job, JobState, json_at
 from app.models.sheet import Sheet, SheetCell, SheetIdCounter, SheetType, SheetTypeVersion
 
 _FRESH = {"populate_existing": True}
@@ -161,19 +161,14 @@ async def unattached_reservation_sheets(
     return set(result.scalars().all())
 
 
-# The sheet a stored page payload belongs to, as an expression. The same text builds the index
-# ``ix_jobs_page_sheet`` (migration 20261108a1), so SQLite finds a sheet's jobs by index and
-# never parses the payloads of other sheets' jobs (R11-1): one literal, not a bound parameter,
-# or the index cannot match.
-PAGE_SHEET_EXPR = "json_extract(payload, '$.detail.sheet_id')"
 _CARRIED_KEYS = ("margin_id", "feed_mark")
 
 
 def _carried(key: str) -> tuple[ColumnElement[Any], ColumnElement[Any]]:
-    path = f"'$.detail.{key}'"
+    path = f"$.detail.{key}"
     return (
-        literal_column(f"json_extract(payload, {path})"),
-        literal_column(f"json_type(payload, {path})"),
+        literal_column(json_at(path)),
+        literal_column(f"CASE WHEN json_valid(payload) THEN json_type(payload, '{path}') END"),
     )
 
 
@@ -191,7 +186,7 @@ async def _carrier_rows(session: AsyncSession, *where: ColumnElement[bool]) -> l
     result = await session.execute(
         select(*columns)
         .select_from(Job)
-        .where(literal_column("json_extract(payload, '$.kind')") == "sheet_page", *where)
+        .where(literal_column(json_at("$.kind")) == "sheet_page", *where)
         .execution_options(**_FRESH)
     )
     out: list[dict[str, Any]] = []

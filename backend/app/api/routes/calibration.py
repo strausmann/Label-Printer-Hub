@@ -43,8 +43,12 @@ TrayPath = Annotated[str, Path(min_length=1, max_length=100, description="Tray k
 class ReadingIn(BaseModel):
     col_gap: int = Field(ge=1, le=1000, description="Vertical gap S1, S2, ... counted from 1.")
     row_gap: int = Field(ge=1, le=1000, description="Horizontal gap Z1, Z2, ... counted from 1.")
-    across_mm: float = Field(ge=-20, le=20, description="Ink offset to the right, mm.")
-    down_mm: float = Field(ge=-20, le=20, description="Ink offset downwards, mm.")
+    across_mm: float = Field(
+        ge=-20, le=20, allow_inf_nan=False, description="Ink offset to the right, mm."
+    )
+    down_mm: float = Field(
+        ge=-20, le=20, allow_inf_nan=False, description="Ink offset downwards, mm."
+    )
 
 
 class FitRequest(BaseModel):
