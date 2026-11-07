@@ -20,6 +20,7 @@ import qrcode.exceptions
 
 from app.page_render.transform import Deviation
 from app.printer_backends.ipp.attributes import Margins
+from app.sheets.cell_render import qr_edge_px
 from app.sheets.errors import (
     CellOutOfRangeError,
     CellsTakenError,
@@ -36,6 +37,7 @@ __all__ = [
     "PlacementIn",
     "Plan",
     "SheetView",
+    "margin_qr_allowed",
     "margin_qr_fits",
     "margin_usable_hmm",
     "plan",
@@ -113,11 +115,15 @@ def margin_usable_hmm(g: Geometry, *, hw_top_hmm: int | None, dev: Deviation) ->
     return g.margin_top - hw - max(0, -dev.offset_y_hmm) - SAFETY_HMM
 
 
-def margin_qr_fits(usable_hmm: int, payload: str) -> bool:
-    """Whether a QR of ``payload`` sits next to the margin ID text (OC-16): at least 9 mm of
-    usable height and a module of at least 0.25 mm with its four-module quiet zone, the symbol
-    being as tall as the usable height."""
-    if usable_hmm < MIN_MARGIN_QR_HMM:
+def margin_qr_allowed(usable_hmm: int, payload: str, dpi: int) -> bool:
+    """Whether a QR of ``payload`` is drawn next to the margin ID (OC-16, ruling T4-1).
+
+    The one decision the planner and the renderer both use. True only if the band is at least
+    9 mm tall and the module ``build_qr`` really produces at ``dpi`` (the symbol is
+    ``qr_edge_px`` square, modules a whole number of device pixels, four-module quiet zone
+    inside) is at least 0.25 mm. Pixel flooring is part of the answer, not an afterthought.
+    """
+    if usable_hmm < MIN_MARGIN_QR_HMM or dpi <= 0:
         return False
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=0)
     try:
@@ -125,8 +131,14 @@ def margin_qr_fits(usable_hmm: int, payload: str) -> bool:
         qr.make(fit=True)
     except (qrcode.exceptions.DataOverflowError, ValueError):
         return False
-    modules = len(qr.get_matrix()) + 2 * _QUIET_MODULES
-    return usable_hmm // modules >= MIN_QR_MODULE_HMM
+    edge = qr_edge_px(usable_hmm / 100, usable_hmm / 100, dpi)
+    module_px = edge // (len(qr.get_matrix()) + 2 * _QUIET_MODULES)
+    # module_px * 25.4 / dpi >= 0.25 mm, in integers: module_px * 2540 >= 25 * dpi
+    return module_px >= 1 and module_px * 2540 >= MIN_QR_MODULE_HMM * dpi
+
+
+margin_qr_fits = margin_qr_allowed
+"""Name the plan uses; the same function."""
 
 
 def _hw_margin_cells(g: Geometry, cells: Sequence[int], hw: Margins | None) -> list[int]:

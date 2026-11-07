@@ -310,9 +310,9 @@ def test_margin_usable() -> None:
     assert margin_usable_hmm(L4736, hw_top_hmm=None, dev=Deviation()) == 1530
     # A shift down (positive) does not give margin back.
     assert margin_usable_hmm(L4736, hw_top_hmm=None, dev=Deviation(offset_y_hmm=80)) == 1530
-    assert margin_qr_fits(777, "https://hub.example/sheet/L4731-0001") is False  # < 9 mm
-    assert margin_qr_fits(1530, "https://hub.example/sheet/L4736-0001") is True
-    assert margin_qr_fits(1530, "x" * 3000) is False  # no QR holds it at >= 0.25 mm
+    assert margin_qr_fits(777, "https://hub.example/sheet/L4731-0001", 600) is False  # < 9 mm
+    assert margin_qr_fits(1530, "https://hub.example/sheet/L4736-0001", 600) is True
+    assert margin_qr_fits(1530, "x" * 3000, 600) is False  # no QR holds it at >= 0.25 mm
 
 
 def test_margin_too_small_raises_only_when_an_id_is_due() -> None:

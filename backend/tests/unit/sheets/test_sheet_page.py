@@ -16,6 +16,7 @@ from app.services.page_jobs import CalibrationSnapshot, PagePayload, snapshot_to
 from app.sheets import cell_render
 from app.sheets.cell_render import DEFAULT_CELL_RENDERER, CellImage, content_box
 from app.sheets.geometry import Geometry
+from app.sheets.planner import margin_qr_allowed
 from app.sheets.sheet_page import (
     MarginIdPayload,
     SheetCellPayload,
@@ -316,3 +317,112 @@ def test_preview_is_never_calibrated() -> None:
     a = render_preview_png(L4736, [(18, _cell_image(L4736, 18))], None)
     b = render_preview_png(L4736, [(18, _cell_image(L4736, 18))], None)
     assert a == b
+
+
+# ---------------------------------------------------------------- margin QR rule (T4-1)
+
+_URL = "https://hub.example/sheet/L4736-0001"
+_URL33 = "x" * 46  # a 33-module symbol (version 4)
+
+
+def _margin_pdf(usable: int, qr: str | None, dpi: int) -> bytes:
+    margin = MarginIdPayload(text="L4736-0001", qr_payload=qr, usable_hmm=usable)
+    p = _payload(_detail(cells=(), margin=margin)).model_copy(update={"render_dpi": dpi})
+    return render_sheet_page(p, compress=False)
+
+
+def _drawn_module_px(edge_px: int, payload: str) -> int:
+    """Module size of the symbol ``build_qr`` makes: the first dark run is a finder (7 modules)."""
+    qr = cell_render.build_qr(payload, edge_px)
+    assert qr is not None
+    row = qr.convert("L")
+    for y in range(qr.height):
+        run = 0
+        for x in range(qr.width):
+            if row.getpixel((x, y)) == 0:
+                run += 1
+            elif run:
+                break
+        if run:
+            return run // 7
+    raise AssertionError("no dark pixel")
+
+
+@pytest.mark.parametrize("usable", [400, 600, 899])
+def test_margin_qr_never_below_nine_mm(usable: int) -> None:
+    pdf = _margin_pdf(usable, _URL, 600)
+    assert _image_cms(pdf) == []
+    assert pi.texts(pdf) == ["L4736-0001"]
+
+
+def test_margin_qr_not_drawn_when_pixel_module_is_too_small() -> None:
+    # 33 modules + quiet zone = 41; 10.3 mm at 300 dpi is 122 px -> 2 px modules = 0.169 mm.
+    pdf = _margin_pdf(1030, _URL33, 300)
+    assert _image_cms(pdf) == []
+    assert pi.texts(pdf) == ["L4736-0001"]
+
+
+def test_margin_qr_drawn_with_module_of_a_quarter_mm() -> None:
+    pdf = _margin_pdf(1530, _URL, 300)
+    assert len(_image_cms(pdf)) == 1
+    edge = pi.images(pdf)[0]["Width"]
+    assert _drawn_module_px(edge, _URL) * 25.4 / 300 >= 0.25
+
+
+@pytest.mark.parametrize("dpi", [150, 300, 600])
+@pytest.mark.parametrize("usable", [800, 900, 1030, 1200, 1530])
+@pytest.mark.parametrize("payload", [_URL, _URL33])
+def test_planner_and_renderer_agree_on_margin_qr(payload: str, usable: int, dpi: int) -> None:
+    allowed = margin_qr_allowed(usable, payload, dpi)
+    pdf = _margin_pdf(usable, payload, dpi)
+    drawn = len(_image_cms(pdf)) == 1
+    assert drawn == allowed
+    edge = round(usable / 100 / 25.4 * dpi)
+    module_mm = _drawn_module_px(edge, payload) * 25.4 / dpi
+    if drawn:
+        assert module_mm >= 0.25
+    else:
+        assert usable < 900 or module_mm < 0.25  # independent of margin_qr_allowed
+
+
+# ---------------------------------------------------------------- review minors
+
+
+def test_text_only_margin_id_is_left_aligned_with_the_grid() -> None:
+    pdf = _pdf(_detail(cells=(), margin=MarginIdPayload(text="X", usable_hmm=700)))
+    assert pi.text_positions(pdf)[0][0] / PT_PER_MM == pytest.approx(
+        L4736.margin_left / 100, abs=0.01
+    )
+
+
+def test_long_margin_text_shrinks_then_is_shortened_inside_the_grid() -> None:
+    from app.page_render.pdf import text_width_mm
+
+    long = "L4736-0001 · " + "very long sheet type name " * 8
+    pdf = _pdf(_detail(cells=(), margin=MarginIdPayload(text=long, usable_hmm=700)))
+    (shown,) = pi.texts(pdf)
+    assert shown.endswith("…") and len(shown) < len(long)
+    grid_w = ((L4736.cols - 1) * L4736.pitch_x + L4736.label_w) / 100
+    assert text_width_mm(shown, 6.0) <= grid_w
+    mid = "L4736-0001 · Avery Zweckform"
+    (kept,) = pi.texts(_pdf(_detail(cells=(), margin=MarginIdPayload(text=mid, usable_hmm=700))))
+    assert kept == mid
+
+
+def test_preview_text_only_margin_id_draws_inside_the_top_margin() -> None:
+    png = render_preview_png(L4736, [], MarginIdPayload(text="L4736-0001", usable_hmm=700))
+    inv = Image.eval(Image.open(io.BytesIO(png)).convert("L"), lambda v: 255 - v)
+    bbox = inv.getbbox()
+    assert bbox is not None
+    assert bbox[0] >= round(L4736.margin_left * 150 / 2540) - 1
+    assert bbox[3] <= round(L4736.margin_top * 150 / 2540)
+
+
+def test_detail_rejects_bad_cell_numbers_and_ignores_unknown_keys() -> None:
+    base = _detail().model_dump(mode="json")
+    with pytest.raises(ValueError, match=r"1\.\.48"):
+        SheetPageDetail.model_validate({**base, "cells": [_cell(49).model_dump(mode="json")]})
+    dup = [_cell(5).model_dump(mode="json")] * 2
+    with pytest.raises(ValueError, match="unique"):
+        SheetPageDetail.model_validate({**base, "cells": dup})
+    assert SheetPageDetail.model_validate({**base, "from_the_future": 1}).sheet_id == SHEET_ID

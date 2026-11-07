@@ -21,7 +21,7 @@ from typing import Any, Final
 from uuid import UUID
 
 from PIL import Image, ImageDraw
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.page_render.pdf import PageImage, PageText, text_width_mm, write_pdf
 from app.page_render.transform import PT_PER_MM
@@ -38,8 +38,8 @@ from app.sheets.cell_render import (
     load_cell_font,
     qr_edge_px,
 )
-from app.sheets.geometry import Geometry
-from app.sheets.planner import SAFETY_HMM
+from app.sheets.geometry import Geometry, cell_count
+from app.sheets.planner import SAFETY_HMM, margin_qr_allowed
 
 __all__ = [
     "PREVIEW_DPI",
@@ -79,9 +79,13 @@ class MarginIdPayload(BaseModel):
 
 
 class SheetPageDetail(BaseModel):
-    """``PagePayload.detail`` of a ``sheet_page`` job."""
+    """``PagePayload.detail`` of a ``sheet_page`` job.
 
-    model_config = ConfigDict(extra="forbid")
+    Unknown keys are ignored so a job stored by a later version still renders; cell numbers
+    are checked against the pinned geometry when the payload is built.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
     sheet_id: UUID
     sheet_code: str | None
@@ -93,6 +97,16 @@ class SheetPageDetail(BaseModel):
     id_cell: SheetCellPayload | None = None
     margin_id: MarginIdPayload | None = None
     job_summary: dict[str, Any]
+
+    @model_validator(mode="after")
+    def _cells_valid(self) -> SheetPageDetail:
+        total = cell_count(Geometry(**self.geometry))
+        numbers = [c.cell for c in self.cells] + ([self.id_cell.cell] if self.id_cell else [])
+        if len(set(numbers)) != len(numbers):
+            raise ValueError("cell numbers must be unique on a page")
+        if any(not 1 <= n <= total for n in numbers):
+            raise ValueError(f"cell numbers must lie in 1..{total} of the pinned geometry")
+        return self
 
 
 @dataclass(frozen=True)
@@ -170,7 +184,7 @@ def render_sheet_page(
     if d.margin_id is not None:
         m = d.margin_id
         qr_image: Image.Image | None = None
-        if m.qr_payload:
+        if m.qr_payload and margin_qr_allowed(m.usable_hmm, m.qr_payload, payload.render_dpi):
             edge_mm = m.usable_hmm / 100
             qr_image = build_qr(m.qr_payload, qr_edge_px(edge_mm, edge_mm, payload.render_dpi))
         lay = _margin_layout(g, m, with_qr=qr_image is not None)
@@ -211,6 +225,7 @@ def render_preview_png(
         qr = (
             build_qr(margin.qr_payload, qr_edge_px(edge_mm, edge_mm, PREVIEW_DPI))
             if margin.qr_payload
+            and margin_qr_allowed(margin.usable_hmm, margin.qr_payload, PREVIEW_DPI)
             else None
         )
         lay = _margin_layout(geometry, margin, with_qr=qr is not None)
