@@ -10,6 +10,12 @@ GET    /api/v1/admin/printers/{slug}            — Einzelner Drucker (200, 404)
 PUT    /api/v1/admin/printers/{slug}            — Drucker aktualisieren (200, 404)
 POST   /api/v1/admin/printers/{slug}/disable    — Drucker deaktivieren (200, 404, 409)
 POST   /api/v1/admin/printers/{slug}/enable     — Drucker aktivieren (200, 404, 409)
+POST   /api/v1/admin/printers/ipp/probe         — read an IPP printer live (200, 422, 502)
+
+The probe makes the hub connect to an admin-supplied URI (SSRF surface, spec 18): admin
+only; ``ipp``/``ipps``/``http``/``https`` without user info; the client's timeouts, 1 MB
+cap and no redirects; the answer is the bounded summary, never raw attributes; errors
+never repeat the URI or the printer's answer beyond the IPP status name.
 
 Auth
 ----
@@ -31,16 +37,24 @@ from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin
 from app.db.session import get_session
 from app.models.printer import Printer
-from app.schemas.printer_admin import PrinterCreatePayload, PrinterUpdatePayload
+from app.models.printer_tray import PrinterTray
+from app.printer_backends.ipp.attributes import ProbeSummary
+from app.schemas.printer_admin import IppConnection, PrinterCreatePayload, PrinterUpdatePayload
 from app.services.event_bus import BusEvent, EventBus
 from app.services.printer_admin_service import (
+    IPP_BACKEND,
+    ConnectionKindMismatchError,
     DuplicateNameError,
     DuplicateSlugError,
+    IppTransportFactory,
     PrinterAdminService,
     PrinterAlreadyDisabledError,
     PrinterAlreadyEnabledError,
     PrinterNotFoundBySlugError,
+    TraysNotAllowedError,
+    probe_ipp,
 )
+from app.sheets.errors import SheetApiError
 
 router = APIRouter(prefix="/api/v1/admin/printers", tags=["admin"])
 
@@ -53,10 +67,21 @@ AdminAuthDep = Annotated[AuthContext, Depends(require_admin)]
 # ---------------------------------------------------------------------------
 
 
+class TrayRead(BaseModel):
+    """A configured tray of a page printer."""
+
+    key: str
+    label: str
+    load_hint: str | None
+    enabled: bool
+    is_default: bool
+
+
 class PrinterRead(BaseModel):
     """Lesbare Darstellung eines Druckers.
 
     Enthält alle DB-Felder — keine internen Implementierungsdetails.
+    ``trays`` is the tray list of a page printer and ``null`` for tape printers.
     """
 
     id: UUID
@@ -70,6 +95,42 @@ class PrinterRead(BaseModel):
     enabled: bool
     created_at: str
     updated_at: str
+    trays: list[TrayRead] | None = None
+
+
+def _ipp_transport_factory(request: Request) -> IppTransportFactory | None:
+    """Test injection point: ``app.state.ipp_transport_factory`` (``None`` = real network).
+
+    Only tests (and the browser-test app) set it, to hand the IPP client a transport into
+    a fake printer. Production never sets it.
+    """
+    factory: IppTransportFactory | None = getattr(request.app.state, "ipp_transport_factory", None)
+    return factory
+
+
+def _service(session: AsyncSession, auth: AuthContext, request: Request) -> PrinterAdminService:
+    return PrinterAdminService(
+        session,
+        audit_user=_audit_user(auth),
+        ipp_transport_factory=_ipp_transport_factory(request),
+    )
+
+
+def _tray_read(tray: PrinterTray) -> TrayRead:
+    return TrayRead(
+        key=tray.tray_key,
+        label=tray.label,
+        load_hint=tray.load_hint,
+        enabled=tray.enabled,
+        is_default=tray.is_default,
+    )
+
+
+async def _read(svc: PrinterAdminService, printer: Printer) -> PrinterRead:
+    view = _row_to_read(printer)
+    if printer.backend == IPP_BACKEND:
+        view.trays = [_tray_read(t) for t in await svc.list_trays(printer.id)]
+    return view
 
 
 def _row_to_read(printer: Printer) -> PrinterRead:
@@ -139,7 +200,7 @@ async def list_printers(
 ) -> list[PrinterRead]:
     svc = PrinterAdminService(session, audit_user=_audit_user(_auth))
     printers = await svc.list_printers(include_disabled=include_disabled)
-    return [_row_to_read(p) for p in printers]
+    return [await _read(svc, p) for p in printers]
 
 
 @router.post(
@@ -149,7 +210,10 @@ async def list_printers(
     summary="Neuen Drucker anlegen",
     description=(
         "Legt einen neuen Drucker an. Slug und Name müssen eindeutig sein. "
-        "Gibt 409 zurück wenn Slug oder Name bereits vergeben ist."
+        "Gibt 409 zurück wenn Slug oder Name bereits vergeben ist. "
+        "An ``ipp`` printer is probed first; nothing is saved when it is unreachable "
+        "(409 ``ipp_unreachable``), accepts no PDF (409 ``ipp_pdf_unsupported``) or does "
+        "not report a configured tray (422 ``tray_unknown``)."
     ),
 )
 async def create_printer(
@@ -158,9 +222,11 @@ async def create_printer(
     session: SessionDep,
     _auth: AdminAuthDep,
 ) -> PrinterRead:
-    svc = PrinterAdminService(session, audit_user=_audit_user(_auth))
+    svc = _service(session, _auth, request)
     try:
         printer = await svc.create_printer(body)
+    except SheetApiError as exc:
+        raise exc.to_http() from None
     except DuplicateSlugError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -178,7 +244,35 @@ async def create_printer(
             },
         ) from exc
     _publish_changed(request, printer, "created")
-    return _row_to_read(printer)
+    return await _read(svc, printer)
+
+
+@router.post(
+    "/ipp/probe",
+    response_model=ProbeSummary,
+    summary="Read an IPP printer",
+    description=(
+        "Runs Get-Printer-Attributes against the given URI now and returns a bounded "
+        "summary (make and model, IPP and PDF versions, resolutions, media, trays, "
+        "colour modes, margins, state); never the raw attributes. Errors: 502 "
+        "``ipp_unreachable``, ``ipp_rejected`` (IPP status name in ``error_detail``) or "
+        "``ipp_bad_response``. Admin only."
+    ),
+)
+async def probe_ipp_printer(
+    body: IppConnection,
+    request: Request,
+    _auth: AdminAuthDep,
+) -> ProbeSummary:
+    try:
+        return await probe_ipp(
+            body,
+            queue_timeout_s=30,
+            transport_factory=_ipp_transport_factory(request),
+            unreachable_status=status.HTTP_502_BAD_GATEWAY,
+        )
+    except SheetApiError as exc:
+        raise exc.to_http() from None
 
 
 @router.get(
@@ -204,7 +298,7 @@ async def get_printer(
                 "error_message": f"Drucker mit Slug {slug!r} nicht gefunden.",
             },
         )
-    return _row_to_read(printer)
+    return await _read(svc, printer)
 
 
 @router.put(
@@ -214,7 +308,10 @@ async def get_printer(
     description=(
         "Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). "
         "Slug und ID können nicht geändert werden. "
-        "Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert."
+        "Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. "
+        "``connection`` must fit the stored backend (422 ``invalid_connection``); "
+        "``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). "
+        "An ``ipp`` printer is probed again when its URI changes or a tray key is new."
     ),
 )
 async def update_printer(
@@ -224,9 +321,27 @@ async def update_printer(
     session: SessionDep,
     _auth: AdminAuthDep,
 ) -> PrinterRead:
-    svc = PrinterAdminService(session, audit_user=_audit_user(_auth))
+    svc = _service(session, _auth, request)
     try:
         printer = await svc.update_printer(slug, body)
+    except SheetApiError as exc:
+        raise exc.to_http() from None
+    except ConnectionKindMismatchError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "invalid_connection",
+                "error_message": "The connection does not fit this printer's backend.",
+            },
+        ) from exc
+    except TraysNotAllowedError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "trays_not_allowed",
+                "error_message": "Trays can only be set for page printers (IPP).",
+            },
+        ) from exc
     except PrinterNotFoundBySlugError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -236,7 +351,7 @@ async def update_printer(
             },
         ) from exc
     _publish_changed(request, printer, "updated")
-    return _row_to_read(printer)
+    return await _read(svc, printer)
 
 
 @router.post(
@@ -275,7 +390,7 @@ async def disable_printer(
             },
         ) from exc
     _publish_changed(request, printer, "disabled")
-    return _row_to_read(printer)
+    return await _read(svc, printer)
 
 
 @router.post(
@@ -314,4 +429,4 @@ async def enable_printer(
             },
         ) from exc
     _publish_changed(request, printer, "enabled")
-    return _row_to_read(printer)
+    return await _read(svc, printer)

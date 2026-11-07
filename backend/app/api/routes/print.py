@@ -103,6 +103,16 @@ async def create_print_job(
     _auth: Annotated[AuthContext, Depends(require_print)],
 ) -> Any:
     service = http.app.state.print_service
+    if service is None:
+        # No tape printer is wired (fresh install, or only IPP page printers): nothing can
+        # take a label job. Same body shape as the other errors of this route.
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error_code": "no_tape_printer",
+                "error_message": "No tape printer is configured for label printing.",
+            },
+        )
     try:
         job_id = await service.submit_print_job(request)
     except tuple(_SYNC_ERROR_MAP) as exc:

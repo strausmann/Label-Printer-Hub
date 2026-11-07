@@ -18,9 +18,10 @@ the underscore signals "don't touch without thinking".
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -45,6 +46,9 @@ from app.printer_backends.exceptions import (
     TapeEmptyError,
     TapeMismatchError,
 )
+from app.printer_backends.ipp.client import JobInfo
+from app.printer_backends.ipp.errors import IppError, IppNotFoundError
+from app.printer_backends.ipp.job_attrs import is_own_job, wire_job_name
 from app.services.job_lifecycle import (
     InvalidStateTransitionError,
     Job,
@@ -53,6 +57,18 @@ from app.services.job_lifecycle import (
 )
 from app.services.job_store import JobStore, MemoryJobStore
 from app.services.layout_engine import LayoutEngine
+from app.services.page_job_runner import Deferred, PageJobRunner
+from app.services.page_jobs import (
+    PageJob,
+    PagePayload,
+    PagePrinter,
+    notify_ended,
+    outcome_handler,
+)
+from app.sheets.errors import MediaKindMismatchError
+
+_ON_UNKNOWN_TIMEOUT_S = 5.0
+"""A handler's ``on_unknown`` runs inside ``start()``; a hanging one must not block startup."""
 
 
 # Callback type: called after each state transition.  The optional queue_depth
@@ -200,6 +216,8 @@ class PrintQueue:
         store: JobStore | None = None,
         engine: LayoutEngine | None = None,
         on_pause_change: _PauseChangeCallback | None = None,
+        page_printers: Sequence[PagePrinter] = (),
+        page_runner: PageJobRunner | None = None,
     ) -> None:
         """Konstruktor.
 
@@ -223,16 +241,29 @@ class PrintQueue:
         self._store: JobStore = store if store is not None else MemoryJobStore()
         self._engine: LayoutEngine = engine if engine is not None else LayoutEngine()
         self._printers: dict[UUID, _PrinterLike] = {p.id: p for p in printers}
-        # Queue type is Job | BatchJob | None — None is the sentinel used by
+        # D18: page printers (IPP) get their own queues and worker; tape printers keep theirs.
+        self._page_printers: dict[UUID, PagePrinter] = {p.id: p for p in page_printers}
+        self._page_runner: PageJobRunner = page_runner or PageJobRunner(
+            store=self._store, notify=self._notify_page_change
+        )
+        # Per page printer: the job a pre-flight deferred, drained before queue.get().
+        self._held: dict[UUID, PageJob | None] = dict.fromkeys(self._page_printers)
+        # Per page printer: jobs the printer already holds after a restart; the worker
+        # resumes their tracking before it takes anything else.
+        self._to_resume: dict[UUID, list[PageJob]] = {}
+        # Job ids waiting in ``_to_resume`` -> a cancel arrived before the tracking resumed.
+        self._resuming: dict[UUID, bool] = {}
+        all_ids = [*self._printers, *self._page_printers]
+        # Queue type is Job | BatchJob | PageJob | None — None is the sentinel used by
         # stop() to wake workers that are blocked at queue.get().
-        self._queues: dict[UUID, asyncio.Queue[Job | BatchJob | None]] = {
-            p.id: asyncio.Queue() for p in printers
+        self._queues: dict[UUID, asyncio.Queue[Job | BatchJob | PageJob | None]] = {
+            pid: asyncio.Queue() for pid in all_ids
         }
-        self._worker_states: dict[UUID, PrinterWorkerState] = {
-            p.id: PrinterWorkerState.ACTIVE for p in printers
-        }
+        self._worker_states: dict[UUID, PrinterWorkerState] = dict.fromkeys(
+            all_ids, PrinterWorkerState.ACTIVE
+        )
         self._worker_resume_events: dict[UUID, asyncio.Event] = {
-            p.id: asyncio.Event() for p in printers
+            pid: asyncio.Event() for pid in all_ids
         }
         # All resume events start "set" so a never-paused worker doesn't block.
         for ev in self._worker_resume_events.values():
@@ -263,9 +294,17 @@ class PrintQueue:
                 if paused_id in self._worker_states:
                     # No real suspension here: state is set before any worker is created.
                     await self.pause_printer(paused_id, reason="user", source="user", since=since)
+            # A PRINTING page job whose printer is not a page printer of this run (disabled,
+            # deleted, or its backend changed) is not seen by the loop below: its outcome is
+            # unknown, as it would be for a tape job (R1).
+            for orphan in await self._store.list_page_jobs_in_flight():
+                if orphan.printer_id not in self._page_printers:
+                    await self._settle_unknown_page_job(orphan)
             # Phase 2 Recovery: unterbrochene PRINTING-Jobs markieren + QUEUED re-enqueuen.
             # mark_interrupted MUSS vor list_pending aufgerufen werden, damit die alten
-            # PRINTING-Jobs NICHT in list_pending zurückkommen.
+            # PRINTING-*Tape*-Jobs NICHT in list_pending zurückkommen. PRINTING *page* jobs
+            # bleiben (mark_interrupted lässt sie aus) und kommen zurück: _recover_page_jobs
+            # nimmt sie auf und filtert den Rest nach QUEUED.
             for printer_id in self._queues:
                 interrupted = await self._store.mark_interrupted(printer_id)
                 if interrupted > 0:
@@ -275,6 +314,9 @@ class PrintQueue:
                         printer_id,
                     )
                 pending_db_jobs = await self._store.list_pending(printer_id)
+                if printer_id in self._page_printers:  # D18: page jobs render at send time
+                    await self._recover_page_jobs(printer_id, pending_db_jobs)
+                    continue
                 for db_job in pending_db_jobs:
                     # S-1: StrEnum-Konsistenz — DbJobState.QUEUED.value statt String-Literal
                     if db_job.state != DbJobState.QUEUED.value:
@@ -339,14 +381,79 @@ class PrintQueue:
                     )
 
             for printer_id in self._queues:
+                # D18: tape and page printers have different workers.
+                worker = (
+                    self._page_worker(printer_id)
+                    if printer_id in self._page_printers
+                    else self._worker(printer_id)
+                )
                 self._workers[printer_id] = asyncio.create_task(
-                    self._worker(printer_id), name=f"printer-worker-{printer_id}"
+                    worker, name=f"printer-worker-{printer_id}"
                 )
         except Exception:
             # I-1: Bei Recovery-Fehler _running zurücksetzen, damit ein erneuter
             # start()-Aufruf nicht am Guard scheitert.
             self._running = False
             raise
+
+    async def _recover_page_jobs(self, printer_id: UUID, pending: list[DbJob]) -> None:
+        """Restart recovery of one page printer's jobs.
+
+        In-flight (PRINTING) jobs are untouched by ``mark_interrupted``: one with an IPP job
+        id is handed to the worker for resumed tracking; one without may have been taken by
+        the printer (the upload was under way), its outcome is unknown. QUEUED jobs are
+        re-enqueued from their payload (rendered at send, not here).
+        """
+        await self._recover_in_flight_page_jobs(printer_id)
+        for db_job in pending:
+            if db_job.state != DbJobState.QUEUED.value or str(db_job.id) in self._jobs:
+                continue
+            try:
+                payload = PagePayload.model_validate(db_job.payload)
+            except ValueError:
+                logger.warning("Recovery: page job %s has an invalid payload", db_job.id)
+                await self._store.mark_failed(db_job.id, "recovery_invalid_page_payload")
+                continue
+            job = self._new_page_job(db_job.id, printer_id, payload)
+            await self._queues[printer_id].put(PageJob(job=job, payload=payload))
+            logger.info("Recovery: page job %s re-enqueued on %s", db_job.id, printer_id)
+
+    async def _recover_in_flight_page_jobs(self, printer_id: UUID) -> None:
+        resumable: list[PageJob] = []
+        for row in await self._store.list_page_jobs_in_flight(printer_id):
+            result = dict(row.result or {})
+            ipp_job_id = result.get("ipp_job_id")
+            try:
+                payload = PagePayload.model_validate(row.payload)
+            except ValueError:
+                payload = None
+            # "uploading" is an unknown outcome even if the hub never saw the printer accept
+            # the document: it may have (R1). Same for a job without an IPP job id.
+            if (
+                payload is None
+                or result.get("phase") == "uploading"
+                or not isinstance(ipp_job_id, int)
+                or isinstance(ipp_job_id, bool)
+            ):
+                await self._settle_unknown_page_job(row)
+                continue
+            job = self._new_page_job(row.id, printer_id, payload)
+            JobStateMachine.transition(job, JobState.PRINTING)
+            resumable.append(PageJob(job=job, payload=payload, resume_result=result))
+            self._resuming[row.id] = False
+            logger.info("Recovery: page job %s on %s resumes tracking", row.id, printer_id)
+        self._to_resume[printer_id] = resumable
+
+    async def _settle_unknown_page_job(self, row: DbJob) -> None:
+        """A page job that may or may not have printed: ``failed_restart`` and ``on_unknown``."""
+        logger.warning("Recovery: page job %s has an unknown outcome", row.id)
+        await self._store.mark_failed_restart(row.id, "page_outcome_unknown")
+        kind = str((row.payload or {}).get("kind"))
+        try:
+            async with asyncio.timeout(_ON_UNKNOWN_TIMEOUT_S):
+                await outcome_handler(kind).on_unknown(row.id)
+        except Exception:
+            logger.exception("Page outcome handler on_unknown failed for job %s", row.id)
 
     def _rerender_from_db_payload(self, payload: dict[str, Any]) -> Image.Image:
         """Reconstruct a PIL Image from a stored job payload.
@@ -396,6 +503,13 @@ class PrintQueue:
         # wake up and see the stop flag.
         for q in self._queues.values():
             await q.put(None)
+        # D18: a page worker may be tracking a job at the printer, which can take minutes.
+        # The printer keeps the job; it is cancelled here at once instead of being waited
+        # for; the next start() resumes the tracking (``_resume_page_jobs``).
+        for printer_id in self._page_printers:
+            page_task = self._workers.get(printer_id)
+            if page_task is not None and not page_task.done():
+                page_task.cancel()
         if self._workers:
             try:
                 await asyncio.wait_for(
@@ -415,6 +529,11 @@ class PrintQueue:
         # PRINTING job whose worker was cancelled before completion.
         # Transition those jobs to FAILED so their _done_event is set.
         for job in self._jobs.values():
+            if job.state == JobState.PRINTING and job.kind is not None:
+                # Page job at the printer: the row stays ``printing`` (the printer may
+                # still print it); only the in-memory waiters are released.
+                job._done_event.set()
+                continue
             if job.state == JobState.PRINTING:
                 job.error_code = "shutdown"
                 job.error_message = "Print queue stopped during job execution"
@@ -440,8 +559,7 @@ class PrintQueue:
         tape_mm: int,
         **options: Any,
     ) -> str:
-        if printer_id not in self._queues:
-            raise KeyError(f"Unknown printer: {printer_id}")
+        self._require_tape(printer_id)
         payload = await asyncio.to_thread(_serialize_image_to_png, image)
         job = Job(
             id=str(uuid.uuid4()),
@@ -474,8 +592,7 @@ class PrintQueue:
         store.save_queued) und die resultierende UUID hier weitergibt.
         Gibt die job_id unverändert zurück.
         """
-        if printer_id not in self._queues:
-            raise KeyError(f"Unknown printer: {printer_id}")
+        self._require_tape(printer_id)
         # Register BEFORE the first await: the caller has already persisted the row as
         # QUEUED, so from now on a cancel/clear can arrive.  If the queue did not track
         # the job yet it would only touch the DB row, answer success, and the job would
@@ -524,8 +641,7 @@ class PrintQueue:
             KeyError: unknown printer_id.
             ValueError: len(images) != len(job_ids), or len(images) == 0.
         """
-        if printer_id not in self._queues:
-            raise KeyError(f"Unknown printer: {printer_id}")
+        self._require_tape(printer_id)
         if not images:
             raise ValueError("enqueue_batch requires at least one image")
         if len(images) != len(job_ids):
@@ -576,6 +692,77 @@ class PrintQueue:
         logger.info("Batch %s queued on %s with %d items", batch_id, printer_id, len(images))
         return batch_id
 
+    def _require_tape(self, printer_id: UUID) -> None:
+        """D18: tape submission paths refuse page printers."""
+        if printer_id in self._page_printers:
+            raise MediaKindMismatchError()
+        if printer_id not in self._queues:
+            raise KeyError(f"Unknown printer: {printer_id}")
+
+    def _new_page_job(self, job_id: UUID, printer_id: UUID, payload: PagePayload) -> Job:
+        """Register the in-memory job of a page job (before any await, like the tape paths)."""
+        job = Job(
+            id=str(job_id),
+            printer_id=printer_id,
+            kind=payload.kind,
+            summary=payload.detail.get("job_summary"),
+        )
+        self._jobs[job.id] = job
+        return job
+
+    async def submit_page_job(
+        self,
+        printer_id: UUID,
+        payload: PagePayload,
+        *,
+        api_key_id: UUID | None,
+        source_ip: str | None,
+        job_id: UUID | None = None,
+    ) -> UUID:
+        """Persist a QUEUED page job and hand it to the printer's worker.
+
+        Raises:
+            MediaKindMismatchError: *printer_id* is a tape printer.
+            KeyError: *printer_id* is unknown to the queue.
+        """
+        if printer_id in self._printers:
+            raise MediaKindMismatchError()
+        if printer_id not in self._page_printers:
+            raise KeyError(f"Unknown printer: {printer_id}")
+        row = DbJob(
+            id=job_id or uuid4(),
+            printer_id=printer_id,
+            template_key=None,
+            payload=payload.model_dump(mode="json"),
+            api_key_id=api_key_id,
+            source_ip=source_ip,
+        )
+        job = self._new_page_job(row.id, printer_id, payload)
+        try:
+            await self._store.save_queued(row)
+        except BaseException:
+            self._drop_unqueued(job)
+            raise
+        if job.state != JobState.QUEUED:
+            # Cancelled (or cleared) while the row was being saved. The cancellation found no
+            # row to persist then, and the insert has just written it as ``queued``: persist
+            # it again, or a restart would resurrect the cancelled job. (The tape paths save
+            # the row first, so their cancel always finds it.)
+            if job.state == JobState.CANCELLED:
+                await self._store.mark_cancelled(row.id)
+            return row.id
+        await self._queues[printer_id].put(PageJob(job=job, payload=payload))
+        logger.info("Page job %s queued on %s", row.id, printer_id)
+        return row.id
+
+    def is_page_job(self, job_id: str | UUID) -> bool:
+        """True if the queue tracks *job_id* as a page job."""
+        job = self._jobs.get(str(job_id))
+        return job is not None and job.kind is not None
+
+    def is_page_printer(self, printer_id: UUID) -> bool:
+        return printer_id in self._page_printers
+
     async def get(self, job_id: str | UUID) -> Job:
         return self._jobs[str(job_id)]
 
@@ -605,6 +792,16 @@ class PrintQueue:
             KeyError: *job_id* is unknown to the queue.
         """
         job = self._jobs[job_id]
+        if job.kind is not None and job.state == JobState.PRINTING:
+            # A page job at the printer: send Cancel-Job; the tracking decides the outcome
+            # (cancelled, or failed/interrupted when the page had started). The job stays
+            # PRINTING until then. A tape job on the wire is never cancelled (ADR 0005).
+            if UUID(job_id) in self._resuming:
+                # Recovered, tracking not resumed yet: the runner sends Cancel-Job when it
+                # picks the job up (``_resume_page_jobs``).
+                self._resuming[UUID(job_id)] = True
+                return True
+            return await self._page_runner.request_cancel(UUID(job_id))
         if job.state not in (JobState.QUEUED, JobState.PAUSED):
             return False
         from_state = job.state
@@ -621,6 +818,10 @@ class PrintQueue:
         # A store failure propagates (the route answers 5xx instead of a false
         # success); the job stays cancelled in memory, so this process never prints it.
         await self._store.mark_cancelled(UUID(job.id))
+        if job.kind is not None:
+            await notify_ended(
+                job.kind, UUID(job.id), state="cancelled", started=False, error_code="cancelled"
+            )
         return True
 
     async def pause_job(self, job_id: str) -> bool:
@@ -699,7 +900,10 @@ class PrintQueue:
         self._worker_states[printer_id] = PrinterWorkerState.PAUSED
         self._worker_resume_events[printer_id].clear()
         previous = self._pause_info.get(printer_id)
-        if previous is None or previous.source != source:
+        # A user pause is never turned into an automatic one (which the status producer may
+        # lift on its own); an automatic pause may become a user pause.
+        keep_user = previous is not None and previous.source == "user"
+        if previous is None or (previous.source != source and not keep_user):
             info = PauseInfo(
                 source=source,
                 reason_code="user" if source == "user" else (reason or "unknown"),
@@ -807,6 +1011,15 @@ class PrintQueue:
             except Exception as exc:
                 logger.exception("clear_queue: persisting cancellation of %s failed", job.id)
                 first_error = first_error or exc
+        for job in cleared:
+            if job.kind is not None:  # queued and held page jobs; tracked ones are PRINTING
+                await notify_ended(
+                    job.kind,
+                    UUID(job.id),
+                    state="cancelled",
+                    started=False,
+                    error_code="cancelled",
+                )
         if first_error is not None:
             raise first_error
         return len(cleared)
@@ -825,8 +1038,7 @@ class PrintQueue:
                 webhook-created row, or a payload that no longer validates).
         """
         printer_id = db_job.printer_id
-        if printer_id not in self._queues:
-            raise KeyError(f"Unknown printer: {printer_id}")
+        self._require_tape(printer_id)
         job_key = str(db_job.id)
         if job_key in self._jobs:
             return
@@ -948,6 +1160,9 @@ class PrintQueue:
             if isinstance(item, BatchJob):
                 await self._process_batch(printer, printer_id, item)
                 continue
+            if isinstance(item, PageJob):  # pragma: no cover - D18: submit paths refuse this
+                logger.error("Tape printer %s got a page job; dropped", printer_id)
+                continue
 
             job = item
 
@@ -1058,6 +1273,153 @@ class PrintQueue:
                 # Phase 2: DB-State persistieren (auch wenn Transition fehlschlug)
                 await self._store.mark_failed(UUID(job.id), str(exc))
                 logger.exception("Job %s failed on %s", job.id, printer_id)
+
+    def _notify_page_change(self, job: Job, from_state: JobState, to_state: JobState) -> None:
+        """Event hook of the page-job runner (``from == to`` = ``at_printer`` changed)."""
+        self._notify_state_change(
+            job, from_state, to_state, queue_depth=self._queue_depth(job.printer_id)
+        )
+
+    async def _page_worker(self, printer_id: UUID) -> None:
+        """D18: consume a page printer's queue, one page job at the printer at a time.
+
+        A job the pre-flight deferred waits in the held slot and is taken before anything
+        from the queue, so it keeps its place; the printer is paused with
+        ``source="printer_error"`` until the status producer (or the user) resumes it.
+        """
+        printer = self._page_printers[printer_id]
+        queue = self._queues[printer_id]
+        await self._resume_page_jobs(printer, printer_id)
+        while True:
+            item = self._held[printer_id]
+            if item is not None:
+                self._held[printer_id] = None
+            else:
+                got = await queue.get()
+                if got is None:  # sentinel — stop() requested a clean exit
+                    return
+                if not isinstance(got, PageJob):  # pragma: no cover - submit paths guard this
+                    logger.error("Page printer %s got a tape item; dropped", printer_id)
+                    continue
+                item = got
+            while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
+                if self._stopping:
+                    return
+                await self._worker_resume_events[printer_id].wait()
+            if self._stopping:
+                return
+            if item.job.state != JobState.QUEUED:
+                continue  # cancelled (or cleared) while waiting
+            try:
+                await self._page_runner.run(printer, item)
+            except Deferred as deferred:
+                if _state_of(item.job) != JobState.QUEUED:
+                    continue  # cancelled during the pre-flight: nothing to hold, no pause
+                self._held[printer_id] = item
+                await self.pause_printer(
+                    printer_id, reason=deferred.reason_code, source="printer_error"
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await self._page_backstop(item, printer_id)
+
+    async def _page_backstop(self, item: PageJob, printer_id: UUID) -> None:
+        """The runner ends every job itself; this is the backstop for a bug in it."""
+        logger.exception("Page job %s: runner failed on %s", item.job.id, printer_id)
+        if _state_of(item.job) == JobState.PRINTING:
+            message = "The printer may have printed the page; its outcome is unknown."
+            # 1. persist, best effort
+            try:
+                await self._store.mark_failed_code(UUID(item.job.id), "interrupted", message, None)
+            except Exception:
+                # The database is failing too; the row stays ``printing`` and the next
+                # start settles it. The worker must not die of it.
+                logger.exception("Page job %s: backstop could not persist the end", item.job.id)
+            # 2. the terminal state in memory (this releases the waiters), 3. the same event a
+            # normal failure emits, 4. the outcome handler: the page may have printed.
+            item.job.error_code = "interrupted"
+            item.job.error_message = message
+            item.job.error_msg = message
+            with contextlib.suppress(InvalidStateTransitionError):
+                JobStateMachine.transition(item.job, JobState.FAILED)
+            if _state_of(item.job) == JobState.FAILED:
+                self._notify_page_change(item.job, JobState.PRINTING, JobState.FAILED)
+                try:
+                    await notify_ended(
+                        item.payload.kind,
+                        UUID(item.job.id),
+                        state="failed",
+                        started=True,
+                        error_code="interrupted",
+                    )
+                except Exception:
+                    logger.exception("Page job %s: backstop outcome call failed", item.job.id)
+
+    async def _resume_page_jobs(self, printer: PagePrinter, printer_id: UUID) -> None:
+        """Resume tracking of the jobs the printer held across a hub restart.
+
+        Runs before the worker takes anything from its queue, and whether or not the printer
+        is paused: the job is at the printer already. One Get-Jobs ``not-completed`` asks what
+        the printer still holds; a tracked id it does not list is looked up once, and ends
+        ``interrupted`` only if the printer no longer knows it. If the printer cannot be
+        asked, nothing is failed: the tracking resumes and waits like any tracked job (OC-23).
+        """
+        items = self._to_resume.pop(printer_id, [])
+        if not items:
+            return
+        try:
+            await self._resume_listed(printer, printer_id, items)
+        finally:
+            for item in items:
+                self._resuming.pop(UUID(item.job.id), None)
+
+    async def _resume_listed(
+        self, printer: PagePrinter, printer_id: UUID, items: list[PageJob]
+    ) -> None:
+        try:
+            listed: dict[int, JobInfo] | None = {
+                j.job_id: j for j in await printer.client.get_jobs()
+            }
+        except IppError as exc:
+            logger.info("Recovery: %s could not list its jobs (%s)", printer_id, type(exc).__name__)
+            listed = None
+        for item in items:
+            if self._stopping:
+                return
+            ipp_job_id = (item.resume_result or {})["ipp_job_id"]
+            expected = wire_job_name(item.payload.job_name, item.job.id)
+            try:
+                if listed is not None:
+                    seen = listed.get(ipp_job_id)
+                    if seen is not None:
+                        # Listed under the stored id: ours only if the name and user are the
+                        # hub's (the printer may have reused the id after a reboot).
+                        foreign = not is_own_job(seen.name, seen.originating_user, expected)
+                    else:
+                        foreign = await self._printer_forgot(printer, ipp_job_id, expected)
+                    if foreign:
+                        await self._page_runner.end_forgotten(item)
+                        continue
+                # No await between this read and ``resume`` registering the job: a cancel
+                # either landed before (and is passed on) or finds the job active.
+                cancel = self._resuming.pop(UUID(item.job.id), False)
+                await self._page_runner.resume(printer, item, cancel_requested=cancel)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await self._page_backstop(item, printer_id)
+
+    @staticmethod
+    async def _printer_forgot(printer: PagePrinter, ipp_job_id: int, expected_name: str) -> bool:
+        """True when the printer has no such job, or the id now belongs to another job."""
+        try:
+            info = await printer.client.get_job(ipp_job_id)
+        except IppNotFoundError:
+            return True
+        except IppError:
+            return False
+        return not is_own_job(info.name, info.originating_user, expected_name)
 
     async def _process_batch(
         self,
@@ -1240,6 +1602,11 @@ class PrintQueue:
                 printer_id,
                 len(active_jobs),
             )
+
+
+def _state_of(job: Job) -> JobState:
+    """The job's current state (read through a call: it changes across awaits)."""
+    return job.state
 
 
 async def load_manual_pauses(session: AsyncSession) -> dict[UUID, datetime]:

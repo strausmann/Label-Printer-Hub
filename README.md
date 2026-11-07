@@ -34,7 +34,7 @@ This project is being designed against the [Brother PT-E550W/P750W/P710BT Raster
 **One container:** a single backend process serves the REST API, the live event stream and the web UI ([ADR 0015](docs/decisions/0015-single-process-deployment.md)). Printers are added in the UI (Settings > Printers), not through environment variables.
 
 - **Backend** (`label-printer-hub-backend`, the only image): Python 3.12+, FastAPI, SQLModel (SQLite), asyncio
-- **Printer protocols**: `nbuchwitz/ptouch` (PT-Series), `pklaus/brother_ql` (QL-Series), `pysnmp` for status polling
+- **Printer protocols**: `nbuchwitz/ptouch` (PT-Series), `pklaus/brother_ql` (QL-Series), `pysnmp` for status polling; an own IPP client over `httpx` for page printers ([ADR 0020](docs/decisions/0020-backend-kinds-ipp-page-printers.md)), with `reportlab` drawing the PDF pages
 - **Web UI** (built into the backend image from `frontend/`): React + TypeScript, Vite, PWA (manifest + service worker + camera scanning) — [ADR 0016](docs/decisions/0016-react-typescript-web-ui.md)
 - **Container**: Docker (multi-stage, one image), GHCR + Docker Hub publishing, multi-arch (amd64 + arm64)
 - **CI/CD**: GitHub Actions, semantic-release, Dependabot

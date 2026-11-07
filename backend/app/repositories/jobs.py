@@ -10,7 +10,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from app.models.job import Job, JobState
+from app.models.job import Job, JobState, is_page_payload
 
 
 async def get(session: AsyncSession, job_id: UUID) -> Job | None:
@@ -111,8 +111,13 @@ async def mark_done(
     return job
 
 
-async def mark_failed(session: AsyncSession, job_id: UUID, error: str) -> Job:
-    """Transition QUEUED|PRINTING → FAILED. Sets finished_at."""
+async def mark_failed(
+    session: AsyncSession, job_id: UUID, error: str, *, result: dict[str, Any] | None = None
+) -> Job:
+    """Transition QUEUED|PRINTING → FAILED. Sets finished_at.
+
+    ``result`` (when given) replaces the stored result in the same commit as the state.
+    """
     job = await _get_or_raise(session, job_id)
     if job.state not in (JobState.QUEUED.value, JobState.PRINTING.value):
         raise ValueError(
@@ -121,7 +126,21 @@ async def mark_failed(session: AsyncSession, job_id: UUID, error: str) -> Job:
         )
     job.state = JobState.FAILED.value
     job.error = error
+    if result is not None:
+        job.result = dict(result)
     job.finished_at = datetime.now(UTC)
+    session.add(job)
+    await session.commit()
+    await session.refresh(job)
+    return job
+
+
+async def set_result(session: AsyncSession, job_id: UUID, result: dict[str, Any]) -> Job | None:
+    """Replace ``result`` of a job (any state). Returns ``None`` when the job is unknown."""
+    job = await session.get(Job, job_id)
+    if job is None:
+        return None
+    job.result = dict(result)
     session.add(job)
     await session.commit()
     await session.refresh(job)
@@ -183,25 +202,47 @@ async def list_active(
     return list(result.scalars())
 
 
+async def list_page_jobs_in_flight(
+    session: AsyncSession, printer_id: UUID | None = None
+) -> list[Job]:
+    """PRINTING page jobs (``payload.kind`` set) of one printer (``None``: of every printer),
+    oldest first."""
+    stmt = select(Job).where(col(Job.state) == JobState.PRINTING.value)
+    if printer_id is not None:
+        stmt = stmt.where(col(Job.printer_id) == printer_id)
+    stmt = stmt.order_by(col(Job.created_at))
+    result = await session.execute(stmt)
+    return [j for j in result.scalars() if is_page_payload(j.payload)]
+
+
 async def mark_printing_as_failed_restart(
     session: AsyncSession,
     printer_id: UUID,
 ) -> int:
-    """Phase 2: UPDATE only PRINTING jobs for a specific printer to
+    """Phase 2: UPDATE only PRINTING *tape* jobs for a specific printer to
     FAILED_RESTART with error='printer_interrupted'.
 
     Used at PrintQueue.start() — QUEUED jobs are NOT affected because
     they will be re-enqueued cleanly. Only PRINTING jobs are ambiguous
     (printer may have completed before crash but Hub couldn't update DB).
 
+    PRINTING page jobs (``payload.kind``) are left alone: the IPP printer still holds
+    them, and the queue resumes their tracking or settles them one by one
+    (``mark_failed_restart``).
+
     Returns the count of affected rows.
     """
-    stmt = (
+    stmt = select(Job).where(
+        col(Job.printer_id) == printer_id,
+        col(Job.state) == JobState.PRINTING.value,
+    )
+    rows = (await session.execute(stmt)).scalars()
+    tape_ids = [job.id for job in rows if not is_page_payload(job.payload)]
+    if not tape_ids:
+        return 0
+    update_stmt = (
         update(Job)
-        .where(
-            col(Job.printer_id) == printer_id,
-            col(Job.state) == JobState.PRINTING.value,
-        )
+        .where(col(Job.id).in_(tape_ids), col(Job.state) == JobState.PRINTING.value)
         .values(
             state=JobState.FAILED_RESTART.value,
             error="printer_interrupted",
@@ -209,9 +250,26 @@ async def mark_printing_as_failed_restart(
         )
         .execution_options(synchronize_session="fetch")
     )
-    result = await session.execute(stmt)
+    result = await session.execute(update_stmt)
     await session.commit()
     return int(result.rowcount)  # type: ignore[attr-defined]
+
+
+async def mark_failed_restart(session: AsyncSession, job_id: UUID, error: str) -> bool:
+    """One PRINTING job -> FAILED_RESTART with *error*. ``False``: not found or not PRINTING."""
+    stmt = (
+        update(Job)
+        .where(col(Job.id) == job_id, col(Job.state) == JobState.PRINTING.value)
+        .values(
+            state=JobState.FAILED_RESTART.value,
+            error=error,
+            finished_at=datetime.now(UTC),
+        )
+        .execution_options(synchronize_session="fetch")
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return int(result.rowcount) > 0  # type: ignore[attr-defined]
 
 
 async def list_by_ids(

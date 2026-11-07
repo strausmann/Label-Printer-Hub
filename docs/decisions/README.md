@@ -28,8 +28,8 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0001](0001-two-container-architecture.md) | Two-container architecture (separate backend and frontend) | Superseded by 0015 |
 | [0002](0002-python-fastapi-backend.md) | Python + FastAPI for the backend | Accepted |
 | [0003](0003-go-tailwind-htmx-pwa-frontend.md) | Go + Tailwind + HTMX + PWA for the frontend | Superseded by 0016 |
-| [0004](0004-plugin-architecture-for-printer-models.md) | Plugin architecture for printer models | Accepted |
-| [0005](0005-print-queue-is-mandatory.md) | Print queue is mandatory (printer has none) | Accepted |
+| [0004](0004-plugin-architecture-for-printer-models.md) | Plugin architecture for printer models | Accepted (amended by 0020) |
+| [0005](0005-print-queue-is-mandatory.md) | Print queue is mandatory (printer has none) | Accepted (amended by 0020) |
 | [0006](0006-status-sources-by-phase.md) | Status sources by phase (ESC i S / passive / SNMP) | Accepted |
 | [0007](0007-docker-image-tag-scheme.md) | Docker image tag scheme | Accepted (single image, see 0015) |
 | [0008](0008-conventional-commits-and-semantic-release.md) | Conventional Commits + semantic-release | Accepted |
@@ -44,6 +44,7 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0017](0017-settings-in-database-env-locks-encrypted-secrets.md) | Settings in the database; environment locks fields; secrets encrypted | Accepted |
 | [0018](0018-decision-register.md) | Public decision register with D/V/L labels | Accepted |
 | [0019](0019-proxy-headers-need-trust-token.md) | Proxy identity headers are trusted only with the trust token | Accepted |
+| [0020](0020-backend-kinds-ipp-page-printers.md) | Page printers are a backend kind (IPP) with the hub's own client | Proposed |
 
 The [decision register](register.md) lists the short `D<n>` labels cited in code.
 

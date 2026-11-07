@@ -520,7 +520,7 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 - `tray` (default tray if omitted), `expected_cells` (from the preview).
 - **Capacity:** if the items do not fit the placements, `409 insufficient_cells` with `free_cells` per placement and the shortfall. The UI then offers: rest onto another sheet of the type, rest onto a new sheet, or a sheet with enough room (mockup screen 2).
 
-**Error codes added:** `sheet_type_not_found`, `sheet_type_version_not_found`, `sheet_type_archived`, `type_exists`, `prefix_taken`, `invalid_geometry`, `sheet_not_found`, `sheet_discarded`, `sheet_busy`, `sheet_type_mismatch`, `cells_taken`, `cell_out_of_range`, `plan_changed`, `insufficient_cells`, `media_kind_mismatch`, `tray_unknown`, `margin_too_small`, `calibration_out_of_range`, `ipp_unreachable`, `ipp_pdf_unsupported`, `ipp_rejected`. Existing ones (`content_type_data_mismatch`, `printer_disabled`, `printer_not_allowed`) are reused.
+**Error codes added:** `sheet_type_not_found`, `sheet_type_version_not_found`, `sheet_type_archived`, `type_exists`, `prefix_taken`, `invalid_geometry`, `sheet_not_found`, `sheet_discarded`, `sheet_busy`, `sheet_type_mismatch`, `cells_taken`, `cell_out_of_range`, `plan_changed`, `insufficient_cells`, `media_kind_mismatch`, `tray_unknown`, `margin_too_small`, `calibration_out_of_range`, `calibration_type_unsuitable`, `readings_insufficient`, `printer_not_found`, `ipp_unreachable`, `ipp_pdf_unsupported`, `ipp_rejected`. Existing ones (`content_type_data_mismatch`, `printer_disabled`, `printer_not_allowed`) are reused.
 
 *Added 2026-11-05 with the sheet API (Plan 1, Task 8): the codes that the type and sheet routes of Plan 1 answer with, as built.*
 
@@ -535,8 +535,36 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 | `invalid_import` | 422 | import document is not valid; `{errors}` with field paths, never the input |
 | `invalid_request` | 422 | request validation failed on `/api/sheet-types`, `/api/sheets` or `/api/sheet-cells`; `{errors}` with field paths only, never the input |
 | `prefix_taken` | 409 | prefix used by another type; `{reason: "sheets_exist"}` when sheets already carry this type's prefix |
-| `sheet_type_version_not_found` | 404 | `POST /api/sheets` names a version the (existing) type does not have; the type itself unknown is `sheet_type_not_found` |
+| `sheet_type_version_not_found` | 404 | the type exists and the version does not; the type itself unknown is `sheet_type_not_found`. Answered by every route that takes a version: `POST /api/sheets`, `GET /api/sheet-types/{key}/versions/{n}`, the export, and (Plan 2) calibration fit, `PUT` with `measured_on`, and the calibration page routes. Amended in Plan 2: before it, the type routes answered `sheet_type_not_found` for a missing version |
 | `type_in_use` | 409 | delete refused; `{reason}` is `has_sheets` (any sheet, even discarded), `seed_type` or `imported_type` (only custom types are deleted, the others are archived) |
+
+*Added 2026-11-07 with the IPP page printers and calibration (Plan 2), as built.* Codes of the table above are not repeated. Most use the `{error_code, error_message, error_detail}` envelope; the exceptions are named in the last column.
+
+| Code | Status | Meaning, `error_detail` | Notes |
+|---|---|---|---|
+| `calibration_out_of_range` | 422 | a calibration value is outside its range, or has more decimals than stored; `{field, min, max, reason}`, `reason` is `out_of_range` or `too_many_decimals` | `PUT /printers/{id}/calibration/{tray}` after the path checks; nothing is stored |
+| `calibration_type_unsuitable` | 422 | the sheet type has fewer than two columns or two rows, so a calibration page has no crossings; `{cols, rows}` | `…/page` and `…/page/pdf` |
+| `invalid_connection` | 422 | the `connection` of an admin update does not fit the stored backend | admin printer routes, `{error_code, error_message}` only |
+| `invalid_geometry` | 422 | from the fit, a reading names a gap that does not exist; `{field, reason, reading}`, where `reading` is the 0-based index of the bad reading and `field` is `readings[<index>].<name>` | `POST …/calibration/{tray}/fit` |
+| `ipp_bad_response` | 502 | the printer answered, but not with something the hub can use; no detail | probe, save of a printer |
+| `ipp_pdf_unsupported` | 409 | the printer does not accept `application/pdf`; the printer is not saved | create and update of an IPP printer |
+| `ipp_rejected` | 502 | the printer refused the request; `{ipp_status}` is the IPP status name, never printer text | probe, save of a printer |
+| `ipp_unreachable` | 409 / 502 | the printer could not be reached: `409` when saving (nothing is saved), `502` for the probe | admin printer routes |
+| `job_not_retryable` | 409 | retry of a sheet page; its cells need the cell-aware retry (Plan 3). No row is created | `POST /api/jobs/{id}/retry` |
+| `media_kind_mismatch` | 409 | a tape route was called for a page printer, a page job for a tape printer, or a tape payload is retried on a page printer | print, batch, submit, retry |
+| `no_tape_printer` | 503 | no tape printer is wired, for example only IPP page printers are configured | `POST /api/print`, `{error_code, error_message}` |
+| `printer_model_unknown` | 409 | capabilities of a tape printer whose model has no registered driver | `GET /printers/{id}/capabilities` |
+| `printer_not_found` | 404 | no printer with this id | calibration and capabilities routes |
+| `readings_insufficient` | 422 | not enough readings to fit; `{reason}` is `fewer_than_three_readings`, `readings_on_one_line` or `degenerate_fit` | `POST …/calibration/{tray}/fit` |
+| `tray_unknown` | 422 | the printer has no enabled tray of this key (calibration routes), or reports no such tray (admin save); `{trays}` for the admin save | calibration and admin printer routes |
+| `trays_not_allowed` | 422 | `trays` sent for a tape printer | admin printer routes, `{error_code, error_message}` only |
+
+*Not in this table, by design:*
+
+- `POST …/calibration/{tray}/page` and `POST /api/jobs/{id}/retry` answer a printer the print queue does not know (`409`) in the **ProblemDetail** shape, `detail.type = "printer-unavailable"`, like the other job routes. Retry also answers `job-not-retryable` (`422`) in that shape when the stored payload is invalid. Every other calibration error uses the envelope above.
+- `margin_too_small` (in the list above) is not answered by Plan 2; it belongs to the sheet print (Plan 3).
+- A *job* that ends `failed` carries its own `error_code`, not an HTTP status: `render_failed`, `ipp_unreachable`, `ipp_busy`, `ipp_rejected` (`{ipp_status}` in `result.error_detail`), `ipp_request_invalid`, `ipp_aborted` (the printer aborted a job that never started), `interrupted` (it may have printed), `recovery_invalid_page_payload` (restart found an unusable payload) and `cancelled`. None carries printer text or the printer's address.
+- Check order of the calibration routes with a path and a body: printer and tray first (`tray_unknown`), then the sheet type of `measured_on`/`type` (`sheet_type_not_found`, `sheet_type_version_not_found`), then the value ranges. `fit`, `page` and `PUT` all use it.
 
 *Empty cell lists (decided with Task 8):* `cells/mark`, `unmark` and `resolve` refuse an empty list at the API (`422 invalid_request`, `cells` needs 1 to 400 entries). The service treats an empty list as a no-op — no write lock, no commit, no event — so a caller that skips the HTTP layer gets the sheet back unchanged. Text that is nothing after cleaning is `null` (optional fields) or the default (`marked by hand` for a cell purpose); empty product code entries are dropped.
 

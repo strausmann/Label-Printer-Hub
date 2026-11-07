@@ -50,30 +50,65 @@ async def _check_alembic(settings: Settings) -> CheckStatus:
         return CheckStatus(status="fail", detail=str(exc))
 
 
-def _check_printer_runtime(app_state: Any) -> CheckStatus:
+def _runtime_printer_ids(app_state: Any) -> list[Any]:
+    """The printers the hub runs: the first tape printer and every page (IPP) printer.
+
+    Both kinds are judged together (the worst answer wins). A hub whose only enabled
+    printers are page printers has no ``printer_id`` but is still a working hub; a hub
+    without any printer has neither.
+    """
+    ids: list[Any] = []
     pid = getattr(app_state, "printer_id", None)
-    if pid is None:
+    if pid is not None:
+        ids.append(pid)
+    ids.extend(
+        ipp_id
+        for ipp_id in (getattr(app_state, "ipp_printer_states", None) or {})
+        if ipp_id not in ids
+    )
+    return ids
+
+
+def _check_printer_runtime(app_state: Any) -> CheckStatus:
+    ids = _runtime_printer_ids(app_state)
+    if not ids:
         return CheckStatus(status="fail", detail="app.state.printer_id is None")
-    return CheckStatus(status="ok", metric={"printer_id": str(pid)})
+    metric: dict[str, Any] = {}
+    pid = getattr(app_state, "printer_id", None)
+    if pid is not None:
+        metric["printer_id"] = str(pid)
+    page_printers = len(ids) - (1 if pid is not None else 0)
+    if page_printers:
+        metric["page_printers"] = page_printers
+    return CheckStatus(status="ok", metric=metric)
 
 
 async def _check_printer_db_sync(session: AsyncSession, app_state: Any) -> CheckStatus:
-    pid = getattr(app_state, "printer_id", None)
-    if pid is None:
+    ids = _runtime_printer_ids(app_state)
+    if not ids:
         return CheckStatus(status="skipped", detail="No runtime printer")
-    row = await session.get(Printer, pid)
-    if row is None:
-        return CheckStatus(
-            status="fail",
-            detail=f"app.state.printer_id={pid} has no matching DB row",
-        )
+    for pid in ids:
+        if await session.get(Printer, pid) is None:
+            return CheckStatus(
+                status="fail",
+                detail=f"app.state.printer_id={pid} has no matching DB row",
+            )
     return CheckStatus(status="ok")
 
 
+_SEVERITY = {"ok": 0, "stale": 1, "fail": 2}
+
+
 async def _check_snmp_discovery(session: AsyncSession, app_state: Any) -> CheckStatus:
-    pid = getattr(app_state, "printer_id", None)
-    if pid is None:
+    """Cache recency of the runtime printer; for page printers the worst of them counts."""
+    ids = _runtime_printer_ids(app_state)
+    if not ids:
         return CheckStatus(status="skipped", detail="No runtime printer")
+    results = [await _check_cache_recency(session, pid) for pid in ids]
+    return max(results, key=lambda r: _SEVERITY[r.status])
+
+
+async def _check_cache_recency(session: AsyncSession, pid: Any) -> CheckStatus:
     row = await session.get(PrinterStatusCache, pid)
     if row is None or row.captured_at is None:
         return CheckStatus(status="fail", detail="No SNMP probe recorded yet")

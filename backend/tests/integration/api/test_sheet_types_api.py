@@ -151,7 +151,7 @@ async def test_get_version(api_client_with_seed, admin, reader):
     assert resp.json()["geometry"]["cols"] == 4
     missing = await api_client_with_seed.get("/api/sheet-types/acme-t1/versions/9", headers=reader)
     assert missing.status_code == 404
-    assert _err(missing)["error_code"] == "sheet_type_not_found"
+    assert _err(missing)["error_code"] == "sheet_type_version_not_found"
 
 
 async def test_patch_changes_only_sent_fields(api_client_with_seed, admin):
@@ -352,6 +352,7 @@ async def test_export_document_and_headers(api_client_with_seed, admin, reader):
         "/api/sheet-types/acme-t1/export", params={"version": 7}, headers=reader
     )
     assert missing.status_code == 404
+    assert _err(missing)["error_code"] == "sheet_type_version_not_found"
 
 
 async def test_export_import_roundtrip_over_http(api_client_with_seed, admin):

@@ -149,7 +149,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a queued job
-         * @description Cancels a job that is in ``queued`` state.  Returns 409 ProblemDetail when the job is in ``printing`` (or any other non-QUEUED) state — mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.
+         * @description Cancels a job that is in ``queued`` state.  Returns 409 ProblemDetail when the job is in ``printing`` (or any other non-QUEUED) state — mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Exception: a page job (IPP printer) that the printer already holds is cancelled at the printer: the hub sends Cancel-Job and answers ``202`` with the job still ``printing``; the job ends ``cancelled`` (or ``failed``/``interrupted`` when the page had started) once the printer confirms.
          */
         post: operations["cancel_job_api_jobs__job_id__cancel_post"];
         delete?: never;
@@ -209,7 +209,7 @@ export interface paths {
         put?: never;
         /**
          * Retry a failed job
-         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).
+         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from its payload, so retry prints the same page again with its original calibration snapshot and date; a fresh check print with the current calibration is a new calibration-page request.  A sheet page answers 409 ``job_not_retryable`` (its cells need the cell-aware retry).
          */
         post: operations["retry_job_api_jobs__job_id__retry_post"];
         delete?: never;
@@ -249,7 +249,7 @@ export interface paths {
         put?: never;
         /**
          * Submit a batch of print jobs
-         * @description Atomic batch print. Validates all items and enqueues the entire batch as a unit — no per-item errors are returned. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code.
+         * @description Atomic batch print. Validates all items and enqueues the entire batch as a unit — no per-item errors are returned. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch.
          */
         post: operations["create_batch_api_print__printer_key__batch_post"];
         delete?: never;
@@ -290,6 +290,112 @@ export interface paths {
          * @description Returns full metadata for a single printer, including the ``paused`` flag joined from ``printer_state``. Returns 404 when the printer is not registered.
          */
         get: operations["get_printer_api_printers__printer_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/printers/{printer_id}/calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Calibration of every enabled tray */
+        get: operations["get_calibration_api_printers__printer_id__calibration_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/printers/{printer_id}/calibration/{tray}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the manual calibration of a tray */
+        put: operations["put_calibration_api_printers__printer_id__calibration__tray__put"];
+        post?: never;
+        /** Reset a tray to no calibration */
+        delete: operations["delete_calibration_api_printers__printer_id__calibration__tray__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/printers/{printer_id}/calibration/{tray}/fit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fit calibration values from measured readings (nothing is saved) */
+        post: operations["fit_calibration_api_printers__printer_id__calibration__tray__fit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/printers/{printer_id}/calibration/{tray}/page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Print the calibration page (no sheet is created) */
+        post: operations["print_calibration_page_api_printers__printer_id__calibration__tray__page_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/printers/{printer_id}/calibration/{tray}/page/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the calibration page as a PDF */
+        get: operations["download_calibration_page_api_printers__printer_id__calibration__tray__page_pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/printers/{printer_id}/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capabilities of a tape or page printer (cache only)
+         * @description Resolution, media, trays with their calibration and accepted document formats. Served from the status cache: the printer is never contacted, so a printer that has not been probed yet answers 200 with ``media`` and ``captured_at`` null. No connection detail is part of the answer. A page printer that never answered a probe is reported as unknown (``media``, ``document_formats`` and ``captured_at`` null). A tape width without a geometry entry also gives ``media`` null. Only enabled trays carry a calibration.
+         */
+        get: operations["get_capabilities_api_printers__printer_id__capabilities_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -349,7 +455,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel all queued jobs for a printer
-         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Returns 204 even when there are no queued jobs.
+         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire; a page job the IPP printer already holds is left to finish as well (cancel it with ``POST /api/jobs/{id}/cancel``).  Returns 204 even when there are no queued jobs.
          */
         post: operations["clear_printer_queue_api_printers__printer_id__queue_clear_post"];
         delete?: never;
@@ -387,7 +493,7 @@ export interface paths {
         };
         /**
          * Return the latest cached printer status
-         * @description Returns the most recent status written by the background SNMP probe worker. The response is served from ``printer_status_cache`` — no synchronous SNMP probe is performed, so the response always returns in <10 ms. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Returns 404 when the printer is not registered.
+         * @description Returns the most recent status written by the background probe worker (SNMP for tape printers, IPP for page printers; page printers add ``kind``, ``printer_state``, reasons, markers, trays and ``jobs_ahead``). The response is served from ``printer_status_cache`` — no synchronous SNMP probe is performed, so the response always returns in <10 ms. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Returns 404 when the printer is not registered.
          */
         get: operations["get_printer_status_api_printers__printer_id__status_get"];
         put?: never;
@@ -729,9 +835,29 @@ export interface paths {
         put?: never;
         /**
          * Neuen Drucker anlegen
-         * @description Legt einen neuen Drucker an. Slug und Name müssen eindeutig sein. Gibt 409 zurück wenn Slug oder Name bereits vergeben ist.
+         * @description Legt einen neuen Drucker an. Slug und Name müssen eindeutig sein. Gibt 409 zurück wenn Slug oder Name bereits vergeben ist. An ``ipp`` printer is probed first; nothing is saved when it is unreachable (409 ``ipp_unreachable``), accepts no PDF (409 ``ipp_pdf_unsupported``) or does not report a configured tray (422 ``tray_unknown``).
          */
         post: operations["create_printer_api_v1_admin_printers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/printers/ipp/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read an IPP printer
+         * @description Runs Get-Printer-Attributes against the given URI now and returns a bounded summary (make and model, IPP and PDF versions, resolutions, media, trays, colour modes, margins, state); never the raw attributes. Errors: 502 ``ipp_unreachable``, ``ipp_rejected`` (IPP status name in ``error_detail``) or ``ipp_bad_response``. Admin only.
+         */
+        post: operations["probe_ipp_printer_api_v1_admin_printers_ipp_probe_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -752,7 +878,7 @@ export interface paths {
         get: operations["get_printer_api_v1_admin_printers__slug__get"];
         /**
          * Drucker aktualisieren
-         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert.
+         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). An ``ipp`` printer is probed again when its URI changes or a tray key is new.
          */
         put: operations["update_printer_api_v1_admin_printers__slug__put"];
         post?: never;
@@ -1252,6 +1378,140 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * CalibrationIn
+         * @description A printer's measured deviation; the hub applies the inverse when it renders (D17).
+         *
+         *     Offsets are millimetres (±10, at most 2 decimals), scales are factors (0.95 to 1.05, at
+         *     most 6 decimals), rotation is degrees (±2, at most 6 decimals, positive is clockwise).
+         *     The bounds are checked by the service and reported as ``calibration_out_of_range``; the
+         *     fit endpoint returns values of this shape even when they are outside the bounds.
+         */
+        CalibrationIn: {
+            /**
+             * Offset X Mm
+             * @description mm; allowed -10.0 to 10.0, at most 2 decimals (checked by the service).
+             * @default 0
+             */
+            offset_x_mm: number;
+            /**
+             * Offset Y Mm
+             * @description mm; allowed -10.0 to 10.0, at most 2 decimals (checked by the service).
+             * @default 0
+             */
+            offset_y_mm: number;
+            /**
+             * Rotation Deg
+             * @description degrees, positive is clockwise; allowed -2.0 to 2.0, at most 6 decimals (checked by the service).
+             * @default 0
+             */
+            rotation_deg: number;
+            /**
+             * Scale X
+             * @description factor; allowed 0.95 to 1.05, at most 6 decimals (checked by the service).
+             * @default 1
+             */
+            scale_x: number;
+            /**
+             * Scale Y
+             * @description factor; allowed 0.95 to 1.05, at most 6 decimals (checked by the service).
+             * @default 1
+             */
+            scale_y: number;
+        };
+        /** CalibrationPut */
+        CalibrationPut: {
+            /** @description The sheet type version the page was measured on (optional). */
+            measured_on?: components["schemas"]["MeasuredOn"] | null;
+            /**
+             * Offset X Mm
+             * @description mm; allowed -10.0 to 10.0, at most 2 decimals (checked by the service).
+             * @default 0
+             */
+            offset_x_mm: number;
+            /**
+             * Offset Y Mm
+             * @description mm; allowed -10.0 to 10.0, at most 2 decimals (checked by the service).
+             * @default 0
+             */
+            offset_y_mm: number;
+            /**
+             * Rotation Deg
+             * @description degrees, positive is clockwise; allowed -2.0 to 2.0, at most 6 decimals (checked by the service).
+             * @default 0
+             */
+            rotation_deg: number;
+            /**
+             * Scale X
+             * @description factor; allowed 0.95 to 1.05, at most 6 decimals (checked by the service).
+             * @default 1
+             */
+            scale_x: number;
+            /**
+             * Scale Y
+             * @description factor; allowed 0.95 to 1.05, at most 6 decimals (checked by the service).
+             * @default 1
+             */
+            scale_y: number;
+        };
+        /**
+         * CalibrationRead
+         * @description One enabled tray; the values are ``None`` while the tray has no calibration (identity).
+         */
+        CalibrationRead: {
+            measured_on?: components["schemas"]["MeasuredOn"] | null;
+            /** Method */
+            method?: string | null;
+            /** Offset X Mm */
+            offset_x_mm?: number | null;
+            /** Offset Y Mm */
+            offset_y_mm?: number | null;
+            /** Rotation Deg */
+            rotation_deg?: number | null;
+            /** Scale X */
+            scale_x?: number | null;
+            /** Scale Y */
+            scale_y?: number | null;
+            /** Tray */
+            tray: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** Updated By */
+            updated_by?: string | null;
+        };
+        /**
+         * Capabilities
+         * @description Served from the status cache; the printer is never contacted.
+         */
+        Capabilities: {
+            /**
+             * Captured At
+             * @description When the values were read. A page printer that went offline keeps the time of its last successful reading.
+             */
+            captured_at: string | null;
+            /**
+             * Document Formats
+             * @description Page printers only.
+             */
+            document_formats: string[] | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "tape" | "page";
+            /**
+             * Media
+             * @description None while nothing is known (page printer that never answered), when no tape is loaded, or when the loaded tape width has no geometry entry (tape).
+             */
+            media: components["schemas"]["TapeMedia"] | components["schemas"]["PageMedia"] | null;
+            /** Resolution Dpi */
+            resolution_dpi: components["schemas"]["TapeResolution"] | components["schemas"]["PageResolution"];
+            /**
+             * Trays
+             * @description Page printers only.
+             */
+            trays: components["schemas"]["TrayCapability"][] | null;
+        };
         /** CellHitRead */
         CellHitRead: {
             /** Cell */
@@ -1337,6 +1597,37 @@ export interface components {
             type: components["schemas"]["TypeDoc"];
             version: components["schemas"]["VersionDoc"];
         };
+        /** FitRequest */
+        FitRequest: {
+            /** Readings */
+            readings: components["schemas"]["ReadingIn"][];
+            /**
+             * Type
+             * @description Sheet type key.
+             */
+            type: string;
+            /**
+             * Version
+             * @description Defaults to the current version.
+             */
+            version?: number | null;
+        };
+        /** FitResponse */
+        FitResponse: {
+            /**
+             * Flagged
+             * @description 0-based indices into `readings` of those further than 0.3 mm from the fit.
+             */
+            flagged: number[];
+            /**
+             * Out Of Range
+             * @description Names of values outside the allowed ranges.
+             */
+            out_of_range: string[];
+            /** Residuals Mm */
+            residuals_mm: number[];
+            values: components["schemas"]["CalibrationIn"];
+        };
         /** GeometryMm */
         GeometryMm: {
             /** Cols */
@@ -1397,6 +1688,17 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HardwareMargins */
+        HardwareMargins: {
+            /** Bottom */
+            bottom: number;
+            /** Left */
+            left: number;
+            /** Right */
+            right: number;
+            /** Top */
+            top: number;
         };
         /**
          * Healthz
@@ -1495,6 +1797,22 @@ export interface components {
             ok: boolean;
             /** Status */
             status?: number | null;
+        };
+        /**
+         * IppConnection
+         * @description Connection of an IPP page printer (spec 11.1): URI and TLS verification (OC-17).
+         *
+         *     Only ``ipp``, ``ipps``, ``http`` and ``https``; no user info, no fragment
+         *     (``validate_ipp_uri``). IPP authentication is out of scope (OC-2).
+         */
+        IppConnection: {
+            /**
+             * Tls Verify
+             * @default true
+             */
+            tls_verify: boolean;
+            /** Uri */
+            uri: string;
         };
         /**
          * JobRead
@@ -1610,6 +1928,20 @@ export interface components {
              */
             url?: string | null;
         };
+        /**
+         * Margins
+         * @description Smallest unprintable margin per side, hundredths of mm.
+         */
+        Margins: {
+            /** Bottom */
+            bottom: number;
+            /** Left */
+            left: number;
+            /** Right */
+            right: number;
+            /** Top */
+            top: number;
+        };
         /** MarkRequest */
         MarkRequest: {
             /** Cells */
@@ -1625,6 +1957,33 @@ export interface components {
              */
             purpose?: string | null;
         };
+        /**
+         * MarkerRead
+         * @description One supply (toner, ink, waste container) of a page printer.
+         */
+        MarkerRead: {
+            /** Color */
+            color: string | null;
+            /** Empty */
+            empty: boolean;
+            /** Level Percent */
+            level_percent: number | null;
+            /** Low */
+            low: boolean;
+            /** Name */
+            name: string;
+            /** Some Remaining */
+            some_remaining: boolean;
+            /** Type */
+            type: string | null;
+        };
+        /** MeasuredOn */
+        MeasuredOn: {
+            /** Type Key */
+            type_key: string;
+            /** Version */
+            version: number;
+        };
         /** NextCode */
         NextCode: {
             /** Code */
@@ -1635,6 +1994,65 @@ export interface components {
              * @constant
              */
             hint: "probable";
+        };
+        /** PageJobAccepted */
+        PageJobAccepted: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /** PageMedia */
+        PageMedia: {
+            hardware_margins_mm: components["schemas"]["HardwareMargins"] | null;
+            /** Media Type Settable */
+            media_type_settable: boolean;
+            /** Media Types */
+            media_types: string[];
+            /** Page Sizes */
+            page_sizes: components["schemas"]["PageSize"][];
+        };
+        /** PageRequest */
+        PageRequest: {
+            /**
+             * Corrected
+             * @description Print with the tray's stored correction, to check it (not to measure).
+             * @default false
+             */
+            corrected: boolean;
+            /**
+             * Type
+             * @description Sheet type key.
+             */
+            type: string;
+            /**
+             * Version
+             * @description Defaults to the current version.
+             */
+            version?: number | null;
+        };
+        /** PageResolution */
+        PageResolution: {
+            /**
+             * Max
+             * @description Highest resolution the printer reports; None if unknown.
+             */
+            max: number | null;
+            /**
+             * Supported
+             * @description Every reported resolution in dpi, as reported.
+             */
+            supported: number[];
+        };
+        /** PageSize */
+        PageSize: {
+            /** Height Mm */
+            height_mm: number;
+            /** Name */
+            name: string;
+            /** Width Mm */
+            width_mm: number;
         };
         /**
          * PauseRead
@@ -1768,14 +2186,19 @@ export interface components {
         /**
          * PrinterCreatePayload
          * @description Payload für das Anlegen eines neuen Druckers via Admin-API.
+         *
+         *     ``ipp`` printers take an ``IppConnection`` and a required ``trays`` list; their
+         *     ``model`` is optional (filled from the probe) and SNMP and cut defaults do not
+         *     apply. Tape backends keep a required ``model`` and must not send ``trays``.
          */
         PrinterCreatePayload: {
             /**
              * Backend
              * @enum {string}
              */
-            backend: "ptouch" | "brother_ql";
-            connection: components["schemas"]["PrinterConnection"];
+            backend: "ptouch" | "brother_ql" | "ipp";
+            /** Connection */
+            connection: components["schemas"]["PrinterConnection"] | components["schemas"]["IppConnection"];
             cut_defaults?: components["schemas"]["PrinterCutDefaults"];
             /**
              * Enabled
@@ -1783,12 +2206,14 @@ export interface components {
              */
             enabled: boolean;
             /** Model */
-            model: string;
+            model?: string | null;
             /** Name */
             name: string;
             queue?: components["schemas"]["PrinterQueueSettings"];
             /** Slug */
             slug: string;
+            /** Trays */
+            trays?: components["schemas"]["TrayIn"][] | null;
         };
         /**
          * PrinterCutDefaults
@@ -1825,15 +2250,18 @@ export interface components {
          *     ``error_state`` mirrors the active PrinterError flags as a string, or
          *     ``None`` when the printer is ready.
          *     ``captured_at`` is the UTC timestamp of the probe that last updated the
-         *     cache row.  ``None`` means no probe has completed yet.
-         *     ``last_probe_age_s`` is the age of the cached reading in seconds.
+         *     cache row.  ``None`` means no probe has completed yet.  For a page printer
+         *     (``kind="page"``) that went offline it stays the time of the last
+         *     *successful* reading; ``online`` and ``last_error`` tell that it is stale.
+         *     ``last_probe_age_s`` is the age of the cached reading in seconds (for an
+         *     offline page printer: since its last successful reading).
          *     ``last_error`` is the exception message from the most recent failed probe.
          *     ``note`` carries a human-readable hint (e.g. "No probe yet").
          */
         PrinterStatus: {
             /**
              * Captured At
-             * @description UTC timestamp of the probe that produced this reading; None if no probe yet
+             * @description UTC timestamp of the probe that produced this reading; None if no probe yet. A page printer that went offline keeps the time of its last successful reading.
              */
             captured_at?: string | null;
             /**
@@ -1842,15 +2270,27 @@ export interface components {
              */
             error_state?: string | null;
             /**
+             * Jobs Ahead
+             * @description Jobs on the printer ahead of the hub's own
+             */
+            jobs_ahead?: number | null;
+            /**
+             * Kind
+             * @description 'page' for IPP page printers; None for tape printers
+             */
+            kind?: ("tape" | "page") | null;
+            /**
              * Last Error
              * @description Exception message from the most recent failed probe
              */
             last_error?: string | null;
             /**
              * Last Probe Age S
-             * @description Age of the cached reading in seconds
+             * @description Age of the cached reading in seconds; for an offline page printer, since its last successful reading
              */
             last_probe_age_s?: number | null;
+            /** Markers */
+            markers?: components["schemas"]["MarkerRead"][] | null;
             /**
              * Note
              * @description Human-readable hint, e.g. 'No probe yet'
@@ -1866,11 +2306,17 @@ export interface components {
              * Format: uuid
              */
             printer_id: string;
+            /** Printer State */
+            printer_state?: ("idle" | "printing" | "stopped") | null;
+            /** State Reasons */
+            state_reasons?: components["schemas"]["ReasonRead"][] | null;
             /**
              * Tape Loaded
              * @description e.g. "12mm laminated black/clear"; None when no tape is loaded
              */
             tape_loaded?: string | null;
+            /** Trays */
+            trays?: components["schemas"]["TrayStatusRead"][] | null;
         };
         /**
          * PrinterUpdatePayload
@@ -1878,15 +2324,60 @@ export interface components {
          *
          *     Der Service ignoriert stillschweigend: slug, model, backend, id.
          *     Alle Felder sind optional — ein leerer Body ist ein gültiger PATCH.
+         *
+         *     The payload carries no backend, so the service checks ``connection`` against the
+         *     stored row's backend; ``trays`` (replace-all) are for ``ipp`` printers only.
          */
         PrinterUpdatePayload: {
-            connection?: components["schemas"]["PrinterConnection"] | null;
+            /** Connection */
+            connection?: components["schemas"]["PrinterConnection"] | components["schemas"]["IppConnection"] | null;
             cut_defaults?: components["schemas"]["PrinterCutDefaults"] | null;
             /** Enabled */
             enabled?: boolean | null;
             /** Name */
             name?: string | null;
             queue?: components["schemas"]["PrinterQueueSettings"] | null;
+            /** Trays */
+            trays?: components["schemas"]["TrayIn"][] | null;
+        };
+        /**
+         * ProbeSummary
+         * @description What "Read printer" shows (spec 11.1) and what Print-Job attributes are chosen from.
+         */
+        ProbeSummary: {
+            /** Accepting Jobs */
+            accepting_jobs: boolean | null;
+            /** Color Modes */
+            color_modes: string[];
+            /** Ipp Versions */
+            ipp_versions: string[];
+            /** Make And Model */
+            make_and_model: string | null;
+            margins_hmm: components["schemas"]["Margins"] | null;
+            /** Media Col Members */
+            media_col_members: string[];
+            /** Media Col Supported */
+            media_col_supported: boolean;
+            /** Media Sizes */
+            media_sizes: string[];
+            /** Media Sources */
+            media_sources: string[];
+            /** Media Types */
+            media_types: string[];
+            /** Monochrome Supported */
+            monochrome_supported: boolean;
+            /** One Sided Supported */
+            one_sided_supported: boolean;
+            /** Pdf Supported */
+            pdf_supported: boolean;
+            /** Pdf Versions */
+            pdf_versions: string[];
+            /** Resolutions Dpi */
+            resolutions_dpi: number[];
+            /** Scaling None Supported */
+            scaling_none_supported: boolean;
+            /** State */
+            state: string;
         };
         /**
          * ProblemDetail
@@ -1972,6 +2463,44 @@ export interface components {
             status: "ready" | "degraded" | "not-ready";
             /** Version */
             version: string;
+        };
+        /** ReadingIn */
+        ReadingIn: {
+            /**
+             * Across Mm
+             * @description Ink offset to the right, mm.
+             */
+            across_mm: number;
+            /**
+             * Col Gap
+             * @description Vertical gap S1, S2, ... counted from 1.
+             */
+            col_gap: number;
+            /**
+             * Down Mm
+             * @description Ink offset downwards, mm.
+             */
+            down_mm: number;
+            /**
+             * Row Gap
+             * @description Horizontal gap Z1, Z2, ... counted from 1.
+             */
+            row_gap: number;
+        };
+        /**
+         * ReasonRead
+         * @description One ``printer-state-reasons`` keyword of a page printer (severity suffix removed).
+         */
+        ReasonRead: {
+            /** Blocking */
+            blocking: boolean;
+            /** Keyword */
+            keyword: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "report" | "warning" | "error";
         };
         /** ResolveRequest */
         ResolveRequest: {
@@ -2342,6 +2871,115 @@ export interface components {
              */
             type: string;
         };
+        /** TapeMedia */
+        TapeMedia: {
+            /**
+             * Printable Mm
+             * @description printable_px / dpi_y * 25.4, two decimals.
+             */
+            printable_mm: number;
+            /** Printable Px */
+            printable_px: number;
+            /**
+             * Type
+             * @description Tape type; None while the status cache does not carry it.
+             */
+            type: string | null;
+            /** Width Mm */
+            width_mm: number;
+        };
+        /** TapeResolution */
+        TapeResolution: {
+            /**
+             * X
+             * @description Dots per inch across the print head.
+             */
+            x: number;
+            /**
+             * Y
+             * @description Dots per inch along the tape.
+             */
+            y: number;
+        };
+        /** TrayCapability */
+        TrayCapability: {
+            /** @description Stored calibration; None while the tray has none or is disabled. */
+            calibration: components["schemas"]["CalibrationRead"] | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Is Default */
+            is_default: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Load Hint */
+            load_hint: string | null;
+            /**
+             * Media
+             * @description Media the printer reports in this tray, if any.
+             */
+            media: string | null;
+        };
+        /**
+         * TrayIn
+         * @description One tray of a page printer as the admin configures it.
+         */
+        TrayIn: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Load Hint */
+            load_hint?: string | null;
+        };
+        /**
+         * TrayRead
+         * @description A configured tray of a page printer.
+         */
+        TrayRead: {
+            /** Enabled */
+            enabled: boolean;
+            /** Is Default */
+            is_default: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Load Hint */
+            load_hint: string | null;
+        };
+        /**
+         * TrayStatusRead
+         * @description A configured tray of a page printer plus what the printer reports as loaded in it.
+         */
+        TrayStatusRead: {
+            /** Enabled */
+            enabled: boolean;
+            /** Is Default */
+            is_default: boolean;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Load Hint */
+            load_hint: string | null;
+            /**
+             * Media
+             * @description Loaded media as the printer reports it; None when not reported
+             */
+            media?: string | null;
+        };
         /** TypeDoc */
         TypeDoc: {
             /** Allow Qr */
@@ -2455,6 +3093,7 @@ export interface components {
          * @description Lesbare Darstellung eines Druckers.
          *
          *     Enthält alle DB-Felder — keine internen Implementierungsdetails.
+         *     ``trays`` is the tray list of a page printer and ``null`` for tape printers.
          */
         app__api__routes__admin_printers_api__PrinterRead: {
             /** Backend */
@@ -2486,6 +3125,8 @@ export interface components {
             };
             /** Slug */
             slug: string;
+            /** Trays */
+            trays?: components["schemas"]["TrayRead"][] | null;
             /** Updated At */
             updated_at: string;
         };
@@ -2826,6 +3467,15 @@ export interface operations {
                     "application/json": components["schemas"]["JobRead"];
                 };
             };
+            /** @description Cancel requested at the printer (page job) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3049,6 +3699,270 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["app__schemas__printer__PrinterRead"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_calibration_api_printers__printer_id__calibration_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_calibration_api_printers__printer_id__calibration__tray__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_calibration_api_printers__printer_id__calibration__tray__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fit_calibration_api_printers__printer_id__calibration__tray__fit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    print_calibration_page_api_printers__printer_id__calibration__tray__page_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJobAccepted"];
+                };
+            };
+            /** @description The printer is a tape printer (`media_kind_mismatch`) or is not known to the print queue (`printer-unavailable`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_calibration_page_api_printers__printer_id__calibration__tray__page_pdf_get: {
+        parameters: {
+            query: {
+                /** @description Sheet type key. */
+                type: string;
+                /** @description Defaults to the current version. */
+                version?: number | null;
+                corrected?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The calibration page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_capabilities_api_printers__printer_id__capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id. */
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            /** @description No driver is registered for the tape printer's model (`printer_model_unknown`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -4220,6 +5134,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["app__api__routes__admin_printers_api__PrinterRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    probe_ipp_printer_api_v1_admin_printers_ipp_probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IppConnection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProbeSummary"];
                 };
             };
             /** @description Validation Error */

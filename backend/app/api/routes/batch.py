@@ -26,6 +26,7 @@ from app.repositories import printers as printers_repo
 from app.schemas.print_batch import BatchRequest, BatchResponse
 from app.services.batch_dispatch import dispatch_batch
 from app.services.lookup_service import LookupFailedError, UnknownAppError
+from app.sheets.errors import MediaKindMismatchError
 
 # SessionDep locally — Hub has no central app/api/deps.py module.
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -54,7 +55,8 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
         "as a unit — no per-item errors are returned. Any validation failure "
         "or hardware precondition (printer_offline, cover_open, unsupported_tape, "
         "no_tape_loaded, content_type_data_mismatch) rejects the whole batch "
-        "with the appropriate 4xx status code."
+        "with the appropriate 4xx status code. A page printer (IPP) answers "
+        "409 media_kind_mismatch."
     ),
 )
 async def create_batch(
@@ -84,6 +86,10 @@ async def create_batch(
 
     # 3. ACL: api-key may be restricted to a subset of printer_ids
     check_printer_access(auth, printer.id)
+
+    # 3b. Tape jobs only: a page printer (IPP) prints sheets, not tape labels.
+    if printer.backend == "ipp":
+        raise MediaKindMismatchError().to_http()
 
     # 4. R3-Drift #10: backend_router direkt aus app.state — KEIN get_app_state.
     backend_router = getattr(http.app.state, "backend_router", None)

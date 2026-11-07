@@ -28,6 +28,7 @@ from app.sheets.errors import (
     PrefixTakenError,
     SheetTypeInUseError,
     SheetTypeNotFoundError,
+    SheetTypeVersionNotFoundError,
     TypeExistsError,
 )
 from app.sheets.geometry import (
@@ -257,8 +258,8 @@ async def current_version(session: AsyncSession, type_id: UUID) -> SheetTypeVers
 async def get_version(session: AsyncSession, key: str, n: int) -> SheetTypeVersion:
     t = await get_type(session, key)
     found = await repo.get_version(session, t.id, n)
-    if found is None:
-        raise SheetTypeNotFoundError()
+    if found is None:  # the type was resolved above: it is the version that is missing
+        raise SheetTypeVersionNotFoundError()
     return found
 
 

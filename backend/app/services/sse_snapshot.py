@@ -20,6 +20,7 @@ from sqlmodel import col
 from app.models.job import Job, JobState
 from app.repositories import jobs as jobs_repo
 from app.repositories import printer_status_cache as status_cache_repo
+from app.services.producers.ipp_status_producer import page_status_event_data
 
 _log = logging.getLogger(__name__)
 
@@ -50,11 +51,15 @@ async def build_snapshot(session: AsyncSession, printer_id: uuid.UUID) -> list[d
                     "channel": f"printer:{pid}:state",
                     "type": "printer.status",
                     "ts": ts,
-                    "data": {
-                        "hr_printer_status": parsed.get("hr_printer_status", "unknown"),
-                        "error_flags": parsed.get("error_flags", []),
-                        "online": parsed.get("online", False),
-                    },
+                    "data": (
+                        page_status_event_data(parsed)
+                        if parsed.get("kind") == "page"
+                        else {
+                            "hr_printer_status": parsed.get("hr_printer_status", "unknown"),
+                            "error_flags": parsed.get("error_flags", []),
+                            "online": parsed.get("online", False),
+                        }
+                    ),
                 }
             )
             # Only when the tape width is known: a null width would overwrite the

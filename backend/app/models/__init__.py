@@ -10,8 +10,10 @@ from app.models.job import Job, JobState
 from app.models.preset import Preset
 from app.models.print_batch import PrintBatch
 from app.models.printer import Printer, PrinterAudit
+from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_state import PrinterState
 from app.models.printer_status_cache import PrinterStatusCache
+from app.models.printer_tray import PrinterTray
 from app.models.sheet import (
     Sheet,
     SheetCell,
@@ -31,8 +33,10 @@ __all__ = [
     "PrintBatch",
     "Printer",
     "PrinterAudit",
+    "PrinterCalibration",
     "PrinterState",
     "PrinterStatusCache",
+    "PrinterTray",
     "Sheet",
     "SheetCell",
     "SheetIdCounter",

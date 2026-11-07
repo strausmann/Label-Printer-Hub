@@ -56,6 +56,39 @@ class PrinterRead(BaseModel):
         return serialize_datetime_utc(dt, _info)
 
 
+class ReasonRead(BaseModel):
+    """One ``printer-state-reasons`` keyword of a page printer (severity suffix removed)."""
+
+    keyword: str
+    severity: Literal["report", "warning", "error"]
+    blocking: bool
+
+
+class MarkerRead(BaseModel):
+    """One supply (toner, ink, waste container) of a page printer."""
+
+    name: str
+    color: str | None
+    type: str | None
+    level_percent: int | None
+    some_remaining: bool
+    low: bool
+    empty: bool
+
+
+class TrayStatusRead(BaseModel):
+    """A configured tray of a page printer plus what the printer reports as loaded in it."""
+
+    key: str
+    label: str
+    load_hint: str | None
+    enabled: bool
+    is_default: bool
+    media: str | None = Field(
+        default=None, description="Loaded media as the printer reports it; None when not reported"
+    )
+
+
 class PrinterStatus(BaseModel):
     """Printer status sourced from the printer_status_cache table.
 
@@ -68,8 +101,11 @@ class PrinterStatus(BaseModel):
     ``error_state`` mirrors the active PrinterError flags as a string, or
     ``None`` when the printer is ready.
     ``captured_at`` is the UTC timestamp of the probe that last updated the
-    cache row.  ``None`` means no probe has completed yet.
-    ``last_probe_age_s`` is the age of the cached reading in seconds.
+    cache row.  ``None`` means no probe has completed yet.  For a page printer
+    (``kind="page"``) that went offline it stays the time of the last
+    *successful* reading; ``online`` and ``last_error`` tell that it is stale.
+    ``last_probe_age_s`` is the age of the cached reading in seconds (for an
+    offline page printer: since its last successful reading).
     ``last_error`` is the exception message from the most recent failed probe.
     ``note`` carries a human-readable hint (e.g. "No probe yet").
     """
@@ -89,11 +125,17 @@ class PrinterStatus(BaseModel):
     )
     captured_at: datetime | None = Field(
         default=None,
-        description="UTC timestamp of the probe that produced this reading; None if no probe yet",
+        description=(
+            "UTC timestamp of the probe that produced this reading; None if no probe yet. "
+            "A page printer that went offline keeps the time of its last successful reading."
+        ),
     )
     last_probe_age_s: int | None = Field(
         default=None,
-        description="Age of the cached reading in seconds",
+        description=(
+            "Age of the cached reading in seconds; for an offline page printer, "
+            "since its last successful reading"
+        ),
     )
     last_error: str | None = Field(
         default=None,
@@ -102,6 +144,17 @@ class PrinterStatus(BaseModel):
     note: str | None = Field(
         default=None,
         description="Human-readable hint, e.g. 'No probe yet'",
+    )
+    # Page printers (IPP) only; all ``None`` for tape printers.
+    kind: Literal["tape", "page"] | None = Field(
+        default=None, description="'page' for IPP page printers; None for tape printers"
+    )
+    printer_state: Literal["idle", "printing", "stopped"] | None = None
+    state_reasons: list[ReasonRead] | None = None
+    markers: list[MarkerRead] | None = None
+    trays: list[TrayStatusRead] | None = None
+    jobs_ahead: int | None = Field(
+        default=None, description="Jobs on the printer ahead of the hub's own"
     )
 
     @field_serializer("captured_at")

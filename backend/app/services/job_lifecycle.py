@@ -8,7 +8,8 @@ owns the state model only; the worker that drives transitions lives in
 State diagram:
 
     QUEUED ──> PRINTING ──> COMPLETED
-       │           └──────> FAILED
+       │           ├──────> FAILED
+       │           └──────> CANCELLED   (page jobs only, confirmed by the printer)
        │
        ├──> PAUSED ──> QUEUED
        │       └─────> CANCELLED
@@ -16,8 +17,9 @@ State diagram:
        ├──> CANCELLED
        └──> FAILED
 
-Mid-print cancel and mid-print pause are NOT supported (Brother spec —
-the printer ignores commands once the raster stream starts).
+Mid-print cancel and mid-print pause are NOT supported for tape jobs (Brother
+spec — the printer ignores commands once the raster stream starts). An IPP page
+job can be cancelled at the printer; the queue enforces the difference.
 """
 
 from __future__ import annotations
@@ -40,7 +42,7 @@ class JobState(StrEnum):
 
 
 # Terminal states are absorbing — no transitions out.
-# PRINTING is one-way to COMPLETED or FAILED (Brother spec: no mid-print stop).
+# PRINTING never returns to QUEUED or PAUSED (Brother spec: no mid-print stop).
 _VALID_TRANSITIONS: dict[JobState, frozenset[JobState]] = {
     JobState.QUEUED: frozenset(
         {
@@ -51,7 +53,10 @@ _VALID_TRANSITIONS: dict[JobState, frozenset[JobState]] = {
         }
     ),
     JobState.PAUSED: frozenset({JobState.QUEUED, JobState.CANCELLED}),
-    JobState.PRINTING: frozenset({JobState.COMPLETED, JobState.FAILED}),
+    # PRINTING -> CANCELLED exists for page jobs (IPP), after the printer confirmed a
+    # Cancel-Job of a job that never started. Tape jobs never take it: the queue's cancel
+    # paths only cancel QUEUED/PAUSED tape jobs (ADR 0005).
+    JobState.PRINTING: frozenset({JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED}),
     JobState.COMPLETED: frozenset(),
     JobState.FAILED: frozenset(),
     JobState.CANCELLED: frozenset(),
@@ -94,6 +99,13 @@ class Job:
     error_message: str | None = None
     error_detail: dict[str, Any] | None = None
     retry_count: int = 0
+    # Page jobs (IPP) only: payload kind, where the printer reports the job while it is
+    # tracked (``waiting`` / ``printing`` / ``stopped``) with the printer's job-state-reasons,
+    # and the payload's ``job_summary`` for events (spec 16). ``kind is None`` = tape job.
+    kind: str | None = None
+    summary: Any = None
+    at_printer: str | None = None
+    at_printer_reasons: list[str] = field(default_factory=list)
     # asyncio.Event is mutable but safe to use as a dataclass field default_factory:
     # it's constructed when a Job instance is created (not at import time), and
     # since Python 3.10 the Event does not pin to a specific event loop at

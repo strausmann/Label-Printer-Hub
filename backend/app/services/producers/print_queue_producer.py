@@ -45,18 +45,26 @@ class PrintQueueProducer:
         """
         channel = f"printer:{job.printer_id}:queue"
         try:
+            data: dict[str, object] = {
+                "job_id": str(job.id),
+                "from_state": from_state.value,
+                "to_state": to_state.value,
+                "queue_depth": queue_depth,
+                "error_code": getattr(job, "error_code", None),
+            }
+            if job.kind is not None:
+                # Page jobs (spec 16). from == to: the job moved at the printer
+                # (``at_printer`` waiting/printing/stopped) without a queue transition.
+                data["kind"] = job.kind
+                data["at_printer"] = job.at_printer
+                data["at_printer_reasons"] = list(job.at_printer_reasons)
+                data["summary"] = job.summary
             event = BusEvent(
                 channel=channel,
                 event_id=self._bus.next_event_id(channel),
                 event_type="job.state_changed",
                 timestamp=datetime.now(UTC),
-                data={
-                    "job_id": str(job.id),
-                    "from_state": from_state.value,
-                    "to_state": to_state.value,
-                    "queue_depth": queue_depth,
-                    "error_code": getattr(job, "error_code", None),
-                },
+                data=data,
             )
             self._bus.publish(channel, event)
         except Exception:

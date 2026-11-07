@@ -38,20 +38,24 @@ from __future__ import annotations
 
 import contextlib
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
-from app.models.job import Job, JobState
+from app.models.job import Job, JobState, is_page_payload
 from app.repositories import jobs as jobs_repo
 from app.schemas.job import JobRead
 from app.schemas.problem import ProblemDetail
+from app.services.page_jobs import PagePayload
 from app.services.print_queue import UnrenderableJobError
+from app.sheets.errors import MediaKindMismatchError, PageJobNotRetryableError
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -184,29 +188,49 @@ async def get_job(
         "Cancels a job that is in ``queued`` state.  "
         "Returns 409 ProblemDetail when the job is in ``printing`` (or any other "
         "non-QUEUED) state — mid-print abort is unsafe over TCP/9100 because the "
-        "raster data is already on the wire."
+        "raster data is already on the wire.  "
+        "Exception: a page job (IPP printer) that the printer already holds is cancelled "
+        "at the printer: the hub sends Cancel-Job and answers ``202`` with the job still "
+        "``printing``; the job ends ``cancelled`` (or ``failed``/``interrupted`` when the "
+        "page had started) once the printer confirms."
     ),
+    responses={
+        202: {"model": JobRead, "description": "Cancel requested at the printer (page job)"},
+    },
 )
 async def cancel_job(
     request: Request,
     job_id: UUID,
     session: SessionDep,
     _auth: PrintAuthDep,
-) -> JobRead:
-    """Cancel a QUEUED job; reject with 409 for any other state."""
+) -> JobRead | JSONResponse:
+    """Cancel a QUEUED job (or ask the printer to cancel a page job); 409 otherwise."""
     job = await _get_job_or_404(session, job_id, _auth)
     job_state: str = job.state
-    if job_state != JobState.QUEUED.value:
-        raise _cancel_conflict(job_state)
     queue = getattr(request.app.state, "print_queue", None)
-    if queue is not None and queue.has_job(job_id):
+    tracked = queue is not None and queue.has_job(job_id)
+    at_printer = (
+        queue is not None
+        and tracked
+        and queue.is_page_job(job_id)
+        and job_state == JobState.PRINTING.value
+    )
+    if job_state != JobState.QUEUED.value and not at_printer:
+        raise _cancel_conflict(job_state)
+    if tracked and queue is not None:
         # The queue transitions the in-memory job (the state the worker gates on)
-        # and persists the cancellation.  False = the worker took the job first.
+        # and persists the cancellation.  False = the worker took the job first
+        # (tape) or the page job already ended.
         if not await queue.cancel(str(job_id)):
             live = await queue.get(job_id)
             raise _cancel_conflict(live.state.value)
         await session.refresh(job)
-        return JobRead.model_validate(job, from_attributes=True)
+        read = JobRead.model_validate(job, from_attributes=True)
+        if job.state == JobState.PRINTING.value:  # requested at the printer, not yet final
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED, content=jsonable_encoder(read)
+            )
+        return read
     cancelled = await jobs_repo.mark_cancelled(session, job_id)
     return JobRead.model_validate(cancelled, from_attributes=True)
 
@@ -315,7 +339,11 @@ async def resume_job(
         "queue immediately — no restart needed.  Returns 409 when the original job "
         "is still in an active state (``queued`` or ``printing``) or its printer is "
         "not available, and 422 when the stored payload cannot be re-rendered "
-        "(e.g. webhook-created jobs)."
+        "(e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from "
+        "its payload, so retry prints the same page again with its original calibration "
+        "snapshot and date; a fresh check print with the current calibration is a new "
+        "calibration-page request.  A sheet page answers 409 ``job_not_retryable`` (its "
+        "cells need the cell-aware retry)."
     ),
 )
 async def retry_job(
@@ -343,13 +371,15 @@ async def retry_job(
             status_code=status.HTTP_409_CONFLICT,
             detail=problem.model_dump(exclude_none=True),
         )
+    queue = getattr(request.app.state, "print_queue", None)
+    if is_page_payload(job.payload):
+        return await _retry_page_job(session, queue, job, _auth)
     new_job = await jobs_repo.create_queued(
         session,
         printer_id=job.printer_id,
         template_key=job.template_key,
         payload=dict(job.payload),
     )
-    queue = getattr(request.app.state, "print_queue", None)
     if queue is not None:
         try:
             await queue.enqueue_persisted(new_job)
@@ -361,6 +391,10 @@ async def retry_job(
                 "Job payload cannot be re-rendered",
                 str(exc),
             ) from exc
+        except MediaKindMismatchError as exc:
+            # A tape row whose printer is now a page printer (D18).
+            await _fail_unqueued(session, new_job.id, "retry_media_kind_mismatch")
+            raise exc.to_http() from exc
         except KeyError as exc:
             await _fail_unqueued(session, new_job.id, "retry_printer_unavailable")
             raise _retry_rejected(
@@ -370,6 +404,57 @@ async def retry_job(
                 f"Printer {job.printer_id} is not known to the print queue",
             ) from exc
     return JobRead.model_validate(new_job, from_attributes=True)
+
+
+async def _retry_page_job(
+    session: AsyncSession, queue: Any, job: Job, auth: AuthContext | None
+) -> JobRead:
+    """Re-submit a page job from its payload through the queue (it renders at send time).
+
+    Only calibration pages: a sheet page's cells need the cell-aware path (Plan 3), so it
+    is refused with ``409 job_not_retryable`` and no row is created.
+
+    Retry means "the same page again": the stored payload carries the calibration snapshot
+    and the date of the first submit, and both are kept on purpose. After the admin has
+    corrected the values, a new check print is a new calibration-page request.
+    """
+    if job.payload.get("kind") != "calibration_page":
+        raise PageJobNotRetryableError().to_http()
+    try:
+        payload = PagePayload.model_validate(job.payload)
+    except ValueError as exc:
+        raise _retry_rejected(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "job-not-retryable",
+            "Job payload cannot be re-rendered",
+            "The stored page payload is not valid",
+        ) from exc
+    if queue is None:
+        raise _printer_unavailable(job.printer_id)
+    try:
+        new_id = await queue.submit_page_job(
+            job.printer_id,
+            payload,
+            api_key_id=auth.api_key_id if auth is not None else None,
+            source_ip=auth.ip if auth is not None else None,
+        )
+    except MediaKindMismatchError as exc:
+        raise exc.to_http() from exc
+    except KeyError as exc:
+        raise _printer_unavailable(job.printer_id) from exc
+    new_job = await jobs_repo.get(session, new_id)
+    if new_job is None:  # pragma: no cover - the queue persisted it before returning
+        raise _printer_unavailable(job.printer_id)
+    return JobRead.model_validate(new_job, from_attributes=True)
+
+
+def _printer_unavailable(printer_id: UUID) -> HTTPException:
+    return _retry_rejected(
+        status.HTTP_409_CONFLICT,
+        "printer-unavailable",
+        "Printer is not available to the print queue",
+        f"Printer {printer_id} is not known to the print queue",
+    )
 
 
 async def _fail_unqueued(session: AsyncSession, job_id: UUID, error: str) -> None:
