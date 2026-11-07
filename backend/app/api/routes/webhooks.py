@@ -68,17 +68,18 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 async def _resolve_default_printer_id(session: AsyncSession) -> str:
-    """Return the first enabled printer's ID, or raise 503.
+    """Return the first enabled *tape* printer's ID, or raise 503.
 
-    MVP: webhooks route to the first registered printer.  Phase 7 adds
-    per-webhook printer-routing configuration.
+    MVP: webhooks route to the first registered tape printer.  Phase 7 adds
+    per-webhook printer-routing configuration.  A webhook job is a tape label job, and
+    tape jobs are never routed to an IPP page printer (spec 11.4).
     """
     printers = await printers_repo.list_all(session)
-    enabled = [p for p in printers if p.enabled]
+    enabled = [p for p in printers if p.enabled and p.backend != "ipp"]
     if not enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="No enabled printers registered — cannot accept webhook",
+            detail="No enabled printers registered that print tape labels — cannot accept webhook",
         )
     return str(enabled[0].id)
 

@@ -568,3 +568,52 @@ async def test_grocy_webhook_direct_without_quantity(session) -> None:
     job = await jobs_repo.get(session, result.job_id)
     assert job is not None
     assert "quantity" not in job.payload
+
+
+@pytest.mark.asyncio
+async def test_resolve_default_printer_id_skips_an_ipp_page_printer(session) -> None:
+    """Spec 11.4: a webhook is a tape job; the first enabled printer may be a page printer."""
+    from app.api.routes.webhooks import _resolve_default_printer_id
+
+    page = Printer(
+        name="Office laser",
+        slug="office-laser",
+        model="x",
+        backend="ipp",
+        connection={"uri": "ipp://printer.example.invalid/ipp/print"},
+    )
+    session.add(page)
+    await session.commit()
+    tape = Printer(
+        name="Workshop",
+        model="PT-P750W",
+        backend="ptouch",
+        connection={"host": "198.51.100.30", "port": 9100},
+    )
+    session.add(tape)
+    await session.commit()
+
+    assert await _resolve_default_printer_id(session) == str(tape.id)
+
+
+@pytest.mark.asyncio
+async def test_resolve_default_printer_id_503_when_only_a_page_printer_exists(session) -> None:
+    from app.api.routes.webhooks import _resolve_default_printer_id
+    from fastapi import HTTPException
+
+    session.add(
+        Printer(
+            name="Office laser",
+            slug="office-laser",
+            model="x",
+            backend="ipp",
+            connection={"uri": "ipp://printer.example.invalid/ipp/print"},
+        )
+    )
+    await session.commit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _resolve_default_printer_id(session)
+
+    assert exc_info.value.status_code == 503
+    assert "No enabled printers" in exc_info.value.detail
