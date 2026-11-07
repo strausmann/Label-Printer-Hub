@@ -2250,15 +2250,18 @@ export interface components {
          *     ``error_state`` mirrors the active PrinterError flags as a string, or
          *     ``None`` when the printer is ready.
          *     ``captured_at`` is the UTC timestamp of the probe that last updated the
-         *     cache row.  ``None`` means no probe has completed yet.
-         *     ``last_probe_age_s`` is the age of the cached reading in seconds.
+         *     cache row.  ``None`` means no probe has completed yet.  For a page printer
+         *     (``kind="page"``) that went offline it stays the time of the last
+         *     *successful* reading; ``online`` and ``last_error`` tell that it is stale.
+         *     ``last_probe_age_s`` is the age of the cached reading in seconds (for an
+         *     offline page printer: since its last successful reading).
          *     ``last_error`` is the exception message from the most recent failed probe.
          *     ``note`` carries a human-readable hint (e.g. "No probe yet").
          */
         PrinterStatus: {
             /**
              * Captured At
-             * @description UTC timestamp of the probe that produced this reading; None if no probe yet
+             * @description UTC timestamp of the probe that produced this reading; None if no probe yet. A page printer that went offline keeps the time of its last successful reading.
              */
             captured_at?: string | null;
             /**
@@ -2283,7 +2286,7 @@ export interface components {
             last_error?: string | null;
             /**
              * Last Probe Age S
-             * @description Age of the cached reading in seconds
+             * @description Age of the cached reading in seconds; for an offline page printer, since its last successful reading
              */
             last_probe_age_s?: number | null;
             /** Markers */
