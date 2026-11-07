@@ -57,6 +57,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from app.printer_backends.ipp.attributes import reason_keyword
 from app.printer_backends.ipp.codec import (
     OPERATIONS,
     STATUS_NAMES,
@@ -98,7 +99,6 @@ IPP_VERSION = (1, 1)
 
 USER_NAME = "label-printer-hub"
 MAX_REASONS = 32
-MAX_REASON_LENGTH = 120
 MAX_JOB_URI_LENGTH = 1023
 JOB_ATTRIBUTES = ("job-id", "job-state", "job-state-reasons", "job-impressions-completed")
 
@@ -186,7 +186,8 @@ def _int(values: list[Value] | None) -> int | None:
 
 
 def _reasons(values: list[Value] | None) -> list[str]:
-    out = [v[:MAX_REASON_LENGTH] for v in values or [] if isinstance(v, str)]
+    """Job state reasons that pass the keyword filter of the status mapping, at most 32."""
+    out = [k for v in values or [] if isinstance(v, str) and (k := reason_keyword(v)) is not None]
     return out[:MAX_REASONS]
 
 

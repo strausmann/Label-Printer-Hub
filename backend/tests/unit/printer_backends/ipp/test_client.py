@@ -442,7 +442,7 @@ async def test_validate_job() -> None:
 
 
 async def test_job_info_reasons_are_bounded() -> None:
-    reasons = wire.attr(0x44, "job-state-reasons", b"r" * 200) + b"".join(
+    reasons = wire.attr(0x44, "job-state-reasons", b"job-printing") + b"".join(
         wire.more(0x44, b"x%d" % i) for i in range(1, 100)
     )
     body = (
@@ -458,8 +458,28 @@ async def test_job_info_reasons_are_bounded() -> None:
     client = IppClient(URI, transport=_Recorder(_ipp(body)))
     info = await client.get_job(9)
     assert len(info.reasons) == 32
-    assert info.reasons[0] == "r" * 120
+    assert info.reasons[0] == "job-printing"
     assert info.impressions_completed is None
+
+
+async def test_job_info_reasons_pass_the_status_keyword_filter() -> None:
+    """Spec 18: printer text must not reach the job events. Same filter as the status mapping."""
+    hostile = [b"Job-Printing", b"r" * 65, b"two words", b"a;b", b"<script>", b"caf\xc3\xa9", b""]
+    reasons = wire.attr(0x44, "job-state-reasons", b"processing-to-stop-point") + b"".join(
+        wire.more(0x44, h) for h in hostile
+    )
+    body = (
+        _ok_header(1)
+        + _op_group_response()
+        + bytes([0x02])
+        + wire.attr(0x21, "job-id", wire.i32(9))
+        + wire.attr(0x23, "job-state", wire.i32(5))
+        + reasons
+        + wire.END_OF_ATTRIBUTES
+    )
+    client = IppClient(URI, transport=_Recorder(_ipp(body)))
+    info = await client.get_job(9)
+    assert info.reasons == ["processing-to-stop-point", "job-printing"]  # lower-cased, rest dropped
 
 
 async def test_print_job_without_job_id_is_a_bad_response() -> None:

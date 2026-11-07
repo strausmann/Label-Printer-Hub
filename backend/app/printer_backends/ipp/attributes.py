@@ -371,6 +371,17 @@ def summarise(attrs: Mapping[str, list[Value]]) -> ProbeSummary:
 # ---------------------------------------------------------------------------- map_status
 
 
+def reason_keyword(value: str) -> str | None:
+    """A state-reason keyword as it may be shown or published: lower-cased, ``[a-z0-9-]``,
+    at most 64 characters; anything else is printer-controlled text and gives ``None``.
+
+    The one filter for printer reasons and job reasons (spec 18: printer text does not
+    reach the job record or the event stream).
+    """
+    value = value.lower() if len(value) <= _MAX_REASON_LENGTH else value
+    return value if _REASON.fullmatch(value) is not None else None
+
+
 def _reasons(attrs: Mapping[str, list[Value]]) -> list[Reason]:
     """Every valid reason in wire order. Not cut: the blocking decision is made over all of
     them (the codec already bounds the count); only the display list is cut."""
@@ -381,10 +392,11 @@ def _reasons(attrs: Mapping[str, list[Value]]) -> list[Reason]:
         if not isinstance(value, str):
             _warn_once("printer-state-reasons", "wrong-type")
             continue
-        value = value.lower() if len(value) <= _MAX_REASON_LENGTH else value
-        if _REASON.fullmatch(value) is None:
+        keyword = reason_keyword(value)
+        if keyword is None:
             _warn_once("printer-state-reasons", "unusable-keyword")
             continue
+        value = keyword
         if value == "none":
             continue
         base, severity = value, None
