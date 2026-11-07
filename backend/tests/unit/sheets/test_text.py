@@ -115,3 +115,11 @@ def test_log_value_removes_line_breaks() -> None:
 
     assert log_value("a\r\nb\nc\rd") == "abcd"
     assert log_value(42) == "42"
+
+
+def test_log_value_removes_other_control_characters() -> None:
+    from app.sheets.text import log_value
+
+    assert log_value("a\x00b\x1bc\x7fd\x85e\u2028f\u2029g\th") == "abcdefgh"
+    assert log_value("plain-slug_1") == "plain-slug_1"
+    assert "\n" not in log_value("x\ny WARNING forged")

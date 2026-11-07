@@ -55,6 +55,10 @@ def check_http_url(value: str) -> str:
     return value
 
 
+_LOG_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+
+
 def log_value(value: object) -> str:
-    """Return ``value`` as one log-safe line: CR and LF removed so it cannot forge a log entry."""
-    return str(value).replace("\r", "").replace("\n", "")
+    """Return ``value`` as one log-safe line: CR, LF and every other control character removed
+    (C0, DEL, C1, line and paragraph separator), so it cannot forge or hide a log entry."""
+    return _LOG_CONTROL.sub("", str(value).replace("\r", "").replace("\n", ""))

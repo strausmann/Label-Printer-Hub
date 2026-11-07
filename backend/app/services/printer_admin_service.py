@@ -56,6 +56,7 @@ from app.sheets.errors import (
     IppUnreachableApiError,
     TrayUnknownError,
 )
+from app.sheets.text import log_value
 
 _log = logging.getLogger(__name__)
 
@@ -149,13 +150,17 @@ async def probe_ipp(
             attrs = await client.get_printer_attributes(PRINTER_ATTRS)
     except (IppUnreachableError, IppTransportError, httpx.InvalidURL) as exc:
         # No usable answer in time: for the admin the printer is not reachable.
-        _log.warning("IPP probe for %s: printer not reachable (%s)", log_name, type(exc).__name__)
+        _log.warning(
+            "IPP probe for %s: printer not reachable (%s)", log_value(log_name), type(exc).__name__
+        )
         raise IppUnreachableApiError(unreachable_status) from None
     except IppStatusError as exc:
-        _log.warning("IPP probe for %s: printer answered %s", log_name, exc.name)
+        _log.warning("IPP probe for %s: printer answered %s", log_value(log_name), exc.name)
         raise IppRejectedError(exc.name) from None
     except IppError as exc:
-        _log.warning("IPP probe for %s: unusable answer (%s)", log_name, type(exc).__name__)
+        _log.warning(
+            "IPP probe for %s: unusable answer (%s)", log_value(log_name), type(exc).__name__
+        )
         raise IppBadResponseApiError() from None
     return summarise(attrs)
 

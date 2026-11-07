@@ -773,3 +773,30 @@ async def test_calibration_put_that_wins_the_race_is_cleaned_by_the_removal(hub:
         put = await _calibrate(hub, headers, "tray-2")
     assert put.status_code == 200, put.text
     assert await _db_calibration_keys(pid) == []
+
+
+@pytest.mark.asyncio
+async def test_probe_log_line_cannot_be_forged_through_the_name(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """``log_name`` comes from the request: line breaks and control characters stay out."""
+    import logging
+
+    from app.schemas.printer_admin import IppConnection
+    from app.services.printer_admin_service import probe_ipp
+    from app.sheets.errors import IppUnreachableApiError
+
+    with (
+        caplog.at_level(logging.WARNING, logger="app.services.printer_admin_service"),
+        pytest.raises(IppUnreachableApiError),
+    ):
+        await probe_ipp(
+            IppConnection(uri=URI),
+            queue_timeout_s=5,
+            transport_factory=lambda _uri: _unreachable_transport(),
+            log_name="evil\r\n2026-01-01 ERROR forged entry\x1b[2K",
+        )
+    (record,) = [r for r in caplog.records if "IPP probe for" in r.getMessage()]
+    message = record.getMessage()
+    assert "\n" not in message and "\r" not in message and "\x1b" not in message
+    assert "evil2026-01-01 ERROR forged entry[2K" in message
