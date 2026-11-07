@@ -162,6 +162,44 @@ async def test_offline_keeps_last_snapshot_and_recovers(async_session_factory) -
     await producer.stop()
 
 
+async def test_offline_write_keeps_the_time_the_values_were_read(async_session_factory) -> None:
+    """Capabilities report ``captured_at`` as the time of the reading, not of the failed probe."""
+    fake = FakeIppPrinter()
+    producer, pid, _bus, _state = _make(fake, async_session_factory)
+    assert await producer.probe_once() is not None
+    read_at = (await _cache(async_session_factory, pid)).captured_at
+    assert read_at is not None
+    producer._client = IppClient(
+        FAKE_URI,
+        transport=FailingTransport(
+            httpx.ASGITransport(app=fake), "Get-Printer-Attributes", httpx.ConnectError
+        ),
+    )
+    assert await producer.probe_once() is None
+    assert await producer.probe_once() is None
+    row = await _cache(async_session_factory, pid)
+    assert row.parsed["online"] is False
+    assert row.captured_at == read_at
+    producer._client = IppClient(FAKE_URI, transport=httpx.ASGITransport(app=fake))
+    assert await producer.probe_once() is not None
+    assert (await _cache(async_session_factory, pid)).captured_at > read_at  # a new reading
+    await producer.stop()
+
+
+async def test_first_probe_failing_still_stamps_the_row(async_session_factory) -> None:
+    fake = FakeIppPrinter()
+    producer, pid, _bus, _state = _make(
+        fake,
+        async_session_factory,
+        transport=FailingTransport(
+            httpx.ASGITransport(app=fake), "Get-Printer-Attributes", httpx.ConnectError
+        ),
+    )
+    assert await producer.probe_once() is None
+    assert (await _cache(async_session_factory, pid)).captured_at is not None
+    await producer.stop()
+
+
 async def test_garbage_answer_does_not_raise(async_session_factory) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=b"\x01\x01\x00\x00garbage")

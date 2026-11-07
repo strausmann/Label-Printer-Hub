@@ -236,12 +236,16 @@ class IppStatusProducer:
         (_log.warning if first else _log.debug)(
             "IPP printer %s not usable (%s)", self._log_name, message
         )
-        await self._write_cache(offline, last_error=message)
+        await self._write_cache(offline, last_error=message, keep_captured_at=True)
         self._publish_if_changed(offline)
 
     # ------------------------------------------------------------------ outputs
 
-    async def _write_cache(self, record: IppStatusRecord, *, last_error: str | None) -> None:
+    async def _write_cache(
+        self, record: IppStatusRecord, *, last_error: str | None, keep_captured_at: bool = False
+    ) -> None:
+        """Write the cache row. ``keep_captured_at``: an offline write re-flags the last reading
+        and must not restamp it, so ``captured_at`` stays the time the values were read."""
         from app.models.printer_status_cache import PrinterStatusCache
 
         parsed: dict[str, Any] = record.model_dump(mode="json")
@@ -254,7 +258,8 @@ class IppStatusProducer:
                 if row is not None:
                     row.parsed = parsed
                     row.raw_block = None
-                    row.captured_at = now
+                    if not keep_captured_at or row.captured_at is None:
+                        row.captured_at = now
                 else:
                     s.add(
                         PrinterStatusCache(

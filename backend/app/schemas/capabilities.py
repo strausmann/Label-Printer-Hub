@@ -74,4 +74,9 @@ class Capabilities(BaseModel):
     )
     trays: list[TrayCapability] | None = Field(description="Page printers only.")
     document_formats: list[str] | None = Field(description="Page printers only.")
-    captured_at: datetime | None = Field(description="When the cache row was written.")
+    captured_at: datetime | None = Field(
+        description=(
+            "When the values were read. A page printer that went offline keeps the time of "
+            "its last successful reading."
+        )
+    )
