@@ -46,6 +46,9 @@ from app.schemas.label_data import LabelData
 from app.schemas.print_request import PrintLookupRequest
 from app.schemas.sheet_print import (
     QR_PAYLOAD_MAX,
+    RAW_LISTING_MAX,
+    RAW_SECONDARY_MAX,
+    RAW_TEXT_MAX,
     ExpectedPageModel,
     PlacementInModel,
     PreviewCell,
@@ -265,6 +268,35 @@ def _purpose(item: SheetItem, label: LabelData) -> str:
     return default_purpose(label.title, label.primary_id)
 
 
+def _capped_lookup_label(label: LabelData, index: int) -> LabelData:
+    """A lookup's answer held to the caps of a raw item (``SheetRawLabelData``).
+
+    Text is cut (``RAW_TEXT_MAX``), the lists keep their first ``RAW_SECONDARY_MAX`` lines and
+    ``RAW_LISTING_MAX`` rows: a cell shows far less, and the renderer shortens the rest anyway.
+    A QR payload is never cut, a cut payload is another code: one above ``MAX_QR_PAYLOAD``
+    (the label's or a listing row's) is refused with the item's index. The integration is not
+    trusted to stay small: a hostile one returned megabytes that the job row stored whole and
+    every read key could fetch.
+    """
+    if len(label.qr_payload or "") > MAX_QR_PAYLOAD:
+        # A scan URL is short, so this only fires on an odd integration base URL.
+        raise ItemContentMismatchError(index, ("qr_payload",))
+    rows = label.items[:RAW_LISTING_MAX]
+    if any(len(row.qr_payload or "") > MAX_QR_PAYLOAD for row in rows):
+        raise ItemContentMismatchError(index, ("qr_payload",))
+    return label.model_copy(
+        update={
+            "source_app": label.source_app[:RAW_TEXT_MAX],
+            "title": None if label.title is None else label.title[:RAW_TEXT_MAX],
+            "primary_id": None if label.primary_id is None else label.primary_id[:RAW_TEXT_MAX],
+            "secondary": tuple(line[:RAW_TEXT_MAX] for line in label.secondary[:RAW_SECONDARY_MAX]),
+            "items": tuple(
+                row.model_copy(update={"item": row.item[:RAW_TEXT_MAX]}) for row in rows
+            ),
+        }
+    )
+
+
 def _lookup_error(exc: Exception, index: int) -> ItemLookupFailedError | None:
     for cls, status, code, message in _LOOKUP_ERRORS:
         if isinstance(exc, cls):
@@ -332,10 +364,10 @@ async def resolve_items(items: Sequence[SheetItem], lookup: AppLookupService) ->
         else:
             source = item.source or _DEFAULT_SOURCE
             ref = (sanitise_text(item.ref, max_len=PURPOSE_MAX) or None) if item.ref else None
-        if item.lookup is not None and len(result.qr_payload or "") > MAX_QR_PAYLOAD:
-            # A raw payload is capped by the schema; a lookup's is checked here (a scan URL is
-            # short, so this only fires on an odd integration base URL).
-            raise ItemContentMismatchError(index, ("qr_payload",))
+        if item.lookup is not None:
+            # A raw item is capped by the schema; a lookup's answer is capped here, before
+            # the job row stores it whole (R10-6).
+            result = _capped_lookup_label(result, index)
         resolved.append(
             ResolvedItem(
                 label=result,

@@ -1229,3 +1229,62 @@ def test_scan_payload_builder() -> None:
     build = print_service.scan_payload_builder("https://hub.example.invalid/sub/")
     assert build("L4736-0001") == "https://hub.example.invalid/sub/sheet/L4736-0001"
     assert print_service.scan_payload_builder("")("L4736-0001") == "sheet:L4736-0001"
+
+
+class _HostileLookup(FakeLookup):
+    """An integration that answers with far more text than a label can hold (run-10 R10-6)."""
+
+    async def lookup(self, source_app: str, identifier: str) -> LabelData:
+        from app.schemas.label_data_item import LabelDataItem
+
+        label = await super().lookup(source_app, identifier)
+        return label.model_copy(
+            update={
+                "title": "T" * 5_000_000,
+                "primary_id": "P" * 600,
+                "secondary": tuple("S" * 20_000 for _ in range(1_000)),
+                "items": tuple(LabelDataItem(item="I" * 10_000) for _ in range(5_000)),
+            }
+        )
+
+
+async def test_a_lookup_result_is_cut_to_the_caps_of_a_raw_item() -> None:
+    """R10-6: a hostile Grocy, Spoolman or Snipe-IT could return megabytes that were stored
+    whole in the job row and served to every read key. The caps of a raw item apply: 512 per
+    text, 10 secondary lines, 100 listing rows."""
+    (item,) = await resolve_items([grocy(1, ContentType.QR_WITH_LISTING)], _HostileLookup())  # type: ignore[arg-type]
+
+    label = item.label
+    assert label.title is not None and len(label.title) == 512
+    assert label.primary_id is not None and len(label.primary_id) == 512
+    assert len(label.secondary) == 10 and all(len(line) == 512 for line in label.secondary)
+    assert len(label.items) == 100 and all(len(row.item) == 512 for row in label.items)
+    assert len(label.model_dump_json()) < 200_000
+    # the record keeping is cut as before
+    assert len(item.meta.purpose) <= 120
+
+
+async def test_a_lookup_listing_qr_payload_over_512_characters_is_refused_with_its_index() -> None:
+    from app.schemas.label_data_item import LabelDataItem
+
+    class LongRowPayload(FakeLookup):
+        async def lookup(self, source_app: str, identifier: str) -> LabelData:
+            label = await super().lookup(source_app, identifier)
+            row = LabelDataItem(item="row", qr_payload="https://g/" + "x" * 600)
+            return label.model_copy(update={"items": (row,)})
+
+    with pytest.raises(ItemContentMismatchError) as err:
+        await resolve_items([grocy(1), grocy(2)], LongRowPayload())  # type: ignore[arg-type]
+
+    assert err.value.detail == {"item_index": 0, "missing_fields": ["qr_payload"]}
+
+
+async def test_a_lookup_result_within_the_caps_is_stored_unchanged() -> None:
+    (item,) = await resolve_items([grocy(1)], FakeLookup())  # type: ignore[arg-type]
+
+    assert item.label == LabelData(
+        source_app="grocy",
+        title="Product 1",
+        primary_id="G-1",
+        qr_payload="https://g.example.invalid/1",
+    )
