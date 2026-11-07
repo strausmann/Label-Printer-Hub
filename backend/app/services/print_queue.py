@@ -1325,12 +1325,17 @@ class PrintQueue:
             item.job.error_code = "interrupted"
             with contextlib.suppress(InvalidStateTransitionError):
                 JobStateMachine.transition(item.job, JobState.FAILED)
-            await self._store.mark_failed_code(
-                UUID(item.job.id),
-                "interrupted",
-                "The printer may have printed the page; its outcome is unknown.",
-                None,
-            )
+            try:
+                await self._store.mark_failed_code(
+                    UUID(item.job.id),
+                    "interrupted",
+                    "The printer may have printed the page; its outcome is unknown.",
+                    None,
+                )
+            except Exception:
+                # The database is failing too; the row stays ``printing`` and the next
+                # start settles it. The worker must not die of it.
+                logger.exception("Page job %s: backstop could not persist the end", item.job.id)
 
     async def _resume_page_jobs(self, printer: PagePrinter, printer_id: UUID) -> None:
         """Resume tracking of the jobs the printer held across a hub restart.

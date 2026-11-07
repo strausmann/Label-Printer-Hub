@@ -190,7 +190,10 @@ class PageJobRunner:
         if active is None:
             return False
         active.cancel_requested = True
-        if active.ipp_job_id is not None and not active.cancel_sent:
+        # A resumed job whose identity is not verified yet may be another client's job under a
+        # reused id: the cancel stays pending and tracking sends it after the first poll that
+        # shows the job is ours (or never, if it is not).
+        if active.ipp_job_id is not None and not active.cancel_sent and active.identity_verified:
             await self._send_cancel(job_id, active)
         return True
 
@@ -437,15 +440,17 @@ class PageJobRunner:
 
     async def _complete(self, page_job: PageJob) -> None:
         job = page_job.job
-        self._end_in_memory(job, JobState.COMPLETED)
+        # Database first: if the write fails the job is still ``printing`` for the queue's
+        # backstop, and no event or waiter has claimed a completion that is not stored.
         await self._store.mark_done(UUID(job.id))
+        self._end_in_memory(job, JobState.COMPLETED)
         await self._handler_call(page_job, "on_completed")
 
     async def _cancelled(self, page_job: PageJob) -> None:
         job = page_job.job
+        await self._store.mark_cancelled(UUID(job.id), allow_printing=True)  # database first
         job.error_code = "cancelled"
         self._end_in_memory(job, JobState.CANCELLED)
-        await self._store.mark_cancelled(UUID(job.id), allow_printing=True)
         await notify_ended(
             page_job.payload.kind,
             UUID(job.id),
@@ -469,16 +474,17 @@ class PageJobRunner:
         if started and not result.get("started"):
             result["started"] = True
         result["phase"] = "ended"
+        # One write for result and state, and before the in-memory end: ``started`` is
+        # persisted before ``on_ended`` runs, and a crash leaves either the row as it was
+        # (printing: restart recovery settles it from the printer) or the finished one. Two
+        # commits would leave "printing" with ``phase=ended`` between them. A failing write
+        # leaves the job ``printing`` for the queue's backstop; nothing was published.
+        await self._store.mark_failed_code(job_id, code, message, detail, result=result)
         job.error_code = code
         job.error_message = message
         job.error_detail = detail
         job.error_msg = message
         self._end_in_memory(job, JobState.FAILED)
-        # One write for result and state: ``started`` is persisted before ``on_ended`` runs,
-        # and a crash leaves either the row as it was (printing: restart recovery settles it
-        # from the printer) or the finished one. Two commits would leave "printing" with
-        # ``phase=ended`` between them, and recovery would track a job that was already decided.
-        await self._store.mark_failed_code(job_id, code, message, detail, result=result)
         await notify_ended(
             page_job.payload.kind, job_id, state="failed", started=started, error_code=code
         )

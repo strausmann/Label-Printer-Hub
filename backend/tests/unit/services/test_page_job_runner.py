@@ -133,6 +133,59 @@ async def test_failure_writes_result_and_state_in_one_call(handler: RecordingHan
     assert row.state == DbJobState.FAILED.value and row.result["phase"] == "ended"
 
 
+class _FailingStore(MemoryJobStore):
+    """A store whose terminal write raises (the database is gone)."""
+
+    def __init__(self, fail: str) -> None:
+        super().__init__()
+        self.fail = fail
+
+    async def mark_done(self, job_id: UUID) -> None:
+        if self.fail == "done":
+            raise RuntimeError("db down")
+        await super().mark_done(job_id)
+
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+        if self.fail == "cancelled":
+            raise RuntimeError("db down")
+        await super().mark_cancelled(job_id, allow_printing=allow_printing)
+
+    async def mark_failed_code(self, job_id: UUID, *args: Any, **kwargs: Any) -> None:
+        if self.fail == "failed":
+            raise RuntimeError("db down")
+        await super().mark_failed_code(job_id, *args, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("fail", "fake_kwargs"),
+    [
+        ("done", {"job_script": [9]}),
+        ("cancelled", {"job_script": [3, 7]}),
+        ("failed", {"print_status": 0x040A}),
+    ],
+)
+async def test_terminal_state_is_persisted_before_it_is_published(
+    handler: RecordingHandler, fail: str, fake_kwargs: dict[str, Any]
+) -> None:
+    """If the database write fails, the job must not claim success (or any end) in memory.
+
+    The exception reaches the queue's backstop, which can only repair a job that is still
+    ``printing``; no terminal event went out and no waiter was released.
+    """
+    env = _Env(FakeIppPrinter(**fake_kwargs))
+    env.store = _FailingStore(fail)
+    env.runner = PageJobRunner(
+        store=env.store, notify=env._notify, poll_interval_s=0.0, max_backoff_s=0.0
+    )
+    pj = await env.job()
+    with pytest.raises(RuntimeError, match="db down"):
+        await env.run(pj)
+    assert pj.job.state == JobState.PRINTING
+    assert not pj.job._done_event.is_set()
+    assert all(to_state == JobState.PRINTING for _from, to_state, _where in env.events[1:])
+    assert handler.names(UUID(pj.job.id)) in ([], ["started"])  # no completion
+
+
 async def test_completed_flow(handler: RecordingHandler) -> None:
     env = _Env(FakeIppPrinter(job_script=[3, 5, 9]))
     pj = await env.job()
