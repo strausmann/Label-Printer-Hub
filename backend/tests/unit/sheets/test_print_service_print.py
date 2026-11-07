@@ -18,6 +18,7 @@ import pytest
 import pytest_asyncio
 from app.calibration import service as calibration_service
 from app.calibration.model import CalibrationIn
+from app.models.job import Job as DbJob
 from app.models.print_batch import PrintBatch
 from app.models.sheet import Sheet, SheetCell, SheetIdCounter
 from app.printer_backends.ipp.attributes import Margins
@@ -35,6 +36,7 @@ from app.sheets.errors import (
     MediaKindMismatchError,
     PlanChangedError,
     PrinterUnavailableError,
+    PrintInterruptedError,
     TrayUnknownError,
 )
 from app.sheets.planner import MARGIN_TEXT_GAP_HMM
@@ -72,7 +74,7 @@ class FakeQueue:
         self.exc = exc if exc is not None else RuntimeError("queue is down")
         self.submitted: list[tuple[UUID, PagePayload, UUID]] = []
         self.calls = 0
-        self.tracked: set[str] = set()
+        self.before_submit: Any = None  # awaited with the call number before each submit
 
     async def submit_page_job(
         self,
@@ -85,14 +87,12 @@ class FakeQueue:
     ) -> UUID:
         self.calls += 1
         assert job_id is not None
+        if self.before_submit is not None:
+            await self.before_submit(self.calls, job_id)
         if self.fail_on == self.calls:
             raise self.exc
         self.submitted.append((printer_id, payload, job_id))
-        self.tracked.add(str(job_id))
         return job_id
-
-    def has_job(self, job_id: str | UUID) -> bool:
-        return str(job_id) in self.tracked
 
     @property
     def payloads(self) -> list[PagePayload]:
@@ -547,7 +547,7 @@ async def test_submit_failure_on_page_two_of_three_releases_the_rest(
     bus = FakeBus()
     queue = FakeQueue(fail_on=2)
 
-    with pytest.raises(RuntimeError, match="queue is down"):
+    with pytest.raises(PrintInterruptedError) as exc:
         await run_print(
             factory,
             printer,
@@ -561,8 +561,206 @@ async def test_submit_failure_on_page_two_of_three_releases_the_rest(
     rows = await cell_rows(factory)
     assert len(rows) == 48 and {r.job_id for r in rows} == {first}
     assert {r.state for r in rows} == {"reserved"}
-    assert await count(factory, PrintBatch) == 0
+    # the error names the batch and what is printing, and nothing else
+    async with factory() as s:
+        batch = (await s.execute(select(PrintBatch))).scalar_one()
+    assert batch.job_ids == [str(first)]  # rewritten to the submitted pages
+    assert exc.value.detail == {"batch_id": str(batch.id), "job_ids": [str(first)]}
+    assert "queue is down" not in str(exc.value.to_http().detail)
     assert any(e.data["changed"] for e in bus.events)  # reserve and release both announced
+
+
+async def test_the_batch_row_exists_with_every_job_before_the_first_submit(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    printer = await make_printer(session, record())
+    seen: list[list[str]] = []
+
+    async def look(n: int, job_id: UUID) -> None:
+        async with factory() as s:
+            batch = (await s.execute(select(PrintBatch))).scalar_one()
+        seen.append(batch.job_ids)
+
+    queue = FakeQueue()
+    queue.before_submit = look
+
+    out = await run_print(
+        factory,
+        printer,
+        req([raw(i) for i in range(60)], [fresh(count=48), fresh()]),
+        queue=queue,
+    )
+
+    expected = [str(p.job_id) for p in out.pages]
+    assert seen == [expected, expected]
+
+
+async def test_a_failed_batch_insert_queues_nothing_and_frees_every_cell(
+    factory: async_sessionmaker[AsyncSession],
+    session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    printer = await make_printer(session, record())
+
+    async def broken(*a: Any, **kw: Any) -> Any:
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(print_service.batches_repo, "create", broken)
+    queue = FakeQueue()
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        await run_print(
+            factory,
+            printer,
+            req([raw(i) for i in range(60)], [fresh(count=48), fresh()]),
+            queue=queue,
+        )
+
+    assert queue.calls == 0 and queue.submitted == []
+    assert await cell_rows(factory) == []
+
+
+async def test_a_failure_after_a_submit_on_a_sheet_error_adds_the_batch_to_its_detail(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    printer = await make_printer(session, record())
+    queue = FakeQueue(fail_on=2, exc=KeyError("printer"))
+
+    with pytest.raises(PrinterUnavailableError) as exc:
+        await run_print(
+            factory,
+            printer,
+            req([raw(i) for i in range(60)], [fresh(count=48), fresh()]),
+            queue=queue,
+        )
+
+    detail = exc.value.detail
+    assert detail is not None and detail["job_ids"] == [str(queue.submitted[0][2])]
+    assert UUID(detail["batch_id"])
+
+
+async def test_a_committed_job_row_keeps_its_cells_even_if_the_queue_forgot_it(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    """``submit_page_job`` can commit the row and then fail on the refresh; the queue drops the
+    job from memory, but the next start re-enqueues the row: its cells must stay reserved."""
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, used=17)
+    queue = FakeQueue()
+
+    async def commit_then_cancel(n: int, job_id: UUID) -> None:
+        async with factory() as s:
+            s.add(
+                DbJob(
+                    id=job_id,
+                    printer_id=printer.id,
+                    template_key=None,
+                    payload={"kind": "sheet_page"},
+                )
+            )
+            await s.commit()
+        raise asyncio.CancelledError
+
+    queue.before_submit = commit_then_cancel
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_print(factory, printer, req([raw(i) for i in range(5)], [on(code)]), queue=queue)
+
+    reserved = [r for r in await cell_rows(factory) if r.state == "reserved"]
+    assert sorted(r.cell_no for r in reserved) == [18, 19, 20, 21, 22]
+
+
+async def test_no_database_transaction_is_open_while_the_lookups_run(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    printer = await make_printer(session, record())
+    code = await make_sheet(session)
+    opened: list[AsyncSession] = []
+
+    def tracking() -> AsyncSession:
+        s = factory()
+        opened.append(s)
+        return s
+
+    open_during: list[bool] = []
+
+    class Watching(FakeLookup):
+        async def lookup(self, source_app: str, identifier: str) -> LabelData:
+            open_during.append(any(s.in_transaction() for s in opened))
+            return await super().lookup(source_app, identifier)
+
+    await print_service.print_sheets(
+        tracking,  # type: ignore[arg-type]
+        printer=printer,
+        request=req([grocy(1)], [on(code)]),
+        lookup=Watching(),  # type: ignore[arg-type]
+        queue=FakeQueue(),
+        actor="key:test",
+        api_key_id=None,
+        source_ip=None,
+        language="en",
+    )
+
+    assert open_during == [False]
+
+
+async def test_the_margin_qr_of_the_preview_has_the_size_the_job_prints(
+    factory: async_sessionmaker[AsyncSession],
+    session: AsyncSession,
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import io
+    import subprocess
+
+    from app.sheets.cell_render import DEFAULT_CELL_RENDERER
+    from app.sheets.sheet_page import render_sheet_page
+    from PIL import Image
+
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, placement="margin")
+    request = req([raw(0)], [on(code)])
+    queue = FakeQueue()
+    spy_pngs: list[bytes] = []
+    original = print_service.render_preview_png
+
+    def capture(*a: Any, **kw: Any) -> bytes:
+        out = original(*a, **kw)
+        spy_pngs.append(out)
+        return out
+
+    monkeypatch.setattr(print_service, "render_preview_png", capture)
+    await run_preview(session, printer, request)
+    monkeypatch.undo()
+    await run_print(factory, printer, request, queue=queue)
+
+    detail = queue.detail()
+    assert detail.margin_id is not None and detail.margin_id.band == "top"
+    g = detail.geometry
+    d = detail.margin_id.usable_hmm
+    left = g["margin_left"]
+    top = g["margin_top"] - 100 - d  # the band starts SAFETY_HMM outside the grid
+
+    def ink_width_px(img: Image.Image, dpi: int) -> int:
+        box = (
+            round(left / 2540 * dpi),
+            round(top / 2540 * dpi),
+            round((left + d) / 2540 * dpi),
+            round((top + d) / 2540 * dpi),
+        )
+        bbox = img.convert("L").point(lambda v: 255 if v < 128 else 0).crop(box).getbbox()
+        assert bbox is not None
+        return bbox[2] - bbox[0]
+
+    pdf = tmp_path / "job.pdf"
+    pdf.write_bytes(render_sheet_page(queue.payloads[0], DEFAULT_CELL_RENDERER))
+    subprocess.run(
+        ["pdftoppm", "-r", "150", "-png", "-singlefile", str(pdf), str(tmp_path / "job")],
+        check=True,
+    )
+    job_img = Image.open(tmp_path / "job.png")
+    preview_img = Image.open(io.BytesIO(spy_pngs[0]))
+    assert abs(ink_width_px(preview_img, 150) - ink_width_px(job_img, 150)) <= 1
 
 
 async def test_unknown_printer_in_the_queue_answers_unavailable_and_releases(
@@ -608,35 +806,8 @@ async def test_failure_while_building_a_payload_releases_everything_unsubmitted(
             queue=queue,
         )
 
-    assert len(queue.submitted) == 1
-    assert {r.job_id for r in await cell_rows(factory)} == {queue.submitted[0][2]}
-
-
-async def test_a_page_the_queue_already_tracks_is_not_released_when_the_call_is_interrupted(
-    factory: async_sessionmaker[AsyncSession], session: AsyncSession
-) -> None:
-    """A cancelled request can leave the failing page saved and queued: its cells stay."""
-    printer = await make_printer(session, record())
-
-    class Interrupted(FakeQueue):
-        async def submit_page_job(self, printer_id: UUID, payload: PagePayload, **kw: Any) -> UUID:
-            if self.calls == 1:  # the second call: saved and queued, then the request is cancelled
-                self.calls += 1
-                self.tracked.add(str(kw["job_id"]))
-                raise asyncio.CancelledError
-            return await super().submit_page_job(printer_id, payload, **kw)
-
-    queue = Interrupted()
-    with pytest.raises(asyncio.CancelledError):
-        await run_print(
-            factory,
-            printer,
-            req([raw(i) for i in range(100)], [fresh(count=48), fresh(count=48), fresh()]),
-            queue=queue,
-        )
-
-    jobs = {r.job_id for r in await cell_rows(factory)}
-    assert len(jobs) == 2  # page 1 and the tracked page 2 stay; page 3 was released
+    assert queue.submitted == []  # every payload is built before the first submit
+    assert await cell_rows(factory) == []
 
 
 # ---------------------------------------------------------------------------- margin and mark

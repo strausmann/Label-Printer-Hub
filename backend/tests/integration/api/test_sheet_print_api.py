@@ -9,7 +9,6 @@ bounded.
 from __future__ import annotations
 
 import asyncio
-import random
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -524,11 +523,6 @@ async def test_nothing_reserved_on_late_failure() -> None:
         assert _err(mismatch)["error_code"] == "content_type_data_mismatch"
         assert _err(mismatch)["error_detail"]["item_index"] == 5
 
-        dense = _body(code, 10)
-        dense["items"][7]["data"]["qr_payload"] = "".join(
-            random.Random(4).choices("😀😁😂🤣😃😄", k=512)
-        )
-        dense["items"][7]["data"]["qr_payload"] = "ü" * 500  # fits at 600 dpi: no refusal
         assert (await _cells()) == []
         assert await _count(Sheet) == sheets
         assert await _count(PrintBatch) == 0

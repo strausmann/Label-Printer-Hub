@@ -315,16 +315,22 @@ def render_sheet_page(
     )
 
 
-def _preview_qr(payload: str, usable_hmm: int) -> Image.Image:
-    """The margin QR at preview size. It is a picture of what the job prints, so it is drawn
-    even where the symbol is too fine for a 150 dpi raster: rendered larger, then reduced."""
+def _preview_qr(payload: str, usable_hmm: int, render_dpi: int) -> Image.Image:
+    """The margin QR at preview size: the symbol the job prints, reduced to 150 dpi.
+
+    The job draws whole-pixel modules at ``render_dpi``; whole-pixel modules at 150 dpi would
+    leave a visibly smaller symbol inside the same square (a 2 px module cannot grow to 2.6).
+    So the symbol is built the job's way and then scaled to the preview's square, which keeps
+    its proportions. Only the margin QR is built this way: one per page."""
     edge = qr_edge_px(usable_hmm / 100, usable_hmm / 100, PREVIEW_DPI)
-    qr = build_qr(payload, edge)
-    if qr is not None:
+    job_edge = max(edge, qr_edge_px(usable_hmm / 100, usable_hmm / 100, render_dpi))
+    qr = build_qr(payload, job_edge)
+    if qr is None:  # the job could draw it, so a symbol of this payload exists at some size
+        qr = build_qr(payload, max(job_edge, edge * 8))
+    assert qr is not None
+    if qr.size == (edge, edge):
         return qr
-    big = build_qr(payload, edge * 8)
-    assert big is not None  # the job could draw it, so a symbol of this payload exists
-    return big.convert("L").resize((edge, edge), Image.Resampling.BOX).convert("1")
+    return qr.convert("L").resize((edge, edge), Image.Resampling.BOX).convert("1")
 
 
 def _paste_turned_text(
@@ -373,7 +379,7 @@ def render_preview_png(
     if margin is not None:
         # The decision is the job's (stored flag); the preview only draws it.
         qr = (
-            _preview_qr(margin.qr_payload, margin.usable_hmm)
+            _preview_qr(margin.qr_payload, margin.usable_hmm, render_dpi)
             if margin.qr_payload and margin.draws_qr(render_dpi)
             else None
         )

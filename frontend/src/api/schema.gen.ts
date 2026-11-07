@@ -4053,7 +4053,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description An integration lookup failed (`integration_lookup_failed`). */
+            /** @description An integration lookup failed (`integration_lookup_failed`), or the print stopped after some pages were queued (`print_interrupted`, or the error of that page with `batch_id` and `job_ids` in `error_detail`: those pages keep printing). */
             502: {
                 headers: {
                     [name: string]: unknown;

@@ -135,6 +135,13 @@ _PRINT_ERRORS: dict[int | str, dict[str, Any]] = {
             "unknown integration (`integration_unknown_app`). Item errors carry `item_index`."
         )
     },
+    502: {
+        "description": (
+            "An integration lookup failed (`integration_lookup_failed`), or the print stopped "
+            "after some pages were queued (`print_interrupted`, or the error of that page with "
+            "`batch_id` and `job_ids` in `error_detail`: those pages keep printing)."
+        )
+    },
 }
 
 

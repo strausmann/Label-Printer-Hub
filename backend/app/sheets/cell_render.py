@@ -56,6 +56,7 @@ __all__ = [
     "RasterCellRenderer",
     "build_qr",
     "cap_height_px",
+    "check_required",
     "content_box",
     "load_cell_font",
     "map_content_type",
@@ -287,7 +288,7 @@ def _clean(value: str | None) -> str:
     return sanitise_text(text, max_len=_MAX_TEXT_CHARS)
 
 
-def _check_required(content_type: ContentType, data: LabelData) -> None:
+def check_required(content_type: ContentType, data: LabelData) -> None:
     def empty(name: str) -> bool:
         value = getattr(data, name)
         if value is None or len(value) == 0:
@@ -336,7 +337,7 @@ class RasterCellRenderer:
         content_type: ContentType,
         data: LabelData,
     ) -> CellImage:
-        _check_required(content_type, data)
+        check_required(content_type, data)
         width, height = _box_px(box_w_mm, box_h_mm, dpi)
         canvas = Image.new("1", (width, height), 1)
         text_x = 0

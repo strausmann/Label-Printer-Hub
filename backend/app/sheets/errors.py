@@ -396,3 +396,17 @@ class PrinterUnavailableError(SheetApiError):
     status = 409
     error_code = "printer-unavailable"
     message = "Printer is not available to the print queue."
+
+
+class PrintInterruptedError(SheetApiError):
+    """A sheet print failed after some of its pages were queued (pre-flight ruling T7-2).
+
+    The pages already queued keep printing; the detail names the batch and their jobs so the
+    client can follow or cancel them instead of retrying the whole print."""
+
+    status = 502
+    error_code = "print_interrupted"
+    message = "The print stopped after some pages were queued."
+
+    def __init__(self, batch_id: str, job_ids: list[str]) -> None:
+        super().__init__(detail={"batch_id": batch_id, "job_ids": job_ids})
