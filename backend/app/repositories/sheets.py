@@ -8,12 +8,14 @@ another session changed it.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, case, func, select
+from sqlalchemy import ColumnElement, case, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.models.job import Job, JobState
 from app.models.sheet import Sheet, SheetCell, SheetIdCounter, SheetType, SheetTypeVersion
 
 _FRESH = {"populate_existing": True}
@@ -97,3 +99,50 @@ async def cells_by_ref(
         .order_by(col(SheetCell.updated_at).desc(), col(Sheet.code), col(SheetCell.cell_no))
     )
     return [(code, cell) for code, cell in result.all()]
+
+
+async def has_hub_cell(session: AsyncSession, sheet_id: UUID) -> bool:
+    """Whether the sheet holds an ID label cell of the hub in any state (OC-40)."""
+    result = await session.execute(
+        select(
+            exists().where(col(SheetCell.sheet_id) == sheet_id, col(SheetCell.source) == "hub")
+        ).execution_options(**_FRESH)
+    )
+    return bool(result.scalar_one())
+
+
+async def has_unattached_reservation(session: AsyncSession, sheet_id: UUID) -> bool:
+    """Whether a ``reserved`` cell of the sheet points at a job that has no ``jobs`` row yet.
+
+    That is the window between the reservation commit and the page job being saved (C26).
+    """
+    result = await session.execute(
+        select(
+            exists().where(
+                col(SheetCell.sheet_id) == sheet_id,
+                col(SheetCell.state) == "reserved",
+                ~exists().where(col(Job.id) == col(SheetCell.job_id)),
+            )
+        ).execution_options(**_FRESH)
+    )
+    return bool(result.scalar_one())
+
+
+async def active_job_payloads(session: AsyncSession) -> list[dict[str, Any]]:
+    """Payloads of the jobs that are still queued or printing."""
+    result = await session.execute(
+        select(col(Job.payload))
+        .where(col(Job.state).in_((JobState.QUEUED.value, JobState.PRINTING.value)))
+        .execution_options(**_FRESH)
+    )
+    return [p for p in result.scalars().all() if isinstance(p, dict)]
+
+
+async def reserved_cells_of_job(session: AsyncSession, job_id: UUID) -> list[SheetCell]:
+    result = await session.execute(
+        select(SheetCell)
+        .where(col(SheetCell.job_id) == job_id, col(SheetCell.state) == "reserved")
+        .order_by(col(SheetCell.sheet_id), col(SheetCell.cell_no))
+        .execution_options(**_FRESH)
+    )
+    return list(result.scalars().all())

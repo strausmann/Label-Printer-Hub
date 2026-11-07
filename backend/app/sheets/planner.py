@@ -69,6 +69,8 @@ class SheetView:
     has_hub_cell: bool
     margin_id_in_flight: bool
     state: Literal["active", "discarded"]
+    # The database id of an existing or just created sheet; the planner ignores it.
+    sheet_id: UUID | None = None
 
 
 @dataclass

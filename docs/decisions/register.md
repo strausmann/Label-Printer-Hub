@@ -23,10 +23,12 @@ A guard test (`backend/tests/unit/test_decision_register.py`) fails if a `D<n>` 
 | D20 | The hub is AGPL-3.0-or-later and links to the source of the running build | 2026-11-05 | Accepted | — |
 | D13 | Sheet archive, physical sheets and calibration live in the hub (#150) | 2026-11-05 | Accepted | — |
 | D14 | Sheet type geometry is versioned; sheets pin their version | 2026-11-05 | Accepted | — |
+| D15 | Cells are reserved at job creation, used on completion, unconfirmed when the outcome is unknown | 2026-11-05 | Accepted | — |
 | D16 | Lengths stored in hundredths of a millimetre | 2026-11-05 | Accepted | — |
 | D17 | Calibration stores the printer's deviation around the page centre; the hub applies the inverse | 2026-11-06 | Accepted | — |
 | D18 | IPP backend kind with an own client | 2026-11-06 | Proposed | [0020](0020-backend-kinds-ipp-page-printers.md) |
 | D19 | Imported sheet types are never marked verified | 2026-11-05 | Accepted | — |
 | V1 | Media type `labels` is settable on the test printer via `media-col` | 2026-11-06 | To verify | — |
 | V2 | L4731REV has no vertical gap (pitch 10 mm) | 2026-11-05 | To verify | — |
+| V3 | A QR does not scan reliably on 25.4 × 10 mm cells | 2026-11-05 | To verify | — |
 | V4 | Corner radius of L4736REV (unknown, to measure) | 2026-11-05 | To verify | — |

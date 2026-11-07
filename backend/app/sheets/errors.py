@@ -178,6 +178,28 @@ class InsufficientCellsError(SheetApiError):
         )
 
 
+class PlanChangedError(SheetApiError):
+    """The fresh plan differs from the one the client confirmed (OC-8); nothing was written."""
+
+    status = 409
+    error_code = "plan_changed"
+    message = "The cell plan changed since the preview."
+
+    def __init__(self, plan: list[dict[str, Any]]) -> None:
+        super().__init__(detail={"plan": plan})
+
+
+class SheetTypeMismatchError(SheetApiError):
+    """A placement names a sheet of another type than the request needs."""
+
+    status = 409
+    error_code = "sheet_type_mismatch"
+    message = "The sheet is of another type than this print needs."
+
+    def __init__(self, expected: str, actual: str) -> None:
+        super().__init__(detail={"expected": expected, "actual": actual})
+
+
 class InvalidPlacementsError(SheetApiError):
     """The placements contradict each other or the item count; ``reason`` names the rule."""
 
