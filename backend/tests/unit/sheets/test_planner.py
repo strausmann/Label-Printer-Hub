@@ -138,6 +138,13 @@ def test_explicit_cells() -> None:
         margin=None,
     )
     assert ok.pages[0].item_cells == [20, 21]
+    swapped = plan(
+        [PlacementIn(sheet=view, cells=[21, 20], skip=[], count=None)],
+        2,
+        hw_margins_hmm=None,
+        margin=None,
+    )
+    assert swapped.pages[0].item_cells == [21, 20]  # item i goes to cells[i]
     with pytest.raises(CellsTakenError) as taken:
         plan(
             [PlacementIn(sheet=view, cells=[5], skip=[], count=None)],
@@ -352,3 +359,86 @@ def test_hw_margin_flags_other_sides_and_id_cell() -> None:
     page = result.pages[0]
     assert page.id_cell == 1
     assert page.hw_margin_cells == [1, 5]  # id cell 1 and item cell 5 (column 1, row 2)
+
+
+def test_id_cell_once_per_sheet_when_the_sheet_is_in_two_placements() -> None:
+    view = sheet(id_placement="cell", code=None)
+    result = plan(
+        [first_free(view, 2), first_free(view, None)], 5, hw_margins_hmm=None, margin=None
+    )
+    assert [p.id_cell for p in result.pages] == [1, None]
+    assert result.pages[0].item_cells == [2, 3]
+    assert result.pages[1].item_cells == [4, 5, 6]
+
+
+def test_margin_id_once_per_sheet_when_the_sheet_is_in_two_placements() -> None:
+    view = sheet(id_placement="margin")
+    result = plan(
+        [first_free(view, 2), first_free(view, None)], 4, hw_margins_hmm=None, margin=None
+    )
+    assert [p.margin_id for p in result.pages] == [True, False]
+
+
+def test_full_cell_sheet_with_id_due_and_no_items_is_insufficient() -> None:
+    full = sheet(used=set(range(1, 49)), id_placement="cell")
+    with pytest.raises(InsufficientCellsError) as exc:
+        plan([first_free(full, None)], 0, hw_margins_hmm=None, margin=None)
+    assert exc.value.detail == {"free_cells": [0], "needed": 0, "shortfall": 1}
+
+
+def test_zero_count_placement_never_yields_an_empty_page() -> None:
+    full = sheet(used=set(range(1, 49)), id_placement="cell")
+    with pytest.raises(InsufficientCellsError):
+        plan(
+            [first_free(full, 0), first_free(sheet(code=None), None)],
+            3,
+            hw_margins_hmm=None,
+            margin=None,
+        )
+    with pytest.raises(InvalidPlacementsError) as exc:
+        plan(
+            [first_free(sheet(), 0), first_free(sheet(code=None), None)],
+            3,
+            hw_margins_hmm=None,
+            margin=None,
+        )
+    assert exc.value.detail == {"reason": "empty_placement"}
+    # A zero-count placement is fine when it carries the margin ID.
+    ok = plan(
+        [first_free(sheet(id_placement="margin"), 0), first_free(sheet(code=None), None)],
+        3,
+        hw_margins_hmm=None,
+        margin=None,
+    )
+    assert ok.pages[0].margin_id is True
+
+
+def test_hw_margin_flags_bottom_and_right_bands() -> None:
+    # L4736REV leaves 21.3 mm at the bottom and 9.85 mm at the right.
+    last_row = [45, 46, 47, 48]
+    bottom = Margins(top=0, left=0, bottom=2200, right=0)
+    result = plan(
+        [first_free(sheet(used=set(range(1, 45))), 4)], 4, hw_margins_hmm=bottom, margin=None
+    )
+    assert result.pages[0].hw_margin_cells == last_row
+    ok = Margins(top=0, left=0, bottom=2100, right=0)
+    result = plan([first_free(sheet(used=set(range(1, 45))), 4)], 4, hw_margins_hmm=ok, margin=None)
+    assert result.pages[0].hw_margin_cells == []
+    right = Margins(top=0, left=0, bottom=0, right=1000)
+    result = plan([first_free(sheet(), 4)], 4, hw_margins_hmm=right, margin=None)
+    assert result.pages[0].hw_margin_cells == [4]
+
+
+def test_reserved_and_unconfirmed_cells_are_not_free() -> None:
+    view = sheet()
+    view.non_free.update({1: "reserved", 2: "unconfirmed"})
+    result = plan([first_free(view, 2)], 2, hw_margins_hmm=None, margin=None)
+    assert result.pages[0].item_cells == [3, 4]
+
+
+def test_five_hundred_items_over_eleven_sheets() -> None:
+    placements = [first_free(sheet(code=None), 48) for _ in range(10)]
+    placements.append(first_free(sheet(code=None), None))
+    result = plan(placements, 500, hw_margins_hmm=None, margin=None)
+    assert sum(len(p.item_cells) for p in result.pages) == 500
+    assert result.free_after[-1] == 28

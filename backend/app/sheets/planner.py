@@ -179,13 +179,21 @@ class _Draft:
     placement: PlacementIn
     count: int
     id_cell: int | None
+    id_missing: bool
     item_cells: list[int]
     margin_id: bool
     available: int
     free_after: int
 
 
-def _draft(p: PlacementIn, count: int, taken: set[int], margin: MarginContext | None) -> _Draft:
+def _draft(
+    p: PlacementIn,
+    count: int,
+    taken: set[int],
+    margin: MarginContext | None,
+    id_done: bool,
+) -> _Draft:
+    """Plan one placement. ``id_done``: this sheet's ID label already went to an earlier page."""
     view = p.sheet
     if view.state == "discarded":
         raise SheetDiscardedError()
@@ -194,7 +202,12 @@ def _draft(p: PlacementIn, count: int, taken: set[int], margin: MarginContext | 
     busy = set(view.non_free) | taken
     free = [n for n in range(1, total + 1) if n not in busy]
     skip = set(p.skip)
-    needs_id_cell = view.id_placement == "cell" and not view.id_printed and not view.has_hub_cell
+    needs_id_cell = (
+        view.id_placement == "cell"
+        and not view.id_printed
+        and not view.has_hub_cell
+        and not id_done
+    )
     explicit = set(p.cells) if isinstance(p.cells, list) else set()
 
     if isinstance(p.cells, list):
@@ -210,9 +223,13 @@ def _draft(p: PlacementIn, count: int, taken: set[int], margin: MarginContext | 
     id_cell: int | None = None
     if needs_id_cell:
         id_cell = next((n for n in free if n not in skip and n not in explicit), None)
+    id_missing = needs_id_cell and id_cell is None
 
     margin_id = (
-        view.id_placement == "margin" and not view.id_printed and not view.margin_id_in_flight
+        view.id_placement == "margin"
+        and not view.id_printed
+        and not view.margin_id_in_flight
+        and not id_done
     )
     if margin_id and margin is not None:
         usable = margin_usable_hmm(g, hw_top_hmm=margin.hw_top_hmm, dev=margin.deviation)
@@ -220,15 +237,14 @@ def _draft(p: PlacementIn, count: int, taken: set[int], margin: MarginContext | 
             raise MarginTooSmallError(hmm_to_mm(usable))
 
     if isinstance(p.cells, list):
+        # Item i goes to cells[i]: the caller's order is kept.
         items = list(p.cells)
-        items.sort()
         available = len(items)
-        enough = not (needs_id_cell and id_cell is None)
     else:
         pool = [n for n in free if n not in skip and n != id_cell]
-        available = len(pool) if not (needs_id_cell and id_cell is None) else 0
-        enough = count <= available
-        items = pool[:count] if enough else []
+        available = len(pool)
+        items = pool[:count]
+    enough = not id_missing and len(items) == count
     if not enough:
         items = []
     used = set(items) | ({id_cell} if id_cell is not None else set())
@@ -236,9 +252,10 @@ def _draft(p: PlacementIn, count: int, taken: set[int], margin: MarginContext | 
         placement=p,
         count=count,
         id_cell=id_cell,
+        id_missing=id_missing,
         item_cells=items,
         margin_id=margin_id,
-        available=available if enough or not isinstance(p.cells, list) else 0,
+        available=available,
         free_after=len(free) - len(used),
     )
 
@@ -254,30 +271,47 @@ def plan(
 
     ``n_items == 0`` is valid when an ID cell or a margin ID is due (an ID-only job); with
     nothing to print at all the request is ``empty``. ``margin=None`` means there is no printer
-    context, so margin availability is not checked.
+    context, so margin availability is not checked. A placement that would print nothing is
+    ``empty_placement``.
+
+    Caller contract: one ``SheetView`` object stands for one sheet. Passing the same object in
+    several placements shares its cells and its ID label (the ID goes out once, on the sheet's
+    first page); two distinct objects are two sheets, even if they carry the same code, and a
+    new sheet must therefore get its own object. Explicit cell lists keep the caller's order.
+    ``InsufficientCellsError.free_cells`` is the capacity left for items per placement, after
+    skip and the ID cell; a missing ID cell adds one to ``shortfall``.
     """
     if not placements:
         raise InvalidPlacementsError("empty")
     counts = _resolve_counts(placements, n_items)
 
     taken_by_sheet: dict[int, set[int]] = {}
+    id_done: set[int] = set()
     drafts: list[_Draft] = []
     for p, count in zip(placements, counts, strict=True):
-        taken = taken_by_sheet.setdefault(id(p.sheet), set())
-        d = _draft(p, count, taken, margin)
+        key = id(p.sheet)
+        taken = taken_by_sheet.setdefault(key, set())
+        d = _draft(p, count, taken, margin, key in id_done)
         drafts.append(d)
-        if len(d.item_cells) == count:
-            taken.update(d.item_cells)
-            if d.id_cell is not None:
-                taken.add(d.id_cell)
+        if d.id_missing or len(d.item_cells) != count:
+            continue
+        taken.update(d.item_cells)
+        if d.id_cell is not None:
+            taken.add(d.id_cell)
+        if d.id_cell is not None or d.margin_id:
+            id_done.add(key)
 
-    short = [d for d in drafts if len(d.item_cells) != d.count]
+    short = [d for d in drafts if d.id_missing or len(d.item_cells) != d.count]
     if short:
-        shortfall = sum(d.count - d.available for d in short)
+        shortfall = sum(max(0, d.count - d.available) + int(d.id_missing) for d in short)
         raise InsufficientCellsError(
             [d.available for d in drafts], needed=n_items, shortfall=shortfall
         )
 
+    for d in drafts:
+        if not d.item_cells and d.id_cell is None and not d.margin_id:
+            # n_items == 0 with nothing due is "empty"; otherwise a zero-count placement.
+            raise InvalidPlacementsError("empty" if n_items == 0 else "empty_placement")
     if n_items == 0 and not any(d.id_cell is not None or d.margin_id for d in drafts):
         raise InvalidPlacementsError("empty")
 
