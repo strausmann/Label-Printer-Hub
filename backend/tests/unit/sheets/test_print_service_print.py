@@ -1036,3 +1036,28 @@ async def test_a_cell_qr_has_the_same_size_in_the_preview_and_the_job_pdf(
     one_preview_pixel = 25.4 / 150
     assert abs(preview[0] - job[0]) <= one_preview_pixel, (preview, job)
     assert abs(preview[1] - job[1]) <= one_preview_pixel, (preview, job)
+
+
+async def test_the_dry_plan_of_a_print_runs_off_the_event_loop(
+    factory: async_sessionmaker[AsyncSession],
+    session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R10-5 / R10-2: the plan before the lookups is CPU work and must not block the loop."""
+    import threading
+
+    loop_thread = threading.get_ident()
+    seen: list[int] = []
+    real_plan = print_service.plan
+
+    def recording(*args: Any, **kwargs: Any) -> Any:
+        seen.append(threading.get_ident())
+        return real_plan(*args, **kwargs)
+
+    monkeypatch.setattr(print_service, "plan", recording)
+    printer = await make_printer(session, record())
+    code = await make_sheet(session)
+
+    await run_print(factory, printer, req([raw(0)], [on(code)]))
+
+    assert seen and seen[0] != loop_thread  # the dry plan; the locked one runs in reserve

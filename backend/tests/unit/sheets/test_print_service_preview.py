@@ -272,7 +272,7 @@ async def run_preview(
     language: str | None = "en",
 ) -> Any:
     return await print_service.preview(
-        s,
+        async_sessionmaker(bind=s.bind, expire_on_commit=False),
         printer=printer,
         request=request,
         lookup=lookup or FakeLookup(),
@@ -1290,3 +1290,59 @@ async def test_a_lookup_result_within_the_caps_is_stored_unchanged() -> None:
         primary_id="G-1",
         qr_payload="https://g.example.invalid/1",
     )
+
+
+async def test_the_page_bound_is_checked_before_anything_is_read_or_planned(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R10-5: a plan has one page per placement, so a refused 50-page request must not cost
+    the plan (about a second of CPU) nor a database read."""
+    planned: list[int] = []
+    real_plan = print_service.plan
+
+    def counting(*args: Any, **kwargs: Any) -> Any:
+        planned.append(1)
+        return real_plan(*args, **kwargs)
+
+    monkeypatch.setattr(print_service, "plan", counting)
+    printer = await make_printer(session, record())
+
+    class NoSessions:
+        def __call__(self) -> Any:  # a session factory that must not be asked
+            raise AssertionError("the preview opened a session before the page bound")
+
+    with pytest.raises(PreviewTooLargeError) as err:
+        await print_service.preview(
+            NoSessions(),  # type: ignore[arg-type]
+            printer=printer,
+            request=req([raw(i) for i in range(50)], [fresh(count=1) for _ in range(50)]),
+            lookup=FakeLookup(),  # type: ignore[arg-type]
+            renderer=DEFAULT_CELL_RENDERER,
+            language="en",
+        )
+
+    assert err.value.detail == {"pages": 50, "max": 10}
+    assert planned == []
+
+
+async def test_the_plan_runs_off_the_event_loop(
+    session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    loop_thread = threading.get_ident()
+    seen: list[int] = []
+    real_plan = print_service.plan
+
+    def recording(*args: Any, **kwargs: Any) -> Any:
+        seen.append(threading.get_ident())
+        return real_plan(*args, **kwargs)
+
+    monkeypatch.setattr(print_service, "plan", recording)
+    printer = await make_printer(session, record())
+    code = await make_sheet(session)
+
+    await run_preview(session, printer, req([raw(0)], [on(code)]))
+
+    assert seen and all(t != loop_thread for t in seen)
+

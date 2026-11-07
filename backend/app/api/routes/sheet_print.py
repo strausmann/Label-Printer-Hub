@@ -101,9 +101,12 @@ async def preview_sheet_print(
     if not printer.enabled:
         raise SheetPrinterDisabledError().to_http()
     language = http.app.state.settings_store.get("general.language")
+    # Give the connection back before the lookups and the drawing (R10-1): the printer row is
+    # all this request still needs from the session, and a committed session keeps it usable.
+    await session.commit()
     with mapped():
         return await print_service.preview(
-            session,
+            db_engine.async_session,
             printer=printer,
             request=body,
             lookup=lookup,
@@ -175,6 +178,7 @@ async def print_sheet(
     if not printer.enabled:
         raise SheetPrinterDisabledError().to_http()
     language = http.app.state.settings_store.get("general.language")
+    await session.commit()  # no connection held through the lookups (R10-1); see preview above
     with mapped():
         return await print_service.print_sheets(
             db_engine.async_session,

@@ -409,3 +409,76 @@ async def test_a_513_character_qr_payload_is_refused_by_path_only(
     assert _err(resp)["error_code"] == "invalid_request"
     assert _err(resp)["error_detail"] == {"errors": ["items.2.data.qr_payload"]}
     assert SENTINEL not in resp.text
+
+
+class _SlowLookup:
+    """An integration that answers after ``delay`` seconds."""
+
+    def __init__(self, delay: float) -> None:
+        self.delay = delay
+        self.started = 0
+
+    async def lookup(self, source_app: str, identifier: str) -> Any:
+        import asyncio
+
+        from app.schemas.label_data import LabelData
+
+        self.started += 1
+        await asyncio.sleep(self.delay)
+        return LabelData(
+            source_app=source_app,
+            title=f"T {identifier}",
+            primary_id=f"P-{identifier}",
+            qr_payload=f"https://x.example.invalid/{identifier}",
+        )
+
+
+@pytest.mark.parametrize("route", ["preview", "print"])
+async def test_no_db_connection_is_held_while_the_lookups_run(
+    api_client_with_seed: httpx.AsyncClient, route: str
+) -> None:
+    """R10-1: a request kept its pooled connection through up to 500 slow lookups (and, for the
+    preview, through the rendering queue), so about 15 concurrent requests from one key used up
+    the pool and every other request timed out. While the lookups run, nothing is checked out."""
+    import asyncio
+
+    import app.db.engine as engine_module
+    from app.api.routes.sheet_print import get_lookup_service
+
+    keys = {
+        "preview": {"X-Label-Hub-Key": await _insert_key(["read"])},
+        "print": {"X-Label-Hub-Key": await _insert_key(["print"])},
+    }
+    pid, _ = await _printer()
+    code = await _sheet()
+    await api_client_with_seed.get("/healthz")  # the lifespan starts on the first request
+    transport_app = api_client_with_seed._transport.app  # type: ignore[attr-defined]
+    fastapi_app = getattr(transport_app, "_app", transport_app)
+    slow = _SlowLookup(2.0)
+    fastapi_app.dependency_overrides[get_lookup_service] = lambda: slow
+    body = {
+        "items": [
+            {"content_type": "qr_two_lines", "lookup": {"app": "grocy", "identifier": str(i)}}
+            for i in range(6)
+        ],
+        "placements": [{"sheet": code}],
+    }
+    url = _url(pid) if route == "preview" else f"/api/print/{pid}/sheet"
+    pool = engine_module.engine.pool
+
+    try:
+        tasks = [
+            asyncio.create_task(api_client_with_seed.post(url, json=body, headers=keys[route]))
+            for _ in range(8)
+        ]
+        for _ in range(100):  # until every request is inside its lookups: 8 x 6 started
+            if slow.started >= 48:
+                break
+            await asyncio.sleep(0.05)
+        assert slow.started == 48
+        held = pool.checkedout()  # type: ignore[attr-defined]
+        await asyncio.gather(*tasks)
+    finally:
+        fastapi_app.dependency_overrides.pop(get_lookup_service, None)
+
+    assert held == 0

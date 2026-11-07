@@ -700,7 +700,7 @@ async def _reprint_hints(session: AsyncSession, items: Sequence[ResolvedItem]) -
 
 
 async def preview(
-    session: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
     *,
     printer: Printer,
     request: SheetPrintRequest,
@@ -710,33 +710,52 @@ async def preview(
 ) -> SheetPreview:
     """The plan and the pictures of a sheet print, written nowhere.
 
-    Order: printer kind and tray, sheets and the plan (only the item count is needed), the page
-    bound, then the integration lookups, then the pictures. A refused request makes no lookup.
+    Order: printer kind, the page bound (a plan has one page per placement, so it is known
+    before anything is read or planned), tray, sheets and the plan (only the item count is
+    needed), then the integration lookups, then the pictures. A refused request makes no lookup.
     ``language`` is the hub's ``general.language``; it picks the feed-direction mark's text.
+
+    No database connection is held while the lookups run or the pictures are drawn (R10-1): the
+    reads happen in one short session before them, the reprint hints in another one after.
     """
     if printer.backend != "ipp":
         raise MediaKindMismatchError()
-    tray = await calibration_service.resolve_tray(session, printer.id, request.tray)
-    snapshot = await calibration_service.snapshot(session, printer.id, tray)
-    facts: PrinterFacts = await load_printer_facts(session, printer.id)
-
-    # Everything that needs only the item count comes before any integration call: a refused
-    # request must not fire up to 500 lookups first.
-    placements, infos, new_views = await _placements(session, request)
+    if len(request.placements) > MAX_PREVIEW_PAGES:  # R10-5: before any planning
+        raise PreviewTooLargeError(len(request.placements), MAX_PREVIEW_PAGES)
     scan = scan_payload_builder(str(get_settings().public_url))
-    margin = MarginContext(
-        deviation=snapshot_to_deviation(snapshot),
-        scan_payload=scan,
-        render_dpi=facts.render_dpi,
-        language=language,
-    )
-    result = plan(placements, len(request.items), hw_margins_hmm=facts.margins_hmm, margin=margin)
-    if len(result.pages) > MAX_PREVIEW_PAGES:
-        raise PreviewTooLargeError(len(result.pages), MAX_PREVIEW_PAGES)
-    items = await resolve_items(request.items, lookup)
+    async with session_factory() as session:
+        tray = await calibration_service.resolve_tray(session, printer.id, request.tray)
+        snapshot = await calibration_service.snapshot(session, printer.id, tray)
+        facts: PrinterFacts = await load_printer_facts(session, printer.id)
 
-    tray_row = await session.get(PrinterTray, (printer.id, tray))
-    load_hint = tray_row.load_hint if tray_row is not None else None
+        # Everything that needs only the item count comes before any integration call: a refused
+        # request must not fire up to 500 lookups first.
+        placements, infos, new_views = await _placements(session, request)
+        margin = MarginContext(
+            deviation=snapshot_to_deviation(snapshot),
+            scan_payload=scan,
+            render_dpi=facts.render_dpi,
+            language=language,
+        )
+        # Planning is CPU work (margin and feed-mark geometry per page): off the event loop.
+        result = await asyncio.to_thread(
+            plan, placements, len(request.items), hw_margins_hmm=facts.margins_hmm, margin=margin
+        )
+        if len(result.pages) > MAX_PREVIEW_PAGES:  # one page per placement; kept as a guard
+            raise PreviewTooLargeError(len(result.pages), MAX_PREVIEW_PAGES)
+
+        tray_row = await session.get(PrinterTray, (printer.id, tray))
+        load_hint = tray_row.load_hint if tray_row is not None else None
+        # The cells of each existing sheet, read now so that the drawing needs no connection.
+        sheet_cells: dict[UUID, dict[int, tuple[str, str | None]]] = {}
+        for page in result.pages:
+            sheet_id = page.sheet.sheet_id
+            if sheet_id is not None and sheet_id not in sheet_cells:
+                sheet_cells[sheet_id] = {
+                    row.cell_no: (row.state, row.purpose)
+                    for row in await repo.cells_of(session, sheet_id)
+                }
+    items = await resolve_items(request.items, lookup)
 
     pages: list[PreviewPage] = []
     taken_here: dict[int, dict[int, tuple[str, str | None]]] = {}  # earlier pages, same sheet
@@ -748,8 +767,7 @@ async def preview(
         assert code is not None
         existing: dict[int, tuple[str, str | None]] = {}
         if view.sheet_id is not None:
-            for row in await repo.cells_of(session, view.sheet_id):
-                existing[row.cell_no] = (row.state, row.purpose)
+            existing.update(sheet_cells[view.sheet_id])
         existing.update(taken_here.setdefault(id(view), {}))
 
         jobs: list[_CellJob] = []
@@ -825,6 +843,8 @@ async def preview(
             )
         )
 
+    async with session_factory() as session:
+        hints = await _reprint_hints(session, items)
     return SheetPreview(
         pages=pages,
         free_after=list(result.free_after),
@@ -832,7 +852,7 @@ async def preview(
             ExpectedPageModel(sheet=e.sheet, cells=e.cells, id_cell=e.id_cell)
             for e in expected_of(result, new_views)
         ],
-        reprint_hints=await _reprint_hints(session, items),
+        reprint_hints=hints,
     )
 
 
@@ -1213,7 +1233,9 @@ async def print_sheets(
         # A plan on views read without the lock: it tells which cell each item would get, so a
         # sheet that does not exist or does not fit is refused before any lookup.
         views, _, _ = await _placements(session, request)
-        dry = plan(views, len(request.items), hw_margins_hmm=facts.margins_hmm, margin=margin)
+        dry = await asyncio.to_thread(
+            plan, views, len(request.items), hw_margins_hmm=facts.margins_hmm, margin=margin
+        )
         await session.commit()  # no read transaction stays open while the lookups run
         items = await resolve_items(request.items, lookup)
         await asyncio.to_thread(_check_plan_items, dry.pages, items, facts.render_dpi)
