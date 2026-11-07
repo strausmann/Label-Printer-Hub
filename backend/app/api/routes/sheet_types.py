@@ -30,7 +30,7 @@ from app.schemas.sheets import (
 )
 from app.sheets import exchange
 from app.sheets import type_service as ts
-from app.sheets.errors import ImportTooLargeError, SheetTypeNotFoundError
+from app.sheets.errors import ImportTooLargeError, SheetTypeVersionNotFoundError
 from app.sheets.geometry import normalise, validate_geometry
 from app.sheets.naming import KEY_PATTERN
 
@@ -226,7 +226,7 @@ async def get_sheet_type_version(
         for v, count in await ts.list_versions_with_sheet_counts(session, t.id):
             if v.version == n:
                 return _version_read(v, count)
-        raise SheetTypeNotFoundError()
+        raise SheetTypeVersionNotFoundError()  # the type was resolved above
 
 
 @router.patch(

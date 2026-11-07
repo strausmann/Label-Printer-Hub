@@ -27,11 +27,7 @@ from app.calibration.fit import crossing_point
 from app.page_render.pdf import VectorPen, text_width_mm, write_pdf
 from app.page_render.transform import IDENTITY, Deviation
 from app.services.page_jobs import PagePayload
-from app.sheets.errors import (
-    CalibrationTypeUnsuitableError,
-    SheetTypeNotFoundError,
-    SheetTypeVersionNotFoundError,
-)
+from app.sheets.errors import CalibrationTypeUnsuitableError
 from app.sheets.geometry import Geometry
 
 if TYPE_CHECKING:
@@ -386,10 +382,7 @@ async def build_payload(
     if version is None:
         v = await ts.current_version(session, sheet_type.id)
     else:
-        try:
-            v = await ts.get_version(session, type_key, version)
-        except SheetTypeNotFoundError:  # the type exists (just read): the version does not
-            raise SheetTypeVersionNotFoundError() from None
+        v = await ts.get_version(session, type_key, version)
     g = ts.version_geometry(v)
     if g.cols < 2 or g.rows < 2:
         raise CalibrationTypeUnsuitableError(g.cols, g.rows)

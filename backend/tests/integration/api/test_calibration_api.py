@@ -111,7 +111,33 @@ async def test_put_measured_on(api_client_with_seed):
         json={**BODY, "measured_on": {"type_key": "cal-test", "version": 9}},
         headers=admin,
     )
-    assert bad.status_code == 404 and _err(bad)["error_code"] == "sheet_type_not_found"
+    assert bad.status_code == 404 and _err(bad)["error_code"] == "sheet_type_version_not_found"
+
+
+async def test_put_checks_the_path_before_the_body(api_client_with_seed):
+    """Same order as fit and page: tray, then the measured_on type, then the ranges."""
+    c = api_client_with_seed
+    admin = await _key(["admin"])
+    pid = await _printer()
+    await _type()
+    ghost = {"type_key": "no-such-type", "version": 1}
+    wild = {**BODY, "offset_x_mm": 10.01}
+
+    async def put(tray: str, body: dict) -> Any:
+        return await c.put(f"/api/printers/{pid}/calibration/{tray}", json=body, headers=admin)
+
+    unknown_tray_and_type = await put("nope", {**BODY, "measured_on": ghost})
+    assert unknown_tray_and_type.status_code == 422
+    assert _err(unknown_tray_and_type)["error_code"] == "tray_unknown"
+    unknown_tray_and_range = await put("nope", wild)
+    assert unknown_tray_and_range.status_code == 422
+    assert _err(unknown_tray_and_range)["error_code"] == "tray_unknown"
+    type_and_range = await put("auto", {**wild, "measured_on": ghost})
+    assert type_and_range.status_code == 404
+    assert _err(type_and_range)["error_code"] == "sheet_type_not_found"
+    range_only = await put("auto", {**wild, "measured_on": {"type_key": "cal-test", "version": 1}})
+    assert range_only.status_code == 422
+    assert _err(range_only)["error_code"] == "calibration_out_of_range"
 
 
 async def test_put_errors(api_client_with_seed):
@@ -258,8 +284,8 @@ async def test_fit_errors(api_client_with_seed):
     )
     bad_version = await c.post(url, json={**good, "version": 9}, headers=reader)
     assert bad_version.status_code == 404
-    # type_service.get_version answers a missing version with sheet_type_not_found
-    assert _err(bad_version)["error_code"] == "sheet_type_not_found"
+    # the type exists, the version does not: the spec's code, same as the page routes
+    assert _err(bad_version)["error_code"] == "sheet_type_version_not_found"
     gap = {**good, "readings": [*good["readings"][:3], {**good["readings"][3], "col_gap": 9}]}
     outside = await c.post(url, json=gap, headers=reader)
     assert outside.status_code == 422

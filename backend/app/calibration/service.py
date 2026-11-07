@@ -115,10 +115,12 @@ async def put(
 ) -> CalibrationRead:
     """Store (replace) the manual calibration of a tray. Nothing is stored on any error."""
     await _page_printer(session, printer_id)
-    dev = to_deviation(values)  # raises calibration_out_of_range before any write
+    # Path before body, the order fit and page use: tray, the measured_on type, then the ranges.
+    await _check_tray(session, printer_id, tray)
     version_id = (
         (await ts.get_version(session, measured_on[0], measured_on[1])).id if measured_on else None
     )
+    dev = to_deviation(values)  # raises calibration_out_of_range before any write
     async with ts.write_transaction(session):
         await _check_tray(session, printer_id, tray)  # inside the lock: no race with a tray edit
         row = await session.get(PrinterCalibration, (printer_id, tray))
