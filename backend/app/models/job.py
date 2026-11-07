@@ -14,8 +14,10 @@ from sqlmodel import Column, Field, SQLModel
 def is_page_payload(payload: dict[str, Any] | None) -> bool:
     """True for a stored page-job payload (it names a ``kind``); tape payloads have none.
 
-    The one definition of "is a page job": the queue, the stores, the repository and the
-    API all ask this function.
+    The definition of "is a page job" for *stored payloads*: the job stores, the repository
+    and the retry route ask this function. Other components key on what they hold instead:
+    the in-memory queue on ``job.kind``, capabilities and calibration on
+    ``printer.backend == "ipp"``, and the status route on the cache row's ``kind``.
     """
     return bool(payload) and "kind" in (payload or {})
 

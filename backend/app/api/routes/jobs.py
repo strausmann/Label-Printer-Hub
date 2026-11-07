@@ -340,8 +340,10 @@ async def resume_job(
         "is still in an active state (``queued`` or ``printing``) or its printer is "
         "not available, and 422 when the stored payload cannot be re-rendered "
         "(e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from "
-        "its payload; a sheet page answers 409 ``job_not_retryable`` (its cells need the "
-        "cell-aware retry)."
+        "its payload, so retry prints the same page again with its original calibration "
+        "snapshot and date; a fresh check print with the current calibration is a new "
+        "calibration-page request.  A sheet page answers 409 ``job_not_retryable`` (its "
+        "cells need the cell-aware retry)."
     ),
 )
 async def retry_job(
@@ -411,6 +413,10 @@ async def _retry_page_job(
 
     Only calibration pages: a sheet page's cells need the cell-aware path (Plan 3), so it
     is refused with ``409 job_not_retryable`` and no row is created.
+
+    Retry means "the same page again": the stored payload carries the calibration snapshot
+    and the date of the first submit, and both are kept on purpose. After the admin has
+    corrected the values, a new check print is a new calibration-page request.
     """
     if job.payload.get("kind") != "calibration_page":
         raise PageJobNotRetryableError().to_http()
