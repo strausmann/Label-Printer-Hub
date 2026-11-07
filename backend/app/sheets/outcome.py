@@ -10,9 +10,10 @@ transitions:
 ``SheetCellsOutcome`` is the outcome handler of the ``sheet_page`` kind. Every call is one write
 transaction under the sheet write lock, touches only ``reserved`` rows of that job (so a second
 call, or a late contradicting one, changes nothing and publishes nothing) and publishes
-``sheet.updated`` after the commit. ``id_printed`` is set in the **same** transaction that turns
-the cells into ``used``: a crash can never leave used cells with an ID label that is "not
-printed" (or the reverse). A job that fails cleanly leaves it false (OC-40).
+``sheet.updated`` after the commit. ``id_printed`` and ``feed_mark_printed`` are set in the **same**
+transaction that turns the cells into ``used``: a crash can never leave used cells with an ID
+label or mark that is "not printed" (or the reverse). A job that fails cleanly leaves them
+false (OC-40, OC-56).
 
 ``sweep_orphan_reservations`` repairs reservations whose job ended, or vanished, while the hub
 was down. It applies the same rule to what the database holds. A job counts as possibly printed
@@ -83,14 +84,15 @@ async def _settle_locked(
 ) -> list[SheetTouched]:
     """Apply the decisions. The caller holds the write lock and commits.
 
-    ``id_printed`` is set only by a decision that moves a cell reserved -> used (T5-2): a late
-    or contradicting call finds no reserved row and changes nothing. Nothing is committed here,
-    so cells and ``id_printed`` always land together.
+    ``id_printed`` and ``feed_mark_printed`` are set only by a decision that moves a cell
+    reserved -> used (T5-2): a late or contradicting call finds no reserved row and changes
+    nothing. Nothing is committed here, so cells and the flags always land together.
     """
     now = datetime.now(UTC)
     changed: dict[UUID, list[int]] = {}
     used_at: dict[UUID, datetime] = {}
     id_printed_on: set[UUID] = set()
+    feed_mark_on: set[UUID] = set()
     for row, outcome in decisions:
         changed.setdefault(row.sheet_id, []).append(row.cell_no)
         if outcome == "free":
@@ -108,6 +110,8 @@ async def _settle_locked(
         carries_margin = repo.margin_id_sheet(job)
         if row.source == HUB_SOURCE or carries_margin:
             id_printed_on.add(row.sheet_id)  # the ID label is on the sheet now
+        if repo.feed_mark_sheet(job):  # its own check: the ID-cell job carries both
+            feed_mark_on.add(row.sheet_id)  # the orientation mark is on the sheet now
     await session.flush()
     touched: list[SheetTouched] = []
     for sheet_id in sorted(changed, key=str):
@@ -120,6 +124,8 @@ async def _settle_locked(
                 sheet.last_used_at = used_at[sheet_id]  # the job's finish time, never earlier
         if sheet_id in id_printed_on:
             sheet.id_printed = True
+        if sheet_id in feed_mark_on:
+            sheet.feed_mark_printed = True
         await session.flush()
         touched.append(await _summary(session, sheet, sorted(changed[sheet_id])))
     return touched

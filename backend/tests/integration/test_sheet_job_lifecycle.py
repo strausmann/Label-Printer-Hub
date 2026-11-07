@@ -298,3 +298,166 @@ async def test_lifespan_unregisters_its_handler_at_shutdown() -> None:
     async with app.router.lifespan_context(app):
         assert "sheet_page" in page_jobs._HANDLERS
     assert "sheet_page" not in page_jobs._HANDLERS
+
+
+# ---------------------------------------------------------------- feed-direction mark (Task 5c)
+
+
+def _mark_payload(page: Any, code: str) -> PagePayload:
+    """What Task 7 will store for a reserved page: the cells and, if decided, the mark."""
+    from dataclasses import asdict
+
+    from app.schemas.content_type import ContentType
+    from app.schemas.label_data import LabelData
+    from app.sheets.sheet_page import (
+        SheetCellPayload,
+        SheetPageDetail,
+        feed_mark_payload,
+    )
+
+    cells = [
+        SheetCellPayload(
+            cell=a.cell,
+            content_type=ContentType.TEXT_TWO_LINES,
+            label_data=LabelData(source_app="t", primary_id=f"A-{a.cell}", title="Item").model_dump(
+                mode="json"
+            ),
+            mapped=False,
+        )
+        for a in page.assignments
+    ]
+    detail = SheetPageDetail(
+        sheet_id=page.sheet_id,
+        sheet_code=code,
+        type_key="avery-l4736rev",
+        type_version_id=page.type_version_id,
+        geometry=asdict(G48),
+        allow_qr=True,
+        cells=cells,
+        feed_mark=feed_mark_payload(page.feed_mark) if page.feed_mark is not None else None,
+        job_summary={"sheet_code": code, "cell_count": len(cells)},
+    )
+    return PagePayload(
+        kind="sheet_page",
+        media="A4",
+        tray="auto",
+        render_dpi=300,
+        job_name=f"Sheet {code}",
+        calibration=None,
+        detail=detail.model_dump(mode="json"),
+    )
+
+
+async def _reserve_manual(margin: Any, n: int = 2) -> tuple[Any, str]:
+    import app.db.engine as eng
+
+    async with eng.async_session() as s:
+        code = await make_sheet(s)
+        (page,) = await reserve(
+            s,
+            placements=[existing(code)],
+            items=[ItemMeta("api", f"item {i}", f"ref-{i}") for i in range(n)],
+            expected=None,
+            hw_margins_hmm=None,
+            margin=margin,
+            required_type_key=None,
+            actor="tester",
+        )
+        return page, code
+
+
+async def _sheet_row() -> Sheet:
+    import app.db.engine as eng
+
+    async with eng.async_session() as s:
+        return (await s.execute(select(Sheet))).scalar_one()
+
+
+async def test_only_the_first_job_of_a_sheet_carries_the_mark() -> None:
+    """Acceptance 7a: two jobs onto a fresh ``manual`` sheet; the mark is on the first only."""
+    import app.db.engine as eng
+
+    fake = FakeIppPrinter(job_script=[3, 5, 9])
+    pid = await _printer()
+    async with eng.async_session() as s:
+        await ts.create_type(s, _fields(), G48, actor="tester")
+    page1, code = await _reserve_manual(MARGIN)
+    assert page1.feed_mark is not None
+    app = _app(fake)
+    async with app.router.lifespan_context(app):
+        await app.state.print_queue.submit_page_job(
+            pid, _mark_payload(page1, code), api_key_id=None, source_ip=None, job_id=page1.job_id
+        )
+
+        async def _flag() -> bool:
+            return (await _sheet_row()).feed_mark_printed
+
+        await _until(_flag)
+        first = await _row(page1.job_id)
+        assert first.payload["detail"]["feed_mark"]["text"] == "▲ Top \u2013 this edge first"
+        async with eng.async_session() as s:
+            (page2,) = await reserve(
+                s,
+                placements=[existing(code)],
+                items=[ItemMeta("api", "again", "ref")],
+                expected=None,
+                hw_margins_hmm=None,
+                margin=MARGIN,
+                required_type_key=None,
+                actor="tester",
+            )
+        assert page2.feed_mark is None
+        await app.state.print_queue.submit_page_job(
+            pid, _mark_payload(page2, code), api_key_id=None, source_ip=None, job_id=page2.job_id
+        )
+        await _until(_cells_are_all("used", 3))
+        second = await _row(page2.job_id)
+        assert second.payload["detail"]["feed_mark"] is None
+
+
+def _cells_are_all(state: str, count: int) -> Callable[[], Awaitable[bool]]:
+    async def _check() -> bool:
+        import app.db.engine as eng
+
+        async with eng.async_session() as s:
+            rows = (await s.execute(select(SheetCell))).scalars().all()
+        return len(rows) == count and {r.state for r in rows} == {state}
+
+    return _check
+
+
+async def test_mark_language_fixed_at_reservation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The mark's text is decided when the reservation runs: a later change of the hub
+    language does not reach the PDF the printer receives."""
+    from dataclasses import replace
+
+    import app.db.engine as eng
+    from app.sheets.sheet_page import render_sheet_page
+
+    from tests.helpers import pdf_inspect as pi
+
+    monkeypatch.setitem(
+        page_jobs._RENDERERS, "sheet_page", lambda p: render_sheet_page(p, compress=False)
+    )
+    fake = FakeIppPrinter(job_script=[3, 5, 9])
+    pid = await _printer()
+    async with eng.async_session() as s:
+        await ts.create_type(s, _fields(), G48, actor="tester")
+    app = _app(fake)
+    async with app.router.lifespan_context(app):
+        store = app.state.settings_store
+        async with eng.async_session() as s:
+            await store.set_many(s, {"general.language": "de"})
+        page, code = await _reserve_manual(replace(MARGIN, language=store.get("general.language")))
+        payload = _mark_payload(page, code)
+        async with eng.async_session() as s:
+            await store.set_many(s, {"general.language": "en"})
+        assert store.get("general.language") == "en"
+        await app.state.print_queue.submit_page_job(
+            pid, payload, api_key_id=None, source_ip=None, job_id=page.job_id
+        )
+        await _until(_cells_are_all("used", 2))
+
+    (doc,) = [r.document for r in fake.received if r.operation == "Print-Job"]
+    assert "▲ Oben \u2013 diese Kante zuerst" in pi.texts(doc)
+    assert "▲ Top \u2013 this edge first" not in pi.texts(doc)

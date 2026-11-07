@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Final, Literal
 from uuid import UUID
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.page_render.pdf import PageImage, PageText, text_width_mm, write_pdf
@@ -43,8 +43,10 @@ from app.sheets.cell_render import (
 )
 from app.sheets.geometry import Geometry, cell_count, remaining_margins
 from app.sheets.planner import (
+    _CAP_EM,
     MARGIN_TEXT_GAP_HMM,
     SAFETY_HMM,
+    FeedMarkPlacement,
     MarginBand,
     MarginCorner,
     MarginPlacement,
@@ -53,9 +55,11 @@ from app.sheets.planner import (
 
 __all__ = [
     "PREVIEW_DPI",
+    "FeedMarkPayload",
     "MarginIdPayload",
     "SheetCellPayload",
     "SheetPageDetail",
+    "feed_mark_payload",
     "margin_id_payload",
     "render_preview_png",
     "render_sheet_page",
@@ -64,7 +68,6 @@ __all__ = [
 PREVIEW_DPI: Final = 150
 _MAX_PT: Final = 11.0
 _MIN_PT: Final = 6.0
-_CAP_EM: Final = 0.72  # cap height as a fraction of the font size
 
 
 class SheetCellPayload(BaseModel):
@@ -95,6 +98,9 @@ class MarginIdPayload(BaseModel):
     """The one decision, taken at the job's render dpi when the payload is built (T4-2).
     ``None`` only in payloads stored before the flag existed: the rule is then evaluated at
     render dpi."""
+    text_end_hmm: int | None = None
+    """Top band only: the ID text ends here instead of at the grid's right end, because the
+    feed-direction mark sits beyond it (spec 10.2a). ``None`` in payloads stored before."""
 
     def draws_qr(self, render_dpi: int) -> bool:
         """Whether the margin carries a QR; the stored flag wins, the rule is the fallback."""
@@ -106,11 +112,17 @@ class MarginIdPayload(BaseModel):
 
 
 def margin_id_payload(
-    text: str, qr_payload: str | None, placement: MarginPlacement
+    text: str,
+    qr_payload: str | None,
+    placement: MarginPlacement,
+    *,
+    text_end_hmm: int | None = None,
 ) -> MarginIdPayload:
     """Builds the margin ID from the planner's decision; the QR rule is not evaluated again.
 
     ``qr_payload`` is ``margin.scan_payload(code)``, the string the planner decided on.
+    ``text_end_hmm`` is ``feed_mark.x_hmm - MARGIN_TEXT_GAP_HMM`` when the mark shares the top
+    band, else ``None``.
     """
     allowed = placement.qr and bool(qr_payload)
     return MarginIdPayload(
@@ -120,6 +132,31 @@ def margin_id_payload(
         band=placement.band,
         corner=placement.corner,
         qr_allowed=allowed,
+        text_end_hmm=text_end_hmm,
+    )
+
+
+class FeedMarkPayload(BaseModel):
+    """The feed-direction mark as decided in the reservation (spec 10.2a, OC-57).
+
+    The text is stored with it, so a later change of the hub language changes nothing about a
+    stored job. ``x_hmm`` is the left end of the text. The renderers draw exactly this and never
+    place it again."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str
+    x_hmm: int
+    baseline_y_hmm: int
+    size_pt: float
+    band: Literal["top"] = "top"
+    anchor: Literal["top_right"] = "top_right"
+
+
+def feed_mark_payload(p: FeedMarkPlacement) -> FeedMarkPayload:
+    """The payload of the planner's decision; copies the text, nothing reads the language."""
+    return FeedMarkPayload(
+        text=p.text, x_hmm=p.x_hmm, baseline_y_hmm=p.baseline_y_hmm, size_pt=p.size_pt
     )
 
 
@@ -141,6 +178,7 @@ class SheetPageDetail(BaseModel):
     cells: list[SheetCellPayload]
     id_cell: SheetCellPayload | None = None
     margin_id: MarginIdPayload | None = None
+    feed_mark: FeedMarkPayload | None = None
     job_summary: dict[str, Any]
 
     @model_validator(mode="after")
@@ -200,7 +238,10 @@ def _margin_layout(g: Geometry, margin: MarginIdPayload, *, with_qr: bool) -> _M
         top = g.margin_top - SAFETY_HMM - d if margin.band == "top" else grid_bottom + SAFETY_HMM
         qr = BoxHmm(g.margin_left, top, d, d) if with_qr else None
         text_x = g.margin_left + lead
-        text, size = _fit_margin_text(margin.text, start, (grid_right - text_x) / 100)
+        text_end = grid_right
+        if margin.band == "top" and margin.text_end_hmm is not None:
+            text_end = min(grid_right, margin.text_end_hmm)  # the feed mark follows
+        text, size = _fit_margin_text(margin.text, start, (text_end - text_x) / 100)
         em_hmm = size / PT_PER_MM * 100
         return _MarginLayout(qr, text, text_x, round(top + d / 2 + _CAP_EM * em_hmm / 2), size)
     edge = grid_right + SAFETY_HMM if margin.band == "right" else g.margin_left - SAFETY_HMM - d
@@ -240,6 +281,9 @@ def render_sheet_page(
             data=LabelData(**c.label_data),
         )
         images.append(PageImage(box.x, box.y, box.w, box.h, cell_image.image))
+    if d.feed_mark is not None:
+        f = d.feed_mark
+        texts.append(PageText(f.x_hmm, f.baseline_y_hmm, f.size_pt, f.text))
     if d.margin_id is not None:
         m = d.margin_id
         qr_image: Image.Image | None = None
@@ -285,7 +329,10 @@ def _paste_turned_text(
     turned = strip.transpose(Image.Transpose.ROTATE_270)  # clockwise
     # After the turn, strip (x, y) lands at (height - 1 - y, x): the baseline row becomes the
     # column ``height - 1 - base`` and the text start the row 0.
-    page.paste(turned, (origin[0] - (height - 1 - base), origin[1]))
+    # Only the ink is drawn: the white of the strip must never erase what is already on the page
+    # (the feed-direction mark, a cell), as an opaque paste would (review of Task 5b, Minor 1).
+    ink = ImageOps.invert(turned.convert("L"))
+    page.paste(0, (origin[0] - (height - 1 - base), origin[1]), ink)
 
 
 def render_preview_png(
@@ -294,6 +341,7 @@ def render_preview_png(
     margin: MarginIdPayload | None,
     *,
     render_dpi: int = 600,
+    feed_mark: FeedMarkPayload | None = None,
 ) -> bytes:
     """1-bit PNG of the page at 150 dpi (spec 12): only the new content, at nominal positions.
 
@@ -328,6 +376,16 @@ def render_preview_png(
             ImageDraw.Draw(page).text(
                 (px(lay.text_x), px(lay.baseline_y)), lay.text, font=font, fill=0, anchor="ls"
             )
+    # Last: nothing the ID or a cell drew can cover it.
+    if feed_mark is not None:
+        font = load_cell_font(max(1, round(feed_mark.size_pt * PREVIEW_DPI / 72)))
+        ImageDraw.Draw(page).text(
+            (px(feed_mark.x_hmm), px(feed_mark.baseline_y_hmm)),
+            feed_mark.text,
+            font=font,
+            fill=0,
+            anchor="ls",
+        )
     out = io.BytesIO()
     page.save(out, format="PNG")
     return out.getvalue()

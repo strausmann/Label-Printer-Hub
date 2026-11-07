@@ -30,6 +30,7 @@ from app.sheets.reservation import (
     ItemMeta,
     NewSheetIn,
     PlacementRequest,
+    feed_mark_in_flight,
     margin_id_in_flight,
     release,
     reserve,
@@ -68,7 +69,9 @@ def _fields(key: str = KEY, prefix: str = "L4736") -> ts.TypeFields:
     )
 
 
-MARGIN = MarginContext(deviation=Deviation(), scan_payload=lambda c: f"sheet:{c}", render_dpi=600)
+MARGIN = MarginContext(
+    deviation=Deviation(), scan_payload=lambda c: f"sheet:{c}", render_dpi=600, language=None
+)
 
 
 def meta(n: int) -> list[ItemMeta]:
@@ -523,3 +526,79 @@ async def test_failing_event_bus_does_not_lose_the_reservation(session: AsyncSes
 
     assert [a.cell for a in pages[0].assignments] == [1, 2]
     assert len([c for c in await cells(session) if c.state == "reserved"]) == 2
+
+
+# ---------------------------------------------------------------- feed-direction mark (Task 5c)
+
+
+async def test_feed_mark_in_flight(session: AsyncSession) -> None:
+    code = await make_sheet(session)  # manual: no ID, the mark is still due (OC-58)
+
+    first = (await do_reserve(session, [existing(code)], 1))[0]
+    second = (await do_reserve(session, [existing(code)], 1))[0]
+
+    assert first.feed_mark is not None
+    assert first.feed_mark.text == "▲ Top \u2013 this edge first"
+    # C26: the first job's row is not saved yet, so its mark counts as in flight
+    assert second.feed_mark is None
+
+
+async def test_feed_mark_text_follows_the_context_language(session: AsyncSession) -> None:
+    code = await make_sheet(session)
+
+    page = (await do_reserve(session, [existing(code)], 1, margin=replace(MARGIN, language="de")))[
+        0
+    ]
+
+    assert page.feed_mark is not None and page.feed_mark.text == "▲ Oben \u2013 diese Kante zuerst"
+
+
+async def test_view_reads_feed_mark_printed(session: AsyncSession) -> None:
+    code = await make_sheet(session)
+    sheet = (await session.execute(select(Sheet))).scalar_one()
+    sheet.feed_mark_printed = True
+    await session.commit()
+
+    page = (await do_reserve(session, [existing(code)], 1))[0]
+
+    assert page.feed_mark is None
+
+
+async def test_new_sheet_gets_the_mark_on_its_first_page(session: AsyncSession) -> None:
+    (page,) = await do_reserve(session, [new("manual")], 1)
+    assert page.feed_mark is not None
+
+
+async def test_feed_mark_in_flight_rules(session: AsyncSession) -> None:
+    await make_sheet(session)
+    sheet_id = (await session.execute(select(Sheet.id))).scalar_one()
+    assert await feed_mark_in_flight(session, sheet_id) is False
+
+    # a queued job of another sheet, or of this sheet without a mark, does not count
+    await _job(session, uuid4(), JobState.QUEUED.value, {"sheet_id": str(uuid4()), "feed_mark": {}})
+    await _job(session, uuid4(), JobState.QUEUED.value, {"sheet_id": str(sheet_id)})
+    # the margin ID is not the mark
+    await _job(
+        session, uuid4(), JobState.QUEUED.value, {"sheet_id": str(sheet_id), "margin_id": {"t": 1}}
+    )
+    assert await feed_mark_in_flight(session, sheet_id) is False
+    carrier = uuid4()
+    await _job(
+        session,
+        carrier,
+        JobState.PRINTING.value,
+        {"sheet_id": str(sheet_id), "feed_mark": {"x": 1}},
+    )
+    assert await feed_mark_in_flight(session, sheet_id) is True
+    job = await session.get(Job, carrier)
+    assert job is not None
+    job.state = JobState.DONE.value
+    await session.commit()
+    assert await feed_mark_in_flight(session, sheet_id) is False
+    # reserved cells whose job has no row do (C26)
+    attached = uuid4()
+    session.add(
+        SheetCell(sheet_id=sheet_id, cell_no=1, state="reserved", job_id=attached, source="api")
+    )
+    await session.commit()
+    assert await feed_mark_in_flight(session, sheet_id) is True

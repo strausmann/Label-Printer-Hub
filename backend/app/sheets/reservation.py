@@ -40,6 +40,7 @@ from app.sheets.errors import (
 from app.sheets.events import SheetTouched, publish_touched
 from app.sheets.geometry import cell_count
 from app.sheets.planner import (
+    FeedMarkPlacement,
     MarginContext,
     MarginPlacement,
     PlacementIn,
@@ -64,6 +65,7 @@ __all__ = [
     "NewSheetIn",
     "PlacementRequest",
     "ReservedPage",
+    "feed_mark_in_flight",
     "load_sheet_view",
     "margin_id_in_flight",
     "release",
@@ -117,6 +119,7 @@ class ReservedPage:
     hw_margin_cells: list[int]
     margin_placement: MarginPlacement | None = None
     id_not_printed: bool = False
+    feed_mark: FeedMarkPlacement | None = None
 
 
 @dataclass
@@ -131,16 +134,17 @@ class ExpectedPage:
 # ---------------------------------------------------------------------------- views
 
 
-def _active_sheet_page_carries_margin_id(
-    payloads: Sequence[dict[str, Any]], sheet_id: UUID
+def _active_sheet_page_carries(
+    payloads: Sequence[dict[str, Any]], sheet_id: UUID, key: str
 ) -> bool:
+    """Whether a queued or printing page payload of the sheet has a truthy ``detail[key]``."""
     for payload in payloads:
         if payload.get("kind") != "sheet_page":
             continue
         detail = payload.get("detail")
         if not isinstance(detail, dict):
             continue
-        if str(detail.get("sheet_id")) == str(sheet_id) and detail.get("margin_id"):
+        if str(detail.get("sheet_id")) == str(sheet_id) and detail.get(key):
             return True
     return False
 
@@ -156,7 +160,24 @@ async def margin_id_in_flight(session: AsyncSession, sheet_id: UUID) -> bool:
     """
     if await repo.has_unattached_reservation(session, sheet_id):
         return True
-    return _active_sheet_page_carries_margin_id(await repo.active_job_payloads(session), sheet_id)
+    return _active_sheet_page_carries(
+        await repo.active_job_payloads(session), sheet_id, "margin_id"
+    )
+
+
+async def feed_mark_in_flight(session: AsyncSession, sheet_id: UUID) -> bool:
+    """Whether another job already carries (or is about to carry) the sheet's feed mark.
+
+    The same two rules as ``margin_id_in_flight``, keyed on ``detail.feed_mark``: a queued or
+    printing page job of the sheet carries it, or a ``reserved`` cell of the sheet points at a
+    job that has no ``jobs`` row yet (C26). Conservative: at worst the mark moves to a later
+    job (OC-56).
+    """
+    if await repo.has_unattached_reservation(session, sheet_id):
+        return True
+    return _active_sheet_page_carries(
+        await repo.active_job_payloads(session), sheet_id, "feed_mark"
+    )
 
 
 async def _view_of(session: AsyncSession, sheet: Sheet) -> SheetView:
@@ -180,6 +201,8 @@ async def _view_of(session: AsyncSession, sheet: Sheet) -> SheetView:
         ),
         state=sheet.state,  # type: ignore[arg-type]
         sheet_id=sheet.id,
+        feed_mark_printed=sheet.feed_mark_printed,
+        feed_mark_in_flight=await feed_mark_in_flight(session, sheet.id),  # every placement
     )
 
 
@@ -219,6 +242,8 @@ async def _create_sheet_view(session: AsyncSession, new: NewSheetIn, actor: str)
         margin_id_in_flight=False,
         state="active",
         sheet_id=sheet.id,
+        feed_mark_printed=False,
+        feed_mark_in_flight=False,
     )
 
 
@@ -345,6 +370,7 @@ async def _attempt(
                     hw_margin_cells=list(page.hw_margin_cells),
                     margin_placement=page.margin_placement,
                     id_not_printed=page.id_not_printed,
+                    feed_mark=page.feed_mark,
                 )
             )
             t = touched.setdefault(

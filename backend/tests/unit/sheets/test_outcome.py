@@ -60,11 +60,14 @@ async def add_job(
     *,
     margin_id: bool = False,
     sheet_id: UUID | None = None,
+    feed_mark: bool = False,
     result: dict[str, Any] | None = None,
     error: str | None = None,
     finished_at: datetime | None = None,
 ) -> None:
     detail: dict[str, Any] = {"margin_id": margin_id}
+    if feed_mark:
+        detail["feed_mark"] = {"text": "▲ Top \u2013 this edge first"}
     if sheet_id is not None:
         detail["sheet_id"] = str(sheet_id)
     session.add(
@@ -684,3 +687,156 @@ async def test_sweep_stamps_last_used_with_the_jobs_finish_time(
     stamp = (await read_sheet(async_session_factory)).last_used_at
     assert stamp is not None
     assert abs(stamp.replace(tzinfo=UTC) - finished) < timedelta(seconds=5)
+
+
+# ---------------------------------------------------------------------------- feed mark (5c)
+
+
+async def test_completed_job_sets_feed_mark_printed(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    (page,) = await do_reserve(session, [new("manual")], 2)
+    await add_job(session, page.job_id, sheet_id=page.sheet_id, feed_mark=True)
+    handler = SheetCellsOutcome(async_session_factory, None)
+
+    await handler.on_completed(page.job_id)
+
+    sheet = await read_sheet(async_session_factory)
+    assert sheet.feed_mark_printed is True
+    assert sheet.id_printed is False  # its own flag: a manual sheet never sets the ID's
+    assert set(states(await read_cells(async_session_factory)).values()) == {"used"}
+
+
+async def test_completed_job_without_mark_leaves_it_false(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    (page,) = await do_reserve(session, [new("manual")], 2)
+    await add_job(session, page.job_id, sheet_id=page.sheet_id, feed_mark=False)
+    await SheetCellsOutcome(async_session_factory, None).on_completed(page.job_id)
+    assert (await read_sheet(async_session_factory)).feed_mark_printed is False
+
+
+async def test_clean_failure_leaves_the_mark_false(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    (page,) = await do_reserve(session, [new("manual")], 2)
+    await add_job(session, page.job_id, sheet_id=page.sheet_id, feed_mark=True)
+    handler = SheetCellsOutcome(async_session_factory, None)
+
+    await handler.on_ended(page.job_id, state="failed", started=False, error_code="ipp_aborted")
+
+    assert (await read_sheet(async_session_factory)).feed_mark_printed is False
+
+
+async def test_resolve_printed_sets_the_mark_not_printed_does_not(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    code = await make_sheet(session)
+    (page,) = await do_reserve(session, [existing(code, count=2)], 2)
+    await add_job(session, page.job_id, sheet_id=page.sheet_id, feed_mark=True)
+    handler = SheetCellsOutcome(async_session_factory, None)
+    await handler.on_ended(page.job_id, state="failed", started=True, error_code="interrupted")
+    assert (await read_sheet(async_session_factory)).feed_mark_printed is False
+
+    async with async_session_factory() as s:
+        await ss.resolve_cells(s, code, [1], "not_printed", actor="tester")
+    assert (await read_sheet(async_session_factory)).feed_mark_printed is False
+
+    async with async_session_factory() as s:
+        await ss.resolve_cells(s, code, [2], "printed", actor="tester")
+    assert (await read_sheet(async_session_factory)).feed_mark_printed is True
+
+
+async def test_resolve_printed_without_mark_job_leaves_it_false(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    code = await make_sheet(session)
+    (page,) = await do_reserve(session, [existing(code, count=2)], 2)
+    await add_job(session, page.job_id, sheet_id=page.sheet_id, feed_mark=False)
+    await SheetCellsOutcome(async_session_factory, None).on_unknown(page.job_id)
+
+    async with async_session_factory() as s:
+        await ss.resolve_cells(s, code, [1, 2], "printed", actor="tester")
+
+    assert (await read_sheet(async_session_factory)).feed_mark_printed is False
+
+
+@pytest.mark.parametrize("first", ["clean_failure", "unknown"])
+async def test_late_completed_leaves_the_mark_false(
+    session: AsyncSession, async_session_factory: Factory, first: str
+) -> None:
+    """T5-2 for the new flag: a late call finds no reserved row and changes nothing."""
+    (page,) = await do_reserve(session, [new("manual")], 2)
+    await add_job(session, page.job_id, sheet_id=page.sheet_id, feed_mark=True)
+    handler = SheetCellsOutcome(async_session_factory, None)
+    if first == "clean_failure":
+        await handler.on_ended(page.job_id, state="failed", started=False, error_code="ipp_aborted")
+    else:
+        await handler.on_unknown(page.job_id)
+
+    await handler.on_completed(page.job_id)
+
+    assert (await read_sheet(async_session_factory)).feed_mark_printed is False
+
+
+async def test_sweep_done_job_sets_the_mark(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    (page,) = await do_reserve(session, [new("manual")], 2)
+    await add_job(session, page.job_id, "done", sheet_id=page.sheet_id, feed_mark=True)
+    async with async_session_factory() as s:
+        await s.execute(update(SheetCell).values(updated_at=datetime.now(UTC) - timedelta(hours=1)))
+        await s.commit()
+
+    await sweep_orphan_reservations(async_session_factory)
+
+    assert (await read_sheet(async_session_factory)).feed_mark_printed is True
+
+
+async def test_sweep_unconfirmed_and_freed_leave_the_mark_false(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    (page,) = await do_reserve(session, [new("manual")], 2)
+    await add_job(
+        session, page.job_id, "failed", sheet_id=page.sheet_id, feed_mark=True,
+        result={"started": True},
+    )  # fmt: skip
+    async with async_session_factory() as s:
+        await s.execute(update(SheetCell).values(updated_at=datetime.now(UTC) - timedelta(hours=1)))
+        await s.commit()
+
+    await sweep_orphan_reservations(async_session_factory)
+
+    assert (await read_sheet(async_session_factory)).feed_mark_printed is False
+
+
+async def test_resolving_the_id_cell_sets_both_flags(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    """The ID-only job of a ``cell`` sheet carries the mark: its hub cell sets both flags, the
+    mark check is separate from the ID check and not an ``elif``."""
+    (page,) = await do_reserve(session, [new("cell")], 0)
+    await add_job(session, page.job_id, sheet_id=page.sheet_id, feed_mark=True)
+    handler = SheetCellsOutcome(async_session_factory, None)
+    await handler.on_unknown(page.job_id)
+    sheet = await read_sheet(async_session_factory)
+    assert (sheet.id_printed, sheet.feed_mark_printed) == (False, False)
+    code = sheet.code
+
+    async with async_session_factory() as s:
+        await ss.resolve_cells(s, code, [1], "printed", actor="tester")
+
+    after = await read_sheet(async_session_factory)
+    assert (after.id_printed, after.feed_mark_printed) == (True, True)
+
+
+async def test_completed_cell_sheet_job_sets_both_flags(
+    session: AsyncSession, async_session_factory: Factory
+) -> None:
+    (page,) = await do_reserve(session, [new("cell")], 0)
+    await add_job(session, page.job_id, sheet_id=page.sheet_id, feed_mark=True)
+
+    await SheetCellsOutcome(async_session_factory, None).on_completed(page.job_id)
+
+    after = await read_sheet(async_session_factory)
+    assert (after.id_printed, after.feed_mark_printed) == (True, True)

@@ -91,6 +91,7 @@ def _read(detail: ss.SheetDetail) -> SheetRead:
         **_summary_fields(detail),  # type: ignore[arg-type]
         id_placement=detail.sheet.id_placement,  # type: ignore[arg-type]
         id_printed=detail.sheet.id_printed,
+        feed_mark_printed=detail.sheet.feed_mark_printed,
         note=detail.sheet.note,
         geometry=exchange.geometry_to_doc(ts.version_geometry(detail.version)),
         cells=[

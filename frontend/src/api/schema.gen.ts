@@ -2620,6 +2620,11 @@ export interface components {
             code: string;
             /** Discarded At */
             discarded_at: string | null;
+            /**
+             * Feed Mark Printed
+             * @description Whether the feed-direction mark has been printed on this sheet.
+             */
+            feed_mark_printed: boolean;
             /** Free */
             free: number;
             /** @description Geometry of the version the sheet is pinned to. */

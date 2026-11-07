@@ -224,6 +224,9 @@ class SheetSummary(BaseModel):
 class SheetRead(SheetSummary):
     id_placement: Literal["cell", "margin", "manual"]
     id_printed: bool
+    feed_mark_printed: bool = Field(
+        description="Whether the feed-direction mark has been printed on this sheet."
+    )
     note: str | None
     geometry: GeometryMm = Field(description="Geometry of the version the sheet is pinned to.")
     cells: list[CellRead] = Field(description="Every cell that is not free, by cell number.")

@@ -19,7 +19,8 @@ import qrcode
 import qrcode.constants
 import qrcode.exceptions
 
-from app.page_render.transform import Deviation
+from app.page_render.pdf import text_width_mm
+from app.page_render.transform import PT_PER_MM, Deviation
 from app.printer_backends.ipp.attributes import Margins
 from app.sheets.cell_render import qr_edge_px
 from app.sheets.errors import (
@@ -34,6 +35,10 @@ from app.sheets.geometry import Geometry, cell_count, cell_origin, remaining_mar
 __all__ = [
     "BAND_CORNER",
     "BAND_ORDER",
+    "FEED_MARK_MIN_PT",
+    "FEED_MARK_PT",
+    "FEED_MARK_TEXTS",
+    "FeedMarkPlacement",
     "MarginBand",
     "MarginContext",
     "MarginCorner",
@@ -43,7 +48,9 @@ __all__ = [
     "Plan",
     "SheetView",
     "band_length_hmm",
+    "choose_feed_mark",
     "choose_margin_placement",
+    "feed_mark_text",
     "margin_bands_hmm",
     "margin_qr_allowed",
     "margin_qr_fits",
@@ -71,6 +78,14 @@ MIN_MARGIN_TEXT_RUN_HMM: Final = 1000  # 10 mm of text beside a QR (OC-48)
 MAX_MARGIN_ID_HMM: Final = 2000  # usable size cap, 20 mm (OC-52)
 VERTICAL_BAND_LEAD_HMM: Final = 200  # a side band must be 2 mm deeper to beat top or bottom
 _QUIET_MODULES: Final = 4
+_CAP_EM: Final = 0.72  # cap height as a fraction of the font size
+
+FEED_MARK_TEXTS: Final[dict[str, str]] = {  # OC-55, ruling A-5; \u2013 is the en dash (RUF001)
+    "en": "▲ Top \u2013 this edge first",
+    "de": "▲ Oben \u2013 diese Kante zuerst",
+}
+FEED_MARK_PT: Final = 7.0  # OC-54
+FEED_MARK_MIN_PT: Final = 6.0
 
 
 @dataclass
@@ -97,6 +112,9 @@ class SheetView:
     sheet_id: UUID | None = None
     # The probable code of a sheet that does not exist yet (a preview); used for the QR payload.
     code_hint: str | None = None
+    # The feed-direction mark (spec 10.2a): its own flag, and whether another job carries it.
+    feed_mark_printed: bool = False
+    feed_mark_in_flight: bool = False
 
 
 @dataclass
@@ -117,6 +135,7 @@ class PagePlan:
     hw_margin_cells: list[int]
     margin_placement: MarginPlacement | None = None
     id_not_printed: bool = False
+    feed_mark: FeedMarkPlacement | None = None
 
 
 @dataclass
@@ -129,9 +148,25 @@ class Plan:
 
 @dataclass(frozen=True)
 class MarginContext:
+    """What the margin decisions need. ``language`` is required on purpose (no default): a
+    caller that leaves it out is reported by ``mypy`` and raises ``TypeError``, so the mark
+    never turns English by accident. ``None`` or an unknown value gives English."""
+
     deviation: Deviation
     scan_payload: Callable[[str], str]
     render_dpi: int
+    language: str | None
+
+
+@dataclass(frozen=True)
+class FeedMarkPlacement:
+    """The feed-direction mark: ``x_hmm`` is the left end of the text."""
+
+    text: str
+    x_hmm: int
+    baseline_y_hmm: int
+    size_pt: float
+    width_hmm: int
 
 
 @dataclass(frozen=True)
@@ -202,14 +237,54 @@ margin_qr_fits = margin_qr_allowed
 """Name the plan uses; the same function."""
 
 
+def feed_mark_text(language: str | None) -> str:
+    """The mark's text for the hub language; any other value gives English (ruling A-5)."""
+    return FEED_MARK_TEXTS.get(language or "", FEED_MARK_TEXTS["en"])
+
+
+def choose_feed_mark(
+    g: Geometry, *, hw: Margins | None, dev: Deviation, text: str
+) -> FeedMarkPlacement | None:
+    """Where the feed-direction mark goes: the top band's top-right end, or nowhere (OC-53/54).
+
+    Not printed when the top band is below 4 mm; never in another band. 7 pt, shrinking in
+    0.5 pt steps to 6 pt; never shortened, so it is dropped when 6 pt does not fit.
+    """
+    depth = margin_bands_hmm(g, hw=hw, dev=dev)["top"]
+    if depth < MIN_MARGIN_TEXT_HMM:
+        return None
+    usable = min(depth, MAX_MARGIN_ID_HMM)
+    right_margin = hw.right if hw is not None else DEFAULT_HW_HMM
+    grid_right = g.page_w - remaining_margins(g)[0]
+    right_end = min(grid_right, g.page_w - right_margin - abs(dev.offset_x_hmm) - SAFETY_HMM)
+    room = right_end - g.margin_left
+    size = FEED_MARK_PT
+    while round(text_width_mm(text, size) * 100) > room and size > FEED_MARK_MIN_PT:
+        size -= 0.5
+    width = round(text_width_mm(text, size) * 100)
+    if width > room:
+        return None
+    centre = g.margin_top - SAFETY_HMM - usable / 2
+    baseline = round(centre + _CAP_EM * size / PT_PER_MM * 100 / 2)
+    return FeedMarkPlacement(text, right_end - width, baseline, size, width)
+
+
 def choose_margin_placement(
-    g: Geometry, *, hw: Margins | None, dev: Deviation, payload: str | None, dpi: int
+    g: Geometry,
+    *,
+    hw: Margins | None,
+    dev: Deviation,
+    payload: str | None,
+    dpi: int,
+    top_taken_hmm: int = 0,
 ) -> MarginPlacement | None:
     """The band the margin ID goes into, or ``None`` if no band is deep enough (OC-46).
 
     A band with a QR beats any text-only band; then depth decides, with the tie-break top,
     bottom, right, left. A side band beats the best of top and bottom only if it is
     ``VERTICAL_BAND_LEAD_HMM`` deeper (ruling A-2). Decided once, at render dpi.
+    ``top_taken_hmm`` is the length of the top band the feed-direction mark takes (from its left
+    end to the grid's right end, plus the gap); the top band's length rule sees the rest.
     """
     usable = {
         band: min(depth, MAX_MARGIN_ID_HMM)
@@ -222,7 +297,7 @@ def choose_margin_placement(
         qr_of[band] = (
             payload is not None
             and margin_qr_allowed(usable[band], payload, dpi)
-            and band_length_hmm(g, band)
+            and band_length_hmm(g, band) - (top_taken_hmm if band == "top" else 0)
             >= usable[band] + MARGIN_TEXT_GAP_HMM + MIN_MARGIN_TEXT_RUN_HMM
         )
     if not qr_of:
@@ -308,6 +383,8 @@ class _Draft:
     margin_placement: MarginPlacement | None = None
     id_not_printed: bool = False
     id_was_due: bool = False
+    feed_mark: FeedMarkPlacement | None = None
+    mark_was_due: bool = False
 
 
 def _draft(
@@ -316,9 +393,11 @@ def _draft(
     taken: set[int],
     margin: MarginContext | None,
     id_done: bool,
+    mark_done: bool,
     hw_margins_hmm: Margins | None,
 ) -> _Draft:
-    """Plan one placement. ``id_done``: this sheet's ID label already went to an earlier page."""
+    """Plan one placement. ``id_done``: this sheet's ID label already went to an earlier page;
+    ``mark_done``: so did its feed-direction mark."""
     view = p.sheet
     if view.state == "discarded":
         raise SheetDiscardedError()
@@ -359,6 +438,20 @@ def _draft(
     margin_id = due
     placement: MarginPlacement | None = None
     id_not_printed = False
+    # The mark has its own flag and is due for every ID placement (OC-56, OC-58). It is decided
+    # before the margin ID, which then sees the shorter top band (OC-57).
+    mark_due = not view.feed_mark_printed and not view.feed_mark_in_flight and not mark_done
+    feed_mark: FeedMarkPlacement | None = None
+    top_taken = 0
+    if mark_due and margin is not None:
+        feed_mark = choose_feed_mark(
+            g,
+            hw=hw_margins_hmm,
+            dev=margin.deviation,
+            text=feed_mark_text(margin.language),
+        )
+        if feed_mark is not None:
+            top_taken = g.page_w - remaining_margins(g)[0] - feed_mark.x_hmm + MARGIN_TEXT_GAP_HMM
     if due and margin is not None:
         code = view.code or view.code_hint
         placement = choose_margin_placement(
@@ -367,6 +460,7 @@ def _draft(
             dev=margin.deviation,
             payload=margin.scan_payload(code) if code else None,
             dpi=margin.render_dpi,
+            top_taken_hmm=top_taken,
         )
         margin_id = placement is not None
         id_not_printed = placement is None
@@ -395,6 +489,8 @@ def _draft(
         margin_placement=placement,
         id_not_printed=id_not_printed,
         id_was_due=due,
+        feed_mark=feed_mark,
+        mark_was_due=mark_due,
     )
 
 
@@ -425,11 +521,12 @@ def plan(
 
     taken_by_sheet: dict[int, set[int]] = {}
     id_done: set[int] = set()
+    mark_done: set[int] = set()
     drafts: list[_Draft] = []
     for p, count in zip(placements, counts, strict=True):
         key = id(p.sheet)
         taken = taken_by_sheet.setdefault(key, set())
-        d = _draft(p, count, taken, margin, key in id_done, hw_margins_hmm)
+        d = _draft(p, count, taken, margin, key in id_done, key in mark_done, hw_margins_hmm)
         drafts.append(d)
         if d.id_missing or len(d.item_cells) != count:
             continue
@@ -438,6 +535,8 @@ def plan(
             taken.add(d.id_cell)
         if d.id_cell is not None or d.id_was_due:
             id_done.add(key)
+        if d.mark_was_due:
+            mark_done.add(key)
 
     short = [d for d in drafts if d.id_missing or len(d.item_cells) != d.count]
     if short:
@@ -467,6 +566,7 @@ def plan(
             ),
             margin_placement=d.margin_placement,
             id_not_printed=d.id_not_printed,
+            feed_mark=d.feed_mark,
         )
         for i, d in enumerate(drafts)
     ]

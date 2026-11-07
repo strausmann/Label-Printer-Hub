@@ -166,16 +166,25 @@ async def jobs_by_id(session: AsyncSession, job_ids: Sequence[UUID]) -> dict[UUI
     return found
 
 
-def margin_id_sheet(job: Job | None) -> str | None:
-    """The sheet id a ``sheet_page`` job's margin ID belongs to; ``None``: it carries none.
-
-    A job row already deleted by retention (``job is None``) counts as not carrying one.
-    """
+def _carried_sheet(job: Job | None, key: str) -> str | None:
     if job is None or not isinstance(job.payload, dict):
         return None
     if job.payload.get("kind") != "sheet_page":
         return None
     detail = job.payload.get("detail")
-    if not isinstance(detail, dict) or not detail.get("margin_id"):
+    if not isinstance(detail, dict) or not detail.get(key):
         return None
     return str(detail.get("sheet_id"))
+
+
+def margin_id_sheet(job: Job | None) -> str | None:
+    """The sheet id a ``sheet_page`` job's margin ID belongs to; ``None``: it carries none.
+
+    A job row already deleted by retention (``job is None``) counts as not carrying one.
+    """
+    return _carried_sheet(job, "margin_id")
+
+
+def feed_mark_sheet(job: Job | None) -> str | None:
+    """The sheet id a ``sheet_page`` job's feed-direction mark belongs to; ``None``: none."""
+    return _carried_sheet(job, "feed_mark")

@@ -58,7 +58,9 @@ FIELDS = ts.TypeFields(
     description=None,
     allow_qr=None,
 )
-MARGIN = MarginContext(deviation=Deviation(), scan_payload=lambda c: f"sheet:{c}", render_dpi=600)
+MARGIN = MarginContext(
+    deviation=Deviation(), scan_payload=lambda c: f"sheet:{c}", render_dpi=600, language=None
+)
 
 
 @pytest.fixture(autouse=True)

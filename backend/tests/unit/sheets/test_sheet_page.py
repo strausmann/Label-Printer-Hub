@@ -60,6 +60,7 @@ def _detail(
     id_cell: SheetCellPayload | None = None,
     margin: MarginIdPayload | None = None,
     ct: ContentType = ContentType.QR_TWO_LINES,
+    feed_mark: Any = None,
 ) -> SheetPageDetail:
     return SheetPageDetail(
         sheet_id=SHEET_ID,
@@ -71,6 +72,7 @@ def _detail(
         cells=[_cell(n, ct, mapped=not allow_qr) for n in cells],
         id_cell=id_cell,
         margin_id=margin,
+        feed_mark=feed_mark,
         job_summary={"sheet_code": "L4736-0001", "cell_count": len(cells)},
     )
 
@@ -262,13 +264,18 @@ def test_detail_field_names_for_in_flight_check() -> None:
 
 
 def test_margin_id_in_flight_reads_what_this_module_stores() -> None:
-    from app.sheets.reservation import _active_sheet_page_carries_margin_id
+    from app.sheets.reservation import _active_sheet_page_carries
 
     margin = MarginIdPayload(text="X", qr_payload=None, usable_hmm=700)
     with_id = _payload(_detail(margin=margin)).model_dump(mode="json")
     without = _payload(_detail()).model_dump(mode="json")
-    assert _active_sheet_page_carries_margin_id([with_id], SHEET_ID)
-    assert not _active_sheet_page_carries_margin_id([without], SHEET_ID)
+    assert _active_sheet_page_carries([with_id], SHEET_ID, "margin_id")
+    assert not _active_sheet_page_carries([without], SHEET_ID, "margin_id")
+    # the same helper, keyed on the feed mark (Task 5c): what this module stores is found
+    with_mark = _payload(_detail(feed_mark=_mark())).model_dump(mode="json")
+    assert _active_sheet_page_carries([with_mark], SHEET_ID, "feed_mark")
+    assert not _active_sheet_page_carries([with_id], SHEET_ID, "feed_mark")
+    assert not _active_sheet_page_carries([with_mark], SHEET_ID, "margin_id")
 
 
 # ---------------------------------------------------------------- preview
@@ -619,3 +626,155 @@ def test_preview_draws_stored_band() -> None:
     right = margin_id_payload("L4736-0001", _URL, MarginPlacement("right", "top_right", 2000, True))
     left, _, edge, _ = _ink_box(render_preview_png(WIDE_RIGHT, [], right))
     assert left >= round(18500 * s) - 1 and edge <= round(20500 * s) + 1
+
+
+# ---------------------------------------------------------------- feed-direction mark (Task 5c)
+
+EN_MARK = "▲ Top \u2013 this edge first"
+DE_MARK = "▲ Oben \u2013 diese Kante zuerst"
+
+
+def _mark(**kw: Any) -> Any:
+    from app.sheets import sheet_page
+
+    fields: dict[str, Any] = {
+        "text": EN_MARK, "x_hmm": 17300, "baseline_y_hmm": 1354, "size_pt": 7.0,
+    }  # fmt: skip
+    fields.update(kw)
+    return sheet_page.FeedMarkPayload(**fields)
+
+
+def _ink(png: bytes) -> Image.Image:
+    return Image.eval(Image.open(io.BytesIO(png)).convert("L"), lambda v: 255 - v)
+
+
+def test_feed_mark_drawn_from_payload() -> None:
+    pdf = _pdf(_detail(cells=(), feed_mark=_mark()))
+    assert pi.texts(pdf) == [EN_MARK]
+    x, y = pi.text_positions(pdf)[0]
+    assert (x, y) == pytest.approx((173.00 * PT_PER_MM, (297.00 - 13.54) * PT_PER_MM), abs=1e-3)
+    assert _image_cms(pdf) == []
+    # The renderer does not place it again: a payload at 10 mm is drawn at 10 mm.
+    moved = _pdf(_detail(cells=(), feed_mark=_mark(x_hmm=1000)))
+    assert pi.text_positions(moved)[0][0] == pytest.approx(10.00 * PT_PER_MM, abs=1e-3)
+
+
+def test_old_payload_has_no_feed_mark() -> None:
+    d = SheetPageDetail.model_validate(
+        {k: v for k, v in _detail().model_dump(mode="json").items() if k != "feed_mark"}
+    )
+    assert d.feed_mark is None
+
+
+def test_feed_mark_payload_copies_the_placement() -> None:
+    from app.sheets import planner, sheet_page
+
+    placement = planner.FeedMarkPlacement(DE_MARK, 16508, 1354, 7.0, 3507)
+    got = sheet_page.feed_mark_payload(placement)
+    assert (got.text, got.x_hmm, got.baseline_y_hmm, got.size_pt) == (DE_MARK, 16508, 1354, 7.0)
+    assert (got.band, got.anchor) == ("top", "top_right")
+
+
+def test_id_text_ends_before_the_mark() -> None:
+    from app.page_render.pdf import text_width_mm
+
+    long = "L4736-0001 · " + "very long sheet type name " * 8
+    base = MarginIdPayload(text=long, usable_hmm=700)
+    limited = base.model_copy(update={"text_end_hmm": 17100})
+    (cut,) = pi.texts(_pdf(_detail(cells=(), margin=limited)))
+    (free,) = pi.texts(_pdf(_detail(cells=(), margin=base)))
+    text_x = L4736.margin_left
+    assert text_width_mm(cut.removesuffix("…"), 6.0) <= (17100 - text_x) / 100
+    assert text_width_mm(free.removesuffix("…"), 6.0) <= (20015 - text_x) / 100  # grid_right
+    assert len(cut) < len(free)
+
+
+def test_margin_id_payload_takes_text_end() -> None:
+    m = margin_id_payload(
+        "L4736-0001", _URL, MarginPlacement("top", "top_left", 1530, True), text_end_hmm=17100
+    )
+    assert m.text_end_hmm == 17100
+    assert (
+        margin_id_payload("x", None, MarginPlacement("top", "top_left", 700, False)).text_end_hmm
+        is None
+    )
+
+
+def test_text_end_applies_to_the_top_band_only() -> None:
+    from app.page_render.pdf import text_width_mm
+
+    long = "L4736-0001 · " + "very long sheet type name " * 8
+    bottom = MarginIdPayload(text=long, usable_hmm=700, band="bottom", text_end_hmm=5000)
+    (shown,) = pi.texts(_pdf(_detail(cells=(), margin=bottom)))
+    assert text_width_mm(shown.removesuffix("…"), 6.0) > (5000 - L4736.margin_left) / 100
+
+
+def test_preview_draws_feed_mark() -> None:
+    from app.sheets import sheet_page
+
+    png = render_preview_png(L4736, [], None, feed_mark=_mark())
+    ink = _ink(png)
+    bbox = ink.getbbox()
+    assert bbox is not None
+    assert bbox[0] >= round(17300 * 150 / 2540) - 1
+    assert bbox[2] <= round(20015 * 150 / 2540) + 1
+    assert bbox[3] <= round(2030 * 150 / 2540)
+    assert sheet_page.PREVIEW_DPI == 150
+
+
+def _black(png: bytes) -> set[tuple[int, int]]:
+    im = _ink(png)
+    w, h = im.size
+    px = im.load()
+    assert px is not None
+    return {(x, y) for y in range(h) for x in range(w) if px[x, y] > 127}
+
+
+def test_id_strips_never_cover_the_feed_mark_in_the_preview() -> None:
+    """Review 5b, Minor 1: the mark's ink must survive whatever the ID draws around it."""
+    # (a) both share the top band, the case the planner produces for L4736REV
+    top = margin_id_payload("L4736-0001", _URL, MarginPlacement("top", "top_left", 1530, True),
+                            text_end_hmm=17100)  # fmt: skip
+    alone = _black(render_preview_png(L4736, [], None, feed_mark=_mark()))
+    both = _black(render_preview_png(L4736, [], top, feed_mark=_mark()))
+    assert alone and alone <= both
+    # (b) a rotated ID, with a stored mark placed where the rotated text's paste would land:
+    # the mark's ink must stay even though the turned text is a separate image
+    right = margin_id_payload("L4736-0001-" + "x" * 30, _URL,
+                              MarginPlacement("right", "top_right", 2000, False))  # fmt: skip
+    under = _mark(x_hmm=18600, baseline_y_hmm=WIDE_RIGHT.margin_top + 1500)
+    only_mark = _black(render_preview_png(WIDE_RIGHT, [], None, feed_mark=under))
+    with_id = _black(render_preview_png(WIDE_RIGHT, [], right, feed_mark=under))
+    assert only_mark and only_mark <= with_id
+
+
+async def test_stored_mark_text_wins(
+    async_session_factory: Any,
+) -> None:
+    """The renderers take no language: the stored text is drawn whatever the setting says."""
+    from app.settings_store import SettingsStore
+
+    store = SettingsStore()
+    async with async_session_factory() as s:
+        await store.load(s)
+        await store.set_many(s, {"general.language": "de"})
+    detail = _detail(cells=(), feed_mark=_mark(text=DE_MARK, x_hmm=16508))
+    before_pdf = _pdf(detail)
+    before_png = render_preview_png(L4736, [], None, feed_mark=_mark(text=DE_MARK, x_hmm=16508))
+    async with async_session_factory() as s:
+        await store.set_many(s, {"general.language": "en"})
+    assert store.get("general.language") == "en"
+    assert pi.texts(_pdf(detail)) == [DE_MARK] == pi.texts(before_pdf)
+    again = render_preview_png(L4736, [], None, feed_mark=_mark(text=DE_MARK, x_hmm=16508))
+    assert again == before_png
+
+
+def test_turned_text_paste_never_erases_ink() -> None:
+    """Whatever is on the page stays: the strip contributes its ink only (5b Minor 1)."""
+    from app.sheets import sheet_page
+
+    page = Image.new("1", (300, 300), 0)  # a page that is black everywhere
+    lay = sheet_page._MarginLayout(None, "L4736-0001", 10, 10, 8.0, 90)
+    font = sheet_page.load_cell_font(20)
+    sheet_page._paste_turned_text(page, lay, font, (150, 20))
+    assert page.getextrema() == (0, 0)  # an opaque white strip would leave white pixels

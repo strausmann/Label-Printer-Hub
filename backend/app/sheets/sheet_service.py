@@ -407,6 +407,10 @@ async def resolve_cells(
                 before.sheet.id_printed = True
             elif row.job_id is not None and repo.margin_id_sheet(margin_jobs.get(row.job_id)):
                 before.sheet.id_printed = True  # the job carried the margin ID
+            # A separate check, not a third ``elif``: the ID-cell job of a ``cell`` sheet
+            # carries the mark too, and its hub cell must set both flags.
+            if row.job_id is not None and repo.feed_mark_sheet(margin_jobs.get(row.job_id)):
+                before.sheet.feed_mark_printed = True
         await session.flush()
         detail = await _detail(session, before.sheet)
         await session.commit()
