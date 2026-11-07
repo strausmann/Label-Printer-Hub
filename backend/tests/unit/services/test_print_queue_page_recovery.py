@@ -145,7 +145,6 @@ async def test_restart_resumes_tracking_to_completion(
                 "phase": "tracking",
                 "started": True,
                 "ipp_job_id": 1,
-                "job_uri": f"{FAKE_URI}/jobs/1",
             }
 
         await _until(_started)

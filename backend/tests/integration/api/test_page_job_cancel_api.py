@@ -7,6 +7,7 @@ fake printer; the routes are driven through an in-loop ASGI client. Waits are bo
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 from uuid import UUID, uuid4
@@ -22,11 +23,13 @@ from app.db.session import get_session
 from app.models.job import Job, JobState
 from app.models.printer import Printer
 from app.printer_backends.ipp.client import IppClient
+from app.services.event_bus import BusEvent, EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.page_job_runner import PageJobRunner
 from app.services.page_jobs import IppPagePrinter
 from app.services.print_queue import PrintQueue
 from app.services.producers.ipp_status_producer import IppPrinterState
+from app.services.producers.print_queue_producer import PrintQueueProducer
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -46,7 +49,9 @@ class _Env:
         printer_id: UUID,
         factory: async_sessionmaker[AsyncSession],
         handler: RecordingHandler,
+        events: list[BusEvent],
     ) -> None:
+        self.events = events
         self.app = app
         self.queue = queue
         self.runner = runner
@@ -112,8 +117,19 @@ async def env(async_session_factory: async_sessionmaker[AsyncSession]) -> AsyncI
         client = IppClient(FAKE_URI, transport=httpx.ASGITransport(app=fake))
         page = IppPagePrinter(id=printer_id, client=client, state=IppPrinterState())
         store = SQLiteJobStore(async_session_factory)
+        # Every job event the runner emits is published as the real producer builds it.
+        bus = EventBus()
+        events: list[BusEvent] = []
+        producer = PrintQueueProducer(bus)
+        real_publish = bus.publish
+
+        def _record(channel: str, event: BusEvent) -> None:
+            events.append(event)
+            real_publish(channel, event)
+
+        bus.publish = _record  # type: ignore[method-assign]
         runner = PageJobRunner(
-            store=store, notify=lambda *a, **k: None, poll_interval_s=0.01, max_backoff_s=0
+            store=store, notify=producer.handle_transition, poll_interval_s=0.01, max_backoff_s=0
         )
         queue = PrintQueue([], store=store, page_printers=[page], page_runner=runner)
         await queue.start()
@@ -132,7 +148,7 @@ async def env(async_session_factory: async_sessionmaker[AsyncSession]) -> AsyncI
             app.dependency_overrides[dep] = lambda _c=auth: _c
         app.dependency_overrides[get_session] = _session
         try:
-            yield _Env(app, queue, runner, fake, printer_id, async_session_factory, handler)
+            yield _Env(app, queue, runner, fake, printer_id, async_session_factory, handler, events)
         finally:
             await queue.stop(timeout_s=2)
             await client.aclose()
@@ -250,3 +266,45 @@ async def test_retry_route_tape_payload_on_page_printer_is_409(env: _Env) -> Non
         r = await c.post(f"/api/jobs/{old_id}/retry")
     assert r.status_code == 409, r.text
     assert r.json()["detail"]["error_code"] == "media_kind_mismatch"
+
+
+def _assert_no_printer_address(raw: str) -> None:
+    """The printer's URI and host must not appear anywhere in the raw JSON text."""
+    host = FAKE_URI.split("//", 1)[1].split("/", 1)[0]
+    assert FAKE_URI not in raw
+    assert host not in raw
+    assert "ipp://" not in raw
+
+
+@pytest.mark.asyncio
+async def test_job_responses_and_events_never_carry_the_printer_address(env: _Env) -> None:
+    """Spec 14/18: the IPP URI is admin-only. A read key must not get it back through jobs.
+
+    Raw-text assertions on purpose: a parsed check would miss a renamed field.
+    """
+    jid = await env.submit()
+    await env.until(lambda: env.runner.is_tracking(jid))
+    async with env.client() as c:
+        tracked = await c.get(f"/api/jobs/{jid}")
+        cancel = await c.post(f"/api/jobs/{jid}/cancel")
+    assert cancel.status_code == 202, cancel.text
+    await env.wait_state(jid, JobState.CANCELLED.value)
+    async with env.client() as c:
+        detail = await c.get(f"/api/jobs/{jid}")
+    env.fake.print_status = 0x040A
+    failed = await env.submit()
+    await env.wait_state(failed, JobState.FAILED.value)
+    env.fake.print_status = 0
+    env.fake.job_script = [9]
+    async with env.client() as c:
+        retry = await c.post(f"/api/jobs/{failed}/retry")
+    assert retry.status_code == 201, retry.text
+    await env.wait_state(UUID(retry.json()["id"]), JobState.DONE.value)
+    async with env.client() as c:
+        listing = await c.get("/api/jobs")
+    for response in (tracked, cancel, detail, listing, retry):
+        _assert_no_printer_address(response.text)
+    assert env.events, "the runner emitted no job events"
+    _assert_no_printer_address(json.dumps([e.data for e in env.events], default=str))
+    # the reference tracking uses is still stored
+    assert (await env.row(jid)).result["ipp_job_id"] == 1

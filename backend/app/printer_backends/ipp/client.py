@@ -156,7 +156,7 @@ def to_http_url(uri: str) -> str:
 
 @dataclass(frozen=True)
 class PrintAccepted:
-    """Print-Job was accepted. ``job_uri`` is stored, never requested.
+    """Print-Job was accepted. ``job_uri`` is never requested and never stored (host inside).
 
     ``substituted``: the printer answered ``successful-ok-ignored-or-substituted-attributes``
     or ``successful-ok-conflicting-attributes`` — it took the job but did not honour every

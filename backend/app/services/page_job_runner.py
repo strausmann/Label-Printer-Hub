@@ -319,9 +319,10 @@ class PageJobRunner:
             return
         active.ipp_job_id = accepted.job_id
         active.printer.own_job_ids.add(accepted.job_id)
-        result.update(
-            {"phase": "tracking", "ipp_job_id": accepted.job_id, "job_uri": accepted.job_uri}
-        )
+        # Not ``accepted.job_uri``: the job row is readable with a plain ``read`` key and the
+        # URI carries the printer's host, which only admins may see (spec 14, 18). Tracking and
+        # recovery use ``ipp_job_id``; the printer's address comes from its own connection.
+        result.update({"phase": "tracking", "ipp_job_id": accepted.job_id})
         if accepted.substituted:
             # The printer ignored or replaced some job attributes (spike S2); the UI can warn.
             result["attributes_substituted"] = True

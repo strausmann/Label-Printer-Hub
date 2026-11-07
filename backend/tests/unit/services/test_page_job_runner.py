@@ -108,7 +108,7 @@ async def test_completed_flow(handler: RecordingHandler) -> None:
     assert row.result is not None
     assert row.result["ipp_job_id"] == 1
     assert row.result["started"] is True
-    assert row.result["job_uri"].endswith("/jobs/1")
+    assert "job_uri" not in row.result  # the printer address stays admin-only
     assert handler.names() == ["started", "completed"]
     assert (JobState.QUEUED, JobState.PRINTING, None) in env.events
     assert (JobState.PRINTING, JobState.PRINTING, "waiting") in env.events
