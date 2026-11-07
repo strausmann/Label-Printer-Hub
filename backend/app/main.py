@@ -137,6 +137,7 @@ from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.readiness import build_readiness_response
 from app.services.tape_registry import TapeRegistry
 from app.settings_store import SettingsStore
+from app.sheets.sheet_page import render_sheet_page
 from app.web.api_docs import mount_api_docs
 from app.web.spa import add_security_headers, mount_spa
 
@@ -813,6 +814,7 @@ class _LifespanManager:
 
 # Once per process, at import: a page job of this kind is drawn by this renderer (spec 13.2).
 register_page_renderer("calibration_page", render_calibration_page)
+register_page_renderer("sheet_page", render_sheet_page)
 
 
 def create_app() -> _LifespanManager:

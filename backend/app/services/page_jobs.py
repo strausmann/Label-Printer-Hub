@@ -25,6 +25,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from app.page_render.transform import IDENTITY, Deviation
 from app.printer_backends.ipp.attributes import IppStatusRecord, ProbeSummary
 from app.printer_backends.ipp.client import IppClient
 from app.services.job_lifecycle import Job
@@ -53,6 +54,13 @@ class CalibrationSnapshot(BaseModel):
     sx_ppm: int = 1_000_000
     sy_ppm: int = 1_000_000
     rotation_udeg: int = 0
+
+
+def snapshot_to_deviation(snap: CalibrationSnapshot | None) -> Deviation:
+    """The deviation a snapshot stands for; no snapshot is the identity (no correction)."""
+    if snap is None:
+        return IDENTITY
+    return Deviation(snap.dx_hmm, snap.dy_hmm, snap.sx_ppm, snap.sy_ppm, snap.rotation_udeg)
 
 
 class PagePayload(BaseModel):
