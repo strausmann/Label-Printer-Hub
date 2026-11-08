@@ -114,3 +114,15 @@ export function ippRejected(error: unknown): { ippStatus: string } | null {
   const d = detailOf(error, "ipp_rejected");
   return d && typeof d.ipp_status === "string" && d.ipp_status !== "" ? { ippStatus: d.ipp_status } : null;
 }
+
+/** `409 tray_unknown`: the trays the printer reports (can be empty). */
+export function trayUnknown(error: unknown): { trays: string[] } | null {
+  const d = detailOf(error, "tray_unknown");
+  return d && isStrings(d.trays) ? { trays: d.trays } : null;
+}
+
+/** The index of the item a failure belongs to (`content_type_data_mismatch`, `integration_*`), whatever the code. */
+export function itemIndexOf(error: unknown): number | null {
+  const d = error instanceof ApiError ? error.errorDetail : null;
+  return d && typeof d.item_index === "number" ? d.item_index : null;
+}

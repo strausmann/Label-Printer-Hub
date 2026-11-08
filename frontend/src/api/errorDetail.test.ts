@@ -9,10 +9,12 @@ import {
   invalidGeometry,
   invalidImport,
   ippRejected,
+  itemIndexOf,
   planChanged,
   prefixTaken,
   printInterrupted,
   readingsInsufficient,
+  trayUnknown,
   sheetIdJobFailed,
   typeInUse,
 } from "./errorDetail";
@@ -92,5 +94,17 @@ describe("typed error readers", () => {
     expect(ippRejected(err("ipp_rejected", { ipp_status: "server-error-busy" }))).toEqual({ ippStatus: "server-error-busy" });
     expect(ippRejected(err("ipp_rejected", {}))).toBeNull();
     expect(ippRejected(err("ipp_unreachable", { ipp_status: "x" }))).toBeNull();
+  });
+
+  it("trayUnknown lists the trays the printer reports, itemIndexOf names the item an integration failed on", () => {
+    expect(trayUnknown(err("tray_unknown", { trays: ["main", "bypass"] }))).toEqual({ trays: ["main", "bypass"] });
+    expect(trayUnknown(err("tray_unknown", { trays: [] }))).toEqual({ trays: [] });
+    expect(trayUnknown(err("tray_unknown", { trays: [1] }))).toBeNull();
+    expect(trayUnknown(err("tray_unknown", null))).toBeNull();
+    expect(trayUnknown(err("printer_disabled", { trays: [] }))).toBeNull();
+    expect(itemIndexOf(err("integration_unreachable", { item_index: 3 }))).toBe(3);
+    expect(itemIndexOf(err("integration_unreachable", { item_index: "3" }))).toBeNull();
+    expect(itemIndexOf(err("integration_unreachable", null))).toBeNull();
+    expect(itemIndexOf(new Error("plain"))).toBeNull();
   });
 });

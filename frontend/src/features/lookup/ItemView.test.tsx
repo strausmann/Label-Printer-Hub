@@ -70,7 +70,7 @@ describe("ItemView", () => {
     expect(screen.getByRole("link", { name: "Open in Snipe-IT" })).toHaveAttribute("href", "https://assets.example.invalid/snipeit/42");
     expect(await screen.findByRole("img", { name: "Label preview" })).toBeVisible();
     const picker = screen.getByRole("combobox", { name: "Printer" });
-    expect(within(picker).getAllByRole("option").map((o) => o.textContent)).toEqual(["Workshop PT-P750W", "Office QL-820NWB"]);
+    expect(within(picker).getAllByRole("option").map((o) => o.textContent)).toEqual(["Workshop PT-P750W · Tape printer · Ready", "Office QL-820NWB · Tape printer"]);
     const preview = calls.find((c) => c.path === "/api/render/preview")!;
     expect(JSON.parse(preview.body!)).toMatchObject({ content_type: "qr_two_lines", tape_mm: 12, data: { title: "Cordless drill", primary_id: "42" } });
   });
@@ -122,7 +122,7 @@ describe("ItemView", () => {
   it("remembers the printer the person picked", async () => {
     mockApi(routes());
     await renderApp({ path: "/asset/42" });
-    await screen.findByRole("option", { name: "Office QL-820NWB" });
+    await screen.findByRole("option", { name: /Office QL-820NWB/ });
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_B.id);
     await waitFor(() => expect(localStorage.getItem("lph.printer")).toBe(PRINTER_B.id));
   });

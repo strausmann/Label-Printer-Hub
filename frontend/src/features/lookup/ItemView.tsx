@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { PRIMARY_BUTTON, FIELD } from "../../shell/SignIn";
-import { usePrinters, usePrinterStatus } from "../printers/api";
+import { usePrinters, usePrinterStatus, usePrinterStatuses } from "../printers/api";
 import { PANEL } from "../ui";
 import {
   DEFAULT_CONTENT_TYPE,
@@ -20,6 +20,7 @@ import { MAX_COPIES, useCart, type ContentType, type LookupApp } from "./cart";
 import { lookupIdFromQrPath } from "./labelUrl";
 import { recordRecent } from "./recent";
 import { PrinterPicker, usePrinterChoice, usePrintErrorText } from "./PrinterPicker";
+import { SheetSection } from "../sheets/print/SheetSection";
 
 const lookupRoute = getRouteApi("/lookup/$app/$id");
 
@@ -109,10 +110,13 @@ function ItemDetail({ item }: { item: LookupResult }) {
   const printers = usePrinters();
   const { usable, selected, choose } = usePrinterChoice(printers.data);
   const status = usePrinterStatus(selected?.id ?? "");
+  const statuses = usePrinterStatuses(usable);
   const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
   const [copies, setCopies] = useState(1);
   const print = usePrintNow();
-  const preview = usePreviewImage(item, contentType, tapeMmOf(selected ? status.data?.tape_loaded : null));
+  // A page printer prints onto sheets (the sheet section); only tape printers get the tape preview.
+  const pagePrinter = selected?.backend === "ipp";
+  const preview = usePreviewImage(item, contentType, tapeMmOf(selected ? status.data?.tape_loaded : null), !printers.isPending && !pagePrinter);
 
   const appName = appNames(item.app);
   const printerName = selected?.name ?? "";
@@ -143,7 +147,8 @@ function ItemDetail({ item }: { item: LookupResult }) {
         )}
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className={pagePrinter ? "grid gap-4 lg:grid-cols-[22rem_minmax(0,1fr)]" : "grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]"}>
+        {!pagePrinter && (
         <section aria-labelledby="preview-h" className={`${PANEL} flex flex-col gap-3`}>
           <h2 id="preview-h" className="text-section font-bold">{t`Preview`}</h2>
           <div className="grid min-h-32 place-items-center overflow-x-auto rounded-r2 bg-sunken p-4">
@@ -156,6 +161,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
             )}
           </div>
         </section>
+        )}
 
         <section aria-labelledby="print-h" className={`${PANEL} flex flex-col gap-4`}>
           <h2 id="print-h" className="text-section font-bold">{t`Print`}</h2>
@@ -164,6 +170,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
             value={selected?.id ?? null}
             onChange={choose}
             loading={printers.isPending}
+            statuses={statuses}
           />
           <label className="flex flex-col gap-1.5">
             <span className="font-bold">{t`Layout`}</span>
@@ -188,13 +195,16 @@ function ItemDetail({ item }: { item: LookupResult }) {
             />
           </label>
           <div className="flex flex-wrap gap-2">
-            <Button
-              className={PRIMARY_BUTTON}
-              isDisabled={!selected || print.isPending}
-              onPress={() => selected && print.mutate({ printerKey: selected.id, item: asItem })}
-            >
-              {t`Print now`}
-            </Button>
+            {/* A page printer prints through the sheet section; "Print now" is the tape printers' one-label batch. */}
+            {!pagePrinter && (
+              <Button
+                className={PRIMARY_BUTTON}
+                isDisabled={!selected || print.isPending}
+                onPress={() => selected && print.mutate({ printerKey: selected.id, item: asItem })}
+              >
+                {t`Print now`}
+              </Button>
+            )}
             <Button
               className="press inline-flex h-11 items-center justify-center rounded-r2 border border-line-strong bg-surface px-4 text-small font-bold text-ink hover:bg-sunken data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-link"
               onPress={() => cart.add(asItem)}
@@ -216,6 +226,8 @@ function ItemDetail({ item }: { item: LookupResult }) {
             </p>
           )}
         </section>
+
+        {pagePrinter && selected && <SheetSection items={[asItem]} printer={selected} />}
       </div>
     </div>
   );

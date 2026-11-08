@@ -165,19 +165,21 @@ test.describe.serial("sheets", () => {
   test("marks a cell by hand and takes the mark back again (net zero for the other specs)", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
+    // Relative: print-sheet.spec.ts prints onto this sheet before this file runs.
+    const used = ((await (await page.request.get("/api/sheets/L4736-0001")).json()) as { used: number }).used;
     await page.goto("/sheets/L4736-0001");
-    await expect(page.getByText("17 of 48 used")).toBeVisible();
+    await expect(page.getByText(`${used} of 48 used`)).toBeVisible();
     await page.getByRole("button", { name: "Mark cells as used" }).click();
     await page.getByRole("gridcell", { name: /^Cell 48,/ }).click();
     await page.getByRole("textbox", { name: /^Purpose/ }).fill("e2e probe");
     await page.getByRole("button", { name: "Mark 1 cell as used" }).click();
-    await expect(page.getByText("18 of 48 used")).toBeVisible();
+    await expect(page.getByText(`${used + 1} of 48 used`)).toBeVisible();
     await expect(page.getByRole("list", { name: "Cells in use" })).toContainText("Cell 48 → e2e probe · marked by hand");
 
     await page.getByRole("button", { name: "Un-mark cells" }).click();
     await page.getByRole("gridcell", { name: /^Cell 48,/ }).click();
     await page.getByRole("button", { name: "Un-mark 1 cell" }).click();
-    await expect(page.getByText("17 of 48 used")).toBeVisible();
+    await expect(page.getByText(`${used} of 48 used`)).toBeVisible();
     await expect(page.getByRole("list", { name: "Cells in use" })).not.toContainText("e2e probe");
   });
 

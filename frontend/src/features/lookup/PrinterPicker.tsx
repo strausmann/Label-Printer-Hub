@@ -2,7 +2,8 @@ import { useLingui } from "@lingui/react/macro";
 import { useState } from "react";
 import { ApiError } from "../../api/client";
 import { FIELD } from "../../shell/SignIn";
-import type { Printer } from "../printers/api";
+import { describePrinter, isPagePrinter, useKindLabel } from "../printers/model";
+import type { Printer, PrinterStatus } from "../printers/api";
 
 const PRINTER_KEY = "lph.printer";
 
@@ -33,18 +34,35 @@ export function usePrinterChoice(printers: Printer[] | undefined) {
   return { usable, selected, choose };
 }
 
+/** "Office laser · Page printer · Stopped": the kind always, the state once the printer's status is known. */
+function usePrinterOptionText(): (printer: Printer, status: PrinterStatus | undefined) => string {
+  const { t } = useLingui();
+  const states = useKindLabel();
+  return (printer, status) => {
+    const page = isPagePrinter(printer, status);
+    const kind = page ? t({ message: "Page printer", context: "printer kind" }) : t({ message: "Tape printer", context: "printer kind" });
+    const parts = [printer.name, kind];
+    if (status) parts.push(states[describePrinter(printer, status, false).kind]);
+    return parts.join(" · ");
+  };
+}
+
 export function PrinterPicker({
   printers,
   value,
   onChange,
   loading,
+  statuses,
 }: {
   printers: Printer[];
   value: string | null;
   onChange: (id: string) => void;
   loading: boolean;
+  /** Their latest statuses, for the state words in the list. */
+  statuses?: ReadonlyMap<string, PrinterStatus>;
 }) {
   const { t } = useLingui();
+  const optionText = usePrinterOptionText();
   return (
     <label className="flex flex-col gap-1.5">
       <span className="font-bold">{t`Printer`}</span>
@@ -57,7 +75,7 @@ export function PrinterPicker({
         {printers.length === 0 && <option value="">{loading ? t`Loading…` : t`No printer available`}</option>}
         {printers.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.name}
+            {optionText(p, statuses?.get(p.id))}
           </option>
         ))}
       </select>

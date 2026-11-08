@@ -48,10 +48,11 @@ export interface SheetFilters {
 const post = <T>(path: string, json?: unknown) => apiFetch<T>(path, { method: "POST", json });
 const encode = encodeURIComponent;
 
-export const useSheets = (filters: SheetFilters = {}) =>
+export const useSheets = (filters: SheetFilters = {}, enabled = true) =>
   useQuery({
     queryKey: sheetsKey(filters),
     queryFn: () => apiFetch<SheetSummary[]>(`/api/sheets${queryString({ ...filters })}`),
+    enabled,
   });
 
 export const useSheet = (code: string) =>
