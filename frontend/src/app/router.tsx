@@ -19,7 +19,6 @@ import {
   KeptPage,
   NotFoundPage,
   SheetDetailPlaceholder,
-  SheetsPage,
 } from "../pages/placeholders";
 import { IntegrationPage } from "../features/integrations/IntegrationPage";
 import { AboutPage } from "../features/about/AboutPage";
@@ -37,6 +36,8 @@ import { ScanScreen } from "../features/scan/ScanScreen";
 import { SheetArchivePage } from "../features/archive/ArchivePage";
 import { parseArchiveSearch } from "../features/archive/search";
 import { parseSheetCode } from "../features/sheets/resolver";
+import { parseSheetsSearch } from "../features/sheets/search";
+import { SheetsPage } from "../features/sheets/SheetsPage";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { PrinterPage } from "../features/printers/PrinterDetail";
 import { PrintersPage } from "../features/printers/PrintersPage";
@@ -166,6 +167,13 @@ const archiveRoute = createRoute({
   validateSearch: parseArchiveSearch,
 });
 
+const sheetsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sheets",
+  component: SheetsPage,
+  validateSearch: parseSheetsSearch,
+});
+
 const calibrationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/calibration",
@@ -216,7 +224,7 @@ const routeTree = rootRoute.addChildren([
     settingsChild("/jobs", Jobs),
     settingsChild("/system", System),
   ]),
-  page("/sheets", SheetsPage),
+  sheetsRoute,
   archiveRoute,
   // The second path is the one printed in the QR code of a sheet.
   page("/sheets/$code", SheetDetailPlaceholder),

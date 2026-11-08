@@ -67,4 +67,6 @@ export const useCapabilities = (printerId: string) =>
   useQuery({
     queryKey: capabilitiesKey(printerId),
     queryFn: () => apiFetch<Capabilities>(`/api/printers/${encode(printerId)}/capabilities`),
+    // A screen that has not chosen a printer yet passes "" and asks for nothing.
+    enabled: printerId !== "",
   });

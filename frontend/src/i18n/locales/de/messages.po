@@ -7,6 +7,11 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: de\n"
 
+#. placeholder {0}: marked.size
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "{0, plural, one {# cell marked as used} other {# cells marked as used}}"
+msgstr "{0, plural, one {# Feld als benutzt markiert} other {# Felder als benutzt markiert}}"
+
 #. placeholder {0}: g.cols
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "{0, plural, one {# column} other {# columns}}"
@@ -28,6 +33,11 @@ msgstr "{0, plural, one {# Produktcode} other {# Produktcodes}}"
 msgid "{0, plural, one {# row} other {# rows}}"
 msgstr "{0, plural, one {# Zeile} other {# Zeilen}}"
 
+#. placeholder {0}: sheet.unconfirmed
+#: src/features/sheets/SheetsPage.tsx
+msgid "{0, plural, one {Resolve the # unconfirmed cell first; once the sheet is discarded it can no longer be cleaned up.} other {Resolve the # unconfirmed cells first; once the sheet is discarded they can no longer be cleaned up.}}"
+msgstr "{0, plural, one {Kläre zuerst das # unbestätigte Feld; nach dem Verwerfen des Bogens lässt es sich nicht mehr bereinigen.} other {Kläre zuerst die # unbestätigten Felder; nach dem Verwerfen des Bogens lassen sie sich nicht mehr bereinigen.}}"
+
 #. placeholder {0}: type.key
 #: src/features/archive/TypeDetail.tsx
 msgid "{0} has no sheets. Deleting it removes it and all its versions for good."
@@ -45,6 +55,14 @@ msgstr "{appName} ist noch nicht eingerichtet, deshalb gibt es nichts nachzuschl
 #: src/features/jobs/JobDetail.tsx
 msgid "{copyNo} of {copyTotal}"
 msgstr "{copyNo} von {copyTotal}"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "{free} free"
+msgstr "{free} frei"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hidden}}"
+msgstr "{hidden, plural, one {# aufgebrauchter Bogen ausgeblendet} other {# aufgebrauchte Bögen ausgeblendet}}"
 
 #: src/features/archive/TypeForm.tsx
 msgid "{label} is too long: at most {max} characters."
@@ -74,6 +92,10 @@ msgstr "{name} ist noch nicht eingerichtet, deshalb kann dieser Eintrag nicht an
 msgid "{pinned, plural, one {# sheet keeps version {version}} other {# sheets keep version {version}}}"
 msgstr "{pinned, plural, one {# Bogen behält Version {version}} other {# Bögen behalten Version {version}}}"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "{reserved} reserved"
+msgstr "{reserved} reserviert"
+
 #: src/features/settings/AccessKeys.tsx
 msgid "{revokingName} stops working at once, and so does every browser session that signed in with it. This cannot be undone."
 msgstr "{revokingName} funktioniert sofort nicht mehr, ebenso jede Browser-Sitzung, die damit angemeldet wurde. Das lässt sich nicht rückgängig machen."
@@ -85,6 +107,14 @@ msgstr "{sentLabels, plural, one {# Etikett gesendet an} other {# Etiketten gese
 #: src/features/jobs/JobDetail.tsx
 msgid "{tapeMm} mm"
 msgstr "{tapeMm} mm"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "{unconfirmed} unconfirmed"
+msgstr "{unconfirmed} unbestätigt"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "{used} of {total} used"
+msgstr "{used} von {total} benutzt"
 
 #: src/features/archive/errors.ts
 msgid "{what} can have at most two decimals."
@@ -126,6 +156,10 @@ msgstr "{what} darf nicht negativ sein."
 msgid "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
 msgstr "Ein Schlüssel öffnet die API und die Anmeldung im Browser. read schaut nur, print druckt auch, admin ändert auch die Einstellungen."
 
+#: src/features/sheets/errors.ts
+msgid "A marked cell is outside the sheet."
+msgstr "Ein markiertes Feld liegt außerhalb des Bogens."
+
 #: src/features/settings/AccessKeys.tsx
 msgid "A name that tells you who uses it, for example “Kept”."
 msgstr "Ein Name, der verrät, wer den Schlüssel nutzt, zum Beispiel „Kept“."
@@ -134,6 +168,10 @@ msgstr "Ein Name, der verrät, wer den Schlüssel nutzt, zum Beispiel „Kept“
 #: src/features/archive/TypeForm.tsx
 msgid "A product code is at most {0} characters."
 msgstr "Ein Produktcode hat höchstens {0} Zeichen."
+
+#: src/features/sheets/errors.ts
+msgid "A running job still uses this sheet. Try again when it has finished."
+msgstr "Ein laufender Auftrag benutzt diesen Bogen noch. Versuche es erneut, wenn er fertig ist."
 
 #: src/features/settings/feedback.tsx
 msgid "A secret is saved for the old URL. Enter the secret again to use the new URL."
@@ -172,9 +210,21 @@ msgstr "Über die GNU AGPL"
 msgid "Access and keys"
 msgstr "Zugang und Schlüssel"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Action"
+msgstr "Aktion"
+
 #: src/features/settings/PrinterForm.tsx
 msgid "Add a printer"
 msgstr "Drucker hinzufügen"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Add a sheet"
+msgstr "Bogen hinzufügen"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Add and print ID label"
+msgstr "Hinzufügen und ID-Etikett drucken"
 
 #: src/features/archive/ImportDialog.tsx
 msgid "Add as new version"
@@ -183,6 +233,10 @@ msgstr "Als neue Version hinzufügen"
 #: src/features/settings/Printers.tsx
 msgid "Add printer"
 msgstr "Drucker hinzufügen"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Add sheet"
+msgstr "Bogen hinzufügen"
 
 #: src/features/lookup/ItemView.tsx
 msgid "Add to cart"
@@ -221,6 +275,10 @@ msgstr "Ein anderer Typ verwendet dieses Code-Präfix schon. Wähle ein anderes.
 #: src/features/archive/ArchivePage.tsx
 msgid "Any page size"
 msgstr "Jede Papiergröße"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "Any sheet type"
+msgstr "Jeder Bogentyp"
 
 #: src/features/archive/ArchivePage.tsx
 msgid "Any vendor"
@@ -292,9 +350,17 @@ msgstr "Backend"
 msgid "Blue"
 msgstr "Blau"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "bottom margin"
+msgstr "unteren Rand"
+
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Bottom margin"
 msgstr "Unterer Rand"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "By hand"
+msgstr "Von Hand"
 
 #: src/features/printers/PrinterDetail.tsx
 #: src/pages/placeholders.tsx
@@ -320,6 +386,8 @@ msgstr "Lässt sich mit dem aktuellen Geheimschlüssel nicht lesen — bitte ern
 #: src/features/jobs/JobDetail.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/PrinterForm.tsx
+#: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/SheetsPage.tsx
 msgid "Cancel"
 msgstr "Abbrechen"
 
@@ -350,6 +418,10 @@ msgstr "Warenkorb ({inCart})"
 msgid "Cell {0}, {state}"
 msgstr "Zelle {0}, {state}"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Cells already used"
+msgstr "Bereits benutzte Felder"
+
 #: src/shell/SessionStatus.tsx
 msgid "Checking your session…"
 msgstr "Sitzung wird geprüft…"
@@ -366,13 +438,26 @@ msgstr "Wähle eine Datei, die von diesem oder einem anderen Hub exportiert wurd
 msgid "Choose a photo of a code"
 msgstr "Foto eines Codes wählen"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Choose a printer and a tray to print the ID label."
+msgstr "Wähle einen Drucker und ein Fach, um das ID-Etikett zu drucken."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Choose a sheet type"
+msgstr "Bogentyp wählen"
+
 #: src/features/archive/ArchivePage.tsx
 msgid "Choose a sheet type to see its measurements and versions."
 msgstr "Wähle einen Bogentyp, um seine Maße und Versionen zu sehen."
 
 #: src/features/archive/ArchivePage.tsx
+#: src/features/sheets/SheetsPage.tsx
 msgid "Clear filters"
 msgstr "Filter zurücksetzen"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Clear marks"
+msgstr "Markierungen löschen"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Clear queue"
@@ -383,6 +468,7 @@ msgid "Clients"
 msgstr "Clients"
 
 #: src/features/archive/ImportDialog.tsx
+#: src/features/sheets/AddSheetDialog.tsx
 msgid "Close"
 msgstr "Schließen"
 
@@ -596,6 +682,28 @@ msgstr "{0} deaktivieren"
 msgid "Disabled"
 msgstr "Deaktiviert"
 
+#: src/features/sheets/SheetsPage.tsx
+msgctxt "sheet action"
+msgid "Discard"
+msgstr "Verwerfen"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "Discard {code}"
+msgstr "{code} verwerfen"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "Discard {code}? It leaves the picker; its number is never given out again; labels already printed stay printed."
+msgstr "{code} verwerfen? Er verschwindet aus der Auswahl; seine Nummer wird nie wieder vergeben; bereits gedruckte Etiketten bleiben gedruckt."
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "Discard sheet"
+msgstr "Bogen verwerfen"
+
+#: src/features/sheets/SheetsPage.tsx
+msgctxt "sheet state"
+msgid "discarded"
+msgstr "verworfen"
+
 #: src/features/settings/sections.tsx
 msgid "Display name"
 msgstr "Anzeigename"
@@ -666,6 +774,10 @@ msgstr "Gib eine gültige Zahl ein."
 msgid "Enter it again"
 msgstr "Bitte erneut eingeben"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Every sheet is used up."
+msgstr "Alle Bögen sind aufgebraucht."
+
 #: src/features/archive/TypeDetail.tsx
 msgid "Export"
 msgstr "Exportieren"
@@ -693,11 +805,17 @@ msgstr "Nach Status filtern"
 msgid "Filter the sheet types"
 msgstr "Bogentypen filtern"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Filter the sheets"
+msgstr "Bögen filtern"
+
 #: src/features/archive/ArchivePage.tsx
+#: src/features/sheets/SheetsPage.tsx
 msgid "Filters"
 msgstr "Filter"
 
 #: src/features/archive/ArchivePage.tsx
+#: src/features/sheets/SheetsPage.tsx
 msgid "Filters ({activeFilters} active)"
 msgstr "Filter ({activeFilters} aktiv)"
 
@@ -775,6 +893,10 @@ msgstr "Zustand"
 msgid "Healthy"
 msgstr "Gesund"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Hide used-up sheets"
+msgstr "Aufgebrauchte Bögen ausblenden"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "History"
 msgstr "Verlauf"
@@ -829,9 +951,21 @@ msgstr "Mit dem neuen Schlüssel importieren"
 msgid "imported"
 msgstr "importiert"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "In the first free cell"
+msgstr "Im ersten freien Feld"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "In the margin"
+msgstr "Im Rand"
+
 #: src/features/sheets/cellState.ts
 msgid "in the printer's unprintable margin"
 msgstr "im nicht bedruckbaren Rand des Druckers"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "In use by a running job"
+msgstr "In Benutzung durch einen laufenden Auftrag"
 
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/integrations/IntegrationTiles.tsx
@@ -844,6 +978,10 @@ msgstr "Integrationen"
 #: src/features/printers/model.ts
 msgid "Interrupted by a restart"
 msgstr "Durch Neustart unterbrochen"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "It will probably become <0>{hintCode}</0>."
+msgstr "Er bekommt voraussichtlich die Nummer <0>{hintCode}</0>."
 
 #: src/features/jobs/JobsPage.tsx
 #: src/features/search/jobsSource.ts
@@ -938,6 +1076,10 @@ msgstr "Sprache"
 msgid "Last status {age} s ago"
 msgstr "Letzter Status vor {age} s"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Last used"
+msgstr "Zuletzt benutzt"
+
 #: src/features/settings/LastUsed.tsx
 msgid "Last used {when}"
 msgstr "Zuletzt benutzt {when}"
@@ -954,6 +1096,10 @@ msgstr "Leer lassen, wenn unbekannt."
 #: src/features/archive/ImportDialog.tsx
 msgid "Leave empty to keep the prefix of the file."
 msgstr "Leer lassen, um das Präfix der Datei zu behalten."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "left margin"
+msgstr "linken Rand"
 
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Left margin"
@@ -999,6 +1145,7 @@ msgstr "Live-Updates pausiert"
 #: src/features/settings/Printers.tsx
 #: src/features/settings/sections.tsx
 #: src/features/settings/System.tsx
+#: src/features/sheets/SheetsPage.tsx
 #: src/i18n/messages.ts
 msgid "Loading…"
 msgstr "Wird geladen …"
@@ -1019,6 +1166,10 @@ msgstr "In einer Integration nachschlagen"
 msgid "Main"
 msgstr "Hauptnavigation"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "margin"
+msgstr "Rand"
+
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/shell/labels.ts
@@ -1034,6 +1185,10 @@ msgstr "{0} neu vermessen"
 #: src/features/archive/TypeForm.tsx
 msgid "Measurements"
 msgstr "Maße"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Measurements of this type"
+msgstr "Maße dieses Typs"
 
 #: src/features/settings/System.tsx
 msgid "Message"
@@ -1076,6 +1231,10 @@ msgstr "Neues Code-Präfix (optional)"
 #: src/features/archive/ImportDialog.tsx
 msgid "New key"
 msgstr "Neuer Schlüssel"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "New sheet"
+msgstr "Neuer Bogen"
 
 #: src/features/archive/TypeForm.tsx
 msgid "New sheet type"
@@ -1121,6 +1280,10 @@ msgstr "Keine Aufträge."
 msgid "No preview for this tape."
 msgstr "Für dieses Band gibt es keine Vorschau."
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "No printer"
+msgstr "Kein Drucker"
+
 #: src/features/lookup/PrinterPicker.tsx
 msgid "No printer available"
 msgstr "Kein Drucker verfügbar"
@@ -1131,9 +1294,17 @@ msgstr "Kein Drucker verfügbar"
 msgid "No printers yet."
 msgstr "Noch keine Drucker."
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "No sheet matches."
+msgstr "Kein Bogen passt."
+
 #: src/features/archive/ArchivePage.tsx
 msgid "No sheet type matches."
 msgstr "Kein Bogentyp passt."
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "No sheets yet."
+msgstr "Noch keine Bögen."
 
 #: src/features/printers/model.ts
 msgid "No status yet"
@@ -1176,6 +1347,10 @@ msgstr "Nicht gesetzt"
 msgid "Not set up"
 msgstr "Nicht eingerichtet"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Not used yet"
+msgstr "Noch nicht benutzt"
+
 #: src/features/archive/TypeForm.tsx
 msgid "Notes"
 msgstr "Notizen"
@@ -1189,6 +1364,10 @@ msgstr "Nichts geändert: {0} hat diese Maße schon."
 msgid "Nothing changed."
 msgstr "Nichts geändert."
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Nothing is printed. You write the code on the sheet yourself."
+msgstr "Es wird nichts gedruckt. Du schreibst den Code selbst auf den Bogen."
+
 #: src/features/overview/OverviewPage.tsx
 msgid "Nothing is printing."
 msgstr "Es wird nichts gedruckt."
@@ -1196,6 +1375,10 @@ msgstr "Es wird nichts gedruckt."
 #: src/features/printers/PrinterDetail.tsx
 msgid "Nothing is waiting."
 msgstr "Es wartet nichts."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Nothing marked yet"
+msgstr "Noch nichts markiert"
 
 #: src/features/overview/OverviewPage.tsx
 msgid "Nothing needs attention."
@@ -1234,6 +1417,10 @@ msgstr "{0} in {name} öffnen"
 msgid "Open {appName}"
 msgstr "{appName} öffnen"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Open {code}"
+msgstr "{code} öffnen"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Open in {appName}"
 msgstr "In {appName} öffnen"
@@ -1242,6 +1429,10 @@ msgstr "In {appName} öffnen"
 #: src/features/lookup/ItemView.tsx
 msgid "Open Settings › Integrations"
 msgstr "Einstellungen › Integrationen öffnen"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Optional. It checks where the ID can go, and it is needed to print the ID label."
+msgstr "Optional. Damit wird geprüft, wohin die ID passt; zum Drucken des ID-Etiketts ist er nötig."
 
 #: src/features/archive/ImportDialog.tsx
 msgid "Or choose an export file"
@@ -1323,8 +1514,13 @@ msgstr "Jetzt drucken"
 
 #: src/features/jobs/JobDetail.tsx
 #: src/features/lookup/PrinterPicker.tsx
+#: src/features/sheets/AddSheetDialog.tsx
 msgid "Printer"
 msgstr "Drucker"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Printer and tray"
+msgstr "Drucker und Fach"
 
 #: src/features/printers/PauseReason.tsx
 msgid "Printer is offline"
@@ -1521,6 +1717,10 @@ msgstr "Diesen Schlüssel widerrufen?"
 msgid "Revoked"
 msgstr "Widerrufen"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "right margin"
+msgstr "rechten Rand"
+
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Right margin"
 msgstr "Rechter Rand"
@@ -1603,6 +1803,10 @@ msgstr "Berechtigungen"
 msgid "Search"
 msgstr "Suchen"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Search by code"
+msgstr "Nach Code suchen"
+
 #: src/features/search/GlobalSearch.tsx
 msgid "Search results"
 msgstr "Suchergebnisse"
@@ -1652,11 +1856,24 @@ msgstr "Einstellungen lassen sich nur mit einem Admin-Schlüssel ändern. Melde 
 msgid "Settings sections"
 msgstr "Bereiche der Einstellungen"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Sheet"
+msgstr "Bogen"
+
 #: src/pages/placeholders.tsx
 msgid "Sheet {code}"
 msgstr "Bogen {code}"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Sheet {code} was added, but its ID label could not be queued."
+msgstr "Bogen {code} wurde hinzugefügt, aber sein ID-Etikett konnte nicht in die Warteschlange gelegt werden."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Sheet {code} was added."
+msgstr "Bogen {code} wurde hinzugefügt."
+
 #: src/features/archive/ArchivePage.tsx
+#: src/features/sheets/SheetsPage.tsx
 #: src/shell/labels.ts
 msgid "Sheet archive"
 msgstr "Bogenarchiv"
@@ -1665,12 +1882,17 @@ msgstr "Bogenarchiv"
 msgid "sheet ID"
 msgstr "Bogen-ID"
 
+#: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/SheetsPage.tsx
+msgid "Sheet type"
+msgstr "Bogentyp"
+
 #: src/features/archive/ArchivePage.tsx
 msgid "Sheet types"
 msgstr "Bogentypen"
 
 #: src/features/archive/TypeDetail.tsx
-#: src/pages/placeholders.tsx
+#: src/features/sheets/SheetsPage.tsx
 #: src/shell/labels.ts
 msgid "Sheets"
 msgstr "Bögen"
@@ -1683,9 +1905,25 @@ msgstr "Schon angelegte Bögen drucken weiter mit den alten Maßen."
 msgid "Show archived types"
 msgstr "Archivierte Typen anzeigen"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Show discarded sheets"
+msgstr "Verworfene Bögen anzeigen"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Show the ID label job"
+msgstr "Auftrag des ID-Etiketts anzeigen"
+
 #: src/features/archive/ImportDialog.tsx
 msgid "Show the type"
 msgstr "Typ anzeigen"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "Show the unconfirmed cells"
+msgstr "Die unbestätigten Felder anzeigen"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "Show them"
+msgstr "Anzeigen"
 
 #: src/shell/SignIn.tsx
 msgid "Sign in"
@@ -1793,6 +2031,10 @@ msgstr "Systemdesign"
 msgid "Tabs"
 msgstr "Tabs"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Tap the labels that are already gone. A fresh sheet needs none."
+msgstr "Tippe auf die Etiketten, die schon weg sind. Ein frischer Bogen braucht keine."
+
 #: src/features/jobs/JobDetail.tsx
 msgid "Tape"
 msgstr "Band"
@@ -1824,6 +2066,14 @@ msgstr "Dieser Schlüssel wurde nicht akzeptiert."
 #: src/features/settings/feedback.tsx
 msgid "That name is already used by another printer."
 msgstr "Dieser Name wird schon von einem anderen Drucker verwendet."
+
+#: src/features/sheets/errors.ts
+msgid "That printer does not exist."
+msgstr "Diesen Drucker gibt es nicht."
+
+#: src/features/sheets/errors.ts
+msgid "That sheet does not exist."
+msgstr "Diesen Bogen gibt es nicht."
 
 #: src/features/archive/errors.ts
 #: src/features/archive/TypeDetail.tsx
@@ -1923,6 +2173,34 @@ msgstr "Der horizontale Abstand"
 msgid "The horizontal pitch must not be smaller than the label width."
 msgstr "Der horizontale Abstand darf nicht kleiner sein als die Etikettenbreite."
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The ID is printed in the margin of the sheet with the first print. No label is used."
+msgstr "Die ID wird mit dem ersten Druck in den Rand des Bogens gedruckt. Es wird kein Etikett verbraucht."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The ID label is in the print queue."
+msgstr "Das ID-Etikett liegt in der Druckwarteschlange."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The ID label was queued only in part. Look at the print jobs."
+msgstr "Das ID-Etikett wurde nur teilweise eingereiht. Sieh dir die Druckaufträge an."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The ID takes the first free label and is printed right away."
+msgstr "Die ID belegt das erste freie Etikett und wird sofort gedruckt."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The ID will be printed in the {where}, text only."
+msgstr "Die ID wird in den {where} gedruckt, nur als Text."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The ID will be printed in the {where}, with QR."
+msgstr "Die ID wird in den {where} gedruckt, mit QR-Code."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The ID will not be printed on this printer, add it by hand."
+msgstr "Die ID wird auf diesem Drucker nicht gedruckt, trage sie von Hand ein."
+
 #: src/features/archive/ImportDialog.tsx
 msgid "The import failed."
 msgstr "Der Import ist fehlgeschlagen."
@@ -1995,6 +2273,10 @@ msgstr "Die Etikettenbreite"
 msgid "The labels could not be sent."
 msgstr "Die Etiketten konnten nicht gesendet werden."
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The labels of this type are too small for a QR code, so the ID is printed as text only."
+msgstr "Die Etiketten dieses Typs sind zu klein für einen QR-Code, deshalb wird die ID nur als Text gedruckt."
+
 #: src/features/settings/System.tsx
 msgid "The last 200 records of level warning or higher, newest first. They are kept in memory and start over with the container."
 msgstr "Die letzten 200 Einträge der Stufe Warnung oder höher, neueste zuerst. Sie liegen im Arbeitsspeicher und beginnen mit dem Container neu."
@@ -2016,6 +2298,10 @@ msgstr "Die Liste der Produktcodes"
 #: src/features/settings/System.tsx
 msgid "The log could not be loaded."
 msgstr "Das Protokoll konnte nicht geladen werden."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The margin could not be checked on this printer."
+msgstr "Der Rand konnte auf diesem Drucker nicht geprüft werden."
 
 #: src/features/archive/errors.ts
 msgid "The measurements are the same as in the current version. Change something first."
@@ -2041,6 +2327,10 @@ msgstr "Die Notiz ist zu lang: höchstens {0} Zeichen."
 #: src/features/archive/errors.ts
 msgid "The notes text"
 msgstr "Der Notiztext"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The number is {code}, not {hinted}: another sheet was added in the meantime."
+msgstr "Die Nummer ist {code}, nicht {hinted}: In der Zwischenzeit wurde ein anderer Bogen hinzugefügt."
 
 #: src/features/archive/errors.ts
 msgid "The number of columns"
@@ -2074,6 +2364,10 @@ msgstr "Der Port muss zwischen 1 und 65535 liegen."
 msgid "The prefix is fixed once sheets of this type exist."
 msgstr "Das Präfix ist fest, sobald es Bögen dieses Typs gibt."
 
+#: src/features/sheets/errors.ts
+msgid "The print queue does not know this printer yet. Try again in a moment."
+msgstr "Die Druckwarteschlange kennt diesen Drucker noch nicht. Versuche es gleich noch einmal."
+
 #: src/features/settings/Printers.tsx
 msgid "The printer could not be changed."
 msgstr "Der Drucker konnte nicht geändert werden."
@@ -2081,6 +2375,18 @@ msgstr "Der Drucker konnte nicht geändert werden."
 #: src/features/printers/PrinterDetail.tsx
 msgid "The printer could not be loaded."
 msgstr "Der Drucker konnte nicht geladen werden."
+
+#: src/features/sheets/errors.ts
+msgid "The printer could not be reached."
+msgstr "Der Drucker ist nicht erreichbar."
+
+#: src/features/sheets/errors.ts
+msgid "The printer did not accept the ID label."
+msgstr "Der Drucker hat das ID-Etikett nicht angenommen."
+
+#: src/features/sheets/errors.ts
+msgid "The printer does not report that tray."
+msgstr "Der Drucker meldet dieses Fach nicht."
 
 #: src/features/printers/PrinterGrid.tsx
 #: src/features/settings/Printers.tsx
@@ -2120,13 +2426,26 @@ msgstr "Der Server hat die Datei abgelehnt: Sie ist größer als 64 KB."
 msgid "The settings could not be loaded."
 msgstr "Die Einstellungen konnten nicht geladen werden."
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The sheet could not be added."
+msgstr "Der Bogen konnte nicht hinzugefügt werden."
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "The sheet could not be discarded."
+msgstr "Der Bogen konnte nicht verworfen werden."
+
 #: src/features/archive/TypeDetail.tsx
 msgid "The sheet type could not be loaded."
 msgstr "Der Bogentyp konnte nicht geladen werden."
 
 #: src/features/archive/ArchivePage.tsx
+#: src/features/sheets/AddSheetDialog.tsx
 msgid "The sheet types could not be loaded."
 msgstr "Die Bogentypen konnten nicht geladen werden."
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "The sheets could not be loaded."
+msgstr "Die Bögen konnten nicht geladen werden."
 
 #: src/features/settings/PrinterForm.tsx
 msgid "The short name in addresses and in the API. It cannot be changed later."
@@ -2230,9 +2549,21 @@ msgstr "Diese Seite ist noch nicht verfügbar."
 msgid "This printer does not exist."
 msgstr "Diesen Drucker gibt es nicht."
 
+#: src/features/sheets/errors.ts
+msgid "This printer is switched off."
+msgstr "Dieser Drucker ist ausgeschaltet."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "This printer reports no trays, so it cannot print the ID label."
+msgstr "Dieser Drucker meldet keine Fächer und kann das ID-Etikett deshalb nicht drucken."
+
 #: src/features/settings/SettingField.tsx
 msgid "This secret is saved for the old URL. Enter it again to use the new URL."
 msgstr "Dieses Geheimnis ist für die alte URL gespeichert. Gib es erneut ein, um die neue URL zu nutzen."
+
+#: src/features/sheets/errors.ts
+msgid "This sheet is discarded."
+msgstr "Dieser Bogen ist verworfen."
 
 #: src/features/archive/errors.ts
 msgid "This type has sheets. Archive it instead."
@@ -2266,6 +2597,10 @@ msgstr "Token"
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Zu viele Versuche. Warte eine Minute und versuche es erneut."
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "top margin"
+msgstr "oberen Rand"
+
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Top margin"
 msgstr "Oberer Rand"
@@ -2274,12 +2609,20 @@ msgstr "Oberer Rand"
 msgid "Top margin (mm)"
 msgstr "Oberer Rand (mm)"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Tray"
+msgstr "Fach"
+
 #: src/app/router.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/ScanScreen.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Erneut versuchen"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "Type"
+msgstr "Typ"
 
 #: src/features/archive/TypeDetail.tsx
 msgid "Unarchive"
@@ -2316,6 +2659,15 @@ msgstr "URL"
 msgctxt "sheet cell state"
 msgid "used"
 msgstr "belegt"
+
+#: src/features/sheets/SheetsPage.tsx
+msgid "Used"
+msgstr "Benutzt"
+
+#: src/features/sheets/SheetsPage.tsx
+msgctxt "sheet state"
+msgid "used up"
+msgstr "aufgebraucht"
 
 #: src/features/archive/ArchivePage.tsx
 #: src/features/archive/TypeForm.tsx
@@ -2371,6 +2723,10 @@ msgstr "Was schiefgelaufen ist"
 #: src/features/archive/TypeDetail.tsx
 msgid "Where the numbers come from"
 msgstr "Woher die Zahlen stammen"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Where the sheet ID goes"
+msgstr "Wohin die Bogen-ID kommt"
 
 #: src/features/printers/model.ts
 msgid "White"

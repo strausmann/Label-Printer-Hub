@@ -16,10 +16,6 @@ function PagePlaceholder({ title }: { title: string }) {
 }
 
 /* Modules that have not shipped: their navigation entries stay hidden until `features` says so. */
-export function SheetsPage() {
-  const { t } = useLingui();
-  return <PagePlaceholder title={t`Sheets`} />;
-}
 /** `/sheets/$code` and `/sheet/$code` (the path printed in the sheet QR code) until the detail page replaces it. */
 export function SheetDetailPlaceholder() {
   const { t } = useLingui();
