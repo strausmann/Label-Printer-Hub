@@ -83,12 +83,14 @@ export function summarizePayload(job: Job): PayloadSummary {
   };
 }
 
-/** "Sheet L4736-0002 · 9 labels", "Calibration page · L4736REV v1". */
-function pageTitle(page: PageInfo): string {
+/** "Sheet L4736-0002 · 9 labels", "Calibration page · <sheet type> v1" (`typeLabel`: the type's name, when known). */
+function pageTitle(page: PageInfo, typeLabel: string | null): string {
   if (page.kind === "calibration_page") {
-    if (page.typeKey === null) return t`Calibration page`;
-    const version = page.version === null ? "" : ` v${page.version}`;
-    return t`Calibration page · ${page.typeKey}${version}`;
+    // The payload stores the type's key; the label is known once the type has been read.
+    const name = typeLabel ?? page.typeKey;
+    if (name === null) return t`Calibration page`;
+    const version = page.version;
+    return version === null ? t`Calibration page · ${name}` : t`Calibration page · ${name} v${version}`;
   }
   if (page.sheetCode === null) return t`Sheet page`;
   const code = page.sheetCode;
@@ -97,9 +99,9 @@ function pageTitle(page: PageInfo): string {
 }
 
 /** What the person calls this job: the page, else the label's title, else its code, else the template. */
-export function jobTitle(job: Job): string | null {
+export function jobTitle(job: Job, typeLabel: string | null = null): string | null {
   const s = summarizePayload(job);
-  if (s.page) return pageTitle(s.page);
+  if (s.page) return pageTitle(s.page, typeLabel);
   return s.title ?? s.code ?? job.template_key;
 }
 

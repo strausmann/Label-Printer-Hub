@@ -43,8 +43,8 @@ export const useSheetTypes = (filters: TypeFilters = {}) =>
     queryFn: () => apiFetch<SheetTypeRead[]>(`/api/sheet-types${queryString({ ...filters })}`),
   });
 
-export const useSheetType = (key: string) =>
-  useQuery({ queryKey: typeKey(key), queryFn: () => apiFetch<SheetTypeDetail>(typePath(key)) });
+export const useSheetType = (key: string, enabled = true) =>
+  useQuery({ queryKey: typeKey(key), queryFn: () => apiFetch<SheetTypeDetail>(typePath(key)), enabled });
 
 /**
  * A type write changes the lists, the type and (through the usage counts) the sheet lists.

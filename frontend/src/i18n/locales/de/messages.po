@@ -50,7 +50,9 @@ msgstr "{0, plural, one {# Zelle als belegt markieren} other {# Zellen als beleg
 msgid "{0, plural, one {Resolve the # unconfirmed cell first; once the sheet is discarded it can no longer be cleaned up.} other {Resolve the # unconfirmed cells first; once the sheet is discarded they can no longer be cleaned up.}}"
 msgstr "{0, plural, one {Kläre zuerst das # unbestätigte Feld; nach dem Verwerfen des Bogens lässt es sich nicht mehr bereinigen.} other {Kläre zuerst die # unbestätigten Felder; nach dem Verwerfen des Bogens lassen sie sich nicht mehr bereinigen.}}"
 
+#. placeholder {0}: cells.length
 #. placeholder {0}: sheet.cells.length
+#: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/SheetDetail.tsx
 msgid "{0, plural, one {Show the # cell} other {Show all # cells}}"
 msgstr "{0, plural, one {Die # Zelle anzeigen} other {Alle # Zellen anzeigen}}"
@@ -572,10 +574,13 @@ msgstr "Die Kalibrierung dieses Druckers erscheint hier."
 msgid "Calibration page"
 msgstr "Kalibrierseite"
 
-#. placeholder {0}: page.typeKey
 #: src/features/jobs/model.ts
-msgid "Calibration page · {0}{version}"
-msgstr "Kalibrierseite · {0}{version}"
+msgid "Calibration page · {name}"
+msgstr "Kalibrierseite · {name}"
+
+#: src/features/jobs/model.ts
+msgid "Calibration page · {name} v{version}"
+msgstr "Kalibrierseite · {name} v{version}"
 
 #: src/features/scan/CameraScanner.tsx
 msgid "Camera view"
@@ -2100,6 +2105,7 @@ msgid "Printed, cell {n}"
 msgstr "Gedruckt, Zelle {n}"
 
 #: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/PageJobInfo.tsx
 #: src/features/lookup/PrinterPicker.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Printer"
@@ -2609,6 +2615,10 @@ msgstr "Archivierte Typen anzeigen"
 #: src/features/sheets/SheetsPage.tsx
 msgid "Show discarded sheets"
 msgstr "Verworfene Bögen anzeigen"
+
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Show fewer"
+msgstr "Weniger anzeigen"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Show the ID label job"

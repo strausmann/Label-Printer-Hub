@@ -43,13 +43,21 @@ test.describe("jobs", () => {
   });
 });
 
+const TYPE_KEY = "avery-zweckform-l4736rev";
+
+/** The name the UI gives the sheet type: "<vendor> <first product code>". */
+async function typeName(page: Page): Promise<string> {
+  const type = (await (await page.request.get(`/api/sheet-types/${TYPE_KEY}`)).json()) as { vendor: string | null; product_codes: string[] };
+  return type.vendor && type.product_codes[0] ? `${type.vendor} ${type.product_codes[0]}` : (type.product_codes[0] ?? TYPE_KEY);
+}
+
 /** A calibration page job on the fake page printer: it needs no sheet and no cells. */
 async function startPageJob(page: Page): Promise<string> {
   const printers = (await (await page.request.get("/api/printers")).json()) as Array<{ id: string; name: string }>;
   const printer = printers.find((p) => p.name === "Office page printer")!;
   const csrf = await page.evaluate(async () => ((await (await fetch("/api/v1/auth/session")).json()) as { csrf_token: string }).csrf_token);
   const response = await page.request.post(`/api/printers/${printer.id}/calibration/main-tray/page`, {
-    data: { type: "avery-zweckform-l4736rev" },
+    data: { type: TYPE_KEY },
     headers: { "X-CSRF-Token": csrf },
   });
   expect(response.ok(), await response.text()).toBe(true);
@@ -68,7 +76,10 @@ test.describe("page jobs", () => {
     await setPagePrinter(page, { job_script: [3, 3, 5, 9] });
     const jobId = await startPageJob(page);
     await page.goto(`/jobs/${jobId}`);
-    await expect(page.getByRole("heading", { level: 1, name: "Calibration page · avery-zweckform-l4736rev v1" })).toBeVisible();
+    // The title names the sheet type by its label, not by the key the payload stores.
+    const label = await typeName(page);
+    expect(label).not.toBe(TYPE_KEY);
+    await expect(page.getByRole("heading", { level: 1, name: `Calibration page · ${label} v1` })).toBeVisible();
 
     const info = page.getByRole("region", { name: "Calibration page" });
     const seen: string[] = [];
@@ -85,15 +96,23 @@ test.describe("page jobs", () => {
   test("a page job stopped at the printer says so", async ({ signedInPage: page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.evaluate(() => localStorage.setItem("lph.lang", "en"));
-    await setPagePrinter(page, { job_script: [3, 6, 6, 6, 9] });
+    await setPagePrinter(page, { job_script: [3, 6, 6, 6, 6, 6, 6, 6, 6, 6, 9] });
     const jobId = await startPageJob(page);
     await page.goto(`/jobs/${jobId}`);
     const info = page.getByRole("region", { name: "Calibration page" });
     await expect(info.getByRole("status").getByText("Stopped at the printer", { exact: true })).toBeVisible({ timeout: 30_000 });
     await shot(page, "task-10-stopped-1280-en-light.png");
-    // The job list says the same, and a reload keeps it (the reconnect snapshot carries the sub-state).
+    // The printer's own reason: the job says only "printer-stopped", the printer status names the cause.
+    await setPagePrinter(page, { printer_state: 5, reasons: ["toner-empty-error"] });
+    await expect(info.getByRole("status").getByText("Stopped at the printer · toner empty", { exact: true })).toBeVisible({ timeout: 15_000 });
+    // The job list says the same.
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Jobs" }).click();
+    await expect(page.getByRole("list", { name: "Jobs" }).getByText("Stopped at the printer · toner empty").first()).toBeVisible();
+    await page.goBack();
+    // A reload keeps the sub-state: the reconnect snapshot carries it.
     await page.reload();
     await expect(info.getByRole("status")).toContainText("Stopped at the printer", { timeout: 15_000 });
+    await shot(page, "task-10-stopped-reason-1280-en-light.png");
     await expect(page.getByText("Done", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
   });
 });

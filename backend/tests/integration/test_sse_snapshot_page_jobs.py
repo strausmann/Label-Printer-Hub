@@ -91,3 +91,18 @@ async def test_a_failing_queue_lookup_does_not_drop_the_job(db_session, printer)
 
     (frame,) = await _job_frames(db_session, printer.id, _Broken({str(job.id): _page_job()}))
     assert frame["job_id"] == str(job.id) and "kind" not in frame
+
+
+async def test_jobs_past_the_snapshot_limit_get_no_frame(db_session, printer) -> None:
+    """The 6th active job has no frame; the UI says "at the printer" for it (documented limit)."""
+    from app.services.sse_snapshot import SNAPSHOT_JOB_LIMIT
+
+    jobs = {}
+    for _ in range(SNAPSHOT_JOB_LIMIT + 1):
+        j = await jobs_repo.create_queued(
+            db_session, printer_id=printer.id, template_key=None, payload={}
+        )
+        jobs[str(j.id)] = _page_job()
+    frames = await _job_frames(db_session, printer.id, _Queue(jobs))
+    assert len(frames) == SNAPSHOT_JOB_LIMIT
+    assert all(f["kind"] == "sheet_page" for f in frames)

@@ -32,6 +32,17 @@ function stoppedReasons(status: PrinterStatus | undefined): Reason[] {
 }
 
 /**
+ * The keywords that say why a page printer cannot print right now: what a stopped printer names
+ * (`describePrinter`), else its blocking reasons. Empty when the status names none. A job that is
+ * stopped at the printer carries only job-level reasons ("printer-stopped"); this is the cause.
+ */
+export function printerStopReasons(status: PrinterStatus | undefined): string[] {
+  const stopped = stoppedReasons(status).map((r) => r.keyword);
+  if (stopped.length > 0) return stopped;
+  return (status?.state_reasons ?? []).filter((r) => r.blocking).map((r) => r.keyword);
+}
+
+/**
  * What the operator can act on wins: a paused printer says Paused even when it is also
  * offline. The reason for a pause comes from `printer.pause` (see PauseReason).
  */

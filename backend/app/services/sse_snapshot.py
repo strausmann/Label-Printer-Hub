@@ -27,7 +27,9 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
-# Active jobs included in a snapshot, per printer.
+# Active jobs included in a snapshot, per printer. A job past the limit gets no frame on connect:
+# the UI then says "at the printer" for it without a sub-state and learns it from the next live
+# event. Queued jobs are listed before printing ones, so many waiting jobs can crowd one out.
 SNAPSHOT_JOB_LIMIT = 5
 
 
@@ -42,7 +44,7 @@ async def _page_job_fields(queue: PrintQueue | None, job_id: uuid.UUID) -> dict[
         return {}
     try:
         live = await queue.get(job_id)
-    except Exception:  # evicted between the check and the read
+    except KeyError:  # evicted between the check and the read
         return {}
     if live.kind is None:
         return {}

@@ -16,7 +16,8 @@ const sheetPage = (over: Record<string, unknown> = {}, state = "queued") =>
     },
     ...over,
   });
-const calibration = (detail: Record<string, unknown> = { type_key: "L4736REV", version: 1, printer_name: "Office" }) =>
+const KEY = "avery-zweckform-l4736rev"; // what the payload stores: the type's key, not its label
+const calibration = (detail: Record<string, unknown> = { type_key: KEY, version: 1, printer_name: "Office" }) =>
   job("j2", P, "queued", { template_key: null, payload: { kind: "calibration_page", detail } });
 
 describe("jobTitle for page jobs", () => {
@@ -38,8 +39,13 @@ describe("jobTitle for page jobs", () => {
     expect(jobTitle(bare as never)).toBe("Sheet page");
   });
 
-  it("names a calibration page by sheet type and version", () => {
-    expect(jobTitle(calibration() as never)).toBe("Calibration page · L4736REV v1");
+  it("names a calibration page by the sheet type's label and the version", () => {
+    expect(jobTitle(calibration() as never, "Avery Zweckform L4736REV-25")).toBe("Calibration page · Avery Zweckform L4736REV-25 v1");
+  });
+
+  it("falls back to the type's key while the label is unknown, and to the bare name without a type", () => {
+    expect(jobTitle(calibration() as never)).toBe(`Calibration page · ${KEY} v1`);
+    expect(jobTitle(calibration({ type_key: KEY }) as never)).toBe(`Calibration page · ${KEY}`);
     expect(jobTitle(calibration({}) as never)).toBe("Calibration page");
   });
 
@@ -92,6 +98,6 @@ describe("jobTitle in German", () => {
 
   it("names both page kinds in German", () => {
     expect(jobTitle(sheetPage() as never)).toBe("Bogen L4736-0002 · 9 Etiketten");
-    expect(jobTitle(calibration() as never)).toBe("Kalibrierseite · L4736REV v1");
+    expect(jobTitle(calibration() as never, "Avery Zweckform L4736REV-25")).toBe("Kalibrierseite · Avery Zweckform L4736REV-25 v1");
   });
 });
