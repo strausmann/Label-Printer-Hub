@@ -2,7 +2,7 @@ import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import type { SheetPrintResponse } from "../api";
-import { useBandWord } from "./bandWord";
+import { useSheetIdBand } from "./bandWord";
 
 type Page = SheetPrintResponse["pages"][number];
 
@@ -26,7 +26,7 @@ function cellsWords(cells: number[]): string {
 /** What was queued: one line per page with its job, and the notes about the sheet ID that belong to that page. */
 export function PrintResult({ pages }: { pages: Page[] }) {
   const { t } = useLingui();
-  const bandWord = useBandWord();
+  const sheetIdBand = useSheetIdBand();
   return (
     <section role="status" aria-labelledby="sheet-sent-h" className="flex flex-col gap-3 rounded-r2 border border-ok bg-sunken p-4">
       <h3 id="sheet-sent-h" className="font-bold">{t`Sent to the print queue`}</h3>
@@ -35,14 +35,13 @@ export function PrintResult({ pages }: { pages: Page[] }) {
           const number = i + 1;
           const code = page.sheet_code;
           const cells = cellsWords(page.cells);
-          const band = bandWord(page.margin_band);
-          return (
+                  return (
             <li key={page.job_id} className="flex min-w-0 flex-col gap-0.5">
               <span className="[overflow-wrap:anywhere]">{t`Page ${number}: ${code}, cells ${cells}`}</span>
               {page.id_not_printed ? (
                 <span className="font-bold text-warn">{t`Sheet ID not printed, add it by hand`}</span>
               ) : page.margin_id ? (
-                <span className="text-small text-ink-2">{t`Sheet ID in the ${band}`}</span>
+                <span className="text-small text-ink-2">{sheetIdBand(page.margin_band)}</span>
               ) : null}
               <Link to="/jobs/$jobId" params={{ jobId: page.job_id }} className={LINK} aria-label={t`View job for page ${number}`}>
                 {t`View job`}
@@ -55,18 +54,22 @@ export function PrintResult({ pages }: { pages: Page[] }) {
   );
 }
 
-/** `502 print_interrupted`: part of the pages is queued and keeps printing; the rest was not queued. Never "could not be sent". */
-export function PartialResult({ jobIds }: { jobIds: string[] }) {
+/**
+ * `502 print_interrupted`: part of the pages is queued and keeps printing. Says what was queued and
+ * what is left (the preview below plans only that); never "could not be sent".
+ */
+export function PartialResult({ jobIds, queued, left, inCart, words }: { jobIds: string[]; queued: number; left: number; inCart: boolean; words: string | null }) {
   const { t } = useLingui();
   return (
     <div role="alert" className="flex flex-col gap-2 rounded-r2 border border-warn bg-sunken p-4">
       <p className="font-bold">
-        {plural(jobIds.length, {
-          one: "Only # page was queued, and it will print. The rest was not queued.",
-          other: "Only # pages were queued, and they will print. The rest was not queued.",
-        })}
+        {plural(queued, { one: "# label was queued and will print.", other: "# labels were queued and will print." })}{" "}
+        {left === 0
+          ? t`Nothing is left to print.`
+          : plural(left, { one: "# label was not queued. The preview below shows it.", other: "# labels were not queued. The preview below shows them." })}
       </p>
-      <p>{t`The preview below shows what is left. Cells that are already in the queue count as used, so remove the labels that are queued from the cart first, or you get them twice.`}</p>
+      {words && <p className="[overflow-wrap:anywhere]">{words}</p>}
+      {inCart && <p>{t`The queued labels are still in the cart and will print again if you leave them there.`}</p>}
       <ol className="m-0 flex list-none flex-wrap gap-x-4 p-0">
         {jobIds.map((id, i) => {
           const number = i + 1;

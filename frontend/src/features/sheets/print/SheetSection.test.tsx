@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../../test-utils";
 import { CART_KEY, reloadCart } from "../../lookup/cart";
 import { mockApi, PAGE_PRINTER, PRINTER_A, respond, SHEET_TYPE, pageStatus, type Call } from "../../test-api";
-import { SHEET_PREVIEW_KEY, previewNamesCode } from "../keys";
 import { BATCH, JOB, NEW_9, P, USED_17, body, conflict, pick, previewFor, previewPage, reason, routes, sheet } from "./testkit";
 
 const PREVIEW = `/api/print/${P}/sheet/preview`;
@@ -185,6 +184,27 @@ describe("tray, sheet type and the sheet", () => {
   });
 });
 
+describe("defaults and hints", () => {
+  it("with nothing remembered the type that has a sheet with room comes first", async () => {
+    const empty = { ...SHEET_TYPE, key: "aaa-empty-type", product_codes: ["AAA-1"], vendor: "Aaa" };
+    await itemView(routes({ types: [empty, SHEET_TYPE] }), 1);
+    expect(await screen.findByRole("button", { name: /L4736REV/ })).toBeVisible();
+  });
+
+  it("choosing cells on a sheet that is too small says so", async () => {
+    await itemView(routes({ sheets: [sheet("L4736-0001", 44)] }), 9);
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("option", { name: /L4736-0001/ }));
+    await userEvent.click(await screen.findByRole("radio", { name: "Choose cells" }));
+    expect(await screen.findByText(/too few free cells for this print: 4 free, 9 needed/)).toBeVisible();
+  });
+
+  it("the 200 % switch is hidden on a phone while the one page is the tap-size skip view", async () => {
+    await itemView(routes(), 1);
+    expect(await screen.findByRole("button", { name: "Zoom to 200 %" })).toHaveClass("max-sm:hidden");
+  });
+});
+
 describe("choosing cells and skipping one", () => {
   it("choosing cells by hand sends exactly those, and printing waits until there are enough", async () => {
     const { calls } = await itemView(routes({ preview: previewFor("L4736-0001", [30, 31], USED_17) }), 2);
@@ -273,16 +293,39 @@ describe("the preview", () => {
 });
 
 describe("another computer changes the sheet", () => {
-  it("a live event for the sheet shows a fresh preview, one for another sheet or a printer does not", async () => {
-    const { calls, queryClient } = await itemView(routes());
+  it("a sheet.updated event on the stream refreshes a preview that names the sheet, other events do not", async () => {
+    const sources: Array<{ emit: (type: string, printerId: string | null, data: unknown) => void }> = [];
+    class FakeEventSource {
+      private listeners = new Map<string, Array<(e: MessageEvent) => void>>();
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor() {
+        sources.push(this);
+      }
+      addEventListener(type: string, fn: (e: MessageEvent) => void) {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+      }
+      close() {}
+      emit(type: string, printerId: string | null, data: unknown) {
+        const body = JSON.stringify({ channel: "hub", printer_id: printerId, type, ts: "2026-01-01T00:00:00Z", data });
+        for (const fn of this.listeners.get(type) ?? []) fn(new MessageEvent(type, { data: body }));
+      }
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const { calls } = await itemView(routes());
     await waitFor(() => expect(previews(calls)).toHaveLength(1));
+    await waitFor(() => expect(sources.length).toBeGreaterThan(0));
+    const stream = sources.at(-1)!;
     await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ["printers"] });
-      await queryClient.invalidateQueries({ queryKey: [SHEET_PREVIEW_KEY], predicate: (q) => previewNamesCode(q.queryKey, "L4736-0099") });
+      stream.emit("printer.status", P, {});
+      stream.emit("sheet.updated", null, { code: "L4736-0099", free: 1, total: 48, changed: [1], state: "active" });
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
     });
     expect(previews(calls)).toHaveLength(1);
     await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: [SHEET_PREVIEW_KEY], predicate: (q) => previewNamesCode(q.queryKey, "L4736-0001") });
+      stream.emit("sheet.updated", null, { code: "L4736-0001", free: 30, total: 48, changed: [18], state: "active" });
     });
     await waitFor(() => expect(previews(calls)).toHaveLength(2));
   });
@@ -433,19 +476,80 @@ describe("after printing", () => {
     expect(within(done).getByText("Sheet ID in the bottom margin")).toBeVisible();
   });
 
-  it("a partial print lists the pages that were queued, says the rest was not, and previews again", async () => {
-    const { calls } = await itemView(
-      routes({ print: conflict(502, "print_interrupted", "Interrupted.", { batch_id: BATCH, job_ids: [JOB, "55555555-5555-4555-8555-555555555555"] }) }),
-    );
+  /** Two pages: items 0-4 on L4736-0001, items 5-8 on a new sheet. A request for fewer items gets one page. */
+  const twoPages = (init: RequestInit) => {
+    const count = (JSON.parse(String(init.body)) as { items: unknown[] }).items.length;
+    if (count !== 9) return previewFor("L4736-0001", Array.from({ length: count }, (_, i) => 18 + i), USED_17);
+    const first = previewPage("L4736-0001", [18, 19, 20, 21, 22], USED_17);
+    const second = previewPage(null, [1, 2, 3, 4], []);
+    second.cells = second.cells.map((c) => (c.item_index === null ? c : { ...c, item_index: c.item_index + 5 }));
+    return previewFor("L4736-0001", [], [], { pages: [first, second], free_after: [20, 44], expected_cells: [{ sheet: "L4736-0001", cells: [18, 19, 20, 21, 22], id_cell: null }, { sheet: "new", cells: [1, 2, 3, 4], id_cell: null }] });
+  };
+  // A Response body can be read once, so every route gets a fresh one.
+  const interrupted = () => conflict(502, "print_interrupted", "Interrupted.", { batch_id: BATCH, job_ids: [JOB] });
+
+  it("a partial print in the cart previews only the items whose pages were not queued, and says the queued ones stay in the cart", async () => {
+    const { calls } = await cartView("/cart", [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")], routes({ preview: twoPages, print: interrupted }));
     await pressPrint();
     const note = await screen.findByRole("alert");
-    expect(note).toHaveTextContent("The rest was not queued");
+    expect(note).toHaveTextContent("5 labels were queued and will print.");
+    expect(note).toHaveTextContent("4 labels were not queued. The preview below shows them.");
+    expect(note).toHaveTextContent("still in the cart and will print again if you leave them there");
     expect(note).not.toHaveTextContent("could not be sent");
-    expect(within(note).getAllByRole("link", { name: /View job/ }).map((l) => l.getAttribute("href"))).toEqual([
-      `/jobs/${JOB}`,
-      "/jobs/55555555-5555-4555-8555-555555555555",
-    ]);
-    await waitFor(() => expect(previews(calls).length).toBeGreaterThanOrEqual(2));
+    expect(within(note).getAllByRole("link", { name: /View job/ }).map((l) => l.getAttribute("href"))).toEqual([`/jobs/${JOB}`]);
+    // What is previewed now: the four sugar labels only, never the queued flour.
+    await waitFor(() => expect(body(previews(calls).at(-1)!).items).toHaveLength(4));
+    const rest = body(previews(calls).at(-1)!).items;
+    expect(rest.map((i) => i.lookup?.identifier)).toEqual(["9", "9", "9", "9"]);
+    // The cart is untouched until something is accepted.
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(2);
+  });
+
+  it("a partial print in the item view does not mention a cart", async () => {
+    const { calls } = await itemView(routes({ preview: twoPages, print: interrupted }));
+    await pressPrint();
+    const note = await screen.findByRole("alert");
+    expect(note).toHaveTextContent("5 labels were queued and will print.");
+    expect(note).toHaveTextContent("4 labels were not queued.");
+    expect(note).not.toHaveTextContent(/cart/i);
+    await waitFor(() => expect(body(previews(calls).at(-1)!).items).toHaveLength(4));
+  });
+
+  it("printing what is left empties the cart", async () => {
+    let printN = 0;
+    await cartView(
+      "/cart",
+      [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")],
+      routes({ preview: twoPages, print: () => (++printN === 1 ? interrupted() : { batch_id: BATCH, pages: [{ job_id: JOB, sheet_code: "L4736-0001", cells: [18, 19, 20, 21], id_cell: null, margin_id: false, margin_band: null, id_not_printed: false, feed_mark: false }] }) }),
+    );
+    await pressPrint();
+    await screen.findByRole("alert");
+    await pressPrint();
+    expect(await screen.findByRole("status", { name: "Sent to the print queue" })).toBeVisible();
+    expect(localStorage.getItem(CART_KEY)).toBe("[]");
+  });
+
+  it("the cart is cleared even when the page is left while the hub answers", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const { router } = await cartView(
+      "/cart",
+      [LINE("7", 1)],
+      routes({
+        extra: {
+          [`POST ${PRINT}`]: async () => {
+            await gate;
+            return { batch_id: BATCH, pages: [{ job_id: JOB, sheet_code: "L4736-0001", cells: [18], id_cell: null, margin_id: false, margin_band: null, id_not_printed: false, feed_mark: false }] };
+          },
+        },
+      }),
+    );
+    await pressPrint();
+    await act(async () => {
+      await router.navigate({ to: "/" });
+    });
+    release();
+    await waitFor(() => expect(localStorage.getItem(CART_KEY)).toBe("[]"));
   });
 });
 

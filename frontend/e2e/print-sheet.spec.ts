@@ -27,6 +27,9 @@ async function openCart(page: Page, path: string, copies: number) {
 }
 
 const sheetUsed = async (page: Page, code: string) => ((await (await page.request.get(`/api/sheets/${code}`)).json()) as { used: number }).used;
+/** Cells a completed Grocy job wrote: a retry of this group prints more, so counts are taken against this. */
+const grocyCells = async (page: Page, code: string) =>
+  ((await (await page.request.get(`/api/sheets/${code}`)).json()) as { cells: Array<{ source: string }> }).cells.filter((c) => c.source === "grocy").length;
 
 // One sign-in for the whole file: the hub limits sign-ins per minute.
 test.describe.serial("print onto a sheet", () => {
@@ -50,6 +53,7 @@ test.describe.serial("print onto a sheet", () => {
     // The fake printer takes the job: pending, processing, completed.
     await setPagePrinter(page, { job_script: [3, 5, 9] });
     const before = await sheetUsed(page, PARTLY_USED);
+    const grocyBefore = await grocyCells(page, PARTLY_USED);
 
     await openCart(page, `/cart?sheet=${PARTLY_USED}`, 9);
     await expect(page.getByRole("heading", { level: 2, name: "Print onto a sheet" })).toBeVisible();
@@ -71,8 +75,11 @@ test.describe.serial("print onto a sheet", () => {
 
     await page.goto(`/sheets/${PARTLY_USED}`);
     await expect(page.getByText(`${before + 9} of 48 used`)).toBeVisible();
+    // More than 30 cells fold the list (a retry of this group gets there): open it.
+    const fold = page.getByText(/^Show all \d+ cells$/);
+    if (await fold.count()) await fold.click();
     const cells = page.getByRole("list", { name: "Cells in use" });
-    await expect(cells.getByRole("listitem").filter({ hasText: "· Grocy" })).toHaveCount(9);
+    await expect(cells.getByRole("listitem").filter({ hasText: "· Grocy" })).toHaveCount(grocyBefore + 9);
     await expect(cells.getByRole("listitem").filter({ hasText: "· marked by hand" }).first()).toBeVisible();
   });
 
@@ -128,6 +135,8 @@ test.describe.serial("print onto a sheet", () => {
         // The item view of a page printer has the sheet section instead of the tape preview.
         await page.goto("/lookup/grocy/7");
         await expect(page.getByRole("heading", { level: 2, name: heading })).toBeVisible();
+        // A settled picture: the preview has arrived and the button is live.
+        await expect(page.getByText(de ? "1 jetzt gedruckt" : "1 printed now")).toBeVisible({ timeout: 30_000 });
         await expect(page.getByRole("img", { name: de ? "Etikettenvorschau" : "Label preview" })).toHaveCount(0);
         expect(await noSideScroll(page)).toBe(true);
         await shot("item");

@@ -126,3 +126,9 @@ export function itemIndexOf(error: unknown): number | null {
   const d = error instanceof ApiError ? error.errorDetail : null;
   return d && typeof d.item_index === "number" ? d.item_index : null;
 }
+
+/** The jobs of the pages that were queued before a print failed (`print_interrupted`, or the merged detail of the failing page's own error); null when none were. */
+export function queuedJobs(error: unknown): string[] | null {
+  const d = error instanceof ApiError ? error.errorDetail : null;
+  return d && isStrings(d.job_ids) && d.job_ids.length > 0 ? d.job_ids : null;
+}

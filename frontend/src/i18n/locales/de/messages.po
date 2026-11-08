@@ -43,11 +43,6 @@ msgstr "{0, plural, one {# Zeile} other {# Zeilen}}"
 msgid "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
 msgstr "{0, plural, one {# Zelle als belegt markieren} other {# Zellen als belegt markieren}}"
 
-#. placeholder {0}: jobIds.length
-#: src/features/sheets/print/PrintResult.tsx
-msgid "{0, plural, one {Only # page was queued, and it will print. The rest was not queued.} other {Only # pages were queued, and they will print. The rest was not queued.}}"
-msgstr "{0, plural, one {Nur # Seite wurde in die Warteschlange gelegt und wird gedruckt. Der Rest wurde nicht eingereiht.} other {Nur # Seiten wurden in die Warteschlange gelegt und werden gedruckt. Der Rest wurde nicht eingereiht.}}"
-
 #. placeholder {0}: sheet.unconfirmed
 #: src/features/sheets/SheetsPage.tsx
 msgid "{0, plural, one {Resolve the # unconfirmed cell first; once the sheet is discarded it can no longer be cleaned up.} other {Resolve the # unconfirmed cells first; once the sheet is discarded they can no longer be cleaned up.}}"
@@ -94,6 +89,10 @@ msgstr "{code} konnte nicht geprüft werden. Versuche es noch einmal."
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "{code} has no free cell left."
 msgstr "{code} hat keine freie Zelle mehr."
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "{code} has too few free cells for this print: {free} free, {needed} needed. Choose another sheet, or switch to the first free cells."
+msgstr "{code} hat zu wenige freie Zellen für diesen Druck: {free} frei, {needed} nötig. Wähle einen anderen Bogen oder wechsle zu den ersten freien Zellen."
 
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "{code} is discarded and cannot take labels any more."
@@ -156,6 +155,10 @@ msgstr "{label} muss eine ganze Zahl von 1 bis 400 sein."
 msgid "{labels, plural, one {Print # label} other {Print # labels}}"
 msgstr "{labels, plural, one {# Etikett drucken} other {# Etiketten drucken}}"
 
+#: src/features/sheets/print/PrintResult.tsx
+msgid "{left, plural, one {# label was not queued. The preview below shows it.} other {# labels were not queued. The preview below shows them.}}"
+msgstr "{left, plural, one {# Etikett wurde nicht eingereiht. Die Vorschau unten zeigt es.} other {# Etiketten wurden nicht eingereiht. Die Vorschau unten zeigt sie.}}"
+
 #: src/features/printers/MarkerSwatch.tsx
 msgid "{level} %"
 msgstr "{level} %"
@@ -199,6 +202,10 @@ msgstr "{preselectedSheet} hat keine freie Zelle mehr."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "{preselectedSheet} is discarded and cannot take labels any more."
 msgstr "{preselectedSheet} ist verworfen und nimmt keine Etiketten mehr auf."
+
+#: src/features/sheets/print/PrintResult.tsx
+msgid "{queued, plural, one {# label was queued and will print.} other {# labels were queued and will print.}}"
+msgstr "{queued, plural, one {# Etikett wurde eingereiht und wird gedruckt.} other {# Etiketten wurden eingereiht und werden gedruckt.}}"
 
 #: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -517,7 +524,6 @@ msgid "Blue"
 msgstr "Blau"
 
 #: src/features/sheets/AddSheetDialog.tsx
-#: src/features/sheets/print/bandWord.ts
 msgid "bottom margin"
 msgstr "unteren Rand"
 
@@ -1414,7 +1420,6 @@ msgid "Leave empty to keep the prefix of the file."
 msgstr "Leer lassen, um das Präfix der Datei zu behalten."
 
 #: src/features/sheets/AddSheetDialog.tsx
-#: src/features/sheets/print/bandWord.ts
 msgid "left margin"
 msgstr "linken Rand"
 
@@ -1494,7 +1499,6 @@ msgid "Make and model"
 msgstr "Hersteller und Modell"
 
 #: src/features/sheets/AddSheetDialog.tsx
-#: src/features/sheets/print/bandWord.ts
 msgid "margin"
 msgstr "Rand"
 
@@ -1806,6 +1810,10 @@ msgstr "Nichts geändert."
 #: src/features/sheets/SheetDetail.tsx
 msgid "Nothing chosen yet"
 msgstr "Noch nichts gewählt"
+
+#: src/features/sheets/print/PrintResult.tsx
+msgid "Nothing is left to print."
+msgstr "Es ist nichts mehr zu drucken."
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Nothing is printed. You write the code on the sheet yourself."
@@ -2289,7 +2297,6 @@ msgid "Revoked"
 msgstr "Widerrufen"
 
 #: src/features/sheets/AddSheetDialog.tsx
-#: src/features/sheets/print/bandWord.ts
 msgid "right margin"
 msgstr "rechten Rand"
 
@@ -2472,16 +2479,25 @@ msgctxt "cell source"
 msgid "Sheet ID"
 msgstr "Bogen-ID"
 
-#. placeholder {0}: bandWord(page.margin_band)
-#: src/features/sheets/print/PrintResult.tsx
-#: src/features/sheets/print/SheetPreview.tsx
-#~ msgid "Sheet ID in the {0}"
-#~ msgstr ""
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet ID in the bottom margin"
+msgstr "Bogen-ID im unteren Rand"
 
-#: src/features/sheets/print/PrintResult.tsx
-#: src/features/sheets/print/SheetPreview.tsx
-msgid "Sheet ID in the {band}"
-msgstr "Bogen-ID geht in den {band}"
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet ID in the left margin"
+msgstr "Bogen-ID im linken Rand"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet ID in the margin"
+msgstr "Bogen-ID im Rand"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet ID in the right margin"
+msgstr "Bogen-ID im rechten Rand"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet ID in the top margin"
+msgstr "Bogen-ID im oberen Rand"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "Sheet ID not printed yet"
@@ -2702,7 +2718,7 @@ msgstr "Band noch nicht bekannt"
 #: src/features/lookup/PrinterPicker.tsx
 msgctxt "printer kind"
 msgid "Tape printer"
-msgstr "Bandrucker"
+msgstr "Banddrucker"
 
 #: src/features/settings/Integrations.tsx
 msgid "Test connection"
@@ -3098,10 +3114,6 @@ msgstr "Der Port muss zwischen 1 und 65535 liegen."
 msgid "The prefix is fixed once sheets of this type exist."
 msgstr "Das Präfix ist fest, sobald es Bögen dieses Typs gibt."
 
-#: src/features/sheets/print/PrintResult.tsx
-msgid "The preview below shows what is left. Cells that are already in the queue count as used, so remove the labels that are queued from the cart first, or you get them twice."
-msgstr "Die Vorschau unten zeigt, was noch übrig ist. Zellen, die schon in der Warteschlange stehen, gelten als belegt. Nimm die bereits eingereihten Etiketten erst aus dem Warenkorb, sonst bekommst du sie doppelt."
-
 #: src/features/sheets/errors.ts
 msgid "The print queue does not know this printer yet. Try again in a moment."
 msgstr "Die Druckwarteschlange kennt diesen Drucker noch nicht. Versuche es gleich noch einmal."
@@ -3174,6 +3186,10 @@ msgstr "Die Warteschlange konnte nicht geladen werden."
 #: src/features/settings/PrinterForm.tsx
 msgid "The queue timeout must be between 1 and 600 seconds."
 msgstr "Das Warteschlangen-Zeitlimit muss zwischen 1 und 600 Sekunden liegen."
+
+#: src/features/sheets/print/PrintResult.tsx
+msgid "The queued labels are still in the cart and will print again if you leave them there."
+msgstr "Die eingereihten Etiketten liegen noch im Warenkorb und werden noch einmal gedruckt, wenn du sie dort lässt."
 
 #: src/features/settings/SettingField.tsx
 msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."
@@ -3428,7 +3444,6 @@ msgid "Top {top} mm, right {right} mm, bottom {bottom} mm, left {left} mm"
 msgstr "Oben {top} mm, rechts {right} mm, unten {bottom} mm, links {left} mm"
 
 #: src/features/sheets/AddSheetDialog.tsx
-#: src/features/sheets/print/bandWord.ts
 msgid "top margin"
 msgstr "oberen Rand"
 

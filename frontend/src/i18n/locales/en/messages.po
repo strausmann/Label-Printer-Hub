@@ -43,11 +43,6 @@ msgstr "{0, plural, one {# row} other {# rows}}"
 msgid "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
 msgstr "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
 
-#. placeholder {0}: jobIds.length
-#: src/features/sheets/print/PrintResult.tsx
-msgid "{0, plural, one {Only # page was queued, and it will print. The rest was not queued.} other {Only # pages were queued, and they will print. The rest was not queued.}}"
-msgstr "{0, plural, one {Only # page was queued, and it will print. The rest was not queued.} other {Only # pages were queued, and they will print. The rest was not queued.}}"
-
 #. placeholder {0}: sheet.unconfirmed
 #: src/features/sheets/SheetsPage.tsx
 msgid "{0, plural, one {Resolve the # unconfirmed cell first; once the sheet is discarded it can no longer be cleaned up.} other {Resolve the # unconfirmed cells first; once the sheet is discarded they can no longer be cleaned up.}}"
@@ -94,6 +89,10 @@ msgstr "{code} could not be checked. Try again."
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "{code} has no free cell left."
 msgstr "{code} has no free cell left."
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "{code} has too few free cells for this print: {free} free, {needed} needed. Choose another sheet, or switch to the first free cells."
+msgstr "{code} has too few free cells for this print: {free} free, {needed} needed. Choose another sheet, or switch to the first free cells."
 
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "{code} is discarded and cannot take labels any more."
@@ -156,6 +155,10 @@ msgstr "{label} must be a whole number from 1 to 400."
 msgid "{labels, plural, one {Print # label} other {Print # labels}}"
 msgstr "{labels, plural, one {Print # label} other {Print # labels}}"
 
+#: src/features/sheets/print/PrintResult.tsx
+msgid "{left, plural, one {# label was not queued. The preview below shows it.} other {# labels were not queued. The preview below shows them.}}"
+msgstr "{left, plural, one {# label was not queued. The preview below shows it.} other {# labels were not queued. The preview below shows them.}}"
+
 #: src/features/printers/MarkerSwatch.tsx
 msgid "{level} %"
 msgstr "{level} %"
@@ -199,6 +202,10 @@ msgstr "{preselectedSheet} has no free cell left."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "{preselectedSheet} is discarded and cannot take labels any more."
 msgstr "{preselectedSheet} is discarded and cannot take labels any more."
+
+#: src/features/sheets/print/PrintResult.tsx
+msgid "{queued, plural, one {# label was queued and will print.} other {# labels were queued and will print.}}"
+msgstr "{queued, plural, one {# label was queued and will print.} other {# labels were queued and will print.}}"
 
 #: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -517,7 +524,6 @@ msgid "Blue"
 msgstr "Blue"
 
 #: src/features/sheets/AddSheetDialog.tsx
-#: src/features/sheets/print/bandWord.ts
 msgid "bottom margin"
 msgstr "bottom margin"
 
@@ -1414,7 +1420,6 @@ msgid "Leave empty to keep the prefix of the file."
 msgstr "Leave empty to keep the prefix of the file."
 
 #: src/features/sheets/AddSheetDialog.tsx
-#: src/features/sheets/print/bandWord.ts
 msgid "left margin"
 msgstr "left margin"
 
@@ -1494,7 +1499,6 @@ msgid "Make and model"
 msgstr "Make and model"
 
 #: src/features/sheets/AddSheetDialog.tsx
-#: src/features/sheets/print/bandWord.ts
 msgid "margin"
 msgstr "margin"
 
@@ -1806,6 +1810,10 @@ msgstr "Nothing changed."
 #: src/features/sheets/SheetDetail.tsx
 msgid "Nothing chosen yet"
 msgstr "Nothing chosen yet"
+
+#: src/features/sheets/print/PrintResult.tsx
+msgid "Nothing is left to print."
+msgstr "Nothing is left to print."
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Nothing is printed. You write the code on the sheet yourself."
@@ -2289,7 +2297,6 @@ msgid "Revoked"
 msgstr "Revoked"
 
 #: src/features/sheets/AddSheetDialog.tsx
-#: src/features/sheets/print/bandWord.ts
 msgid "right margin"
 msgstr "right margin"
 
@@ -2472,16 +2479,25 @@ msgctxt "cell source"
 msgid "Sheet ID"
 msgstr "Sheet ID"
 
-#. placeholder {0}: bandWord(page.margin_band)
-#: src/features/sheets/print/PrintResult.tsx
-#: src/features/sheets/print/SheetPreview.tsx
-#~ msgid "Sheet ID in the {0}"
-#~ msgstr "Sheet ID in the {0}"
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet ID in the bottom margin"
+msgstr "Sheet ID in the bottom margin"
 
-#: src/features/sheets/print/PrintResult.tsx
-#: src/features/sheets/print/SheetPreview.tsx
-msgid "Sheet ID in the {band}"
-msgstr "Sheet ID in the {band}"
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet ID in the left margin"
+msgstr "Sheet ID in the left margin"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet ID in the margin"
+msgstr "Sheet ID in the margin"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet ID in the right margin"
+msgstr "Sheet ID in the right margin"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet ID in the top margin"
+msgstr "Sheet ID in the top margin"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "Sheet ID not printed yet"
@@ -3098,10 +3114,6 @@ msgstr "The port must be between 1 and 65535."
 msgid "The prefix is fixed once sheets of this type exist."
 msgstr "The prefix is fixed once sheets of this type exist."
 
-#: src/features/sheets/print/PrintResult.tsx
-msgid "The preview below shows what is left. Cells that are already in the queue count as used, so remove the labels that are queued from the cart first, or you get them twice."
-msgstr "The preview below shows what is left. Cells that are already in the queue count as used, so remove the labels that are queued from the cart first, or you get them twice."
-
 #: src/features/sheets/errors.ts
 msgid "The print queue does not know this printer yet. Try again in a moment."
 msgstr "The print queue does not know this printer yet. Try again in a moment."
@@ -3174,6 +3186,10 @@ msgstr "The queue could not be loaded."
 #: src/features/settings/PrinterForm.tsx
 msgid "The queue timeout must be between 1 and 600 seconds."
 msgstr "The queue timeout must be between 1 and 600 seconds."
+
+#: src/features/sheets/print/PrintResult.tsx
+msgid "The queued labels are still in the cart and will print again if you leave them there."
+msgstr "The queued labels are still in the cart and will print again if you leave them there."
 
 #: src/features/settings/SettingField.tsx
 msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."
@@ -3428,7 +3444,6 @@ msgid "Top {top} mm, right {right} mm, bottom {bottom} mm, left {left} mm"
 msgstr "Top {top} mm, right {right} mm, bottom {bottom} mm, left {left} mm"
 
 #: src/features/sheets/AddSheetDialog.tsx
-#: src/features/sheets/print/bandWord.ts
 msgid "top margin"
 msgstr "top margin"
 

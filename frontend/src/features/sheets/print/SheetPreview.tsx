@@ -6,7 +6,7 @@ import { SECONDARY_BUTTON } from "../../ui";
 import type { SheetPreview as PreviewData } from "../api";
 import type { GridCell } from "../cellState";
 import { SheetGrid, SheetLegend } from "../SheetGrid";
-import { useBandWord } from "./bandWord";
+import { useSheetIdBand } from "./bandWord";
 
 type Page = PreviewData["pages"][number];
 
@@ -49,7 +49,7 @@ function PageView({
   onToggleSkip,
 }: { page: Page; index: number; total: number; freeAfter: number | undefined } & Omit<SheetPreviewProps, "zoom"> & { zoom: 1 | 2 }) {
   const { t, i18n } = useLingui();
-  const bandWord = useBandWord();
+  const sheetIdBand = useSheetIdBand();
   const number = index + 1;
   const code = page.sheet_code;
   const hint = page.new_code_hint ?? "";
@@ -73,7 +73,6 @@ function PageView({
   const shortened = numbers(fresh.filter((c) => c.truncated).map((c) => c.cell));
   const cutOff = numbers(fresh.filter((c) => c.hw_margin).map((c) => c.cell));
   const { used, reserved, unconfirmed, now } = counts;
-  const band = bandWord(page.margin_band);
   const list = (
     <ul className="flex flex-col gap-0.5 text-small">
       {fresh.map((c) => {
@@ -109,7 +108,7 @@ function PageView({
 
       <ul className="m-0 flex list-none flex-col gap-1 p-0 text-small">
         {page.feed_mark && <li className="flex items-center gap-2"><span aria-hidden="true">▲</span>{t`Top-edge mark`}</li>}
-        {page.margin_id && <li>{t`Sheet ID in the ${band}`}</li>}
+        {page.margin_id && <li>{sheetIdBand(page.margin_band)}</li>}
       </ul>
       {page.id_not_printed && <p className="font-bold text-warn">{t`Sheet ID not printed, add it by hand`}</p>}
 
@@ -165,10 +164,10 @@ export function SheetPreview(props: SheetPreviewProps) {
 }
 
 /** The zoom switch of the preview: the whole page, or 200 % in a scroll container of its own. */
-export function ZoomToggle({ zoom, onChange }: { zoom: 1 | 2; onChange: (zoom: 1 | 2) => void }) {
+export function ZoomToggle({ zoom, onChange, className = "" }: { zoom: 1 | 2; onChange: (zoom: 1 | 2) => void; className?: string }) {
   const { t } = useLingui();
   return (
-    <Button className={SECONDARY_BUTTON} onPress={() => onChange(zoom === 1 ? 2 : 1)}>
+    <Button className={`${SECONDARY_BUTTON} ${className}`} onPress={() => onChange(zoom === 1 ? 2 : 1)}>
       {zoom === 1 ? t`Zoom to 200 %` : t`Whole page`}
     </Button>
   );

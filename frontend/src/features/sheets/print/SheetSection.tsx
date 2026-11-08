@@ -1,10 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
 import { useMemo, useState } from "react";
 import { Button, Radio, RadioGroup } from "react-aria-components";
-import { cellsTaken, insufficientCells, planChanged, printInterrupted } from "../../../api/errorDetail";
+import { cellsTaken, insufficientCells, planChanged, queuedJobs } from "../../../api/errorDetail";
 import { PRIMARY_BUTTON } from "../../../shell/SignIn";
 import { useSheetTypes, type SheetTypeRead } from "../../archive/api";
 import type { CartItem } from "../../lookup/cart";
+import { ApiError } from "../../../api/client";
 import { usePrinterStatus, type Printer } from "../../printers/api";
 import { describePrinter } from "../../printers/model";
 import { ReasonLine } from "../../printers/PageStatus";
@@ -69,8 +70,13 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   const linked = useSheet(preselectedSheet ?? "");
   const print = usePrintSheets(printer.id);
 
-  const needed = countItems(items);
-  const tooMany = needed > MAX_ITEMS;
+  // After a partial print only the items whose pages were not queued are previewed and printed.
+  const allItems = expandItems(items);
+  const itemsKey = JSON.stringify(items.map((i) => [i.app, i.id, i.content_type, i.copies]));
+  const [leftover, setLeftover] = useState<{ key: string; indices: number[] } | null>(null);
+  const activeIdx = leftover && leftover.key === itemsKey ? leftover.indices : allItems.map((_, i) => i);
+  const needed = activeIdx.length;
+  const tooMany = countItems(items) > MAX_ITEMS;
   const typeList = types.data ?? [];
 
   // --- the choices; a null choice means "the default derived below" ---
@@ -84,6 +90,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   const [zoom, setZoom] = useState<1 | 2>(1);
   const [changed, setChanged] = useState<Changed | null>(null);
   const [result, setResult] = useState<PrintedPages | null>(null);
+  const [partial, setPartial] = useState<{ jobIds: string[]; queued: number; left: number; words: string | null } | null>(null);
 
   // --- the sheet of the link, if any ---
   const linkedSheet = linked.data;
@@ -102,12 +109,14 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   // --- type ---
   const remembered = lastType.get(printer.id);
   const rememberedType = typeList.find((x) => x.key === remembered)?.key ?? null;
-  const typeKey = typeChoice ?? linkedUsable?.type_key ?? rememberedType ?? typeList[0]?.key ?? null;
+  // Nothing chosen or remembered: a type that has a sheet with room, else the first.
+  const sheetsQuery = useSheets({ state: "active" });
+  const typeWithRoom = typeList.find((x) => (sheetsQuery.data ?? []).some((s) => s.type_key === x.key && s.state === "active" && freeOf(s) > 0))?.key ?? null;
+  const typeKey = typeChoice ?? linkedUsable?.type_key ?? rememberedType ?? typeWithRoom ?? typeList[0]?.key ?? null;
   const type = typeList.find((x) => x.key === typeKey) ?? null;
   const typeName = type ? typeLabelWithKey(type) : (typeKey ?? "");
 
   // --- sheets of the type ---
-  const sheetsQuery = useSheets({ ...(typeKey ? { type: typeKey } : {}), state: "active" }, !!typeKey);
   const usable = useMemo(
     () => (sheetsQuery.data ?? []).filter((s) => s.type_key === typeKey && s.state === "active" && freeOf(s) > 0),
     [sheetsQuery.data, typeKey],
@@ -121,7 +130,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
       ? { kind: "sheet", code: linkedHere }
       : ranked[0]?.fits
         ? { kind: "sheet", code: ranked[0].sheet.code }
-        : sheetsQuery.isPending
+        : sheetsQuery.isPending || types.isPending
           ? null
           : { kind: "new" };
   const target = targetChoice ?? defaultTarget;
@@ -140,7 +149,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
     !target || !typeKey || needed === 0 || tooMany || !chosenReady
       ? null
       : {
-          items: expandItems(items),
+          items: activeIdx.map((i) => allItems[i]!),
           placements: activeOverride?.placements ?? [placementFor(target, typeKey, fill)],
           ...(tray ? { tray: tray.key } : {}),
         };
@@ -152,7 +161,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
 
   // --- words ---
   const lineOf = (index: number): CartItem | undefined => {
-    let rest = index;
+    let rest = activeIdx[index] ?? index;
     for (const line of items) {
       if (rest < line.copies) return line;
       rest -= line.copies;
@@ -196,27 +205,39 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   function submit() {
     if (!settled.value || !previewData) return;
     const sent = settled.value;
+    const planned = previewData;
     setResult(null);
-    print.mutate(
-      { ...sent, expected_cells: previewData.expected_cells },
-      {
-        onSuccess: (response) => {
-          setChanged(null);
-          setResult(response.pages);
-          onAccepted?.();
-        },
-        onError: (error) => {
-          // The plan moved under us: the preview is asked again (the print invalidates it) and the next press is the second confirmation.
-          const plan = planChanged(error);
-          if (plan) setChanged({ kind: "plan", sheets: [...new Set(plan.plan.map((p) => p.sheet))] });
-          else if (cellsTaken(error)) setChanged({ kind: "cells", sheet: sheetCode ?? "" });
-        },
+    setPartial(null);
+    print.mutateAsync({ ...sent, expected_cells: planned.expected_cells }).then(
+      (response) => {
+        // Not a per-call callback: those are dropped when the page is left while the request runs.
+        setChanged(null);
+        setResult(response.pages);
+        onAccepted?.();
+      },
+      (error: unknown) => {
+        // Pages are queued in plan order: the first k pages are the ones that will print.
+        const jobs = queuedJobs(error);
+        if (jobs) {
+          const done = new Set(
+            planned.pages
+              .slice(0, jobs.length)
+              .flatMap((page) => page.cells.filter((c) => c.state === "new" && c.item_index !== null).map((c) => activeIdx[c.item_index!]!)),
+          );
+          const rest = activeIdx.filter((i) => !done.has(i));
+          setLeftover({ key: itemsKey, indices: rest });
+          setPartial({ jobIds: jobs, queued: done.size, left: rest.length, words: error instanceof ApiError && error.code !== "print_interrupted" ? errorText(error) : null });
+          return;
+        }
+        // The plan moved under us: the preview is asked again (the print invalidates it) and the next press is the second confirmation.
+        const plan = planChanged(error);
+        if (plan) setChanged({ kind: "plan", sheets: [...new Set(plan.plan.map((p) => p.sheet))] });
+        else if (cellsTaken(error)) setChanged({ kind: "cells", sheet: sheetCode ?? "" });
       },
     );
   }
 
   const printError = print.error;
-  const interrupted = printInterrupted(printError);
   const changedSheet = changed?.kind === "cells" ? changed.sheet : "";
   const changedSheets = changed?.kind === "plan" ? changed.sheets.map((c) => (c === "new" ? t`a new sheet` : c)).join(", ") : "";
   const changeNote = !changed
@@ -226,12 +247,14 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
         ? t`Another computer used cells on ${changedSheet} while you were looking. Check the new plan, then confirm.`
         : t`Another computer used some of the cells while you were looking. Check the new plan, then confirm.`
       : t`Another computer changed ${changedSheets} while you were looking. Check the new plan, then confirm.`;
-  const showPrintError = print.isError && !interrupted && !changed;
+  // The states below are set a moment after the error arrives; their errors are never shown as plain words in between.
+  const handled = !!queuedJobs(printError) || !!planChanged(printError) || !!cellsTaken(printError);
+  const showPrintError = print.isError && !partial && !changed && !handled;
   const busy = print.isPending || preview.isFetching || settled.pending || preview.isPlaceholderData;
   const canPrint = !!previewData && !preview.isError && !busy && !tooMany && needed > 0;
   const buttonText = changed ? t`Print with the new plan` : waits ? t`Add to print queue` : t`Print onto sheet`;
 
-  const idleNote = needed === 0 && !result ? t`There is nothing to print yet.` : null;
+  const idleNote = needed === 0 && !result && !partial ? t`There is nothing to print yet.` : null;
 
   return (
     <section aria-labelledby="sheet-section-h" className={`${PANEL} flex min-w-0 flex-col gap-5`}>
@@ -310,7 +333,8 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
         <section aria-labelledby="sheet-preview-h" className="flex min-w-0 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 id="sheet-preview-h" className="font-bold">{t`Preview`}</h3>
-            {shownData && <ZoomToggle zoom={zoom} onChange={setZoom} />}
+            {/* On a phone the skip view of one page already is the tap-size view: a 200 % switch would promise more than it does. */}
+            {shownData && <ZoomToggle zoom={zoom} onChange={setZoom} className={shownData.pages.length === 1 && sheetCode && fillMode === "first_free" && !activeOverride ? "max-sm:hidden" : ""} />}
           </div>
           {insufficient && target && typeKey ? (
             <CapacityAlert
@@ -347,7 +371,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
       )}
 
       {changeNote && <p role="alert" className="font-bold [overflow-wrap:anywhere]">{changeNote}</p>}
-      {interrupted && <PartialResult jobIds={interrupted.jobIds} />}
+      {partial && <PartialResult jobIds={partial.jobIds} queued={partial.queued} left={partial.left} inCart={onAccepted !== undefined} words={partial.words} />}
       {showPrintError && <p role="alert" className="[overflow-wrap:anywhere]">{errorText(printError)}</p>}
       {result && <PrintResult pages={result} />}
 
@@ -390,8 +414,14 @@ function ChooseCells({ code, chosen, needed, onToggle }: { code: string; chosen:
   }, [sheet.data, chosen]);
   if (!sheet.data) return <p role="status" className="text-ink-2">{t`Loading…`}</p>;
   const count = chosen.length;
+  const free = freeOf(sheet.data);
   return (
     <div className="flex min-w-0 flex-col gap-2">
+      {free < needed && (
+        <p role="status" className="font-bold">
+          {t`${code} has too few free cells for this print: ${free} free, ${needed} needed. Choose another sheet, or switch to the first free cells.`}
+        </p>
+      )}
       <p className="font-bold tabular-nums">{t`${count} of ${needed} cells chosen`}</p>
       <SheetGrid
         geometry={sheet.data.geometry}
