@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { IntegrationTiles } from "../integrations/IntegrationTiles";
 import { PANEL, SECTION_HEADING } from "../ui";
+import { SheetTiles } from "./SheetTiles";
 import { usePrinters, usePrinterStatuses, useRecentJobs, type Job, type Printer, type PrinterStatus } from "../printers/api";
 import { describePrinter, isFailed, isPagePrinter, useJobStateBadge, useKindLabel } from "../printers/model";
 import { MarkerList, noAnswerYet, ReasonLine, runningOut } from "../printers/PageStatus";
@@ -106,6 +107,8 @@ export function OverviewPage() {
         </Block>
 
         <IntegrationTiles />
+
+        <SheetTiles />
 
         <Block id="material-h" title={t`Material`}>
           {list.length === 0 ? (

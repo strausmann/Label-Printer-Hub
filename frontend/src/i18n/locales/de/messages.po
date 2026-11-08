@@ -616,6 +616,7 @@ msgid "Calibrated"
 msgstr "Kalibriert"
 
 #: src/features/calibration/CalibrationPage.tsx
+#: src/features/overview/SheetTiles.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/shell/labels.ts
 msgid "Calibration"
@@ -2814,6 +2815,7 @@ msgid "Sheet {code} was added."
 msgstr "Bogen {code} wurde hinzugefügt."
 
 #: src/features/archive/ArchivePage.tsx
+#: src/features/overview/SheetTiles.tsx
 #: src/features/sheets/SheetsPage.tsx
 #: src/shell/labels.ts
 msgid "Sheet archive"
@@ -2884,6 +2886,7 @@ msgid "Sheet types"
 msgstr "Bogentypen"
 
 #: src/features/archive/TypeDetail.tsx
+#: src/features/overview/SheetTiles.tsx
 #: src/features/sheets/SheetsPage.tsx
 #: src/shell/labels.ts
 msgid "Sheets"

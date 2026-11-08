@@ -18,9 +18,42 @@ describe("Overview", () => {
     mockApi(base());
     await renderApp({ path: "/" });
     const headings = await screen.findAllByRole("heading", { level: 2 });
-    // The phone-only Integrations tiles sit between the second and third question.
-    const questions = headings.map((h) => h.textContent).filter((h) => h !== "Integrations");
+    // The phone-only Integrations and Sheets tiles sit between the second and third question.
+    const questions = headings.map((h) => h.textContent).filter((h) => h !== "Integrations" && h !== "Sheets");
     expect(questions.slice(0, 3)).toEqual(["Printing now", "Needs attention", "Material"]);
+  });
+
+  it("links to the sheet archive and the calibration when their features are on, for every scope", async () => {
+    mockApi(base());
+    for (const scope of ["read", "print", "admin"] as const) {
+      const { unmount } = await renderApp({
+        path: "/",
+        info: { features: { sheets: true, calibration: true } },
+        session: { ...SIGNED_IN, scope },
+      });
+      const group = await screen.findByRole("region", { name: "Sheets" });
+      expect(within(group).getByRole("link", { name: "Sheet archive" })).toHaveAttribute("href", "/sheets/archive");
+      expect(within(group).getByRole("link", { name: "Calibration" })).toHaveAttribute("href", "/calibration");
+      unmount();
+    }
+  });
+
+  it("shows each entry only while its own feature is on", async () => {
+    mockApi(base());
+    const only = async (features: Record<string, boolean>) => {
+      const { unmount } = await renderApp({ path: "/", info: { features } });
+      await screen.findByRole("heading", { level: 2, name: "Printing now" });
+      // The sidebar carries the same names; the entries of the Overview are the ones in its own group.
+      const group = screen.queryByRole("region", { name: "Sheets" });
+      const names = group ? within(group).getAllByRole("link").map((l) => l.textContent) : [];
+      unmount();
+      return names;
+    };
+    expect(await only({ sheets: true, calibration: false })).toContain("Sheet archive");
+    expect(await only({ sheets: true, calibration: false })).not.toContain("Calibration");
+    expect(await only({ sheets: false, calibration: true })).toContain("Calibration");
+    expect(await only({ sheets: false, calibration: true })).not.toContain("Sheet archive");
+    expect(await only({ sheets: false, calibration: false })).toEqual([]);
   });
 
   it("lists a running job under Printing now", async () => {
