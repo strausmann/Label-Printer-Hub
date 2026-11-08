@@ -157,14 +157,13 @@ export function ReadingsHelper({ printerId, tray, typeKey, version, cols, rows, 
       )}
       {fitted && (
         <div className="overflow-x-auto">
-          <table aria-label={t`Result of the fit`} className="w-full min-w-96 border-collapse text-left text-small">
+          <table aria-label={t`Result of the fit`} className="w-full border-collapse text-left text-small">
             <thead>
               <tr className="text-ink-2">
                 <th scope="col" className="py-1 pr-3 font-bold">{t`Crossing`}</th>
                 <th scope="col" className="py-1 pr-3 font-bold">{t`Across`}</th>
                 <th scope="col" className="py-1 pr-3 font-bold">{t`Down`}</th>
-                <th scope="col" className="py-1 pr-3 font-bold">{t`Left over after the fit`}</th>
-                <th scope="col" className="py-1 font-bold">{t`Note`}</th>
+                <th scope="col" className="py-1 font-bold">{t`Left over after the fit`}</th>
               </tr>
             </thead>
             <tbody>
@@ -176,8 +175,11 @@ export function ReadingsHelper({ printerId, tray, typeKey, version, cols, rows, 
                     <th scope="row" className="py-2 pr-3 font-bold tabular-nums">{crossingName(c.col_gap, c.row_gap)}</th>
                     <td className="py-2 pr-3 tabular-nums">{mm(c.across_mm)}</td>
                     <td className="py-2 pr-3 tabular-nums">{mm(c.down_mm)}</td>
-                    <td className="py-2 pr-3 font-bold tabular-nums">{mm(residual)}</td>
-                    <td className="py-2">{flagged ? <span className="font-bold text-warn">{t`check this reading`}</span> : null}</td>
+                    {/* The flag sits with the value it is about: a column of its own was past the edge at 360 px. */}
+                    <td className="py-2 font-bold tabular-nums">
+                      {mm(residual)}
+                      {flagged && <span className="block font-bold text-warn">{t`check this reading`}</span>}
+                    </td>
                   </tr>
                 );
               })}

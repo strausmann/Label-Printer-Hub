@@ -356,6 +356,18 @@ describe("step 2: the readings helper", () => {
     expect(screen.getByText("The values are filled in below. Nothing is saved yet.")).toBeVisible();
   });
 
+  it("puts the flag in the cell of the residual it is about, so a phone shows it without scrolling the table sideways", async () => {
+    await open({ [`POST ${BASE}/main/fit`]: FIT });
+    await fillThree();
+    await userEvent.click(await button("Fit"));
+    const table = await screen.findByRole("table", { name: "Result of the fit" });
+    expect(within(table).queryByRole("columnheader", { name: "Note" })).toBeNull();
+    const flagged = within(table).getByText("check this reading");
+    expect(flagged.closest("td")).toHaveTextContent("0.42 mm");
+    // Not in a column of its own: the flag would sit past the edge at 360 px.
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(4);
+  });
+
   it("names fitted values that are outside the allowed range, and does not fill them in", async () => {
     await open({ [`POST ${BASE}/main/fit`]: { ...FIT, values: { ...FIT.values, offset_x_mm: 14 }, out_of_range: ["offset_x_mm", "rotation_deg"] } });
     await fillThree();

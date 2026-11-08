@@ -1979,7 +1979,6 @@ msgstr "Nicht eingerichtet"
 msgid "Not used yet"
 msgstr "Noch nicht benutzt"
 
-#: src/features/calibration/ReadingsHelper.tsx
 #: src/features/sheets/SheetDetail.tsx
 msgid "Note"
 msgstr "Notiz"

@@ -202,6 +202,11 @@ test.describe.serial("calibration", () => {
         }
         await page.getByRole("button", { name: de ? "Berechnen" : "Fit", exact: true }).click();
         await expect(page.getByRole("table", { name: de ? "Ergebnis der Berechnung" : "Result of the fit" })).toBeVisible();
+        // The flag on the far reading is on screen without scrolling the table sideways.
+        const flag = await page.getByText(de ? "diesen Messwert prüfen" : "check this reading").boundingBox();
+        expect(flag, "the flag is rendered").not.toBeNull();
+        expect(flag!.x).toBeGreaterThanOrEqual(0);
+        expect(flag!.x + flag!.width).toBeLessThanOrEqual(size.width);
         expect(await noSideScroll(page)).toBe(true);
         await shot("calibration-fitted");
         await page.unroute(`**/api/printers/${id}/calibration/${TRAY}/fit`);
