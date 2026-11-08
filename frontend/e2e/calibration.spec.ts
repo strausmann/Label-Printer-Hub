@@ -123,7 +123,8 @@ test.describe.serial("calibration", () => {
         },
         [`/api/printers/${id}/calibration/${TRAY}`] as const,
       );
-      expect([204, 404]).toContain(status);
+      // Not asserted here: a failing check in `finally` would replace the error of the test body. The state is asserted below.
+      void status;
     }
     expect(hasCorrection(await trayCalibration(page, id))).toBe(false);
   });

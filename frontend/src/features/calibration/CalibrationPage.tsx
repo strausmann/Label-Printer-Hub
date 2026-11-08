@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "react-aria-components";
 import { useSession } from "../../app/session";
@@ -25,6 +25,10 @@ import { useCalibrationErrorText, useValueNames } from "./errors";
 import { parseNumber, usableTypes } from "./model";
 import { ReadingsHelper } from "./ReadingsHelper";
 
+const calibrationApi = getRouteApi("/calibration");
+
+type MeasuredOn = { type_key: string; version: number };
+
 const FIELDS = ["offset_x_mm", "offset_y_mm", "scale_x", "scale_y", "rotation_deg"] as const;
 type Field = (typeof FIELDS)[number];
 type Draft = Record<Field, string>;
@@ -32,6 +36,9 @@ type Draft = Record<Field, string>;
 const IDENTITY: Record<Field, number> = { offset_x_mm: 0, offset_y_mm: 0, scale_x: 1, scale_y: 1, rotation_deg: 0 };
 
 const hasValues = (row: CalibrationRead | undefined): boolean => !!row && FIELDS.some((f) => row[f] != null);
+
+/** A length without its unit, for "45.7 × 21.2 mm". */
+const plainMm = (v: number, locale: string) => new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(Math.round(v * 100) / 100);
 
 function useNumberText(): (n: number) => string {
   const { i18n } = useLingui();
@@ -46,7 +53,7 @@ function draftOf(row: CalibrationRead | undefined, text: (n: number) => string):
 
 export function CalibrationPage() {
   const { t } = useLingui();
-  const search = useSearch({ strict: false }) as { printer?: string; tray?: string };
+  const search = calibrationApi.useSearch();
   const navigate = useNavigate();
   const printers = usePrinters();
   const pagePrinters = useMemo(() => (printers.data ?? []).filter((p) => p.backend === "ipp" && p.enabled), [printers.data]);
@@ -146,9 +153,12 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
   // The values of step 2 live here: the form edits them and the readings helper fills them.
   const text = useNumberText();
   const key = stored?.updated_at ?? "none";
-  const [draft, setDraft] = useState<{ key: string; fields: Draft }>(() => ({ key, fields: draftOf(stored, text) }));
+  // `fit` is the type and version of the readings the values came from; null for values typed by hand.
+  const [draft, setDraft] = useState<{ key: string; fields: Draft; fit: MeasuredOn | null }>(() => ({ key, fields: draftOf(stored, text), fit: null }));
   // The stored values changed (a save, a reset, another tab): the form follows them.
-  if (draft.key !== key) setDraft({ key, fields: draftOf(stored, text) });
+  if (draft.key !== key) setDraft({ key, fields: draftOf(stored, text), fit: null });
+  // A fit result is saved as measured on the type it was fitted on; typed values on the type chosen now.
+  const measuredOn: MeasuredOn | null = draft.fit ?? (type ? { type_key: type.key, version: type.current_version } : null);
 
   return (
     <>
@@ -168,7 +178,7 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
             <SelectField
               label={t`Sheet type`}
               value={type.key}
-              options={usable.map((x) => ({ id: x.key, label: `${typeLabelWithKey(x)} · ${formatMm(x.geometry.label_w, i18n.locale).replace(/ mm$/, "")} × ${formatMm(x.geometry.label_h, i18n.locale)}` }))}
+              options={usable.map((x) => ({ id: x.key, label: `${typeLabelWithKey(x)} · ${plainMm(x.geometry.label_w, i18n.locale)} × ${formatMm(x.geometry.label_h, i18n.locale)}` }))}
               onChange={setTypeChoice}
             />
             <CalibrationSchematic geometry={type.geometry} typeName={typeLabelWithKey(type)} />
@@ -184,6 +194,7 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
                 label={t`Print calibration page`}
                 done={t`The calibration page is queued.`}
                 primary
+                noKey={!canPrint}
               />
               <a
                 href={calibrationPdfUrl(printer.id, tray, { type: type.key, version: type.current_version, corrected: false })}
@@ -210,7 +221,7 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
               version={type.current_version}
               cols={type.geometry.cols}
               rows={type.geometry.rows}
-              onFitted={(values) => setDraft({ key, fields: draftOfValues(values, text) })}
+              onFitted={(values, fit) => setDraft({ key, fields: draftOfValues(values, text), fit })}
             />
           </div>
         )}
@@ -221,8 +232,8 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
           trayLabel={trayLabel}
           hasStored={hasValues(stored)}
           fields={draft.fields}
-          onChange={(fields) => setDraft({ key, fields })}
-          type={type}
+          onChange={(fields) => setDraft({ key, fields, fit: null })}
+          measuredOn={measuredOn}
           admin={admin}
         />
       </section>
@@ -241,6 +252,7 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
               type={type}
               corrected
               disabled={!canPrint || !hasValues(stored)}
+              noKey={!canPrint}
               label={t`Check print with correction`}
               done={t`The check page is queued.`}
             />
@@ -298,9 +310,10 @@ interface PrintActionProps {
   label: string;
   done: string;
   primary?: boolean;
+  noKey: boolean;
 }
 
-function PrintAction({ printerId, tray, type, corrected, disabled, label, done, primary }: PrintActionProps) {
+function PrintAction({ printerId, tray, type, corrected, disabled, label, done, primary, noKey }: PrintActionProps) {
   const { t } = useLingui();
   const errorText = useCalibrationErrorText();
   const print = usePrintCalibrationPage(printerId);
@@ -313,6 +326,7 @@ function PrintAction({ printerId, tray, type, corrected, disabled, label, done, 
       >
         {label}
       </Button>
+      {noKey && <p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
       {print.isError && (
         <p role="alert" className="m-0 text-bad">
           {errorText(print.error, t`The page could not be queued.`)}
@@ -337,11 +351,11 @@ interface ValuesFormProps {
   hasStored: boolean;
   fields: Draft;
   onChange: (fields: Draft) => void;
-  type: SheetTypeRead | undefined;
+  measuredOn: MeasuredOn | null;
   admin: boolean;
 }
 
-function ValuesForm({ printer, tray, trayLabel, hasStored, fields, onChange, type, admin }: ValuesFormProps) {
+function ValuesForm({ printer, tray, trayLabel, hasStored, fields, onChange, measuredOn, admin }: ValuesFormProps) {
   const { t } = useLingui();
   const names = useValueNames();
   const errorText = useCalibrationErrorText();
@@ -370,7 +384,7 @@ function ValuesForm({ printer, tray, trayLabel, hasStored, fields, onChange, typ
     setInvalid(null);
     setMessage(null);
     save.mutate(
-      { tray, values: { ...parsed, ...(type ? { measured_on: { type_key: type.key, version: type.current_version } } : {}) } },
+      { tray, values: { ...parsed, ...(measuredOn ? { measured_on: measuredOn } : {}) } },
       { onSuccess: () => setMessage("saved") },
     );
   };

@@ -2073,6 +2073,10 @@ msgstr "Offset Y (mm)"
 msgid "OK"
 msgstr "OK"
 
+#: src/features/calibration/ReadingsHelper.tsx
+msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
+msgstr "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
+
 #: src/features/sheets/errors.ts
 msgid "One of those cells is already in use. The sheet shows the current state."
 msgstr "One of those cells is already in use. The sheet shows the current state."
@@ -2340,6 +2344,10 @@ msgstr "Printing"
 msgctxt "page job at the printer"
 msgid "Printing"
 msgstr "Printing"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Printing needs a print or admin key."
+msgstr "Printing needs a print or admin key."
 
 #: src/features/overview/OverviewPage.tsx
 msgid "Printing now"

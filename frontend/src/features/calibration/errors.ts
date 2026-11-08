@@ -31,11 +31,11 @@ export function useRangeWords(): Record<string, string> {
  * The words for a failed calibration request. Calibration cases come first; the rest is the sheet
  * screens' table (printer-unavailable, tray_unknown, no network, no admin key …).
  */
-export function useCalibrationErrorText(): (error: unknown, fallback?: string) => string {
+export function useCalibrationErrorText(): (error: unknown, fallback?: string, readingRows?: number[]) => string {
   const { t } = useLingui();
   const sheetText = useSheetErrorText();
   const names = useValueNames();
-  return (error, fallback) => {
+  return (error, fallback, readingRows) => {
     if (error instanceof ApiError) {
       const range = calibrationOutOfRange(error);
       if (range) {
@@ -56,7 +56,9 @@ export function useCalibrationErrorText(): (error: unknown, fallback?: string) =
         }
       }
       if (error.code === "invalid_geometry" && typeof error.errorDetail?.reading === "number") {
-        const n = error.errorDetail.reading + 1;
+        // The server counts the complete readings it was sent; `readingRows` maps that back to the visible row.
+        const index = error.errorDetail.reading;
+        const n = readingRows?.[index] ?? index + 1;
         return t`Reading ${n} names a gap that this sheet does not have.`;
       }
       switch (error.code) {

@@ -2073,6 +2073,10 @@ msgstr "Versatz Y (mm)"
 msgid "OK"
 msgstr "OK"
 
+#: src/features/calibration/ReadingsHelper.tsx
+msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
+msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, die Messwerte lassen sich daher nicht berechnen. Geben Sie die Werte direkt ein."
+
 #: src/features/sheets/errors.ts
 msgid "One of those cells is already in use. The sheet shows the current state."
 msgstr "Eine dieser Zellen ist schon belegt. Der Bogen zeigt den aktuellen Stand."
@@ -2340,6 +2344,10 @@ msgstr "Druckt"
 msgctxt "page job at the printer"
 msgid "Printing"
 msgstr "Druckt"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Printing needs a print or admin key."
+msgstr "Zum Drucken ist ein Druck- oder Admin-Schlüssel nötig."
 
 #: src/features/overview/OverviewPage.tsx
 msgid "Printing now"

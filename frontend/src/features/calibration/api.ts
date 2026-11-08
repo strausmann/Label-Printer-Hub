@@ -29,7 +29,10 @@ export function useSaveCalibration(printerId: string) {
   return useMutation({
     mutationFn: ({ tray, values }: { tray: string; values: CalibrationPut }) =>
       apiFetch<CalibrationRead>(trayPath(printerId, tray), { method: "PUT", json: values }),
-    onSettled: () => void client.invalidateQueries({ queryKey: calibrationKey(printerId) }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: calibrationKey(printerId) });
+      void client.invalidateQueries({ queryKey: capabilitiesKey(printerId) });
+    },
   });
 }
 

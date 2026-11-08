@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "react-aria-components";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { HINT, SelectField, TextInput } from "../settings/controls";
@@ -8,6 +8,7 @@ import { useFit, type FitResponse } from "./api";
 import { useCalibrationErrorText, useRangeWords } from "./errors";
 import {
   canFit,
+  completeReadings,
   crossingName,
   emptyReading,
   readingsRequest,
@@ -16,6 +17,16 @@ import {
 } from "./model";
 
 const MAX_ROWS = 200;
+
+/** The first crossing, counting across then down, that no row names yet; S1 · Z1 when all are taken. */
+function unusedCrossing(list: readonly ReadingRow[], cols: number, rows: number) {
+  for (let z = 1; z < rows; z++) {
+    for (let s = 1; s < cols; s++) {
+      if (!list.some((r) => r.col_gap === s && r.row_gap === z)) return { col_gap: s, row_gap: z };
+    }
+  }
+  return { col_gap: 1, row_gap: 1 };
+}
 
 interface Fitted {
   response: FitResponse;
@@ -30,8 +41,8 @@ export interface ReadingsHelperProps {
   version: number;
   cols: number;
   rows: number;
-  /** Called with the fitted values when they are inside the allowed ranges. */
-  onFitted: (values: FitResponse["values"]) => void;
+  /** Called with the fitted values and the type and version they were measured on, when they are inside the allowed ranges. */
+  onFitted: (values: FitResponse["values"], measuredOn: { type_key: string; version: number }) => void;
 }
 
 /**
@@ -43,8 +54,10 @@ export function ReadingsHelper({ printerId, tray, typeKey, version, cols, rows, 
   const errorText = useCalibrationErrorText();
   const rangeWords = useRangeWords();
   const fit = useFit(printerId);
-  const [next, setNext] = useState(1);
-  const [list, setList] = useState<ReadingRow[]>(() => suggestedCrossings(cols, rows).map((c, i) => emptyReading(i, c)));
+  const initial = useState(() => suggestedCrossings(cols, rows).map((c, i) => emptyReading(i, c)))[0];
+  // Row ids come from one counter that only counts up: a removed row's id is never handed out again.
+  const nextId = useRef(initial.length);
+  const [list, setList] = useState<ReadingRow[]>(initial);
   const [fitted, setFitted] = useState<Fitted | null>(null);
   const [filled, setFilled] = useState(false);
   const ready = canFit(list);
@@ -58,8 +71,8 @@ export function ReadingsHelper({ printerId, tray, typeKey, version, cols, rows, 
     fit.reset();
   };
   const add = () => {
-    setList((rowsNow) => [...rowsNow, emptyReading(rowsNow.length + next)]);
-    setNext((n) => n + 1);
+    const id = nextId.current++;
+    setList((rowsNow) => [...rowsNow, emptyReading(id, unusedCrossing(rowsNow, cols, rows))]);
   };
   const remove = (id: number) => {
     setList((rowsNow) => rowsNow.filter((r) => r.id !== id));
@@ -77,7 +90,7 @@ export function ReadingsHelper({ printerId, tray, typeKey, version, cols, rows, 
         onSuccess: (response) => {
           setFitted({ response, crossings: request.readings });
           if (response.out_of_range.length === 0) {
-            onFitted(response.values);
+            onFitted(response.values, { type_key: typeKey, version });
             setFilled(true);
           }
         },
@@ -85,8 +98,15 @@ export function ReadingsHelper({ printerId, tray, typeKey, version, cols, rows, 
     );
   };
 
+  // The server numbers the complete readings it got; the person sees rows, empty ones included.
+  const completeRows = list.flatMap((r, i) => (completeReadings([r]).length === 1 ? [i + 1] : []));
   const outOfRange = fitted?.response.out_of_range ?? [];
   const outOfRangeList = outOfRange.map((name) => rangeWords[name] ?? name).join(", ");
+
+  // With two columns (or two rows) every crossing lies on one line: nothing to fit.
+  if (cols <= 2 || rows <= 2) {
+    return <p className={HINT}>{t`On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly.`}</p>;
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -122,7 +142,7 @@ export function ReadingsHelper({ printerId, tray, typeKey, version, cols, rows, 
 
       {fit.isError && (
         <p role="alert" className="m-0 text-bad">
-          {errorText(fit.error, t`The fit failed.`)}
+          {errorText(fit.error, t`The fit failed.`, completeRows)}
         </p>
       )}
       {outOfRange.length > 0 && (

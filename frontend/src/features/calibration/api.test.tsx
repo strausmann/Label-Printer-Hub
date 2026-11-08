@@ -39,7 +39,9 @@ describe("calibration writes", () => {
     const { result } = renderHook(() => useSaveCalibration(P), { wrapper });
     await act(() => result.current.mutateAsync({ tray: "main", values }));
     expect(JSON.parse(calls[0]!.body!)).toEqual(values);
-    expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual(["printers", P, "calibration"]);
+    const keys = invalidate.mock.calls.map((c) => c[0]?.queryKey);
+    expect(keys).toContainEqual(["printers", P, "calibration"]);
+    expect(keys).toContainEqual(["printers", P, "capabilities"]);
   });
 
   it("an out-of-range value surfaces the field and its range", async () => {

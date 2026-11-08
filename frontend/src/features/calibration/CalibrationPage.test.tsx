@@ -27,6 +27,8 @@ const stored = {
 const none = { tray: "bypass", offset_x_mm: null, offset_y_mm: null, scale_x: null, scale_y: null, rotation_deg: null, method: null, updated_at: null };
 const oneColumn = { ...SHEET_TYPE, key: "ONECOL", prefix: "O1", product_codes: [], vendor: "One", geometry: { ...GEOMETRY_L4736, cols: 1 } };
 const secondPrinter = { ...PAGE_PRINTER, id: "44444444-4444-4444-8444-444444444444", name: "Second laser", slug: "second" };
+const typeB = { ...SHEET_TYPE, key: "OTHERTYPE", prefix: "OT", vendor: "Other", product_codes: ["OT-1"], current_version: 3 };
+const twoColumns = { ...SHEET_TYPE, key: "TWOCOL", prefix: "T2", vendor: "Two", product_codes: ["T2-1"], geometry: { ...GEOMETRY_L4736, cols: 2 } };
 const disabledPrinter = { ...PAGE_PRINTER, id: "55555555-5555-4555-8555-555555555555", name: "Switched off laser", enabled: false };
 
 function routes(extra: Record<string, unknown> = {}) {
@@ -219,6 +221,14 @@ describe("step 1: the calibration page", () => {
   });
 });
 
+describe("print without a print key", () => {
+  it("says why the print buttons are disabled", async () => {
+    await open({}, READ_SESSION);
+    expect(await button("Print calibration page")).toBeDisabled();
+    expect((await screen.findAllByText("Printing needs a print or admin key.")).length).toBeGreaterThan(0);
+  });
+});
+
 describe("step 2: direct entry", () => {
   it("starts from the stored values and states what the signs mean", async () => {
     await open();
@@ -391,6 +401,105 @@ describe("step 2: the readings helper", () => {
     expect(screen.getAllByRole("group", { name: /^Reading \d/ })).toHaveLength(5);
     await userEvent.click(screen.getByRole("button", { name: "Remove reading 5" }));
     expect(screen.getAllByRole("group", { name: /^Reading \d/ })).toHaveLength(4);
+  });
+});
+
+describe("readings: row identity", () => {
+  const firstBox = (n: number) => within(screen.getByRole("group", { name: `Reading ${n}` })).getAllByRole("textbox")[0]!;
+
+  it("rows keep distinct identities through add and remove: typing and Remove touch one row only", async () => {
+    await open();
+    await screen.findByRole("group", { name: "Reading 4" });
+    const add = () => userEvent.click(screen.getByRole("button", { name: "Add reading" }));
+    const removeFirst = () => userEvent.click(screen.getByRole("button", { name: "Remove reading 1" }));
+    await removeFirst();
+    await add();
+    await add();
+    await removeFirst();
+    await removeFirst();
+    await add();
+    expect(screen.getAllByRole("group", { name: /^Reading \d/ })).toHaveLength(4);
+    await userEvent.type(firstBox(4), "0,5");
+    expect(firstBox(4)).toHaveValue("0,5");
+    expect(firstBox(3)).toHaveValue("");
+    expect(firstBox(2)).toHaveValue("");
+    expect(firstBox(1)).toHaveValue("");
+    await userEvent.click(screen.getByRole("button", { name: "Remove reading 4" }));
+    expect(screen.getAllByRole("group", { name: /^Reading \d/ })).toHaveLength(3);
+  });
+
+  it("a new reading starts at a crossing that is not in the list yet", async () => {
+    await open();
+    await userEvent.click(await button("Add reading"));
+    expect(await screen.findByRole("textbox", { name: "Across at S2 · Z1 (mm)" })).toBeVisible();
+  });
+
+  it("names the visible row when the server's reading index skips an empty row", async () => {
+    await open({
+      [`POST ${BASE}/main/fit`]: () => respond(422, apiErrorBody("invalid_geometry", "Bad gap.", { field: "readings[0].col_gap", reason: "no such gap", reading: 0 })),
+    });
+    for (const [crossing, a, d] of [["S3 · Z1", "0,4", "0"], ["S1 · Z11", "0,6", "0,3"], ["S3 · Z11", "0,1", "0,1"]] as const) {
+      await enter(`Across at ${crossing} (mm)`, a);
+      await enter(`Down at ${crossing} (mm)`, d);
+    }
+    await userEvent.click(await button("Fit"));
+    expect(await screen.findByText("Reading 2 names a gap that this sheet does not have.")).toBeVisible();
+  });
+
+  it("a sheet with two columns has no readings helper and says to enter the values directly", async () => {
+    await open({ "GET /api/sheet-types": [twoColumns] });
+    expect(await screen.findByText("On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Fit" })).toBeNull();
+  });
+});
+
+describe("which type the values were measured on", () => {
+  const two = { "GET /api/sheet-types": [SHEET_TYPE, typeB], [`PUT ${BASE}/main`]: stored, [`POST ${BASE}/main/fit`]: FIT };
+  async function chooseB() {
+    await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /OTHERTYPE/ }));
+  }
+
+  it("a fit made on type A is saved as measured on A, even after the type select moved to B", async () => {
+    const { calls } = await open(two);
+    await fillThree();
+    await userEvent.click(await button("Fit"));
+    await screen.findByRole("table", { name: "Result of the fit" });
+    await chooseB();
+    await userEvent.click(await button("Save for this printer and tray"));
+    await screen.findByText("Saved. New prints use this correction.");
+    expect(body(only(calls, "PUT")[0]).measured_on).toEqual({ type_key: "L4736REV", version: 1 });
+  });
+
+  it("switching the type clears the readings and the fit result", async () => {
+    await open(two);
+    await fillThree();
+    await userEvent.click(await button("Fit"));
+    await screen.findByRole("table", { name: "Result of the fit" });
+    await chooseB();
+    await waitFor(() => expect(screen.queryByRole("table", { name: "Result of the fit" })).toBeNull());
+    expect(await screen.findByRole("textbox", { name: "Across at S1 · Z1 (mm)" })).toHaveValue("");
+  });
+
+  it("values typed by hand are saved with the type chosen at that moment", async () => {
+    const { calls } = await open(two);
+    await chooseB();
+    await enter("Offset X (mm)", "1");
+    await userEvent.click(await button("Save for this printer and tray"));
+    await screen.findByText("Saved. New prints use this correction.");
+    expect(body(only(calls, "PUT")[0]).measured_on).toEqual({ type_key: "OTHERTYPE", version: 3 });
+  });
+
+  it("a fitted value that is edited by hand is no longer a fit result: the current type is sent", async () => {
+    const { calls } = await open(two);
+    await fillThree();
+    await userEvent.click(await button("Fit"));
+    await screen.findByRole("table", { name: "Result of the fit" });
+    await chooseB();
+    await enter("Offset X (mm)", "0,3");
+    await userEvent.click(await button("Save for this printer and tray"));
+    await screen.findByText("Saved. New prints use this correction.");
+    expect(body(only(calls, "PUT")[0]).measured_on).toEqual({ type_key: "OTHERTYPE", version: 3 });
   });
 });
 
