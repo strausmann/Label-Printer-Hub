@@ -37,10 +37,11 @@ export function pageJobStateFrom(data: Record<string, unknown>): { jobId: string
  * says "at the printer" without guessing. Never fetches: the entry is written by the event hook.
  */
 export const usePageJobState = (jobId: string) =>
-  useQuery<PageJobState | undefined>({
+  useQuery<PageJobState | null>({
     queryKey: pageJobStateKey(jobId),
-    queryFn: () => undefined,
+    // Never runs (disabled); null instead of undefined, which TanStack refuses as query data.
+    queryFn: () => null,
     enabled: false,
     staleTime: Infinity,
     gcTime: Infinity,
-  }).data;
+  }).data ?? undefined;

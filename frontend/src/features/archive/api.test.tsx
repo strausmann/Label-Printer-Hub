@@ -24,7 +24,7 @@ function setup() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("sheet type reads", () => {
-  it("useSheetTypes sends the set filters, including false-free numbers", async () => {
+  it("useSheetTypes sends the set filters, drops an empty string and keeps true and decimals", async () => {
     const { calls } = mockApi({ "GET /api/sheet-types": [SHEET_TYPE] });
     const { wrapper } = setup();
     const { result } = renderHook(() => useSheetTypes({ page: "A4", w: 45.7, h: 21.2, include_archived: true, vendor: "" }), { wrapper });

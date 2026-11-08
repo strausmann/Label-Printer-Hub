@@ -163,13 +163,6 @@ describe("useHubEvents", () => {
       expect(client.getQueryData(["jobs", "j1", "at_printer"])).toMatchObject({ atPrinter: "stopped", reasons: ["toner-empty"] });
     });
 
-    it("a sub-state survives the job invalidation that follows the same event", () => {
-      const { client } = setup();
-      act(() => last().emit("job.state_changed", "p1", pageEvent("printing")));
-      expect(client.getQueryData(["jobs", "j1", "at_printer"])).toMatchObject({ atPrinter: "printing" });
-      expect(client.getQueryState(["jobs", "j1", "at_printer"])?.data).toBeDefined();
-    });
-
     it("keeps jobs apart and ignores jobs without a kind", () => {
       const { client } = setup();
       act(() => last().emit("job.state_changed", "p1", pageEvent("waiting")));

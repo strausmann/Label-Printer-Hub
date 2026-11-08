@@ -1,4 +1,7 @@
 import { ApiError } from "./client";
+import type { components } from "./schema.gen";
+
+export type ExpectedPage = components["schemas"]["ExpectedPageModel"];
 
 /*
  * Typed readers for the structured data of the error codes the sheet screens act on. Each one
@@ -27,10 +30,17 @@ export function insufficientCells(error: unknown): InsufficientCells | null {
   return { freeCells: d.free_cells, needed: d.needed, shortfall: d.shortfall };
 }
 
-/** `409 plan_changed`: the server's current plan, to render again. */
-export function planChanged(error: unknown): { plan: unknown } | null {
+const isExpectedPage = (v: unknown): v is ExpectedPage =>
+  typeof v === "object" &&
+  v !== null &&
+  typeof (v as ExpectedPage).sheet === "string" &&
+  isNumbers((v as ExpectedPage).cells) &&
+  ((v as ExpectedPage).id_cell == null || typeof (v as ExpectedPage).id_cell === "number");
+
+/** `409 plan_changed`: the server's current plan (one entry per page), to render again. */
+export function planChanged(error: unknown): { plan: ExpectedPage[] } | null {
   const d = detailOf(error, "plan_changed");
-  return d && "plan" in d ? { plan: d.plan } : null;
+  return d && Array.isArray(d.plan) && d.plan.every(isExpectedPage) ? { plan: d.plan } : null;
 }
 
 function reasonReader(code: string) {

@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
+import { queryString } from "../../api/queryString";
 import type { components } from "../../api/schema.gen";
 import {
   marginCheckKey,
@@ -44,17 +45,6 @@ export interface SheetFilters {
   q?: string;
 }
 
-/** A query string from the set filters only; empty values are left out. */
-export function queryString(params: Record<string, string | number | boolean | null | undefined>): string {
-  const query = new URLSearchParams();
-  for (const [name, value] of Object.entries(params)) {
-    if (value === undefined || value === null || value === "") continue;
-    query.set(name, String(value));
-  }
-  const text = query.toString();
-  return text ? `?${text}` : "";
-}
-
 const post = <T>(path: string, json?: unknown) => apiFetch<T>(path, { method: "POST", json });
 const encode = encodeURIComponent;
 
@@ -65,7 +55,11 @@ export const useSheets = (filters: SheetFilters = {}) =>
   });
 
 export const useSheet = (code: string) =>
-  useQuery({ queryKey: sheetKey(code), queryFn: () => apiFetch<SheetRead>(`/api/sheets/${encode(code)}`) });
+  useQuery({
+    queryKey: sheetKey(code),
+    queryFn: () => apiFetch<SheetRead>(`/api/sheets/${encode(code)}`),
+    enabled: !!code,
+  });
 
 /** The code the next sheet of this type will get, and a hint for the ID placement. */
 export const useNextCode = (typeKey: string | null) =>
@@ -83,10 +77,12 @@ export const useMarginCheck = (typeKey: string | null, printer: string | null, t
     enabled: !!typeKey && !!printer,
   });
 
-/** Everything a sheet write changes: the lists, the sheet itself, the type's usage, queued jobs. */
-function refreshAfterWrite(client: QueryClient, code?: string) {
+/**
+ * What a sheet write changes besides the sheet itself: the lists and the type's usage. The sheet's
+ * own key is not invalidated: the writes that answer with the sheet put it into the cache.
+ */
+function refreshAfterWrite(client: QueryClient) {
   void client.invalidateQueries({ queryKey: sheetsListKey });
-  if (code) void client.invalidateQueries({ queryKey: sheetKey(code) });
   void client.invalidateQueries({ queryKey: typesListKey });
 }
 
@@ -106,7 +102,7 @@ export function useDiscardSheet() {
   return useMutation({
     mutationFn: (code: string) => post<SheetRead>(`/api/sheets/${encode(code)}/discard`),
     onSuccess: (sheet, code) => client.setQueryData(sheetKey(code), sheet),
-    onSettled: (_data, _error, code) => refreshAfterWrite(client, code),
+    onSettled: () => refreshAfterWrite(client),
   });
 }
 
@@ -116,7 +112,7 @@ function useCellsWrite<V extends { code: string }>(action: string, body: (v: V) 
   return useMutation({
     mutationFn: (v: V) => post<SheetRead>(`/api/sheets/${encode(v.code)}/cells/${action}`, body(v)),
     onSuccess: (sheet, v) => client.setQueryData(sheetKey(v.code), sheet),
-    onSettled: (_data, _error, v) => refreshAfterWrite(client, v.code),
+    onSettled: () => refreshAfterWrite(client),
   });
 }
 

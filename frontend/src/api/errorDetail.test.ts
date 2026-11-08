@@ -26,8 +26,10 @@ describe("typed error readers", () => {
   });
 
   it("planChanged hands the new plan through", () => {
-    const plan = { pages: [] };
+    const plan = [{ sheet: "L4736-0001", cells: [4, 5], id_cell: null }, { sheet: "new", cells: [1] }];
     expect(planChanged(err("plan_changed", { plan }))).toEqual({ plan });
+    expect(planChanged(err("plan_changed", { plan: [{ sheet: 3, cells: [] }] }))).toBeNull();
+    expect(planChanged(err("plan_changed", { plan: "x" }))).toBeNull();
   });
 
   it("prefixTaken, calibrationOutOfRange, readingsInsufficient, typeInUse", () => {

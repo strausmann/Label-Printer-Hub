@@ -69,6 +69,13 @@ describe("reads", () => {
     await waitFor(() => expect(result.current.data?.code).toBe("L4736-0001"));
   });
 
+  it("useSheet does not ask for an empty code", () => {
+    const { calls } = mockApi({});
+    const { wrapper } = setup();
+    renderHook(() => useSheet(""), { wrapper });
+    expect(calls).toHaveLength(0);
+  });
+
   it("useNextCode waits for a type, then asks for it", async () => {
     const { calls } = mockApi({ "GET /api/sheets/next-code": { code: "L4736-0002", hint: "probable" } });
     const { wrapper } = setup();
@@ -120,6 +127,23 @@ describe("sheet writes", () => {
     expect(client.getQueryData<{ state: string }>(sheetKey("L4736-0001"))?.state).toBe("discarded");
   });
 
+  it("a write that answers with the sheet does not refetch that sheet", async () => {
+    const { calls } = mockApi({
+      "GET /api/sheets/L4736-0001": sheetRead(),
+      "POST /api/sheets/L4736-0001/cells/mark": sheetRead("L4736-0001", { used: [1, 7] }),
+      "POST /api/sheets/L4736-0001/discard": sheetRead("L4736-0001", {}, { state: "discarded" }),
+    });
+    const { wrapper, client } = setup();
+    const detail = renderHook(() => useSheet("L4736-0001"), { wrapper });
+    await waitFor(() => expect(detail.result.current.data).toBeDefined());
+    const mark = renderHook(() => useMarkCells(), { wrapper });
+    const discard = renderHook(() => useDiscardSheet(), { wrapper });
+    await act(() => mark.result.current.mutateAsync({ code: "L4736-0001", cells: [{ cell: 7 }] }));
+    await act(() => discard.result.current.mutateAsync("L4736-0001"));
+    await act(() => client.invalidateQueries({ queryKey: ["nothing"] }));
+    expect(calls.filter((c) => c.method === "GET" && c.path === "/api/sheets/L4736-0001")).toHaveLength(1);
+  });
+
   it("mark, unmark and resolve post the cells to their own address and cache the answer", async () => {
     const { calls } = mockApi({
       "POST /api/sheets/L4736-0001/cells/mark": sheetRead("L4736-0001", { used: [1, 7] }),
@@ -168,14 +192,14 @@ describe("preview and print", () => {
 
   it("useSheetPreview does not ask while disabled and does not retry plan_changed", async () => {
     const { calls } = mockApi({
-      [`POST /api/print/${PAGE_PRINTER.id}/sheet/preview`]: () => respond(409, apiErrorBody("plan_changed", "Changed.", { plan: { pages: [] } })),
+      [`POST /api/print/${PAGE_PRINTER.id}/sheet/preview`]: () => respond(409, apiErrorBody("plan_changed", "Changed.", { plan: [{ sheet: "L4736-0001", cells: [4], id_cell: null }] })),
     });
     const { wrapper } = setup();
     renderHook(() => useSheetPreview(PAGE_PRINTER.id, request, false), { wrapper });
     expect(calls).toHaveLength(0);
     const on = renderHook(() => useSheetPreview(PAGE_PRINTER.id, request), { wrapper });
     await waitFor(() => expect(on.result.current.isError).toBe(true));
-    expect(planChanged(on.result.current.error)).toEqual({ plan: { pages: [] } });
+    expect(planChanged(on.result.current.error)).toEqual({ plan: [{ sheet: "L4736-0001", cells: [4], id_cell: null }] });
     expect(calls).toHaveLength(1);
   });
 

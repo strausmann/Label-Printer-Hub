@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
 import type { components } from "../../api/schema.gen";
-import { queryString } from "../sheets/api";
+import { queryString } from "../../api/queryString";
 import { sheetsListKey, typeKey, typesKey, typesListKey } from "../sheets/keys";
 
 export { typeKey, typesKey } from "../sheets/keys";
