@@ -7,6 +7,7 @@ const TYPE_48 = "avery-zweckform-l4736rev";
 const TYPE_189 = "avery-zweckform-l4731rev"; // the edge sheet type: 189 cells
 const FULL = "L4736-0002";
 const DISCARDED = "L4736-0003";
+const EDGE = "L4731-0001"; // the 189-cell sheet, 120 cells used with purposes of 120 characters
 
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
@@ -147,6 +148,72 @@ test.describe.serial("sheets", () => {
     expect((await view()).scrollLeft).toBe(0);
   });
 
+  test("the page of a sheet opened by its address (the scanned URL) lists what is in its cells", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/sheet/L4736-0001");
+    await expect(page.getByRole("heading", { level: 1, name: "L4736-0001" })).toBeVisible();
+    const list = page.getByRole("list", { name: "Cells in use" });
+    await expect(list).toContainText("Cell 1 → item 1 · marked by hand");
+    await expect(list).toContainText("Cell 17 → item 17 · marked by hand");
+    await expect(page.getByRole("link", { name: "Print onto this sheet" })).toHaveAttribute("href", "/cart?sheet=L4736-0001");
+    // The purpose is read on a tap, not only on hover.
+    await page.getByRole("gridcell", { name: /^Cell 4,/ }).click();
+    await expect(page.getByRole("status", { name: "Selected cell" })).toContainText("Cell 4 → item 4 · marked by hand");
+  });
+
+  test("marks a cell by hand and takes the mark back again (net zero for the other specs)", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/sheets/L4736-0001");
+    await expect(page.getByText("17 of 48 used")).toBeVisible();
+    await page.getByRole("button", { name: "Mark cells as used" }).click();
+    await page.getByRole("gridcell", { name: /^Cell 48,/ }).click();
+    await page.getByRole("textbox", { name: /^Purpose/ }).fill("e2e probe");
+    await page.getByRole("button", { name: "Mark 1 cell as used" }).click();
+    await expect(page.getByText("18 of 48 used")).toBeVisible();
+    await expect(page.getByRole("list", { name: "Cells in use" })).toContainText("Cell 48 → e2e probe · marked by hand");
+
+    await page.getByRole("button", { name: "Un-mark cells" }).click();
+    await page.getByRole("gridcell", { name: /^Cell 48,/ }).click();
+    await page.getByRole("button", { name: "Un-mark 1 cell" }).click();
+    await expect(page.getByText("17 of 48 used")).toBeVisible();
+    await expect(page.getByRole("list", { name: "Cells in use" })).not.toContainText("e2e probe");
+  });
+
+  test("says that a discarded sheet is discarded, and that an unknown code does not exist", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/sheets/${DISCARDED}`);
+    await expect(page.getByText(/^Discarded on .+, this ID is not used again\.$/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mark cells as used" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Discard sheet" })).toHaveCount(0);
+    await page.goto("/sheet/L4736-9999");
+    await expect(page.getByText("That sheet does not exist.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Back to the sheets" })).toBeVisible();
+  });
+
+  test("the 189-cell sheet at 360 px: every cell stays 44 px, long purposes wrap, no side scroll", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto(`/sheets/${EDGE}`);
+    await expect(page.getByRole("gridcell")).toHaveCount(189);
+    const smallest = await page.locator("[role=gridcell] rect[data-hit]").evaluateAll((rects) =>
+      Math.min(...rects.flatMap((r) => {
+        const box = r.getBoundingClientRect();
+        return [box.width, box.height];
+      })),
+    );
+    expect(smallest).toBeGreaterThanOrEqual(43.99);
+    expect(await noSideScroll(page)).toBe(true);
+    // A purpose of 120 characters is readable in full on a tap and does not push the page wider.
+    await page.getByRole("gridcell", { name: /^Cell 7,/ }).click();
+    const status = page.getByRole("status", { name: "Selected cell" });
+    await expect(status).toContainText("cell 007 ");
+    expect(await status.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    expect(await noSideScroll(page)).toBe(true);
+  });
+
   for (const [lang, size] of [
     ["de", { width: 360, height: 780 }],
     ["en", { width: 1280, height: 800 }],
@@ -188,6 +255,40 @@ test.describe.serial("sheets", () => {
         await expect(dialog.getByRole("button", { name: de ? "Bogen hinzufügen" : "Add sheet" })).toBeInViewport();
         await viewportShot("dialog-bottom");
         await page.keyboard.press("Escape");
+        await page.emulateMedia({ colorScheme: "light" });
+      });
+    }
+  }
+
+  for (const [lang, size] of [
+    ["de", { width: 360, height: 780 }],
+    ["en", { width: 1280, height: 800 }],
+  ] as const) {
+    for (const scheme of ["light", "dark"] as const) {
+      test(`detail layout and screenshots, ${lang} at ${size.width} px, ${scheme}`, async () => {
+        const testInfo = test.info();
+        const de = lang === "de";
+        await setLanguage(page, lang);
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.setViewportSize(size);
+        const shot = (name: string) => page.screenshot({ path: testInfo.outputPath(`${name}-${size.width}-${lang}-${scheme}.png`), fullPage: true });
+
+        for (const [name, code] of [["detail", "L4736-0001"], ["detail-discarded", DISCARDED], ["detail-edge", EDGE], ["detail-full", FULL]] as const) {
+          await page.goto(`/sheets/${code}`);
+          await expect(page.getByRole("heading", { level: 1, name: code })).toBeVisible();
+          await expect(page.getByRole("grid")).toBeVisible();
+          expect(await noSideScroll(page)).toBe(true);
+          await shot(name);
+        }
+        await page.goto("/sheets/L4736-0001");
+        await page.getByRole("button", { name: de ? "Zellen als belegt markieren" : "Mark cells as used" }).click();
+        for (const n of [30, 31]) await page.getByRole("gridcell", { name: new RegExp(`^(Cell|Zelle) ${n},`) }).click();
+        await expect(page.getByRole("heading", { level: 2, name: de ? "Zellen als belegt markieren" : "Mark cells as used" })).toBeVisible();
+        expect(await noSideScroll(page)).toBe(true);
+        await shot("detail-marking");
+        await page.goto("/sheet/L4736-9999");
+        await expect(page.getByRole("link", { name: de ? "Zurück zu den Bögen" : "Back to the sheets" })).toBeVisible();
+        await shot("detail-unknown");
         await page.emulateMedia({ colorScheme: "light" });
       });
     }

@@ -18,7 +18,6 @@ import {
   CalibrationPage,
   KeptPage,
   NotFoundPage,
-  SheetDetailPlaceholder,
 } from "../pages/placeholders";
 import { IntegrationPage } from "../features/integrations/IntegrationPage";
 import { AboutPage } from "../features/about/AboutPage";
@@ -38,6 +37,7 @@ import { parseArchiveSearch } from "../features/archive/search";
 import { parseSheetCode } from "../features/sheets/resolver";
 import { parseSheetsSearch } from "../features/sheets/search";
 import { SheetsPage } from "../features/sheets/SheetsPage";
+import { SheetDetail } from "../features/sheets/SheetDetail";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { PrinterPage } from "../features/printers/PrinterDetail";
 import { PrintersPage } from "../features/printers/PrintersPage";
@@ -227,8 +227,8 @@ const routeTree = rootRoute.addChildren([
   sheetsRoute,
   archiveRoute,
   // The second path is the one printed in the QR code of a sheet.
-  page("/sheets/$code", SheetDetailPlaceholder),
-  page("/sheet/$code", SheetDetailPlaceholder),
+  page("/sheets/$code", SheetDetail),
+  page("/sheet/$code", SheetDetail),
   calibrationRoute,
   page("/asn", AsnPage),
   page("/kept", KeptPage),

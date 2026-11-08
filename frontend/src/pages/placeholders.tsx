@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 
 /**
  * Stand-ins for pages that later tasks build. Each one is replaced by importing the real
@@ -16,12 +16,6 @@ function PagePlaceholder({ title }: { title: string }) {
 }
 
 /* Modules that have not shipped: their navigation entries stay hidden until `features` says so. */
-/** `/sheets/$code` and `/sheet/$code` (the path printed in the sheet QR code) until the detail page replaces it. */
-export function SheetDetailPlaceholder() {
-  const { t } = useLingui();
-  const { code = "" } = useParams({ strict: false });
-  return <PagePlaceholder title={t`Sheet ${code}`} />;
-}
 export function CalibrationPage() {
   const { t } = useLingui();
   return <PagePlaceholder title={t`Calibration`} />;

@@ -26,6 +26,12 @@ export function useSheetErrorText(): (error: unknown, fallback?: string) => stri
           return t`The print queue does not know this printer yet. Try again in a moment.`;
         case "tray_unknown":
           return t`The printer does not report that tray.`;
+        case "cells_taken":
+          return t`One of those cells is already in use. The sheet shows the current state.`;
+        case "cells_not_marked_by_hand":
+          return t`Only cells that were marked by hand can be un-marked.`;
+        case "cells_not_unconfirmed":
+          return t`Those cells are no longer waiting for confirmation.`;
         case "cell_out_of_range":
           return t`A marked cell is outside the sheet.`;
         case "ipp_unreachable":

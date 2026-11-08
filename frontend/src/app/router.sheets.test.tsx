@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "../App";
 import { initI18n } from "../i18n";
 import { INFO, SIGNED_IN } from "../test-utils";
-import { mockApi } from "../features/test-api";
+import { mockApi, sheetRead } from "../features/test-api";
 import { createQueryClient } from "./queryClient";
 import { createAppRouter } from "./router";
 import { INFO_KEY, SESSION_KEY } from "./session";
@@ -28,8 +28,10 @@ beforeEach(() => {
 
 describe("sheet routes", () => {
   it.each(["/sheets/L4736-0002", "/sheet/L4736-0002"])("%s opens the sheet page for that code", async (path) => {
+    mockApi({ "GET /api/sheets/L4736-0002": sheetRead("L4736-0002") });
     await mountAt(path);
-    expect(await screen.findByRole("heading", { name: "Sheet L4736-0002" })).toBeVisible();
+    // The detail page asks for exactly the code in the path and titles itself with it.
+    expect(await screen.findByRole("heading", { level: 1, name: "L4736-0002" })).toBeVisible();
   });
 
   it("/sheets/archive stays the archive page, not a sheet called archive", async () => {

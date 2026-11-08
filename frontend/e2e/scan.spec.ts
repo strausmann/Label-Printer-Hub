@@ -152,6 +152,20 @@ test.describe.serial("scan", () => {
     await context.close();
   });
 
+  test("@sheet scanning a sheet's ID label opens that sheet's page", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    await page.getByRole("navigation", { name: "Tabs" }).getByRole("link", { name: "Scan" }).click();
+    await expect(page).toHaveURL(/\/sheet\/L4736-0001$/, { timeout: 20_000 });
+    await expect(page.getByRole("heading", { level: 1, name: "L4736-0001" })).toBeVisible();
+    // The grid shows the seeded sheet; its first cell was marked by hand with the purpose "item 1".
+    await expect(page.getByRole("list", { name: "Cells in use" })).toContainText("Cell 1 → item 1 · marked by hand");
+    expect(await noSideScroll(page)).toBe(true);
+    await shot(page, "task-6-scan-opens-sheet.png");
+    // The camera is off again once the screen is left.
+    await expect.poll(() => page.evaluate(() => document.querySelectorAll("video").length)).toBe(0);
+  });
+
   test("@data-matrix zxing worker decodes a data-matrix image under the production CSP", async () => {
     const problems = await watch(page);
     // Make sure the browser's own detector cannot be the one reading this.

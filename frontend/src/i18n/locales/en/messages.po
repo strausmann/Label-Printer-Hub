@@ -7,6 +7,11 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: en\n"
 
+#. placeholder {0}: chosen.length
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {# cell chosen} other {# cells chosen}}"
+msgstr "{0, plural, one {# cell chosen} other {# cells chosen}}"
+
 #. placeholder {0}: marked.size
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "{0, plural, one {# cell marked as used} other {# cells marked as used}}"
@@ -33,10 +38,25 @@ msgstr "{0, plural, one {# product code} other {# product codes}}"
 msgid "{0, plural, one {# row} other {# rows}}"
 msgstr "{0, plural, one {# row} other {# rows}}"
 
+#. placeholder {0}: chosen.length
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
+msgstr "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
+
 #. placeholder {0}: sheet.unconfirmed
 #: src/features/sheets/SheetsPage.tsx
 msgid "{0, plural, one {Resolve the # unconfirmed cell first; once the sheet is discarded it can no longer be cleaned up.} other {Resolve the # unconfirmed cells first; once the sheet is discarded they can no longer be cleaned up.}}"
 msgstr "{0, plural, one {Resolve the # unconfirmed cell first; once the sheet is discarded it can no longer be cleaned up.} other {Resolve the # unconfirmed cells first; once the sheet is discarded they can no longer be cleaned up.}}"
+
+#. placeholder {0}: sheet.cells.length
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {Show the # cell} other {Show all # cells}}"
+msgstr "{0, plural, one {Show the # cell} other {Show all # cells}}"
+
+#. placeholder {0}: chosen.length
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {Un-mark # cell} other {Un-mark # cells}}"
+msgstr "{0, plural, one {Un-mark # cell} other {Un-mark # cells}}"
 
 #. placeholder {0}: type.key
 #: src/features/archive/TypeDetail.tsx
@@ -214,6 +234,10 @@ msgstr "Access and keys"
 msgid "Action"
 msgstr "Action"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Actions"
+msgstr "Actions"
+
 #: src/features/settings/PrinterForm.tsx
 msgid "Add a printer"
 msgstr "Add a printer"
@@ -241,6 +265,10 @@ msgstr "Add sheet"
 #: src/features/lookup/ItemView.tsx
 msgid "Add to cart"
 msgstr "Add to cart"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "added by hand"
+msgstr "added by hand"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Added to the cart: {added}"
@@ -297,6 +325,10 @@ msgstr "API key"
 msgid "API keys"
 msgstr "API keys"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Applies to every chosen cell."
+msgstr "Applies to every chosen cell."
+
 #: src/features/archive/TypeDetail.tsx
 msgid "Archive"
 msgstr "Archive"
@@ -341,6 +373,10 @@ msgstr "Back to the overview"
 #: src/features/printers/PrinterDetail.tsx
 msgid "Back to the printers"
 msgstr "Back to the printers"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Back to the sheets"
+msgstr "Back to the sheets"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Backend"
@@ -387,6 +423,7 @@ msgstr "Can't be read with the current secret key — enter it again"
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/PrinterForm.tsx
 #: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Cancel"
 msgstr "Cancel"
@@ -418,9 +455,21 @@ msgstr "Cart ({inCart})"
 msgid "Cell {0}, {state}"
 msgstr "Cell {0}, {state}"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Cell {inspected} is free"
+msgstr "Cell {inspected} is free"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Cell {n} → {purpose} · {source}"
+msgstr "Cell {n} → {purpose} · {source}"
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Cells already used"
 msgstr "Cells already used"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Cells in use"
+msgstr "Cells in use"
 
 #: src/shell/SessionStatus.tsx
 msgid "Checking your session…"
@@ -695,14 +744,20 @@ msgstr "Discard {code}"
 msgid "Discard {code}? It leaves the picker; its number is never given out again; labels already printed stay printed."
 msgstr "Discard {code}? It leaves the picker; its number is never given out again; labels already printed stay printed."
 
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Discard sheet"
 msgstr "Discard sheet"
 
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgctxt "sheet state"
 msgid "discarded"
 msgstr "discarded"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Discarded on {discardedOn}, this ID is not used again."
+msgstr "Discarded on {discardedOn}, this ID is not used again."
 
 #: src/features/settings/sections.tsx
 msgid "Display name"
@@ -796,6 +851,10 @@ msgstr "Export version {0}"
 #: src/features/settings/Integrations.tsx
 msgid "Failed"
 msgstr "Failed"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Feed mark printed"
+msgstr "Feed mark printed"
 
 #: src/features/jobs/JobsPage.tsx
 msgid "Filter by state"
@@ -951,9 +1010,17 @@ msgstr "Import with the new key"
 msgid "imported"
 msgstr "imported"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "in a cell"
+msgstr "in a cell"
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "In the first free cell"
 msgstr "In the first free cell"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "in the margin"
+msgstr "in the margin"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "In the margin"
@@ -963,6 +1030,7 @@ msgstr "In the margin"
 msgid "in the printer's unprintable margin"
 msgstr "in the printer's unprintable margin"
 
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "In use by a running job"
 msgstr "In use by a running job"
@@ -1076,6 +1144,7 @@ msgstr "Language"
 msgid "Last status {age} s ago"
 msgstr "Last status {age} s ago"
 
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Last used"
 msgstr "Last used"
@@ -1145,6 +1214,7 @@ msgstr "Live updates paused"
 #: src/features/settings/Printers.tsx
 #: src/features/settings/sections.tsx
 #: src/features/settings/System.tsx
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 #: src/i18n/messages.ts
 msgid "Loading…"
@@ -1169,6 +1239,15 @@ msgstr "Main"
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "margin"
 msgstr "margin"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Mark cells as used"
+msgstr "Mark cells as used"
+
+#: src/features/sheets/SheetDetail.tsx
+msgctxt "cell source"
+msgid "marked by hand"
+msgstr "marked by hand"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterDetail.tsx
@@ -1248,6 +1327,10 @@ msgstr "New type"
 msgid "New version available"
 msgstr "New version available"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "no"
+msgstr "no"
+
 #: src/features/scan/ScanScreen.tsx
 msgid "No camera"
 msgstr "No camera"
@@ -1255,6 +1338,10 @@ msgstr "No camera"
 #: src/features/scan/ScanScreen.tsx
 msgid "No camera was found on this device. Choose a photo of the code instead."
 msgstr "No camera was found on this device. Choose a photo of the code instead."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "No cell is in use."
+msgstr "No cell is in use."
 
 #: src/features/settings/Integrations.tsx
 msgid "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
@@ -1294,6 +1381,10 @@ msgstr "No printer available"
 msgid "No printers yet."
 msgstr "No printers yet."
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "no purpose"
+msgstr "no purpose"
+
 #: src/features/sheets/SheetsPage.tsx
 msgid "No sheet matches."
 msgstr "No sheet matches."
@@ -1330,6 +1421,19 @@ msgstr "Not found"
 msgid "Not found in {name}"
 msgstr "Not found in {name}"
 
+#: src/features/sheets/SheetDetail.tsx
+msgctxt "resolve an unconfirmed cell"
+msgid "Not printed"
+msgstr "Not printed"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "not printed yet"
+msgstr "not printed yet"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Not printed, cell {n}"
+msgstr "Not printed, cell {n}"
+
 #: src/features/settings/System.tsx
 msgid "Not reachable"
 msgstr "Not reachable"
@@ -1347,9 +1451,14 @@ msgstr "Not set"
 msgid "Not set up"
 msgstr "Not set up"
 
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Not used yet"
 msgstr "Not used yet"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Note"
+msgstr "Note"
 
 #: src/features/archive/TypeForm.tsx
 msgid "Notes"
@@ -1363,6 +1472,10 @@ msgstr "Nothing changed: {0} already has this geometry."
 #: src/features/archive/TypeForm.tsx
 msgid "Nothing changed."
 msgstr "Nothing changed."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Nothing chosen yet"
+msgstr "Nothing chosen yet"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Nothing is printed. You write the code on the sheet yourself."
@@ -1399,6 +1512,18 @@ msgstr "Offline"
 #: src/shell/StatusBadge.tsx
 msgid "OK"
 msgstr "OK"
+
+#: src/features/sheets/errors.ts
+msgid "One of those cells is already in use. The sheet shows the current state."
+msgstr "One of those cells is already in use. The sheet shows the current state."
+
+#: src/features/sheets/errors.ts
+msgid "Only cells that were marked by hand can be un-marked."
+msgstr "Only cells that were marked by hand can be un-marked."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Only cells you marked by hand can be un-marked. Labels a job printed stay used."
+msgstr "Only cells you marked by hand can be un-marked. Labels a job printed stay used."
 
 #: src/features/archive/errors.ts
 msgid "Only your own types can be deleted. Archive this one instead."
@@ -1512,6 +1637,23 @@ msgstr "Print {0}"
 msgid "Print now"
 msgstr "Print now"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Print onto this sheet"
+msgstr "Print onto this sheet"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "printed"
+msgstr "printed"
+
+#: src/features/sheets/SheetDetail.tsx
+msgctxt "resolve an unconfirmed cell"
+msgid "Printed"
+msgstr "Printed"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Printed, cell {n}"
+msgstr "Printed, cell {n}"
+
 #: src/features/jobs/JobDetail.tsx
 #: src/features/lookup/PrinterPicker.tsx
 #: src/features/sheets/AddSheetDialog.tsx
@@ -1570,6 +1712,10 @@ msgstr "Product ID or barcode."
 #: src/features/settings/sections.tsx
 msgid "Public URL"
 msgstr "Public URL"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Purpose (optional)"
+msgstr "Purpose (optional)"
 
 #: src/features/lookup/apps.ts
 msgid "QR code and code"
@@ -1683,6 +1829,10 @@ msgstr "Remove saved value"
 msgctxt "sheet cell state"
 msgid "reserved"
 msgstr "reserved"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Resolve the unconfirmed cells first; the sheet ID waits for them"
+msgstr "Resolve the unconfirmed cells first; the sheet ID waits for them"
 
 #: src/features/printers/PauseResumeButton.tsx
 msgid "Resume"
@@ -1819,6 +1969,10 @@ msgstr "See the jobs"
 msgid "seed"
 msgstr "seed"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Selected cell"
+msgstr "Selected cell"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Sent to {printerName}."
 msgstr "Sent to {printerName}."
@@ -1861,8 +2015,8 @@ msgid "Sheet"
 msgstr "Sheet"
 
 #: src/pages/placeholders.tsx
-msgid "Sheet {code}"
-msgstr "Sheet {code}"
+#~ msgid "Sheet {code}"
+#~ msgstr "Sheet {code}"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Sheet {code} was added, but its ID label could not be queued."
@@ -1882,7 +2036,21 @@ msgstr "Sheet archive"
 msgid "sheet ID"
 msgstr "sheet ID"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Sheet ID"
+msgstr "Sheet ID"
+
+#: src/features/sheets/SheetDetail.tsx
+msgctxt "cell source"
+msgid "Sheet ID"
+msgstr "Sheet ID"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Sheet ID not printed yet"
+msgstr "Sheet ID not printed yet"
+
 #: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Sheet type"
 msgstr "Sheet type"
@@ -2031,6 +2199,10 @@ msgstr "System theme"
 msgid "Tabs"
 msgstr "Tabs"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Tap the free labels that are gone. They are written down as marked by hand."
+msgstr "Tap the free labels that are gone. They are written down as marked by hand."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Tap the labels that are already gone. A fresh sheet needs none."
 msgstr "Tap the labels that are already gone. A fresh sheet needs none."
@@ -2072,6 +2244,7 @@ msgid "That printer does not exist."
 msgstr "That printer does not exist."
 
 #: src/features/sheets/errors.ts
+#: src/features/sheets/SheetDetail.tsx
 msgid "That sheet does not exist."
 msgstr "That sheet does not exist."
 
@@ -2119,6 +2292,18 @@ msgstr "The camera needs a secure connection (HTTPS) or localhost. Open the hub 
 #: src/features/lookup/CartPage.tsx
 msgid "The cart is empty."
 msgstr "The cart is empty."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "The cell could not be resolved."
+msgstr "The cell could not be resolved."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "The cells could not be marked."
+msgstr "The cells could not be marked."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "The cells could not be un-marked."
+msgstr "The cells could not be un-marked."
 
 #: src/features/archive/errors.ts
 msgid "The code prefix"
@@ -2438,6 +2623,10 @@ msgstr "The sheet could not be added."
 msgid "The sheet could not be discarded."
 msgstr "The sheet could not be discarded."
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "The sheet could not be loaded."
+msgstr "The sheet could not be loaded."
+
 #: src/features/archive/TypeDetail.tsx
 msgid "The sheet type could not be loaded."
 msgstr "The sheet type could not be loaded."
@@ -2505,6 +2694,10 @@ msgstr "The vertical pitch must not be smaller than the label height."
 msgid "Theme"
 msgstr "Theme"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "These labels were sent to the printer, but nobody confirmed the result. Say what became of each one."
+msgstr "These labels were sent to the printer, but nobody confirmed the result. Say what became of each one."
+
 #: src/features/scan/ScanScreen.tsx
 msgid "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
 msgstr "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
@@ -2565,6 +2758,10 @@ msgstr "This printer reports no trays, so it cannot print the ID label."
 msgid "This secret is saved for the old URL. Enter it again to use the new URL."
 msgstr "This secret is saved for the old URL. Enter it again to use the new URL."
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "This sheet"
+msgstr "This sheet"
+
 #: src/features/sheets/errors.ts
 msgid "This sheet is discarded."
 msgstr "This sheet is discarded."
@@ -2576,6 +2773,10 @@ msgstr "This type has sheets. Archive it instead."
 #: src/features/archive/errors.ts
 msgid "This type is archived. Bring it back first."
 msgstr "This type is archived. Bring it back first."
+
+#: src/features/sheets/errors.ts
+msgid "Those cells are no longer waiting for confirmation."
+msgstr "Those cells are no longer waiting for confirmation."
 
 #: src/features/settings/System.tsx
 msgid "Time"
@@ -2628,6 +2829,10 @@ msgstr "Try again"
 msgid "Type"
 msgstr "Type"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Un-mark cells"
+msgstr "Un-mark cells"
+
 #: src/features/archive/TypeDetail.tsx
 msgid "Unarchive"
 msgstr "Unarchive"
@@ -2636,6 +2841,10 @@ msgstr "Unarchive"
 msgctxt "sheet cell state"
 msgid "unconfirmed"
 msgstr "unconfirmed"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Unconfirmed cells"
+msgstr "Unconfirmed cells"
 
 #: src/features/about/BuildRows.tsx
 #: src/features/sheets/GeometryDiagram.tsx
@@ -2716,6 +2925,10 @@ msgstr "Webhooks"
 msgid "What changed"
 msgstr "What changed"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "What the markings mean"
+msgstr "What the markings mean"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "What was printed"
 msgstr "What was printed"
@@ -2751,6 +2964,10 @@ msgstr "Wrong tape loaded"
 #: src/features/printers/model.ts
 msgid "Yellow"
 msgstr "Yellow"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "yes"
+msgstr "yes"
 
 #: src/features/settings/SettingsPage.tsx
 msgid "You need an admin key"

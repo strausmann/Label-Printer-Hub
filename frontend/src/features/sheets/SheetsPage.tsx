@@ -45,11 +45,14 @@ function useTypedQuery(current: string | undefined, commit: (q: string | undefin
   return [value, setValue] as const;
 }
 
+/** What the usage drawing and its words need; a sheet row and a whole sheet both have it. */
+type Counts = Pick<SheetSummary, "used" | "total" | "free" | "reserved" | "unconfirmed">;
+
 /**
  * Used, reserved and unconfirmed cells as one bar. It is a drawing: the numbers beside it say the
  * same in words, and colour is never the only difference (the segments differ in position).
  */
-function UsageBar({ sheet }: { sheet: SheetSummary }) {
+function UsageBar({ sheet }: { sheet: Counts }) {
   const total = Math.max(sheet.total, 1);
   const part = (n: number) => Math.min(100, (n / total) * 100);
   const used = part(sheet.used);
@@ -65,7 +68,7 @@ function UsageBar({ sheet }: { sheet: SheetSummary }) {
   );
 }
 
-function Usage({ sheet }: { sheet: SheetSummary }) {
+export function Usage({ sheet }: { sheet: Counts }) {
   const { t } = useLingui();
   const { used, total, free, reserved, unconfirmed } = sheet;
   return (
@@ -100,7 +103,16 @@ function StateWord({ sheet }: { sheet: SheetSummary }) {
 }
 
 /** The question before a discard, in the mockup's words, with the two traps of the server's rules. */
-function DiscardDialog({ sheet, onClose }: { sheet: SheetSummary | null; onClose: () => void }) {
+export function DiscardDialog({
+  sheet,
+  onClose,
+  onShowUnconfirmed,
+}: {
+  sheet: Pick<SheetSummary, "code" | "unconfirmed"> | null;
+  onClose: () => void;
+  /** Given on the sheet's own page, where a link to the sheet would lead nowhere: the cells are on screen already. */
+  onShowUnconfirmed?: () => void;
+}) {
   const { t } = useLingui();
   const errorText = useSheetErrorText();
   const discard = useDiscardSheet();
@@ -122,13 +134,25 @@ function DiscardDialog({ sheet, onClose }: { sheet: SheetSummary | null; onClose
               other: "Resolve the # unconfirmed cells first; once the sheet is discarded they can no longer be cleaned up.",
             })}
           </p>
-          <Link
-            to="/sheets/$code"
-            params={{ code: sheet.code }}
-            className="inline-flex min-h-11 items-center self-start text-link underline underline-offset-2"
-          >
-            {t`Show the unconfirmed cells`}
-          </Link>
+          {onShowUnconfirmed ? (
+            <Button
+              onPress={() => {
+                close();
+                onShowUnconfirmed();
+              }}
+              className="inline-flex min-h-11 items-center self-start text-link underline underline-offset-2"
+            >
+              {t`Show the unconfirmed cells`}
+            </Button>
+          ) : (
+            <Link
+              to="/sheets/$code"
+              params={{ code: sheet.code }}
+              className="inline-flex min-h-11 items-center self-start text-link underline underline-offset-2"
+            >
+              {t`Show the unconfirmed cells`}
+            </Link>
+          )}
         </div>
       ) : null}
       {discard.isError ? (

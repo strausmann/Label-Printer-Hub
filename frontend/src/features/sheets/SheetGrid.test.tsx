@@ -260,3 +260,28 @@ describe("sizing", () => {
     expect(Number(svgOf(container).getAttribute("width"))).toBeLessThanOrEqual(360);
   });
 });
+
+describe("inspecting a cell", () => {
+  it("reports a cell on focus and on a tap, also in view mode and on cells that cannot be toggled", () => {
+    const onInspect = vi.fn();
+    const onToggle = vi.fn();
+    render(<SheetGrid geometry={L4736} cells={[mk(5, "used")]} mode="view" onToggle={onToggle} onInspect={onInspect} label="x" containerWidth={360} />);
+    fireEvent.focus(cell(3));
+    expect(onInspect).toHaveBeenLastCalledWith(3);
+    fireEvent.click(cell(5));
+    expect(onInspect).toHaveBeenLastCalledWith(5);
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("sizes a view grid for fingers only when cells can be inspected", () => {
+    const tap = (inspect: boolean) => {
+      const { container, unmount } = render(
+        <SheetGrid geometry={L4731} cells={[]} mode="view" onInspect={inspect ? () => {} : undefined} label="x" containerWidth={360} />,
+      );
+      const width = Number(container.querySelector("svg")!.getAttribute("width"));
+      unmount();
+      return width;
+    };
+    expect(tap(true)).toBeGreaterThan(tap(false));
+  });
+});

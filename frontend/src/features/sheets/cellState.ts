@@ -32,6 +32,8 @@ const ASYMMETRY_MM = 0.5;
 export const MIN_TAP_PX = 44;
 /** Below this container width the select/skip modes switch to the zoomed tap view. */
 export const TAP_VIEW_BELOW_PX = 640;
+/** A view whose cells are only read on a tap (no marking) goes to the zoomed view only on a phone, not in a narrow desktop column. */
+export const INSPECT_VIEW_BELOW_PX = 480;
 /** A fitted view never grows past this width, so a desktop page is not a poster. */
 export const MAX_VIEW_PX = 760;
 
@@ -89,12 +91,13 @@ export interface GridLayout {
 /**
  * Sizing of the grid, pure so that it can be unit-tested (jsdom has no layout engine).
  * `view` fits the container at the true aspect ratio; selecting below 640 px zooms until even the
- * smallest pitch box is 44 px, and the grid then scrolls inside its own container.
+ * smallest pitch box is 44 px, and the grid then scrolls inside its own container. A `view` grid
+ * whose cells can be tapped to read them (`touchable`) is sized the same way.
  */
-export function gridLayout(g: GeometryMm, containerPx: number, mode: GridMode, zoom: 1 | 2 = 1): GridLayout {
+export function gridLayout(g: GeometryMm, containerPx: number, mode: GridMode, zoom: 1 | 2 = 1, touchable = false): GridLayout {
   const { w: pageW, h: pageH } = pageSizeMm(g);
   const available = Math.max(containerPx, 1);
-  const tap = mode !== "view" && available < TAP_VIEW_BELOW_PX;
+  const tap = mode !== "view" ? available < TAP_VIEW_BELOW_PX : touchable && available < INSPECT_VIEW_BELOW_PX;
   let scale = Math.min(available, MAX_VIEW_PX) / pageW;
   if (tap) scale = Math.max(scale, MIN_TAP_PX / Math.min(g.pitch_x, g.pitch_y));
   scale *= zoom;

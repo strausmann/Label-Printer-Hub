@@ -7,6 +7,11 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: de\n"
 
+#. placeholder {0}: chosen.length
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {# cell chosen} other {# cells chosen}}"
+msgstr "{0, plural, one {# Zelle gewählt} other {# Zellen gewählt}}"
+
 #. placeholder {0}: marked.size
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "{0, plural, one {# cell marked as used} other {# cells marked as used}}"
@@ -33,10 +38,25 @@ msgstr "{0, plural, one {# Produktcode} other {# Produktcodes}}"
 msgid "{0, plural, one {# row} other {# rows}}"
 msgstr "{0, plural, one {# Zeile} other {# Zeilen}}"
 
+#. placeholder {0}: chosen.length
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
+msgstr "{0, plural, one {# Zelle als belegt markieren} other {# Zellen als belegt markieren}}"
+
 #. placeholder {0}: sheet.unconfirmed
 #: src/features/sheets/SheetsPage.tsx
 msgid "{0, plural, one {Resolve the # unconfirmed cell first; once the sheet is discarded it can no longer be cleaned up.} other {Resolve the # unconfirmed cells first; once the sheet is discarded they can no longer be cleaned up.}}"
 msgstr "{0, plural, one {Kläre zuerst das # unbestätigte Feld; nach dem Verwerfen des Bogens lässt es sich nicht mehr bereinigen.} other {Kläre zuerst die # unbestätigten Felder; nach dem Verwerfen des Bogens lassen sie sich nicht mehr bereinigen.}}"
+
+#. placeholder {0}: sheet.cells.length
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {Show the # cell} other {Show all # cells}}"
+msgstr "{0, plural, one {Die # Zelle anzeigen} other {Alle # Zellen anzeigen}}"
+
+#. placeholder {0}: chosen.length
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {Un-mark # cell} other {Un-mark # cells}}"
+msgstr "{0, plural, one {Markierung von # Zelle aufheben} other {Markierung von # Zellen aufheben}}"
 
 #. placeholder {0}: type.key
 #: src/features/archive/TypeDetail.tsx
@@ -214,6 +234,10 @@ msgstr "Zugang und Schlüssel"
 msgid "Action"
 msgstr "Aktion"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Actions"
+msgstr "Aktionen"
+
 #: src/features/settings/PrinterForm.tsx
 msgid "Add a printer"
 msgstr "Drucker hinzufügen"
@@ -241,6 +265,10 @@ msgstr "Bogen hinzufügen"
 #: src/features/lookup/ItemView.tsx
 msgid "Add to cart"
 msgstr "In den Warenkorb"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "added by hand"
+msgstr "von Hand aufgebracht"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Added to the cart: {added}"
@@ -297,6 +325,10 @@ msgstr "API-Schlüssel"
 msgid "API keys"
 msgstr "API-Schlüssel"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Applies to every chosen cell."
+msgstr "Gilt für jede gewählte Zelle."
+
 #: src/features/archive/TypeDetail.tsx
 msgid "Archive"
 msgstr "Archivieren"
@@ -341,6 +373,10 @@ msgstr "Zurück zur Übersicht"
 #: src/features/printers/PrinterDetail.tsx
 msgid "Back to the printers"
 msgstr "Zurück zu den Druckern"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Back to the sheets"
+msgstr "Zurück zu den Bögen"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Backend"
@@ -387,6 +423,7 @@ msgstr "Lässt sich mit dem aktuellen Geheimschlüssel nicht lesen — bitte ern
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/PrinterForm.tsx
 #: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Cancel"
 msgstr "Abbrechen"
@@ -418,9 +455,21 @@ msgstr "Warenkorb ({inCart})"
 msgid "Cell {0}, {state}"
 msgstr "Zelle {0}, {state}"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Cell {inspected} is free"
+msgstr "Zelle {inspected} ist frei"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Cell {n} → {purpose} · {source}"
+msgstr "Zelle {n} → {purpose} · {source}"
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Cells already used"
 msgstr "Bereits benutzte Felder"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Cells in use"
+msgstr "Belegte Zellen"
 
 #: src/shell/SessionStatus.tsx
 msgid "Checking your session…"
@@ -695,14 +744,20 @@ msgstr "{code} verwerfen"
 msgid "Discard {code}? It leaves the picker; its number is never given out again; labels already printed stay printed."
 msgstr "{code} verwerfen? Er verschwindet aus der Auswahl; seine Nummer wird nie wieder vergeben; bereits gedruckte Etiketten bleiben gedruckt."
 
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Discard sheet"
 msgstr "Bogen verwerfen"
 
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgctxt "sheet state"
 msgid "discarded"
 msgstr "verworfen"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Discarded on {discardedOn}, this ID is not used again."
+msgstr "Verworfen am {discardedOn}, diese ID wird nicht noch einmal vergeben."
 
 #: src/features/settings/sections.tsx
 msgid "Display name"
@@ -796,6 +851,10 @@ msgstr "Version {0} exportieren"
 #: src/features/settings/Integrations.tsx
 msgid "Failed"
 msgstr "Fehlgeschlagen"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Feed mark printed"
+msgstr "Einzugsmarke gedruckt"
 
 #: src/features/jobs/JobsPage.tsx
 msgid "Filter by state"
@@ -951,9 +1010,17 @@ msgstr "Mit dem neuen Schlüssel importieren"
 msgid "imported"
 msgstr "importiert"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "in a cell"
+msgstr "in einer Zelle"
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "In the first free cell"
 msgstr "Im ersten freien Feld"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "in the margin"
+msgstr "im Rand"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "In the margin"
@@ -963,6 +1030,7 @@ msgstr "Im Rand"
 msgid "in the printer's unprintable margin"
 msgstr "im nicht bedruckbaren Rand des Druckers"
 
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "In use by a running job"
 msgstr "In Benutzung durch einen laufenden Auftrag"
@@ -1076,6 +1144,7 @@ msgstr "Sprache"
 msgid "Last status {age} s ago"
 msgstr "Letzter Status vor {age} s"
 
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Last used"
 msgstr "Zuletzt benutzt"
@@ -1145,6 +1214,7 @@ msgstr "Live-Updates pausiert"
 #: src/features/settings/Printers.tsx
 #: src/features/settings/sections.tsx
 #: src/features/settings/System.tsx
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 #: src/i18n/messages.ts
 msgid "Loading…"
@@ -1169,6 +1239,15 @@ msgstr "Hauptnavigation"
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "margin"
 msgstr "Rand"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Mark cells as used"
+msgstr "Zellen als belegt markieren"
+
+#: src/features/sheets/SheetDetail.tsx
+msgctxt "cell source"
+msgid "marked by hand"
+msgstr "von Hand markiert"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterDetail.tsx
@@ -1248,6 +1327,10 @@ msgstr "Neuer Typ"
 msgid "New version available"
 msgstr "Neue Version verfügbar"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "no"
+msgstr "nein"
+
 #: src/features/scan/ScanScreen.tsx
 msgid "No camera"
 msgstr "Keine Kamera"
@@ -1255,6 +1338,10 @@ msgstr "Keine Kamera"
 #: src/features/scan/ScanScreen.tsx
 msgid "No camera was found on this device. Choose a photo of the code instead."
 msgstr "Auf diesem Gerät wurde keine Kamera gefunden. Wähle stattdessen ein Foto des Codes."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "No cell is in use."
+msgstr "Keine Zelle ist belegt."
 
 #: src/features/settings/Integrations.tsx
 msgid "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
@@ -1294,6 +1381,10 @@ msgstr "Kein Drucker verfügbar"
 msgid "No printers yet."
 msgstr "Noch keine Drucker."
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "no purpose"
+msgstr "kein Zweck"
+
 #: src/features/sheets/SheetsPage.tsx
 msgid "No sheet matches."
 msgstr "Kein Bogen passt."
@@ -1330,6 +1421,19 @@ msgstr "Nicht gefunden"
 msgid "Not found in {name}"
 msgstr "Nicht gefunden in {name}"
 
+#: src/features/sheets/SheetDetail.tsx
+msgctxt "resolve an unconfirmed cell"
+msgid "Not printed"
+msgstr "Nicht gedruckt"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "not printed yet"
+msgstr "noch nicht gedruckt"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Not printed, cell {n}"
+msgstr "Nicht gedruckt, Zelle {n}"
+
 #: src/features/settings/System.tsx
 msgid "Not reachable"
 msgstr "Nicht erreichbar"
@@ -1347,9 +1451,14 @@ msgstr "Nicht gesetzt"
 msgid "Not set up"
 msgstr "Nicht eingerichtet"
 
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Not used yet"
 msgstr "Noch nicht benutzt"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Note"
+msgstr "Notiz"
 
 #: src/features/archive/TypeForm.tsx
 msgid "Notes"
@@ -1363,6 +1472,10 @@ msgstr "Nichts geändert: {0} hat diese Maße schon."
 #: src/features/archive/TypeForm.tsx
 msgid "Nothing changed."
 msgstr "Nichts geändert."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Nothing chosen yet"
+msgstr "Noch nichts gewählt"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Nothing is printed. You write the code on the sheet yourself."
@@ -1399,6 +1512,18 @@ msgstr "Offline"
 #: src/shell/StatusBadge.tsx
 msgid "OK"
 msgstr "OK"
+
+#: src/features/sheets/errors.ts
+msgid "One of those cells is already in use. The sheet shows the current state."
+msgstr "Eine dieser Zellen ist schon belegt. Der Bogen zeigt den aktuellen Stand."
+
+#: src/features/sheets/errors.ts
+msgid "Only cells that were marked by hand can be un-marked."
+msgstr "Nur von Hand markierte Zellen lassen sich zurücksetzen."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Only cells you marked by hand can be un-marked. Labels a job printed stay used."
+msgstr "Nur Zellen, die du von Hand markiert hast, lassen sich zurücksetzen. Von einem Auftrag gedruckte Etiketten bleiben belegt."
 
 #: src/features/archive/errors.ts
 msgid "Only your own types can be deleted. Archive this one instead."
@@ -1512,6 +1637,23 @@ msgstr "{0} drucken"
 msgid "Print now"
 msgstr "Jetzt drucken"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Print onto this sheet"
+msgstr "Auf diesen Bogen drucken"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "printed"
+msgstr "gedruckt"
+
+#: src/features/sheets/SheetDetail.tsx
+msgctxt "resolve an unconfirmed cell"
+msgid "Printed"
+msgstr "Gedruckt"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Printed, cell {n}"
+msgstr "Gedruckt, Zelle {n}"
+
 #: src/features/jobs/JobDetail.tsx
 #: src/features/lookup/PrinterPicker.tsx
 #: src/features/sheets/AddSheetDialog.tsx
@@ -1570,6 +1712,10 @@ msgstr "Produkt-ID oder Barcode."
 #: src/features/settings/sections.tsx
 msgid "Public URL"
 msgstr "Öffentliche URL"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Purpose (optional)"
+msgstr "Zweck (optional)"
 
 #: src/features/lookup/apps.ts
 msgid "QR code and code"
@@ -1683,6 +1829,10 @@ msgstr "Gespeicherten Wert entfernen"
 msgctxt "sheet cell state"
 msgid "reserved"
 msgstr "reserviert"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Resolve the unconfirmed cells first; the sheet ID waits for them"
+msgstr "Kläre zuerst die unbestätigten Zellen; die Bogen-ID wartet darauf"
 
 #: src/features/printers/PauseResumeButton.tsx
 msgid "Resume"
@@ -1819,6 +1969,10 @@ msgstr "Aufträge ansehen"
 msgid "seed"
 msgstr "mitgeliefert"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Selected cell"
+msgstr "Gewählte Zelle"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Sent to {printerName}."
 msgstr "An {printerName} gesendet."
@@ -1861,8 +2015,8 @@ msgid "Sheet"
 msgstr "Bogen"
 
 #: src/pages/placeholders.tsx
-msgid "Sheet {code}"
-msgstr "Bogen {code}"
+#~ msgid "Sheet {code}"
+#~ msgstr "Bogen {code}"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Sheet {code} was added, but its ID label could not be queued."
@@ -1882,7 +2036,21 @@ msgstr "Bogenarchiv"
 msgid "sheet ID"
 msgstr "Bogen-ID"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Sheet ID"
+msgstr "Bogen-ID"
+
+#: src/features/sheets/SheetDetail.tsx
+msgctxt "cell source"
+msgid "Sheet ID"
+msgstr "Bogen-ID"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Sheet ID not printed yet"
+msgstr "Bogen-ID noch nicht gedruckt"
+
 #: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Sheet type"
 msgstr "Bogentyp"
@@ -2031,6 +2199,10 @@ msgstr "Systemdesign"
 msgid "Tabs"
 msgstr "Tabs"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Tap the free labels that are gone. They are written down as marked by hand."
+msgstr "Tippe auf die freien Etiketten, die schon weg sind. Sie werden als von Hand markiert vermerkt."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Tap the labels that are already gone. A fresh sheet needs none."
 msgstr "Tippe auf die Etiketten, die schon weg sind. Ein frischer Bogen braucht keine."
@@ -2072,6 +2244,7 @@ msgid "That printer does not exist."
 msgstr "Diesen Drucker gibt es nicht."
 
 #: src/features/sheets/errors.ts
+#: src/features/sheets/SheetDetail.tsx
 msgid "That sheet does not exist."
 msgstr "Diesen Bogen gibt es nicht."
 
@@ -2119,6 +2292,18 @@ msgstr "Die Kamera braucht eine sichere Verbindung (HTTPS) oder localhost. Öffn
 #: src/features/lookup/CartPage.tsx
 msgid "The cart is empty."
 msgstr "Der Warenkorb ist leer."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "The cell could not be resolved."
+msgstr "Die Zelle konnte nicht geklärt werden."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "The cells could not be marked."
+msgstr "Die Zellen konnten nicht markiert werden."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "The cells could not be un-marked."
+msgstr "Die Markierung der Zellen konnte nicht aufgehoben werden."
 
 #: src/features/archive/errors.ts
 msgid "The code prefix"
@@ -2438,6 +2623,10 @@ msgstr "Der Bogen konnte nicht hinzugefügt werden."
 msgid "The sheet could not be discarded."
 msgstr "Der Bogen konnte nicht verworfen werden."
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "The sheet could not be loaded."
+msgstr "Der Bogen konnte nicht geladen werden."
+
 #: src/features/archive/TypeDetail.tsx
 msgid "The sheet type could not be loaded."
 msgstr "Der Bogentyp konnte nicht geladen werden."
@@ -2505,6 +2694,10 @@ msgstr "Der vertikale Abstand darf nicht kleiner sein als die Etikettenhöhe."
 msgid "Theme"
 msgstr "Design"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "These labels were sent to the printer, but nobody confirmed the result. Say what became of each one."
+msgstr "Diese Etiketten gingen an den Drucker, aber niemand hat das Ergebnis bestätigt. Gib an, was aus jedem geworden ist."
+
 #: src/features/scan/ScanScreen.tsx
 msgid "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
 msgstr "Der Browser hat die Kamera für diese Seite gesperrt. Erlaube sie in den Website-Einstellungen (Symbol neben der Adresse, dann Kamera) und versuche es erneut."
@@ -2565,6 +2758,10 @@ msgstr "Dieser Drucker meldet keine Fächer und kann das ID-Etikett deshalb nich
 msgid "This secret is saved for the old URL. Enter it again to use the new URL."
 msgstr "Dieses Geheimnis ist für die alte URL gespeichert. Gib es erneut ein, um die neue URL zu nutzen."
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "This sheet"
+msgstr "Dieser Bogen"
+
 #: src/features/sheets/errors.ts
 msgid "This sheet is discarded."
 msgstr "Dieser Bogen ist verworfen."
@@ -2576,6 +2773,10 @@ msgstr "Dieser Typ hat Bögen. Archiviere ihn stattdessen."
 #: src/features/archive/errors.ts
 msgid "This type is archived. Bring it back first."
 msgstr "Dieser Typ ist archiviert. Hole ihn zuerst zurück."
+
+#: src/features/sheets/errors.ts
+msgid "Those cells are no longer waiting for confirmation."
+msgstr "Diese Zellen warten nicht mehr auf Bestätigung."
 
 #: src/features/settings/System.tsx
 msgid "Time"
@@ -2628,6 +2829,10 @@ msgstr "Erneut versuchen"
 msgid "Type"
 msgstr "Typ"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Un-mark cells"
+msgstr "Markierung aufheben"
+
 #: src/features/archive/TypeDetail.tsx
 msgid "Unarchive"
 msgstr "Wiederherstellen"
@@ -2636,6 +2841,10 @@ msgstr "Wiederherstellen"
 msgctxt "sheet cell state"
 msgid "unconfirmed"
 msgstr "unbestätigt"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Unconfirmed cells"
+msgstr "Unbestätigte Zellen"
 
 #: src/features/about/BuildRows.tsx
 #: src/features/sheets/GeometryDiagram.tsx
@@ -2716,6 +2925,10 @@ msgstr "Webhooks"
 msgid "What changed"
 msgstr "Was sich geändert hat"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "What the markings mean"
+msgstr "Was die Markierungen bedeuten"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "What was printed"
 msgstr "Was gedruckt wurde"
@@ -2751,6 +2964,10 @@ msgstr "Falsches Band eingelegt"
 #: src/features/printers/model.ts
 msgid "Yellow"
 msgstr "Gelb"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "yes"
+msgstr "ja"
 
 #: src/features/settings/SettingsPage.tsx
 msgid "You need an admin key"

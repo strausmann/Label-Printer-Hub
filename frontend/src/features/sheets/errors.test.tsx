@@ -36,3 +36,13 @@ describe("sheet error words", () => {
     expect(await textFor(new Error("boom"), "Nope")).toBe("Nope");
   });
 });
+
+describe("cell write errors", () => {
+  it.each([
+    ["cells_taken", "One of those cells is already in use. The sheet shows the current state."],
+    ["cells_not_marked_by_hand", "Only cells that were marked by hand can be un-marked."],
+    ["cells_not_unconfirmed", "Those cells are no longer waiting for confirmation."],
+  ])("%s", async (code, words) => {
+    expect(await textFor(api(code))).toBe(words);
+  });
+});

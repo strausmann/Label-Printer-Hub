@@ -208,6 +208,8 @@ export interface SheetGridProps {
   cells: GridCell[];
   mode: GridMode;
   onToggle?: (cell: number) => void;
+  /** Called with a cell's number when it gets focus or a tap, in every mode: the page shows what the cell holds. */
+  onInspect?: (cell: number) => void;
   /** Rendered sheet page (data URL), drawn under the cells over the whole page. */
   overlayPng?: string;
   zoom?: 1 | 2;
@@ -225,13 +227,13 @@ export interface SheetGridProps {
  * On phones, selecting opens a zoomed view in its own scroll container so every cell is at least
  * 44 × 44 px (spec 17.6); the page itself never scrolls sideways.
  */
-export function SheetGrid({ geometry: g, cells, mode, onToggle, overlayPng, zoom = 1, label, selectable, containerWidth }: SheetGridProps) {
+export function SheetGrid({ geometry: g, cells, mode, onToggle, onInspect, overlayPng, zoom = 1, label, selectable, containerWidth }: SheetGridProps) {
   const { i18n } = useLingui();
   const t = useCallback<Translate>((d) => i18n._(d), [i18n]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const width = useContainerWidth(wrapRef, containerWidth);
-  const layout = gridLayout(g, width, mode, zoom);
+  const layout = gridLayout(g, width, mode, zoom, !!onInspect);
   const patternId = `hatch-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const total = g.cols * g.rows;
   const [active, setActive] = useState(1);
@@ -252,6 +254,7 @@ export function SheetGrid({ geometry: g, cells, mode, onToggle, overlayPng, zoom
   };
 
   const toggle = (data: GridCell) => {
+    onInspect?.(data.cell);
     if (interactive && onToggle && canToggle(data)) onToggle(data.cell);
   };
 
@@ -328,7 +331,10 @@ export function SheetGrid({ geometry: g, cells, mode, onToggle, overlayPng, zoom
                   aria-label={cellLabel(data, t)}
                   aria-disabled={interactive && !enabled ? true : undefined}
                   tabIndex={n === Math.min(active, total) ? 0 : -1}
-                  onFocus={() => setActive(n)}
+                  onFocus={() => {
+                    setActive(n);
+                    onInspect?.(n);
+                  }}
                   onKeyDown={(e) => onKeyDown(e, n, data)}
                   onClick={() => toggle(data)}
                   className={`group/cell outline-none ${enabled ? "cursor-pointer" : ""}`}
