@@ -62,7 +62,13 @@ async def test_info_shape(api_client_with_seed) -> None:
     }
     assert set(body["auth"]) == {"sso_configured", "bootstrap_open"}
     assert set(body["features"]) == FEATURE_KEYS
-    assert [k for k, v in body["features"].items() if v] == ["jobs", "lookup", "scan", "sheets", "calibration"]
+    assert [k for k, v in body["features"].items() if v] == [
+        "jobs",
+        "lookup",
+        "scan",
+        "sheets",
+        "calibration",
+    ]
     assert body["default_language"] == "en"
     assert body["display_name"] == "Label Printer Hub"
     assert body["auth"] == {"sso_configured": False, "bootstrap_open": False}
