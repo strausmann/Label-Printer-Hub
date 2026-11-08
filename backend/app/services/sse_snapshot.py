@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,18 +22,48 @@ from app.repositories import jobs as jobs_repo
 from app.repositories import printer_status_cache as status_cache_repo
 from app.services.producers.ipp_status_producer import page_status_event_data
 
+if TYPE_CHECKING:
+    from app.services.print_queue import PrintQueue
+
 _log = logging.getLogger(__name__)
 
 # Active jobs included in a snapshot, per printer.
 SNAPSHOT_JOB_LIMIT = 5
 
 
-async def build_snapshot(session: AsyncSession, printer_id: uuid.UUID) -> list[dict[str, Any]]:
+async def _page_job_fields(queue: PrintQueue | None, job_id: uuid.UUID) -> dict[str, Any]:
+    """Where a page job stands at the printer, from the queue's in-memory job (spec 16).
+
+    The sub-state is not persisted, so a client that connects after the last live event can only
+    learn it here. Empty for a tape job, an untracked job or a failed lookup: the frame then
+    stays what it was and the UI says "at the printer" without guessing.
+    """
+    if queue is None or not queue.has_job(job_id):
+        return {}
+    try:
+        live = await queue.get(job_id)
+    except Exception:  # evicted between the check and the read
+        return {}
+    if live.kind is None:
+        return {}
+    return {
+        "kind": live.kind,
+        "at_printer": live.at_printer,
+        "at_printer_reasons": list(live.at_printer_reasons),
+        "summary": live.summary,
+    }
+
+
+async def build_snapshot(
+    session: AsyncSession, printer_id: uuid.UUID, queue: PrintQueue | None = None
+) -> list[dict[str, Any]]:
     """Return synthetic events describing the current state of ``printer_id``.
 
     Contains ``printer.status`` and ``printer.tape_changed`` from the status cache
     and one ``job.state_changed`` per active (QUEUED|PRINTING) job, at most
-    ``SNAPSHOT_JOB_LIMIT``. Read failures are logged and skipped, never raised.
+    ``SNAPSHOT_JOB_LIMIT``; a page job's frame also carries ``kind``, ``at_printer``,
+    ``at_printer_reasons`` and ``summary`` when ``queue`` tracks it. Read failures are logged
+    and skipped, never raised.
     """
     snapshot: list[dict[str, Any]] = []
     now = datetime.now(UTC)
@@ -110,6 +140,7 @@ async def build_snapshot(session: AsyncSession, printer_id: uuid.UUID) -> list[d
                         "to_state": job.state,
                         "queue_depth": queue_depth,
                         "error_code": None,
+                        **await _page_job_fields(queue, job.id),
                     },
                 }
             )
