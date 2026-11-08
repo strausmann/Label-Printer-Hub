@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { Link } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 
 /**
  * Stand-ins for pages that later tasks build. Each one is replaced by importing the real
@@ -23,6 +23,12 @@ export function SheetsPage() {
 export function SheetArchivePage() {
   const { t } = useLingui();
   return <PagePlaceholder title={t`Sheet archive`} />;
+}
+/** `/sheets/$code` and `/sheet/$code` (the path printed in the sheet QR code) until the detail page replaces it. */
+export function SheetDetailPlaceholder() {
+  const { t } = useLingui();
+  const { code = "" } = useParams({ strict: false });
+  return <PagePlaceholder title={t`Sheet ${code}`} />;
 }
 export function CalibrationPage() {
   const { t } = useLingui();

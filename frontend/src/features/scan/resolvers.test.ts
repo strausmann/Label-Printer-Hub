@@ -50,3 +50,16 @@ describe("resolvers", () => {
     expect(resolveScan(qr("SHEET-7"))).toBeNull();
   });
 });
+
+describe("the registered resolvers together", () => {
+  it.each([
+    ["https://hub.example.invalid/sheet/L4736-0002", "/sheet/L4736-0002"],
+    ["sheet:L4736-0002", "/sheet/L4736-0002"],
+  ])("%s resolves as a sheet", (text, route) => {
+    expect(resolveScan(qr(text))).toEqual({ resolverId: "sheet", route });
+  });
+
+  it("an asset label link still resolves as a label link", () => {
+    expect(resolveScan(qr("https://hub.example.invalid/asset/42"))).toEqual({ resolverId: "label-link", route: "/asset/42" });
+  });
+});

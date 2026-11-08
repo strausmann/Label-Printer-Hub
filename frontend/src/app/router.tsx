@@ -19,6 +19,7 @@ import {
   KeptPage,
   NotFoundPage,
   SheetArchivePage,
+  SheetDetailPlaceholder,
   SheetsPage,
 } from "../pages/placeholders";
 import { IntegrationPage } from "../features/integrations/IntegrationPage";
@@ -34,6 +35,7 @@ import { General, Jobs } from "../features/settings/sections";
 import { SettingsLayout } from "../features/settings/SettingsPage";
 import { System } from "../features/settings/System";
 import { ScanScreen } from "../features/scan/ScanScreen";
+import { parseSheetCode } from "../features/sheets/resolver";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { PrinterPage } from "../features/printers/PrinterDetail";
 import { PrintersPage } from "../features/printers/PrintersPage";
@@ -140,6 +142,32 @@ function SignInRoute() {
 const page = <P extends string>(path: P, component: () => React.JSX.Element) =>
   createRoute({ getParentRoute: () => rootRoute, path, component });
 
+const text = (value: unknown): string | undefined => (typeof value === "string" && value !== "" ? value : undefined);
+
+// The search parameters other pages link with (`<Link to="/cart" search={{ sheet }}>`), declared
+// here so the typed links compile; the pages read them. A value that is not a sheet code is dropped.
+// Every key stays in the result even when rejected: the router merges the result over the raw
+// query string, so leaving it out would let the unchecked value through.
+const cartRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/cart",
+  component: CartPage,
+  validateSearch: (search: Record<string, unknown>): { sheet?: string | undefined } => {
+    const sheet = text(search.sheet);
+    return { sheet: sheet && parseSheetCode(`sheet:${sheet}`) ? sheet : undefined };
+  },
+});
+
+const calibrationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/calibration",
+  component: CalibrationPage,
+  validateSearch: (search: Record<string, unknown>): { printer?: string | undefined; tray?: string | undefined } => ({
+    printer: text(search.printer),
+    tray: text(search.tray),
+  }),
+});
+
 // Settings is a layout (admin gate and section navigation) with one child per section.
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsLayout });
 const settingsChild = <P extends string>(path: P, component: () => React.JSX.Element) =>
@@ -169,7 +197,7 @@ const routeTree = rootRoute.addChildren([
   page("/asset/$id", AssetPage),
   page("/spool/$id", SpoolPage),
   page("/product/$id", ProductPage),
-  page("/cart", CartPage),
+  cartRoute,
   page("/about", AboutPage),
   page("/scan", ScanScreen),
   settingsRoute.addChildren([
@@ -182,7 +210,10 @@ const routeTree = rootRoute.addChildren([
   ]),
   page("/sheets", SheetsPage),
   page("/sheets/archive", SheetArchivePage),
-  page("/calibration", CalibrationPage),
+  // The second path is the one printed in the QR code of a sheet.
+  page("/sheets/$code", SheetDetailPlaceholder),
+  page("/sheet/$code", SheetDetailPlaceholder),
+  calibrationRoute,
   page("/asn", AsnPage),
   page("/kept", KeptPage),
   signInRoute,

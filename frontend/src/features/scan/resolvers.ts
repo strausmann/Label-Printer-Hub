@@ -1,4 +1,5 @@
 import { parseLabelPath } from "../lookup/labelUrl";
+import { sheetResolver } from "../sheets/resolver";
 import type { ScanHit } from "./decoder";
 
 export interface ScanResolver {
@@ -52,3 +53,7 @@ registerScanResolver({
   match: (hit) => JOB_ID.test(hit.text.trim()),
   resolve: (hit) => `/jobs/${hit.text.trim().toLowerCase()}`,
 });
+
+// After the foundation ones. The resolver comes from a module that does not import this one, so
+// nothing runs before the registry above exists.
+registerScanResolver(sheetResolver);

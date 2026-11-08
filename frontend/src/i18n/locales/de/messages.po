@@ -1133,6 +1133,10 @@ msgid "Settings sections"
 msgstr "Bereiche der Einstellungen"
 
 #: src/pages/placeholders.tsx
+msgid "Sheet {code}"
+msgstr "Bogen {code}"
+
+#: src/pages/placeholders.tsx
 #: src/shell/labels.ts
 msgid "Sheet archive"
 msgstr "Bogenarchiv"
