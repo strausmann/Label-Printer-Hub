@@ -112,8 +112,17 @@ function parseProblem(status: number, body: unknown): ApiError {
   if (!isObject(body)) return new ApiError(status, null, fallback);
   const d = body.detail;
   if (isObject(d)) {
-    const code = typeof d.error_code === "string" ? d.error_code : null;
-    const message = typeof d.error_message === "string" ? d.error_message : fallback;
+    // A problem object raised as a FastAPI exception arrives wrapped: `detail: { type, title, detail }`.
+    const wrapped = typeof d.type === "string" && d.type !== "about:blank" ? d.type : null;
+    const code = typeof d.error_code === "string" ? d.error_code : wrapped;
+    const message =
+      typeof d.error_message === "string"
+        ? d.error_message
+        : typeof d.detail === "string"
+          ? d.detail
+          : typeof d.title === "string"
+            ? d.title
+            : fallback;
     return new ApiError(status, code, message, isObject(d.error_detail) ? d.error_detail : null);
   }
   const code = typeof body.type === "string" && body.type !== "about:blank" ? body.type : null;

@@ -83,6 +83,22 @@ describe("apiFetch", () => {
     });
   });
 
+  it("reads a problem object that FastAPI wrapped in `detail` (the calibration page's printer-unavailable)", async () => {
+    fetchMock.mockResolvedValue(
+      respond(409, { detail: { type: "printer-unavailable", title: "Printer is not available to the print queue", status: 409, detail: "Printer x is not known" } }),
+    );
+    await expect(apiFetch("/api/x", { method: "POST" })).rejects.toMatchObject({
+      status: 409,
+      code: "printer-unavailable",
+      detail: "Printer x is not known",
+    });
+  });
+
+  it("an about:blank problem inside `detail` has no code", async () => {
+    fetchMock.mockResolvedValue(respond(409, { detail: { type: "about:blank", title: "Conflict", status: 409 } }));
+    await expect(apiFetch("/api/x", { method: "POST" })).rejects.toMatchObject({ status: 409, code: null, detail: "Conflict" });
+  });
+
   it("falls back to a string detail, then to the status text", async () => {
     fetchMock.mockResolvedValueOnce(respond(404, { detail: "Not Found" }));
     await expect(apiFetch("/api/v1/x")).rejects.toMatchObject({ status: 404, code: null, detail: "Not Found" });
