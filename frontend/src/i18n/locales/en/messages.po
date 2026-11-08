@@ -23,8 +23,10 @@ msgid "{0, plural, one {# column} other {# columns}}"
 msgstr "{0, plural, one {# column} other {# columns}}"
 
 #. placeholder {0}: g.cols * g.rows
+#. placeholder {0}: page.cellCount
 #: src/features/archive/ArchivePage.tsx
 #: src/features/archive/TypeDetail.tsx
+#: src/features/jobs/model.ts
 msgid "{0, plural, one {# label} other {# labels}}"
 msgstr "{0, plural, one {# label} other {# labels}}"
 
@@ -478,6 +480,10 @@ msgstr "archived"
 msgid "Ask an admin to set it up."
 msgstr "Ask an admin to set it up."
 
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Asked the printer to cancel. The cells are settled when it reports."
+msgstr "Asked the printer to cancel. The cells are settled when it reports."
+
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Asset"
 msgstr "Asset"
@@ -490,6 +496,10 @@ msgstr "Asset tag (for example AT-0042), numeric ID (42) or a printed label link
 #: src/features/archive/TypeForm.tsx
 msgid "At most {0} product codes."
 msgstr "At most {0} product codes."
+
+#: src/features/jobs/pageJobText.ts
+msgid "At the printer"
+msgstr "At the printer"
 
 #: src/features/archive/ImportDialog.tsx
 msgid "Back"
@@ -557,6 +567,16 @@ msgstr "Calibration"
 msgid "Calibration for this printer will appear here."
 msgstr "Calibration for this printer will appear here."
 
+#: src/features/jobs/model.ts
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Calibration page"
+msgstr "Calibration page"
+
+#. placeholder {0}: page.typeKey
+#: src/features/jobs/model.ts
+msgid "Calibration page · {0}{version}"
+msgstr "Calibration page · {0}{version}"
+
 #: src/features/scan/CameraScanner.tsx
 msgid "Camera view"
 msgstr "Camera view"
@@ -620,9 +640,18 @@ msgstr "Cell {inspected} is free"
 msgid "Cell {n} → {purpose} · {source}"
 msgstr "Cell {n} → {purpose} · {source}"
 
+#: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Cells"
 msgstr "Cells"
+
+#: src/features/jobs/RetryError.tsx
+msgid "Cells {cells} are in use by something else now. Print the labels again as a new page."
+msgstr "Cells {cells} are in use by something else now. Print the labels again as a new page."
+
+#: src/features/jobs/RetryError.tsx
+msgid "Cells {cells} may or may not have been printed. Resolve them on the sheet first, then retry."
+msgstr "Cells {cells} may or may not have been printed. Resolve them on the sheet first, then retry."
 
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "cells {mapped}"
@@ -1389,6 +1418,10 @@ msgstr "Label size"
 msgid "Label width (mm)"
 msgstr "Label width (mm)"
 
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Labels"
+msgstr "Labels"
+
 #: src/features/settings/sections.tsx
 msgid "Language"
 msgstr "Language"
@@ -1743,6 +1776,10 @@ msgstr "Not calibrated"
 msgid "Not configured"
 msgstr "Not configured"
 
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Not confirmed"
+msgstr "Not confirmed"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Not found"
 msgstr "Not found"
@@ -1896,6 +1933,10 @@ msgstr "Open {appName}"
 msgid "Open {code}"
 msgstr "Open {code}"
 
+#: src/features/jobs/RetryError.tsx
+msgid "Open {sheetCode}"
+msgstr "Open {sheetCode}"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Open in {appName}"
 msgstr "Open in {appName}"
@@ -1904,6 +1945,10 @@ msgstr "Open in {appName}"
 #: src/features/lookup/ItemView.tsx
 msgid "Open Settings › Integrations"
 msgstr "Open Settings › Integrations"
+
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Open the sheet"
+msgstr "Open the sheet"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Optional. It checks where the ID can go, and it is needed to print the ID label."
@@ -2088,6 +2133,11 @@ msgstr "Printers live here; there is no configuration file. A disabled printer k
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
+msgid "Printing"
+msgstr "Printing"
+
+#: src/features/jobs/pageJobText.ts
+msgctxt "page job at the printer"
 msgid "Printing"
 msgstr "Printing"
 
@@ -2447,10 +2497,19 @@ msgstr "Settings can only be changed with an admin key. Sign in with one, or ask
 msgid "Settings sections"
 msgstr "Settings sections"
 
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Settle the cells on the sheet"
+msgstr "Settle the cells on the sheet"
+
+#: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/print/SheetPicker.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Sheet"
 msgstr "Sheet"
+
+#: src/features/jobs/model.ts
+msgid "Sheet {code} · {labels}"
+msgstr "Sheet {code} · {labels}"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Sheet {code} was added, but its ID label could not be queued."
@@ -2478,6 +2537,10 @@ msgstr "Sheet ID"
 msgctxt "cell source"
 msgid "Sheet ID"
 msgstr "Sheet ID"
+
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Sheet ID in cell"
+msgstr "Sheet ID in cell"
 
 #: src/features/sheets/print/bandWord.ts
 msgid "Sheet ID in the bottom margin"
@@ -2508,6 +2571,12 @@ msgstr "Sheet ID not printed yet"
 msgid "Sheet ID not printed, add it by hand"
 msgstr "Sheet ID not printed, add it by hand"
 
+#: src/features/jobs/model.ts
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Sheet page"
+msgstr "Sheet page"
+
+#: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/print/SheetSection.tsx
 #: src/features/sheets/SheetDetail.tsx
@@ -2664,6 +2733,10 @@ msgstr "state unknown"
 #: src/features/printers/model.ts
 msgid "Stopped"
 msgstr "Stopped"
+
+#: src/features/jobs/pageJobText.ts
+msgid "Stopped at the printer"
+msgstr "Stopped at the printer"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Supplies"
@@ -2903,6 +2976,10 @@ msgstr "The horizontal pitch"
 msgid "The horizontal pitch must not be smaller than the label width."
 msgstr "The horizontal pitch must not be smaller than the label width."
 
+#: src/features/jobs/RetryError.tsx
+msgid "The hub could not be reached. Try again."
+msgstr "The hub could not be reached. Try again."
+
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "The hub does not know a sheet {code}."
 msgstr "The hub does not know a sheet {code}."
@@ -2947,7 +3024,7 @@ msgstr "The import failed."
 msgid "The item could not be loaded."
 msgstr "The item could not be loaded."
 
-#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/RetryError.tsx
 #: src/features/printers/PrinterDetail.tsx
 msgid "The job could not be cancelled."
 msgstr "The job could not be cancelled."
@@ -2956,7 +3033,7 @@ msgstr "The job could not be cancelled."
 msgid "The job could not be loaded."
 msgstr "The job could not be loaded."
 
-#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/RetryError.tsx
 msgid "The job could not be retried."
 msgstr "The job could not be retried."
 
@@ -3150,6 +3227,10 @@ msgstr "The printer could not be read."
 msgid "The printer did not accept the ID label."
 msgstr "The printer did not accept the ID label."
 
+#: src/features/jobs/PageJobInfo.tsx
+msgid "The printer did not say whether these labels came out. Look at the sheet and settle each cell."
+msgstr "The printer did not say whether these labels came out. Look at the sheet and settle each cell."
+
 #: src/features/sheets/errors.ts
 msgid "The printer does not report that tray."
 msgstr "The printer does not report that tray."
@@ -3161,6 +3242,10 @@ msgstr "The printer is not ready. The pages go into the print queue and print wh
 #: src/features/settings/Printers.tsx
 msgid "The printer is ready after the hub restarts."
 msgstr "The printer is ready after the hub restarts."
+
+#: src/features/jobs/RetryError.tsx
+msgid "The printer is switched off. Switch it on in the settings, then retry."
+msgstr "The printer is switched off. Switch it on in the settings, then retry."
 
 #: src/features/settings/feedback.tsx
 msgid "The printer refused the request ({status})."
@@ -3227,6 +3312,10 @@ msgstr "The sheet could not be discarded."
 #: src/features/sheets/SheetDetail.tsx
 msgid "The sheet could not be loaded."
 msgstr "The sheet could not be loaded."
+
+#: src/features/jobs/PageJobInfo.tsx
+msgid "The sheet is discarded, so these cells cannot be settled any more."
+msgstr "The sheet is discarded, so these cells cannot be settled any more."
 
 #: src/features/archive/TypeDetail.tsx
 msgid "The sheet type could not be loaded."
@@ -3338,6 +3427,10 @@ msgstr "This is not a valid sheet type export."
 #: src/features/lookup/ItemView.tsx
 msgid "This item cannot be shown"
 msgstr "This item cannot be shown"
+
+#: src/features/jobs/RetryError.tsx
+msgid "This job cannot be retried: nothing is left to print."
+msgstr "This job cannot be retried: nothing is left to print."
 
 #: src/features/jobs/JobDetail.tsx
 msgid "This job does not exist."
@@ -3595,6 +3688,10 @@ msgstr "View job for page {number}"
 #: src/features/lookup/ItemView.tsx
 msgid "View the job"
 msgstr "View the job"
+
+#: src/features/jobs/pageJobText.ts
+msgid "Waiting at the printer"
+msgstr "Waiting at the printer"
 
 #: src/shell/StatusBadge.tsx
 msgid "Warning"

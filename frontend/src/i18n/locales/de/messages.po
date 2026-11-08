@@ -23,8 +23,10 @@ msgid "{0, plural, one {# column} other {# columns}}"
 msgstr "{0, plural, one {# Spalte} other {# Spalten}}"
 
 #. placeholder {0}: g.cols * g.rows
+#. placeholder {0}: page.cellCount
 #: src/features/archive/ArchivePage.tsx
 #: src/features/archive/TypeDetail.tsx
+#: src/features/jobs/model.ts
 msgid "{0, plural, one {# label} other {# labels}}"
 msgstr "{0, plural, one {# Etikett} other {# Etiketten}}"
 
@@ -478,6 +480,10 @@ msgstr "archiviert"
 msgid "Ask an admin to set it up."
 msgstr "Bitten Sie einen Admin, es einzurichten."
 
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Asked the printer to cancel. The cells are settled when it reports."
+msgstr "Der Drucker wurde gebeten abzubrechen. Die Zellen werden geklärt, sobald er sich meldet."
+
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Asset"
 msgstr "Gerät"
@@ -490,6 +496,10 @@ msgstr "Inventarnummer (zum Beispiel AT-0042), numerische ID (42) oder ein gedru
 #: src/features/archive/TypeForm.tsx
 msgid "At most {0} product codes."
 msgstr "Höchstens {0} Produktcodes."
+
+#: src/features/jobs/pageJobText.ts
+msgid "At the printer"
+msgstr "Beim Drucker"
 
 #: src/features/archive/ImportDialog.tsx
 msgid "Back"
@@ -557,6 +567,16 @@ msgstr "Kalibrierung"
 msgid "Calibration for this printer will appear here."
 msgstr "Die Kalibrierung dieses Druckers erscheint hier."
 
+#: src/features/jobs/model.ts
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Calibration page"
+msgstr "Kalibrierseite"
+
+#. placeholder {0}: page.typeKey
+#: src/features/jobs/model.ts
+msgid "Calibration page · {0}{version}"
+msgstr "Kalibrierseite · {0}{version}"
+
 #: src/features/scan/CameraScanner.tsx
 msgid "Camera view"
 msgstr "Kamerabild"
@@ -620,9 +640,18 @@ msgstr "Zelle {inspected} ist frei"
 msgid "Cell {n} → {purpose} · {source}"
 msgstr "Zelle {n} → {purpose} · {source}"
 
+#: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Cells"
 msgstr "Zellen"
+
+#: src/features/jobs/RetryError.tsx
+msgid "Cells {cells} are in use by something else now. Print the labels again as a new page."
+msgstr "Die Zellen {cells} sind inzwischen anderweitig belegt. Drucke die Etiketten erneut als neue Seite."
+
+#: src/features/jobs/RetryError.tsx
+msgid "Cells {cells} may or may not have been printed. Resolve them on the sheet first, then retry."
+msgstr "Die Zellen {cells} wurden möglicherweise gedruckt. Kläre sie zuerst auf dem Bogen, dann versuche es erneut."
 
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "cells {mapped}"
@@ -1389,6 +1418,10 @@ msgstr "Etikettengröße"
 msgid "Label width (mm)"
 msgstr "Etikettenbreite (mm)"
 
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Labels"
+msgstr "Etiketten"
+
 #: src/features/settings/sections.tsx
 msgid "Language"
 msgstr "Sprache"
@@ -1743,6 +1776,10 @@ msgstr "Nicht kalibriert"
 msgid "Not configured"
 msgstr "Nicht eingerichtet"
 
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Not confirmed"
+msgstr "Nicht bestätigt"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Not found"
 msgstr "Nicht gefunden"
@@ -1896,6 +1933,10 @@ msgstr "{appName} öffnen"
 msgid "Open {code}"
 msgstr "{code} öffnen"
 
+#: src/features/jobs/RetryError.tsx
+msgid "Open {sheetCode}"
+msgstr "{sheetCode} öffnen"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Open in {appName}"
 msgstr "In {appName} öffnen"
@@ -1904,6 +1945,10 @@ msgstr "In {appName} öffnen"
 #: src/features/lookup/ItemView.tsx
 msgid "Open Settings › Integrations"
 msgstr "Einstellungen › Integrationen öffnen"
+
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Open the sheet"
+msgstr "Bogen öffnen"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Optional. It checks where the ID can go, and it is needed to print the ID label."
@@ -2088,6 +2133,11 @@ msgstr "Drucker werden hier verwaltet; es gibt keine Konfigurationsdatei. Ein de
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
+msgid "Printing"
+msgstr "Druckt"
+
+#: src/features/jobs/pageJobText.ts
+msgctxt "page job at the printer"
 msgid "Printing"
 msgstr "Druckt"
 
@@ -2447,10 +2497,19 @@ msgstr "Einstellungen lassen sich nur mit einem Admin-Schlüssel ändern. Melde 
 msgid "Settings sections"
 msgstr "Bereiche der Einstellungen"
 
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Settle the cells on the sheet"
+msgstr "Zellen auf dem Bogen klären"
+
+#: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/print/SheetPicker.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Sheet"
 msgstr "Bogen"
+
+#: src/features/jobs/model.ts
+msgid "Sheet {code} · {labels}"
+msgstr "Bogen {code} · {labels}"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Sheet {code} was added, but its ID label could not be queued."
@@ -2478,6 +2537,10 @@ msgstr "Bogen-ID"
 msgctxt "cell source"
 msgid "Sheet ID"
 msgstr "Bogen-ID"
+
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Sheet ID in cell"
+msgstr "Bogen-ID in Zelle"
 
 #: src/features/sheets/print/bandWord.ts
 msgid "Sheet ID in the bottom margin"
@@ -2508,6 +2571,12 @@ msgstr "Bogen-ID noch nicht gedruckt"
 msgid "Sheet ID not printed, add it by hand"
 msgstr "Bogen-ID nicht gedruckt, bitte von Hand ergänzen"
 
+#: src/features/jobs/model.ts
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Sheet page"
+msgstr "Bogenseite"
+
+#: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/print/SheetSection.tsx
 #: src/features/sheets/SheetDetail.tsx
@@ -2664,6 +2733,10 @@ msgstr "Zustand unbekannt"
 #: src/features/printers/model.ts
 msgid "Stopped"
 msgstr "Angehalten"
+
+#: src/features/jobs/pageJobText.ts
+msgid "Stopped at the printer"
+msgstr "Beim Drucker angehalten"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Supplies"
@@ -2903,6 +2976,10 @@ msgstr "Der horizontale Abstand"
 msgid "The horizontal pitch must not be smaller than the label width."
 msgstr "Der horizontale Abstand darf nicht kleiner sein als die Etikettenbreite."
 
+#: src/features/jobs/RetryError.tsx
+msgid "The hub could not be reached. Try again."
+msgstr "Der Hub ist nicht erreichbar. Versuche es erneut."
+
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "The hub does not know a sheet {code}."
 msgstr "Der Hub kennt keinen Bogen {code}."
@@ -2947,7 +3024,7 @@ msgstr "Der Import ist fehlgeschlagen."
 msgid "The item could not be loaded."
 msgstr "Der Eintrag konnte nicht geladen werden."
 
-#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/RetryError.tsx
 #: src/features/printers/PrinterDetail.tsx
 msgid "The job could not be cancelled."
 msgstr "Der Auftrag konnte nicht abgebrochen werden."
@@ -2956,7 +3033,7 @@ msgstr "Der Auftrag konnte nicht abgebrochen werden."
 msgid "The job could not be loaded."
 msgstr "Der Auftrag konnte nicht geladen werden."
 
-#: src/features/jobs/JobDetail.tsx
+#: src/features/jobs/RetryError.tsx
 msgid "The job could not be retried."
 msgstr "Der Auftrag konnte nicht wiederholt werden."
 
@@ -3150,6 +3227,10 @@ msgstr "Der Drucker konnte nicht ausgelesen werden."
 msgid "The printer did not accept the ID label."
 msgstr "Der Drucker hat das ID-Etikett nicht angenommen."
 
+#: src/features/jobs/PageJobInfo.tsx
+msgid "The printer did not say whether these labels came out. Look at the sheet and settle each cell."
+msgstr "Der Drucker hat nicht gemeldet, ob diese Etiketten herauskamen. Sieh dir den Bogen an und kläre jede Zelle."
+
 #: src/features/sheets/errors.ts
 msgid "The printer does not report that tray."
 msgstr "Der Drucker meldet dieses Fach nicht."
@@ -3161,6 +3242,10 @@ msgstr "Der Drucker ist nicht bereit. Die Seiten kommen in die Druckwarteschlang
 #: src/features/settings/Printers.tsx
 msgid "The printer is ready after the hub restarts."
 msgstr "Der Drucker ist nach einem Neustart des Hubs bereit."
+
+#: src/features/jobs/RetryError.tsx
+msgid "The printer is switched off. Switch it on in the settings, then retry."
+msgstr "Der Drucker ist ausgeschaltet. Schalte ihn in den Einstellungen ein und versuche es dann erneut."
 
 #: src/features/settings/feedback.tsx
 msgid "The printer refused the request ({status})."
@@ -3227,6 +3312,10 @@ msgstr "Der Bogen konnte nicht verworfen werden."
 #: src/features/sheets/SheetDetail.tsx
 msgid "The sheet could not be loaded."
 msgstr "Der Bogen konnte nicht geladen werden."
+
+#: src/features/jobs/PageJobInfo.tsx
+msgid "The sheet is discarded, so these cells cannot be settled any more."
+msgstr "Der Bogen ist verworfen, deshalb lassen sich diese Zellen nicht mehr klären."
 
 #: src/features/archive/TypeDetail.tsx
 msgid "The sheet type could not be loaded."
@@ -3338,6 +3427,10 @@ msgstr "Das ist kein gültiger Export eines Bogentyps."
 #: src/features/lookup/ItemView.tsx
 msgid "This item cannot be shown"
 msgstr "Dieser Eintrag kann nicht angezeigt werden"
+
+#: src/features/jobs/RetryError.tsx
+msgid "This job cannot be retried: nothing is left to print."
+msgstr "Dieser Auftrag lässt sich nicht wiederholen: Es ist nichts mehr zu drucken."
 
 #: src/features/jobs/JobDetail.tsx
 msgid "This job does not exist."
@@ -3595,6 +3688,10 @@ msgstr "Auftrag für Seite {number} ansehen"
 #: src/features/lookup/ItemView.tsx
 msgid "View the job"
 msgstr "Auftrag ansehen"
+
+#: src/features/jobs/pageJobText.ts
+msgid "Waiting at the printer"
+msgstr "Wartet beim Drucker"
 
 #: src/shell/StatusBadge.tsx
 msgid "Warning"

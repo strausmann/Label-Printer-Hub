@@ -10,6 +10,8 @@ import { useJobStateBadge } from "../printers/model";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { useCancelJobById, useJob, useRetryJob, type Job } from "./api";
 import { canCancel, canRetry, formatTime, historyOf, jobTitle, summarizePayload } from "./model";
+import { PageJobInfo } from "./PageJobInfo";
+import { CancelError, RetryError } from "./RetryError";
 
 const route = getRouteApi("/jobs/$jobId");
 
@@ -86,9 +88,15 @@ function JobDetail({ job }: { job: Job }) {
 
       {(retry.isError || cancel.isError) && (
         <p role="alert" className="text-small text-bad">
-          {retry.isError ? t`The job could not be retried.` : t`The job could not be cancelled.`}
+          {retry.isError ? (
+            <RetryError error={retry.error} sheetCode={summary.page?.sheetCode ?? null} />
+          ) : (
+            <CancelError error={cancel.error} />
+          )}
         </p>
       )}
+
+      <PageJobInfo job={job} cancelRequested={cancel.isSuccess && job.state === "printing"} />
 
       {job.error && (
         <section aria-labelledby="error-h" className="rounded-r3 border border-bad bg-surface p-4">
@@ -110,6 +118,8 @@ function JobDetail({ job }: { job: Job }) {
                 "—"
               )}
             </Row>
+            {!summary.page && (
+              <>
             <Row label={t`Title`}>{summary.title ?? "—"}</Row>
             <Row label={t`Code`}>{summary.code ? <span className="code">{summary.code}</span> : "—"}</Row>
             <Row label={t`Source`}>{summary.source ?? "—"}</Row>
@@ -118,6 +128,8 @@ function JobDetail({ job }: { job: Job }) {
             <Row label={t`Copies`}>
               {copyTotal !== null && copyNo !== null ? t`${copyNo} of ${copyTotal}` : (summary.copies ?? "—")}
             </Row>
+              </>
+            )}
           </dl>
         </section>
 
