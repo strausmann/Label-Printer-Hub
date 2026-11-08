@@ -20,7 +20,7 @@ from app.calibration import service as calibration_service
 from app.calibration.model import CalibrationIn
 from app.models.job import Job as DbJob
 from app.models.print_batch import PrintBatch
-from app.models.sheet import Sheet, SheetCell, SheetIdCounter
+from app.models.sheet import Sheet, SheetCell, SheetIdCounter, SheetTypeVersion
 from app.printer_backends.ipp.attributes import Margins
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
@@ -1115,3 +1115,36 @@ async def test_the_preview_of_a_tiny_label_is_refused_the_same_way(
         await run_preview(session, printer, req([raw(0)], [on(code)]))
 
     assert err.value.detail["item_index"] == 0
+
+
+async def test_a_version_added_during_the_lookups_is_not_printed_on_unchecked_geometry(
+    factory: async_sessionmaker[AsyncSession],
+    session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex P2: with ``new_sheet.version`` left out, the fit check used the current version read
+    before the (slow) lookups and ``reserve`` resolved the current version again. A version an
+    admin added in between was printed on without ever being checked. The version is now
+    resolved once, before the check, and reserved explicitly."""
+    printer = await make_printer(session, record())
+    original = print_service.resolve_items
+
+    async def slow(*args: Any, **kwargs: Any) -> Any:
+        out = await original(*args, **kwargs)
+        v2 = Geometry(**{**asdict(G48), "pitch_x": 5000, "cols": 3})
+        async with factory() as other:  # the admin, while the lookups ran
+            await ts.add_version(other, KEY, v2, actor="admin", change_note="v2")
+        return out
+
+    monkeypatch.setattr(print_service, "resolve_items", slow)
+    queue = FakeQueue()
+
+    out = await run_print(factory, printer, req([raw(0)], [fresh()]), queue=queue)
+
+    detail = queue.detail()
+    assert detail.geometry == asdict(G48)  # the version that was checked, not the new one
+    assert out.pages[0].cells == [1]
+    async with factory() as s:
+        sheet = (await s.execute(select(Sheet))).scalar_one()
+        version = await s.get(SheetTypeVersion, sheet.type_version_id)
+    assert version is not None and version.version == 1

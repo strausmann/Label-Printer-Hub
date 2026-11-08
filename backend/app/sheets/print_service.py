@@ -930,13 +930,20 @@ def _check_plan_items(
             index += 1
 
 
-def _placement_request(p: PlacementInModel) -> PlacementRequest:
+def _placement_request(p: PlacementInModel, version: int | None = None) -> PlacementRequest:
+    """The reservation's placement. ``version``: the concrete version of a new sheet, resolved
+    and checked by the caller; a request that left it out is not allowed to get whatever is
+    current when the reservation runs."""
     new = p.new_sheet
     return PlacementRequest(
         sheet_code=p.sheet,
         new_sheet=None
         if new is None
-        else NewSheetIn(type_key=new.type, version=new.version, id_placement=new.id_placement),
+        else NewSheetIn(
+            type_key=new.type,
+            version=new.version if version is None else version,
+            id_placement=new.id_placement,
+        ),
         cells=p.cells if isinstance(p.cells, str) else list(p.cells),
         skip=list(p.skip),
         count=p.count,
@@ -1243,7 +1250,10 @@ async def print_sheets(
         )
         # A plan on views read without the lock: it tells which cell each item would get, so a
         # sheet that does not exist or does not fit is refused before any lookup.
-        views, _, _ = await _placements(session, request)
+        views, infos, _ = await _placements(session, request)
+        # The version of each new sheet, resolved once here: the fit check below and the
+        # reservation then use the same geometry, whatever an admin adds meanwhile.
+        pinned = [infos[id(v.sheet)].version for v in views]
         dry = await asyncio.to_thread(
             plan, views, len(request.items), hw_margins_hmm=facts.margins_hmm, margin=margin
         )
@@ -1258,7 +1268,9 @@ async def print_sheets(
         )
         reserved = await reserve(
             session,
-            placements=[_placement_request(p) for p in request.placements],
+            placements=[
+                _placement_request(p, v) for p, v in zip(request.placements, pinned, strict=True)
+            ],
             items=[i.meta for i in items],
             expected=expected,
             hw_margins_hmm=facts.margins_hmm,

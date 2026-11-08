@@ -7,6 +7,7 @@ import base64
 import io
 import random
 from collections.abc import AsyncIterator
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -1376,3 +1377,23 @@ async def test_a_dense_qr_is_a_placeholder_in_the_preview_and_builds_no_symbol(
     (page,) = out.pages
     assert [c.cell for c in page.cells if c.state == "new"] == [1, 2]
     assert png_of(page).size[0] > 0
+
+
+async def test_a_new_sheet_without_a_version_is_previewed_on_the_one_it_reports(
+    session: AsyncSession,
+) -> None:
+    """The preview resolves the current version once: the version it reports and the geometry
+    it plans and draws are the same one (and the print pins it the same way)."""
+    printer = await make_printer(session, record())
+    await ts.add_version(
+        session,
+        KEY,
+        Geometry(**{**asdict(G48), "pitch_x": 5000, "cols": 3}),
+        actor="t",
+        change_note="v2",
+    )
+
+    out = await run_preview(session, printer, req([raw(0)], [fresh()]))
+
+    (page,) = out.pages
+    assert page.version == 2 and page.geometry.cols == 3
