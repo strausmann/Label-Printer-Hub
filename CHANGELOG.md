@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## 1.3.0 (2026-11-08)
+
+* fix(api): release the session before submitting page jobs and validate the ID cell (#214) ([1906ad8](https://github.com/strausmann/Label-Printer-Hub/commit/1906ad8)), closes [#214](https://github.com/strausmann/Label-Printer-Hub/issues/214) [#210](https://github.com/strausmann/Label-Printer-Hub/issues/210)
+* feat(api): IPP page printers, page jobs and per-tray calibration (#205) ([5097158](https://github.com/strausmann/Label-Printer-Hub/commit/5097158)), closes [#205](https://github.com/strausmann/Label-Printer-Hub/issues/205) [#150](https://github.com/strausmann/Label-Printer-Hub/issues/150) [#150](https://github.com/strausmann/Label-Printer-Hub/issues/150)
+* feat(api): print labels onto die-cut sheets on page printers (#209) ([c6b99d6](https://github.com/strausmann/Label-Printer-Hub/commit/c6b99d6)), closes [#209](https://github.com/strausmann/Label-Printer-Hub/issues/209) [#150](https://github.com/strausmann/Label-Printer-Hub/issues/150) [#150](https://github.com/strausmann/Label-Printer-Hub/issues/150)
+
 ## 1.2.0 (2026-11-06)
 
 * feat(api): sheet archive with versioned types, seed, numbered sheets and cell usage (#203) ([7085e06](https://github.com/strausmann/Label-Printer-Hub/commit/7085e06)), closes [#203](https://github.com/strausmann/Label-Printer-Hub/issues/203) [#150](https://github.com/strausmann/Label-Printer-Hub/issues/150)
