@@ -2,8 +2,10 @@
 
 ``uvicorn tests.e2e_app:app`` serves the real FastAPI app and the built web UI
 (``PRINTER_HUB_WEB_DIST_DIR``) on a throw-away SQLite database. Hardware and upstream
-apps are replaced: both printers use ``MockPrinterBackend`` and Snipe-IT, Grocy and
-Spoolman are in-memory fakes, so no network is involved.
+apps are replaced: both tape printers use ``MockPrinterBackend`` and Snipe-IT, Grocy and
+Spoolman are in-memory fakes, so no network is involved. The one page printer is real IPP
+against a scriptable fake on a loopback port; ``E2EApp`` (below) starts it, seeds the sheets
+and serves the ``/__e2e/`` control paths that switch its state.
 
 Environment:
 
@@ -24,12 +26,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import os
 import secrets
 import tempfile
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, ValidationError
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 E2E_ADMIN_KEY_NAME = "e2e admin key"
@@ -93,6 +99,9 @@ def _prepare_environment(workdir: Path) -> tuple[bool, Path | None]:
     os.environ["PRINTER_HUB_DATABASE_URL"] = f"sqlite+aiosqlite:///{workdir / 'e2e.db'}"
     # Every spec signs in from 127.0.0.1; the production default (10/min) would trip.
     os.environ["PRINTER_HUB_SIGN_IN_LIMIT_PER_MINUTE"] = "100000"
+    # The page printer's status is probed over IPP; a 30 s interval would make every state
+    # switch in the specs take half a minute. The tape printers use the in-memory backend.
+    os.environ["PRINTER_HUB_SSE_PROBE_INTERVAL_S"] = E2E_PROBE_INTERVAL_S
     os.environ.setdefault("PRINTER_HUB_WEB_DIST_DIR", "../frontend/dist")
     # One integration URL comes from the container, so the settings UI has a locked field (D4).
     os.environ["PRINTER_HUB_GROCY_URL"] = "http://grocy.example.invalid"
@@ -191,6 +200,242 @@ def _write_key_file(path: Path, key: str) -> None:
         handle.write(key)
 
 
+# --- page printer, seeded sheets and the control path (Plan 4, Task 1) ---------------------------
+
+E2E_PAGE_PRINTER_NAME = "Office page printer"
+E2E_PAGE_PRINTER_SLUG = "office-page"
+E2E_PAGE_TRAY = "main-tray"
+E2E_CONTROL_PREFIX = "/__e2e/"
+# Short probe interval: the hub learns of a state switch within about a second (default: 30 s).
+E2E_PROBE_INTERVAL_S = "1"
+
+TAPE_L4736 = "avery-zweckform-l4736rev"  # 4 x 12 = 48 cells
+TAPE_L4731 = "avery-zweckform-l4731rev"  # 189 cells, the edge sheet
+E2E_CUSTOM_TYPE_KEY = "e2e-custom-unknown-radius"
+
+
+def _new_fake() -> Any:
+    from tests.helpers.fake_ipp_printer import FakeIppPrinter
+
+    return FakeIppPrinter(media_sources=[E2E_PAGE_TRAY])
+
+
+class _PageState(BaseModel):
+    """Body of ``POST /__e2e/page-printer/state``: every field optional, none unknown."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    printer_state: int | None = None
+    reasons: list[str] | None = None
+    markers: list[dict[str, Any]] | None = None
+    accepting_jobs: bool | None = None
+    job_script: list[int] | None = None
+
+
+_RESET_KEEP = frozenset({"received", "_jobs", "_next_job_id"})
+
+
+def _reset_fake(fake: Any) -> None:
+    """Back to a fresh idle printer, in place: the running server keeps the same object."""
+    fresh = _new_fake()
+    for f in dataclasses.fields(fake):
+        if f.name not in _RESET_KEEP:
+            setattr(fake, f.name, getattr(fresh, f.name))
+    fake.received.clear()
+
+
+def _fake_state(fake: Any) -> dict[str, Any]:
+    return {
+        "printer_state": fake.printer_state,
+        "reasons": list(fake.reasons),
+        "markers": [dict(m) for m in fake.markers],
+        "accepting_jobs": fake.accepting_jobs,
+        "job_script": list(fake.job_script),
+        "media_sources": list(fake.media_sources),
+    }
+
+
+class E2EApp:
+    """ASGI wrapper around the hub for the browser tests.
+
+    - On ``lifespan.startup`` it first brings up the fake page printer, creates its printer row
+      and the seed sheets, and only then lets the hub's own lifespan run (C4): the hub reads its
+      enabled page printers once at startup, so the row has to exist before that.
+    - It serves ``/__e2e/…`` itself, ahead of the hub's SPA catch-all (C5), so a GET never
+      returns ``index.html``. These paths exist in this wrapper only, never in ``app.main``.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+        self.fake = _new_fake()
+        self.uri: str | None = None
+        self._stop: Any = None
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "lifespan":
+            await self._lifespan(scope, receive, send)
+        elif scope["type"] == "http" and scope["path"].startswith(E2E_CONTROL_PREFIX):
+            await self._control(scope, receive, send)
+        else:
+            await self.inner(scope, receive, send)
+
+    async def _lifespan(self, scope: Any, receive: Any, send: Any) -> None:
+        async def receive_with_setup() -> Any:
+            message = await receive()
+            if message["type"] == "lifespan.startup":
+                await self._setup()
+            return message
+
+        async def send_with_teardown(message: Any) -> None:
+            if message["type"] in ("lifespan.shutdown.complete", "lifespan.shutdown.failed"):
+                await self._teardown()
+            await send(message)
+
+        await self.inner(scope, receive_with_setup, send_with_teardown)
+
+    async def _setup(self) -> None:
+        from tests.helpers.fake_ipp_printer import serve_on_loopback
+
+        self.uri, self._stop = await serve_on_loopback(self.fake)
+        await _seed_page_printer_and_sheets(self.uri)
+
+    async def _teardown(self) -> None:
+        if self._stop is not None:
+            stop, self._stop = self._stop, None
+            await stop()
+
+    async def _control(self, scope: Any, receive: Any, send: Any) -> None:
+        request = Request(scope, receive)
+        path = request.url.path.rstrip("/")
+        method = request.method
+        response: Response
+        if path == "/__e2e/page-printer" and method == "GET":
+            response = JSONResponse({"uri": self.uri, "state": _fake_state(self.fake)})
+        elif path == "/__e2e/page-printer/state" and method == "POST":
+            try:
+                body = _PageState.model_validate(await request.json())
+            except (ValueError, ValidationError) as exc:
+                response = JSONResponse({"error": str(exc)}, status_code=422)
+            else:
+                for name, value in body.model_dump(exclude_none=True).items():
+                    setattr(self.fake, name, value)
+                response = JSONResponse({"uri": self.uri, "state": _fake_state(self.fake)})
+        elif path == "/__e2e/page-printer/reset" and method == "POST":
+            _reset_fake(self.fake)
+            response = JSONResponse({"uri": self.uri, "state": _fake_state(self.fake)})
+        else:
+            response = JSONResponse({"error": "unknown control path"}, status_code=404)
+        await response(scope, receive, send)
+
+
+async def _seed_page_printer_and_sheets(uri: str) -> None:
+    """Create the page printer row and the seed sheets; the order of the sheets is fixed."""
+    from app.db.engine import async_session
+    from app.schemas.printer_admin import PrinterCreatePayload
+    from app.seed.sheet_seed import run_sheet_seed
+    from app.services.printer_admin_service import PrinterAdminService
+    from app.sheets import sheet_service, type_service
+    from app.sheets.geometry import Geometry
+    from app.sheets.sheet_service import MarkedCell
+
+    async with async_session() as session:
+        # After the two tape printers (created_at order): ``usable[0]`` stays Workshop PT-P750W.
+        await PrinterAdminService(session, "e2e").create_printer(
+            PrinterCreatePayload.model_validate(
+                {
+                    "name": E2E_PAGE_PRINTER_NAME,
+                    "slug": E2E_PAGE_PRINTER_SLUG,
+                    "backend": "ipp",
+                    "connection": {"uri": uri, "tls_verify": True},
+                    "trays": [
+                        {
+                            "key": E2E_PAGE_TRAY,
+                            "label": "Main tray",
+                            "load_hint": "written side down, top edge first",
+                            "is_default": True,
+                        },
+                        {"key": "auto", "label": "Automatic"},
+                    ],
+                }
+            )
+        )
+
+    # Idempotent; the lifespan runs it again afterwards.
+    await run_sheet_seed(async_session)
+
+    def marks(numbers: range, purpose: Any) -> list[MarkedCell]:
+        return [MarkedCell(n, purpose(n)) for n in numbers]
+
+    async with async_session() as session:
+        # 1. L4736-0001: 17 of 48 cells used.
+        await sheet_service.create_sheet(
+            session,
+            type_key=TAPE_L4736,
+            version=None,
+            used_cells=marks(range(1, 18), lambda n: f"item {n}"),
+            note=None,
+            actor="e2e",
+        )
+        # 2. L4736-0002: full.
+        await sheet_service.create_sheet(
+            session,
+            type_key=TAPE_L4736,
+            version=None,
+            used_cells=marks(range(1, 49), lambda n: f"item {n}"),
+            note=None,
+            actor="e2e",
+        )
+        # 3. L4736-0003: discarded.
+        discarded = await sheet_service.create_sheet(
+            session,
+            type_key=TAPE_L4736,
+            version=None,
+            used_cells=marks(range(1, 4), lambda n: f"item {n}"),
+            note=None,
+            actor="e2e",
+        )
+        await sheet_service.discard_sheet(session, discarded.code, actor="e2e")
+        # 4. L4731-0001: the 189-cell edge sheet, 120 used, every purpose 120 characters long.
+        await sheet_service.create_sheet(
+            session,
+            type_key=TAPE_L4731,
+            version=None,
+            used_cells=marks(
+                range(1, 121), lambda n: f"cell {n:03d} " + "a" * (120 - len(f"cell {n:03d} "))
+            ),
+            note=None,
+            actor="e2e",
+        )
+        # A custom type whose corner radius is unknown (the "measure it" case).
+        await type_service.create_type(
+            session,
+            type_service.TypeFields(
+                key=E2E_CUSTOM_TYPE_KEY,
+                prefix="E2ECUSTOM",
+                vendor="E2E Labels",
+                product_codes=["E2E-3x4"],
+                description="Custom type, corner radius unknown",
+                allow_qr=None,
+            ),
+            Geometry(
+                page_size="A4",
+                page_w=21000,
+                page_h=29700,
+                label_w=6000,
+                label_h=4000,
+                cols=3,
+                rows=4,
+                pitch_x=6500,
+                pitch_y=4500,
+                margin_top=1500,
+                margin_left=1500,
+                corner_radius=None,
+                shape="rectangle",
+            ),
+            actor="e2e",
+        )
+
+
 def build_e2e_app() -> ASGIApp:
     """Build the app against a fresh temp database; see the module docstring."""
     workdir = Path(tempfile.mkdtemp(prefix="lph-e2e-"))
@@ -224,7 +469,7 @@ def build_e2e_app() -> ASGIApp:
         key = os.environ["PRINTER_HUB_BOOTSTRAP_ADMIN_KEY"] if bootstrap else admin_key
         assert key is not None
         _write_key_file(key_file, key)
-    return main_module.create_app()
+    return E2EApp(main_module.create_app())
 
 
 app = build_e2e_app()

@@ -16,6 +16,9 @@ export const BOOTSTRAP = {
 export const FAKE_CAMERA = {
   qr: resolve(import.meta.dirname, ".tmp", "camera-qr.y4m"),
   dataMatrix: resolve(import.meta.dirname, ".tmp", "camera-data-matrix.y4m"),
+  sheet: resolve(import.meta.dirname, ".tmp", "camera-sheet.y4m"),
   qrText: "https://hub.example.invalid/asset/42",
   dataMatrixText: "https://hub.example.invalid/spool/5",
+  /** The sheet ID cell of the first seeded L4736REV sheet, as the scanner reads it. */
+  sheetText: "sheet:L4736-0001",
 };
