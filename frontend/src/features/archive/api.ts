@@ -46,15 +46,18 @@ export const useSheetTypes = (filters: TypeFilters = {}) =>
 export const useSheetType = (key: string) =>
   useQuery({ queryKey: typeKey(key), queryFn: () => apiFetch<SheetTypeDetail>(typePath(key)) });
 
-/** A type write changes the lists, the type and (through the usage counts) the sheet lists. */
-function useTypeWrite<V, R>(run: (v: V) => Promise<R>, keyOf: (v: V) => string | null) {
+/**
+ * A type write changes the lists, the type and (through the usage counts) the sheet lists.
+ * `keyOf` names the type that changed: from the request, or (an import) from the answer.
+ */
+function useTypeWrite<V, R>(run: (v: V) => Promise<R>, keyOf: (v: V, data: R | undefined) => string | null) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: run,
-    onSettled: (_data, _error, v) => {
+    onSettled: (data, _error, v) => {
       void client.invalidateQueries({ queryKey: typesListKey });
       void client.invalidateQueries({ queryKey: sheetsListKey });
-      const key = keyOf(v);
+      const key = keyOf(v, data);
       if (key) void client.invalidateQueries({ queryKey: typeKey(key) });
     },
   });
@@ -97,5 +100,6 @@ export const useImportType = () =>
   useTypeWrite(
     ({ doc, options = {} }: { doc: ExportDoc; options?: ImportOptions }) =>
       apiFetch<ImportResponse>(`/api/sheet-types/import${queryString({ ...options })}`, { method: "POST", json: doc }),
-    () => null,
+    // The type the import touched: a new version changes an open detail, a new key has none cached yet.
+    (_v, data) => data?.key ?? null,
   );

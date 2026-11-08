@@ -77,7 +77,7 @@ function Versions({ type }: { type: SheetTypeDetail }) {
           </tr>
         </thead>
         <tbody>
-          {type.versions.map((v) => (
+          {[...type.versions].sort((a, b) => b.version - a.version).map((v) => (
             <tr key={v.version} className="border-t border-line align-top">
               <th scope="row" className="py-2 pr-3 whitespace-nowrap">
                 {v.version}

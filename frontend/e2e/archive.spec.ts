@@ -82,8 +82,24 @@ test.describe.serial("sheet archive", () => {
 
         await page.goto("/sheets/archive");
         await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-        await expect(page.getByRole("list").first()).toBeVisible();
+        const typeList = page.getByRole("list", { name: lang === "de" ? "Bogentypen" : "Sheet types" });
+        await expect(typeList).toBeVisible();
         expect(await noSideScroll(page)).toBe(true);
+        // The filters are folded on a phone (none is in use) and always open on a wide screen.
+        const filters = page.locator("#archive-filters");
+        const toggle = page.locator('button[aria-controls="archive-filters"]');
+        if (size.width < 1024) {
+          await expect(toggle).toBeVisible();
+          await expect(filters).toBeHidden();
+          await shot("list-folded");
+          const first = typeList.getByRole("link").first();
+          expect((await first.boundingBox())!.y).toBeLessThan(size.height);
+          await toggle.click();
+          await expect(filters).toBeVisible();
+        } else {
+          await expect(toggle).toBeHidden();
+          await expect(filters).toBeVisible();
+        }
         await shot("list");
 
         await page.goto(`/sheets/archive?type=${SEED}`);

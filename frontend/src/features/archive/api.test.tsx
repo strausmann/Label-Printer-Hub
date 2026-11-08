@@ -100,6 +100,26 @@ describe("sheet type writes", () => {
   });
 });
 
+describe("import refreshes the type it touched", () => {
+  it.each(["version_added", "unchanged", "created_as_new_key"])("%s invalidates the detail of the key in the answer", async (outcome) => {
+    mockApi({ "POST /api/sheet-types/import": respond(201, { outcome, key: "L4736REV-copy", version: 2 }) });
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => useImportType(), { wrapper });
+    await act(() => result.current.mutateAsync({ doc: { format: "x" } as never }));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["sheet-types", "detail", "L4736REV-copy"] });
+  });
+
+  it("a refused import names no type, so only the lists refresh", async () => {
+    mockApi({ "POST /api/sheet-types/import": respond(409, apiErrorBody("type_exists", "exists")) });
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => useImportType(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ doc: { format: "x" } as never }).catch(() => undefined);
+    });
+    expect(invalidate.mock.calls.some(([arg]) => (arg as { queryKey: string[] }).queryKey[1] === "detail")).toBe(false);
+  });
+});
+
 describe("exportTypeUrl", () => {
   it("is the export address, with the version when one is named", () => {
     expect(exportTypeUrl("L4736REV")).toBe("/api/sheet-types/L4736REV/export");

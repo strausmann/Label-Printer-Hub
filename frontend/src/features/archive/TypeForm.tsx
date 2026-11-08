@@ -6,14 +6,26 @@ import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { SelectField, SwitchField, TextInput } from "../settings/controls";
 import { SaveFeedback } from "../settings/feedback";
+import { invalidGeometry } from "../../api/errorDetail";
 import { useAddVersion, useCreateType, usePatchType, type SheetTypeCreate, type SheetTypeDetail, type SheetTypePatch } from "./api";
 import { useArchiveErrorText } from "./errors";
 import { TextAreaField } from "./fields";
 import { draftOf, EMPTY_DRAFT, geometryOf, type FieldName, type GeometryDraft } from "./geometryDraft";
+import { PREFIX, KEY } from "./patterns";
 import { httpUrl } from "./search";
 
-const KEY = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
-const PREFIX = /^[A-Z][A-Z0-9]{1,9}$/;
+// The server's field names for the measurement inputs, to mark the one it complained about.
+const SERVER_FIELD: Record<string, FieldName> = {
+  cols: "cols",
+  rows: "rows",
+  label_w: "labelW",
+  label_h: "labelH",
+  pitch_x: "pitchX",
+  pitch_y: "pitchY",
+  margin_top: "marginTop",
+  margin_left: "marginLeft",
+  corner_radius: "cornerRadius",
+};
 // The server's caps (spec 15), checked here so a person is told before the request.
 const MAX = { vendor: 200, description: 200, sourceName: 200, sourceUrl: 500, notes: 2000, changeNote: 500, codes: 50, code: 40 };
 
@@ -130,6 +142,7 @@ export function TypeForm({ mode, onDone }: { mode: FormMode; onDone: (createdKey
 
   const pending = create.isPending || patchType.isPending || addVersion.isPending;
   const serverError = create.error ?? patchType.error ?? addVersion.error;
+  const serverField = SERVER_FIELD[invalidGeometry(serverError)?.field ?? ""] ?? null;
 
   const tooLong = (label: string, value: string, max: number): string | null =>
     value.length > max ? t`${label} is too long: at most ${max} characters.` : null;
@@ -263,7 +276,7 @@ export function TypeForm({ mode, onDone }: { mode: FormMode; onDone: (createdKey
         </fieldset>
       ) : null}
 
-      {mode.kind !== "details" ? <GeometryFields draft={draft} onChange={setDraft} invalid={badField} /> : null}
+      {mode.kind !== "details" ? <GeometryFields draft={draft} onChange={setDraft} invalid={badField ?? serverField} /> : null}
 
       {mode.kind === "geometry" ? (
         <div className="flex flex-col gap-3">

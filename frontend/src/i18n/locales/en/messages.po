@@ -86,6 +86,42 @@ msgstr "{sentLabels, plural, one {# label sent to} other {# labels sent to}}"
 msgid "{tapeMm} mm"
 msgstr "{tapeMm} mm"
 
+#: src/features/archive/errors.ts
+msgid "{what} can have at most two decimals."
+msgstr "{what} can have at most two decimals."
+
+#: src/features/archive/errors.ts
+msgid "{what} has the wrong format."
+msgstr "{what} has the wrong format."
+
+#: src/features/archive/errors.ts
+msgid "{what} has too many entries."
+msgstr "{what} has too many entries."
+
+#: src/features/archive/errors.ts
+msgid "{what} is not a valid number."
+msgstr "{what} is not a valid number."
+
+#: src/features/archive/errors.ts
+msgid "{what} is too long."
+msgstr "{what} is too long."
+
+#: src/features/archive/errors.ts
+msgid "{what} must be at least 1."
+msgstr "{what} must be at least 1."
+
+#: src/features/archive/errors.ts
+msgid "{what} must be greater than zero."
+msgstr "{what} must be greater than zero."
+
+#: src/features/archive/errors.ts
+msgid "{what} must not be empty."
+msgstr "{what} must not be empty."
+
+#: src/features/archive/errors.ts
+msgid "{what} must not be negative."
+msgstr "{what} must not be negative."
+
 #: src/features/settings/AccessKeys.tsx
 msgid "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
 msgstr "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
@@ -656,6 +692,14 @@ msgstr "Filter by state"
 #: src/features/archive/ArchivePage.tsx
 msgid "Filter the sheet types"
 msgstr "Filter the sheet types"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Filters"
+msgstr "Filters"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Filters ({activeFilters} active)"
+msgstr "Filters ({activeFilters} active)"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Find a product"
@@ -1489,6 +1533,10 @@ msgstr "round"
 msgid "Round"
 msgstr "Round"
 
+#: src/features/archive/errors.ts
+msgid "Round labels must be as high as they are wide."
+msgstr "Round labels must be as high as they are wide."
+
 #: src/features/archive/TypeForm.tsx
 msgid "Rows"
 msgstr "Rows"
@@ -1823,9 +1871,14 @@ msgid "The cart is empty."
 msgstr "The cart is empty."
 
 #: src/features/archive/errors.ts
+msgid "The code prefix"
+msgstr "The code prefix"
+
+#: src/features/archive/errors.ts
 msgid "The code prefix cannot change while sheets of this type exist."
 msgstr "The code prefix cannot change while sheets of this type exist."
 
+#: src/features/archive/ImportDialog.tsx
 #: src/features/archive/TypeForm.tsx
 msgid "The code prefix is 2 to 10 capital letters or digits and starts with a letter."
 msgstr "The code prefix is 2 to 10 capital letters or digits and starts with a letter."
@@ -1834,6 +1887,14 @@ msgstr "The code prefix is 2 to 10 capital letters or digits and starts with a l
 msgid "The code reader did not start"
 msgstr "The code reader did not start"
 
+#: src/features/archive/errors.ts
+msgid "The corner radius"
+msgstr "The corner radius"
+
+#: src/features/archive/errors.ts
+msgid "The description"
+msgstr "The description"
+
 #: src/features/settings/System.tsx
 msgid "The download holds the settings that are not secret and not set by the container, as JSON. Keys and tokens are never included."
 msgstr "The download holds the settings that are not secret and not set by the container, as JSON. Keys and tokens are never included."
@@ -1841,6 +1902,26 @@ msgstr "The download holds the settings that are not secret and not set by the c
 #: src/features/archive/ImportDialog.tsx
 msgid "The file is larger than 64 KB."
 msgstr "The file is larger than 64 KB."
+
+#: src/features/archive/errors.ts
+msgid "The grid does not fit on the page: it is taller than the page."
+msgstr "The grid does not fit on the page: it is taller than the page."
+
+#: src/features/archive/errors.ts
+msgid "The grid does not fit on the page: it is wider than the page."
+msgstr "The grid does not fit on the page: it is wider than the page."
+
+#: src/features/archive/errors.ts
+msgid "The grid has too many labels: at most 400 per sheet."
+msgstr "The grid has too many labels: at most 400 per sheet."
+
+#: src/features/archive/errors.ts
+msgid "The horizontal pitch"
+msgstr "The horizontal pitch"
+
+#: src/features/archive/errors.ts
+msgid "The horizontal pitch must not be smaller than the label width."
+msgstr "The horizontal pitch must not be smaller than the label width."
 
 #: src/features/archive/ImportDialog.tsx
 msgid "The import failed."
@@ -1868,6 +1949,10 @@ msgstr "The job could not be retried."
 msgid "The jobs could not be loaded."
 msgstr "The jobs could not be loaded."
 
+#: src/features/archive/errors.ts
+msgid "The key"
+msgstr "The key"
+
 #: src/features/settings/AccessKeys.tsx
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "The key could not be created."
@@ -1881,6 +1966,7 @@ msgstr "The key could not be revoked."
 msgid "The key that webhooks from other apps must present."
 msgstr "The key that webhooks from other apps must present."
 
+#: src/features/archive/ImportDialog.tsx
 #: src/features/archive/TypeForm.tsx
 msgid "The key uses lowercase letters, digits and dashes, 3 to 64 characters, and starts and ends with a letter or digit."
 msgstr "The key uses lowercase letters, digits and dashes, 3 to 64 characters, and starts and ends with a letter or digit."
@@ -1888,6 +1974,22 @@ msgstr "The key uses lowercase letters, digits and dashes, 3 to 64 characters, a
 #: src/features/settings/AccessKeys.tsx
 msgid "The keys could not be loaded."
 msgstr "The keys could not be loaded."
+
+#: src/features/archive/errors.ts
+msgid "The label height"
+msgstr "The label height"
+
+#: src/features/archive/errors.ts
+msgid "The label shape"
+msgstr "The label shape"
+
+#: src/features/archive/errors.ts
+msgid "The label shape must be rectangle or round."
+msgstr "The label shape must be rectangle or round."
+
+#: src/features/archive/errors.ts
+msgid "The label width"
+msgstr "The label width"
 
 #: src/features/lookup/PrinterPicker.tsx
 msgid "The labels could not be sent."
@@ -1903,9 +2005,21 @@ msgstr "The last 200 records of level warning or higher, newest first. They are 
 msgid "The left and right margins differ ({0} and {1}). Measure the sheet again if the labels print off-centre."
 msgstr "The left and right margins differ ({0} and {1}). Measure the sheet again if the labels print off-centre."
 
+#: src/features/archive/errors.ts
+msgid "The left margin"
+msgstr "The left margin"
+
+#: src/features/archive/errors.ts
+msgid "The list of product codes"
+msgstr "The list of product codes"
+
 #: src/features/settings/System.tsx
 msgid "The log could not be loaded."
 msgstr "The log could not be loaded."
+
+#: src/features/archive/errors.ts
+msgid "The measurements are the same as in the current version. Change something first."
+msgstr "The measurements are the same as in the current version. Change something first."
 
 #: src/features/archive/TypeForm.tsx
 msgid "The name in addresses and exports. It cannot be changed later."
@@ -1915,10 +2029,42 @@ msgstr "The name in addresses and exports. It cannot be changed later."
 msgid "The name in the title bar, the language new visitors see, and the address of this hub."
 msgstr "The name in the title bar, the language new visitors see, and the address of this hub."
 
+#: src/features/archive/errors.ts
+msgid "The note about the change"
+msgstr "The note about the change"
+
 #. placeholder {0}: MAX.changeNote
 #: src/features/archive/TypeForm.tsx
 msgid "The note is too long: at most {0} characters."
 msgstr "The note is too long: at most {0} characters."
+
+#: src/features/archive/errors.ts
+msgid "The notes text"
+msgstr "The notes text"
+
+#: src/features/archive/errors.ts
+msgid "The number of columns"
+msgstr "The number of columns"
+
+#: src/features/archive/errors.ts
+msgid "The number of rows"
+msgstr "The number of rows"
+
+#: src/features/archive/errors.ts
+msgid "The page height"
+msgstr "The page height"
+
+#: src/features/archive/errors.ts
+msgid "The page size is not valid."
+msgstr "The page size is not valid."
+
+#: src/features/archive/errors.ts
+msgid "The page width"
+msgstr "The page width"
+
+#: src/features/archive/errors.ts
+msgid "The paper size"
+msgstr "The paper size"
 
 #: src/features/settings/PrinterForm.tsx
 msgid "The port must be between 1 and 65535."
@@ -1962,6 +2108,10 @@ msgstr "The secret comes from the container, but the URL does not. Set the URL i
 msgid "The server cannot be reached."
 msgstr "The server cannot be reached."
 
+#: src/features/archive/errors.ts
+msgid "The server did not accept this value. {what} ({reason})."
+msgstr "The server did not accept this value. {what} ({reason})."
+
 #: src/features/archive/ImportDialog.tsx
 msgid "The server refused the file: it is larger than 64 KB."
 msgstr "The server refused the file: it is larger than 64 KB."
@@ -1986,9 +2136,17 @@ msgstr "The short name in addresses and in the API. It cannot be changed later."
 msgid "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
 msgstr "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
 
+#: src/features/archive/errors.ts
+msgid "The source address"
+msgstr "The source address"
+
 #: src/features/archive/TypeForm.tsx
 msgid "The source address must start with http:// or https://."
 msgstr "The source address must start with http:// or https://."
+
+#: src/features/archive/errors.ts
+msgid "The source name"
+msgstr "The source name"
 
 #: src/features/settings/Integrations.tsx
 msgid "The test could not be run."
@@ -2003,6 +2161,22 @@ msgstr "The text is larger than 64 KB."
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "The top and bottom margins differ ({0} and {1}). Measure the sheet again if the labels print off-centre."
 msgstr "The top and bottom margins differ ({0} and {1}). Measure the sheet again if the labels print off-centre."
+
+#: src/features/archive/errors.ts
+msgid "The top margin"
+msgstr "The top margin"
+
+#: src/features/archive/errors.ts
+msgid "The vendor"
+msgstr "The vendor"
+
+#: src/features/archive/errors.ts
+msgid "The vertical pitch"
+msgstr "The vertical pitch"
+
+#: src/features/archive/errors.ts
+msgid "The vertical pitch must not be smaller than the label height."
+msgstr "The vertical pitch must not be smaller than the label height."
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Theme"

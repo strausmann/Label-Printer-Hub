@@ -9,6 +9,7 @@ import { SECONDARY_BUTTON } from "../ui";
 import { useImportType, type ExportDoc, type ImportOptions, type ImportResponse } from "./api";
 import { useArchiveErrorText } from "./errors";
 import { TextAreaField } from "./fields";
+import { KEY, PREFIX } from "./patterns";
 
 /** The server refuses larger documents (413); the dialog checks first so nothing is uploaded for nothing. */
 export const MAX_IMPORT_BYTES = 64 * 1024;
@@ -65,16 +66,30 @@ export function ImportDialog({ isOpen, onClose, onShow }: { isOpen: boolean; onC
     setText(await file.text());
   }
 
+  /** The new key and prefix the person typed, checked against the server's shapes before anything is sent. */
+  function checkNames(options: ImportOptions): string | null {
+    if (options.new_key !== undefined && !KEY.test(options.new_key)) {
+      return t`The key uses lowercase letters, digits and dashes, 3 to 64 characters, and starts and ends with a letter or digit.`;
+    }
+    const prefixMissing = prefixRequired && options.mode !== "new_version" && options.new_prefix === undefined;
+    if (prefixMissing || (options.new_prefix !== undefined && !PREFIX.test(options.new_prefix))) {
+      return t`The code prefix is 2 to 10 capital letters or digits and starts with a letter.`;
+    }
+    return null;
+  }
+
   async function send(options: ImportOptions) {
     const doc = readDoc();
     if (typeof doc === "string") return setProblem({ text: doc });
+    const names = checkNames(options);
+    if (names) return setProblem({ text: names });
     setProblem(null);
     try {
       setResult(await importType.mutateAsync({ doc, options }));
       setPhase("done");
     } catch (error) {
       if (error instanceof ApiError && error.code === "type_exists" && !options.mode) {
-        setExistingKey(doc.type?.key ?? "");
+        setExistingKey(typeof doc.type?.key === "string" ? doc.type.key : "");
         setPhase("conflict");
         return;
       }

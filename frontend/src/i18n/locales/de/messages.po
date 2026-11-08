@@ -86,6 +86,42 @@ msgstr "{sentLabels, plural, one {# Etikett gesendet an} other {# Etiketten gese
 msgid "{tapeMm} mm"
 msgstr "{tapeMm} mm"
 
+#: src/features/archive/errors.ts
+msgid "{what} can have at most two decimals."
+msgstr "{what} darf höchstens zwei Nachkommastellen haben."
+
+#: src/features/archive/errors.ts
+msgid "{what} has the wrong format."
+msgstr "{what} hat das falsche Format."
+
+#: src/features/archive/errors.ts
+msgid "{what} has too many entries."
+msgstr "{what} hat zu viele Einträge."
+
+#: src/features/archive/errors.ts
+msgid "{what} is not a valid number."
+msgstr "{what} ist keine gültige Zahl."
+
+#: src/features/archive/errors.ts
+msgid "{what} is too long."
+msgstr "{what} ist zu lang."
+
+#: src/features/archive/errors.ts
+msgid "{what} must be at least 1."
+msgstr "{what} muss mindestens 1 sein."
+
+#: src/features/archive/errors.ts
+msgid "{what} must be greater than zero."
+msgstr "{what} muss größer als null sein."
+
+#: src/features/archive/errors.ts
+msgid "{what} must not be empty."
+msgstr "{what} darf nicht leer sein."
+
+#: src/features/archive/errors.ts
+msgid "{what} must not be negative."
+msgstr "{what} darf nicht negativ sein."
+
 #: src/features/settings/AccessKeys.tsx
 msgid "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
 msgstr "Ein Schlüssel öffnet die API und die Anmeldung im Browser. read schaut nur, print druckt auch, admin ändert auch die Einstellungen."
@@ -656,6 +692,14 @@ msgstr "Nach Status filtern"
 #: src/features/archive/ArchivePage.tsx
 msgid "Filter the sheet types"
 msgstr "Bogentypen filtern"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Filters"
+msgstr "Filter"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Filters ({activeFilters} active)"
+msgstr "Filter ({activeFilters} aktiv)"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Find a product"
@@ -1489,6 +1533,10 @@ msgstr "rund"
 msgid "Round"
 msgstr "Rund"
 
+#: src/features/archive/errors.ts
+msgid "Round labels must be as high as they are wide."
+msgstr "Runde Etiketten müssen so hoch wie breit sein."
+
 #: src/features/archive/TypeForm.tsx
 msgid "Rows"
 msgstr "Zeilen"
@@ -1823,9 +1871,14 @@ msgid "The cart is empty."
 msgstr "Der Warenkorb ist leer."
 
 #: src/features/archive/errors.ts
+msgid "The code prefix"
+msgstr "Das Code-Präfix"
+
+#: src/features/archive/errors.ts
 msgid "The code prefix cannot change while sheets of this type exist."
 msgstr "Das Code-Präfix lässt sich nicht ändern, solange es Bögen dieses Typs gibt."
 
+#: src/features/archive/ImportDialog.tsx
 #: src/features/archive/TypeForm.tsx
 msgid "The code prefix is 2 to 10 capital letters or digits and starts with a letter."
 msgstr "Das Code-Präfix besteht aus 2 bis 10 Großbuchstaben oder Ziffern und beginnt mit einem Buchstaben."
@@ -1834,6 +1887,14 @@ msgstr "Das Code-Präfix besteht aus 2 bis 10 Großbuchstaben oder Ziffern und b
 msgid "The code reader did not start"
 msgstr "Der Code-Leser ist nicht gestartet"
 
+#: src/features/archive/errors.ts
+msgid "The corner radius"
+msgstr "Der Eckenradius"
+
+#: src/features/archive/errors.ts
+msgid "The description"
+msgstr "Die Beschreibung"
+
 #: src/features/settings/System.tsx
 msgid "The download holds the settings that are not secret and not set by the container, as JSON. Keys and tokens are never included."
 msgstr "Der Download enthält die Einstellungen, die weder geheim noch vom Container gesetzt sind, als JSON. Schlüssel und Token sind nie enthalten."
@@ -1841,6 +1902,26 @@ msgstr "Der Download enthält die Einstellungen, die weder geheim noch vom Conta
 #: src/features/archive/ImportDialog.tsx
 msgid "The file is larger than 64 KB."
 msgstr "Die Datei ist größer als 64 KB."
+
+#: src/features/archive/errors.ts
+msgid "The grid does not fit on the page: it is taller than the page."
+msgstr "Das Raster passt nicht auf die Seite: Es ist höher als die Seite."
+
+#: src/features/archive/errors.ts
+msgid "The grid does not fit on the page: it is wider than the page."
+msgstr "Das Raster passt nicht auf die Seite: Es ist breiter als die Seite."
+
+#: src/features/archive/errors.ts
+msgid "The grid has too many labels: at most 400 per sheet."
+msgstr "Das Raster hat zu viele Etiketten: höchstens 400 pro Bogen."
+
+#: src/features/archive/errors.ts
+msgid "The horizontal pitch"
+msgstr "Der horizontale Abstand"
+
+#: src/features/archive/errors.ts
+msgid "The horizontal pitch must not be smaller than the label width."
+msgstr "Der horizontale Abstand darf nicht kleiner sein als die Etikettenbreite."
 
 #: src/features/archive/ImportDialog.tsx
 msgid "The import failed."
@@ -1868,6 +1949,10 @@ msgstr "Der Auftrag konnte nicht wiederholt werden."
 msgid "The jobs could not be loaded."
 msgstr "Die Aufträge konnten nicht geladen werden."
 
+#: src/features/archive/errors.ts
+msgid "The key"
+msgstr "Der Schlüssel"
+
 #: src/features/settings/AccessKeys.tsx
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "The key could not be created."
@@ -1881,6 +1966,7 @@ msgstr "Der Schlüssel konnte nicht widerrufen werden."
 msgid "The key that webhooks from other apps must present."
 msgstr "Der Schlüssel, den Webhooks anderer Apps vorweisen müssen."
 
+#: src/features/archive/ImportDialog.tsx
 #: src/features/archive/TypeForm.tsx
 msgid "The key uses lowercase letters, digits and dashes, 3 to 64 characters, and starts and ends with a letter or digit."
 msgstr "Der Schlüssel besteht aus Kleinbuchstaben, Ziffern und Bindestrichen, 3 bis 64 Zeichen, und beginnt und endet mit einem Buchstaben oder einer Ziffer."
@@ -1888,6 +1974,22 @@ msgstr "Der Schlüssel besteht aus Kleinbuchstaben, Ziffern und Bindestrichen, 3
 #: src/features/settings/AccessKeys.tsx
 msgid "The keys could not be loaded."
 msgstr "Die Schlüssel konnten nicht geladen werden."
+
+#: src/features/archive/errors.ts
+msgid "The label height"
+msgstr "Die Etikettenhöhe"
+
+#: src/features/archive/errors.ts
+msgid "The label shape"
+msgstr "Die Etikettenform"
+
+#: src/features/archive/errors.ts
+msgid "The label shape must be rectangle or round."
+msgstr "Die Etikettenform muss Rechteck oder Rund sein."
+
+#: src/features/archive/errors.ts
+msgid "The label width"
+msgstr "Die Etikettenbreite"
 
 #: src/features/lookup/PrinterPicker.tsx
 msgid "The labels could not be sent."
@@ -1903,9 +2005,21 @@ msgstr "Die letzten 200 Einträge der Stufe Warnung oder höher, neueste zuerst.
 msgid "The left and right margins differ ({0} and {1}). Measure the sheet again if the labels print off-centre."
 msgstr "Der linke und der rechte Rand unterscheiden sich ({0} und {1}). Miss den Bogen erneut, falls die Etiketten nicht mittig drucken."
 
+#: src/features/archive/errors.ts
+msgid "The left margin"
+msgstr "Der linke Rand"
+
+#: src/features/archive/errors.ts
+msgid "The list of product codes"
+msgstr "Die Liste der Produktcodes"
+
 #: src/features/settings/System.tsx
 msgid "The log could not be loaded."
 msgstr "Das Protokoll konnte nicht geladen werden."
+
+#: src/features/archive/errors.ts
+msgid "The measurements are the same as in the current version. Change something first."
+msgstr "Die Maße sind dieselben wie in der aktuellen Version. Ändere zuerst etwas."
 
 #: src/features/archive/TypeForm.tsx
 msgid "The name in addresses and exports. It cannot be changed later."
@@ -1915,10 +2029,42 @@ msgstr "Der Name in Adressen und Exporten. Er lässt sich später nicht ändern.
 msgid "The name in the title bar, the language new visitors see, and the address of this hub."
 msgstr "Der Name in der Titelleiste, die Sprache für neue Besucher und die Adresse dieses Hubs."
 
+#: src/features/archive/errors.ts
+msgid "The note about the change"
+msgstr "Die Notiz zur Änderung"
+
 #. placeholder {0}: MAX.changeNote
 #: src/features/archive/TypeForm.tsx
 msgid "The note is too long: at most {0} characters."
 msgstr "Die Notiz ist zu lang: höchstens {0} Zeichen."
+
+#: src/features/archive/errors.ts
+msgid "The notes text"
+msgstr "Der Notiztext"
+
+#: src/features/archive/errors.ts
+msgid "The number of columns"
+msgstr "Die Spaltenzahl"
+
+#: src/features/archive/errors.ts
+msgid "The number of rows"
+msgstr "Die Zeilenzahl"
+
+#: src/features/archive/errors.ts
+msgid "The page height"
+msgstr "Die Seitenhöhe"
+
+#: src/features/archive/errors.ts
+msgid "The page size is not valid."
+msgstr "Das Papierformat ist ungültig."
+
+#: src/features/archive/errors.ts
+msgid "The page width"
+msgstr "Die Seitenbreite"
+
+#: src/features/archive/errors.ts
+msgid "The paper size"
+msgstr "Das Papierformat"
 
 #: src/features/settings/PrinterForm.tsx
 msgid "The port must be between 1 and 65535."
@@ -1962,6 +2108,10 @@ msgstr "Das Geheimnis kommt vom Container, die URL aber nicht. Setze die URL ebe
 msgid "The server cannot be reached."
 msgstr "Der Server ist nicht erreichbar."
 
+#: src/features/archive/errors.ts
+msgid "The server did not accept this value. {what} ({reason})."
+msgstr "Der Server hat einen Wert nicht akzeptiert. {what} ({reason})."
+
 #: src/features/archive/ImportDialog.tsx
 msgid "The server refused the file: it is larger than 64 KB."
 msgstr "Der Server hat die Datei abgelehnt: Sie ist größer als 64 KB."
@@ -1986,9 +2136,17 @@ msgstr "Der Kurzname in Adressen und in der API. Er lässt sich später nicht ä
 msgid "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
 msgstr "Der Slug besteht aus Kleinbuchstaben, Ziffern und Bindestrichen, 3 bis 64 Zeichen."
 
+#: src/features/archive/errors.ts
+msgid "The source address"
+msgstr "Die Quelladresse"
+
 #: src/features/archive/TypeForm.tsx
 msgid "The source address must start with http:// or https://."
 msgstr "Die Quelladresse muss mit http:// oder https:// beginnen."
+
+#: src/features/archive/errors.ts
+msgid "The source name"
+msgstr "Der Name der Quelle"
 
 #: src/features/settings/Integrations.tsx
 msgid "The test could not be run."
@@ -2003,6 +2161,22 @@ msgstr "Der Text ist größer als 64 KB."
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "The top and bottom margins differ ({0} and {1}). Measure the sheet again if the labels print off-centre."
 msgstr "Der obere und der untere Rand unterscheiden sich ({0} und {1}). Miss den Bogen erneut, falls die Etiketten nicht mittig drucken."
+
+#: src/features/archive/errors.ts
+msgid "The top margin"
+msgstr "Der obere Rand"
+
+#: src/features/archive/errors.ts
+msgid "The vendor"
+msgstr "Der Herstellername"
+
+#: src/features/archive/errors.ts
+msgid "The vertical pitch"
+msgstr "Der vertikale Abstand"
+
+#: src/features/archive/errors.ts
+msgid "The vertical pitch must not be smaller than the label height."
+msgstr "Der vertikale Abstand darf nicht kleiner sein als die Etikettenhöhe."
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Theme"

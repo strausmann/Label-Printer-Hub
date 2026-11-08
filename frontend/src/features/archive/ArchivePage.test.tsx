@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
@@ -7,7 +7,7 @@ import { apiErrorBody, GEOMETRY_L4736, mockApi, respond, SHEET_TYPE } from "../t
 const PRINT_SESSION = { ...SIGNED_IN, scope: "print" as const };
 const VERSION = {
   version: 1,
-  change_note: null,
+  change_note: null as string | null,
   created_at: "2026-11-01T08:00:00Z",
   geometry: GEOMETRY_L4736,
   geometry_hash: "abc",
@@ -231,16 +231,50 @@ describe("edit geometry", () => {
     expect(calls.some((c) => c.method === "POST")).toBe(false);
   });
 
-  it("shows the server's geometry complaint in words, not as an exception", async () => {
+  const refuseGeometry = (field: string, reason: string) =>
     mockApi({
       ...LIST,
-      "POST /api/sheet-types/L4736REV/versions": () => respond(422, apiErrorBody("invalid_geometry", "Invalid geometry", { field: "cols", reason: "grid_exceeds_page" })),
+      "POST /api/sheet-types/L4736REV/versions": () => respond(422, apiErrorBody("invalid_geometry", "Invalid geometry", { field, reason })),
     });
-    await renderApp({ path: "/sheets/archive?type=L4736REV" });
+  const saveWithNote = async () => {
     await userEvent.click(await screen.findByRole("button", { name: "Edit geometry" }));
     await userEvent.type(screen.getByRole("textbox", { name: "What changed" }), "x");
     await userEvent.click(screen.getByRole("button", { name: "Save new version" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("cols: grid_exceeds_page");
+  };
+
+  it("shows the server's geometry complaint in words, marks the field, and never the raw keyword", async () => {
+    refuseGeometry("cols", "grid is wider than the page");
+    await renderApp({ path: "/sheets/archive?type=L4736REV" });
+    await saveWithNote();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The grid does not fit on the page: it is wider than the page.");
+    expect(alert).not.toHaveTextContent("grid is wider");
+    expect(alert).not.toHaveTextContent("cols:");
+    expect(screen.getByRole("textbox", { name: "Columns" })).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("textbox", { name: "Rows" })).not.toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("says in German what the server meant", async () => {
+    refuseGeometry("pitch_x", "must not be smaller than label_w");
+    await renderApp({ path: "/sheets/archive?type=L4736REV", language: "de" });
+    await userEvent.click(await screen.findByRole("button", { name: "Maße bearbeiten" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Was sich geändert hat" }), "x");
+    await userEvent.click(screen.getByRole("button", { name: "Neue Version speichern" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Der horizontale Abstand darf nicht kleiner sein als die Etikettenbreite.");
+  });
+
+  it("an unknown reason gets a generic sentence with the keyword only as a detail", async () => {
+    refuseGeometry("rows", "something new");
+    await renderApp({ path: "/sheets/archive?type=L4736REV" });
+    await saveWithNote();
+    expect(await screen.findByRole("alert")).toHaveTextContent("The server did not accept this value. The number of rows (something new).");
+  });
+
+  it("the server refusing an unchanged geometry is explained", async () => {
+    refuseGeometry("geometry", "unchanged");
+    await renderApp({ path: "/sheets/archive?type=L4736REV" });
+    await saveWithNote();
+    expect(await screen.findByRole("alert")).toHaveTextContent("The measurements are the same as in the current version. Change something first.");
   });
 });
 
@@ -472,5 +506,126 @@ describe("a session that may only read and print", () => {
     // Reading stays possible: the diagram, the versions and the export download.
     expect(screen.getByRole("table", { name: "Versions" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Export" })).toBeVisible();
+  });
+});
+
+describe("filters, as a person uses them", () => {
+  it("choosing a vendor asks the server for it", async () => {
+    const { calls } = mockApi(LIST);
+    await renderApp({ path: "/sheets/archive" });
+    await screen.findByRole("link", { name: /L4736REV/ });
+    await userEvent.click(screen.getByRole("button", { name: /Vendor/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Example Labels" }));
+    await waitFor(() => expect(typeCalls(calls).some((c) => c.search === "?vendor=Example+Labels")).toBe(true));
+  });
+
+  it("typing a label size (with a decimal comma) asks the server for it", async () => {
+    const { calls } = mockApi(LIST);
+    await renderApp({ path: "/sheets/archive" });
+    await screen.findByRole("link", { name: /L4736REV/ });
+    await userEvent.type(screen.getByRole("textbox", { name: "Label width (mm)" }), "45,7");
+    await userEvent.type(screen.getByRole("textbox", { name: "Label height (mm)" }), "21.2");
+    await waitFor(() => expect(typeCalls(calls).some((c) => c.search === "?w=45.7&h=21.2")).toBe(true));
+  });
+
+  it("the boxes follow the address when it changes from outside", async () => {
+    mockApi(LIST);
+    const { router } = await renderApp({ path: "/sheets/archive?q=first" });
+    const search = await screen.findByRole("textbox", { name: "Search" });
+    expect(search).toHaveValue("first");
+    await act(async () => {
+      await router.navigate({ to: "/sheets/archive", search: { q: "second", w: 45.7 } });
+    });
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Search" })).toHaveValue("second"));
+    expect(screen.getByRole("textbox", { name: "Label width (mm)" })).toHaveValue("45.7");
+    // And it stays so: the old text is not written back over the address.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(router.state.location.search).toMatchObject({ q: "second", w: 45.7 });
+  });
+
+  it("the filter panel can be folded, starts folded without a filter and counts the ones in use", async () => {
+    mockApi(LIST);
+    const first = await renderApp({ path: "/sheets/archive" });
+    const toggle = await screen.findByRole("button", { name: "Filters" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    first.unmount();
+
+    await renderApp({ path: "/sheets/archive?q=flour&page=A4&archived=true" });
+    const open = await screen.findByRole("button", { name: "Filters (3 active)" });
+    expect(open).toHaveAttribute("aria-expanded", "true");
+    expect(open).toHaveAttribute("aria-controls", "archive-filters");
+  });
+});
+
+describe("versions and imports that touch the open type", () => {
+  it("lists the newest version first and marks the current one", async () => {
+    mockApi({
+      ...LIST,
+      "GET /api/sheet-types/L4736REV": {
+        ...DETAIL,
+        current_version: 3,
+        versions: [1, 3, 2].map((version) => ({ ...VERSION, version, change_note: `note ${version}` })),
+      },
+    });
+    await renderApp({ path: "/sheets/archive?type=L4736REV" });
+    const table = await screen.findByRole("table", { name: "Versions" });
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows.map((r) => within(r).getByRole("rowheader").textContent)).toEqual(["3current", "2", "1"]);
+  });
+
+  it("an import that adds a version shows it in the open type, not the cached one", async () => {
+    let versions = [VERSION];
+    let posts = 0;
+    mockApi({
+      ...LIST,
+      "GET /api/sheet-types/L4736REV": () => ({ ...DETAIL, current_version: versions.length, versions }),
+      "POST /api/sheet-types/import": () => {
+        if (posts++ === 0) return respond(409, apiErrorBody("type_exists", "exists"));
+        versions = [{ ...VERSION, version: 2, change_note: "imported geometry" }, VERSION];
+        return respond(201, { key: "L4736REV", version: 2, outcome: "version_added" });
+      },
+    });
+    await renderApp({ path: "/sheets/archive?type=L4736REV" });
+    await screen.findByRole("table", { name: "Versions" });
+    await userEvent.click(screen.getByRole("button", { name: "Import type" }));
+    await userEvent.click(await screen.findByRole("textbox", { name: "Export file contents" }));
+    await userEvent.paste(JSON.stringify(EXPORT_DOC));
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Add as new version" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Show the type" }));
+    expect(await screen.findByText("imported geometry")).toBeVisible();
+  });
+
+  it("a conflict sentence never prints an object as the key", async () => {
+    mockApi({ ...LIST, "POST /api/sheet-types/import": () => respond(409, apiErrorBody("type_exists", "exists")) });
+    await renderApp({ path: "/sheets/archive" });
+    await userEvent.click(await screen.findByRole("button", { name: "Import type" }));
+    await userEvent.click(await screen.findByRole("textbox", { name: "Export file contents" }));
+    await userEvent.paste(JSON.stringify({ ...EXPORT_DOC, type: { ...EXPORT_DOC.type, key: { a: 1 } } }));
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    const text = await screen.findByText(/already exists/);
+    expect(text).not.toHaveTextContent("[object Object]");
+  });
+
+  it("checks the new key and the new prefix before sending them", async () => {
+    const { calls } = mockApi({ ...LIST, "POST /api/sheet-types/import": () => respond(409, apiErrorBody("type_exists", "exists")) });
+    await renderApp({ path: "/sheets/archive" });
+    await userEvent.click(await screen.findByRole("button", { name: "Import type" }));
+    await userEvent.click(await screen.findByRole("textbox", { name: "Export file contents" }));
+    await userEvent.paste(JSON.stringify(EXPORT_DOC));
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Import under a new key" }));
+    const before = calls.filter((c) => c.method === "POST").length;
+    await userEvent.type(screen.getByRole("textbox", { name: "New key" }), "Bad Key");
+    await userEvent.click(screen.getByRole("button", { name: "Import with the new key" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The key uses lowercase letters");
+    await userEvent.clear(screen.getByRole("textbox", { name: "New key" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "New key" }), "good-key");
+    await userEvent.type(screen.getByRole("textbox", { name: "New code prefix (optional)" }), "1x");
+    await userEvent.click(screen.getByRole("button", { name: "Import with the new key" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("The code prefix is 2 to 10 capital letters or digits"));
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(before);
   });
 });

@@ -17,21 +17,40 @@ import { TypeForm } from "./TypeForm";
 const ANY = "__any__";
 const FILTER_DELAY_MS = 200;
 
-/** Typing in a filter waits a moment before it asks the server (and before the address changes). */
+const sizeOf = (value: string) => {
+  const n = parseDecimal(value);
+  return n !== null && n > 0 && n <= 1000 ? n : undefined;
+};
+
+/**
+ * Typing in a filter waits a moment before it asks the server (and before the address changes).
+ * When the address changes from outside (a link, back and forward), the boxes follow it.
+ */
 function useTypedFilters(search: ArchiveSearch, commit: (next: Partial<ArchiveSearch>) => void) {
   const [q, setQ] = useState(search.q ?? "");
   const [w, setW] = useState(search.w === undefined ? "" : String(search.w));
   const [h, setH] = useState(search.h === undefined ? "" : String(search.h));
+  const typed = { q: q.trim() === "" ? undefined : q.trim(), w: sizeOf(w), h: sizeOf(h) };
+  const inSync = typed.q === search.q && typed.w === search.w && typed.h === search.h;
+
+  // The address moved. If it is what the boxes already say (our own commit), leave them alone,
+  // or the box would be rewritten under the cursor ("45." becomes "45"). Otherwise follow it.
+  // (React's pattern for state that follows a changing input: set it while rendering, not in an effect.)
+  const [seen, setSeen] = useState({ q: search.q, w: search.w, h: search.h });
+  if (seen.q !== search.q || seen.w !== search.w || seen.h !== search.h) {
+    setSeen({ q: search.q, w: search.w, h: search.h });
+    if (!inSync) {
+      setQ(search.q ?? "");
+      setW(search.w === undefined ? "" : String(search.w));
+      setH(search.h === undefined ? "" : String(search.h));
+    }
+  }
+
   useEffect(() => {
-    const size = (value: string) => {
-      const n = parseDecimal(value);
-      return n !== null && n > 0 && n <= 1000 ? n : undefined;
-    };
-    const next = { q: q.trim() === "" ? undefined : q.trim(), w: size(w), h: size(h) };
-    if (next.q === search.q && next.w === search.w && next.h === search.h) return;
-    const timer = setTimeout(() => commit(next), FILTER_DELAY_MS);
+    if (inSync) return;
+    const timer = setTimeout(() => commit({ q: typed.q, w: typed.w, h: typed.h }), FILTER_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [q, w, h, search.q, search.w, search.h, commit]);
+  }, [typed.q, typed.w, typed.h, inSync, commit]);
   return { q, setQ, w, setW, h, setH, clear: () => { setQ(""); setW(""); setH(""); } };
 }
 
@@ -71,6 +90,8 @@ export function SheetArchivePage() {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
+  // On a phone the filters take the first screen: they start folded unless one is in use.
+  const [filtersOpen, setFiltersOpen] = useState(() => [search.q, search.page, search.vendor, search.w, search.h, search.archived].some(Boolean));
 
   const commit = useCallback(
     (next: Partial<ArchiveSearch>) => void navigate({ to: "/sheets/archive", search: (prev) => ({ ...prev, ...next }), replace: true }),
@@ -92,6 +113,7 @@ export function SheetArchivePage() {
   if (search.vendor && !vendors.includes(search.vendor)) vendors.push(search.vendor);
 
   const filtered = Boolean(search.q || search.page || search.vendor || search.w || search.h);
+  const activeFilters = [search.q, search.page, search.vendor, search.w, search.h, search.archived].filter(Boolean).length;
   const open = search.type;
 
   return (
@@ -117,7 +139,24 @@ export function SheetArchivePage() {
       ) : (
         <div className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
           <div className={`flex min-w-0 flex-col gap-4 ${open ? "hidden lg:flex" : ""}`}>
-            <form role="search" aria-label={t`Filter the sheet types`} onSubmit={(e) => e.preventDefault()} className={`${PANEL} flex flex-col gap-4`}>
+            <Button
+              aria-expanded={filtersOpen}
+              aria-controls="archive-filters"
+              onPress={() => setFiltersOpen((open) => !open)}
+              className={`${SECONDARY_BUTTON} w-full justify-between lg:hidden`}
+            >
+              <span>{activeFilters > 0 ? t`Filters (${activeFilters} active)` : t`Filters`}</span>
+              <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" className={`fill-none stroke-current stroke-2 transition-transform duration-150 ${filtersOpen ? "rotate-180" : ""}`}>
+                <path d="M2 4.5 6 8.5 10 4.5" />
+              </svg>
+            </Button>
+            <form
+              id="archive-filters"
+              role="search"
+              aria-label={t`Filter the sheet types`}
+              onSubmit={(e) => e.preventDefault()}
+              className={`${PANEL} ${filtersOpen ? "flex" : "hidden"} flex-col gap-4 lg:flex`}
+            >
               <TextInput label={t`Search`} value={typed.q} onChange={typed.setQ} description={t`Key, description or product code`} />
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                 <SelectField
