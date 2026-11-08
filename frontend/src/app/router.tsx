@@ -18,7 +18,6 @@ import {
   CalibrationPage,
   KeptPage,
   NotFoundPage,
-  SheetArchivePage,
   SheetDetailPlaceholder,
   SheetsPage,
 } from "../pages/placeholders";
@@ -35,6 +34,8 @@ import { General, Jobs } from "../features/settings/sections";
 import { SettingsLayout } from "../features/settings/SettingsPage";
 import { System } from "../features/settings/System";
 import { ScanScreen } from "../features/scan/ScanScreen";
+import { SheetArchivePage } from "../features/archive/ArchivePage";
+import { parseArchiveSearch } from "../features/archive/search";
 import { parseSheetCode } from "../features/sheets/resolver";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { PrinterPage } from "../features/printers/PrinterDetail";
@@ -158,6 +159,13 @@ const cartRoute = createRoute({
   },
 });
 
+const archiveRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sheets/archive",
+  component: SheetArchivePage,
+  validateSearch: parseArchiveSearch,
+});
+
 const calibrationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/calibration",
@@ -209,7 +217,7 @@ const routeTree = rootRoute.addChildren([
     settingsChild("/system", System),
   ]),
   page("/sheets", SheetsPage),
-  page("/sheets/archive", SheetArchivePage),
+  archiveRoute,
   // The second path is the one printed in the QR code of a sheet.
   page("/sheets/$code", SheetDetailPlaceholder),
   page("/sheet/$code", SheetDetailPlaceholder),

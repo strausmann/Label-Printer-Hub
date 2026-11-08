@@ -6,6 +6,8 @@ import {
   cellsUnconfirmed,
   contentTypeDataMismatch,
   insufficientCells,
+  invalidGeometry,
+  invalidImport,
   planChanged,
   prefixTaken,
   printInterrupted,
@@ -70,5 +72,18 @@ describe("typed error readers", () => {
     expect(cellsTaken(err("cells_taken", { cells: [1, "2"] }))).toBeNull();
     expect(printInterrupted(new Error("plain"))).toBeNull();
     expect(printInterrupted(null)).toBeNull();
+  });
+
+  it("invalidImport and invalidGeometry read the server's lists and keywords", () => {
+    expect(invalidImport(new ApiError(422, "invalid_import", "x", { errors: ["type.key", "version"] }))).toEqual({
+      errors: ["type.key", "version"],
+    });
+    expect(invalidImport(new ApiError(422, "invalid_import", "x", { errors: [1] }))).toBeNull();
+    expect(invalidImport(new ApiError(422, "invalid_import", "x", null))).toBeNull();
+    expect(invalidGeometry(new ApiError(422, "invalid_geometry", "x", { field: "cols", reason: "too_large" }))).toEqual({
+      field: "cols",
+      reason: "too_large",
+    });
+    expect(invalidGeometry(new ApiError(422, "invalid_geometry", "x", { field: "cols" }))).toBeNull();
   });
 });

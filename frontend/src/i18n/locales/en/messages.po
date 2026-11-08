@@ -12,10 +12,26 @@ msgstr ""
 msgid "{0, plural, one {# column} other {# columns}}"
 msgstr "{0, plural, one {# column} other {# columns}}"
 
+#. placeholder {0}: g.cols * g.rows
+#: src/features/archive/ArchivePage.tsx
+#: src/features/archive/TypeDetail.tsx
+msgid "{0, plural, one {# label} other {# labels}}"
+msgstr "{0, plural, one {# label} other {# labels}}"
+
+#. placeholder {0}: codes.length
+#: src/features/archive/TypeDetail.tsx
+msgid "{0, plural, one {# product code} other {# product codes}}"
+msgstr "{0, plural, one {# product code} other {# product codes}}"
+
 #. placeholder {0}: g.rows
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "{0, plural, one {# row} other {# rows}}"
 msgstr "{0, plural, one {# row} other {# rows}}"
+
+#. placeholder {0}: type.key
+#: src/features/archive/TypeDetail.tsx
+msgid "{0} has no sheets. Deleting it removes it and all its versions for good."
+msgstr "{0} has no sheets. Deleting it removes it and all its versions for good."
 
 #. placeholder {0}: tape.widthMm
 #: src/features/printers/TapeSwatch.tsx
@@ -30,6 +46,22 @@ msgstr "{appName} is not set up yet, so there is nothing to look up."
 msgid "{copyNo} of {copyTotal}"
 msgstr "{copyNo} of {copyTotal}"
 
+#: src/features/archive/TypeForm.tsx
+msgid "{label} is too long: at most {max} characters."
+msgstr "{label} is too long: at most {max} characters."
+
+#: src/features/archive/TypeForm.tsx
+msgid "{label} must be a number above 0 and up to 1000."
+msgstr "{label} must be a number above 0 and up to 1000."
+
+#: src/features/archive/TypeForm.tsx
+msgid "{label} must be a number from 0 to 1000."
+msgstr "{label} must be a number from 0 to 1000."
+
+#: src/features/archive/TypeForm.tsx
+msgid "{label} must be a whole number from 1 to 400."
+msgstr "{label} must be a whole number from 1 to 400."
+
 #: src/features/lookup/CartPage.tsx
 msgid "{labels, plural, one {Print # label} other {Print # labels}}"
 msgstr "{labels, plural, one {Print # label} other {Print # labels}}"
@@ -37,6 +69,10 @@ msgstr "{labels, plural, one {Print # label} other {Print # labels}}"
 #: src/features/lookup/ItemView.tsx
 msgid "{name} is not set up yet, so this item cannot be shown."
 msgstr "{name} is not set up yet, so this item cannot be shown."
+
+#: src/features/archive/TypeForm.tsx
+msgid "{pinned, plural, one {# sheet keeps version {version}} other {# sheets keep version {version}}}"
+msgstr "{pinned, plural, one {# sheet keeps version {version}} other {# sheets keep version {version}}}"
 
 #: src/features/settings/AccessKeys.tsx
 msgid "{revokingName} stops working at once, and so does every browser session that signed in with it. This cannot be undone."
@@ -58,9 +94,22 @@ msgstr "A key opens the API and the browser sign-in. read looks, print also prin
 msgid "A name that tells you who uses it, for example “Kept”."
 msgstr "A name that tells you who uses it, for example “Kept”."
 
+#. placeholder {0}: MAX.code
+#: src/features/archive/TypeForm.tsx
+msgid "A product code is at most {0} characters."
+msgstr "A product code is at most {0} characters."
+
 #: src/features/settings/feedback.tsx
 msgid "A secret is saved for the old URL. Enter the secret again to use the new URL."
 msgstr "A secret is saved for the old URL. Enter the secret again to use the new URL."
+
+#: src/features/archive/ImportDialog.tsx
+msgid "A sheet type with the key {existingKey} already exists. Add this geometry to it as a new version, or keep both and import this one under a new key."
+msgstr "A sheet type with the key {existingKey} already exists. Add this geometry to it as a new version, or keep both and import this one under a new key."
+
+#: src/features/archive/errors.ts
+msgid "A sheet type with this key already exists."
+msgstr "A sheet type with this key already exists."
 
 #: src/features/settings/AccessKeys.tsx
 msgid "A webhook key needs at least {MIN_WEBHOOK_KEY} characters."
@@ -91,6 +140,10 @@ msgstr "Access and keys"
 msgid "Add a printer"
 msgstr "Add a printer"
 
+#: src/features/archive/ImportDialog.tsx
+msgid "Add as new version"
+msgstr "Add as new version"
+
 #: src/features/settings/Printers.tsx
 msgid "Add printer"
 msgstr "Add printer"
@@ -103,6 +156,12 @@ msgstr "Add to cart"
 msgid "Added to the cart: {added}"
 msgstr "Added to the cart: {added}"
 
+#. placeholder {0}: result.version
+#. placeholder {1}: result.key
+#: src/features/archive/ImportDialog.tsx
+msgid "Added version {0} to {1}."
+msgstr "Added version {0} to {1}."
+
 #: src/features/jobs/JobsPage.tsx
 msgid "All"
 msgstr "All"
@@ -114,6 +173,22 @@ msgstr "An IANA name such as Europe/Berlin."
 #: src/features/scan/ScanScreen.tsx
 msgid "Another app may be using the camera. Close it and try again."
 msgstr "Another app may be using the camera. Close it and try again."
+
+#: src/features/archive/errors.ts
+msgid "Another type already uses this code prefix."
+msgstr "Another type already uses this code prefix."
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Another type already uses this code prefix. Choose another one."
+msgstr "Another type already uses this code prefix. Choose another one."
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Any page size"
+msgstr "Any page size"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Any vendor"
+msgstr "Any vendor"
 
 #: src/features/settings/System.tsx
 msgid "API documentation"
@@ -128,6 +203,14 @@ msgstr "API key"
 msgid "API keys"
 msgstr "API keys"
 
+#: src/features/archive/TypeDetail.tsx
+msgid "Archive"
+msgstr "Archive"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "archived"
+msgstr "archived"
+
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Ask an admin to set it up."
 msgstr "Ask an admin to set it up."
@@ -140,9 +223,22 @@ msgstr "Asset"
 msgid "Asset tag (for example AT-0042), numeric ID (42) or a printed label link. Locations need the loc: prefix, for example loc:17."
 msgstr "Asset tag (for example AT-0042), numeric ID (42) or a printed label link. Locations need the loc: prefix, for example loc:17."
 
+#. placeholder {0}: MAX.codes
+#: src/features/archive/TypeForm.tsx
+msgid "At most {0} product codes."
+msgstr "At most {0} product codes."
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Back"
+msgstr "Back"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "Back to the jobs"
 msgstr "Back to the jobs"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "Back to the list"
+msgstr "Back to the list"
 
 #: src/pages/placeholders.tsx
 msgid "Back to the overview"
@@ -182,6 +278,9 @@ msgstr "Camera view"
 msgid "Can't be read with the current secret key — enter it again"
 msgstr "Can't be read with the current secret key — enter it again"
 
+#: src/features/archive/ImportDialog.tsx
+#: src/features/archive/TypeDetail.tsx
+#: src/features/archive/TypeForm.tsx
 #: src/features/jobs/JobDetail.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/PrinterForm.tsx
@@ -223,9 +322,21 @@ msgstr "Checking your session…"
 msgid "Checking…"
 msgstr "Checking…"
 
+#: src/features/archive/ImportDialog.tsx
+msgid "Choose a file exported from this or another hub, or paste its contents. Files up to 64 KB."
+msgstr "Choose a file exported from this or another hub, or paste its contents. Files up to 64 KB."
+
 #: src/features/scan/ScanScreen.tsx
 msgid "Choose a photo of a code"
 msgstr "Choose a photo of a code"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Choose a sheet type to see its measurements and versions."
+msgstr "Choose a sheet type to see its measurements and versions."
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Clear filters"
+msgstr "Clear filters"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Clear queue"
@@ -234,6 +345,10 @@ msgstr "Clear queue"
 #: src/features/settings/Integrations.tsx
 msgid "Clients"
 msgstr "Clients"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Close"
+msgstr "Close"
 
 #: src/features/jobs/JobDetail.tsx
 msgid "Code"
@@ -247,9 +362,18 @@ msgstr "Code and title, no QR code"
 msgid "Code only, no QR code"
 msgstr "Code only, no QR code"
 
+#: src/features/archive/TypeDetail.tsx
+#: src/features/archive/TypeForm.tsx
+msgid "Code prefix"
+msgstr "Code prefix"
+
 #: src/features/printers/TapeSwatch.tsx
 msgid "Colour not reported"
 msgstr "Colour not reported"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Columns"
+msgstr "Columns"
 
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/integrations/IntegrationTiles.tsx
@@ -325,6 +449,10 @@ msgstr "Copy key"
 msgid "Corner radius"
 msgstr "Corner radius"
 
+#: src/features/archive/TypeForm.tsx
+msgid "Corner radius (mm)"
+msgstr "Corner radius (mm)"
+
 #: src/features/printers/PauseResumeButton.tsx
 msgid "Could not pause the printer."
 msgstr "Could not pause the printer."
@@ -357,6 +485,28 @@ msgstr "Create printer"
 msgid "Create the first admin key"
 msgstr "Create the first admin key"
 
+#: src/features/archive/TypeForm.tsx
+msgid "Create type"
+msgstr "Create type"
+
+#. placeholder {0}: result.key
+#: src/features/archive/ImportDialog.tsx
+msgid "Created the type {0} as a new key."
+msgstr "Created the type {0} as a new key."
+
+#. placeholder {0}: result.key
+#: src/features/archive/ImportDialog.tsx
+msgid "Created the type {0}."
+msgstr "Created the type {0}."
+
+#: src/features/archive/TypeDetail.tsx
+msgid "current"
+msgstr "current"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "custom"
+msgstr "custom"
+
 #: src/features/settings/PrinterForm.tsx
 msgid "Cuts the tape but leaves the backing, so a strip of labels stays together. A print can still override it."
 msgstr "Cuts the tape but leaves the backing, so a strip of labels stays together. A print can still override it."
@@ -368,6 +518,34 @@ msgstr "Dark theme"
 #: src/features/settings/System.tsx
 msgid "Degraded"
 msgstr "Degraded"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "Delete"
+msgstr "Delete"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "Delete this type?"
+msgstr "Delete this type?"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "Delete type"
+msgstr "Delete type"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Describe what changed."
+msgstr "Describe what changed."
+
+#: src/features/archive/TypeForm.tsx
+msgid "Description"
+msgstr "Description"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Details"
+msgstr "Details"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Diameter (mm)"
+msgstr "Diameter (mm)"
 
 #: src/features/settings/Printers.tsx
 msgid "Disable"
@@ -414,6 +592,19 @@ msgstr "Edit"
 msgid "Edit {0}"
 msgstr "Edit {0}"
 
+#: src/features/archive/TypeDetail.tsx
+msgid "Edit details"
+msgstr "Edit details"
+
+#. placeholder {0}: mode.type.key
+#: src/features/archive/TypeForm.tsx
+msgid "Edit details of {0}"
+msgstr "Edit details of {0}"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "Edit geometry"
+msgstr "Edit geometry"
+
 #: src/features/lookup/CartPage.tsx
 msgid "Empty the cart"
 msgstr "Empty the cart"
@@ -439,6 +630,19 @@ msgstr "Enter a valid number."
 msgid "Enter it again"
 msgstr "Enter it again"
 
+#: src/features/archive/TypeDetail.tsx
+msgid "Export"
+msgstr "Export"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Export file contents"
+msgstr "Export file contents"
+
+#. placeholder {0}: v.version
+#: src/features/archive/TypeDetail.tsx
+msgid "Export version {0}"
+msgstr "Export version {0}"
+
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
 #: src/features/settings/Integrations.tsx
@@ -448,6 +652,10 @@ msgstr "Failed"
 #: src/features/jobs/JobsPage.tsx
 msgid "Filter by state"
 msgstr "Filter by state"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Filter the sheet types"
+msgstr "Filter the sheet types"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Find a product"
@@ -461,10 +669,26 @@ msgstr "Find a spool"
 msgid "Find an asset or location"
 msgstr "Find an asset or location"
 
+#: src/features/archive/TypeDetail.tsx
+msgid "first version"
+msgstr "first version"
+
+#: src/features/archive/TypeForm.tsx
+msgid "For example: measured again with a ruler."
+msgstr "For example: measured again with a ruler."
+
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"
 msgid "free"
 msgstr "free"
+
+#: src/features/archive/TypeForm.tsx
+msgid "From the left edge of one label to the left edge of the next."
+msgstr "From the left edge of one label to the left edge of the next."
+
+#: src/features/archive/TypeForm.tsx
+msgid "From the top edge of one label to the top edge of the next."
+msgstr "From the top edge of one label to the top edge of the next."
 
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Gap between columns"
@@ -515,6 +739,10 @@ msgstr "History"
 msgid "Hold a label's code inside the corners. QR, Code 128 and Data Matrix are read."
 msgstr "Hold a label's code inside the corners. QR, Code 128 and Data Matrix are read."
 
+#: src/features/archive/TypeForm.tsx
+msgid "Horizontal pitch (mm)"
+msgstr "Horizontal pitch (mm)"
+
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/PrinterForm.tsx
 msgid "Host"
@@ -532,6 +760,30 @@ msgstr "HTTP {0}"
 #: src/shell/StatusBadge.tsx
 msgid "Idle"
 msgstr "Idle"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Import"
+msgstr "Import"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Import a sheet type"
+msgstr "Import a sheet type"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Import type"
+msgstr "Import type"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Import under a new key"
+msgstr "Import under a new key"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Import with the new key"
+msgstr "Import with the new key"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "imported"
+msgstr "imported"
 
 #: src/features/sheets/cellState.ts
 msgid "in the printer's unprintable margin"
@@ -586,6 +838,7 @@ msgstr "Kept / Hangar / Grocy"
 msgid "Kept only in this browser. Print adds the label to the cart."
 msgstr "Kept only in this browser. Print adds the label to the cart."
 
+#: src/features/archive/TypeForm.tsx
 #: src/features/settings/AccessKeys.tsx
 msgid "Key"
 msgstr "Key"
@@ -594,12 +847,21 @@ msgstr "Key"
 msgid "Key name"
 msgstr "Key name"
 
+#: src/features/archive/ArchivePage.tsx
+msgid "Key, description or product code"
+msgstr "Key, description or product code"
+
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterDetail.tsx
 msgid "Label"
 msgstr "Label"
+
+#: src/features/archive/ArchivePage.tsx
+#: src/features/archive/TypeForm.tsx
+msgid "Label height (mm)"
+msgstr "Label height (mm)"
 
 #: src/features/lookup/ItemView.tsx
 msgid "Label preview"
@@ -611,9 +873,18 @@ msgstr "Label preview"
 msgid "Label Printer Hub"
 msgstr "Label Printer Hub"
 
+#: src/features/archive/TypeForm.tsx
+msgid "Label shape"
+msgstr "Label shape"
+
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Label size"
 msgstr "Label size"
+
+#: src/features/archive/ArchivePage.tsx
+#: src/features/archive/TypeForm.tsx
+msgid "Label width (mm)"
+msgstr "Label width (mm)"
 
 #: src/features/settings/sections.tsx
 msgid "Language"
@@ -632,9 +903,21 @@ msgstr "Last used {when}"
 msgid "Layout"
 msgstr "Layout"
 
+#: src/features/archive/TypeForm.tsx
+msgid "Leave empty if unknown."
+msgstr "Leave empty if unknown."
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Leave empty to keep the prefix of the file."
+msgstr "Leave empty to keep the prefix of the file."
+
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Left margin"
 msgstr "Left margin"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Left margin (mm)"
+msgstr "Left margin (mm)"
 
 #: src/features/settings/System.tsx
 msgid "Level"
@@ -659,6 +942,8 @@ msgid "Live updates paused"
 msgstr "Live updates paused"
 
 #: src/app/router.tsx
+#: src/features/archive/ArchivePage.tsx
+#: src/features/archive/TypeDetail.tsx
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
 #: src/features/lookup/ItemView.tsx
@@ -696,6 +981,16 @@ msgstr "Main"
 msgid "Material"
 msgstr "Material"
 
+#. placeholder {0}: mode.type.key
+#: src/features/archive/TypeForm.tsx
+msgid "Measure {0} again"
+msgstr "Measure {0} again"
+
+#: src/features/archive/TypeDetail.tsx
+#: src/features/archive/TypeForm.tsx
+msgid "Measurements"
+msgstr "Measurements"
+
 #: src/features/settings/System.tsx
 msgid "Message"
 msgstr "Message"
@@ -725,6 +1020,26 @@ msgstr "Never used"
 msgctxt "sheet cell state"
 msgid "new"
 msgstr "new"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "New code prefix"
+msgstr "New code prefix"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "New code prefix (optional)"
+msgstr "New code prefix (optional)"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "New key"
+msgstr "New key"
+
+#: src/features/archive/TypeForm.tsx
+msgid "New sheet type"
+msgstr "New sheet type"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "New type"
+msgstr "New type"
 
 #: src/shell/UpdatePrompt.tsx
 msgid "New version available"
@@ -772,6 +1087,10 @@ msgstr "No printer available"
 msgid "No printers yet."
 msgstr "No printers yet."
 
+#: src/features/archive/ArchivePage.tsx
+msgid "No sheet type matches."
+msgstr "No sheet type matches."
+
 #: src/features/printers/model.ts
 msgid "No status yet"
 msgstr "No status yet"
@@ -813,6 +1132,19 @@ msgstr "Not set"
 msgid "Not set up"
 msgstr "Not set up"
 
+#: src/features/archive/TypeForm.tsx
+msgid "Notes"
+msgstr "Notes"
+
+#. placeholder {0}: result.key
+#: src/features/archive/ImportDialog.tsx
+msgid "Nothing changed: {0} already has this geometry."
+msgstr "Nothing changed: {0} already has this geometry."
+
+#: src/features/archive/TypeForm.tsx
+msgid "Nothing changed."
+msgstr "Nothing changed."
+
 #: src/features/overview/OverviewPage.tsx
 msgid "Nothing is printing."
 msgstr "Nothing is printing."
@@ -829,6 +1161,10 @@ msgstr "Nothing needs attention."
 msgid "Nothing opened yet."
 msgstr "Nothing opened yet."
 
+#: src/features/archive/TypeForm.tsx
+msgid "Off for labels too small to scan."
+msgstr "Off for labels too small to scan."
+
 #: src/features/printers/model.ts
 msgid "Offline"
 msgstr "Offline"
@@ -836,6 +1172,10 @@ msgstr "Offline"
 #: src/shell/StatusBadge.tsx
 msgid "OK"
 msgstr "OK"
+
+#: src/features/archive/errors.ts
+msgid "Only your own types can be deleted. Archive this one instead."
+msgstr "Only your own types can be deleted. Archive this one instead."
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Open"
@@ -859,6 +1199,10 @@ msgstr "Open in {appName}"
 msgid "Open Settings › Integrations"
 msgstr "Open Settings › Integrations"
 
+#: src/features/archive/ImportDialog.tsx
+msgid "Or choose an export file"
+msgstr "Or choose an export file"
+
 #: src/features/settings/Integrations.tsx
 msgid "Other apps that print through this hub. They are recognised by the name of their API key."
 msgstr "Other apps that print through this hub. They are recognised by the name of their API key."
@@ -876,10 +1220,22 @@ msgstr "Page"
 msgid "Page not found"
 msgstr "Page not found"
 
+#: src/features/archive/ArchivePage.tsx
+msgid "Page size"
+msgstr "Page size"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Paper size"
+msgstr "Paper size"
+
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
 msgid "Paperless ASN"
 msgstr "Paperless ASN"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Paste the export file or choose it."
+msgstr "Paste the export file or choose it."
 
 #: src/features/printers/PauseResumeButton.tsx
 msgid "Pause"
@@ -962,6 +1318,11 @@ msgstr "Problem"
 msgid "Product"
 msgstr "Product"
 
+#: src/features/archive/TypeDetail.tsx
+#: src/features/archive/TypeForm.tsx
+msgid "Product codes"
+msgstr "Product codes"
+
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Product ID or barcode."
 msgstr "Product ID or barcode."
@@ -985,6 +1346,18 @@ msgstr "QR code, code and title"
 #: src/features/lookup/apps.ts
 msgid "QR code, code, title and detail"
 msgstr "QR code, code, title and detail"
+
+#: src/features/archive/TypeForm.tsx
+msgid "QR codes on labels"
+msgstr "QR codes on labels"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "QR codes on labels: allowed"
+msgstr "QR codes on labels: allowed"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "QR codes on labels: not allowed"
+msgstr "QR codes on labels: not allowed"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Queue"
@@ -1033,6 +1406,10 @@ msgstr "Reconnect"
 #: src/shell/LiveStatus.tsx
 msgid "Reconnecting…"
 msgstr "Reconnecting…"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Rectangle"
+msgstr "Rectangle"
 
 #: src/features/printers/model.ts
 msgid "Red"
@@ -1108,10 +1485,26 @@ msgstr "Right margin"
 msgid "round"
 msgstr "round"
 
+#: src/features/archive/TypeForm.tsx
+msgid "Round"
+msgstr "Round"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Rows"
+msgstr "Rows"
+
 #: src/features/settings/Integrations.tsx
 #: src/features/settings/SectionForm.tsx
 msgid "Save"
 msgstr "Save"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Save details"
+msgstr "Save details"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Save new version"
+msgstr "Save new version"
 
 #: src/features/settings/PrinterForm.tsx
 msgid "Save printer"
@@ -1133,6 +1526,7 @@ msgstr "Saved — enter a new value to replace"
 msgid "Saved values exist, but this integration cannot be used yet. A secret may belong to another URL or may not be readable with the current secret key, or the URL is missing. Enter the secret again."
 msgstr "Saved values exist, but this integration cannot be used yet. A secret may belong to another URL or may not be readable with the current secret key, or the URL is missing. Enter the secret again."
 
+#: src/features/archive/errors.ts
 #: src/features/settings/feedback.tsx
 msgid "Saving failed."
 msgstr "Saving failed."
@@ -1156,6 +1550,7 @@ msgstr "Scan barcode"
 msgid "Scopes"
 msgstr "Scopes"
 
+#: src/features/archive/ArchivePage.tsx
 #: src/features/search/GlobalSearch.tsx
 msgid "Search"
 msgstr "Search"
@@ -1168,9 +1563,17 @@ msgstr "Search results"
 msgid "See the jobs"
 msgstr "See the jobs"
 
+#: src/features/archive/TypeDetail.tsx
+msgid "seed"
+msgstr "seed"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Sent to {printerName}."
 msgstr "Sent to {printerName}."
+
+#: src/features/archive/TypeForm.tsx
+msgid "Separate several with commas."
+msgstr "Separate several with commas."
 
 #: src/shell/Sidebar.tsx
 msgid "Server unreachable"
@@ -1205,7 +1608,7 @@ msgstr "Settings sections"
 msgid "Sheet {code}"
 msgstr "Sheet {code}"
 
-#: src/pages/placeholders.tsx
+#: src/features/archive/ArchivePage.tsx
 #: src/shell/labels.ts
 msgid "Sheet archive"
 msgstr "Sheet archive"
@@ -1214,10 +1617,27 @@ msgstr "Sheet archive"
 msgid "sheet ID"
 msgstr "sheet ID"
 
+#: src/features/archive/ArchivePage.tsx
+msgid "Sheet types"
+msgstr "Sheet types"
+
+#: src/features/archive/TypeDetail.tsx
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
 msgid "Sheets"
 msgstr "Sheets"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Sheets already made keep printing with the old measurements."
+msgstr "Sheets already made keep printing with the old measurements."
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Show archived types"
+msgstr "Show archived types"
+
+#: src/features/archive/ImportDialog.tsx
+msgid "Show the type"
+msgstr "Show the type"
 
 #: src/shell/SignIn.tsx
 msgid "Sign in"
@@ -1274,10 +1694,18 @@ msgstr "Something went wrong."
 msgid "Source"
 msgstr "Source"
 
+#: src/features/archive/TypeForm.tsx
+msgid "Source address"
+msgstr "Source address"
+
 #: src/features/about/SourceLink.tsx
 msgctxt "link to the source of the running version"
 msgid "Source code"
 msgstr "Source code"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Source name"
+msgstr "Source name"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Spool"
@@ -1298,6 +1726,10 @@ msgstr "Spoolman sends this key with its webhook. At least {MIN_WEBHOOK_KEY} cha
 #: src/features/scan/ScanScreen.tsx
 msgid "Starting the camera…"
 msgstr "Starting the camera…"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Starts every sheet code, for example L4736."
+msgstr "Starts every sheet code, for example L4736."
 
 #: src/features/settings/SettingsPage.tsx
 #: src/features/settings/System.tsx
@@ -1345,9 +1777,18 @@ msgstr "That key was not accepted."
 msgid "That name is already used by another printer."
 msgstr "That name is already used by another printer."
 
+#: src/features/archive/errors.ts
+#: src/features/archive/TypeDetail.tsx
+msgid "That sheet type does not exist."
+msgstr "That sheet type does not exist."
+
 #: src/features/settings/feedback.tsx
 msgid "That slug is already used by another printer."
 msgstr "That slug is already used by another printer."
+
+#: src/features/archive/ImportDialog.tsx
+msgid "That text is not valid JSON."
+msgstr "That text is not valid JSON."
 
 #: src/features/settings/feedback.tsx
 msgid "That value is set by the container and cannot be changed here."
@@ -1381,6 +1822,14 @@ msgstr "The camera needs a secure connection (HTTPS) or localhost. Open the hub 
 msgid "The cart is empty."
 msgstr "The cart is empty."
 
+#: src/features/archive/errors.ts
+msgid "The code prefix cannot change while sheets of this type exist."
+msgstr "The code prefix cannot change while sheets of this type exist."
+
+#: src/features/archive/TypeForm.tsx
+msgid "The code prefix is 2 to 10 capital letters or digits and starts with a letter."
+msgstr "The code prefix is 2 to 10 capital letters or digits and starts with a letter."
+
 #: src/features/scan/ScanScreen.tsx
 msgid "The code reader did not start"
 msgstr "The code reader did not start"
@@ -1388,6 +1837,14 @@ msgstr "The code reader did not start"
 #: src/features/settings/System.tsx
 msgid "The download holds the settings that are not secret and not set by the container, as JSON. Keys and tokens are never included."
 msgstr "The download holds the settings that are not secret and not set by the container, as JSON. Keys and tokens are never included."
+
+#: src/features/archive/ImportDialog.tsx
+msgid "The file is larger than 64 KB."
+msgstr "The file is larger than 64 KB."
+
+#: src/features/archive/ImportDialog.tsx
+msgid "The import failed."
+msgstr "The import failed."
 
 #: src/features/lookup/ItemView.tsx
 msgid "The item could not be loaded."
@@ -1424,6 +1881,10 @@ msgstr "The key could not be revoked."
 msgid "The key that webhooks from other apps must present."
 msgstr "The key that webhooks from other apps must present."
 
+#: src/features/archive/TypeForm.tsx
+msgid "The key uses lowercase letters, digits and dashes, 3 to 64 characters, and starts and ends with a letter or digit."
+msgstr "The key uses lowercase letters, digits and dashes, 3 to 64 characters, and starts and ends with a letter or digit."
+
 #: src/features/settings/AccessKeys.tsx
 msgid "The keys could not be loaded."
 msgstr "The keys could not be loaded."
@@ -1446,13 +1907,26 @@ msgstr "The left and right margins differ ({0} and {1}). Measure the sheet again
 msgid "The log could not be loaded."
 msgstr "The log could not be loaded."
 
+#: src/features/archive/TypeForm.tsx
+msgid "The name in addresses and exports. It cannot be changed later."
+msgstr "The name in addresses and exports. It cannot be changed later."
+
 #: src/features/settings/sections.tsx
 msgid "The name in the title bar, the language new visitors see, and the address of this hub."
 msgstr "The name in the title bar, the language new visitors see, and the address of this hub."
 
+#. placeholder {0}: MAX.changeNote
+#: src/features/archive/TypeForm.tsx
+msgid "The note is too long: at most {0} characters."
+msgstr "The note is too long: at most {0} characters."
+
 #: src/features/settings/PrinterForm.tsx
 msgid "The port must be between 1 and 65535."
 msgstr "The port must be between 1 and 65535."
+
+#: src/features/archive/TypeForm.tsx
+msgid "The prefix is fixed once sheets of this type exist."
+msgstr "The prefix is fixed once sheets of this type exist."
 
 #: src/features/settings/Printers.tsx
 msgid "The printer could not be changed."
@@ -1480,6 +1954,7 @@ msgid "The secret comes from the container, but the URL does not. Set the URL in
 msgstr "The secret comes from the container, but the URL does not. Set the URL in the container too."
 
 #: src/app/router.tsx
+#: src/features/archive/errors.ts
 #: src/features/lookup/PrinterPicker.tsx
 #: src/features/settings/feedback.tsx
 #: src/i18n/messages.ts
@@ -1487,9 +1962,21 @@ msgstr "The secret comes from the container, but the URL does not. Set the URL i
 msgid "The server cannot be reached."
 msgstr "The server cannot be reached."
 
+#: src/features/archive/ImportDialog.tsx
+msgid "The server refused the file: it is larger than 64 KB."
+msgstr "The server refused the file: it is larger than 64 KB."
+
 #: src/features/settings/sections.tsx
 msgid "The settings could not be loaded."
 msgstr "The settings could not be loaded."
+
+#: src/features/archive/TypeDetail.tsx
+msgid "The sheet type could not be loaded."
+msgstr "The sheet type could not be loaded."
+
+#: src/features/archive/ArchivePage.tsx
+msgid "The sheet types could not be loaded."
+msgstr "The sheet types could not be loaded."
 
 #: src/features/settings/PrinterForm.tsx
 msgid "The short name in addresses and in the API. It cannot be changed later."
@@ -1499,9 +1986,17 @@ msgstr "The short name in addresses and in the API. It cannot be changed later."
 msgid "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
 msgstr "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
 
+#: src/features/archive/TypeForm.tsx
+msgid "The source address must start with http:// or https://."
+msgstr "The source address must start with http:// or https://."
+
 #: src/features/settings/Integrations.tsx
 msgid "The test could not be run."
 msgstr "The test could not be run."
+
+#: src/features/archive/ImportDialog.tsx
+msgid "The text is larger than 64 KB."
+msgstr "The text is larger than 64 KB."
 
 #. placeholder {0}: mm(g.margin_top)
 #. placeholder {1}: mm(bottom)
@@ -1524,6 +2019,14 @@ msgstr "This code is not one the hub knows. Its text:"
 #: src/features/about/AboutPage.tsx
 msgid "This hub is free software under the GNU Affero General Public License, version 3 or later. You can get the source of exactly this version at any time."
 msgstr "This hub is free software under the GNU Affero General Public License, version 3 or later. You can get the source of exactly this version at any time."
+
+#: src/features/archive/ImportDialog.tsx
+msgid "This is not a sheet type export file."
+msgstr "This is not a sheet type export file."
+
+#: src/features/archive/ImportDialog.tsx
+msgid "This is not a valid sheet type export."
+msgstr "This is not a valid sheet type export."
 
 #: src/features/lookup/ItemView.tsx
 msgid "This item cannot be shown"
@@ -1557,6 +2060,14 @@ msgstr "This printer does not exist."
 msgid "This secret is saved for the old URL. Enter it again to use the new URL."
 msgstr "This secret is saved for the old URL. Enter it again to use the new URL."
 
+#: src/features/archive/errors.ts
+msgid "This type has sheets. Archive it instead."
+msgstr "This type has sheets. Archive it instead."
+
+#: src/features/archive/errors.ts
+msgid "This type is archived. Bring it back first."
+msgstr "This type is archived. Bring it back first."
+
 #: src/features/settings/System.tsx
 msgid "Time"
 msgstr "Time"
@@ -1585,12 +2096,20 @@ msgstr "Too many attempts. Wait a minute and try again."
 msgid "Top margin"
 msgstr "Top margin"
 
+#: src/features/archive/TypeForm.tsx
+msgid "Top margin (mm)"
+msgstr "Top margin (mm)"
+
 #: src/app/router.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/ScanScreen.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Try again"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "Unarchive"
+msgstr "Unarchive"
 
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"
@@ -1611,6 +2130,10 @@ msgstr "Unknown code"
 msgid "Unknown printer"
 msgstr "Unknown printer"
 
+#: src/features/archive/TypeDetail.tsx
+msgid "unverified"
+msgstr "unverified"
+
 #: src/features/settings/Integrations.tsx
 msgid "URL"
 msgstr "URL"
@@ -1620,9 +2143,27 @@ msgctxt "sheet cell state"
 msgid "used"
 msgstr "used"
 
+#: src/features/archive/ArchivePage.tsx
+#: src/features/archive/TypeForm.tsx
+msgid "Vendor"
+msgstr "Vendor"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Verified against a real sheet"
+msgstr "Verified against a real sheet"
+
 #: src/features/about/BuildRows.tsx
+#: src/features/archive/TypeDetail.tsx
 msgid "Version"
 msgstr "Version"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "Versions"
+msgstr "Versions"
+
+#: src/features/archive/TypeForm.tsx
+msgid "Vertical pitch (mm)"
+msgstr "Vertical pitch (mm)"
 
 #: src/features/lookup/ItemView.tsx
 msgid "View the job"
@@ -1640,6 +2181,11 @@ msgstr "Webhook key"
 msgid "Webhooks"
 msgstr "Webhooks"
 
+#: src/features/archive/TypeDetail.tsx
+#: src/features/archive/TypeForm.tsx
+msgid "What changed"
+msgstr "What changed"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "What was printed"
 msgstr "What was printed"
@@ -1647,6 +2193,10 @@ msgstr "What was printed"
 #: src/features/jobs/JobDetail.tsx
 msgid "What went wrong"
 msgstr "What went wrong"
+
+#: src/features/archive/TypeDetail.tsx
+msgid "Where the numbers come from"
+msgstr "Where the numbers come from"
 
 #: src/features/printers/model.ts
 msgid "White"
@@ -1672,6 +2222,7 @@ msgstr "Yellow"
 msgid "You need an admin key"
 msgstr "You need an admin key"
 
+#: src/features/archive/errors.ts
 #: src/features/settings/feedback.tsx
 msgid "You need an admin key for this."
 msgstr "You need an admin key for this."

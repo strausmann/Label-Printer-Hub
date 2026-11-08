@@ -96,3 +96,15 @@ export function sheetIdJobFailed(error: unknown): { sheetCode: string } | null {
   const d = detailOf(error, "sheet_id_job_failed");
   return d && typeof d.sheet_code === "string" ? { sheetCode: d.sheet_code } : null;
 }
+
+/** `422 invalid_import`: what the import document got wrong (the server's list, at most 20 entries). */
+export function invalidImport(error: unknown): { errors: string[] } | null {
+  const d = detailOf(error, "invalid_import");
+  return d && isStrings(d.errors) ? { errors: d.errors } : null;
+}
+
+/** `422 invalid_geometry`: which field is wrong and the server's reason keyword. */
+export function invalidGeometry(error: unknown): { field: string; reason: string } | null {
+  const d = detailOf(error, "invalid_geometry");
+  return d && typeof d.field === "string" && typeof d.reason === "string" ? { field: d.field, reason: d.reason } : null;
+}

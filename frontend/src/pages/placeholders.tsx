@@ -20,10 +20,6 @@ export function SheetsPage() {
   const { t } = useLingui();
   return <PagePlaceholder title={t`Sheets`} />;
 }
-export function SheetArchivePage() {
-  const { t } = useLingui();
-  return <PagePlaceholder title={t`Sheet archive`} />;
-}
 /** `/sheets/$code` and `/sheet/$code` (the path printed in the sheet QR code) until the detail page replaces it. */
 export function SheetDetailPlaceholder() {
   const { t } = useLingui();
