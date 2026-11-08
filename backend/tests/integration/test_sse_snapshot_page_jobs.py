@@ -106,3 +106,22 @@ async def test_jobs_past_the_snapshot_limit_get_no_frame(db_session, printer) ->
     frames = await _job_frames(db_session, printer.id, _Queue(jobs))
     assert len(frames) == SNAPSHOT_JOB_LIMIT
     assert all(f["kind"] == "sheet_page" for f in frames)
+
+
+async def test_a_printing_job_is_not_pushed_out_by_queued_ones(db_session, printer) -> None:
+    from app.services.sse_snapshot import SNAPSHOT_JOB_LIMIT
+
+    jobs = {}
+    for _ in range(SNAPSHOT_JOB_LIMIT + 1):
+        await jobs_repo.create_queued(
+            db_session, printer_id=printer.id, template_key=None, payload={}
+        )
+    printing = await jobs_repo.create_queued(
+        db_session, printer_id=printer.id, template_key=None, payload={}
+    )
+    await jobs_repo.mark_printing(db_session, printing.id)
+    jobs[str(printing.id)] = _page_job()
+    frames = await _job_frames(db_session, printer.id, _Queue(jobs))
+    assert len(frames) == SNAPSHOT_JOB_LIMIT
+    by_id = {f["job_id"]: f for f in frames}
+    assert by_id[str(printing.id)]["at_printer"] == "stopped"

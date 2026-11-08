@@ -29,7 +29,7 @@ _log = logging.getLogger(__name__)
 
 # Active jobs included in a snapshot, per printer. A job past the limit gets no frame on connect:
 # the UI then says "at the printer" for it without a sub-state and learns it from the next live
-# event. Queued jobs are listed before printing ones, so many waiting jobs can crowd one out.
+# event. Printing jobs are listed before queued ones, so waiting jobs cannot crowd one out.
 SNAPSHOT_JOB_LIMIT = 5
 
 
@@ -124,11 +124,13 @@ async def build_snapshot(
         )
         queue_depth: int = (await session.execute(count_stmt)).scalar_one()
 
+        # Printing (at the printer) first: those are the jobs whose sub-state the UI needs, and
+        # waiting jobs must never push them past the limit.
         active_jobs = await jobs_repo.list_by_filter(
-            session, printer_id=printer_id, state=JobState.QUEUED.value, limit=SNAPSHOT_JOB_LIMIT
+            session, printer_id=printer_id, state=JobState.PRINTING.value, limit=SNAPSHOT_JOB_LIMIT
         )
         active_jobs += await jobs_repo.list_by_filter(
-            session, printer_id=printer_id, state=JobState.PRINTING.value, limit=SNAPSHOT_JOB_LIMIT
+            session, printer_id=printer_id, state=JobState.QUEUED.value, limit=SNAPSHOT_JOB_LIMIT
         )
         for job in active_jobs[:SNAPSHOT_JOB_LIMIT]:
             snapshot.append(
