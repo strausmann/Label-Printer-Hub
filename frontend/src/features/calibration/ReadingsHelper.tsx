@@ -1,8 +1,8 @@
 import { useLingui } from "@lingui/react/macro";
-import { useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { Button } from "react-aria-components";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
-import { HINT, SelectField, TextInput } from "../settings/controls";
+import { HINT, SelectField, TextInput, type Option } from "../settings/controls";
 import { SECONDARY_BUTTON } from "../ui";
 import { useFit, type FitResponse } from "./api";
 import { useCalibrationErrorText, useRangeWords } from "./errors";
@@ -28,11 +28,43 @@ function unusedCrossing(list: readonly ReadingRow[], cols: number, rows: number)
   return { col_gap: 1, row_gap: 1 };
 }
 
+const gapOptions = (n: number): Option[] => Array.from({ length: n }, (_, i) => ({ id: String(i + 1), label: String(i + 1) }));
+
 interface Fitted {
   response: FitResponse;
   /** The crossings that were sent, in order, so the table can name them. */
   crossings: { col_gap: number; row_gap: number; across_mm: number; down_mm: number }[];
 }
+
+interface ReadingRowViewProps {
+  row: ReadingRow;
+  /** The 1-based position shown to the person. */
+  n: number;
+  colOptions: Option[];
+  rowOptions: Option[];
+  onEdit: (id: number, patch: Partial<ReadingRow>) => void;
+  onRemove: (id: number) => void;
+}
+
+/**
+ * One reading. Memoised: every prop is stable while this row is untouched, so editing one
+ * row does not re-render the others (each carries two selects, ~100 ms of render in jsdom).
+ */
+export const ReadingRowView = memo(function ReadingRowView({ row: r, n, colOptions, rowOptions, onEdit, onRemove }: ReadingRowViewProps) {
+  const { t } = useLingui();
+  const name = crossingName(r.col_gap, r.row_gap);
+  return (
+    <fieldset aria-label={t`Reading ${n}`} className="m-0 grid grid-cols-2 gap-3 rounded-r2 bg-sunken p-3 sm:grid-cols-[5rem_5rem_1fr_1fr_auto] sm:items-end">
+      <SelectField label={t`Gap S`} value={String(r.col_gap)} options={colOptions} onChange={(id) => onEdit(r.id, { col_gap: Number(id) })} />
+      <SelectField label={t`Gap Z`} value={String(r.row_gap)} options={rowOptions} onChange={(id) => onEdit(r.id, { row_gap: Number(id) })} />
+      <TextInput label={t`Across at ${name} (mm)`} value={r.across} onChange={(v) => onEdit(r.id, { across: v })} inputMode="decimal" mono />
+      <TextInput label={t`Down at ${name} (mm)`} value={r.down} onChange={(v) => onEdit(r.id, { down: v })} inputMode="decimal" mono />
+      <Button aria-label={t`Remove reading ${n}`} onPress={() => onRemove(r.id)} className={`${SECONDARY_BUTTON} col-span-2 sm:col-span-1`}>
+        {t`Remove`}
+      </Button>
+    </fieldset>
+  );
+});
 
 export interface ReadingsHelperProps {
   printerId: string;
@@ -61,25 +93,34 @@ export function ReadingsHelper({ printerId, tray, typeKey, version, cols, rows, 
   const [fitted, setFitted] = useState<Fitted | null>(null);
   const [filled, setFilled] = useState(false);
   const ready = canFit(list);
-  const gapOptions = (n: number) => Array.from({ length: n }, (_, i) => ({ id: String(i + 1), label: String(i + 1) }));
+  const colOptions = useMemo(() => gapOptions(Math.max(cols - 1, 1)), [cols]);
+  const rowOptions = useMemo(() => gapOptions(Math.max(rows - 1, 1)), [rows]);
   const mm = (v: number) => `${new Intl.NumberFormat(i18n.locale, { maximumFractionDigits: 2, useGrouping: false }).format(v)} mm`;
 
-  const edit = (id: number, patch: Partial<ReadingRow>) => {
-    setList((rowsNow) => rowsNow.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-    setFitted(null);
-    setFilled(false);
-    fit.reset();
-  };
+  const { reset: resetFit } = fit;
+  // Stable between renders: they are props of the memoised rows.
+  const edit = useCallback(
+    (id: number, patch: Partial<ReadingRow>) => {
+      setList((rowsNow) => rowsNow.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+      setFitted(null);
+      setFilled(false);
+      resetFit();
+    },
+    [resetFit],
+  );
   const add = () => {
     const id = nextId.current++;
     setList((rowsNow) => [...rowsNow, emptyReading(id, unusedCrossing(rowsNow, cols, rows))]);
   };
-  const remove = (id: number) => {
-    setList((rowsNow) => rowsNow.filter((r) => r.id !== id));
-    setFitted(null);
-    setFilled(false);
-    fit.reset();
-  };
+  const remove = useCallback(
+    (id: number) => {
+      setList((rowsNow) => rowsNow.filter((r) => r.id !== id));
+      setFitted(null);
+      setFilled(false);
+      resetFit();
+    },
+    [resetFit],
+  );
 
   const run = () => {
     const request = readingsRequest(typeKey, version, list);
@@ -114,21 +155,9 @@ export function ReadingsHelper({ printerId, tray, typeKey, version, cols, rows, 
         {t`Read the deviation at three or more crossings that are far apart, in both directions. + across = the ink lies to the right, + down = the ink lies below.`}
       </p>
       <div className="flex flex-col gap-3">
-        {list.map((r, index) => {
-          const n = index + 1;
-          const name = crossingName(r.col_gap, r.row_gap);
-          return (
-            <fieldset key={r.id} aria-label={t`Reading ${n}`} className="m-0 grid grid-cols-2 gap-3 rounded-r2 bg-sunken p-3 sm:grid-cols-[5rem_5rem_1fr_1fr_auto] sm:items-end">
-              <SelectField label={t`Gap S`} value={String(r.col_gap)} options={gapOptions(Math.max(cols - 1, 1))} onChange={(id) => edit(r.id, { col_gap: Number(id) })} />
-              <SelectField label={t`Gap Z`} value={String(r.row_gap)} options={gapOptions(Math.max(rows - 1, 1))} onChange={(id) => edit(r.id, { row_gap: Number(id) })} />
-              <TextInput label={t`Across at ${name} (mm)`} value={r.across} onChange={(v) => edit(r.id, { across: v })} inputMode="decimal" mono />
-              <TextInput label={t`Down at ${name} (mm)`} value={r.down} onChange={(v) => edit(r.id, { down: v })} inputMode="decimal" mono />
-              <Button aria-label={t`Remove reading ${n}`} onPress={() => remove(r.id)} className={`${SECONDARY_BUTTON} col-span-2 sm:col-span-1`}>
-                {t`Remove`}
-              </Button>
-            </fieldset>
-          );
-        })}
+        {list.map((r, index) => (
+          <ReadingRowView key={r.id} row={r} n={index + 1} colOptions={colOptions} rowOptions={rowOptions} onEdit={edit} onRemove={remove} />
+        ))}
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button onPress={add} isDisabled={list.length >= MAX_ROWS} className={SECONDARY_BUTTON}>

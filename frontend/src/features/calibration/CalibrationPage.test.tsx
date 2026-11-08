@@ -6,10 +6,11 @@ import { apiErrorBody, GEOMETRY_L4736, mockApi, PAGE_CAPABILITIES, PAGE_PRINTER,
 
 vi.setConfig({ testTimeout: 15_000 });
 
-// This page re-renders every reading row (two react-aria selects each) on every edit, about
-// 100-200 ms per render in jsdom. With 76 files sharing four cores in the full run, the
-// default 1 s findBy window expired on the first render after Fit. The window is widened for
-// this file only and restored afterwards; the assertions are unchanged.
+// Still needed after the reading rows were memoised: the page is a whole app render in jsdom
+// (react-aria selects, a schematic), 60-250 ms per step, about 65 s for this file alone. With 76
+// files sharing four cores in the full run the default 1 s findBy window expired on the first
+// render after Fit. The window is widened for this file only and restored afterwards; the
+// assertions are unchanged.
 let defaultAsyncTimeout = 1000;
 beforeAll(() => {
   configure((current) => {
