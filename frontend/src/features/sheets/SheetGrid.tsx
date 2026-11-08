@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useCallback, useLayoutEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import {
   CELL_STATES,
   cellLabel,
@@ -22,13 +22,16 @@ const FALLBACK_WIDTH_PX = 360;
  */
 function useContainerWidth(ref: RefObject<HTMLElement | null>, injected?: number): number {
   const [measured, setMeasured] = useState(FALLBACK_WIDTH_PX);
-  useEffect(() => {
+  // Layout effect: the first paint already has the measured width (no 360 px flash on a wide screen).
+  useLayoutEffect(() => {
     const el = ref.current;
     if (injected !== undefined || !el || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
+    const measure = () => {
       const width = Math.round(el.clientWidth);
       if (width > 0) setMeasured(width);
-    });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
   }, [ref, injected]);
@@ -44,6 +47,15 @@ const SHAPE_CLASS: Record<GridCellState, string> = {
   unconfirmed: "fill-surface stroke-warn",
   new: "fill-accent stroke-accent-ink",
   skipped: "fill-sunken stroke-ink-3",
+};
+// Over a rendered page (`overlayPng`) the state must not hide the preview: outline and marker only, no fill.
+const OVERLAY_CLASS: Record<GridCellState, string> = {
+  free: "fill-transparent stroke-line-strong",
+  used: "fill-transparent stroke-ink-3",
+  reserved: "fill-transparent stroke-accent",
+  unconfirmed: "fill-transparent stroke-warn",
+  new: "fill-transparent stroke-accent",
+  skipped: "fill-transparent stroke-ink-3",
 };
 const STROKE_W: Record<GridCellState, number> = { free: 0.35, used: 0.3, reserved: 0.4, unconfirmed: 0.8, new: 0.4, skipped: 0.3 };
 const DASH: Partial<Record<GridCellState, string>> = { free: "1.4 1", skipped: "1.2 0.9" };
@@ -73,10 +85,12 @@ interface BodyProps {
   isId?: boolean;
   hwMargin?: boolean;
   hoverable?: boolean;
+  /** Drawn over the page image: outlines and markers only. */
+  overlay?: boolean;
 }
 
 /** One cell, drawn in mm: the shape of its state plus the non-colour marker, number and flags. */
-function CellBody({ state, x, y, w, h, round, radius, patternId, number, numberMm = 3.5, isId, hwMargin, hoverable }: BodyProps) {
+function CellBody({ state, x, y, w, h, round, radius, patternId, number, numberMm = 3.5, isId, hwMargin, hoverable, overlay }: BodyProps) {
   const cx = x + w / 2;
   const cy = y + h / 2;
   const r = w / 2;
@@ -86,8 +100,8 @@ function CellBody({ state, x, y, w, h, round, radius, patternId, number, numberM
   const gy = round ? cy + r * 0.5 : cy;
   const shapeProps = {
     "data-shape": "cell",
-    className: `${SHAPE_CLASS[state]} ${hoverable ? "group-hover/cell:stroke-link" : ""}`,
-    strokeWidth: STROKE_W[state],
+    className: `${overlay ? OVERLAY_CLASS[state] : SHAPE_CLASS[state]} ${hoverable ? "group-hover/cell:stroke-link" : ""}`,
+    strokeWidth: overlay && state === "new" ? 1 : STROKE_W[state],
     strokeDasharray: DASH[state],
     "data-marker": state === "free" ? "free" : state === "new" ? "filled" : undefined,
   };
@@ -103,9 +117,9 @@ function CellBody({ state, x, y, w, h, round, radius, patternId, number, numberM
       {shape()}
       {state === "used" &&
         (round ? (
-          <circle cx={cx} cy={cy} r={r} fill={`url(#${patternId})`} data-marker="hatch" pointerEvents="none" />
+          <circle cx={cx} cy={cy} r={r} fill={`url(#${patternId})`} data-marker="hatch" pointerEvents="none" opacity={overlay ? 0.4 : 1} />
         ) : (
-          <rect x={x} y={y} width={w} height={h} rx={radius} fill={`url(#${patternId})`} data-marker="hatch" pointerEvents="none" />
+          <rect x={x} y={y} width={w} height={h} rx={radius} fill={`url(#${patternId})`} data-marker="hatch" pointerEvents="none" opacity={overlay ? 0.4 : 1} />
         ))}
       {state === "skipped" && (
         <line
@@ -148,8 +162,8 @@ function CellBody({ state, x, y, w, h, round, radius, patternId, number, numberM
           fontWeight={state === "new" ? 800 : 600}
           textAnchor={round ? "middle" : "start"}
           dominantBaseline="central"
-          className={`select-none ${state === "new" ? "fill-accent-ink" : "fill-ink-2"} ${state === "used" ? "stroke-sunken" : "stroke-transparent"}`}
-          strokeWidth={state === "used" ? 0.7 : 0}
+          className={`select-none ${state === "new" && !overlay ? "fill-accent-ink" : "fill-ink-2"} ${overlay ? "stroke-surface" : state === "used" ? "stroke-sunken" : "stroke-transparent"}`}
+          strokeWidth={overlay || state === "used" ? 0.7 : 0}
           paintOrder="stroke"
           pointerEvents="none"
         >
@@ -165,7 +179,7 @@ function CellBody({ state, x, y, w, h, round, radius, patternId, number, numberM
           fontWeight="800"
           textAnchor={round ? "middle" : "start"}
           dominantBaseline="central"
-          className={`select-none ${state === "new" ? "fill-accent-ink" : "fill-ink"}`}
+          className={`select-none ${state === "new" && !overlay ? "fill-accent-ink" : "fill-ink"}`}
           pointerEvents="none"
         >
           ID
@@ -313,14 +327,14 @@ export function SheetGrid({ geometry: g, cells, mode, onToggle, overlayPng, zoom
                   aria-colindex={col + 1}
                   aria-label={cellLabel(data, t)}
                   aria-disabled={interactive && !enabled ? true : undefined}
-                  tabIndex={n === active ? 0 : -1}
+                  tabIndex={n === Math.min(active, total) ? 0 : -1}
                   onFocus={() => setActive(n)}
                   onKeyDown={(e) => onKeyDown(e, n, data)}
                   onClick={() => toggle(data)}
                   className={`group/cell outline-none ${enabled ? "cursor-pointer" : ""}`}
                 >
-                  <title>{cellLabel(data, t)}</title>
-                  <g className={`${enabled ? "press [transform-box:fill-box] origin-center" : ""} ${overlayPng ? "opacity-80" : ""}`}>
+                  {/* One accessible name: the aria-label. A <title> child would be announced as a second description. */}
+                  <g className={`${enabled ? "press [transform-box:fill-box] origin-center" : ""} `}>
                     <CellBody
                       state={data.state}
                       x={rect.x}
@@ -335,15 +349,16 @@ export function SheetGrid({ geometry: g, cells, mode, onToggle, overlayPng, zoom
                       isId={data.isId}
                       hwMargin={data.hwMargin}
                       hoverable={enabled}
+                      overlay={!!overlayPng}
                     />
                   </g>
                   {round ? (
                     <circle cx={rect.x + rect.w / 2} cy={rect.y + rect.h / 2} r={rect.w / 2 + ringMm} fill="none" strokeWidth={ringMm}
-                      className="stroke-transparent group-focus-visible/cell:stroke-link" pointerEvents="none" />
+                      data-ring="1" className="stroke-transparent group-focus-visible/cell:stroke-link" pointerEvents="none" />
                   ) : (
                     <rect x={rect.x - ringMm / 2} y={rect.y - ringMm / 2} width={rect.w + ringMm} height={rect.h + ringMm}
                       rx={radius + ringMm / 2} fill="none" strokeWidth={ringMm}
-                      className="stroke-transparent group-focus-visible/cell:stroke-link" pointerEvents="none" />
+                      data-ring="1" className="stroke-transparent group-focus-visible/cell:stroke-link" pointerEvents="none" />
                   )}
                   {/* The touch target is the pitch box: the label plus half the gap on each side. */}
                   <rect
@@ -374,8 +389,8 @@ export function SheetLegend({ counts }: { counts?: Partial<Record<GridCellState,
       {CELL_STATES.map((state) => (
         <li key={state} className="flex items-center gap-2">
           <svg width="28" height="18" viewBox="0 0 14 9" aria-hidden="true" className="block shrink-0">
-            <StatePatterns id={patternId} />
-            <CellBody state={state} x={0.5} y={0.5} w={13} h={8} round={false} radius={1.2} patternId={patternId} />
+            <StatePatterns id={`${patternId}-${state}`} />
+            <CellBody state={state} x={0.5} y={0.5} w={13} h={8} round={false} radius={1.2} patternId={`${patternId}-${state}`} />
           </svg>
           <span>{cellStateWord(state, t)}</span>
           {counts?.[state] !== undefined && <span className="font-bold tabular-nums">{counts[state]}</span>}

@@ -86,6 +86,14 @@ describe("cell states are never colour alone", () => {
     expect(cell(1).querySelector(`[data-marker="${marker}"]`)).not.toBeNull();
   });
 
+  it("free is dashed and new is a bold number: the cues themselves, not just an attribute", () => {
+    render(<SheetGrid geometry={L4736} cells={[mk(1, "free"), mk(2, "new"), mk(3, "used")]} mode="view" label="g" containerWidth={360} />);
+    expect(cell(1).querySelector('[data-shape="cell"]')).toHaveAttribute("stroke-dasharray");
+    expect(cell(2).querySelector("text")).toHaveAttribute("font-weight", "800");
+    expect(cell(3).querySelector("text")).toHaveAttribute("font-weight", "600");
+    expect(cell(2).querySelector('[data-shape="cell"]')).not.toHaveAttribute("stroke-dasharray");
+  });
+
   it("the legend names every state with its marker", () => {
     render(<SheetLegend counts={{ used: 120, free: 69 }} />);
     const list = screen.getByRole("list");
@@ -125,6 +133,55 @@ describe("shapes and markers", () => {
     expect(img).toHaveAttribute("href", "data:image/png;base64,AAAA");
     expect(img).toHaveAttribute("width", "210");
     expect(img).toHaveAttribute("height", "297");
+  });
+});
+
+describe("overlay", () => {
+  const all: GridCell[] = (["free", "used", "reserved", "unconfirmed", "new", "skipped"] as const).map((st, i) => mk(i + 1, st));
+
+  it("never covers the page image with a fill", () => {
+    const { container } = render(
+      <SheetGrid geometry={L4736} cells={all} mode="view" overlayPng="data:image/png;base64,AAAA" label="g" containerWidth={360} />,
+    );
+    const shapes = [...container.querySelectorAll('[data-shape="cell"]')];
+    expect(shapes).toHaveLength(48);
+    for (const shape of shapes) expect(shape.getAttribute("class")).toContain("fill-transparent");
+    // the hatch of used cells is thinned, and a new cell is told apart by a thick outline
+    expect(cell(2).querySelector('[data-marker="hatch"]')).toHaveAttribute("opacity", "0.4");
+    expect(cell(5).querySelector('[data-shape="cell"]')).toHaveAttribute("stroke-width", "1");
+    expect(container.querySelector("g[class*='opacity']")).toBeNull();
+  });
+
+  it("without the overlay, states keep their fills", () => {
+    const { container } = render(<SheetGrid geometry={L4736} cells={all} mode="view" label="g" containerWidth={360} />);
+    expect(cell(5).querySelector('[data-shape="cell"]')?.getAttribute("class")).toContain("fill-accent");
+    expect(container.querySelector('[data-marker="hatch"]')).toHaveAttribute("opacity", "1");
+  });
+});
+
+describe("accessibility details", () => {
+  it("a cell has one accessible name and no <title> to read twice", () => {
+    const { container } = render(
+      <SheetGrid geometry={L4736} cells={[mk(5, "used", { purpose: "Grocy · flour 1 kg" })]} mode="view" label="g" containerWidth={360} />,
+    );
+    expect(container.querySelectorAll("title")).toHaveLength(0);
+    expect(cell(5)).toHaveAttribute("aria-label", "Cell 5, used, Grocy · flour 1 kg");
+  });
+
+  it("the legend has no duplicate ids", () => {
+    const { container } = render(<SheetLegend counts={{ used: 1 }} />);
+    const ids = [...container.querySelectorAll("[id]")].map((el) => el.id);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("keeps one tab stop when the geometry shrinks under the focused cell", () => {
+    const small: GeometryMm = { ...L4736, cols: 2, rows: 2 };
+    const { rerender } = render(<SheetGrid geometry={L4736} cells={[]} mode="view" label="g" containerWidth={360} />);
+    cell(40).focus();
+    rerender(<SheetGrid geometry={small} cells={[]} mode="view" label="g" containerWidth={360} />);
+    const stops = screen.getAllByRole("gridcell").filter((c) => c.getAttribute("tabindex") === "0");
+    expect(stops).toHaveLength(1);
   });
 });
 

@@ -32,6 +32,15 @@ function edgeCells(total: number): GridCell[] {
   return [...cells, ...rest.filter((c) => c.cell <= total)];
 }
 
+// A stand-in for the preview PNG of a printed page: dark text blocks where labels are printed.
+const PAGE_IMAGE =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 297"><rect width="210" height="297" fill="#fff"/>` +
+      Array.from({ length: 30 }, (_, i) => `<text x="12" y="${20 + i * 9}" font-size="5" fill="#222">Grocy · flour 1 kg ${i + 1}</text>`).join("") +
+      `</svg>`,
+  );
+
 function Page() {
   const q = new URLSearchParams(location.search);
   const geometry = TYPES[q.get("type") ?? "l4731"] ?? TYPES.l4731!;
@@ -48,7 +57,7 @@ function Page() {
     <main className="mx-auto flex max-w-3xl flex-col gap-4 p-4">
       <h1 className="text-section font-bold">Sheet L4731-0001</h1>
       <SheetLegend counts={{ used: cells.filter((c) => c.state === "used").length }} />
-      <SheetGrid geometry={geometry} cells={cells} mode={mode} onToggle={toggle} label="Sheet L4731-0001" />
+      <SheetGrid geometry={geometry} cells={cells} mode={mode} onToggle={toggle} label="Sheet L4731-0001" overlayPng={q.get("overlay") ? PAGE_IMAGE : undefined} />
       <GeometryDiagram geometry={geometry} />
     </main>
   );

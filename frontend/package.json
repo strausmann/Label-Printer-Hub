@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test",
+    "e2e:harness": "playwright test -c playwright.harness.config.ts",
     "gen:api": "python ../backend/scripts/export_openapi.py > openapi.json && openapi-typescript openapi.json -o src/api/schema.gen.ts",
     "i18n:extract": "lingui extract",
     "i18n:compile": "lingui compile --strict --typescript"
