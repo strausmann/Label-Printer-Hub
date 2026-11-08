@@ -4,7 +4,7 @@ import { createElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { calibrationOutOfRange, readingsInsufficient } from "../../api/errorDetail";
 import { apiErrorBody, mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, respond } from "../test-api";
-import { calibrationPdfUrl, useCalibration, useCapabilities, useFit, usePrintCalibrationPage, useSaveCalibration } from "./api";
+import { calibrationPdfUrl, useCalibration, useCapabilities, useFit, usePrintCalibrationPage, useResetCalibration, useSaveCalibration } from "./api";
 
 const P = PAGE_PRINTER.id;
 function setup() {
@@ -77,6 +77,38 @@ describe("calibration writes", () => {
     const answer = await act(() => result.current.mutateAsync({ tray: "main", request: { type: "L4736REV", corrected: true } }));
     expect(answer.job_id).toBe("j1");
     expect(JSON.parse(calls[0]!.body!)).toEqual({ type: "L4736REV", corrected: true });
+  });
+});
+
+describe("useResetCalibration", () => {
+  const route = `DELETE /api/printers/${P}/calibration/main`;
+
+  it("deletes the tray's calibration and refreshes the calibrations and the capabilities", async () => {
+    const { calls } = mockApi({ [route]: null });
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => useResetCalibration(P), { wrapper });
+    await act(() => result.current.mutateAsync({ tray: "main" }));
+    expect(calls[0]).toMatchObject({ method: "DELETE", path: `/api/printers/${P}/calibration/main` });
+    const keys = invalidate.mock.calls.map((c) => c[0]?.queryKey);
+    expect(keys).toContainEqual(["printers", P, "calibration"]);
+    expect(keys).toContainEqual(["printers", P, "capabilities"]);
+  });
+
+  it("a backend error reaches the caller with its code, and the lists are refreshed anyway", async () => {
+    mockApi({ [route]: () => respond(422, apiErrorBody("tray_unknown", "No such tray.")) });
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => useResetCalibration(P), { wrapper });
+    const error = (await act(() => result.current.mutateAsync({ tray: "main" }).catch((e: unknown) => e))) as { code?: string };
+    expect(error.code).toBe("tray_unknown");
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it("a network error reaches the caller as status 0", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("Failed to fetch"))));
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useResetCalibration(P), { wrapper });
+    const error = (await act(() => result.current.mutateAsync({ tray: "main" }).catch((e: unknown) => e))) as { status?: number };
+    expect(error.status).toBe(0);
   });
 });
 

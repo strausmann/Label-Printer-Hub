@@ -15,10 +15,10 @@ import { apiFetch } from "../api/client";
 import type { components } from "../api/schema.gen";
 import {
   AsnPage,
-  CalibrationPage,
   KeptPage,
   NotFoundPage,
 } from "../pages/placeholders";
+import { CalibrationPage } from "../features/calibration/CalibrationPage";
 import { IntegrationPage } from "../features/integrations/IntegrationPage";
 import { AboutPage } from "../features/about/AboutPage";
 import { JobPage } from "../features/jobs/JobDetail";

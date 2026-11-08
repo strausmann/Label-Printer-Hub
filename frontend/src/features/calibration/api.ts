@@ -33,6 +33,18 @@ export function useSaveCalibration(printerId: string) {
   });
 }
 
+/** Back to no correction for one tray (the stored values are deleted; no calibration means identity). */
+export function useResetCalibration(printerId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tray }: { tray: string }) => apiFetch<null>(trayPath(printerId, tray), { method: "DELETE" }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: calibrationKey(printerId) });
+      void client.invalidateQueries({ queryKey: capabilitiesKey(printerId) });
+    },
+  });
+}
+
 /** Turns measured readings into correction values; nothing is stored until they are saved. */
 export const useFit = (printerId: string) =>
   useMutation({

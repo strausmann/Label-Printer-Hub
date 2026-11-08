@@ -16,10 +16,6 @@ function PagePlaceholder({ title }: { title: string }) {
 }
 
 /* Modules that have not shipped: their navigation entries stay hidden until `features` says so. */
-export function CalibrationPage() {
-  const { t } = useLingui();
-  return <PagePlaceholder title={t`Calibration`} />;
-}
 export function AsnPage() {
   const { t } = useLingui();
   return <PagePlaceholder title={t`Paperless ASN`} />;
