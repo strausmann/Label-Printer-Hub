@@ -78,6 +78,28 @@ test.describe.serial("calibration", () => {
     expect(response.headers()["content-type"]).toContain("application/pdf");
   });
 
+  test("the Calibrate link on the printer page opens the calibration with that printer and tray chosen", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/printers/${id}`);
+    const links = page.getByRole("link", { name: /^Calibrate .+/ });
+    await expect(links.last()).toBeVisible();
+    const name = (await links.last().getAttribute("aria-label"))!;
+    const trayLabel = name.replace(/^Calibrate /, "");
+    // Keyboard only: the link is reached and opened with Tab and Enter.
+    await links.last().focus();
+    await expect(links.last()).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { level: 1, name: "Calibration" })).toBeVisible();
+    const url = new URL(page.url());
+    expect(url.pathname).toBe("/calibration");
+    expect(url.searchParams.get("printer")).toBe(id);
+    expect(url.searchParams.get("tray")).toBeTruthy();
+    // The choice is shown, not only in the address: printer and tray are preselected.
+    await expect(page.getByRole("button", { name: / Printer$/ })).toContainText(PRINTER);
+    await expect(page.getByRole("button", { name: / Tray$/ })).toContainText(trayLabel);
+  });
+
   test("fits four readings, saves them, the capabilities show the values; reset puts the tray back", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });

@@ -11,11 +11,11 @@ test.describe("shell", () => {
     const sidebar = page.getByRole("navigation", { name: "Main" });
     await expect(sidebar).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Tabs" })).toBeHidden();
-    for (const name of ["Overview", "Printers", "Jobs", "Snipe-IT", "Grocy", "Spoolman", "Settings"]) {
-      await expect(sidebar.getByRole("link", { name })).toBeVisible();
+    for (const name of ["Overview", "Printers", "Jobs", "Sheets", "Sheet archive", "Calibration", "Snipe-IT", "Grocy", "Spoolman", "Settings"]) {
+      await expect(sidebar.getByRole("link", { name, exact: true })).toBeVisible();
     }
-    // Entries of modules that have not shipped stay hidden (features from /api/info).
-    await expect(sidebar.getByRole("link", { name: "Sheets" })).toHaveCount(0);
+    // Entries of modules that have not shipped stay hidden (features from /api/info): ASN and Kept.
+    await expect(sidebar.getByRole("link", { name: "Paperless ASN" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Scan" }).first()).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Search" })).toBeVisible();
     if (SHOTS) {
@@ -27,7 +27,7 @@ test.describe("shell", () => {
     await expect(sidebar).toBeHidden();
     const tabs = page.getByRole("navigation", { name: "Tabs" });
     await expect(tabs).toBeVisible();
-    await expect(tabs.getByRole("link")).toHaveText(["Overview", "Printers", "Scan", "Jobs"]);
+    await expect(tabs.getByRole("link")).toHaveText(["Overview", "Printers", "Scan", "Jobs", "Sheets"]);
     const scan = await tabs.getByRole("link", { name: "Scan" }).boundingBox();
     const bar = await tabs.boundingBox();
     expect(scan && bar).toBeTruthy();
@@ -45,7 +45,18 @@ test.describe("shell", () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const sidebar = page.getByRole("navigation", { name: "Main" });
     const names = await sidebar.getByRole("link").allInnerTexts();
-    expect(names.map((n) => n.trim())).toEqual(["Overview", "Printers", "Jobs", "Snipe-IT", "Grocy", "Spoolman", "Settings"]);
+    expect(names.map((n) => n.trim())).toEqual([
+      "Overview",
+      "Printers",
+      "Jobs",
+      "Sheets",
+      "Sheet archive",
+      "Calibration",
+      "Snipe-IT",
+      "Grocy",
+      "Spoolman",
+      "Settings",
+    ]);
 
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     const reached = new Set<string>();

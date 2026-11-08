@@ -33,8 +33,8 @@ FEATURES: dict[str, bool] = {
     "lookup": True,
     "scan": True,
     "parts": False,
-    "sheets": False,
-    "calibration": False,
+    "sheets": True,
+    "calibration": True,
     "asn": False,
     "kept": False,
 }
