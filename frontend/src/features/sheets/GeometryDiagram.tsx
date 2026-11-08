@@ -1,3 +1,4 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { asymmetryHints, formatMm, pageSizeMm, remainingMargins, type GeometryMm } from "./cellState";
 
@@ -20,7 +21,10 @@ export function GeometryDiagram({ geometry: g, hints }: { geometry: GeometryMm; 
   const rows: [string, string][] = [
     [t`Page`, `${g.page_size} · ${mm(page.w)} × ${mm(page.h)}`],
     [t`Label size`, `${mm(g.label_w)} × ${mm(g.label_h)}`],
-    [t`Grid`, t`${g.cols} columns × ${g.rows} rows`],
+    [
+      t`Grid`,
+      `${plural(g.cols, { one: "# column", other: "# columns" })} × ${plural(g.rows, { one: "# row", other: "# rows" })}`,
+    ],
     [t`Pitch`, `${mm(g.pitch_x)} × ${mm(g.pitch_y)}`],
     [t`Gap between columns`, mm(gapX)],
     [t`Gap between rows`, mm(gapY)],
@@ -58,8 +62,8 @@ export function GeometryDiagram({ geometry: g, hints }: { geometry: GeometryMm; 
         <line x1={g.margin_left} x2={g.margin_left + g.label_w} y1={g.margin_top - fs * 0.7} y2={g.margin_top - fs * 0.7} className={dim} strokeWidth={vbW / 300} />
         <line x1={g.margin_left - fs * 0.7} x2={g.margin_left - fs * 0.7} y1={g.margin_top} y2={g.margin_top + g.label_h} className={dim} strokeWidth={vbW / 300} />
         <line x1={0} x2={g.margin_left} y1={g.margin_top + g.label_h / 2} y2={g.margin_top + g.label_h / 2} className={dim} strokeWidth={vbW / 300} strokeDasharray={`${fs / 3} ${fs / 3}`} />
-        <line x1={g.margin_left + g.label_w / 2} x2={g.margin_left + g.label_w / 2} y1={0} y2={g.margin_top} className={dim} strokeWidth={vbW / 300} strokeDasharray={`${fs / 3} ${fs / 3}`} />
-        <text x={g.margin_left + g.label_w / 2} y={g.margin_top - fs * 1.1} fontSize={fs} textAnchor="middle" className="fill-ink-2">{mm(g.label_w)}</text>
+        <line x1={g.margin_left + g.label_w - fs} x2={g.margin_left + g.label_w - fs} y1={0} y2={g.margin_top} className={dim} strokeWidth={vbW / 300} strokeDasharray={`${fs / 3} ${fs / 3}`} />
+        <text x={g.margin_left + g.label_w / 2} y={g.margin_top - fs * 1.1} fontSize={fs} textAnchor="middle" className="fill-ink-2 stroke-surface" strokeWidth={fs * 0.35} paintOrder="stroke">{mm(g.label_w)}</text>
       </svg>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-small">

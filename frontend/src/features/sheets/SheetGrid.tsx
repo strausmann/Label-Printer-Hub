@@ -227,7 +227,8 @@ export function SheetGrid({ geometry: g, cells, mode, onToggle, overlayPng, zoom
   const interactive = mode !== "view";
   const round = g.shape === "round";
   const radius = g.corner_radius ?? 1; // unknown radius: a slight rounding, the label shows "unknown"
-  const numberMm = Math.min(g.label_h * 0.45, g.label_w * 0.3, 4.5);
+  // Numbers are 14 px at most, however large the cell grows (a 1 x 7 lever-arch sheet has 190 mm wide cells).
+  const numberMm = Math.min(g.label_h * 0.45, g.label_w * 0.3, 14 / layout.scale);
   const showNumbers = numberMm * layout.scale >= 7;
   const ringMm = 3 / layout.scale;
 

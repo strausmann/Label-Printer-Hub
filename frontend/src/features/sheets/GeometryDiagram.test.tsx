@@ -51,6 +51,14 @@ describe("GeometryDiagram", () => {
     expect(screen.getByText("Corner radius").nextElementSibling).toHaveTextContent("round");
   });
 
+  it("pluralises the grid size, also for one column and one row", () => {
+    const { unmount } = render(<GeometryDiagram geometry={G} />);
+    expect(screen.getByText("Grid").nextElementSibling).toHaveTextContent("4 columns × 12 rows");
+    unmount();
+    render(<GeometryDiagram geometry={{ ...G, cols: 1, rows: 1, pitch_x: 190, label_w: 190 }} />);
+    expect(screen.getByText("Grid").nextElementSibling).toHaveTextContent("1 column × 1 row");
+  });
+
   it("survives a geometry without page dimensions", () => {
     render(<GeometryDiagram geometry={{ ...G, page_w: null, page_h: null }} />);
     expect(screen.getByText("Right margin").nextElementSibling).not.toHaveTextContent("NaN");

@@ -8,10 +8,14 @@ msgstr ""
 "Language: en\n"
 
 #. placeholder {0}: g.cols
-#. placeholder {1}: g.rows
 #: src/features/sheets/GeometryDiagram.tsx
-msgid "{0} columns × {1} rows"
-msgstr "{0} columns × {1} rows"
+msgid "{0, plural, one {# column} other {# columns}}"
+msgstr "{0, plural, one {# column} other {# columns}}"
+
+#. placeholder {0}: g.rows
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "{0, plural, one {# row} other {# rows}}"
+msgstr "{0, plural, one {# row} other {# rows}}"
 
 #. placeholder {0}: tape.widthMm
 #: src/features/printers/TapeSwatch.tsx
@@ -1183,15 +1187,6 @@ msgstr "Set by the container"
 #: src/features/settings/feedback.tsx
 msgid "Set the URL first; a secret belongs to its URL."
 msgstr "Set the URL first; a secret belongs to its URL."
-
-#: src/features/integrations/IntegrationTiles.tsx
-#: src/features/settings/Integrations.tsx
-#~ msgid "Set up"
-#~ msgstr "Set up"
-
-#: src/features/integrations/IntegrationTiles.tsx
-#~ msgid "Set up {name}"
-#~ msgstr "Set up {name}"
 
 #: src/features/settings/SettingsPage.tsx
 #: src/shell/labels.ts
