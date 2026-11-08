@@ -37,14 +37,10 @@ describe("gridLayout", () => {
 
   it("view is capped on wide containers", () => {
     expect(gridLayout(L4731REV, 1600, "view").width).toBeLessThanOrEqual(760);
-    // A view whose cells are tapped to be read is sized for fingers, like a select view.
-    const touch = gridLayout(L4731REV, 360, "view", 1, true);
-    expect(touch.tap).toBe(true);
-    expect(touch.scale * Math.min(L4731REV.pitch_x, L4731REV.pitch_y)).toBeGreaterThanOrEqual(44);
-    expect(gridLayout(L4731REV, 1000, "view", 1, true).tap).toBe(false);
-    // A 620 px column on a desktop shows the whole page; only a phone-width one is zoomed.
-    expect(gridLayout(L4731REV, 620, "view", 1, true).tap).toBe(false);
-    expect(gridLayout(L4731REV, 430, "view", 1, true).tap).toBe(true);
+    // A view is an overview of the whole page at any width; only choosing zooms to finger size.
+    expect(gridLayout(L4731REV, 360, "view").tap).toBe(false);
+    expect(gridLayout(L4731REV, 360, "view").width).toBeCloseTo(360, 5);
+    expect(gridLayout(L4731REV, 360, "select").tap).toBe(true);
   });
 
   it.each(["select", "skip"] as const)("%s below 640 px zooms so every hit box is 44 x 44 px", (mode) => {

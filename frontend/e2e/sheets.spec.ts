@@ -193,11 +193,27 @@ test.describe.serial("sheets", () => {
     await expect(page.getByRole("link", { name: "Back to the sheets" })).toBeVisible();
   });
 
-  test("the 189-cell sheet at 360 px: every cell stays 44 px, long purposes wrap, no side scroll", async () => {
+  test("at 360 px the 48-cell sheet is an overview in view mode and a 44 px grid only while choosing", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 360, height: 780 });
-    await page.goto(`/sheets/${EDGE}`);
-    await expect(page.getByRole("gridcell")).toHaveCount(189);
+    await page.goto("/sheets/L4736-0001");
+    const grid = page.getByRole("grid", { name: "L4736-0001" });
+    await expect(grid.getByRole("gridcell")).toHaveCount(48);
+    // View: the whole page fits the width, all 4 columns are on screen, nothing pans.
+    expect(await page.locator("[data-scroll]").count()).toBe(0);
+    const columns = await grid.evaluate((svg) => {
+      const view = document.documentElement.clientWidth;
+      return [1, 2, 3, 4].map((n) => {
+        const box = svg.querySelector(`[data-cell='${n}'] rect[data-shape]`)!.getBoundingClientRect();
+        return box.left >= 0 && box.right <= view + 0.5;
+      });
+    });
+    expect(columns).toEqual([true, true, true, true]);
+    expect(await noSideScroll(page)).toBe(true);
+
+    // Choosing: zoomed and scrollable, every cell at least 44 x 44 px.
+    await page.getByRole("button", { name: "Mark cells as used" }).click();
+    await expect(page.locator("[data-scroll]")).toHaveCount(1);
     const smallest = await page.locator("[role=gridcell] rect[data-hit]").evaluateAll((rects) =>
       Math.min(...rects.flatMap((r) => {
         const box = r.getBoundingClientRect();
@@ -206,12 +222,33 @@ test.describe.serial("sheets", () => {
     );
     expect(smallest).toBeGreaterThanOrEqual(43.99);
     expect(await noSideScroll(page)).toBe(true);
+    await page.getByRole("button", { name: "Cancel" }).click();
+  });
+
+  test("the 189-cell sheet at 360 px: overview in view mode, 44 px cells while choosing, long purposes wrap, no side scroll", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto(`/sheets/${EDGE}`);
+    await expect(page.getByRole("gridcell")).toHaveCount(189);
+    expect(await noSideScroll(page)).toBe(true);
     // A purpose of 120 characters is readable in full on a tap and does not push the page wider.
     await page.getByRole("gridcell", { name: /^Cell 7,/ }).click();
     const status = page.getByRole("status", { name: "Selected cell" });
     await expect(status).toContainText("cell 007 ");
     expect(await status.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
     expect(await noSideScroll(page)).toBe(true);
+
+    // Choosing zooms: every touch target is at least 44 px, inside its own scroll container.
+    await page.getByRole("button", { name: "Mark cells as used" }).click();
+    const smallest = await page.locator("[role=gridcell] rect[data-hit]").evaluateAll((rects) =>
+      Math.min(...rects.flatMap((r) => {
+        const box = r.getBoundingClientRect();
+        return [box.width, box.height];
+      })),
+    );
+    expect(smallest).toBeGreaterThanOrEqual(43.99);
+    expect(await noSideScroll(page)).toBe(true);
+    await page.getByRole("button", { name: "Cancel" }).click();
   });
 
   for (const [lang, size] of [

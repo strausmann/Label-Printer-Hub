@@ -62,11 +62,12 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** The time as visible text: nothing here is readable only on hover. */
 function Time({ iso, withTime }: { iso: string; withTime?: boolean }) {
   const { i18n } = useLingui();
   const date = new Date(iso);
   return (
-    <time dateTime={iso} title={date.toLocaleString(i18n.locale)}>
+    <time dateTime={iso}>
       {withTime ? date.toLocaleString(i18n.locale, { dateStyle: "medium", timeStyle: "short" }) : date.toLocaleDateString(i18n.locale, { dateStyle: "medium" })}
     </time>
   );
@@ -150,6 +151,8 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   const placementWord = { cell: t`in a cell`, margin: t`in the margin`, manual: t`added by hand` }[sheet.id_placement];
   const writing = mode === "mark" ? mark : unmark;
   const inspectedCell = inspected === null ? null : byNumber.get(inspected);
+  // What the grid draws wins: a cell chosen to mark shows as used, one chosen to un-mark as free.
+  const isChosen = inspected !== null && chosen.includes(inspected);
   const cellList = (
     <ul aria-label={t`Cells in use`} className="m-0 flex list-none flex-col gap-1.5 rounded-r2 border border-line p-3 text-small">
       {sheet.cells.map((c) => (
@@ -284,20 +287,23 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
             label={code}
           />
 
-          <div aria-live="polite">
-            {inspected !== null ? (
-              <p role="status" aria-label={t`Selected cell`} className="rounded-r2 bg-sunken px-3 py-2 [overflow-wrap:anywhere]">
-                {inspectedCell ? (
-                  <>
-                    {cellLine(inspectedCell)}
-                    {inspectedCell.state !== "used" ? <> ({cellStateWord(inspectedCell.state, translate)})</> : null}
-                  </>
-                ) : (
-                  t`Cell ${inspected} is free`
-                )}
-              </p>
-            ) : null}
-          </div>
+          {/* The one live region of the cell line: always in the page, so that a change in it is announced. */}
+          <p
+            role="status"
+            aria-label={t`Selected cell`}
+            className={inspected === null ? "" : "rounded-r2 bg-sunken px-3 py-2 [overflow-wrap:anywhere]"}
+          >
+            {inspected === null ? null : inspectedCell && !isChosen ? (
+              <>
+                {cellLine(inspectedCell)}
+                {inspectedCell.state !== "used" ? <> ({cellStateWord(inspectedCell.state, translate)})</> : null}
+              </>
+            ) : isChosen ? (
+              t`Cell ${inspected} is chosen`
+            ) : (
+              t`Cell ${inspected} is free`
+            )}
+          </p>
 
           {mode !== "view" ? (
             <section aria-labelledby="mode-heading" className={`${PANEL} flex flex-col gap-3`}>

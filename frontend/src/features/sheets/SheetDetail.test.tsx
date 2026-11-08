@@ -111,13 +111,27 @@ describe("the sheet detail page", () => {
 
   it("reads the purpose of a cell on focus and on tap, not only on hover", async () => {
     await open(byHand(sheetRead(CODE, { used: [1, 2] }), [1, 2]));
-    expect(screen.queryByRole("status", { name: "Selected cell" })).toBeNull();
+    expect(screen.getByRole("status", { name: "Selected cell" })).toBeEmptyDOMElement();
     await userEvent.click(cell(2));
     expect(screen.getByRole("status", { name: "Selected cell" })).toHaveTextContent("Cell 2 → item 2 · marked by hand");
     act(() => cell(1).focus());
     expect(screen.getByRole("status", { name: "Selected cell" })).toHaveTextContent("Cell 1 → item 1 · marked by hand");
     await userEvent.click(cell(30));
     expect(screen.getByRole("status", { name: "Selected cell" })).toHaveTextContent("Cell 30 is free");
+  });
+
+  it("has one live region for the cell line, not a status inside another live region", async () => {
+    await open(byHand(sheetRead(CODE, { used: [1] }), [1]));
+    await userEvent.click(cell(1));
+    const status = screen.getByRole("status", { name: "Selected cell" });
+    expect(status.parentElement?.closest("[aria-live]")).toBeNull();
+  });
+
+  it("shows the last-used time as text, with no hover-only title", async () => {
+    await open(sheetRead(CODE, { used: [1] }));
+    const time = screen.getByText("Last used").closest("div")!.querySelector("time")!;
+    expect(time).toHaveTextContent(/2026/);
+    expect(time).not.toHaveAttribute("title");
   });
 
   it("re-renders a newly reserved cell with the clock glyph when the sheet changes live", async () => {
@@ -187,6 +201,15 @@ describe("marking cells as used", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("The server cannot be reached.");
   });
 
+  it("says 'chosen' for a chosen cell, as the grid draws it, and not 'free'", async () => {
+    await open(fresh());
+    await userEvent.click(screen.getByRole("button", { name: "Mark cells as used" }));
+    await userEvent.click(cell(20));
+    expect(screen.getByRole("status", { name: "Selected cell" })).toHaveTextContent("Cell 20 is chosen");
+    await userEvent.click(cell(20)); // taken back: free again
+    expect(screen.getByRole("status", { name: "Selected cell" })).toHaveTextContent("Cell 20 is free");
+  });
+
   it("leaves marking without sending anything", async () => {
     const { calls } = await open(fresh());
     await userEvent.click(screen.getByRole("button", { name: "Mark cells as used" }));
@@ -213,6 +236,13 @@ describe("un-marking cells", () => {
     expect(cell(30)).toHaveAttribute("aria-disabled", "true"); // free
     await userEvent.click(cell(3));
     expect(screen.getByRole("button", { name: "Un-mark 0 cells" })).toBeDisabled();
+  });
+
+  it("says 'chosen' for a cell chosen to be un-marked, which the grid draws free", async () => {
+    await open(mixed());
+    await userEvent.click(screen.getByRole("button", { name: "Un-mark cells" }));
+    await userEvent.click(cell(1));
+    expect(screen.getByRole("status", { name: "Selected cell" })).toHaveTextContent("Cell 1 is chosen");
   });
 
   it("sends the chosen cells and returns to the overview", async () => {

@@ -233,7 +233,7 @@ export function SheetGrid({ geometry: g, cells, mode, onToggle, onInspect, overl
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const width = useContainerWidth(wrapRef, containerWidth);
-  const layout = gridLayout(g, width, mode, zoom, !!onInspect);
+  const layout = gridLayout(g, width, mode, zoom);
   const patternId = `hatch-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const total = g.cols * g.rows;
   const [active, setActive] = useState(1);

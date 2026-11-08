@@ -273,15 +273,17 @@ describe("inspecting a cell", () => {
     expect(onToggle).not.toHaveBeenCalled();
   });
 
-  it("sizes a view grid for fingers only when cells can be inspected", () => {
-    const tap = (inspect: boolean) => {
+  it("keeps a view grid fitted to the width, inspectable or not: the zoom is for choosing only", () => {
+    const width = (mode: "view" | "select", inspect: boolean) => {
       const { container, unmount } = render(
-        <SheetGrid geometry={L4731} cells={[]} mode="view" onInspect={inspect ? () => {} : undefined} label="x" containerWidth={360} />,
+        <SheetGrid geometry={L4731} cells={[]} mode={mode} onInspect={inspect ? () => {} : undefined} label="x" containerWidth={360} />,
       );
-      const width = Number(container.querySelector("svg")!.getAttribute("width"));
+      const w = Number(container.querySelector("svg")!.getAttribute("width"));
       unmount();
-      return width;
+      return w;
     };
-    expect(tap(true)).toBeGreaterThan(tap(false));
+    expect(width("view", true)).toBe(360);
+    expect(width("view", false)).toBe(360);
+    expect(width("select", true)).toBeGreaterThan(360);
   });
 });

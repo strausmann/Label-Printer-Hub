@@ -456,6 +456,10 @@ msgid "Cell {0}, {state}"
 msgstr "Zelle {0}, {state}"
 
 #: src/features/sheets/SheetDetail.tsx
+msgid "Cell {inspected} is chosen"
+msgstr "Zelle {inspected} ist gewählt"
+
+#: src/features/sheets/SheetDetail.tsx
 msgid "Cell {inspected} is free"
 msgstr "Zelle {inspected} ist frei"
 
