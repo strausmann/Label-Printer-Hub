@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
+import { parseSheetsSearch } from "./search";
 import { apiErrorBody, mockApi, respond, sheetRead, sheetSummary, SHEET_TYPE, type Call } from "../test-api";
 
 const PRINT_SESSION = { ...SIGNED_IN, scope: "print" as const };
@@ -165,6 +166,14 @@ describe("the code search", () => {
     await renderApp({ path: `/sheets?q=${"x".repeat(40)}`, session: PRINT_SESSION });
     await waitFor(() => expect(sheetCalls(calls).length).toBeGreaterThan(0));
     expect(sheetCalls(calls).every((c) => (new URLSearchParams(c.search).get("q") ?? "").length <= 24)).toBe(true);
+  });
+});
+
+describe("the code search clamp", () => {
+  // The router's own query parsing already trims what it hands over, so the pure function is tested directly.
+  it("leaves no trailing space when the cut falls behind a space", () => {
+    expect(parseSheetsSearch({ q: "L4736-0001-and-a-long-x tail" }).q).toBe("L4736-0001-and-a-long-x");
+    expect(parseSheetsSearch({ q: "L4736-0001-and-a-long-x" }).q).toBe("L4736-0001-and-a-long-x");
   });
 });
 

@@ -22,5 +22,5 @@ const flag = (value: unknown): true | undefined => (value === true || value === 
 
 /** Every key stays in the result even when rejected: the router merges it over the raw query string. */
 export function parseSheetsSearch(search: Record<string, unknown>): SheetsSearch {
-  return { type: text(search.type), q: text(search.q)?.slice(0, MAX_CODE_SEARCH), full: flag(search.full), discarded: flag(search.discarded) };
+  return { type: text(search.type), q: text(search.q)?.slice(0, MAX_CODE_SEARCH).trim() || undefined, full: flag(search.full), discarded: flag(search.discarded) };
 }

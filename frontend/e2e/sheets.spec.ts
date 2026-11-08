@@ -39,11 +39,11 @@ test.describe.serial("sheets", () => {
     await expect(page.getByRole("link", { name: FULL })).toHaveCount(0);
     await expect(page.getByRole("link", { name: DISCARDED })).toHaveCount(0);
 
-    // A switch is clicked on its label: the input itself sits under the track.
     // The hint under the list has a button; its tap target is a real 44 px (an inline box would not be).
     const showThem = page.getByRole("button", { name: "Show them" });
     await expect(showThem).toBeVisible();
     expect((await showThem.boundingBox())!.height).toBeGreaterThanOrEqual(43.99);
+    // A switch is clicked on its label: the input itself sits under the track.
     await page.getByText("Hide used-up sheets", { exact: true }).click();
     const full = page.getByRole("row").filter({ has: page.getByRole("link", { name: FULL }) });
     await expect(full).toContainText("used up");
@@ -112,6 +112,39 @@ test.describe.serial("sheets", () => {
     expect(lead.scrollLeft).toBe(0);
     expect(lead.gap).toBeGreaterThanOrEqual(-0.5);
     expect(await noSideScroll(page)).toBe(true);
+  });
+
+  test("tapping a half-visible cell on the 189-cell sheet at 360 px does not move the pan view, and a new type starts at the edge", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto("/sheets");
+    await page.getByRole("button", { name: "New sheet" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add a sheet" });
+    await choose(dialog, /Sheet type/, new RegExp(TYPE_189));
+    await expect(dialog.getByRole("gridcell")).toHaveCount(189);
+    const scroller = dialog.locator("[data-scroll]");
+    const view = () =>
+      scroller.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const rect = (n: number) => el.querySelector(`[data-cell='${n}'] rect[data-hit]`)!.getBoundingClientRect();
+        return { scrollLeft: el.scrollLeft, left: box.left, right: box.right, c1: rect(1).left, c3: rect(3) };
+      });
+
+    // At the leading edge cells 1 and 2 fit; cell 3 only peeks in at the right edge. A finger can only hit the part that shows.
+    let v = await view();
+    expect(v.c3.left).toBeLessThan(v.right - 8);
+    expect(v.c3.right).toBeGreaterThan(v.right + 5);
+    await page.mouse.click((v.c3.left + v.right) / 2, v.c3.top + v.c3.height / 2);
+    await expect(dialog.getByRole("gridcell", { name: /^Cell 3, used/ })).toBeVisible();
+    v = await view();
+    expect(v.scrollLeft).toBe(0);
+    expect(v.c1).toBeGreaterThanOrEqual(v.left - 0.5);
+
+    // Panned somewhere and then another type chosen: the new grid starts at its leading edge, not at the old offset.
+    await scroller.evaluate((el) => (el.scrollLeft = 200));
+    await choose(dialog, /Sheet type/, new RegExp(TYPE_48));
+    await expect(dialog.getByRole("gridcell")).toHaveCount(48);
+    expect((await view()).scrollLeft).toBe(0);
   });
 
   for (const [lang, size] of [
