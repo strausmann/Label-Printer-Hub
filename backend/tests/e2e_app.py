@@ -33,7 +33,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
@@ -230,6 +230,8 @@ class _PageState(BaseModel):
     markers: list[dict[str, Any]] | None = None
     accepting_jobs: bool | None = None
     job_script: list[int] | None = None
+    margins_hmm: int | None = Field(default=None, ge=0, le=5000)
+    cancel_steps: int | None = Field(default=None, ge=0, le=20)
 
 
 _RESET_KEEP = frozenset({"received", "_jobs", "_next_job_id"})
@@ -251,6 +253,8 @@ def _fake_state(fake: Any) -> dict[str, Any]:
         "markers": [dict(m) for m in fake.markers],
         "accepting_jobs": fake.accepting_jobs,
         "job_script": list(fake.job_script),
+        "margins_hmm": fake.margins_hmm,
+        "cancel_steps": fake.cancel_steps,
         "media_sources": list(fake.media_sources),
     }
 

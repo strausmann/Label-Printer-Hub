@@ -22,6 +22,10 @@ export type PagePrinterState = {
   markers?: { name: string; color?: string; level?: number; low_level?: number; type?: string }[];
   accepting_jobs?: boolean;
   job_script?: number[];
+  /** Hardware margins the printer reports, in hundredths of a millimetre. */
+  margins_hmm?: number;
+  /** Polls that report "stopping" after a Cancel-Job. */
+  cancel_steps?: number;
 };
 
 /** Switches the fake page printer; the hub notices on its next status probe (1 s in the test hub). */

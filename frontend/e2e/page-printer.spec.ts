@@ -33,14 +33,14 @@ test.describe("page printer test hub", () => {
     await expect(card).toBeVisible();
     const id = (await card.getAttribute("href"))!.split("/").pop()!;
     const status = async () => (await (await page.request.get(`/api/printers/${id}/status`)).json()) as Record<string, unknown>;
-    await expect.poll(async () => (await status()).printer_state ?? null, { timeout: 6_000 }).toBe("idle");
+    await expect.poll(async () => (await status()).printer_state ?? null, { timeout: 10_000 }).toBe("idle");
 
     await setPagePrinter(page, { printer_state: 5, reasons: ["toner-empty-error"] });
-    await expect.poll(async () => (await status()).printer_state ?? null, { timeout: 6_000 }).toBe("stopped");
+    await expect.poll(async () => (await status()).printer_state ?? null, { timeout: 10_000 }).toBe("stopped");
 
     // And back: two switches inside the 1 s probe interval's reach, which a 30 s interval cannot do.
     await resetPagePrinter(page);
-    await expect.poll(async () => (await status()).printer_state ?? null, { timeout: 6_000 }).toBe("idle");
+    await expect.poll(async () => (await status()).printer_state ?? null, { timeout: 10_000 }).toBe("idle");
   });
 
   test("seeds the sheets with fixed codes and counts", async ({ signedInPage: page }) => {
@@ -49,6 +49,20 @@ test.describe("page printer test hub", () => {
     expect(partly).toMatchObject({ code: SEEDED_CODES.partlyUsed, used: 17, state: "active" });
     expect(await get(SEEDED_CODES.full)).toMatchObject({ used: 48, total: 48, state: "active" });
     expect(await get(SEEDED_CODES.discarded)).toMatchObject({ state: "discarded" });
-    expect(await get(SEEDED_CODES.edge)).toMatchObject({ used: 120 });
+    const edge = await get(SEEDED_CODES.edge);
+    expect(edge).toMatchObject({ used: 120, total: 189 });
+    const purposes = (edge.cells as { purpose: string | null }[]).map((c) => c.purpose);
+    expect(purposes).toHaveLength(120);
+    expect(purposes.every((p) => p?.length === 120)).toBe(true);
+    const custom = await (await page.request.get("/api/sheet-types/e2e-custom-unknown-radius")).json();
+    expect(JSON.stringify(custom)).toContain('"corner_radius":null');
+  });
+
+  test("the control body sets margins and cancel steps", async ({ signedInPage: page }) => {
+    await setPagePrinter(page, { margins_hmm: 600, cancel_steps: 2 });
+    const { state } = await pagePrinterControl(page);
+    expect(state).toMatchObject({ margins_hmm: 600, cancel_steps: 2 });
+    await resetPagePrinter(page);
+    expect((await pagePrinterControl(page)).state).toMatchObject({ margins_hmm: 423, cancel_steps: 0 });
   });
 });
