@@ -1,7 +1,7 @@
 import { plural } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Label, Radio, RadioGroup } from "react-aria-components";
 import { printInterrupted, sheetIdJobFailed } from "../../api/errorDetail";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
@@ -15,6 +15,7 @@ import { formatMm, type GridCell } from "./cellState";
 import { useSheetErrorText } from "./errors";
 import { GeometryDiagram } from "./GeometryDiagram";
 import { SheetGrid } from "./SheetGrid";
+import { typeLabelWithKey } from "./typeLabel";
 
 type Placement = SheetCreate["id_placement"];
 
@@ -123,7 +124,7 @@ function Done({
 }
 
 const typeOption = (type: SheetTypeRead, locale: string) =>
-  `${type.key} · ${formatMm(type.geometry.label_w, locale).replace(/ mm$/, "")} × ${formatMm(type.geometry.label_h, locale)}`;
+  `${typeLabelWithKey(type)} · ${formatMm(type.geometry.label_w, locale).replace(/ mm$/, "")} × ${formatMm(type.geometry.label_h, locale)}`;
 
 function AddSheetForm({ onClose }: { onClose: () => void }) {
   const { t, i18n } = useLingui();
@@ -140,6 +141,15 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
   const [created, setCreated] = useState<{ sheet: SheetCreated; hint: string | null } | null>(null);
 
   const type = types.data?.find((x) => x.key === typeKey);
+  const gridBox = useRef<HTMLDivElement>(null);
+  // The tap view pans both ways: a new grid starts at its leading edge, so the first column is the first thing seen.
+  useEffect(() => {
+    const scroller = gridBox.current?.querySelector<HTMLElement>("[data-scroll]");
+    if (scroller) {
+      scroller.scrollLeft = 0;
+      scroller.scrollTop = 0;
+    }
+  }, [typeKey]);
   const next = useNextCode(type ? type.key : null);
   const pagePrinters = (printers.data ?? []).filter((p) => p.backend === "ipp" && p.enabled);
   const caps = useCapabilities(printerId);
@@ -147,7 +157,8 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
   const tray = trays.find((x) => x.key === trayChoice) ?? trays.find((x) => x.is_default) ?? trays[0];
   const trayKey = tray?.key ?? null;
   // The margin depends on the tray's calibration, so ask once the trays are known, not twice.
-  const capsKnown = printerId !== NO_PRINTER && !caps.isPending;
+  // An answer is known once it came, or failed: a failure must not look like "no trays".
+  const capsKnown = printerId !== NO_PRINTER && caps.isSuccess;
   const margin = useMarginCheck(type?.key ?? null, capsKnown ? printerId : null, trayKey);
 
   function chooseType(key: string) {
@@ -175,6 +186,7 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
   let blocker: string | null = null;
   if (needsPrinter) {
     if (printerId === NO_PRINTER) blocker = t`Choose a printer and a tray to print the ID label.`;
+    else if (caps.isError) blocker = t`The printer could not be asked for its trays. Try again in a moment.`;
     else if (capsKnown && trayKey === null) blocker = t`This printer reports no trays, so it cannot print the ID label.`;
   }
   const ready = !!type && !create.isPending && (!needsPrinter || (printerId !== NO_PRINTER && trayKey !== null));
@@ -233,14 +245,16 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
               {t`Cells already used`}
             </h3>
             <p className={HINT}>{t`Tap the labels that are already gone. A fresh sheet needs none.`}</p>
-            <SheetGrid
-              geometry={type.geometry}
-              cells={cells}
-              mode="select"
-              onToggle={toggle}
-              label={t`Cells already used`}
-              selectable={(c) => c.state === "free" || c.state === "used"}
-            />
+            <div ref={gridBox} className="min-w-0">
+              <SheetGrid
+                geometry={type.geometry}
+                cells={cells}
+                mode="select"
+                onToggle={toggle}
+                label={t`Cells already used`}
+                selectable={(c) => c.state === "free" || c.state === "used"}
+              />
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               <p aria-live="polite" className="text-small font-bold">
                 {marked.size === 0

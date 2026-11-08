@@ -13,7 +13,7 @@ const GONE = sheetSummary("L4736-0003", { state: "discarded", used: 5, free: 43 
 const ALL = [FRESH, FULL, GONE];
 
 // Whole-app renders with a dialog and a select: under coverage and a loaded runner they need more than 5 s.
-vi.setConfig({ testTimeout: 30_000 });
+vi.setConfig({ testTimeout: 10_000 });
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -145,6 +145,45 @@ describe("the sheet list", () => {
     await renderApp({ path: "/sheets", session: PRINT_SESSION });
     await screen.findByRole("link", { name: "L4736-0300" });
     expect(screen.getAllByRole("row")).toHaveLength(301); // header row + 300
+  });
+});
+
+describe("the code search", () => {
+  it("takes at most as many characters as the server accepts and never asks for more", async () => {
+    const { calls } = setup();
+    const { router } = await renderApp({ path: "/sheets", session: PRINT_SESSION });
+    const box = await screen.findByRole("textbox", { name: "Search by code" });
+    expect(box).toHaveAttribute("maxlength", "24");
+    await userEvent.type(box, "L4736-0001-and-a-long-tail-of-text");
+    expect(box).toHaveValue("L4736-0001-and-a-long-ta");
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ q: "L4736-0001-and-a-long-ta" }));
+    expect(sheetCalls(calls).every((c) => (new URLSearchParams(c.search).get("q") ?? "").length <= 24)).toBe(true);
+  });
+
+  it("clamps a longer code search arriving in the address", async () => {
+    const { calls } = setup();
+    await renderApp({ path: `/sheets?q=${"x".repeat(40)}`, session: PRINT_SESSION });
+    await waitFor(() => expect(sheetCalls(calls).length).toBeGreaterThan(0));
+    expect(sheetCalls(calls).every((c) => (new URLSearchParams(c.search).get("q") ?? "").length <= 24)).toBe(true);
+  });
+});
+
+describe("types in the filter", () => {
+  it("are named by label and key, like the rows", async () => {
+    setup();
+    await renderApp({ path: "/sheets", session: PRINT_SESSION });
+    await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["Any sheet type", "Example Labels L4736REV-25 (L4736REV)"]);
+  });
+});
+
+describe("the hidden-sheets hint", () => {
+  it("has a Show them button that is a 44 px target (an inline box ignores min-height)", async () => {
+    setup();
+    await renderApp({ path: "/sheets", session: PRINT_SESSION });
+    const button = await screen.findByRole("button", { name: "Show them" });
+    expect(button).toHaveClass("inline-flex", "min-h-11");
+    expect(button).not.toHaveClass("inline");
   });
 });
 

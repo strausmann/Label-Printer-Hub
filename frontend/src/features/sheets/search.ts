@@ -1,3 +1,6 @@
+/** The server caps the code search at this many characters (`max_length` of `q`); a longer one would be answered with a 422. */
+export const MAX_CODE_SEARCH = 24;
+
 /** The address of `/sheets`: the filters of the list. Everything that is not set means "the default". */
 export interface SheetsSearch {
   /** Key of a sheet type. */
@@ -19,5 +22,5 @@ const flag = (value: unknown): true | undefined => (value === true || value === 
 
 /** Every key stays in the result even when rejected: the router merges it over the raw query string. */
 export function parseSheetsSearch(search: Record<string, unknown>): SheetsSearch {
-  return { type: text(search.type), q: text(search.q), full: flag(search.full), discarded: flag(search.discarded) };
+  return { type: text(search.type), q: text(search.q)?.slice(0, MAX_CODE_SEARCH), full: flag(search.full), discarded: flag(search.discarded) };
 }

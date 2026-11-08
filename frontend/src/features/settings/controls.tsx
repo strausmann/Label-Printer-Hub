@@ -42,6 +42,7 @@ export function TextInput({
   autoComplete,
   inputMode,
   hideLabel,
+  maxLength,
 }: {
   label: string;
   value: string;
@@ -56,6 +57,7 @@ export function TextInput({
   autoComplete?: string;
   inputMode?: "numeric" | "decimal" | "url" | "text";
   hideLabel?: boolean;
+  maxLength?: number;
 }) {
   return (
     <TextField
@@ -66,6 +68,7 @@ export function TextInput({
       isInvalid={invalid}
       type={type === "number" ? "text" : type}
       autoComplete={autoComplete}
+      maxLength={maxLength}
       className="flex min-w-0 flex-col gap-1.5"
     >
       <Label className={hideLabel ? "sr-only" : LABEL}>{label}</Label>
@@ -150,7 +153,10 @@ export function SelectField({
         className={`press flex h-11 w-full items-center justify-between gap-2 rounded-r2 border border-line-strong bg-sunken px-3 text-left text-ink data-[disabled]:opacity-60 ${FOCUS}`}
       >
         {/* One line, cut at the end: a long value (a 64-character key) must not outgrow the 44 px button. The list shows it in full. */}
-        <SelectValue className="min-w-0 truncate" />
+        {/* The title keeps the full text reachable when the value is cut. */}
+        <span title={options.find((o) => o.id === value)?.label} className="min-w-0 truncate">
+          <SelectValue />
+        </span>
         <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" className="shrink-0 fill-none stroke-current stroke-2">
           <path d="M2 4.5 6 8.5 10 4.5" />
         </svg>

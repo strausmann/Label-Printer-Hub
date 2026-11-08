@@ -2368,6 +2368,10 @@ msgstr "The prefix is fixed once sheets of this type exist."
 msgid "The print queue does not know this printer yet. Try again in a moment."
 msgstr "The print queue does not know this printer yet. Try again in a moment."
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The printer could not be asked for its trays. Try again in a moment."
+msgstr "The printer could not be asked for its trays. Try again in a moment."
+
 #: src/features/settings/Printers.tsx
 msgid "The printer could not be changed."
 msgstr "The printer could not be changed."

@@ -32,7 +32,7 @@ const MARGIN_OK: Schemas["MarginCheckRead"] = {
 const TWO_TYPES = [SHEET_TYPE, { ...SHEET_TYPE, key: "my-small", description: "Tiny", allow_qr: false }];
 
 // Whole-app renders with a dialog and a select: under coverage and a loaded runner they need more than 5 s.
-vi.setConfig({ testTimeout: 30_000 });
+vi.setConfig({ testTimeout: 10_000 });
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -60,7 +60,7 @@ async function pick(label: string | RegExp, option: string | RegExp) {
   await userEvent.click(await screen.findByRole("option", { name: option }));
 }
 
-const chooseType = () => pick(/Sheet type/, /L4736REV/);
+const chooseType = () => pick(/Sheet type/, /\(L4736REV\)/);
 const choosePrinter = () => pick(/Printer/, "Office laser");
 const posts = (calls: Call[]) => calls.filter((c) => c.method === "POST" && c.path === "/api/sheets");
 const body = (call: Call) => JSON.parse(call.body!) as Record<string, unknown>;
@@ -269,6 +269,69 @@ describe("the add-a-sheet dialog", () => {
     await userEvent.click(screen.getByRole("button", { name: "Add and print ID label" }));
     expect(await screen.findByText("Sheet L4736-0004 was added, but its ID label could not be queued.")).toBeVisible();
     expect(screen.getByRole("link", { name: "Open L4736-0004" })).toHaveAttribute("href", "/sheets/L4736-0004");
+  });
+
+  it("a partly queued ID label is said in words, the marks stay and the form stays open", async () => {
+    setup({
+      "POST /api/sheets": () =>
+        respond(502, apiErrorBody("print_interrupted", "The print stopped.", { batch_id: "b1", job_ids: ["66666666-6666-4666-8666-666666666666"] })),
+    });
+    await openDialog();
+    await chooseType();
+    await userEvent.click(cell(2));
+    await userEvent.click(screen.getByRole("radio", { name: /In the first free cell/ }));
+    await choosePrinter();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add and print ID label" })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "Add and print ID label" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The ID label was queued only in part. Look at the print jobs.");
+    expect(screen.getByRole("button", { name: "Add and print ID label" })).toBeVisible();
+    expect(screen.getByText("1 cell marked as used")).toBeVisible();
+    expect(screen.queryByText(/was added/)).toBeNull();
+  });
+
+  it("a network failure while adding with an ID label says the server cannot be reached and keeps the form", async () => {
+    setup({
+      "POST /api/sheets": () => {
+        throw new TypeError("Failed to fetch");
+      },
+    });
+    await openDialog();
+    await chooseType();
+    await userEvent.click(cell(3));
+    await userEvent.click(screen.getByRole("radio", { name: /In the first free cell/ }));
+    await choosePrinter();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add and print ID label" })).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "Add and print ID label" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The server cannot be reached.");
+    expect(screen.getByText("1 cell marked as used")).toBeVisible();
+    // The failure is not final: the button is usable again.
+    expect(screen.getByRole("button", { name: "Add and print ID label" })).toBeEnabled();
+  });
+
+  it("a failed capabilities request is not reported as a printer without trays", async () => {
+    const { calls } = setup({ [`GET /api/printers/${PAGE_PRINTER.id}/capabilities`]: () => respond(403, { detail: "no" }) });
+    await openDialog();
+    await chooseType();
+    await userEvent.click(screen.getByRole("radio", { name: /In the first free cell/ }));
+    await choosePrinter();
+    expect(await screen.findByText("The printer could not be asked for its trays. Try again in a moment.")).toBeVisible();
+    expect(screen.queryByText(/reports no trays/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Add and print ID label" })).toBeDisabled();
+    // Without the trays the margin check would run for a tray nobody chose: it waits.
+    expect(calls.some((c) => c.path === "/api/sheets/margin-check")).toBe(false);
+  });
+
+  it("names types by their label with the key, in the dialog's list and on the trigger with the full text as a tooltip", async () => {
+    setup();
+    await openDialog();
+    await userEvent.click(screen.getByRole("button", { name: /Sheet type/ }));
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual([
+      "Choose a sheet type",
+      "Example Labels L4736REV-25 (L4736REV) · 45.7 × 21.2 mm",
+      "Example Labels L4736REV-25 (my-small) · 45.7 × 21.2 mm",
+    ]);
+    await userEvent.click(screen.getByRole("option", { name: /\(my-small\)/ }));
+    expect(screen.getByTitle("Example Labels L4736REV-25 (my-small) · 45.7 × 21.2 mm")).toBeInTheDocument();
   });
 
   it("starts empty when it is opened again", async () => {

@@ -12,7 +12,8 @@ import { useSheetTypes } from "../archive/api";
 import { AddSheetDialog } from "./AddSheetDialog";
 import { formatMm } from "./cellState";
 import { useSheetErrorText } from "./errors";
-import { parseSheetsSearch, type SheetsSearch } from "./search";
+import { MAX_CODE_SEARCH, parseSheetsSearch, type SheetsSearch } from "./search";
+import { typeLabelWithKey } from "./typeLabel";
 import { useDiscardSheet, useSheets, type SheetSummary } from "./api";
 
 const ANY = "__any__";
@@ -222,7 +223,7 @@ export function SheetsPage() {
   // the page hides the used-up sheets itself. Discarded sheets are asked for only when wanted.
   const list = useSheets({ type: search.type, q: search.q, state: search.discarded ? "all" : "active" });
   const types = useSheetTypes();
-  const typeOptions = [{ id: ANY, label: t`Any sheet type` }, ...(types.data ?? []).map((x) => ({ id: x.key, label: x.key }))];
+  const typeOptions = [{ id: ANY, label: t`Any sheet type` }, ...(types.data ?? []).map((x) => ({ id: x.key, label: typeLabelWithKey(x) }))];
   if (search.type && !typeOptions.some((o) => o.id === search.type)) typeOptions.push({ id: search.type, label: search.type });
 
   const hideUsedUp = search.full !== true;
@@ -266,7 +267,7 @@ export function SheetsPage() {
           onSubmit={(e) => e.preventDefault()}
           className={`${PANEL} ${filtersOpen ? "grid" : "hidden"} gap-4 md:grid md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] lg:items-end`}
         >
-          <TextInput label={t`Search by code`} value={q} onChange={setQ} placeholder="L4736-0004" mono />
+          <TextInput label={t`Search by code`} value={q} onChange={setQ} placeholder="L4736-0004" mono maxLength={MAX_CODE_SEARCH} />
           <SelectField
             label={t`Sheet type`}
             value={search.type ?? ANY}
@@ -314,7 +315,7 @@ export function SheetsPage() {
           {hidden > 0 ? (
             <p className="text-small text-ink-2">
               {plural(hidden, { one: "# used-up sheet hidden", other: "# used-up sheets hidden" })}{" "}
-              <Button onPress={() => commit({ full: true })} className="inline min-h-11 text-link underline underline-offset-2">
+              <Button onPress={() => commit({ full: true })} className="inline-flex min-h-11 items-center text-link underline underline-offset-2">
                 {t`Show them`}
               </Button>
             </p>

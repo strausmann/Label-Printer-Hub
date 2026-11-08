@@ -40,6 +40,10 @@ test.describe.serial("sheets", () => {
     await expect(page.getByRole("link", { name: DISCARDED })).toHaveCount(0);
 
     // A switch is clicked on its label: the input itself sits under the track.
+    // The hint under the list has a button; its tap target is a real 44 px (an inline box would not be).
+    const showThem = page.getByRole("button", { name: "Show them" });
+    await expect(showThem).toBeVisible();
+    expect((await showThem.boundingBox())!.height).toBeGreaterThanOrEqual(43.99);
     await page.getByText("Hide used-up sheets", { exact: true }).click();
     const full = page.getByRole("row").filter({ has: page.getByRole("link", { name: FULL }) });
     await expect(full).toContainText("used up");
@@ -99,6 +103,14 @@ test.describe.serial("sheets", () => {
       })),
     );
     expect(smallest).toBeGreaterThanOrEqual(43.99);
+    // The grid opens at its leading edge: the first column is the first thing seen, not scrolled out of sight.
+    const lead = await dialog.locator("[data-scroll]").evaluate((scroller) => {
+      const box = scroller.getBoundingClientRect();
+      const first = scroller.querySelector("[data-cell='1'] rect[data-hit]")!.getBoundingClientRect();
+      return { scrollLeft: scroller.scrollLeft, gap: first.left - box.left };
+    });
+    expect(lead.scrollLeft).toBe(0);
+    expect(lead.gap).toBeGreaterThanOrEqual(-0.5);
     expect(await noSideScroll(page)).toBe(true);
   });
 
