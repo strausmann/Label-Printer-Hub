@@ -14,3 +14,7 @@ class IdleEventSource {
   close(): void {}
 }
 globalThis.EventSource ??= IdleEventSource as unknown as typeof EventSource;
+
+// jsdom does not implement scrolling and logs "Not implemented" for every call.
+// Pages scroll to the top on navigation; nothing here asserts on it.
+window.scrollTo = () => {};

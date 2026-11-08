@@ -1,10 +1,23 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
 import { apiErrorBody, GEOMETRY_L4736, mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, pageStatus, PRINTER_A, respond, SHEET_TYPE, status, type Call } from "../test-api";
 
 vi.setConfig({ testTimeout: 15_000 });
+
+// This page re-renders every reading row (two react-aria selects each) on every edit, about
+// 100-200 ms per render in jsdom. With 76 files sharing four cores in the full run, the
+// default 1 s findBy window expired on the first render after Fit. The window is widened for
+// this file only and restored afterwards; the assertions are unchanged.
+let defaultAsyncTimeout = 1000;
+beforeAll(() => {
+  configure((current) => {
+    defaultAsyncTimeout = current.asyncUtilTimeout;
+    return { asyncUtilTimeout: 5000 };
+  });
+});
+afterAll(() => configure({ asyncUtilTimeout: defaultAsyncTimeout }));
 afterEach(() => vi.unstubAllGlobals());
 
 const P = PAGE_PRINTER.id;
@@ -60,11 +73,30 @@ const throws = () => {
 };
 const button = (name: string | RegExp) => screen.findByRole("button", { name });
 
-/** Types a number into a field, replacing what is there. */
-async function enter(label: string | RegExp, value: string) {
-  const field = await screen.findByRole("textbox", { name: label });
-  await userEvent.clear(field);
-  await userEvent.type(field, value);
+/**
+ * Puts a number into a field, replacing what is there, as one change event.
+ * Typing key by key (or even clear + paste through user-event) re-rendered the
+ * page and walked the DOM per step: ~300 ms per field, ~100 s for this file,
+ * enough to blow the 1 s findBy timeout when 76 files share four cores. These
+ * tests are about what the page does with a value, not about keystrokes.
+ * The field is found by its label, which is as strict as the accessible name
+ * here and much cheaper than a role query.
+ */
+async function enter(label: string, value: string) {
+  await enterAll([[label, value]]);
+}
+
+/**
+ * Several fields at once, committed in one render. Every change re-renders the whole
+ * page (~100 ms in jsdom), so six separate changes cost six renders; inside one act the
+ * updates are batched. The page keeps its rows with functional updates, so none is lost.
+ */
+async function enterAll(pairs: readonly (readonly [string, string])[]) {
+  const fields: HTMLElement[] = [];
+  for (const [label] of pairs) fields.push(await screen.findByLabelText(label));
+  act(() => {
+    pairs.forEach(([, value], i) => fireEvent.change(fields[i]!, { target: { value } }));
+  });
 }
 
 async function fillThree() {
@@ -74,10 +106,7 @@ async function fillThree() {
     ["0,6", "0,3"],
   ] as const;
   const crossings = ["S1 · Z1", "S3 · Z1", "S1 · Z11"];
-  for (let i = 0; i < 3; i++) {
-    await enter(`Across at ${crossings[i]} (mm)`, list[i]![0]);
-    await enter(`Down at ${crossings[i]} (mm)`, list[i]![1]);
-  }
+  await enterAll(crossings.flatMap((c, i) => [[`Across at ${c} (mm)`, list[i]![0]], [`Down at ${c} (mm)`, list[i]![1]]] as const));
 }
 
 const FIT = {
@@ -431,7 +460,7 @@ describe("readings: row identity", () => {
     await removeFirst();
     await add();
     expect(screen.getAllByRole("group", { name: /^Reading \d/ })).toHaveLength(4);
-    await userEvent.type(firstBox(4), "0,5");
+    fireEvent.change(firstBox(4), { target: { value: "0,5" } });
     expect(firstBox(4)).toHaveValue("0,5");
     expect(firstBox(3)).toHaveValue("");
     expect(firstBox(2)).toHaveValue("");
@@ -450,10 +479,11 @@ describe("readings: row identity", () => {
     await open({
       [`POST ${BASE}/main/fit`]: () => respond(422, apiErrorBody("invalid_geometry", "Bad gap.", { field: "readings[0].col_gap", reason: "no such gap", reading: 0 })),
     });
-    for (const [crossing, a, d] of [["S3 · Z1", "0,4", "0"], ["S1 · Z11", "0,6", "0,3"], ["S3 · Z11", "0,1", "0,1"]] as const) {
-      await enter(`Across at ${crossing} (mm)`, a);
-      await enter(`Down at ${crossing} (mm)`, d);
-    }
+    await enterAll(
+      ([["S3 · Z1", "0,4", "0"], ["S1 · Z11", "0,6", "0,3"], ["S3 · Z11", "0,1", "0,1"]] as const).flatMap(
+        ([crossing, a, d]) => [[`Across at ${crossing} (mm)`, a], [`Down at ${crossing} (mm)`, d]] as const,
+      ),
+    );
     await userEvent.click(await button("Fit"));
     expect(await screen.findByText("Reading 2 names a gap that this sheet does not have.")).toBeVisible();
   });

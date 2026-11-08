@@ -1,6 +1,6 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../../test-utils";
 import { CART_KEY, reloadCart } from "../../lookup/cart";
 import { mockApi, PAGE_PRINTER, PRINTER_A, respond, SHEET_TYPE, pageStatus, type Call } from "../../test-api";
@@ -8,6 +8,19 @@ import { BATCH, JOB, NEW_9, P, USED_17, body, conflict, pick, previewFor, previe
 
 const PREVIEW = `/api/print/${P}/sheet/preview`;
 const PRINT = `/api/print/${P}/sheet`;
+
+// The preview is requested 400 ms after the last change (PREVIEW_DEBOUNCE_MS), so every
+// findBy that waits for it starts with a 400 ms real-time wait inside the default 1 s window.
+// With 76 files sharing four cores in the full run that margin is thin. The window is widened
+// for this file only and restored afterwards; the assertions are unchanged.
+let defaultAsyncTimeout = 1000;
+beforeAll(() => {
+  configure((current) => {
+    defaultAsyncTimeout = current.asyncUtilTimeout;
+    return { asyncUtilTimeout: 5000 };
+  });
+});
+afterAll(() => configure({ asyncUtilTimeout: defaultAsyncTimeout }));
 
 beforeEach(() => {
   localStorage.clear();
