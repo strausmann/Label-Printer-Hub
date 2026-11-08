@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
-import { job, mockApi, PRINTER_A, PRINTER_B, status } from "../test-api";
+import { job, mockApi, PAGE_PRINTER, PRINTER_A, PRINTER_B, pageStatus, status } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -151,6 +151,57 @@ describe("Overview", () => {
       await renderApp({ path: "/", info: { integrations: set(false, false, false) }, session: { ...SIGNED_IN, scope: "read" } });
       await screen.findByRole("heading", { level: 2, name: "Printing now" });
       expect(screen.queryByRole("region", { name: "Integrations" })).toBeNull();
+    });
+  });
+
+  describe("page printers", () => {
+    const withPage = (pageStat: Record<string, unknown>) => ({
+      ...base(),
+      "GET /api/printers": [PRINTER_A, PAGE_PRINTER],
+      [`GET /api/printers/${PAGE_PRINTER.id}/status`]: pageStat,
+    });
+    const lowBlack = { name: "Black toner", color: "#000000", level_percent: 4, low: true, empty: false, some_remaining: false, type: "toner" };
+
+    it("counts a low toner as material running out, like tape", async () => {
+      mockApi(withPage(pageStatus(PAGE_PRINTER.id, { markers: [lowBlack] })));
+      await renderApp({ path: "/" });
+      const section = await screen.findByRole("region", { name: "Material" });
+      expect(await within(section).findByText("1 printer is running out of material")).toBeVisible();
+      expect(within(section).getByText("4 %, low")).toBeVisible();
+    });
+
+    it("says nothing about running out while the toner is fine", async () => {
+      mockApi(withPage(pageStatus(PAGE_PRINTER.id)));
+      await renderApp({ path: "/" });
+      const section = await screen.findByRole("region", { name: "Material" });
+      expect(await within(section).findByText("Black toner")).toBeVisible();
+      expect(within(section).queryByText(/running out/)).toBeNull();
+    });
+
+    it("a stopped page printer needs attention, with the reason in words", async () => {
+      const stopped = pageStatus(PAGE_PRINTER.id, {
+        printer_state: "stopped",
+        state_reasons: [{ keyword: "toner-empty", severity: "error", blocking: true }],
+      });
+      mockApi(withPage(stopped));
+      await renderApp({ path: "/" });
+      const section = await screen.findByRole("region", { name: "Needs attention" });
+      expect(await within(section).findByText("Stopped")).toBeVisible();
+      expect(within(section).getByText("toner empty")).toBeVisible();
+    });
+
+    it("a printer that never answered shows 'No answer yet' under Material", async () => {
+      mockApi(withPage(pageStatus(PAGE_PRINTER.id, { online: null, printer_state: null, markers: [], trays: [] })));
+      await renderApp({ path: "/" });
+      const section = await screen.findByRole("region", { name: "Material" });
+      expect(await within(section).findByText("No answer yet")).toBeVisible();
+    });
+
+    it("tape printers keep their material row", async () => {
+      mockApi(withPage(pageStatus(PAGE_PRINTER.id)));
+      await renderApp({ path: "/" });
+      const section = await screen.findByRole("region", { name: "Material" });
+      expect(await within(section).findByText("Blue")).toBeVisible();
     });
   });
 });

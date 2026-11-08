@@ -1,3 +1,4 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
@@ -5,7 +6,8 @@ import { StatusBadge } from "../../shell/StatusBadge";
 import { IntegrationTiles } from "../integrations/IntegrationTiles";
 import { PANEL, SECTION_HEADING } from "../ui";
 import { usePrinters, usePrinterStatuses, useRecentJobs, type Job, type Printer, type PrinterStatus } from "../printers/api";
-import { describePrinter, isFailed, useJobStateBadge, useKindLabel } from "../printers/model";
+import { describePrinter, isFailed, isPagePrinter, useJobStateBadge, useKindLabel } from "../printers/model";
+import { MarkerList, noAnswerYet, ReasonLine, runningOut } from "../printers/PageStatus";
 import { PauseReason } from "../printers/PauseReason";
 import { PauseResumeButton } from "../printers/PauseResumeButton";
 import { PrinterGrid } from "../printers/PrinterGrid";
@@ -16,7 +18,7 @@ const ATTENTION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function Block({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
-    <section aria-labelledby={id} className={`${PANEL} flex flex-col gap-3`}>
+    <section aria-labelledby={id} className={`${PANEL} flex min-w-0 flex-col gap-3`}>
       <h2 id={id} className={SECTION_HEADING}>
         {title}
       </h2>
@@ -44,7 +46,8 @@ export function OverviewPage() {
   const failed = all.filter((j) => isFailed(j) && jobs.dataUpdatedAt - Date.parse(j.updated_at) < ATTENTION_WINDOW_MS);
   const stuck = list
     .map((p) => ({ printer: p, view: describePrinter(p, statuses.get(p.id), busy.has(p.id)) }))
-    .filter(({ view }) => view.kind === "paused" || view.kind === "offline" || view.kind === "error");
+    .filter(({ view }) => ["paused", "offline", "error", "stopped"].includes(view.kind));
+  const lowCount = list.filter((p) => runningOut(statuses.get(p.id))).length;
   const recent = [...all].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 8);
 
   return (
@@ -81,6 +84,7 @@ export function OverviewPage() {
                   <StatusBadge state={view.badge} label={kinds[view.kind]} />
                   {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
                   {view.kind === "paused" && <PauseReason pause={printer.pause} />}
+                  <ReasonLine status={statuses.get(printer.id)} />
                   {view.kind === "paused" && <PauseResumeButton printer={printer} named />}
                 </li>
               ))}
@@ -107,11 +111,21 @@ export function OverviewPage() {
           {list.length === 0 ? (
             <p className="text-ink-2">{t`No printers yet.`}</p>
           ) : (
-            <ul className="flex flex-col gap-3">
-              {list.map((p) => (
-                <MaterialRow key={p.id} printer={p} status={statuses.get(p.id)} />
-              ))}
-            </ul>
+            <>
+              {lowCount > 0 && (
+                <p className="flex items-center gap-2 text-small font-bold">
+                  <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true" focusable="false" className="shrink-0 fill-current text-warn">
+                    <polygon points="5,0 10,5 5,10 0,5" />
+                  </svg>
+                  {plural(lowCount, { one: "# printer is running out of material", other: "# printers are running out of material" })}
+                </p>
+              )}
+              <ul className="flex flex-col gap-3">
+                {list.map((p) => (
+                  <MaterialRow key={p.id} printer={p} status={statuses.get(p.id)} />
+                ))}
+              </ul>
+            </>
           )}
         </Block>
       </div>
@@ -149,10 +163,18 @@ export function OverviewPage() {
 }
 
 function MaterialRow({ printer, status }: { printer: Printer; status: PrinterStatus | undefined }) {
+  const { t } = useLingui();
+  const page = isPagePrinter(printer, status);
   return (
-    <li className="flex flex-col gap-1">
-      <span className="text-small text-ink-2">{printer.name}</span>
-      <TapeSwatch tapeLoaded={status?.tape_loaded} probed={status?.captured_at != null} />
+    <li className="flex min-w-0 flex-col gap-1">
+      <span className="break-words text-small text-ink-2">{printer.name}</span>
+      {!page ? (
+        <TapeSwatch tapeLoaded={status?.tape_loaded} probed={status?.captured_at != null} />
+      ) : noAnswerYet(status) ? (
+        <span className="text-ink-2">{t`No answer yet`}</span>
+      ) : (
+        <MarkerList markers={status?.markers} />
+      )}
     </li>
   );
 }

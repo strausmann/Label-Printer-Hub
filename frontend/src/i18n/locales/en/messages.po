@@ -68,6 +68,10 @@ msgstr "{0} has no sheets. Deleting it removes it and all its versions for good.
 msgid "{0} mm"
 msgstr "{0} mm"
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "{ahead, plural, one {# job from another computer ahead} other {# jobs from other computers ahead}}"
+msgstr "{ahead, plural, one {# job from another computer ahead} other {# jobs from other computers ahead}}"
+
 #: src/features/integrations/IntegrationPage.tsx
 msgid "{appName} is not set up yet, so there is nothing to look up."
 msgstr "{appName} is not set up yet, so there is nothing to look up."
@@ -107,6 +111,18 @@ msgstr "{label} must be a whole number from 1 to 400."
 #: src/features/lookup/CartPage.tsx
 msgid "{labels, plural, one {Print # label} other {Print # labels}}"
 msgstr "{labels, plural, one {Print # label} other {Print # labels}}"
+
+#: src/features/printers/MarkerSwatch.tsx
+msgid "{level} %"
+msgstr "{level} %"
+
+#: src/features/printers/MarkerSwatch.tsx
+msgid "{level} %, low"
+msgstr "{level} %, low"
+
+#: src/features/overview/OverviewPage.tsx
+msgid "{lowCount, plural, one {# printer is running out of material} other {# printers are running out of material}}"
+msgstr "{lowCount, plural, one {# printer is running out of material} other {# printers are running out of material}}"
 
 #: src/features/lookup/ItemView.tsx
 msgid "{name} is not set up yet, so this item cannot be shown."
@@ -407,6 +423,18 @@ msgid "By hand"
 msgstr "By hand"
 
 #: src/features/printers/PrinterDetail.tsx
+msgid "Calibrate"
+msgstr "Calibrate"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Calibrate {name}"
+msgstr "Calibrate {name}"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Calibrated"
+msgstr "Calibrated"
+
+#: src/features/printers/PrinterDetail.tsx
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
 msgid "Calibration"
@@ -656,6 +684,10 @@ msgstr "Could not resume the printer."
 msgid "Cover is open"
 msgstr "Cover is open"
 
+#: src/features/printers/reasons.ts
+msgid "cover open"
+msgstr "cover open"
+
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Create admin key"
 msgstr "Create admin key"
@@ -705,6 +737,10 @@ msgstr "Cuts the tape but leaves the backing, so a strip of labels stays togethe
 #: src/shell/ThemeSwitch.tsx
 msgid "Dark theme"
 msgstr "Dark theme"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "default"
+msgstr "default"
 
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Default"
@@ -802,6 +838,10 @@ msgstr "Display name"
 msgid "Done"
 msgstr "Done"
 
+#: src/features/printers/reasons.ts
+msgid "door open"
+msgstr "door open"
+
 #: src/features/settings/System.tsx
 msgid "Download settings"
 msgstr "Download settings"
@@ -836,6 +876,10 @@ msgstr "Edit details of {0}"
 #: src/features/archive/TypeDetail.tsx
 msgid "Edit geometry"
 msgstr "Edit geometry"
+
+#: src/features/printers/MarkerSwatch.tsx
+msgid "empty"
+msgstr "empty"
 
 #: src/features/lookup/CartPage.tsx
 msgid "Empty the cart"
@@ -1340,6 +1384,18 @@ msgstr "Measurements"
 msgid "Measurements of this type"
 msgstr "Measurements of this type"
 
+#: src/features/printers/reasons.ts
+msgid "media empty"
+msgstr "media empty"
+
+#: src/features/printers/reasons.ts
+msgid "media jam"
+msgstr "media jam"
+
+#: src/features/printers/reasons.ts
+msgid "media low"
+msgstr "media low"
+
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Media sizes"
 msgstr "Media sizes"
@@ -1414,6 +1470,12 @@ msgstr "no"
 msgid "No"
 msgstr "No"
 
+#: src/features/overview/OverviewPage.tsx
+#: src/features/printers/PrinterCard.tsx
+#: src/features/printers/PrinterDetail.tsx
+msgid "No answer yet"
+msgstr "No answer yet"
+
 #: src/features/scan/ScanScreen.tsx
 msgid "No camera"
 msgstr "No camera"
@@ -1484,9 +1546,17 @@ msgstr "No sheets yet."
 msgid "No status yet"
 msgstr "No status yet"
 
+#: src/features/printers/PageStatus.tsx
+msgid "No supplies reported"
+msgstr "No supplies reported"
+
 #: src/features/printers/TapeSwatch.tsx
 msgid "No tape loaded"
 msgstr "No tape loaded"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "No tray to calibrate."
+msgstr "No tray to calibrate."
 
 #: src/features/settings/System.tsx
 msgid "No warnings or errors recorded."
@@ -1495,6 +1565,14 @@ msgstr "No warnings or errors recorded."
 #: src/features/settings/IppPrinterFields.tsx
 msgid "None reported, only the automatic choice"
 msgstr "None reported, only the automatic choice"
+
+#: src/features/printers/reasons.ts
+msgid "not accepting jobs"
+msgstr "not accepting jobs"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Not calibrated"
+msgstr "Not calibrated"
 
 #: src/features/settings/AccessKeys.tsx
 msgid "Not configured"
@@ -1596,9 +1674,17 @@ msgstr "Nothing opened yet."
 msgid "Off for labels too small to scan."
 msgstr "Off for labels too small to scan."
 
+#: src/features/printers/reasons.ts
+msgid "offline"
+msgstr "offline"
+
 #: src/features/printers/model.ts
 msgid "Offline"
 msgstr "Offline"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Offset {dx} / {dy} mm"
+msgstr "Offset {dx} / {dy} mm"
 
 #: src/shell/StatusBadge.tsx
 msgid "OK"
@@ -1699,6 +1785,10 @@ msgstr "Paste the export file or choose it."
 #: src/features/printers/PauseResumeButton.tsx
 msgid "Pause"
 msgstr "Pause"
+
+#: src/features/printers/reasons.ts
+msgid "paused"
+msgstr "paused"
 
 #: src/features/printers/model.ts
 msgid "Paused"
@@ -2262,6 +2352,10 @@ msgstr "Slug"
 msgid "Snipe-IT"
 msgstr "Snipe-IT"
 
+#: src/features/printers/MarkerSwatch.tsx
+msgid "some remaining"
+msgstr "some remaining"
+
 #: src/i18n/messages.ts
 #: src/shell/SignIn.tsx
 msgid "Something went wrong."
@@ -2312,6 +2406,26 @@ msgstr "Starts every sheet code, for example L4736."
 #: src/features/settings/IppPrinterFields.tsx
 msgid "State"
 msgstr "State"
+
+#: src/features/printers/reasons.ts
+msgid "state unknown"
+msgstr "state unknown"
+
+#: src/features/printers/model.ts
+msgid "Stopped"
+msgstr "Stopped"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Supplies"
+msgstr "Supplies"
+
+#: src/features/printers/reasons.ts
+msgid "supply empty"
+msgstr "supply empty"
+
+#: src/features/printers/reasons.ts
+msgid "supply low"
+msgstr "supply low"
 
 #: src/features/settings/SettingsPage.tsx
 #: src/features/settings/System.tsx
@@ -2424,6 +2538,10 @@ msgstr "The address redirects, often to a login page in front of the app. Use an
 #: src/shell/SignIn.tsx
 msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."
 msgstr "The bootstrap key no longer works because an admin key exists. Sign in with that key."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "The calibration could not be loaded."
+msgstr "The calibration could not be loaded."
 
 #: src/features/scan/ScanScreen.tsx
 msgid "The camera did not start"
@@ -2757,6 +2875,10 @@ msgstr "The printer refused the request ({status})."
 msgid "The printer refused the request."
 msgstr "The printer refused the request."
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "The printer reports no trays."
+msgstr "The printer reports no trays."
+
 #: src/features/printers/PrinterGrid.tsx
 #: src/features/settings/Printers.tsx
 msgid "The printers could not be loaded."
@@ -2986,6 +3108,14 @@ msgstr "Title"
 msgid "Token"
 msgstr "Token"
 
+#: src/features/printers/reasons.ts
+msgid "toner empty"
+msgstr "toner empty"
+
+#: src/features/printers/reasons.ts
+msgid "toner low"
+msgstr "toner low"
+
 #: src/shell/SignIn.tsx
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Too many attempts. Wait a minute and try again."
@@ -3010,9 +3140,14 @@ msgstr "Top margin (mm)"
 msgid "Tray"
 msgstr "Tray"
 
+#: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Trays"
 msgstr "Trays"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Trays are listed once the printer has answered."
+msgstr "Trays are listed once the printer has answered."
 
 #: src/app/router.tsx
 #: src/features/lookup/ItemView.tsx
@@ -3047,6 +3182,7 @@ msgid "Unconfirmed cells"
 msgstr "Unconfirmed cells"
 
 #: src/features/about/BuildRows.tsx
+#: src/features/printers/MarkerSwatch.tsx
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "unknown"
 msgstr "unknown"

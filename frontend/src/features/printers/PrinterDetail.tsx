@@ -1,14 +1,17 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { getRouteApi, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
-import { useFeature } from "../../app/session";
+import { useFeature, useSession } from "../../app/session";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
-import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, type Printer, type QueueJob } from "./api";
+import { useCalibration, type CalibrationRead } from "../calibration/api";
+import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, type Printer, type PrinterStatus, type QueueJob } from "./api";
 import { PauseReason } from "./PauseReason";
-import { describePrinter, useJobStateBadge, useKindLabel } from "./model";
+import { describePrinter, isPagePrinter, useJobStateBadge, useKindLabel } from "./model";
+import { MarkerList, noAnswerYet, ReasonLine } from "./PageStatus";
 import { PauseResumeButton } from "./PauseResumeButton";
 import { TapeSwatch } from "./TapeSwatch";
 
@@ -41,7 +44,11 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const calibration = useFeature("calibration");
   const printing = (queue.data ?? []).some((j) => j.state === "printing");
   const view = describePrinter(printer, status.data, printing);
-  const age = status.data?.last_probe_age_s;
+  const page = isPagePrinter(printer, status.data);
+  const unanswered = page && noAnswerYet(status.data);
+  // A page printer that never answered has no reading to be "last updated".
+  const age = unanswered ? undefined : status.data?.last_probe_age_s;
+  const ahead = status.data?.jobs_ahead ?? 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -51,25 +58,46 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           <StatusBadge state={view.badge} label={kinds[view.kind]} />
           {view.detail && <p className="text-small text-ink-2">{view.detail}</p>}
           {view.kind === "paused" && <PauseReason pause={printer.pause} />}
+          {page && <ReasonLine status={status.data} />}
+          {page && ahead > 0 && (
+            <p className="text-small text-ink-2">
+              {plural(ahead, { one: "# job from another computer ahead", other: "# jobs from other computers ahead" })}
+            </p>
+          )}
         </div>
         <PauseResumeButton printer={printer} />
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="flex flex-col gap-4">
-          <section aria-labelledby="material-h" className={PANEL}>
-            <h2 id="material-h" className={SECTION_HEADING}>{t`Material`}</h2>
-            <p className="mt-3">
-              <TapeSwatch tapeLoaded={status.data?.tape_loaded} probed={status.data?.captured_at != null} />
-            </p>
-            {typeof age === "number" && (
-              <p className="mt-2 text-small text-ink-2">{t`Last status ${age} s ago`}</p>
-            )}
-          </section>
+        <div className="flex min-w-0 flex-col gap-4">
+          {page ? (
+            <>
+              <section aria-labelledby="supplies-h" className={PANEL}>
+                <h2 id="supplies-h" className={SECTION_HEADING}>{t`Supplies`}</h2>
+                <div className="mt-3">
+                  {unanswered ? <span className="text-ink-2">{t`No answer yet`}</span> : <MarkerList markers={status.data?.markers} />}
+                </div>
+                {typeof age === "number" && (
+                  <p className="mt-2 text-small text-ink-2">{t`Last status ${age} s ago`}</p>
+                )}
+              </section>
+              <TraysSection trays={status.data?.trays} unanswered={unanswered} />
+            </>
+          ) : (
+            <section aria-labelledby="material-h" className={PANEL}>
+              <h2 id="material-h" className={SECTION_HEADING}>{t`Material`}</h2>
+              <p className="mt-3">
+                <TapeSwatch tapeLoaded={status.data?.tape_loaded} probed={status.data?.captured_at != null} />
+              </p>
+              {typeof age === "number" && (
+                <p className="mt-2 text-small text-ink-2">{t`Last status ${age} s ago`}</p>
+              )}
+            </section>
+          )}
           <QueueSection printer={printer} jobs={queue.data} loading={queue.isPending} failed={queue.isError} />
         </div>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <section aria-labelledby="connection-h" className={PANEL}>
             <h2 id="connection-h" className={SECTION_HEADING}>{t`Connection`}</h2>
             <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
@@ -82,12 +110,89 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           {calibration && (
             <section aria-labelledby="calibration-h" className={PANEL}>
               <h2 id="calibration-h" className={SECTION_HEADING}>{t`Calibration`}</h2>
-              <p className="mt-3 text-ink-2">{t`Calibration for this printer will appear here.`}</p>
+              {page ? (
+                <PageCalibration printer={printer} trays={status.data?.trays} />
+              ) : (
+                <p className="mt-3 text-ink-2">{t`Calibration for this printer will appear here.`}</p>
+              )}
             </section>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+type Tray = NonNullable<PrinterStatus["trays"]>[number];
+
+/** The trays the printer reports, with what is loaded and the hint where to put paper. Long keys and hints wrap. */
+function TraysSection({ trays, unanswered }: { trays: PrinterStatus["trays"]; unanswered: boolean }) {
+  const { t } = useLingui();
+  const shown = (trays ?? []).filter((tray) => tray.enabled);
+  return (
+    <section aria-labelledby="trays-h" className={PANEL}>
+      <h2 id="trays-h" className={SECTION_HEADING}>{t`Trays`}</h2>
+      {shown.length === 0 ? (
+        <p className="mt-3 text-ink-2">{unanswered ? t`Trays are listed once the printer has answered.` : t`The printer reports no trays.`}</p>
+      ) : (
+        <ul className="mt-3 flex flex-col gap-2">
+          {shown.map((tray) => (
+            <li key={tray.key} className="flex min-w-0 flex-col gap-0.5 rounded-r2 bg-sunken px-3 py-2">
+              <span className="font-bold [overflow-wrap:anywhere]">
+                {tray.label}
+                {tray.is_default && <span className="ml-2 text-small font-normal text-ink-2">{t`default`}</span>}
+              </span>
+              {tray.media && <span className="text-small [overflow-wrap:anywhere]">{tray.media}</span>}
+              {tray.load_hint && <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{tray.load_hint}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const rounded = (value: number) => Math.round(value * 100) / 100;
+
+/** One line per tray: calibrated or not, and the way to the calibration page (admin only). */
+function PageCalibration({ printer, trays }: { printer: Printer; trays: Tray[] | null | undefined }) {
+  const { t } = useLingui();
+  const admin = useSession().scope === "admin";
+  const calibration = useCalibration(printer.id);
+  if (calibration.isPending) return <p role="status" className="mt-3 text-ink-2">{t`Loading…`}</p>;
+  if (calibration.isError) return <p role="alert" className="mt-3 text-bad">{t`The calibration could not be loaded.`}</p>;
+  if (calibration.data.length === 0) return <p className="mt-3 text-ink-2">{t`No tray to calibrate.`}</p>;
+  const label = (row: CalibrationRead) => trays?.find((tray) => tray.key === row.tray)?.label ?? row.tray;
+  return (
+    <ul className="mt-3 flex flex-col gap-2">
+      {calibration.data.map((row) => {
+        const done = [row.offset_x_mm, row.offset_y_mm, row.scale_x, row.scale_y, row.rotation_deg].some((v) => v != null);
+        const name = label(row);
+        const dx = row.offset_x_mm == null ? null : rounded(row.offset_x_mm);
+        const dy = row.offset_y_mm == null ? null : rounded(row.offset_y_mm);
+        return (
+          <li key={row.tray} className="flex flex-wrap items-center justify-between gap-3 rounded-r2 bg-sunken px-3 py-2">
+            <span className="flex min-w-0 flex-col">
+              <span className="font-bold [overflow-wrap:anywhere]">{name}</span>
+              <span className="text-small text-ink-2">
+                {done ? t`Calibrated` : t`Not calibrated`}
+                {dx !== null && dy !== null && <> · {t`Offset ${dx} / ${dy} mm`}</>}
+              </span>
+            </span>
+            {admin && (
+              <Link
+                to="/calibration"
+                search={{ printer: printer.id, tray: row.tray }}
+                aria-label={t`Calibrate ${name}`}
+                className="press inline-flex h-11 items-center justify-center rounded-r2 border border-line-strong bg-surface px-4 text-small font-bold text-ink transition-colors duration-150 hover:bg-sunken focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-link"
+              >
+                {t`Calibrate`}
+              </Link>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

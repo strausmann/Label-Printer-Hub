@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
-import { expect, test } from "./fixtures";
+import { expect, resetPagePrinter, setPagePrinter, test } from "./fixtures";
 
 const SHOTS = process.env.E2E_SHOTS_DIR;
 const shot = async (page: Page, name: string) => {
@@ -55,4 +55,113 @@ test.describe("printers", () => {
     await expect(headings.nth(1)).toHaveText("Needs attention");
     await expect(headings.nth(2)).toHaveText("Material");
   });
+});
+
+const STOPPED = { printer_state: 5, reasons: ["toner-empty-error"] };
+const BLACK = { name: "black", color: "#000000", level: 0, low_level: 10, type: "toner" };
+
+test.describe("page printer status", () => {
+  // The fake printer is shared by every spec (N10): put it back, and assert nothing absolute about it.
+  test.afterEach(async ({ signedInPage: page }) => {
+    await resetPagePrinter(page);
+  });
+
+  test("a stopped printer shows its reason and toner on the card through the event stream and resumes by itself", async ({
+    signedInPage: page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/printers");
+    const card = page.getByRole("link", { name: /Office page printer/ });
+    await expect(card.getByText("Ready")).toBeVisible({ timeout: 15_000 });
+    // Marker on the window: a reload would erase it.
+    await page.evaluate(() => ((window as unknown as { __kept: boolean }).__kept = true));
+
+    await setPagePrinter(page, { ...STOPPED, markers: [BLACK] });
+    await expect(card.getByText("Stopped")).toBeVisible({ timeout: 15_000 });
+    await expect(card.getByText("toner empty")).toBeVisible();
+    // The hub applies the printer-wide reason to the supply it names: level 0 is empty.
+    await expect(card.getByText("empty", { exact: true })).toBeVisible();
+
+    // Cleared at the printer: the card goes back to Ready on its own (acceptance 16, UI side).
+    await resetPagePrinter(page);
+    await expect(card.getByText("Ready")).toBeVisible({ timeout: 15_000 });
+    await expect(card.getByText("toner empty")).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true);
+  });
+
+  test("the tape printer cards next to it keep tape and no toner", async ({ signedInPage: page }) => {
+    await page.goto("/printers");
+    const tape = page.getByRole("link", { name: /Workshop PT-P750W/ });
+    await expect(tape).toBeVisible();
+    await expect(tape.getByText(/toner|supplies/i)).toHaveCount(0);
+  });
+
+  const WORDS = {
+    de: { stopped: "Angehalten", reason: "Toner leer", some: "Rest vorhanden", supplies: "Verbrauchsmaterial", trays: "Fächer", overview: "Übersicht", printers: "Drucker" },
+    en: { stopped: "Stopped", reason: "toner empty", some: "some remaining", supplies: "Supplies", trays: "Trays", overview: "Overview", printers: "Printers" },
+  } as const;
+  const SIZES = [
+    { width: 360, height: 780, lang: "de" as const },
+    { width: 1280, height: 800, lang: "en" as const },
+  ];
+  // The worst case of the edge data set: stopped on an empty toner, a marker at "some remaining",
+  // very long supply names (one unbreakable) and ten supplies at once.
+  const WORST = {
+    ...STOPPED,
+    markers: [
+      { ...BLACK, name: "Black high-yield toner cartridge with an extremely long supplier description" },
+      { name: "cyan", color: "#00ffff", level: 40, low_level: 10, type: "toner" },
+      // A waste container is never marked by a reason, so its unknown level shows as "some remaining".
+      { name: "waste toner box", color: "#808080", level: -3, type: "waste-toner" },
+      // One name without a single space or hyphen to break at.
+      { name: `Cartridge${"x".repeat(70)}`, color: "#ffcc00", level: 90, low_level: 10, type: "toner" },
+      ...["magenta", "yellow", "drum unit", "fuser kit", "transfer belt", "maintenance kit"].map((name) => ({
+        name,
+        color: "#ff00ff",
+        level: 55,
+        low_level: 10,
+        type: "toner",
+      })),
+    ],
+  };
+
+  for (const size of SIZES) {
+    for (const scheme of ["light", "dark"] as const) {
+      test(`screens at ${size.width} px, ${size.lang}, ${scheme}`, async ({ signedInPage: page }, testInfo) => {
+        const words = WORDS[size.lang];
+        await page.evaluate((l) => localStorage.setItem("lph.lang", l), size.lang);
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.setViewportSize({ width: size.width, height: size.height });
+        await setPagePrinter(page, WORST);
+        const noSideScroll = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+        const name = (screen: string) => testInfo.outputPath(`${screen}-${size.width}-${size.lang}-${scheme}.png`);
+
+        await page.goto("/printers");
+        await expect(page.getByRole("heading", { level: 1, name: words.printers })).toBeVisible();
+        const card = page.getByRole("link", { name: /Office page printer/ });
+        await expect(card.getByText(words.stopped)).toBeVisible({ timeout: 15_000 });
+        await expect(card.getByText(words.reason)).toBeVisible();
+        await expect(card.getByText(words.some)).toBeVisible();
+        // Material, not state: the swatch really has the colour the printer reported (strict CSP allows it).
+        await expect(card.locator("[data-swatch]").first()).toHaveCSS("background-color", "rgb(0, 0, 0)");
+        expect(await noSideScroll()).toBe(true);
+        await page.screenshot({ path: name("printers"), fullPage: true });
+
+        const id = (await card.getAttribute("href"))!.split("/").pop()!;
+        await page.goto(`/printers/${id}`);
+        await expect(page.getByRole("heading", { level: 1, name: "Office page printer" })).toBeVisible();
+        await expect(page.getByRole("region", { name: words.supplies }).getByText(words.some)).toBeVisible();
+        await expect(page.getByRole("region", { name: words.trays })).toBeVisible();
+        expect(await noSideScroll()).toBe(true);
+        await page.screenshot({ path: name("detail"), fullPage: true });
+
+        await page.goto("/");
+        await expect(page.getByRole("heading", { level: 1, name: words.overview })).toBeVisible();
+        const attention = page.getByRole("region", { name: size.lang === "de" ? "Braucht Aufmerksamkeit" : "Needs attention" });
+        await expect(attention.getByText(words.stopped)).toBeVisible({ timeout: 15_000 });
+        expect(await noSideScroll()).toBe(true);
+        await page.screenshot({ path: name("overview"), fullPage: true });
+      });
+    }
+  }
 });
