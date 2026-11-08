@@ -76,6 +76,10 @@ msgstr "{appName} ist noch nicht eingerichtet, deshalb gibt es nichts nachzuschl
 msgid "{copyNo} of {copyTotal}"
 msgstr "{copyNo} von {copyTotal}"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "{dpi} dpi"
+msgstr "{dpi} dpi"
+
 #: src/features/sheets/SheetsPage.tsx
 msgid "{free} free"
 msgstr "{free} frei"
@@ -204,6 +208,10 @@ msgstr "Einen Bogentyp mit dem Schlüssel {existingKey} gibt es schon. Füge die
 #: src/features/archive/errors.ts
 msgid "A sheet type with this key already exists."
 msgstr "Einen Bogentyp mit diesem Schlüssel gibt es schon."
+
+#: src/features/settings/feedback.tsx
+msgid "A tray is set that the printer does not report. Read the printer again."
+msgstr "Es ist ein Fach eingestellt, das der Drucker nicht meldet. Lies den Drucker noch einmal aus."
 
 #: src/features/settings/AccessKeys.tsx
 msgid "A webhook key needs at least {MIN_WEBHOOK_KEY} characters."
@@ -503,6 +511,10 @@ msgstr "Bogentyp wählen"
 msgid "Choose a sheet type to see its measurements and versions."
 msgstr "Wähle einen Bogentyp, um seine Maße und Versionen zu sehen."
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Choose one tray as the default."
+msgstr "Wähle ein Fach als Standard."
+
 #: src/features/archive/ArchivePage.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Clear filters"
@@ -541,6 +553,10 @@ msgstr "Nur Code, ohne QR-Code"
 #: src/features/archive/TypeForm.tsx
 msgid "Code prefix"
 msgstr "Code-Präfix"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Colour modes"
+msgstr "Farbmodi"
 
 #: src/features/printers/TapeSwatch.tsx
 msgid "Colour not reported"
@@ -690,6 +706,19 @@ msgstr "Schneidet das Band an, lässt aber das Trägerpapier ganz, damit ein Str
 msgid "Dark theme"
 msgstr "Dunkles Design"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Default"
+msgstr "Standard"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Default tray"
+msgstr "Standardfach"
+
+#. placeholder {0}: tray.key
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Default: {0}"
+msgstr "Standard: {0}"
+
 #: src/features/settings/System.tsx
 msgid "Degraded"
 msgstr "Eingeschränkt"
@@ -821,9 +850,18 @@ msgstr "Aktivieren"
 msgid "Enable {0}"
 msgstr "{0} aktivieren"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Enable at least one tray."
+msgstr "Schalte mindestens ein Fach ein."
+
 #: src/features/settings/Printers.tsx
 msgid "Enabled"
 msgstr "Aktiv"
+
+#. placeholder {0}: tray.key
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Enabled: {0}"
+msgstr "Eingeschaltet: {0}"
 
 #: src/features/settings/SectionForm.tsx
 msgid "Enter a valid number."
@@ -833,9 +871,17 @@ msgstr "Gib eine gültige Zahl ein."
 msgid "Enter it again"
 msgstr "Bitte erneut eingeben"
 
+#: src/features/settings/PrinterForm.tsx
+msgid "Enter the printer's address."
+msgstr "Gib die Adresse des Druckers ein."
+
 #: src/features/sheets/SheetsPage.tsx
 msgid "Every sheet is used up."
 msgstr "Alle Bögen sind aufgebraucht."
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Every tray needs a label."
+msgstr "Jedes Fach braucht eine Bezeichnung."
 
 #: src/features/archive/TypeDetail.tsx
 msgid "Export"
@@ -898,9 +944,17 @@ msgstr "Gerät oder Standort suchen"
 msgid "first version"
 msgstr "erste Version"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "For example ipp://printer.example.invalid:631/ipp/print"
+msgstr "Zum Beispiel ipp://printer.example.invalid:631/ipp/print"
+
 #: src/features/archive/TypeForm.tsx
 msgid "For example: measured again with a ruler."
 msgstr "Zum Beispiel: mit dem Lineal neu gemessen."
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "For example: written side down"
+msgstr "Zum Beispiel: beschriebene Seite nach unten"
 
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"
@@ -1051,6 +1105,10 @@ msgstr "Integrationen"
 msgid "Interrupted by a restart"
 msgstr "Durch Neustart unterbrochen"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "IPP address"
+msgstr "IPP-Adresse"
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "It will probably become <0>{hintCode}</0>."
 msgstr "Er bekommt voraussichtlich die Nummer <0>{hintCode}</0>."
@@ -1109,6 +1167,7 @@ msgstr "Schlüssel, Beschreibung oder Produktcode"
 #: src/features/jobs/JobsPage.tsx
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterDetail.tsx
+#: src/features/settings/IppPrinterFields.tsx
 msgid "Label"
 msgstr "Etikett"
 
@@ -1204,6 +1263,10 @@ msgstr "Helles Design"
 msgid "Live updates paused"
 msgstr "Live-Updates pausiert"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Load hint"
+msgstr "Einlegehinweis"
+
 #: src/app/router.tsx
 #: src/features/archive/ArchivePage.tsx
 #: src/features/archive/TypeDetail.tsx
@@ -1240,6 +1303,10 @@ msgstr "In einer Integration nachschlagen"
 msgid "Main"
 msgstr "Hauptnavigation"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Make and model"
+msgstr "Hersteller und Modell"
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "margin"
 msgstr "Rand"
@@ -1272,6 +1339,14 @@ msgstr "Maße"
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Measurements of this type"
 msgstr "Maße dieses Typs"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Media sizes"
+msgstr "Papierformate"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Media types"
+msgstr "Papierarten"
 
 #: src/features/settings/System.tsx
 msgid "Message"
@@ -1334,6 +1409,10 @@ msgstr "Neue Version verfügbar"
 #: src/features/sheets/SheetDetail.tsx
 msgid "no"
 msgstr "nein"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "No"
+msgstr "Nein"
 
 #: src/features/scan/ScanScreen.tsx
 msgid "No camera"
@@ -1413,6 +1492,10 @@ msgstr "Kein Band eingelegt"
 msgid "No warnings or errors recorded."
 msgstr "Keine Warnungen oder Fehler aufgezeichnet."
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "None reported, only the automatic choice"
+msgstr "Keine gemeldet, nur die automatische Wahl"
+
 #: src/features/settings/AccessKeys.tsx
 msgid "Not configured"
 msgstr "Nicht eingerichtet"
@@ -1445,6 +1528,10 @@ msgstr "Nicht erreichbar"
 #: src/features/settings/System.tsx
 msgid "Not ready"
 msgstr "Nicht bereit"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Not reported"
+msgstr "Nicht gemeldet"
 
 #: src/features/settings/SettingField.tsx
 msgid "Not set"
@@ -1529,6 +1616,10 @@ msgstr "Nur von Hand markierte Zellen lassen sich zurücksetzen."
 msgid "Only cells you marked by hand can be un-marked. Labels a job printed stay used."
 msgstr "Nur Zellen, die du von Hand markiert hast, lassen sich zurücksetzen. Von einem Auftrag gedruckte Etiketten bleiben belegt."
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Only the first {listed} of {reported} trays are listed."
+msgstr "Aufgelistet sind nur die ersten {listed} von {reported} Fächern."
+
 #: src/features/archive/errors.ts
 msgid "Only your own types can be deleted. Archive this one instead."
 msgstr "Nur eigene Typen lassen sich löschen. Archiviere diesen stattdessen."
@@ -1584,6 +1675,10 @@ msgstr "Seite"
 msgid "Page not found"
 msgstr "Seite nicht gefunden"
 
+#: src/features/settings/PrinterForm.tsx
+msgid "Page printer (IPP)"
+msgstr "Seitendrucker (IPP)"
+
 #: src/features/archive/ArchivePage.tsx
 msgid "Page size"
 msgstr "Papiergröße"
@@ -1612,6 +1707,10 @@ msgstr "Pausiert"
 #: src/features/printers/PauseReason.tsx
 msgid "Paused by user"
 msgstr "Von Hand pausiert"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "PDF printing"
+msgstr "PDF-Druck"
 
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Pitch"
@@ -1667,6 +1766,10 @@ msgstr "Drucker"
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Printer and tray"
 msgstr "Drucker und Fach"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Printer enabled"
+msgstr "Drucker eingeschaltet"
 
 #: src/features/printers/PauseReason.tsx
 msgid "Printer is offline"
@@ -1763,14 +1866,27 @@ msgstr "Warteschlangen-Zeitlimit (Sekunden)"
 msgid "Queued"
 msgstr "Wartet"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Read printer"
+msgstr "Drucker auslesen"
+
 #: src/features/about/AboutPage.tsx
 msgctxt "action"
 msgid "Read the licence"
 msgstr "Lizenz lesen"
 
+#: src/features/settings/IppPrinterFields.tsx
+#: src/features/settings/PrinterForm.tsx
+msgid "Read the printer once before saving, so the hub knows its trays."
+msgstr "Lies den Drucker vor dem Speichern einmal aus, damit der Hub seine Fächer kennt."
+
 #: src/features/settings/System.tsx
 msgid "Readiness"
 msgstr "Bereitschaft"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Reading the printer…"
+msgstr "Der Drucker wird ausgelesen…"
 
 #: src/features/printers/model.ts
 #: src/features/settings/System.tsx
@@ -1833,6 +1949,10 @@ msgstr "Gespeicherten Wert entfernen"
 msgctxt "sheet cell state"
 msgid "reserved"
 msgstr "reserviert"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Resolutions"
+msgstr "Auflösungen"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "Resolve the unconfirmed cells first; the sheet ID waits for them"
@@ -2073,6 +2193,10 @@ msgstr "Bögen"
 msgid "Sheets already made keep printing with the old measurements."
 msgstr "Schon angelegte Bögen drucken weiter mit den alten Maßen."
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Show all {count}"
+msgstr "Alle {count} anzeigen"
+
 #: src/features/archive/ArchivePage.tsx
 msgid "Show archived types"
 msgstr "Archivierte Typen anzeigen"
@@ -2189,6 +2313,10 @@ msgstr "Kamera wird gestartet …"
 msgid "Starts every sheet code, for example L4736."
 msgstr "Steht am Anfang jedes Bogencodes, zum Beispiel L4736."
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "State"
+msgstr "Zustand"
+
 #: src/features/settings/SettingsPage.tsx
 #: src/features/settings/System.tsx
 #: src/shell/labels.ts
@@ -2235,6 +2363,10 @@ msgstr "Wird getestet…"
 msgid "text shortened"
 msgstr "Text gekürzt"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "That is not a valid address."
+msgstr "Das ist keine gültige Adresse."
+
 #: src/shell/SignIn.tsx
 msgid "That key was not accepted."
 msgstr "Dieser Schlüssel wurde nicht akzeptiert."
@@ -2268,6 +2400,26 @@ msgstr "Dieser Text ist kein gültiges JSON."
 #: src/features/settings/feedback.tsx
 msgid "That value is set by the container and cannot be changed here."
 msgstr "Dieser Wert wird vom Container gesetzt und lässt sich hier nicht ändern."
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "The address can be at most 1023 characters."
+msgstr "Die Adresse darf höchstens 1023 Zeichen lang sein."
+
+#: src/features/settings/feedback.tsx
+msgid "The address did not answer like an IPP printer."
+msgstr "Die Adresse hat nicht wie ein IPP-Drucker geantwortet."
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "The address must not contain a user name or password."
+msgstr "Die Adresse darf keinen Benutzernamen und kein Passwort enthalten."
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "The address must start with ipp://, ipps://, http:// or https://."
+msgstr "Die Adresse muss mit ipp://, ipps://, http:// oder https:// beginnen."
+
+#: src/features/settings/feedback.tsx
+msgid "The address or the certificate setting is not valid."
+msgstr "Die Adresse oder die Zertifikatseinstellung ist nicht gültig."
 
 #: src/features/settings/Integrations.tsx
 msgid "The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly."
@@ -2329,6 +2481,10 @@ msgstr "Der Code-Leser ist nicht gestartet"
 #: src/features/archive/errors.ts
 msgid "The corner radius"
 msgstr "Der Eckenradius"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "The default tray must be one of the enabled trays."
+msgstr "Das Standardfach muss eines der eingeschalteten Fächer sein."
 
 #: src/features/archive/errors.ts
 msgid "The description"
@@ -2504,6 +2660,10 @@ msgstr "Der Name in Adressen und Exporten. Er lässt sich später nicht ändern.
 msgid "The name in the title bar, the language new visitors see, and the address of this hub."
 msgstr "Der Name in der Titelleiste, die Sprache für neue Besucher und die Adresse dieses Hubs."
 
+#: src/features/settings/PrinterForm.tsx
+msgid "The name is required."
+msgstr "Der Name ist erforderlich."
+
 #: src/features/archive/errors.ts
 msgid "The note about the change"
 msgstr "Die Notiz zur Änderung"
@@ -2557,6 +2717,10 @@ msgstr "Das Präfix ist fest, sobald es Bögen dieses Typs gibt."
 msgid "The print queue does not know this printer yet. Try again in a moment."
 msgstr "Die Druckwarteschlange kennt diesen Drucker noch nicht. Versuche es gleich noch einmal."
 
+#: src/features/settings/feedback.tsx
+msgid "The printer cannot be reached at that address."
+msgstr "Der Drucker ist unter dieser Adresse nicht erreichbar."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "The printer could not be asked for its trays. Try again in a moment."
 msgstr "Die Fächer des Druckers konnten nicht abgefragt werden. Versuche es gleich noch einmal."
@@ -2573,6 +2737,10 @@ msgstr "Der Drucker konnte nicht geladen werden."
 msgid "The printer could not be reached."
 msgstr "Der Drucker ist nicht erreichbar."
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "The printer could not be read."
+msgstr "Der Drucker konnte nicht ausgelesen werden."
+
 #: src/features/sheets/errors.ts
 msgid "The printer did not accept the ID label."
 msgstr "Der Drucker hat das ID-Etikett nicht angenommen."
@@ -2580,6 +2748,18 @@ msgstr "Der Drucker hat das ID-Etikett nicht angenommen."
 #: src/features/sheets/errors.ts
 msgid "The printer does not report that tray."
 msgstr "Der Drucker meldet dieses Fach nicht."
+
+#: src/features/settings/Printers.tsx
+msgid "The printer is ready after the hub restarts."
+msgstr "Der Drucker ist nach einem Neustart des Hubs bereit."
+
+#: src/features/settings/feedback.tsx
+msgid "The printer refused the request ({status})."
+msgstr "Der Drucker hat die Anfrage abgelehnt ({status})."
+
+#: src/features/settings/feedback.tsx
+msgid "The printer refused the request."
+msgstr "Der Drucker hat die Anfrage abgelehnt."
 
 #: src/features/printers/PrinterGrid.tsx
 #: src/features/settings/Printers.tsx
@@ -2746,6 +2926,14 @@ msgstr "Dieser Schlüssel wird nur einmal angezeigt. Speichere ihn in deinem Pas
 msgid "This page is not available yet."
 msgstr "Diese Seite ist noch nicht verfügbar."
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "This printer cannot print PDF, so the hub cannot use it for sheets."
+msgstr "Dieser Drucker kann kein PDF drucken, der Hub kann ihn deshalb nicht für Bögen nutzen."
+
+#: src/features/settings/feedback.tsx
+msgid "This printer cannot print PDF, which the hub needs for sheets."
+msgstr "Dieser Drucker kann kein PDF drucken, das der Hub für Bögen braucht."
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "This printer does not exist."
 msgstr "Diesen Drucker gibt es nicht."
@@ -2806,6 +2994,10 @@ msgstr "Token"
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Zu viele Versuche. Warte eine Minute und versuche es erneut."
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Top {top} mm, right {right} mm, bottom {bottom} mm, left {left} mm"
+msgstr "Oben {top} mm, rechts {right} mm, unten {bottom} mm, links {left} mm"
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "top margin"
 msgstr "oberen Rand"
@@ -2822,12 +3014,20 @@ msgstr "Oberer Rand (mm)"
 msgid "Tray"
 msgstr "Fach"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Trays"
+msgstr "Fächer"
+
 #: src/app/router.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/ScanScreen.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Erneut versuchen"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Turn off the trays you do not use, and mark the one that should be used when none is chosen."
+msgstr "Schalte die Fächer aus, die du nicht nutzt, und markiere das Fach, das gilt, wenn keines gewählt wird."
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Type"
@@ -2864,6 +3064,10 @@ msgstr "Unbekannter Code"
 msgid "Unknown printer"
 msgstr "Unbekannter Drucker"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Unprintable margins"
+msgstr "Nicht bedruckbare Ränder"
+
 #: src/features/archive/TypeDetail.tsx
 msgid "unverified"
 msgstr "ungeprüft"
@@ -2895,6 +3099,10 @@ msgstr "Hersteller"
 msgid "Verified against a real sheet"
 msgstr "An einem echten Bogen geprüft"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Verify the printer certificate"
+msgstr "Zertifikat des Druckers prüfen"
+
 #: src/features/about/BuildRows.tsx
 #: src/features/archive/TypeDetail.tsx
 msgid "Version"
@@ -2916,6 +3124,10 @@ msgstr "Auftrag ansehen"
 msgid "Warning"
 msgstr "Warnung"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Warning: the certificate is not checked. Anyone on the network path could pose as the printer."
+msgstr "Achtung: Das Zertifikat wird nicht geprüft. Jeder auf dem Netzwerkweg könnte sich als der Drucker ausgeben."
+
 #: src/features/settings/AccessKeys.tsx
 msgid "Webhook key"
 msgstr "Webhook-Schlüssel"
@@ -2932,6 +3144,10 @@ msgstr "Was sich geändert hat"
 #: src/features/sheets/SheetDetail.tsx
 msgid "What the markings mean"
 msgstr "Was die Markierungen bedeuten"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "What the printer reports"
+msgstr "Das meldet der Drucker"
 
 #: src/features/jobs/JobDetail.tsx
 msgid "What was printed"
@@ -2972,6 +3188,10 @@ msgstr "Gelb"
 #: src/features/sheets/SheetDetail.tsx
 msgid "yes"
 msgstr "ja"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Yes"
+msgstr "Ja"
 
 #: src/features/settings/SettingsPage.tsx
 msgid "You need an admin key"

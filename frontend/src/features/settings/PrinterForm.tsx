@@ -6,6 +6,7 @@ import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { usePrinterAdmin, type AdminPrinter, type PrinterCreate } from "./api";
 import { SelectField, SwitchField, TextInput } from "./controls";
 import { SaveFeedback, useErrorText } from "./feedback";
+import { IppPrinterFields, trayPayload, trayProblem, useIppDraft, useTrayProblemText, useUriProblemText } from "./IppPrinterFields";
 
 const SLUG = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 const MODELS: Record<string, string[]> = { ptouch: ["PT-P750W"], brother_ql: ["QL-820NWB"] };
@@ -20,9 +21,18 @@ const numberIn = (obj: Record<string, unknown> | undefined, key: string, fallbac
  * Add a printer or change one (D6). The slug, model and backend name the printer and
  * the driver, so they can only be chosen when it is created.
  */
-export function PrinterForm({ printer, onDone }: { printer: AdminPrinter | null; onDone: () => void }) {
+export function PrinterForm({
+  printer,
+  onDone,
+}: {
+  printer: AdminPrinter | null;
+  /** Called when the form closes. `restartNote` is set when what was saved only applies after a restart (page printers). */
+  onDone: (result?: { restartNote: boolean }) => void;
+}) {
   const { t } = useLingui();
   const errorText = useErrorText();
+  const uriText = useUriProblemText();
+  const trayText = useTrayProblemText();
   const admin = usePrinterAdmin();
   const editing = printer !== null;
   const conn = connectionOf(printer);
@@ -35,12 +45,36 @@ export function PrinterForm({ printer, onDone }: { printer: AdminPrinter | null;
   const [port, setPort] = useState(String(conn.port ?? 9100));
   const [timeout, setTimeoutValue] = useState(String(numberIn(printer?.queue, "timeout_s", 30)));
   const [halfCut, setHalfCut] = useState(Boolean(printer?.cut_defaults?.half_cut));
+  const ipp = useIppDraft(printer);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const isIpp = backend === "ipp";
   const pending = admin.create.isPending || admin.update.isPending;
   const serverError = admin.create.error ?? admin.update.error;
 
+  function submitIpp() {
+    const timeoutNumber = Number(timeout);
+    if (!name.trim()) return setFormError(t`The name is required.`);
+    if (ipp.problem !== null) return setFormError(uriText(ipp.problem) ?? t`Enter the printer's address.`);
+    if (!Number.isInteger(timeoutNumber) || timeoutNumber < 1 || timeoutNumber > 600) return setFormError(t`The queue timeout must be between 1 and 600 seconds.`);
+    if (!editing && !SLUG.test(slug)) return setFormError(t`The slug uses lowercase letters, digits and dashes, 3 to 64 characters.`);
+    if (!ipp.verified) return setFormError(t`Read the printer once before saving, so the hub knows its trays.`);
+    const trayIssue = trayProblem(ipp.trays);
+    if (trayIssue) return setFormError(trayText(trayIssue));
+    setFormError(null);
+    const connection = { uri: ipp.uri.trim(), tls_verify: ipp.tlsVerify };
+    const queue = { timeout_s: timeoutNumber };
+    const trays = trayPayload(ipp.trays);
+    if (printer) {
+      const restartNote = ipp.connectionChanged || ipp.enabledChanged;
+      admin.update.mutate({ slug: printer.slug, body: { name: name.trim(), connection, queue, enabled: ipp.enabled, trays } }, { onSuccess: () => onDone({ restartNote }) });
+    } else {
+      admin.create.mutate({ name: name.trim(), slug, backend: "ipp", connection, queue, enabled: ipp.enabled, trays }, { onSuccess: () => onDone({ restartNote: true }) });
+    }
+  }
+
   function submit() {
+    if (isIpp) return submitIpp();
     const portNumber = Number(port);
     const timeoutNumber = Number(timeout);
     if (!name.trim() || !host.trim()) return setFormError(t`Name and host are required.`);
@@ -52,9 +86,9 @@ export function PrinterForm({ printer, onDone }: { printer: AdminPrinter | null;
     const queue = { timeout_s: timeoutNumber };
     const cut_defaults = { half_cut: halfCut };
     if (printer) {
-      admin.update.mutate({ slug: printer.slug, body: { name: name.trim(), connection, queue, cut_defaults } }, { onSuccess: onDone });
+      admin.update.mutate({ slug: printer.slug, body: { name: name.trim(), connection, queue, cut_defaults } }, { onSuccess: () => onDone() });
     } else {
-      admin.create.mutate({ name: name.trim(), slug, model, backend: backend as PrinterCreate["backend"], connection, queue, cut_defaults, enabled: true }, { onSuccess: onDone });
+      admin.create.mutate({ name: name.trim(), slug, model, backend: backend as PrinterCreate["backend"], connection, queue, cut_defaults, enabled: true }, { onSuccess: () => onDone() });
     }
   }
 
@@ -74,9 +108,11 @@ export function PrinterForm({ printer, onDone }: { printer: AdminPrinter | null;
         <TextInput label={t`Slug`} value={slug} onChange={setSlug} mono description={t`The short name in addresses and in the API. It cannot be changed later.`} />
       )}
       {editing ? (
-        <p className="text-ink-2">
-          {t`Model`}: <span className="font-bold text-ink">{printer.model}</span>
-        </p>
+        printer.model ? (
+          <p className="text-ink-2">
+            {t`Model`}: <span className="font-bold text-ink">{printer.model}</span>
+          </p>
+        ) : null
       ) : (
         <div className="grid gap-5 sm:grid-cols-2">
           <SelectField
@@ -85,31 +121,38 @@ export function PrinterForm({ printer, onDone }: { printer: AdminPrinter | null;
             options={[
               { id: "ptouch", label: "P-touch (PT)" },
               { id: "brother_ql", label: "Brother QL" },
+              { id: "ipp", label: t`Page printer (IPP)` },
             ]}
             onChange={(next) => {
               setBackend(next);
-              setModel(MODELS[next]![0]!);
+              setModel(MODELS[next]?.[0] ?? "");
             }}
           />
-          <TextInput label={t`Model`} value={model} onChange={setModel} mono />
+          {isIpp ? null : <TextInput label={t`Model`} value={model} onChange={setModel} mono />}
         </div>
       )}
-      <div className="grid gap-5 sm:grid-cols-[1fr_8rem]">
-        <TextInput label={t`Host`} value={host} onChange={setHost} mono />
-        <TextInput label={t`Port`} value={port} onChange={setPort} mono inputMode="numeric" />
-      </div>
+      {isIpp ? (
+        <IppPrinterFields draft={ipp} />
+      ) : (
+        <div className="grid gap-5 sm:grid-cols-[1fr_8rem]">
+          <TextInput label={t`Host`} value={host} onChange={setHost} mono />
+          <TextInput label={t`Port`} value={port} onChange={setPort} mono inputMode="numeric" />
+        </div>
+      )}
       <TextInput label={t`Queue timeout (seconds)`} value={timeout} onChange={setTimeoutValue} inputMode="numeric" />
-      <SwitchField
-        label={t`Half cut by default`}
-        isSelected={halfCut}
-        onChange={setHalfCut}
-        description={t`Cuts the tape but leaves the backing, so a strip of labels stays together. A print can still override it.`}
-      />
+      {isIpp ? null : (
+        <SwitchField
+          label={t`Half cut by default`}
+          isSelected={halfCut}
+          onChange={setHalfCut}
+          description={t`Cuts the tape but leaves the backing, so a strip of labels stays together. A print can still override it.`}
+        />
+      )}
       <div className="flex flex-wrap gap-3">
-        <Button type="submit" isDisabled={pending} className={PRIMARY_BUTTON}>
+        <Button type="submit" isDisabled={pending || (isIpp && !ipp.verified)} className={PRIMARY_BUTTON}>
           {editing ? t`Save printer` : t`Create printer`}
         </Button>
-        <Button onPress={onDone} className={SECONDARY_BUTTON}>
+        <Button onPress={() => onDone()} className={SECONDARY_BUTTON}>
           {t`Cancel`}
         </Button>
       </div>

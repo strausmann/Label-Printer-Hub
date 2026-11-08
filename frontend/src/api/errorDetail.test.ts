@@ -8,6 +8,7 @@ import {
   insufficientCells,
   invalidGeometry,
   invalidImport,
+  ippRejected,
   planChanged,
   prefixTaken,
   printInterrupted,
@@ -85,5 +86,11 @@ describe("typed error readers", () => {
       reason: "too_large",
     });
     expect(invalidGeometry(new ApiError(422, "invalid_geometry", "x", { field: "cols" }))).toBeNull();
+  });
+
+  it("ippRejected reads the IPP status name", () => {
+    expect(ippRejected(err("ipp_rejected", { ipp_status: "server-error-busy" }))).toEqual({ ippStatus: "server-error-busy" });
+    expect(ippRejected(err("ipp_rejected", {}))).toBeNull();
+    expect(ippRejected(err("ipp_unreachable", { ipp_status: "x" }))).toBeNull();
   });
 });

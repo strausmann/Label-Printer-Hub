@@ -108,3 +108,9 @@ export function invalidGeometry(error: unknown): { field: string; reason: string
   const d = detailOf(error, "invalid_geometry");
   return d && typeof d.field === "string" && typeof d.reason === "string" ? { field: d.field, reason: d.reason } : null;
 }
+
+/** `502 ipp_rejected`: the printer answered with an IPP status; its name, for example `server-error-busy`. */
+export function ippRejected(error: unknown): { ippStatus: string } | null {
+  const d = detailOf(error, "ipp_rejected");
+  return d && typeof d.ipp_status === "string" && d.ipp_status !== "" ? { ippStatus: d.ipp_status } : null;
+}
