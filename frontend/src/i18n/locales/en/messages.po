@@ -7,6 +7,12 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: en\n"
 
+#. placeholder {0}: g.cols
+#. placeholder {1}: g.rows
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "{0} columns × {1} rows"
+msgstr "{0} columns × {1} rows"
+
 #. placeholder {0}: tape.widthMm
 #: src/features/printers/TapeSwatch.tsx
 msgid "{0} mm"
@@ -150,6 +156,10 @@ msgstr "Backend"
 msgid "Blue"
 msgstr "Blue"
 
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Bottom margin"
+msgstr "Bottom margin"
+
 #: src/features/printers/PrinterDetail.tsx
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
@@ -195,6 +205,11 @@ msgstr "Cart"
 #: src/features/lookup/ItemView.tsx
 msgid "Cart ({inCart})"
 msgstr "Cart ({inCart})"
+
+#. placeholder {0}: cell.cell
+#: src/features/sheets/cellState.ts
+msgid "Cell {0}, {state}"
+msgstr "Cell {0}, {state}"
 
 #: src/shell/SessionStatus.tsx
 msgid "Checking your session…"
@@ -301,6 +316,10 @@ msgstr "Copy it now; after saving it cannot be shown again:"
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Copy key"
 msgstr "Copy key"
+
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Corner radius"
+msgstr "Corner radius"
 
 #: src/features/printers/PauseResumeButton.tsx
 msgid "Could not pause the printer."
@@ -438,6 +457,19 @@ msgstr "Find a spool"
 msgid "Find an asset or location"
 msgstr "Find an asset or location"
 
+#: src/features/sheets/cellState.ts
+msgctxt "sheet cell state"
+msgid "free"
+msgstr "free"
+
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Gap between columns"
+msgstr "Gap between columns"
+
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Gap between rows"
+msgstr "Gap between rows"
+
 #: src/features/settings/sections.tsx
 #: src/features/settings/SettingsPage.tsx
 msgid "General"
@@ -450,6 +482,10 @@ msgstr "Generate a key"
 #: src/features/printers/model.ts
 msgid "Green"
 msgstr "Green"
+
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Grid"
+msgstr "Grid"
 
 #: src/features/lookup/apps.ts
 msgid "Grocy"
@@ -492,6 +528,10 @@ msgstr "HTTP {0}"
 #: src/shell/StatusBadge.tsx
 msgid "Idle"
 msgstr "Idle"
+
+#: src/features/sheets/cellState.ts
+msgid "in the printer's unprintable margin"
+msgstr "in the printer's unprintable margin"
 
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/integrations/IntegrationTiles.tsx
@@ -567,6 +607,10 @@ msgstr "Label preview"
 msgid "Label Printer Hub"
 msgstr "Label Printer Hub"
 
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Label size"
+msgstr "Label size"
+
 #: src/features/settings/sections.tsx
 msgid "Language"
 msgstr "Language"
@@ -583,6 +627,10 @@ msgstr "Last used {when}"
 #: src/features/lookup/ItemView.tsx
 msgid "Layout"
 msgstr "Layout"
+
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Left margin"
+msgstr "Left margin"
 
 #: src/features/settings/System.tsx
 msgid "Level"
@@ -668,6 +716,11 @@ msgstr "Needs attention"
 #: src/features/settings/LastUsed.tsx
 msgid "Never used"
 msgstr "Never used"
+
+#: src/features/sheets/cellState.ts
+msgctxt "sheet cell state"
+msgid "new"
+msgstr "new"
 
 #: src/shell/UpdatePrompt.tsx
 msgid "New version available"
@@ -811,6 +864,10 @@ msgstr "Other apps that print through this hub. They are recognised by the name 
 msgid "Overview"
 msgstr "Overview"
 
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Page"
+msgstr "Page"
+
 #: src/pages/placeholders.tsx
 msgid "Page not found"
 msgstr "Page not found"
@@ -831,6 +888,10 @@ msgstr "Paused"
 #: src/features/printers/PauseReason.tsx
 msgid "Paused by user"
 msgstr "Paused by user"
+
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Pitch"
+msgstr "Pitch"
 
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/PrinterForm.tsx
@@ -997,6 +1058,11 @@ msgstr "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no 
 msgid "Remove saved value"
 msgstr "Remove saved value"
 
+#: src/features/sheets/cellState.ts
+msgctxt "sheet cell state"
+msgid "reserved"
+msgstr "reserved"
+
 #: src/features/printers/PauseResumeButton.tsx
 msgid "Resume"
 msgstr "Resume"
@@ -1029,6 +1095,14 @@ msgstr "Revoke this key?"
 #: src/features/settings/AccessKeys.tsx
 msgid "Revoked"
 msgstr "Revoked"
+
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Right margin"
+msgstr "Right margin"
+
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "round"
+msgstr "round"
 
 #: src/features/settings/Integrations.tsx
 #: src/features/settings/SectionForm.tsx
@@ -1141,6 +1215,10 @@ msgstr "Sheet {code}"
 msgid "Sheet archive"
 msgstr "Sheet archive"
 
+#: src/features/sheets/cellState.ts
+msgid "sheet ID"
+msgstr "sheet ID"
+
 #: src/pages/placeholders.tsx
 #: src/shell/labels.ts
 msgid "Sheets"
@@ -1177,6 +1255,11 @@ msgstr "Single sign-on"
 #: src/shell/AppShell.tsx
 msgid "Skip to content"
 msgstr "Skip to content"
+
+#: src/features/sheets/cellState.ts
+msgctxt "sheet cell state"
+msgid "skipped"
+msgstr "skipped"
 
 #: src/features/settings/PrinterForm.tsx
 msgid "Slug"
@@ -1254,6 +1337,10 @@ msgstr "Test connection"
 #: src/features/settings/Integrations.tsx
 msgid "Testing…"
 msgstr "Testing…"
+
+#: src/features/sheets/cellState.ts
+msgid "text shortened"
+msgstr "text shortened"
 
 #: src/shell/SignIn.tsx
 msgid "That key was not accepted."
@@ -1354,6 +1441,12 @@ msgstr "The labels could not be sent."
 msgid "The last 200 records of level warning or higher, newest first. They are kept in memory and start over with the container."
 msgstr "The last 200 records of level warning or higher, newest first. They are kept in memory and start over with the container."
 
+#. placeholder {0}: mm(g.margin_left)
+#. placeholder {1}: mm(right)
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "The left and right margins differ ({0} and {1}). Measure the sheet again if the labels print off-centre."
+msgstr "The left and right margins differ ({0} and {1}). Measure the sheet again if the labels print off-centre."
+
 #: src/features/settings/System.tsx
 msgid "The log could not be loaded."
 msgstr "The log could not be loaded."
@@ -1414,6 +1507,12 @@ msgstr "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
 #: src/features/settings/Integrations.tsx
 msgid "The test could not be run."
 msgstr "The test could not be run."
+
+#. placeholder {0}: mm(g.margin_top)
+#. placeholder {1}: mm(bottom)
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "The top and bottom margins differ ({0} and {1}). Measure the sheet again if the labels print off-centre."
+msgstr "The top and bottom margins differ ({0} and {1}). Measure the sheet again if the labels print off-centre."
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Theme"
@@ -1487,6 +1586,10 @@ msgstr "Token"
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Too many attempts. Wait a minute and try again."
 
+#: src/features/sheets/GeometryDiagram.tsx
+msgid "Top margin"
+msgstr "Top margin"
+
 #: src/app/router.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/ScanScreen.tsx
@@ -1494,7 +1597,13 @@ msgstr "Too many attempts. Wait a minute and try again."
 msgid "Try again"
 msgstr "Try again"
 
+#: src/features/sheets/cellState.ts
+msgctxt "sheet cell state"
+msgid "unconfirmed"
+msgstr "unconfirmed"
+
 #: src/features/about/BuildRows.tsx
+#: src/features/sheets/GeometryDiagram.tsx
 msgid "unknown"
 msgstr "unknown"
 
@@ -1510,6 +1619,11 @@ msgstr "Unknown printer"
 #: src/features/settings/Integrations.tsx
 msgid "URL"
 msgstr "URL"
+
+#: src/features/sheets/cellState.ts
+msgctxt "sheet cell state"
+msgid "used"
+msgstr "used"
 
 #: src/features/about/BuildRows.tsx
 msgid "Version"
