@@ -77,7 +77,8 @@ from app import __version__
 from app.api.error_handlers import (
     SHEET_ERROR_SCHEMA,
     SHEET_ERROR_SCHEMA_NAME,
-    SHEET_PREFIXES,
+    answers_with_envelope,
+    is_sheet_path,
     register_error_handlers,
 )
 from app.api.routes import auth_session as auth_session_routes
@@ -89,6 +90,7 @@ from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
+from app.api.routes import sheet_print as sheet_print_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.admin_printers_api import router as admin_printers_api_router
@@ -126,7 +128,12 @@ from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
-from app.services.page_jobs import IppPagePrinter, register_page_renderer
+from app.services.page_jobs import (
+    IppPagePrinter,
+    register_outcome_handler,
+    register_page_renderer,
+    unregister_outcome_handler,
+)
 from app.services.print_queue import PrintQueue, load_manual_pauses
 from app.services.print_service import PrintService
 from app.services.producers.ipp_status_producer import IppPrinterState, IppStatusProducer
@@ -137,6 +144,8 @@ from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.readiness import build_readiness_response
 from app.services.tape_registry import TapeRegistry
 from app.settings_store import SettingsStore
+from app.sheets.outcome import SheetCellsOutcome, sweep_orphan_reservations
+from app.sheets.sheet_page import render_sheet_page
 from app.web.api_docs import mount_api_docs
 from app.web.spa import add_security_headers, mount_spa
 
@@ -242,12 +251,16 @@ def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
         "application/json": {"schema": {"$ref": f"#/components/schemas/{SHEET_ERROR_SCHEMA_NAME}"}}
     }
     for path, item in schema.get("paths", {}).items():
-        if not path.startswith(SHEET_PREFIXES):
+        if not answers_with_envelope(path):
             continue
+        sheet = is_sheet_path(path)
         for operation in item.values():
             for status_code, response in operation.get("responses", {}).items():
-                # Every documented 4xx of these routes carries the same error envelope.
-                if status_code.startswith("4"):
+                # Every documented 4xx and 5xx of a sheet route carries the same error envelope
+                # (a 502 for an integration or a stopped print is one too). A webhook route
+                # answers only its validation error (422) that way; its other errors keep
+                # their own shapes.
+                if status_code == "422" or (sheet and status_code.startswith(("4", "5"))):
                     response["content"] = ref
 
 
@@ -429,7 +442,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         retention_days=lambda: int(settings_store.get("jobs.retention_days")),
         session_purge=lambda: purge_expired_sessions(async_session),
     )
-    await cleanup_task.start()
+    # Started after the orphan sweep below: its first eviction must not delete a job row the
+    # sweep still has to read (T5-1).
     app.state.cleanup_task = cleanup_task
 
     # Phase 1i H — Multi-Printer-Wiring (Task 7b)
@@ -504,7 +518,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Persisted manual pauses must be in place before any worker task exists.
     async with async_session() as _pause_session:
         _initially_paused = await load_manual_pauses(_pause_session)
+    # D15: restart recovery calls the handler's ``on_unknown`` from inside ``start()``, so the
+    # handler is registered first (a registry without it would hand the call to a no-op).
+    sheet_outcome = SheetCellsOutcome(async_session, event_bus)
+    register_outcome_handler("sheet_page", sheet_outcome)
     await queue.start(initially_paused=_initially_paused)
+    try:  # cells of jobs that ended, or vanished, while the hub was down
+        await sweep_orphan_reservations(async_session, bus=event_bus)
+    except Exception:
+        _log.exception("Sheet orphan sweep failed; the next start tries again")
+    await cleanup_task.start()
     if _initially_paused:
         _log.info("Restored %d manual printer pause(s) from the database", len(_initially_paused))
 
@@ -645,6 +668,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception as close_exc:  # one failing close must not skip the rest
                 _log.warning("IPP page client close failed (%s)", type(close_exc).__name__)
         await cleanup_task.stop()
+        unregister_outcome_handler("sheet_page", sheet_outcome)
         await engine.dispose()
         # Close shared HTTP clients held by integration plugins that support it.
         # Plugins that pre-date connection pooling may not have aclose(); skip them.
@@ -813,6 +837,7 @@ class _LifespanManager:
 
 # Once per process, at import: a page job of this kind is drawn by this renderer (spec 13.2).
 register_page_renderer("calibration_page", render_calibration_page)
+register_page_renderer("sheet_page", render_sheet_page)
 
 
 def create_app() -> _LifespanManager:
@@ -913,6 +938,7 @@ def create_app() -> _LifespanManager:
     app.include_router(settings_api_router)
     app.include_router(sheet_types_router)
     app.include_router(sheets_router)
+    app.include_router(sheet_print_routes.router)
     app.include_router(calibration_router)
     app.include_router(capabilities_router)
     app.include_router(info_routes.router)

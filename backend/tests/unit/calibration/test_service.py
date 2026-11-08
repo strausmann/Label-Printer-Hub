@@ -73,8 +73,10 @@ def test_values_roundtrip_through_deviation() -> None:
     ],
 )
 def test_ranges_enforced(field: str, value: float) -> None:
+    # ``model_construct``: the schema refuses NaN and Infinity itself (R12-1); the service keeps
+    # its own check for a value that got past it.
     with pytest.raises(CalibrationOutOfRangeError) as err:
-        to_deviation(CalibrationIn(**{field: value}))
+        to_deviation(CalibrationIn.model_construct(**{field: value}))
     assert err.value.error_code == "calibration_out_of_range"
     assert err.value.status == 422
     assert err.value.detail is not None and err.value.detail["field"] == field
@@ -151,7 +153,7 @@ async def test_unknown_or_disabled_tray(session: AsyncSession, tray: str) -> Non
     pid = await _printer(session)
     with pytest.raises(TrayUnknownError) as err:
         await service.put(session, pid, tray, VALUES, measured_on=None, actor="a")
-    assert err.value.detail == {"trays": [tray]}
+    assert err.value.detail == {"trays": []}  # C19: the caller's key is not echoed
     with pytest.raises(TrayUnknownError):
         await service.delete(session, pid, tray, actor="a")
     with pytest.raises(TrayUnknownError):

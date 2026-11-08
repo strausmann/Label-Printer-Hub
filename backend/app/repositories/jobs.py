@@ -6,11 +6,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
 from app.models.job import Job, JobState, is_page_payload
+from app.models.sheet import SheetCell
 
 
 async def get(session: AsyncSession, job_id: UUID) -> Job | None:
@@ -313,6 +314,16 @@ async def evict_terminal_older_than(
         delete(Job)
         .where(col(Job.state).in_(terminal))
         .where(col(Job.finished_at) < cutoff)
+        # A job whose sheet cells are still reserved is not yet settled: without its row the
+        # startup sweep could not tell a printed page from one that was never saved (T5-1).
+        # Nor one whose cells are still unconfirmed: the margin ID and feed mark it carried
+        # count as maybe printed, and resolving the cells as printed reads its row (F3-1).
+        .where(
+            ~exists().where(
+                col(SheetCell.job_id) == col(Job.id),
+                col(SheetCell.state).in_(("reserved", "unconfirmed")),
+            )
+        )
         .execution_options(synchronize_session="fetch")
     )
     result = await session.execute(stmt)

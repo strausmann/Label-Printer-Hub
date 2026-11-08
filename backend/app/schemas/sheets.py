@@ -22,11 +22,14 @@ __all__ = [
     "CellRead",
     "GeometryMm",
     "ImportResponse",
+    "MarginBandsMm",
+    "MarginCheckRead",
     "MarkRequest",
     "MarkedCellIn",
     "NextCode",
     "ResolveRequest",
     "SheetCreate",
+    "SheetCreated",
     "SheetRead",
     "SheetSummary",
     "SheetTypeCreate",
@@ -181,7 +184,22 @@ class SheetCreate(_Body):
     version: int | None = Field(
         default=None, ge=1, le=1_000_000, description="Left out: the current version."
     )
-    id_placement: Literal["margin", "manual"]
+    id_placement: Literal["cell", "margin", "manual"] = Field(
+        default="margin",
+        description=(
+            "Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; "
+            "the margin ID is printed by the first job that prints onto it. `cell` needs a page "
+            "printer: it reserves the first free cell for the ID label and queues an ID-only job "
+            "(`job_id` in the response)."
+        ),
+    )
+    printer: Annotated[str, Field(min_length=1, max_length=100)] | None = Field(
+        default=None,
+        description="Printer slug or UUID. Required for `cell`, ignored otherwise.",
+    )
+    tray: Annotated[str, Field(min_length=1, max_length=100)] | None = Field(
+        default=None, description="Tray of the ID-only job; left out: the printer's default."
+    )
     used_cells: list[MarkedCellIn] = Field(default=[], max_length=MAX_CELLS)
     note: Annotated[str, Field(max_length=500)] | None = None
 
@@ -224,6 +242,9 @@ class SheetSummary(BaseModel):
 class SheetRead(SheetSummary):
     id_placement: Literal["cell", "margin", "manual"]
     id_printed: bool
+    feed_mark_printed: bool = Field(
+        description="Whether the feed-direction mark has been printed on this sheet."
+    )
     note: str | None
     geometry: GeometryMm = Field(description="Geometry of the version the sheet is pinned to.")
     cells: list[CellRead] = Field(description="Every cell that is not free, by cell number.")
@@ -232,6 +253,40 @@ class SheetRead(SheetSummary):
     @field_serializer("discarded_at")
     def _ser_discarded(self, dt: datetime | None, info: Any) -> str | None:
         return _utc(dt, info)
+
+
+class SheetCreated(SheetRead):
+    """The response of ``POST /api/sheets``: the sheet, and the ID-only job of a ``cell`` sheet."""
+
+    job_id: UUID | None = Field(
+        description="The queued ID-only job (`id_placement` `cell`); otherwise `null`."
+    )
+
+
+class MarginBandsMm(BaseModel):
+    top: float
+    bottom: float
+    right: float
+    left: float
+
+
+class MarginCheckRead(BaseModel):
+    """Whether, where and how the margin ID and the feed mark fit a sheet type on a printer."""
+
+    bands_mm: MarginBandsMm = Field(
+        description="Room of each margin band in mm, uncapped; negative if there is none."
+    )
+    band: Literal["top", "bottom", "right", "left"] | None = Field(
+        description="The band the margin ID goes into, or `null`."
+    )
+    corner: Literal["top_left", "top_right", "bottom_left"] | None
+    usable_mm: float | None = Field(description="Depth of the chosen band that is drawn (capped).")
+    qr: bool = Field(description="Whether a QR is drawn next to the margin text.")
+    printable: bool = Field(description="Whether the margin ID fits somewhere at all.")
+    reason: str | None = Field(description="Why not, when `printable` is false.")
+    feed_mark: bool = Field(
+        description="Whether the feed-direction mark prints, in the hub's current language."
+    )
 
 
 class NextCode(BaseModel):

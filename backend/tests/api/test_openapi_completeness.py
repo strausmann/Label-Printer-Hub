@@ -237,3 +237,54 @@ def test_problem_detail_schema_in_components(openapi_schema: dict[str, Any]) -> 
         "Ensure at least one route declares ``response_model=ProblemDetail`` "
         "so FastAPI includes it in the schema."
     )
+
+
+# Every method and path of the sheet archive and the IPP page printers (spec 15), plus the margin
+# check that Plan 3 added and the probe under its versioned admin path (acceptance 19).
+SHEET_ARCHIVE_ENDPOINTS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("get", "/api/sheet-types"),
+        ("post", "/api/sheet-types"),
+        ("get", "/api/sheet-types/{key}"),
+        ("patch", "/api/sheet-types/{key}"),
+        ("delete", "/api/sheet-types/{key}"),
+        ("get", "/api/sheet-types/{key}/versions/{n}"),
+        ("post", "/api/sheet-types/{key}/versions"),
+        ("post", "/api/sheet-types/{key}/archive"),
+        ("post", "/api/sheet-types/{key}/unarchive"),
+        ("get", "/api/sheet-types/{key}/export"),
+        ("post", "/api/sheet-types/import"),
+        ("get", "/api/sheets"),
+        ("get", "/api/sheets/next-code"),
+        ("get", "/api/sheets/margin-check"),
+        ("get", "/api/sheets/{code}"),
+        ("post", "/api/sheets"),
+        ("post", "/api/sheets/{code}/discard"),
+        ("post", "/api/sheets/{code}/cells/mark"),
+        ("post", "/api/sheets/{code}/cells/unmark"),
+        ("post", "/api/sheets/{code}/cells/resolve"),
+        ("get", "/api/sheet-cells"),
+        ("post", "/api/print/{printer_key}/sheet/preview"),
+        ("post", "/api/print/{printer_key}/sheet"),
+        ("get", "/api/printers/{printer_id}/capabilities"),
+        ("get", "/api/printers/{printer_id}/calibration"),
+        ("put", "/api/printers/{printer_id}/calibration/{tray}"),
+        ("delete", "/api/printers/{printer_id}/calibration/{tray}"),
+        ("post", "/api/printers/{printer_id}/calibration/{tray}/fit"),
+        ("post", "/api/printers/{printer_id}/calibration/{tray}/page"),
+        ("get", "/api/printers/{printer_id}/calibration/{tray}/page/pdf"),
+        ("post", "/api/v1/admin/printers/ipp/probe"),
+    }
+)
+
+
+def test_sheet_archive_endpoints_listed(openapi_schema: dict[str, Any]) -> None:
+    """Each endpoint of spec 15 is in the OpenAPI document, with a summary and a tag (ADR 0011)."""
+    listed = {(method, path) for path, method, _ in _iter_operations(openapi_schema)}
+    missing = sorted(SHEET_ARCHIVE_ENDPOINTS - listed)
+    assert not missing, (
+        f"endpoints of the sheet archive missing from the OpenAPI document: {missing}"
+    )
+    for path, method, op in _iter_operations(openapi_schema):
+        if (method, path) in SHEET_ARCHIVE_ENDPOINTS:
+            assert op.get("summary") and op.get("tags"), (method, path)

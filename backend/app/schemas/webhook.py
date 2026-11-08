@@ -43,6 +43,7 @@ class SpoolmanWebhookPayload(BaseModel):
     )
     quantity: float | None = Field(
         default=None,
+        allow_inf_nan=False,
         description="Optional remaining filament in grams (surfaced in the printed label)",
     )
 
@@ -60,6 +61,7 @@ class GrocyWebhookPayload(BaseModel):
     )
     quantity: float | None = Field(
         default=None,
+        allow_inf_nan=False,
         description="Optional stock quantity delta (surfaced in the printed label when present)",
     )
 

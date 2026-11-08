@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     Uuid,
+    false,
 )
 from sqlmodel import Column, Field, SQLModel
 
@@ -120,6 +121,11 @@ class Sheet(SQLModel, table=True):
     discarded_by: str | None = Field(default=None, sa_column=Column(String, nullable=True))
     id_placement: str = Field(sa_column=Column(String, nullable=False))
     id_printed: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
+    # The feed-direction mark (spec 10.2a) has its own flag, independent of ``id_printed``.
+    feed_mark_printed: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False, server_default=false()),
+    )
     note: str | None = Field(default=None, sa_column=Column(String, nullable=True))
     created_at: datetime = Field(default_factory=_now, sa_column=_dt())
     created_by: str | None = Field(default=None, sa_column=Column(String, nullable=True))

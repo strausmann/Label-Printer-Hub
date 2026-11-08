@@ -387,3 +387,20 @@ def test_override_font_is_used_when_rendering(
 def test_unknown_page_size() -> None:
     with pytest.raises(ValueError, match="A5"):
         write_pdf("A5")  # type: ignore[arg-type]
+
+
+# --- rotated text (sheet ID in a side margin) -------------------------------------------------
+
+
+def test_rotated_text_is_a_quarter_turn_clockwise() -> None:
+    pdf = _render(texts=[PageText(5000, 6000, 8.0, "L4736-0001", rotation=90)])
+    assert inspect.texts(pdf) == ["L4736-0001"]
+    (matrix,) = inspect.cm_matrices(pdf)
+    assert matrix == pytest.approx((0, -1, 1, 0, 141.732, 671.811), abs=1e-3)
+    assert inspect.text_positions(pdf)[0] == pytest.approx((141.732, 671.811), abs=1e-3)
+
+
+def test_unrotated_text_has_no_extra_matrix() -> None:
+    pdf = _render(texts=[PageText(5000, 6000, 8.0, "L4736-0001")])
+    assert inspect.cm_matrices(pdf) == []
+    assert inspect.text_positions(pdf)[0] == pytest.approx((141.732, 671.811), abs=1e-3)

@@ -47,9 +47,26 @@ async def _enabled_trays(session: AsyncSession, printer_id: UUID) -> list[Printe
     return list(rows.scalars())
 
 
+async def resolve_tray(session: AsyncSession, printer_id: UUID, tray: str | None) -> str:
+    """The tray a sheet print uses: the one named, else the printer's default tray.
+
+    Both must be enabled; otherwise ``tray_unknown``. A printer without an enabled default
+    tray has none to fall back to (pre-flight C12).
+    """
+    enabled = await _enabled_trays(session, printer_id)
+    if tray is not None:
+        if tray not in {t.tray_key for t in enabled}:
+            raise TrayUnknownError([])  # C19: never echo the caller's key
+        return tray
+    default = next((t.tray_key for t in enabled if t.is_default), None)
+    if default is None:
+        raise TrayUnknownError([])
+    return default
+
+
 async def _check_tray(session: AsyncSession, printer_id: UUID, tray: str) -> None:
     if tray not in {t.tray_key for t in await _enabled_trays(session, printer_id)}:
-        raise TrayUnknownError([tray])
+        raise TrayUnknownError([])  # C19: never echo the caller's key
 
 
 async def _measured_on(session: AsyncSession, version_id: UUID | None) -> MeasuredOn | None:

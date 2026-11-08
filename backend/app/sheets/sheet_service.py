@@ -19,6 +19,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.job import Job
 from app.models.sheet import Sheet, SheetCell, SheetIdCounter, SheetType, SheetTypeVersion
 from app.repositories import sheet_types as types_repo
 from app.repositories import sheets as repo
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 PURPOSE_MAX = 120
 NOTE_MAX = 500
 DEFAULT_HAND_PURPOSE = "marked by hand"
-_ID_PLACEMENTS = ("margin", "manual")  # Plan 3 adds "cell"
+_ID_PLACEMENTS = ("margin", "manual")  # "cell" is created by create_sheet_with_id_label
 _STATE_FILTERS = ("active", "full", "discarded", "all")
 
 
@@ -117,6 +118,19 @@ def _clean_marks(cells: list[MarkedCell]) -> dict[int, str]:
         purpose = "" if mark.purpose is None else _clean("purpose", mark.purpose, PURPOSE_MAX)
         out.setdefault(mark.cell, purpose or DEFAULT_HAND_PURPOSE)
     return out
+
+
+def prepare_new_sheet(
+    used_cells: list[MarkedCell], note: str | None
+) -> tuple[dict[int, str], str | None]:
+    """The hand marks and the note of a new sheet, sanitised: what ``create_sheet_locked`` takes.
+
+    Both ways of creating a sheet (``create_sheet`` and a reservation that creates one) clean
+    their input here, so the two cannot disagree about what is stored.
+    """
+    marks = _clean_marks(used_cells)
+    clean_note = None if note is None else _clean("note", note, NOTE_MAX, multiline=True) or None
+    return marks, clean_note
 
 
 def format_code(prefix: str, value: int) -> str:
@@ -210,12 +224,125 @@ async def get_sheet(session: AsyncSession, code: str) -> SheetDetail:
     return await _detail(session, await _sheet(session, code))
 
 
+class NewSheetBatch:
+    """Creates sheets in the caller's write transaction, reading what they share once.
+
+    A print can create up to 50 sheets while the global write lock is held (R10-2), so the
+    type, its version and the prefix counter are read once for the batch, not once per sheet,
+    and nothing is flushed until ``flush``. The caller holds the sheet write lock and commits;
+    nothing here takes a lock, so the counter in memory is the only view of it. A rollback
+    un-burns the codes.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+        self._types: dict[str, SheetType] = {}
+        self._versions: dict[tuple[UUID, int | None], SheetTypeVersion] = {}
+        self._counters: dict[str, SheetIdCounter] = {}
+
+    async def _type(self, type_key: str) -> SheetType:
+        t = self._types.get(type_key)
+        if t is None:
+            t = await repo.get_type_by_key(self._session, type_key)
+            if t is None:
+                raise SheetTypeNotFoundError()
+            self._types[type_key] = t
+        if t.archived_at is not None:
+            raise SheetTypeArchivedError()
+        return t
+
+    async def _version(self, t: SheetType, version: int | None) -> SheetTypeVersion:
+        v = self._versions.get((t.id, version))
+        if v is None:
+            v = (
+                await types_repo.current_version(self._session, t.id)
+                if version is None
+                else await types_repo.get_version(self._session, t.id, version)
+            )
+            if v is None:  # the type exists, so only the pinned version can be missing
+                raise SheetTypeVersionNotFoundError()
+            self._versions[(t.id, version)] = v
+        return v
+
+    async def _next_code(self, prefix: str) -> str:
+        row = self._counters.get(prefix)
+        if row is None:
+            existing = await repo.counter(self._session, prefix)
+            if existing is None:
+                row = SheetIdCounter(prefix=prefix, next_value=1)
+                self._session.add(row)
+            else:
+                row = existing
+            self._counters[prefix] = row
+        value = row.next_value
+        row.next_value = value + 1
+        return format_code(prefix, value)
+
+    async def add(
+        self,
+        *,
+        type_key: str,
+        version: int | None,
+        id_placement: str,
+        marks: dict[int, str],
+        note: str | None,
+        actor: str,
+    ) -> tuple[Sheet, SheetType, SheetTypeVersion]:
+        """Add one sheet pinned to a version (C8); ``marks`` and ``note`` are already sanitised."""
+        t = await self._type(type_key)
+        v = await self._version(t, version)
+        _check_range(list(marks), _total(v))
+        sheet = Sheet(
+            code=await self._next_code(t.prefix),
+            type_id=t.id,
+            type_version_id=v.id,
+            id_placement=id_placement,
+            note=note,
+            created_by=actor,
+            last_used_at=_now() if marks else None,
+        )
+        self._session.add(sheet)
+        _add_hand_marks(self._session, sheet.id, marks, actor)
+        return sheet, t, v
+
+    async def flush(self) -> None:
+        await self._session.flush()
+
+
+async def create_sheet_locked(
+    session: AsyncSession,
+    *,
+    type_key: str,
+    version: int | None,
+    id_placement: str,
+    marks: dict[int, str],
+    note: str | None,
+    actor: str,
+) -> tuple[Sheet, SheetType, SheetTypeVersion]:
+    """Create a sheet pinned to a version in the caller's write transaction (C8).
+
+    The caller holds the sheet write lock and commits; ``marks`` and ``note`` are already
+    sanitised. The counter step happens here, so a rollback un-burns the code.
+    """
+    batch = NewSheetBatch(session)
+    created = await batch.add(
+        type_key=type_key,
+        version=version,
+        id_placement=id_placement,
+        marks=marks,
+        note=note,
+        actor=actor,
+    )
+    await batch.flush()
+    return created
+
+
 async def create_sheet(
     session: AsyncSession,
     *,
     type_key: str,
     version: int | None,
-    id_placement: Literal["margin", "manual"],
+    id_placement: Literal["margin", "manual"] = "margin",
     used_cells: list[MarkedCell],
     note: str | None,
     actor: str,
@@ -224,35 +351,17 @@ async def create_sheet(
     """Create a sheet pinned to a version, with the cells already used marked by hand."""
     if id_placement not in _ID_PLACEMENTS:
         raise InvalidFieldError("id_placement", "not supported")
-    marks = _clean_marks(used_cells)
-    clean_note = None if note is None else _clean("note", note, NOTE_MAX, multiline=True) or None
+    marks, clean_note = prepare_new_sheet(used_cells, note)
     async with write_transaction(session):
-        t = await repo.get_type_by_key(session, type_key)
-        if t is None:
-            raise SheetTypeNotFoundError()
-        if t.archived_at is not None:
-            raise SheetTypeArchivedError()
-        v = (
-            await types_repo.current_version(session, t.id)
-            if version is None
-            else await types_repo.get_version(session, t.id, version)
-        )
-        if v is None:  # the type exists, so only the pinned version can be missing
-            raise SheetTypeVersionNotFoundError()
-        _check_range(list(marks), _total(v))
-        sheet = Sheet(
-            code=await allocate_code(session, t.prefix),
-            type_id=t.id,
-            type_version_id=v.id,
+        sheet, _t, _v = await create_sheet_locked(
+            session,
+            type_key=type_key,
+            version=version,
             id_placement=id_placement,
+            marks=marks,
             note=clean_note,
-            created_by=actor,
-            last_used_at=_now() if marks else None,
+            actor=actor,
         )
-        session.add(sheet)
-        await session.flush()
-        _add_hand_marks(session, sheet.id, marks, actor)
-        await session.flush()
         detail = await _detail(session, sheet)
         await session.commit()
     logger.info("sheet %s created (%d cells used)", log_value(sheet.code), len(marks))
@@ -362,6 +471,10 @@ async def resolve_cells(
         if bad:
             raise CellsNotUnconfirmedError(bad)
         now = _now()
+        margin_jobs: dict[UUID, Job] = {}
+        if outcome == "printed":  # a job row already purged by retention carries no margin ID
+            job_ids = sorted({jid for n in wanted if (jid := rows[n].job_id) is not None})
+            margin_jobs = await repo.jobs_by_id(session, job_ids)
         for n in wanted:
             row = rows[n]
             if outcome == "not_printed":
@@ -373,6 +486,12 @@ async def resolve_cells(
             row.updated_by = actor
             if row.source == "hub":  # the ID label is on the sheet now (spec 7.1)
                 before.sheet.id_printed = True
+            elif row.job_id is not None and repo.margin_id_sheet(margin_jobs.get(row.job_id)):
+                before.sheet.id_printed = True  # the job carried the margin ID
+            # A separate check, not a third ``elif``: the ID-cell job of a ``cell`` sheet
+            # carries the mark too, and its hub cell must set both flags.
+            if row.job_id is not None and repo.feed_mark_sheet(margin_jobs.get(row.job_id)):
+                before.sheet.feed_mark_printed = True
         await session.flush()
         detail = await _detail(session, before.sheet)
         await session.commit()

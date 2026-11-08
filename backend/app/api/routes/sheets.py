@@ -10,29 +10,38 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Path, Query, Request, status
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.sheet_common import actor, mapped
-from app.auth.dependencies import AuthContext
+from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print, require_read
+from app.db import engine as db_engine
 from app.db.session import get_session
+from app.models.printer import Printer
 from app.models.sheet import SheetType
+from app.repositories import printers as printers_repo
 from app.schemas.sheets import (
     CellHitRead,
     CellNumbers,
     CellRead,
+    MarginBandsMm,
+    MarginCheckRead,
     MarkRequest,
     NextCode,
     ResolveRequest,
     SheetCreate,
+    SheetCreated,
     SheetRead,
     SheetSummary,
 )
 from app.services.event_bus import EventBus
-from app.sheets import exchange
+from app.sheets import exchange, print_service
 from app.sheets import sheet_service as ss
 from app.sheets import type_service as ts
+from app.sheets.errors import PrinterNotFoundError, SheetPrinterDisabledError
 from app.sheets.geometry import hmm_to_mm
+from app.sheets.reservation import NewSheetIn
 from app.sheets.sheet_service import MarkedCell
 
 router = APIRouter(tags=["sheets"])
@@ -87,10 +96,15 @@ def _summary_fields(row: ss.SheetListRow | ss.SheetDetail) -> dict[str, object]:
 
 
 def _read(detail: ss.SheetDetail) -> SheetRead:
-    return SheetRead(
-        **_summary_fields(detail),  # type: ignore[arg-type]
-        id_placement=detail.sheet.id_placement,  # type: ignore[arg-type]
+    return SheetRead(**_read_fields(detail))
+
+
+def _read_fields(detail: ss.SheetDetail) -> dict[str, Any]:
+    return dict(
+        **_summary_fields(detail),
+        id_placement=detail.sheet.id_placement,
         id_printed=detail.sheet.id_printed,
+        feed_mark_printed=detail.sheet.feed_mark_printed,
         note=detail.sheet.note,
         geometry=exchange.geometry_to_doc(ts.version_geometry(detail.version)),
         cells=[
@@ -143,6 +157,66 @@ async def next_code(
         return NextCode(code=await ss.peek_next_code(session, type_key), hint="probable")
 
 
+async def _usable_printer(session: AsyncSession, auth: AuthContext, key: str) -> Printer:
+    """The printer a request names: it exists, the caller may use it and it is switched on
+    (pre-flight C18)."""
+    printer = await printers_repo.resolve_by_slug_or_uuid(session, key)
+    if printer is None:
+        raise PrinterNotFoundError().to_http()
+    check_printer_access(auth, printer.id)
+    if not printer.enabled:
+        raise SheetPrinterDisabledError().to_http()
+    return printer
+
+
+def _language(request: Request) -> str | None:
+    language = request.app.state.settings_store.get("general.language")
+    return None if language is None else str(language)
+
+
+@router.get(
+    "/api/sheets/margin-check",
+    response_model=MarginCheckRead,
+    summary="Where the margin ID and the feed mark of a new sheet would go on a printer",
+    description=(
+        "What the first job of a new sheet of the type would do on this printer and tray: the "
+        "band and corner of the margin ID, whether a QR is drawn next to it, and whether the "
+        "feed-direction mark prints (in the hub's current language). `printable=false` means no "
+        "margin band is deep enough: the sheet can still be created and the ID added by hand. "
+        "Read-only."
+    ),
+    responses={
+        403: {"description": "These credentials may not use this printer."},
+        404: {"description": "Unknown printer (`printer_not_found`) or sheet type."},
+        409: {"description": "Not a page printer (`media_kind_mismatch`) or it is disabled."},
+        422: {"description": "Invalid request (`invalid_request`) or an unknown tray."},
+    },
+)
+async def margin_check(
+    request: Request,
+    session: SessionDep,
+    auth: ReadDep,
+    type_key: Annotated[str, Query(alias="type", max_length=64, description="Sheet type key.")],
+    printer: Annotated[str, Query(min_length=1, max_length=100, description="Slug or UUID.")],
+    tray: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
+) -> MarginCheckRead:
+    with mapped():
+        found = await _usable_printer(session, auth, printer)
+        check = await print_service.margin_check(
+            session, printer=found, type_key=type_key, tray=tray, language=_language(request)
+        )
+    return MarginCheckRead(
+        bands_mm=MarginBandsMm(**check.bands_mm),
+        band=check.band,
+        corner=check.corner,
+        usable_mm=check.usable_mm,
+        qr=check.qr,
+        printable=check.printable,
+        reason=check.reason,
+        feed_mark=check.feed_mark,
+    )
+
+
 @router.get(
     "/api/sheets/{code}",
     response_model=SheetRead,
@@ -156,18 +230,34 @@ async def get_sheet(code: CodePath, session: SessionDep, _auth: ReadDep) -> Shee
 
 @router.post(
     "/api/sheets",
-    response_model=SheetRead,
+    response_model=SheetCreated,
     status_code=status.HTTP_201_CREATED,
     summary="Create a sheet, with the cells already used marked by hand",
+    description=(
+        "`id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also "
+        "reserves the first free cell for the sheet ID label and queues an ID-only job on the "
+        "named page printer; `job_id` names it. If the job cannot be queued, the sheet stays "
+        "without a reservation and the ID goes onto the next job's first free cell; the error "
+        "names the sheet in `error_detail.sheet_code`."
+    ),
     responses={
-        404: {"description": "Sheet type not found."},
-        409: {"description": "Sheet type is archived."},
-        422: {"description": "A cell number is outside the sheet."},
+        403: {"description": "These credentials may not use the printer."},
+        404: {"description": "Sheet type or printer not found."},
+        409: {
+            "description": (
+                "Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the "
+                "printer is disabled (`printer_disabled`) or unknown to the queue."
+            )
+        },
+        422: {"description": "A cell number is outside the sheet, or `cell` without a printer."},
+        502: {"description": "The ID-only job was queued only partly (`print_interrupted`)."},
     },
 )
 async def create_sheet(
     body: SheetCreate, request: Request, session: SessionDep, auth: PrintDep
-) -> SheetRead:
+) -> SheetCreated:
+    if body.id_placement == "cell":
+        return await _create_with_id_cell(body, request, session, auth)
     with mapped():
         sheet = await ss.create_sheet(
             session,
@@ -179,7 +269,49 @@ async def create_sheet(
             actor=actor(auth),
             bus=_bus(request),
         )
-        return _read(await ss.get_sheet(session, sheet.code))
+        return SheetCreated(**_read_fields(await ss.get_sheet(session, sheet.code)), job_id=None)
+
+
+async def _create_with_id_cell(
+    body: SheetCreate, request: Request, session: AsyncSession, auth: AuthContext
+) -> SheetCreated:
+    """``cell``: create the sheet, reserve the ID cell and queue the ID-only job in one go."""
+    if body.printer is None:  # field paths only, like every other validation error
+        raise RequestValidationError(
+            [
+                {
+                    "type": "missing",
+                    "loc": ("body", "printer"),
+                    "msg": "Field required",
+                    "input": None,
+                }
+            ]
+        )
+    with mapped():
+        printer = await _usable_printer(session, auth, body.printer)
+        # Give the connection back: the service opens its own sessions, and a request holding
+        # one while it waits for another can use up the pool (the R10-1 class). The printer row
+        # stays usable (expire_on_commit=False); the session starts again for the read below.
+        await session.commit()
+        code, job_id = await print_service.create_sheet_with_id_label(
+            db_engine.async_session,
+            printer=printer,
+            tray=body.tray,
+            new=NewSheetIn(
+                type_key=body.type,
+                version=body.version,
+                id_placement="cell",
+                used_cells=[MarkedCell(m.cell, m.purpose) for m in body.used_cells],
+                note=body.note,
+            ),
+            queue=request.app.state.print_queue,
+            actor=actor(auth),
+            api_key_id=auth.api_key_id,
+            source_ip=auth.ip,
+            language=_language(request),
+            bus=_bus(request),
+        )
+        return SheetCreated(**_read_fields(await ss.get_sheet(session, code)), job_id=job_id)
 
 
 @router.post(

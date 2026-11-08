@@ -1,7 +1,7 @@
 # Sheet archive, numbered sheets and IPP page printers (Part A)
 
 - **Date:** 2026-11-05
-- **Status:** Draft, awaiting maintainer review. Builder check done on 2026-11-05; its questions are answered in the text (OC-38 to OC-44).
+- **Status:** Draft, awaiting maintainer review. Builder check done on 2026-11-05; its questions are answered in the text (OC-38 to OC-44). Amended 2026-11-07 (operator decisions on where the sheet ID is printed and on a feed-direction mark, with the rulings of the plan review): requirements 17 and 17a, sections 7, 10.1, 10.2, 10.2a, 15, 17.1, 17.4, 19 and 25 (OC-16, OC-40, OC-45 to OC-58).
 - **Issue:** #150 (this document is **Part A**). Related: #151 (Paperless ASN, builds on this), #149 (parts and partial retry), #155 (QL continuous and die-cut media), #178 (label rendering redesign), #179 (printer choice with status and media), #173 (Kept lookup in the hub)
 - **Builds on:** [`2026-11-03-web-ui-redesign-design.md`](2026-11-03-web-ui-redesign-design.md) (slots `/sheets`, `/sheets/archive`, `/calibration`, feature flags `sheets` and `calibration` in `GET /api/info`, design system, scan resolver hook, sessions/CSRF)
 - **Mockups:** <https://claude.ai/artifact/BLKZ7Vhe1RkksXuwptB5ha> (screens 1–3 sheets, screen 4 `#calibrate`)
@@ -108,7 +108,8 @@ These are taken as requirements. Section 24 lists where this document departs fr
 14. **Discard** a sheet: hidden from the picker, ID never reused.
 15. **Mark the used cells** of a sheet that was started before the hub knew it.
 16. Small cells: at 25.4 × 10 mm a QR gets about 8 mm; that type defaults to **code only** until a test print proves a QR scans.
-17. The sheet prints its own ID, three options on first use: (1) on the **first free cell** (default), with ID, sheet type and a QR of the ID, stored as used; (2) in the **sheet margin**, printed once on the sheet's first job, only where the margin is wide enough; (3) **by hand**, no print. On 25.4 × 10 mm cells the ID label is text only; scanning needs option 2 there.
+17. The sheet prints its own ID, three options on first use: (1) on the **first free cell**, only when chosen for the sheet, with ID, sheet type and a QR of the ID, stored as used; (2) in the **sheet margin** (**default**), printed once on the sheet's first job, in the margin band where name and QR fit largest for the sheet type and printer, text only where the band is narrower, not printed at all where no band is wide enough, never moved into a cell (section 10.2); (3) **by hand**, no print. On 25.4 × 10 mm cells the ID label is text only; scanning needs option 2 there. *Changed 2026-11-07 (operator decision): the margin is the default, most label sheets carry their name in a corner and the ID should not use up a label cell; the margin ID goes into the best of the four margin bands instead of the top margin only. This replaces "(1) on the first free cell (default) … (2) in the sheet margin … only where the margin is wide enough".*
+17a. On a sheet's first job the hub prints a small **feed-direction mark** in the margin: an arrow ▲ with the text "Top – this edge first" (in German "Oben – diese Kante zuerst", following the hub's language), so anyone reloading a partly used sheet sees at once which edge goes first. It shows only the top edge and the feed direction; which side faces up in the tray stays with the print dialog's per-tray load hint and is not printed. It applies to every ID placement (`cell`, `margin`, `manual`) and is printed once per sheet (section 10.2a). *Added 2026-11-07 (operator decision).*
 18. Scanning the sheet ID selects that sheet in the print dialog; a scan target clients can resolve and a lookup `GET /api/sheets/{id}`; a discarded sheet resolves to "discarded", not to nothing.
 19. Manual calibration: print a calibration page, read the offset and enter it.
 20. The calibration page: a **centre line in every gap**, **mini scales at every gap crossing** (±2 mm, 0.2 mm ticks), gap lines **numbered** (S1… column gaps, Z1… row gaps), **0.5 mm rulers** at every gap on all four edges, **black only** (lines told apart by number and line style, never colour). Sheets without gaps: labels peeled in a checkerboard.
@@ -163,8 +164,9 @@ Validation on insert: `pitch_x ≥ label_w`, `pitch_y ≥ label_h`, `cols, rows 
 | `code` | unique, e.g. `L4736-0002`: prefix, hyphen, counter zero-padded to four digits (`L4736-0100`; above 9999 the number simply grows: `L4736-10000`). *Changed 2026-11-05 (operator decision): four-digit codes, replacing "at least 2 digits".* |
 | `type_id`, `type_version_id` | the version is pinned for life |
 | `state` | `active` or `discarded` (+ `discarded_at`, `discarded_by`) |
-| `id_placement` | `cell`, `margin`, `manual` |
-| `id_printed` | for `margin`: set when the first job completes; for `cell`: set when the ID cell is used |
+| `id_placement` | `cell`, `margin`, `manual`; **default `margin`** when a sheet is created without a choice. *Changed 2026-11-07 (operator decision): the default was `cell`.* |
+| `id_printed` | for `margin`: set when the first job that carries the margin ID completes; stays false while every job was printed without it because no margin band was wide enough (10.2); for `cell`: set when the ID cell is used |
+| `feed_mark_printed` | set when the first job that carries the feed-direction mark completes (10.2a); independent of `id_printed`, since `manual` sheets never set that. *Added 2026-11-07 (operator decision).* |
 | `note` | optional, plain text |
 | `created_at`, `created_by`, `last_used_at` | |
 
@@ -279,10 +281,10 @@ A sheet comes into existence in one of three ways, all through the same service:
 1. **New sheet in the print dialog** ("+ New L4736REV sheet (becomes L4736-0004)"): created inside the print transaction (section 8). With ID placement `cell`, the first free cell holds the ID label in the same job; with `margin`, the ID is drawn in the margin of that same job.
 2. **Add sheet** (mockup screen 3) without printing: type, version, cells already used (tapped on the grid, stored as `manual`, purpose "marked by hand" unless typed), ID placement.
    - `cell`: needs a printer and tray; a job printing only the ID label into the first free cell is queued at once. This is what makes "creating a sheet with option 1 prints the ID label into the first free cell" true.
-   - `margin`: the ID is printed with the sheet's first job.
-   - If the ID-only job fails cleanly, the ID cell is free again and `id_printed` stays false; the next job printed onto that sheet puts the ID label into its first free cell (OC-40).
+   - `margin` (the default): the ID is printed with the sheet's first job, in the band section 10.2 chooses for that job's printer and tray.
+   - If the ID-only job fails cleanly, the ID cell is free again and `id_printed` stays false; the next job printed onto that sheet puts the ID label into its first free cell (OC-40, `cell` sheets only; a `margin` sheet whose first job fails gets the margin ID on its next job instead, 10.2).
    - `manual`: nothing printed.
-3. **API** (`POST /api/sheets`), same options.
+3. **API** (`POST /api/sheets`), same options; `id_placement` may be left out and is then `margin`. The same default holds for a new sheet inside a print request (section 15). *Changed 2026-11-07 (operator decision).*
 
 The ID shown before creation ("becomes L4736-0004") comes from `GET /api/sheets/next-code?type=…`. It is a hint, not a reservation; under concurrency the actual ID may be higher, and the UI says so only if it happens (the response of the create call is authoritative).
 
@@ -290,8 +292,63 @@ The ID shown before creation ("becomes L4736-0004") comes from `GET /api/sheets/
 
 - **Scan payload (OC-15):** the public hub URL `{PRINTER_HUB_PUBLIC_URL}/sheet/{code}` (the public URL is a required setting since the foundation; if it is empty, e.g. in a test setup, the short form is encoded instead). A phone camera opens the hub directly. The scan resolver also accepts the short form `sheet:{code}` so clients and people can type it.
 - **ID label in a cell:** content `qr_two_lines` with `primary_id` = code, `title` = vendor and first product code + "· sheet ID", QR = payload. On types with `allow_qr=false` it becomes `text_two_lines` (maintainer: text only on 25.4 × 10). The cell is reserved with `source=hub`, purpose "Sheet ID".
-- **ID in the margin (OC-16):** drawn in the **top margin**, left-aligned with the grid, once, on the sheet's first job. Available height = `margin_top` − printer's hardware top margin (from capabilities; 5 mm assumed if the printer does not report it) − calibration offset Y (if it moves content up) − 1 mm safety. Below 4 mm the option is disabled with the reason ("the top margin is too narrow for this printer"). From 9 mm on, a QR (payload as above) is drawn next to the text, if the encoded QR fits at a module size of at least 0.25 mm with its quiet zone; otherwise text only. On L4731REV (13.5 mm top margin) this gives a QR on typical lasers, which is exactly why the maintainer points to option 2 for that type.
-- `id_printed` makes "only on the first job" hold across retries: a job that fails leaves it false, so the next job draws the ID again.
+- **ID in the margin (OC-16, OC-45 to OC-52):** drawn once, on the sheet's first job, in the **best of the four margin bands**. Content: the code, the vendor and first product code (as the ID cell's title), and a QR of the payload above where it fits. *Changed 2026-11-07 (operator decision): the margin ID was always drawn in the top margin, and the margin option was refused below 4 mm. It now goes into whichever band fits it largest, and below 4 mm everywhere it is simply not printed.* The rules:
+  - **Bands.** The four strips between the label grid and the page edges. With `grid_right = margin_left + (cols − 1) × pitch_x + label_w` and `grid_bottom = margin_top + (rows − 1) × pitch_y + label_h`, each band has a **depth** (its size across, which is the QR edge and the text height) of:
+
+    | Band | Room | minus hardware margin | minus calibration offset of its axis | minus safety |
+    |---|---|---|---|---|
+    | top | `margin_top` | top | `abs(dy)` | 1.0 mm |
+    | bottom | `page_h − grid_bottom` | bottom | `abs(dy)` | 1.0 mm |
+    | right | `page_w − grid_right` | right | `abs(dx)` | 1.0 mm |
+    | left | `margin_left` | left | `abs(dx)` | 1.0 mm |
+
+    The hardware margin of a side is the printer's reported minimum margin for that side (`hardware_margins_mm` in the capabilities, section 14); a printer that reports none counts **5.0 mm on every side**. `dx` and `dy` are the stored deviation of the printer and tray (13.1). Both bands of an axis lose the full absolute offset of that axis, whatever its sign: this holds whether the printer clips in its own page coordinates (where the correction moves content toward one edge) or on the paper (where it does not), so it is safe under either reading and calibration never decides between the two bands of an axis. Scale and rotation are not counted (OC-51). The 1.0 mm safety lies between the band and the grid, so the band ends 1.0 mm before the nearest cell.
+  - **Length.** Top and bottom bands run along the grid width (`margin_left` … `grid_right`), left and right bands along the grid height (`margin_top` … `grid_bottom`). The square where two bands meet outside the grid is not used (OC-45).
+  - **Usable size.** The usable size of a band is its depth, capped at **20.0 mm** (OC-52): a deeper band is used only in its 20 mm next to the grid. Everything below (QR edge, text height, ranking) uses the usable size.
+  - **What fits.** Usable size **≥ 4.0 mm**: text. Usable size **≥ 9.0 mm**, and the encoded QR fits a square of the usable size at the job's render resolution with a module of at least 0.25 mm and its four-module quiet zone (the rule the first version already used, at render dpi), and the band is at least `usable size + 2 mm + 10 mm` long: a QR next to the text (OC-48). Otherwise text only.
+  - **Choice (OC-46).** Among the bands with usable size ≥ 4.0 mm:
+    1. if any band holds a QR, only the bands that hold one compete;
+    2. the deepest horizontal band (top or bottom) and the deepest vertical band (right or left) are compared; the vertical one wins only if it is at least **2.0 mm** deeper, so rotated text is used only where it buys clearly more room;
+    3. equal sizes within a side pair go by the order **top, bottom, right, left**.
+
+    Sizes compare exactly, in hundredths of a millimetre: a vertical band 1.99 mm deeper than the best horizontal band loses, one 2.00 mm deeper wins. When only one side pair has a candidate, its best band wins.
+  - **Corner and layout.** The corner is fixed per band: top → top-left, bottom → bottom-left, right → top-right, left → top-left. The ID uses the usable size measured from the band's grid side. In the top and bottom bands the QR sits at the left end of the grid and the text runs to its right after a 2 mm gap, centred across the band, shrunk and then shortened with an ellipsis so that it never passes the grid's far end (as in the first version). In the left and right bands the same layout is turned a quarter turn clockwise: the QR at the top end, the text below it reading top to bottom, centred across the band, never past `grid_bottom`. The QR itself is not rotated (OC-47).
+  - **No band wide enough.** Below 4.0 mm in every band the margin ID is **not printed**, and no cell is taken instead. The job prints without it, `id_printed` stays false, and the next job onto the sheet tries again (another printer or tray may have room). For that page the preview and the print response say "Sheet ID not printed, add it by hand"; the sheet detail shows "Sheet ID not printed yet" while a `margin` sheet has `id_printed=false`. Nothing is refused, and the error code `margin_too_small` is retired (OC-49).
+  - **Decided once.** Band, corner, depth and QR yes/no are decided when the page job is created, at the job's render resolution, inside the reservation, and stored in the page payload. The PDF renderer and the preview draw what is stored and never choose again. The preview of a print request makes the same choice for its own plan; the job agrees with it unless the printer, tray, calibration or the length of the code changed in between (OC-50).
+  - **Examples** (render dpi 600; `dy = −0.8 mm`, `dx = 0` unless stated):
+
+    | Sheet | Hardware margin | top | bottom | right | left | Chosen |
+    |---|---|---|---|---|---|---|
+    | L4736REV | none reported (5.0 mm) | 14.50 | 14.50 | 3.85 | 3.85 | top-left, QR |
+    | L4736REV | 4.23 mm every side | 15.27 | 15.27 | 4.62 | 4.62 | top-left, QR |
+    | L4731REV | none reported (5.0 mm) | 6.70 | 6.70 | 2.60 | 2.60 | top-left, text only |
+    | L4731REV | 4.23 mm every side | 7.47 | 7.47 | 3.37 | 3.37 | top-left, text only |
+    | L4731REV, `dy = 0` | 3.0 mm every side | 9.50 | 9.50 | 4.60 | 4.60 | top-left, QR |
+
+    The bottom band wins over the top only through the hardware margins: L4736REV with 6.0 mm reported at the top and 4.23 mm at the bottom (5.0 mm left and right) gives top 13.50, bottom 15.27 → bottom-left.
+- `id_printed` makes "only on the first job" hold across retries: a job that **fails cleanly** (nothing printed) leaves it false, so the next job draws the ID again. The same holds for a job that was printed without the ID because no band was wide enough.
+- **"Once" holds across unconfirmed outcomes (ruling F3-1).** A job that carried the margin ID and ended `unconfirmed` (the page may be on the sheet: interrupted, lost across a restart, or swept) keeps the ID **in flight**: no further job of the sheet draws it, whatever its other cells, until a human resolves the cells. Resolving them as `printed` sets `id_printed` from that job; resolving them as `not_printed` removes the reason, and the next job draws the ID. Retention never deletes such a job (10.2a, section 15). The price: a sheet with unresolved cells carries no new margin ID until someone resolves them. The `cell` placement already behaved so for the ID: an unconfirmed hub cell blocks a second ID cell.
+
+### 10.2a The feed-direction mark
+
+*Added 2026-11-07 (operator decision, requirement 17a). Everything below the first bullet is decided in this document (OC-53 to OC-58).*
+
+- **Content (OC-55):** every caller that reserves (preview, print, ID-only job, retry) hands over the language as a required input, so leaving it out is an error, not English by accident. One line of text in the bundled font, which contains both special characters (U+25B2 and U+2013), in the hub's `general.language` setting **at the moment the reservation decides the mark**: `de` → `▲ Oben – diese Kante zuerst`, `en` → `▲ Top – this edge first`, any other or unknown value → the English text. The chosen text is stored with the mark (`detail.feed_mark.text`); a later change of the setting does not change a stored job, its PDF or its preview. *Changed 2026-11-07 (operator decision, ruling A-5): was a fixed English string.*
+- **Where (OC-53):** only in the **top band** of 10.2 (same depth, same hardware margins, same `abs(dy)`, same 1.0 mm safety), right-aligned at its **top-right** end, opposite the ID's top-left corner. Its right end is `min(grid_right, page_w − hw.right − abs(dx) − 1.0 mm)`, so it never reaches the right hardware margin; it lies above `margin_top − 1.0 mm`, so it never touches a cell. Baseline centred across the top band's usable size, like the ID text.
+- **Size (OC-54):** 7.0 pt; if it is wider than the space it may use, it shrinks in 0.5 pt steps to the 6 pt floor; if it still does not fit, it is not printed. It is never shortened: a cut-off mark says nothing.
+- **When the ID also takes the top band:** the mark goes first. The ID's top band is then shorter by the distance from the mark's left end to the grid's right end plus 2.0 mm, which is the mark's width plus 2.0 mm unless the right hardware margin pulled the mark in (this length is what the ID's QR length rule of 10.2 sees), and the ID text ends 2.0 mm before the mark. When the space left is too short for the ID, the ID chooses with the shorter band like any other.
+- **Top band below 4.0 mm:** the mark is **not printed**; no other band is used, because an arrow in a side band is easily read as "this side first". The tray load hint in the print dialog still tells the user how to load (OC-53).
+- **Once per sheet (OC-56):** due on a page when the sheet's `feed_mark_printed` is false and no job of the sheet has the mark in flight: a queued or printing job that carries it, **a job that carried it and still owns an unconfirmed cell of the sheet (F3-1; it may have printed)**, or a reservation whose job row is not saved yet (same in-flight rule as the margin ID). Set in the transaction that completes a job carrying it, and by resolving its unconfirmed cells as `printed`; resolving them as `not_printed` makes the next job carry the mark again. A job printed without it (no room) leaves the flag false; the next job tries again. The mark never makes a job on its own: a request with nothing else to print stays `empty`.
+- **Decided once (OC-57):** text, position and size are decided in the reservation at the job's render dpi, together with the margin ID, and stored in the page payload (`feed_mark`). The PDF renderer and the preview draw the stored values and never place it again. Calibration is applied to the whole page as for everything else (13.1); the `abs(dy)`/`abs(dx)` terms keep the corrected mark inside the band.
+- **All placements (OC-58):** `cell` sheets get the mark on the job that also prints the ID cell (including the ID-only job), `manual` sheets on their first print job.
+- **Example:** L4736REV on a printer that reports no margins: top band 15.30 mm deep (y 5.00 … 20.30 mm), grid right 200.15 mm, baseline at y 13.54 mm in both languages.
+
+  | Language | Width at 7 pt | Mark from x … to x | ID text ends at x | ID's top band counts as |
+  |---|---|---|---|---|
+  | `de` | 35.07 mm | 165.08 … 200.15 mm | 163.08 mm | 153.23 mm |
+  | `en` | 27.15 mm | 173.00 … 200.15 mm | 171.00 mm | 161.15 mm |
+
+  The German text is 7.92 mm longer, so on a narrow grid it shrinks or drops sooner (at 6 pt: 30.06 mm against 23.27 mm); the size rules are the same for both.
 
 ### 10.3 Lookup, scanning, discarded sheets
 
@@ -359,7 +416,7 @@ Reasons that stop printing (`media-empty`, `media-jam`, `door-open`, `cover-open
 - Only one hub job is at the printer at a time (per-printer serialisation as today): the worker waits for the job to reach a final IPP state before taking the next.
 - The printer's existing `queue_timeout_s` bounds each IPP request (upload, attribute and job queries), not the time a job may wait at the printer (OC-41).
 - A request spanning several sheets creates one page job per sheet, in placement order, grouped in one `print_batches` row. Each page has its own outcome: page 1 may complete while page 2 fails.
-- **Retry** (`POST /api/jobs/{id}/retry`) of a page job is allowed only for jobs that ended cleanly (`failed` without `interrupted`, or `cancelled` before the printer started them). It re-reserves the **same cells** if they are still free, else answers `409 cells_taken` and the person prints again from the dialog. A job with unconfirmed cells cannot be retried until they are resolved (OC-42).
+- **Retry** (`POST /api/jobs/{id}/retry`) of a page job is allowed for a `failed` or `cancelled` sheet page when **no cell of the job is `unconfirmed`** (OC-42). A job that ended cleanly has none; an `interrupted` job, a `failed_restart` job and a cancelled job the printer had started have, so they are refused (`409 cells_unconfirmed`) until the person resolves the cells, and once they are resolved `not_printed` the retry is allowed. A `done` job is not retried. It re-reserves the **same cells** (and the ID cell where it was) if they are still free, else answers `409 cells_taken` with the cell numbers and the person prints again from the dialog. A job with unconfirmed cells cannot be retried until they are resolved (OC-42, `409 cells_unconfirmed`). The retry is a new job: it takes a **fresh** calibration snapshot (the snapshot of 'at submit time' is the retry's submit), and it decides again whether the margin ID and the feed-direction mark are still due and where they go, for the printer, tray and calibration it is sent to; the first attempt's band is not reused. The labels are the ones the first attempt stored; nothing is looked up again.
 
 ### 11.5 Job tracking, cancel, failures, restart
 
@@ -374,7 +431,7 @@ After Print-Job is accepted, the hub stores `ipp_job_id` (and `job-uri`) in `job
 
 - **Cancel** of a queued job: as today, cells freed. Cancel of a job at the printer: the hub sends Cancel-Job and keeps tracking until the printer reports a final state; the table above decides the cells.
 - **Document rejected** (`client-error-document-format-not-supported`, `client-error-attributes-or-values-not-supported`, other `client-error-*` on Print-Job): job `failed`, cells freed (nothing was printed). The error code names the IPP status; the message is fixed text, not the printer's raw text.
-- **No time-based failure while the printer still knows the job.** A stopped printer may hold a job for hours; the job waits and stays cancellable. If the printer stops knowing the job (Get-Job-Attributes answers `client-error-not-found`, e.g. after a printer reboot), the job ends `failed`/`interrupted` with unconfirmed cells if it had started, freed cells otherwise (OC-23).
+- **No time-based failure while the printer still knows the job.** A stopped printer may hold a job for hours; the job waits and stays cancellable. If the printer stops knowing the job (Get-Job-Attributes answers `client-error-not-found`, e.g. after a printer reboot), the job ends `failed` with `error_code=interrupted` and its cells **unconfirmed**, whether or not the hub saw it start: a job the printer forgot may have printed, so the hub cannot call the cells free (OC-23, refined by ruling T5-3, section 24).
 - **Restart of the hub:** today a `printing` job becomes `failed_restart`. A page job with a stored `ipp_job_id` instead **resumes tracking** on startup; only a page job without an IPP job id (crash between start and acceptance) becomes `failed_restart`, with its cells **unconfirmed** (the upload may have reached the printer) (OC-24).
 - **Get-Jobs** is used by the status producer to report how many other jobs are ahead at the printer (shown as "2 jobs from other computers ahead"), and during restart recovery as a cross-check.
 
@@ -493,8 +550,9 @@ All under `/api`, Pydantic models, complete OpenAPI (ADR 0011), errors in the ex
 | `POST /sheet-types/import` | admin | import (`mode`, optional new key/prefix) |
 | `GET /sheets` | read | list; `type`, `free_at_least`, `state` (`active` default, `full`, `discarded`, `all`), `q` (code) ; sorted: fits first, then most free (OC-34) |
 | `GET /sheets/next-code?type=` | read | the ID a new sheet would probably get |
+| `GET /sheets/margin-check?type=&printer=&tray=` | read + printer access | *added in Plan 3:* the four margin bands of a type on a printer, the band the sheet ID would take, whether the feed-direction mark prints (in the hub's current language) and `printable` |
 | `GET /sheets/{code}` | read | sheet with all non-free cells |
-| `POST /sheets` | print | create (type, version, id placement, cells already used, printer/tray for option 1) |
+| `POST /sheets` | print | create (type, version, id placement — `margin` if left out —, cells already used, printer/tray for option 1) |
 | `POST /sheets/{code}/discard` | print | |
 | `POST /sheets/{code}/cells/mark` | print | mark cells used by hand (`[{cell, purpose?}]`) |
 | `POST /sheets/{code}/cells/unmark` | print | only cells marked by hand |
@@ -516,11 +574,11 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 **Sheet print request** (shape decided, names left to the builder):
 
 - `items`: up to 500 (as batch), each a `PrintRequest` (content type + data or lookup) plus optional `purpose`, `source` (for raw data; lookups use the app name) and `ref`.
-- `placements`: an ordered list; each is either an existing sheet `{sheet: code, cells: "first_free" | [numbers], skip?, count?}` or a new sheet `{new_sheet: {type, version?, id_placement}, count?}`. Items fill placements in order. A single placement without `count` takes all items.
+- `placements`: an ordered list; each is either an existing sheet `{sheet: code, cells: "first_free" | [numbers], skip?, count?}` or a new sheet `{new_sheet: {type, version?, id_placement?}, count?}` (`id_placement` defaults to `margin`, *changed 2026-11-07, operator decision*). Items fill placements in order. A single placement without `count` takes all items.
 - `tray` (default tray if omitted), `expected_cells` (from the preview).
 - **Capacity:** if the items do not fit the placements, `409 insufficient_cells` with `free_cells` per placement and the shortfall. The UI then offers: rest onto another sheet of the type, rest onto a new sheet, or a sheet with enough room (mockup screen 2).
 
-**Error codes added:** `sheet_type_not_found`, `sheet_type_version_not_found`, `sheet_type_archived`, `type_exists`, `prefix_taken`, `invalid_geometry`, `sheet_not_found`, `sheet_discarded`, `sheet_busy`, `sheet_type_mismatch`, `cells_taken`, `cell_out_of_range`, `plan_changed`, `insufficient_cells`, `media_kind_mismatch`, `tray_unknown`, `margin_too_small`, `calibration_out_of_range`, `calibration_type_unsuitable`, `readings_insufficient`, `printer_not_found`, `ipp_unreachable`, `ipp_pdf_unsupported`, `ipp_rejected`. Existing ones (`content_type_data_mismatch`, `printer_disabled`, `printer_not_allowed`) are reused.
+**Error codes added:** `sheet_type_not_found`, `sheet_type_version_not_found`, `sheet_type_archived`, `type_exists`, `prefix_taken`, `invalid_geometry`, `sheet_not_found`, `sheet_discarded`, `sheet_busy`, `sheet_type_mismatch`, `cells_taken`, `cell_out_of_range`, `plan_changed`, `insufficient_cells`, `media_kind_mismatch`, `tray_unknown`, ~~`margin_too_small`~~ (retired 2026-11-07, OC-49), `calibration_out_of_range`, `calibration_type_unsuitable`, `readings_insufficient`, `printer_not_found`, `ipp_unreachable`, `ipp_pdf_unsupported`, `ipp_rejected`. Existing ones (`content_type_data_mismatch`, `printer_disabled`, `printer_not_allowed`) are reused.
 
 *Added 2026-11-05 with the sheet API (Plan 1, Task 8): the codes that the type and sheet routes of Plan 1 answer with, as built.*
 
@@ -550,7 +608,7 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 | `ipp_pdf_unsupported` | 409 | the printer does not accept `application/pdf`; the printer is not saved | create and update of an IPP printer |
 | `ipp_rejected` | 502 | the printer refused the request; `{ipp_status}` is the IPP status name, never printer text | probe, save of a printer |
 | `ipp_unreachable` | 409 / 502 | the printer could not be reached: `409` when saving (nothing is saved), `502` for the probe | admin printer routes |
-| `job_not_retryable` | 409 | retry of a sheet page; its cells need the cell-aware retry (Plan 3). No row is created | `POST /api/jobs/{id}/retry` |
+| `job_not_retryable` | 409 | retry of a sheet page that is `done`: its labels came out, so there is nothing to print again. *Changed in Plan 3:* in Plan 2 every sheet page answered this, because its cells needed the cell-aware retry; a `failed` or `cancelled` sheet page is now retried (see the Plan 3 table). No row is created | `POST /api/jobs/{id}/retry` |
 | `media_kind_mismatch` | 409 | a tape route was called for a page printer, a page job for a tape printer, or a tape payload is retried on a page printer | print, batch, submit, retry |
 | `no_tape_printer` | 503 | no tape printer is wired, for example only IPP page printers are configured | `POST /api/print`, `{error_code, error_message}` |
 | `printer_model_unknown` | 409 | capabilities of a tape printer whose model has no registered driver | `GET /printers/{id}/capabilities` |
@@ -562,9 +620,57 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 *Not in this table, by design:*
 
 - `POST …/calibration/{tray}/page` and `POST /api/jobs/{id}/retry` answer a printer the print queue does not know (`409`) in the **ProblemDetail** shape, `detail.type = "printer-unavailable"`, like the other job routes. Retry also answers `job-not-retryable` (`422`) in that shape when the stored payload is invalid. Every other calibration error uses the envelope above.
-- `margin_too_small` (in the list above) is not answered by Plan 2; it belongs to the sheet print (Plan 3).
+- `margin_too_small` (in the list above) is retired. It was not answered by Plan 2 and is not answered by Plan 3 either (*changed 2026-11-07, operator decision*): a sheet whose margins are too narrow is printed without its ID (10.2, OC-49), and the preview and the print say so with `id_not_printed`. The code is never emitted.
 - A *job* that ends `failed` carries its own `error_code`, not an HTTP status: `render_failed`, `ipp_unreachable`, `ipp_busy`, `ipp_rejected` (`{ipp_status}` in `result.error_detail`), `ipp_request_invalid`, `ipp_aborted` (the printer aborted a job that never started), `interrupted` (it may have printed), `recovery_invalid_page_payload` (restart found an unusable payload) and `cancelled`. None carries printer text or the printer's address.
 - Check order of the calibration routes with a path and a body: printer and tray first (`tray_unknown`), then the sheet type of `measured_on`/`type` (`sheet_type_not_found`, `sheet_type_version_not_found`), then the value ranges. `fit`, `page` and `PUT` all use it.
+
+*Added 2026-11-07 with printing onto sheets (Plan 3), as built.* Codes of the tables above are not repeated unless Plan 3 changes their meaning. All use the `{error_code, error_message, error_detail}` envelope unless the last column says otherwise. The sheet print routes (`/api/print/{printer_key}/sheet` and `/sheet/preview`) answer a validation error as `invalid_request` with field paths only, like the sheet routes (the request carries label text and purposes, which an error must not repeat).
+
+| Code | Status | Meaning, `error_detail` | Notes |
+|---|---|---|---|
+| `app-lookup-not-found` | 404 | the integration has no such item; `{item_index}` | an item lookup; the message is fixed text |
+| `cells_taken` | 409 | explicit cells of a print are not free (`{cells}`, every conflicting cell, nothing reserved), or a retry finds a cell of the failed job taken since (`{cells}`) | print; retry |
+| `cells_unconfirmed` | 409 | a retry of a page job one or more of whose cells wait for confirmation (OC-42); `{cells}` | retry; also answered for a `failed_restart` job, whose cells are unconfirmed |
+| `content_type_data_mismatch` | 422 | an item lacks what its content type needs in the cell it would get, or its QR payload is above the cap; `{item_index, missing_fields}`. Checked before anything is reserved | preview and print |
+| `insufficient_cells` | 409 | the free cells of the placements do not hold the items, or (`POST /api/sheets` with `id_placement` `cell`) the new sheet has no free cell for its ID; `{free_cells, needed, shortfall}` | preview and print; a missing ID cell adds one to `shortfall`; also `POST /api/sheets` with an ID cell |
+| `integration_lookup_failed` | 502 | the integration failed or could not be reached; `{item_index}` | an item lookup; the lowest index when several fail |
+| `integration_not_configured` | 503 | the integration is not configured; `{item_index}` | an item lookup |
+| `integration_unknown_app` | 422 | the integration is not available; `{item_index}` | an item lookup |
+| `invalid_placements` | 422 | the placements contradict each other or the item count; `{reason}` is `count_mismatch` (the counts do not add up, or one is negative), `count_missing_not_last` (only the last placement may leave `count` out), `duplicate_cells` (an explicit list names a cell twice), `empty` (nothing to print and no ID due), `empty_placement` (a placement would print nothing), `explicit_count_mismatch` (an explicit list and `count` or the item count disagree) or `sheet_or_new_sheet` (a placement needs exactly one of the two) | preview and print. `count_mismatch`, `duplicate_cells` and `empty_placement` were added while building |
+| `plan_changed` | 409 | the fresh plan differs from `expected_cells`; `{plan}` is the new plan as `[{sheet, cells, id_cell}]`. Nothing is written, a new sheet and its counter step vanish with the transaction | print |
+| `preview_too_large` | 422 | the plan has more pages than a preview renders; `{pages, max}`, `max` is 10 (a load bound, not the spec's) | preview |
+| `print_interrupted` | 502 | the print failed after some pages were queued; `{batch_id, job_ids}`. The pages already queued keep printing; the batch is rewritten to the jobs that exist | print and the ID-only job; a `SheetApiError` raised there carries the same two keys |
+| `printer-unavailable` | 409 | the print queue does not know the printer (an IPP printer added after the start); nothing was printed and the reserved cells are free again | the envelope on the sheet routes; on `POST /api/jobs/{id}/retry` the ProblemDetail shape, `detail.type = "printer-unavailable"`, as before |
+| `printer_disabled` | 409 | the printer is switched off. #167 remains the general fix at queue level; the sheet routes refuse at the route (pre-flight C18) | preview, print, create with an ID cell, margin check, and the retry of a page job of either kind, a calibration page included (a tightening against Plan 2). `POST …/calibration/{tray}/page` itself still accepts a disabled printer, pending #167, so a new calibration page is accepted where its retry is refused |
+| `sheet_id_job_failed` | 500 | something unexpected stopped the ID-only job of a new `cell` sheet after the sheet was committed; `{sheet_code}`. The sheet exists without a reservation; the cause is logged, never returned | `POST /api/sheets` with `id_placement` `cell` |
+| `sheet_type_mismatch` | 409 | a placement names a sheet of another type than the request needs; `{expected, actual}` | wired in `reserve` (`required_type_key`), but no Plan 3 route sets a required type, so it is not answered today |
+| `tray_unknown` | 422 | the tray is unknown or disabled, or the printer has no enabled default tray; `{trays: []}`, always empty on these routes: the caller's key is never echoed (C19; the admin save lists the trays the printer does not report) | print and preview; also a retry whose tray was removed or disabled since the first attempt (the retry takes a fresh snapshot, which needs the tray) |
+
+*Not an error:* `id_not_printed` is a field of the preview and the print response (`true` when no margin band is deep enough for the sheet ID, 10.2, OC-49), next to `margin_band`. A page printed without its ID does not set `sheets.id_printed`, so a later page tries again.
+
+*Decided while building Plan 3 (each checked against the code):*
+
+- **Explicit cell lists keep the caller's order.** Item *i* goes to `cells[i]`; the planner does not sort. The retry keeps the stored order too.
+- **`interrupted` with `started=false` leaves the cells unconfirmed** (ruling T5-3, refining OC-23 on the safe side). `interrupted` means the page may have printed whatever `started` says; the outcome handler and the startup sweep both apply that.
+- **The top band stays a candidate for the sheet ID only if at least 5 mm remain after the feed-direction mark** (ruling T5c-1, `MIN_SHARED_TOP_TEXT_HMM`). Otherwise another band is chosen, or the page prints without its ID.
+- **Raw items are capped** at the request: `qr_payload` 512 characters, `title`, `primary_id` and every other text field 512, at most 10 `secondary` lines and 100 listing rows. A lookup's `qr_payload` above 512 is `content_type_data_mismatch`. Identical lookups (same app and identifier) run once and fan out to every item that asked, with at most 8 in flight.
+- **The preview draws a marked placeholder** (a hatched square with "QR") for a QR that is too fine for 150 dpi; the job draws the real symbol at render dpi. At most 2 preview renders run at once in the process (a CPU bound, spec 18).
+- **Reservations without a job row older than 30 seconds become `unconfirmed`** at the startup sweep, not free (ruling T5-1): the row may have been purged by retention after the page printed. Younger ones are spared, because a reservation commits before its page job is saved (C26). **Retention never evicts a job that still has `reserved` or `unconfirmed` cells** (the latter by ruling F3-1: the job's margin ID and feed mark count as maybe printed, and resolving its cells as `printed` reads its row), and the startup sweep runs before the first retention eviction, so it can still read the rows it settles.
+- **Audit run 10 (fixes before the pull request).**
+  - **The preview bound is checked first.** A plan has one page per placement, so more than `MAX_PREVIEW_PAGES` (10) placements are `preview_too_large` before anything is read, planned or looked up; the planner then runs in a thread, in the preview and in the print's dry plan.
+  - **No database connection is held while lookups run or pictures are drawn.** The routes give the request session back first; the preview reads in one short session and reads the reprint hints in another.
+  - **The write lock is held for milliseconds, not seconds.** A 50-page print with new sheets held it about 1.6 s; the margin-QR decision now needs only the symbol size (no full build), new sheets are created in one batch (type, version and counter read once, one flush) and the reserved cells go in with one bulk insert. Measured: about 0.1 s warm.
+  - **A cell-less page is refused.** With items to print, a placement that would print only the sheet ID and the feed mark (an empty `cells` list on a margin sheet) is `422 invalid_placements` (`empty_placement`). Both are recorded when a cell of the page turns used, so such a page printed them unrecorded, and an interrupted one leaves nothing to confirm; OC-58 already has the mark never cause a job by itself. A request without items, the ID-only job, is unchanged.
+  - **A job that has ended counts as carrying its ID and mark until its cells are settled** (`done`, `failed`, `failed_restart`, `cancelled` with `reserved` cells): the end and the settling are two transactions.
+  - **A lookup result gets the caps of a raw item** before the job stores it: 512 characters per text, 10 secondary lines, 100 listing rows (cut). A QR payload above 512, the label's or a listing row's, is still `content_type_data_mismatch` with `item_index`. The tape print path does not apply this yet.
+  - **`new_sheet.version` is at most 1 000 000**; a larger value is `invalid_request` (field path only).
+  - **A preview QR denser than 65 modules a side (version 12) is the hatched placeholder**, not a drawn symbol: under two pixels a module at 150 dpi, and the costliest part of a maximal preview (15 to 20 s before, about 7 s now). The printed page still carries the real symbol.
+- **A page job stores the record of each cell** (`source`, `purpose`, `ref`) next to its label, so that the retry reserves the cell with the same record; a payload stored before has none and falls back to the label (`source_app`, title or primary id, no `ref`).
+- **A print that fails after reserving frees what has no job.** If the batch row cannot be inserted, every reservation is released and nothing is queued; if a later page fails, the pages already queued stay and the batch is rewritten to the jobs that exist (`print_interrupted`).
+- **The margin ID and the feed mark go out once, also across unconfirmed outcomes** (ruling F3-1, whole-branch review). A job that carried either and ended `unconfirmed` keeps it in flight until its cells are resolved: `printed` sets `id_printed` / `feed_mark_printed` from that job, `not_printed` makes the next job carry them. Before this ruling a second job printed to the sheet before anyone resolved the cells carried both again (the margin ID twice in one band); a `cell` sheet carried the feed mark twice. The wording of 10.2, 10.2a and OC-56 follows.
+- **The sheet ID goes out once, also on a retry** (ruling T9-1). If the sheet's ID is printed or has a hub cell by the time of the retry, the retry drops the ID cell and prints only the items; an ID-only job with nothing left is `409 job_not_retryable`.
+- **A cell payload ignores unknown keys**, like the page detail, so a job stored by a later version still loads after a rollback.
+- **The retry does not create a batch.** It is one job; the first attempt's batch is left as it was.
 
 *Empty cell lists (decided with Task 8):* `cells/mark`, `unmark` and `resolve` refuse an empty list at the API (`422 invalid_request`, `cells` needs 1 to 400 entries). The service treats an empty list as a no-op — no write lock, no commit, no event — so a caller that skips the HTTP layer gets the sheet back unchanged. Text that is nothing after cleaning is `null` (optional fields) or the default (`marked by hand` for a cell purpose); empty product code entries are dropped.
 
@@ -584,7 +690,8 @@ Follows the foundation's design system and layout; the mockups show the intent. 
 
 - Table: number (mono), sheet type with label size, used n/N with bar, last used, state (`used up`, `discarded`), Discard (with the confirmation text from the mockup: "leaves the picker; its number is never given out again; labels already printed stay printed").
 - Filters: hide used up (default on), sheet type, search by code. Discarded sheets behind a filter.
-- "+ New sheet" opens **Add a sheet** (mockup 3): type select (current version), cells already used (tap on the grid), dimensions panel with the geometry diagram (read-only), ID placement radios (margin disabled with the reason when too narrow), for "first free cell" a printer and tray choice and "Add and print ID label", small-cell hint when `allow_qr=false`.
+- "+ New sheet" opens **Add a sheet** (mockup 3): type select (current version), cells already used (tap on the grid), dimensions panel with the geometry diagram (read-only), ID placement radios with **margin preselected** (when a printer is chosen: the band the ID will go into, "with QR" or "text only", or, when no band is wide enough, "The ID will not be printed on this printer, add it by hand"; the option stays selectable), for "first free cell" a printer and tray choice and "Add and print ID label", small-cell hint when `allow_qr=false`. *Changed 2026-11-07 (operator decision): the margin option is the default and is no longer disabled when the margin is narrow.*
+- Sheet detail of a `margin` or `cell` sheet with `id_printed=false`: "Sheet ID not printed yet".
 - **Sheet detail** `/sheets/$code` (and the scan route `/sheet/$code`): the grid to scale with every cell's state, purpose on focus/tap, list of cells with purpose, actions: mark cells used, resolve unconfirmed cells, discard, "Print onto this sheet" (opens the cart with this sheet preselected).
 
 ### 17.2 `/sheets/archive`
@@ -613,7 +720,7 @@ In the item view and the cart, the existing printer choice decides (#179 builds 
   - sheet type (default: the type last used on this printer in this browser, OC-36), sheet picker (combobox: type to search by code; sheets of the type that fit first, with free count and "fits 9" / "too small"; "+ New … sheet (becomes …)"; scan button);
   - fill: first free cells, or choose cells (tap cells in the preview);
   - capacity alert with the split choices (15);
-  - preview: whole page and 200 % zoom, legend with counts (used / printed now / free), list "Cell 5 → …", reprint hints, "code only on this sheet type" where mapped, shortened text marked;
+  - preview: whole page and 200 % zoom, legend with counts (used / printed now / free), list "Cell 5 → …", reprint hints, "code only on this sheet type" where mapped, shortened text marked; the margin ID drawn in its band with the band named ("Sheet ID in the bottom margin"), the feed-direction mark drawn where it will print, or the warning "Sheet ID not printed, add it by hand" when no band is wide enough (10.2; *added 2026-11-07, operator decision*);
   - footer note "PDF on A4, media type labels, no scaling".
 - After printing: link to the job(s); when the job completes the sheet view shows the new cells as used.
 
@@ -651,8 +758,9 @@ From #150, adapted to Part A. Items marked **(hardware)** are verified by the op
 3. A job larger than the free cells is refused with the free count, unless placements split it.
 4. A discarded sheet's ID is never issued again, also not after archiving and unarchiving its type.
 5. **(hardware)** The CP1525N prints an L4736REV sheet from PDF with no dialog, aligned within ±0.5 mm at every cell after calibration.
-6. Creating a sheet with option 1 queues the ID label into the first free cell, and that cell is used once the job completes.
-7. Option 2 draws the ID only on the sheet's first completed job; a failed first job draws it again on the next.
+6. Creating a sheet with option 1 (chosen explicitly) queues the ID label into the first free cell, and that cell is used once the job completes.
+7. Option 2 draws the ID only on the sheet's first completed job; a failed first job draws it again on the next. It is the default when no placement is given, it lands in the band chosen by 10.2, and on a printer where every band is below 4 mm the job prints without it, takes no cell for it and leaves `id_printed` false. *Changed 2026-11-07 (operator decision).*
+7a. The first completed job of every sheet (`cell`, `margin`, `manual`) carries the feed-direction mark in the top band, right-aligned; the next job does not; a first job that fails cleanly leaves the mark for the next one; a top band under 4 mm prints no mark. *Added 2026-11-07 (operator decision).*
 8. Scanning the ID payload (URL and short form) resolves to the sheet; a discarded sheet resolves to "discarded".
 9. A sheet started under version 1 of a type still prints into version-1 positions after the type is edited to version 2.
 10. An exported type imports on another hub with identical geometry (same hash).
@@ -724,6 +832,7 @@ Only one question would change what gets built; a default is chosen so the plan 
 | Scan payload "`sheet:L4731-0002` or a hub URL" | hub URL, short form also accepted | phone cameras open the hub directly; both forms resolve |
 | Calibration comment of 22:56: test page on plain paper, "client prints" | printed by the hub onto a real sheet, gaps as reference | superseded by the 23:11 comment; the hub prints for its own printers |
 | Calibration "check per type" (wrong sheet dimensions detected) | Part B | needs the measured fit over the whole sheet; a manual reading cannot separate printer scale from a wrong pitch on one type |
+| OC-23: "a job the printer forgot ends interrupted" (cells unconfirmed only if it had started) | the cells are unconfirmed whether or not `started` was seen (ruling T5-3, `interrupted` means the page may have printed) | the hub cannot tell a forgotten job that never started from one whose start it missed; a label printed twice is worse than one confirmation. Spec 11.5 and 15 state it, the OC-23 row below is kept as decided |
 | Mockup 2: separate "Add to print queue" and "Print" buttons | one button; it reads "Add to print queue" when the printer is not ready | every print goes through the queue (ADR 0005); the two buttons would do the same |
 
 ## 25. Orchestrator's calls
@@ -745,14 +854,14 @@ Only one question would change what gets built; a default is chosen so the plan 
 | OC-13 | Seed ships 36 types; the four flagged Avery types and Avery 7161 / Avery Zweckform 3475 (fail the geometry rules as researched) are held back (Operator question 1). |
 | OC-14 | Seeder inserts missing types; only untouched, unused seed types get new seed geometry as a new version. |
 | OC-15 | Sheet-ID QR payload is `{public_url}/sheet/{code}`; `sheet:{code}` also resolves. |
-| OC-16 | Margin ID in the top margin; ≥ 4 mm usable height for text, ≥ 9 mm and a fitting QR for a QR; 5 mm hardware margin assumed if unknown. |
+| OC-16 | Margin ID in the best of the four margin bands (10.2); depth = room − hardware margin of that side − absolute calibration offset of its axis − 1 mm, usable size capped at 20 mm; ≥ 4 mm for text, ≥ 9 mm and a fitting QR (0.25 mm module, quiet zone, render dpi) for a QR; 5 mm hardware margin per side assumed if unknown. *Changed 2026-11-07 (operator decision): was "in the top margin".* |
 | OC-17 | `ipps` with TLS verification on by default; can be switched off per printer with a warning. |
 | OC-18 | Saving an IPP printer that does not accept PDF is refused. |
 | OC-19 | Print-Job attributes as listed (media-col when supported, else media keyword; `print-scaling=none` and `print-color-mode=monochrome` when supported). |
 | OC-20 | A printer-state reason without severity suffix counts as an error. |
 | OC-21 | A pre-flight attribute read right before the job is marked printing decides: offline/stopped/not accepting keep the job queued and pause the printer. After that point there is no way back to queued: a refusal before upload fails the job cleanly, a failure after the upload began fails it as interrupted. |
 | OC-22 | `printer_error` pauses on IPP printers resume automatically when the reason clears; user pauses never do. |
-| OC-23 | No time-based failure while the printer knows the job; a job the printer forgot ends interrupted. |
+| OC-23 | No time-based failure while the printer knows the job; a job the printer forgot ends interrupted. *As built (T5-3):* its cells are unconfirmed even if `started` was never seen. |
 | OC-24 | After a restart, page jobs with an IPP job id resume tracking; without one they fail with unconfirmed cells. |
 | OC-25 | Content box inset 1.0 mm + 0.3 × corner radius (unknown radius counts as 2.0 mm); round cells use the inscribed square. |
 | OC-26 | Cells are rendered at the printer's highest resolution, capped at 600 dpi. |
@@ -769,8 +878,22 @@ Only one question would change what gets built; a default is chosen so the plan 
 | OC-37 | Sheets and sheet types are readable by any `read` key, regardless of printer restriction. |
 | OC-38 | `first_free` is ascending row-major; a placement may skip cells for this print without storing it. |
 | OC-39 | `sheet_cells.job_id` does not block job retention; cells keep state and purpose when the job row is gone. |
-| OC-40 | A sheet whose ID label has not printed yet gets it on the next job's first free cell. |
+| OC-40 | A sheet whose ID label has not printed yet gets it on the next job's first free cell. Applies to `cell` sheets only (*clarified 2026-11-07*): a `margin` sheet never falls back to a cell; it gets the margin ID again on its next job. |
 | OC-41 | `queue_timeout_s` bounds each IPP request, not the wait at the printer. |
 | OC-42 | Retry of a page job re-reserves the same cells or fails with `cells_taken`; no retry while cells are unconfirmed. |
 | OC-43 | Default cell purpose: request purpose, else title, else primary id; source `api` for raw data without one. |
 | OC-44 | Cells in the printer's hardware margin are flagged in the preview, not refused. |
+| OC-45 | A margin band runs along the grid only (grid width for top and bottom, grid height for left and right); the corner square where two bands meet is never used, because its edge is never larger than the deeper band. A "corner" placement is a band with its fixed corner end: top → top-left, bottom → bottom-left, right → top-right, left → top-left. *Added 2026-11-07.* |
+| OC-46 | Band ranking: (1) bands that hold a QR first; (2) a vertical band (right or left) beats the deepest horizontal band only if its usable size is at least 2.0 mm larger; (3) equal sizes go by top, bottom, right, left. *Added 2026-11-07; the 2.0 mm lead added the same day (review ruling A-2).* |
+| OC-47 | Left and right bands use the horizontal layout turned a quarter turn clockwise: QR at the top end (not rotated), text below it reading top to bottom. Rotated text keeps the code at full height in a narrow band; a short code stacked under the QR would have to shrink below the minimum text size (6 pt) in bands under about 13 mm. *Added 2026-11-07.* |
+| OC-48 | A QR in a band also needs the band to be at least `depth + 2 mm + 10 mm` long, so that the QR stays within the grid's span and the text keeps at least 10 mm; otherwise that band is text only. *Added 2026-11-07.* |
+| OC-49 | No band ≥ 4 mm: the job prints without the margin ID, takes no cell, leaves `id_printed` false; preview and print response flag the page ("Sheet ID not printed, add it by hand"); `margin_too_small` is retired. *Added 2026-11-07.* |
+| OC-50 | Band, corner, depth and QR are decided in the reservation at the job's render dpi and stored in the page payload; the renderer and the preview obey the stored values. A payload stored before this change (no band) is drawn in the top band. *Added 2026-11-07.* |
+| OC-51 | Calibration narrows both bands of an axis by the full absolute offset of that axis (top and bottom by `abs(dy)`, left and right by `abs(dx)`), independent of the sign convention and of whether the printer clips in its own coordinates or on paper. Scale and rotation are not counted: their pivot is the page centre, so every band is exposed alike, and typical values stay inside the 1.0 mm safety. *Added 2026-11-07; changed the same day (review ruling A-1): was `max(0, −dy)` for the top band and its mirror for the others, carried over from the first version's top rule, whose direction was doubtful.* |
+| OC-52 | The usable size of a margin band is capped at 20.0 mm (QR edge and ranking), measured from the band's grid side. A 20 mm QR scans easily with a phone; a larger one only wastes the margin, and the cap lets two deep bands tie so the order decides instead of a few tenths of a millimetre. *Added 2026-11-07.* |
+| OC-53 | The feed-direction mark goes only into the top band, right-aligned at the top-right end; its right end stops at the right hardware margin, `abs(dx)` and 1.0 mm; below 4.0 mm of top band it is not printed, no other band. *Added 2026-11-07.* |
+| OC-54 | The mark is 7.0 pt, shrinks in 0.5 pt steps to 6 pt when the space is too short, is never shortened, and is left out when 6 pt does not fit. *Added 2026-11-07.* |
+| OC-55 | The mark text follows `general.language` when the reservation decides it (`de` → "▲ Oben – diese Kante zuerst", `en` and anything else → "▲ Top – this edge first") and is stored in the payload; the stored text wins over any later change of the setting, so output stays deterministic. *Added 2026-11-07; changed the same day (operator decision, ruling A-5): was a fixed English string.* |
+| OC-56 | The mark has its own flag `sheets.feed_mark_printed` and its own in-flight check; it cannot reuse `id_printed`, which `manual` sheets never set and which a `margin` sheet may leave false when its ID does not fit. In flight means a queued or printing carrier, a carrier that still owns unconfirmed cells of the sheet, or a reservation without a job row; the margin ID follows the same rule (10.2, 10.2a: "once" holds across unconfirmed outcomes). *Added 2026-11-07; extended the same day (ruling F3-1).* |
+| OC-57 | The mark is decided once in the reservation and stored in the page payload with its position and size; renderer and preview obey it. When the ID shares the top band, the mark goes first and shortens the ID's band. *Added 2026-11-07.* |
+| OC-58 | The mark is printed for every ID placement, on the sheet's first job that has a printer context (an ID-only `cell` job counts); it never causes a job by itself. *Added 2026-11-07.* |

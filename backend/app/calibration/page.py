@@ -25,8 +25,7 @@ from uuid import UUID
 
 from app.calibration.fit import crossing_point
 from app.page_render.pdf import VectorPen, text_width_mm, write_pdf
-from app.page_render.transform import IDENTITY, Deviation
-from app.services.page_jobs import PagePayload
+from app.services.page_jobs import PagePayload, snapshot_to_deviation
 from app.sheets.errors import CalibrationTypeUnsuitableError
 from app.sheets.geometry import Geometry
 
@@ -334,11 +333,7 @@ def render_calibration_page(payload: PagePayload, *, compress: bool = True) -> b
     g = Geometry(**d["geometry"])
     corrected = bool(d["corrected"])
     snap = payload.calibration if corrected else None
-    dev = (
-        Deviation(snap.dx_hmm, snap.dy_hmm, snap.sx_ppm, snap.sy_ppm, snap.rotation_udeg)
-        if snap is not None
-        else IDENTITY
-    )
+    dev = snapshot_to_deviation(snap)
     footer = fit_footer_text(
         d["type_key"],
         d["version"],

@@ -154,10 +154,18 @@ cookie of a signed-in browser is enough. The proxy settings above apply unchange
 
 `data` is always `{"channel": str, "printer_id": str | null, "type": str, "ts": ISO-8601, "data": {...}}`.
 
-The stream subscribes to the `hub` channel and to `printer:{id}:{queue,state,tape}` of every
-enabled printer the credentials may see. Printers outside `allowed_printer_ids` are never
+The stream subscribes to the `hub` channel, to the `sheets` channel and to
+`printer:{id}:{queue,state,tape}` of every enabled printer the credentials may see. Printers outside `allowed_printer_ids` are never
 subscribed. Without a `printer_id` filter, printers that are created or enabled later are
 picked up on the fly.
+
+`sheet.updated` (channel `sheets`) is published after every committed change to a sheet's
+cells: a reservation, a release, the outcome of a page job (`used`, `unconfirmed` or freed), the
+startup sweep, a resolve of unconfirmed cells and a manual edit. Its `data` is
+`{"code": str, "free": int, "total": int, "changed": [int], "state": str}`, where `changed`
+lists the cell numbers touched and `state` is the sheet's state. Sheets carry no printer
+restriction (OC-11), so every stream receives this channel regardless of
+`allowed_printer_ids` and of a `printer_id` filter. A client reacts by reading the sheet.
 
 `hub.printers_changed` (channel `hub`) is published by the admin printer API with
 `{"printer_id": str, "change": "created" | "updated" | "disabled" | "enabled"}`.

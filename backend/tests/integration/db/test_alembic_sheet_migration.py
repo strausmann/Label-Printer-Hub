@@ -57,3 +57,50 @@ def test_downgrade_removes_all_tables_and_upgrade_again_works(tmp_path):
     assert not (_TABLES & _tables(db))
     command.upgrade(cfg, _REV)
     assert _tables(db) >= _TABLES
+
+
+# ---------------------------------------------------------------- 20261107a1 feed mark (5c)
+
+_MARK_REV = "20261107a1"
+_MARK_PREV = "20261105b1"
+
+
+def _sheet_columns(db) -> dict[str, dict]:
+    eng = create_engine(f"sqlite:///{db}")
+    try:
+        return {c["name"]: c for c in inspect(eng).get_columns("sheets")}
+    finally:
+        eng.dispose()
+
+
+def test_feed_mark_column_added_with_false_for_existing_rows_and_removed_again(tmp_path):
+    db = tmp_path / "mark.db"
+    cfg = _cfg(db)
+    command.upgrade(cfg, _MARK_PREV)
+    assert "feed_mark_printed" not in _sheet_columns(db)
+    eng = create_engine(f"sqlite:///{db}")
+    with eng.begin() as c:
+        c.execute(
+            text(
+                "INSERT INTO sheets (id, code, type_id, type_version_id, state, id_placement, "
+                "id_printed, created_at) VALUES "
+                "('00000000000000000000000000000001', 'S-1', "
+                "'00000000000000000000000000000002', '00000000000000000000000000000003', "
+                "'active', 'margin', 1, '2026-11-07 00:00:00')"
+            )
+        )
+    eng.dispose()
+
+    command.upgrade(cfg, _MARK_REV)
+
+    col = _sheet_columns(db)["feed_mark_printed"]
+    assert col["nullable"] is False
+    eng = create_engine(f"sqlite:///{db}")
+    with eng.connect() as c:
+        assert c.execute(text("SELECT feed_mark_printed FROM sheets")).scalar_one() == 0
+    eng.dispose()
+
+    command.downgrade(cfg, _MARK_PREV)
+    assert "feed_mark_printed" not in _sheet_columns(db)
+    command.upgrade(cfg, _MARK_REV)
+    assert "feed_mark_printed" in _sheet_columns(db)

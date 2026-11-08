@@ -165,6 +165,52 @@ class CellOutOfRangeError(SheetApiError):
         super().__init__(detail={"cells": cells, "max": max_cell})
 
 
+class InsufficientCellsError(SheetApiError):
+    """The free cells of the chosen sheets do not hold all items (spec 8)."""
+
+    status = 409
+    error_code = "insufficient_cells"
+    message = "Not enough free cells for these items."
+
+    def __init__(self, free_cells: list[int], needed: int, shortfall: int) -> None:
+        super().__init__(
+            detail={"free_cells": free_cells, "needed": needed, "shortfall": shortfall}
+        )
+
+
+class PlanChangedError(SheetApiError):
+    """The fresh plan differs from the one the client confirmed (OC-8); nothing was written."""
+
+    status = 409
+    error_code = "plan_changed"
+    message = "The cell plan changed since the preview."
+
+    def __init__(self, plan: list[dict[str, Any]]) -> None:
+        super().__init__(detail={"plan": plan})
+
+
+class SheetTypeMismatchError(SheetApiError):
+    """A placement names a sheet of another type than the request needs."""
+
+    status = 409
+    error_code = "sheet_type_mismatch"
+    message = "The sheet is of another type than this print needs."
+
+    def __init__(self, expected: str, actual: str) -> None:
+        super().__init__(detail={"expected": expected, "actual": actual})
+
+
+class InvalidPlacementsError(SheetApiError):
+    """The placements contradict each other or the item count; ``reason`` names the rule."""
+
+    status = 422
+    error_code = "invalid_placements"
+    message = "The placements are not valid."
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(detail={"reason": reason})
+
+
 class ImportTooLargeError(SheetApiError):
     status = 413
     error_code = "import_too_large"
@@ -194,7 +240,7 @@ class MediaKindMismatchError(SheetApiError):
 
 
 class PageJobNotRetryableError(SheetApiError):
-    """A sheet page cannot be re-sent as is: its cells need the cell-aware path (Plan 3)."""
+    """A page job that cannot be retried: a sheet page that is ``done`` (its labels came out)."""
 
     status = 409
     error_code = "job_not_retryable"
@@ -297,3 +343,95 @@ class CalibrationTypeUnsuitableError(SheetApiError):
 
     def __init__(self, cols: int, rows: int) -> None:
         super().__init__(detail={"cols": cols, "rows": rows})
+
+
+# ---------------------------------------------------------------------------- sheet printing
+
+
+class CellsUnconfirmedError(SheetApiError):
+    """A page job whose cells wait for confirmation cannot be retried (OC-42): the labels may
+    have come out, so the person decides first (resolve as printed or not printed)."""
+
+    status = 409
+    error_code = "cells_unconfirmed"
+    message = "Some cells of this job are waiting for confirmation."
+
+    def __init__(self, cells: list[int]) -> None:
+        super().__init__(detail={"cells": cells})
+
+
+class SheetPrinterDisabledError(SheetApiError):
+    """The printer is switched off; sheet prints are refused at the route (pre-flight C18)."""
+
+    status = 409
+    error_code = "printer_disabled"
+    message = "This printer is disabled."
+
+
+class ItemLookupFailedError(SheetApiError):
+    """An item's integration lookup failed. It keeps the status and the code of the error the
+    lookup raised (pre-flight C10) and names the item; the message is fixed text, because the
+    lookup's own text can carry URLs and upstream detail."""
+
+    def __init__(self, *, status: int, code: str, message: str, item_index: int) -> None:
+        super().__init__(message, detail={"item_index": item_index})
+        self.status = status
+        self.error_code = code
+
+
+class ItemContentMismatchError(SheetApiError):
+    """An item lacks what its (mapped) content type needs; nothing is reserved (spec 12.5)."""
+
+    status = 422
+    error_code = "content_type_data_mismatch"
+    message = "An item lacks the data its content type needs."
+
+    def __init__(self, item_index: int, missing_fields: tuple[str, ...]) -> None:
+        super().__init__(detail={"item_index": item_index, "missing_fields": list(missing_fields)})
+
+
+class PreviewTooLargeError(SheetApiError):
+    """The plan has more pages than a preview renders (a load bound, spec 18)."""
+
+    status = 422
+    error_code = "preview_too_large"
+    message = "The plan has too many pages for a preview."
+
+    def __init__(self, pages: int, maximum: int) -> None:
+        super().__init__(detail={"pages": pages, "max": maximum})
+
+
+class PrinterUnavailableError(SheetApiError):
+    """The print queue does not know the printer (for example a page printer added after the
+    start); nothing was printed and the reserved cells are free again (pre-flight C24)."""
+
+    status = 409
+    error_code = "printer-unavailable"
+    message = "Printer is not available to the print queue."
+
+
+class SheetIdJobFailedError(SheetApiError):
+    """Something unexpected stopped the ID-only job of a new ``cell`` sheet after the sheet was
+    committed. The sheet stays without a reservation; the detail names it. The cause is logged,
+    never returned."""
+
+    status = 500
+    error_code = "sheet_id_job_failed"
+    message = "The sheet was created, but its ID label could not be queued."
+
+    def __init__(self, sheet_code: str) -> None:
+        super().__init__(detail={"sheet_code": sheet_code})
+
+
+class PrintInterruptedError(SheetApiError):
+    """A sheet print failed after some of its pages were queued (pre-flight ruling T7-2).
+
+    The pages already queued keep printing; the detail names the batch and their jobs so the
+    client can follow or cancel them instead of retrying the whole print."""
+
+    status = 502
+    error_code = "print_interrupted"
+    message = "The print stopped after some pages were queued."
+
+    def __init__(self, batch_id: str, job_ids: list[str]) -> None:
+        super().__init__(detail={"batch_id": batch_id, "job_ids": job_ids})

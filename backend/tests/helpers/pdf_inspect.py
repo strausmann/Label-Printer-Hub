@@ -20,6 +20,8 @@ longer matches, the identity ``cm`` stays in front, and the tests that depend on
 from __future__ import annotations
 
 import re
+import zlib
+from dataclasses import dataclass
 from typing import Any
 
 #: Colour-setting operators (PDF 32000-1, table 74). A gray-only page contains none of them;
@@ -242,3 +244,85 @@ def _unescape(literal: bytes) -> bytes:
             out.append(simple.get(nxt, nxt))
             i += 1
     return bytes(out)
+
+
+@dataclass(frozen=True)
+class PlacedImage:
+    """An image XObject as drawn: its pixels and the rectangle it covers on the page.
+
+    ``x_pt``/``y_pt`` is the lower-left corner in page points (origin bottom-left),
+    ``w_pt``/``h_pt`` the size. Only an upright, unrotated placement is understood.
+    """
+
+    image: Any  # PIL.Image.Image, mode "1" (1 = white)
+    x_pt: float
+    y_pt: float
+    w_pt: float
+    h_pt: float
+
+    @property
+    def mm_per_pixel(self) -> float:
+        return self.w_pt / 72 * 25.4 / self.image.width
+
+
+def _xobject_numbers(pdf: bytes) -> dict[str, int]:
+    """Resource name -> object number, from the page's ``/XObject`` dictionary."""
+    match = re.search(rb"/XObject\s*<<(.*?)>>", pdf, re.DOTALL)
+    if match is None:
+        return {}
+    return {
+        name.decode(): int(ref)
+        for name, ref in re.findall(rb"/(\S+?)\s+(\d+)\s+0\s+R", match.group(1))
+    }
+
+
+def placed_images(pdf: bytes) -> list[PlacedImage]:
+    """Every 1-bit image the page draws (``Do``), with the rectangle it covers, in draw order.
+
+    Pure Python (zlib and Pillow): no rasteriser. ``write_pdf`` places an image with one
+    ``cm`` (``w 0 0 h x y``) inside ``q``/``Q`` and decodes with the stream's own pixels, so the
+    pixel size and the placement matrix give the exact scale of the printed symbol.
+    """
+    from PIL import Image
+
+    numbers = _xobject_numbers(pdf)
+    ident = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+    def mul(m: tuple[float, ...], n: tuple[float, ...]) -> tuple[float, ...]:
+        return (
+            m[0] * n[0] + m[1] * n[2],
+            m[0] * n[1] + m[1] * n[3],
+            m[2] * n[0] + m[3] * n[2],
+            m[2] * n[1] + m[3] * n[3],
+            m[4] * n[0] + m[5] * n[2] + n[4],
+            m[4] * n[1] + m[5] * n[3] + n[5],
+        )
+
+    ctm: tuple[float, ...] = ident
+    stack: list[tuple[float, ...]] = []
+    out: list[PlacedImage] = []
+    for op, args in _parse(_page_content(pdf)):
+        if op == "q":
+            stack.append(ctm)
+        elif op == "Q":
+            ctm = stack.pop()
+        elif op == "cm":
+            ctm = mul(tuple(args), ctm)
+        elif op == "Do":
+            number = numbers[args[0].lstrip("/")]
+            head = _object_body(pdf, number).split(b"stream", 1)[0]
+            width = int(re.search(rb"/Width (\d+)", head).group(1))  # type: ignore[union-attr]
+            height = int(re.search(rb"/Height (\d+)", head).group(1))  # type: ignore[union-attr]
+            if b"/BitsPerComponent 1" not in head:
+                raise AssertionError("image is not 1-bit")
+            raw = _stream_of(pdf, number)
+            if b"FlateDecode" in head:
+                raw = zlib.decompress(raw)
+            if abs(ctm[1]) > 1e-9 or abs(ctm[2]) > 1e-9:
+                raise AssertionError("rotated image placement")
+            out.append(
+                PlacedImage(
+                    Image.frombytes("1", (width, height), raw), ctm[4], ctm[5], ctm[0], ctm[3]
+                )
+            )
+    return out

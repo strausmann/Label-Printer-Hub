@@ -46,16 +46,25 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.sheet_common import actor
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
+from app.db import engine as db_engine
 from app.db.session import get_session
 from app.models.job import Job, JobState, is_page_payload
 from app.repositories import jobs as jobs_repo
+from app.repositories import printers as printers_repo
 from app.schemas.job import JobRead
 from app.schemas.problem import ProblemDetail
 from app.services.page_jobs import PagePayload
 from app.services.print_queue import UnrenderableJobError
-from app.sheets.errors import MediaKindMismatchError, PageJobNotRetryableError
+from app.sheets import print_service
+from app.sheets.errors import (
+    MediaKindMismatchError,
+    PageJobNotRetryableError,
+    SheetApiError,
+    SheetPrinterDisabledError,
+)
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -342,8 +351,16 @@ async def resume_job(
         "(e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from "
         "its payload, so retry prints the same page again with its original calibration "
         "snapshot and date; a fresh check print with the current calibration is a new "
-        "calibration-page request.  A sheet page answers 409 ``job_not_retryable`` (its "
-        "cells need the cell-aware retry)."
+        "calibration-page request.  A sheet page is retried onto the same cells of the same "
+        "sheet as a new job, with a fresh calibration snapshot and the margin ID and feed "
+        "mark decided again for the printer.  It answers 409 ``job_not_retryable`` for a "
+        "``done`` job (or an ID-only job whose ID was printed since), 409 "
+        "``cells_unconfirmed`` while a cell of the job waits for confirmation, 409 "
+        "``cells_taken`` (with the cell numbers) when a cell is no longer free, 409 "
+        "``printer_disabled`` for a disabled printer (a calibration page too), 422 "
+        "``tray_unknown`` when the tray was removed or disabled since, and 409 "
+        "``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of "
+        "these cases."
     ),
 )
 async def retry_job(
@@ -373,7 +390,7 @@ async def retry_job(
         )
     queue = getattr(request.app.state, "print_queue", None)
     if is_page_payload(job.payload):
-        return await _retry_page_job(session, queue, job, _auth)
+        return await _retry_page_job(request, session, queue, job, _auth)
     new_job = await jobs_repo.create_queued(
         session,
         printer_id=job.printer_id,
@@ -386,7 +403,7 @@ async def retry_job(
         except UnrenderableJobError as exc:
             await _fail_unqueued(session, new_job.id, "retry_unrenderable_payload")
             raise _retry_rejected(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "job-not-retryable",
                 "Job payload cannot be re-rendered",
                 str(exc),
@@ -407,28 +424,32 @@ async def retry_job(
 
 
 async def _retry_page_job(
-    session: AsyncSession, queue: Any, job: Job, auth: AuthContext | None
+    request: Request, session: AsyncSession, queue: Any, job: Job, auth: AuthContext | None
 ) -> JobRead:
-    """Re-submit a page job from its payload through the queue (it renders at send time).
+    """Re-submit a page job through the queue (it renders at send time).
 
-    Only calibration pages: a sheet page's cells need the cell-aware path (Plan 3), so it
-    is refused with ``409 job_not_retryable`` and no row is created.
+    A calibration page is re-sent from its payload. Retry means "the same page again": the
+    stored payload carries the calibration snapshot and the date of the first submit, and both
+    are kept on purpose. After the admin has corrected the values, a new check print is a new
+    calibration-page request.
 
-    Retry means "the same page again": the stored payload carries the calibration snapshot
-    and the date of the first submit, and both are kept on purpose. After the admin has
-    corrected the values, a new check print is a new calibration-page request.
+    A sheet page goes to ``print_service.retry_sheet_page``: the same cells, a new job, a fresh
+    snapshot. A ``done`` sheet page is not retried (its labels came out).
     """
-    if job.payload.get("kind") != "calibration_page":
+    kind = job.payload.get("kind")
+    if kind == "sheet_page" and job.state == JobState.DONE.value:
+        raise PageJobNotRetryableError().to_http()
+    printer = await printers_repo.get(session, job.printer_id)
+    if printer is not None and not printer.enabled:
+        raise SheetPrinterDisabledError().to_http()  # pre-flight C18; #167 is the general fix
+    if kind == "sheet_page":
+        return await _retry_sheet_page(request, session, queue, job, auth)
+    if kind != "calibration_page":
         raise PageJobNotRetryableError().to_http()
     try:
         payload = PagePayload.model_validate(job.payload)
     except ValueError as exc:
-        raise _retry_rejected(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "job-not-retryable",
-            "Job payload cannot be re-rendered",
-            "The stored page payload is not valid",
-        ) from exc
+        raise _stored_page_invalid() from exc
     if queue is None:
         raise _printer_unavailable(job.printer_id)
     try:
@@ -442,9 +463,51 @@ async def _retry_page_job(
         raise exc.to_http() from exc
     except KeyError as exc:
         raise _printer_unavailable(job.printer_id) from exc
+    return await _read_new_job(session, new_id, job.printer_id)
+
+
+async def _retry_sheet_page(
+    request: Request, session: AsyncSession, queue: Any, job: Job, auth: AuthContext | None
+) -> JobRead:
+    if queue is None:
+        raise _printer_unavailable(job.printer_id)
+    # End this request's read transaction first: the service opens its own sessions (the
+    # R10-1 class). The loaded job stays usable (expire_on_commit=False); the session starts
+    # again when the new job is read.
+    await session.commit()
+    try:
+        new_id = await print_service.retry_sheet_page(
+            db_engine.async_session,
+            queue,
+            job,
+            actor=actor(auth) if auth is not None else "hub",
+            settings_store=request.app.state.settings_store,
+            api_key_id=auth.api_key_id if auth is not None else None,
+            source_ip=auth.ip if auth is not None else None,
+            bus=getattr(request.app.state, "event_bus", None),
+        )
+    except SheetApiError as exc:
+        if exc.error_code == "printer-unavailable":
+            raise _printer_unavailable(job.printer_id) from exc
+        raise exc.to_http() from None
+    except ValueError as exc:  # the stored payload does not describe a sheet page
+        raise _stored_page_invalid() from exc
+    return await _read_new_job(session, new_id, job.printer_id)
+
+
+def _stored_page_invalid() -> HTTPException:
+    return _retry_rejected(
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "job-not-retryable",
+        "Job payload cannot be re-rendered",
+        "The stored page payload is not valid",
+    )
+
+
+async def _read_new_job(session: AsyncSession, new_id: UUID, printer_id: UUID) -> JobRead:
     new_job = await jobs_repo.get(session, new_id)
     if new_job is None:  # pragma: no cover - the queue persisted it before returning
-        raise _printer_unavailable(job.printer_id)
+        raise _printer_unavailable(printer_id)
     return JobRead.model_validate(new_job, from_attributes=True)
 
 
