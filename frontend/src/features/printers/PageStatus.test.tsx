@@ -60,25 +60,17 @@ describe("ReasonLine", () => {
   beforeEach(async () => {
     await initI18n("en");
   });
-  const reason = (keyword: string, severity: "report" | "warning" | "error", blocking: boolean) => ({ keyword, severity, blocking });
-
-  it("names the blocking reasons of a stopped printer", () => {
-    render(
-      wrap(<ReasonLine status={pageStatus(ID, { printer_state: "stopped", state_reasons: [reason("toner-empty", "error", true), reason("media-low", "warning", false)] })} />),
-    );
-    expect(screen.getByText("toner empty")).toBeVisible();
-    expect(screen.queryByText(/media low/)).toBeNull();
+  it("names the keywords in words, joined", () => {
+    render(wrap(<ReasonLine reasons={["toner-empty", "media-low"]} />));
+    expect(screen.getByText("toner empty · media low")).toBeVisible();
   });
-  it("falls back to the warnings when nothing blocks", () => {
-    render(wrap(<ReasonLine status={pageStatus(ID, { printer_state: "stopped", state_reasons: [reason("toner-low", "warning", false)] })} />));
-    expect(screen.getByText("toner low")).toBeVisible();
-  });
-  it("shows an unknown keyword verbatim", () => {
-    render(wrap(<ReasonLine status={pageStatus(ID, { printer_state: "stopped", state_reasons: [reason("developer-low", "error", true)] })} />));
+  it("shows an unknown keyword verbatim, not in the code font", () => {
+    const { container } = render(wrap(<ReasonLine reasons={["developer-low"]} />));
     expect(screen.getByText("developer-low")).toBeVisible();
+    expect(container.querySelector("code")).toBeNull();
   });
-  it("is silent for a printer that is not stopped", () => {
-    const { container } = render(wrap(<ReasonLine status={pageStatus(ID, { state_reasons: [reason("toner-low", "warning", false)] })} />));
+  it("is silent without reasons", () => {
+    const { container } = render(wrap(<ReasonLine reasons={[]} />));
     expect(container).toBeEmptyDOMElement();
   });
 });

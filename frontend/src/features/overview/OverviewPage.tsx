@@ -84,7 +84,7 @@ export function OverviewPage() {
                   <StatusBadge state={view.badge} label={kinds[view.kind]} />
                   {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
                   {view.kind === "paused" && <PauseReason pause={printer.pause} />}
-                  <ReasonLine status={statuses.get(printer.id)} />
+                  <ReasonLine reasons={view.reasons} />
                   {view.kind === "paused" && <PauseResumeButton printer={printer} named />}
                 </li>
               ))}

@@ -28,13 +28,13 @@ export function PrinterCard({
       className="press flex h-full min-w-0 flex-col gap-3 rounded-r3 border border-line bg-surface p-4 transition-colors duration-150 hover:bg-sunken focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-link"
     >
       <span className="flex flex-col">
-        <span className="text-body font-bold">{printer.name}</span>
-        <span className="text-small text-ink-2">{printer.model}</span>
+        <span className="text-body font-bold [overflow-wrap:anywhere]">{printer.name}</span>
+        <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{printer.model}</span>
       </span>
       <StatusBadge state={view.badge} label={kinds[view.kind]} />
       {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
       {view.kind === "paused" && <PauseReason pause={printer.pause} />}
-      {page && <ReasonLine status={status} />}
+      <ReasonLine reasons={view.reasons} />
       <span className="mt-auto min-w-0 text-small">
         {!page ? (
           <TapeSwatch tapeLoaded={status?.tape_loaded} probed={status?.captured_at != null} />

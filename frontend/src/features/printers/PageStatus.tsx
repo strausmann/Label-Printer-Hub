@@ -1,7 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { PrinterStatus } from "./api";
 import { MarkerSwatch } from "./MarkerSwatch";
-import { stoppedReasons } from "./model";
 import { useReasonWord } from "./reasons";
 
 /**
@@ -30,10 +29,9 @@ export function MarkerList({ markers }: { markers: PrinterStatus["markers"] }) {
   );
 }
 
-/** Why a stopped page printer is stopped, as words (unknown keywords stay verbatim). Nothing when it is not stopped. */
-export function ReasonLine({ status }: { status: PrinterStatus | undefined }) {
+/** The reason keywords of a page printer's state (`PrinterView.reasons`) as words; unknown keywords stay verbatim. */
+export function ReasonLine({ reasons }: { reasons: string[] }) {
   const word = useReasonWord();
-  const reasons = stoppedReasons(status);
   if (reasons.length === 0) return null;
-  return <span className="min-w-0 break-words text-small text-ink-2">{reasons.map((r) => word(r.keyword)).join(" · ")}</span>;
+  return <span className="min-w-0 break-words text-small text-ink-2">{reasons.map(word).join(" · ")}</span>;
 }

@@ -9,7 +9,7 @@ export interface PrinterView {
   badge: BadgeState;
   /** Text from the API that explains the state (probe error, error flags); never invented. */
   detail: string | null;
-  /** Page printers: why a stopped printer is stopped (`printer-state-reasons` keywords, in the order sent). */
+  /** Page printers: why a printer is stopped or has a problem (`printer-state-reasons` keywords, in the order sent). */
   reasons: string[];
 }
 
@@ -24,7 +24,7 @@ type Reason = NonNullable<PrinterStatus["state_reasons"]>[number];
  * blocks, every warning and error (a `report` entry is information, not a cause). Empty for a
  * printer that is not stopped.
  */
-export function stoppedReasons(status: PrinterStatus | undefined): Reason[] {
+function stoppedReasons(status: PrinterStatus | undefined): Reason[] {
   if (status?.printer_state !== "stopped") return [];
   const all = status.state_reasons ?? [];
   const blocking = all.filter((r) => r.blocking);
@@ -47,7 +47,14 @@ export function describePrinter(printer: Printer, status: PrinterStatus | undefi
     return { kind: "stopped", badge: serious ? "bad" : "warn", detail: null, reasons: reasons.map((r) => r.keyword) };
   }
   // After the stopped case: a stopped page printer's `error_state` only repeats its reason keywords.
-  if (status?.error_state) return { kind: "error", badge: "bad", detail: status.error_state, reasons: [] };
+  if (status?.error_state) {
+    if (page) {
+      // The hub copies a blocking reason keyword into `error_state`; name it in words, like a stopped printer's.
+      const blocking = (status.state_reasons ?? []).filter((r) => r.blocking).map((r) => r.keyword);
+      return { kind: "error", badge: "bad", detail: null, reasons: blocking.length > 0 ? blocking : [status.error_state] };
+    }
+    return { kind: "error", badge: "bad", detail: status.error_state, reasons: [] };
+  }
   // A page printer can be busy with another computer's job, which the hub's queue never sees.
   if (printing || (page && status?.printer_state === "printing")) {
     return { kind: "printing", badge: "ok", detail: null, reasons: [] };

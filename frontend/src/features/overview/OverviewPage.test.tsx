@@ -162,7 +162,7 @@ describe("Overview", () => {
     });
     const lowBlack = { name: "Black toner", color: "#000000", level_percent: 4, low: true, empty: false, some_remaining: false, type: "toner" };
 
-    it("counts a low toner as material running out, like tape", async () => {
+    it("counts a printer with a low toner as running out of material", async () => {
       mockApi(withPage(pageStatus(PAGE_PRINTER.id, { markers: [lowBlack] })));
       await renderApp({ path: "/" });
       const section = await screen.findByRole("region", { name: "Material" });

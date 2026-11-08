@@ -58,7 +58,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           <StatusBadge state={view.badge} label={kinds[view.kind]} />
           {view.detail && <p className="text-small text-ink-2">{view.detail}</p>}
           {view.kind === "paused" && <PauseReason pause={printer.pause} />}
-          {page && <ReasonLine status={status.data} />}
+          <ReasonLine reasons={view.reasons} />
           {page && ahead > 0 && (
             <p className="text-small text-ink-2">
               {plural(ahead, { one: "# job from another computer ahead", other: "# jobs from other computers ahead" })}

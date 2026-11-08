@@ -63,6 +63,25 @@ describe("describePrinter for a page printer", () => {
     );
     expect(view).toMatchObject({ kind: "stopped", detail: null });
   });
+  it("idle with a blocking reason is a problem named by its keyword, not by the raw error text", () => {
+    const view = describePrinter(
+      PAGE,
+      page({ error_state: "media-empty", state_reasons: [{ keyword: "media-empty", severity: "error", blocking: true }] }),
+      false,
+    );
+    expect(view).toMatchObject({ kind: "error", badge: "bad", detail: null, reasons: ["media-empty"] });
+  });
+  it("without a blocking reason the error text itself is the keyword", () => {
+    expect(describePrinter(PAGE, page({ error_state: "developer-low" }), false)).toMatchObject({
+      kind: "error",
+      detail: null,
+      reasons: ["developer-low"],
+    });
+  });
+  it("a tape printer with error flags and a stopped state keeps its error text", () => {
+    const view = describePrinter(PRINTER_A, status(PRINTER_A.id, { error_state: "cover open", printer_state: "stopped" }), false);
+    expect(view).toMatchObject({ kind: "error", detail: "cover open", reasons: [] });
+  });
   it("a stopped printer with only a warning is a warning, with that keyword", () => {
     const view = describePrinter(
       PAGE,

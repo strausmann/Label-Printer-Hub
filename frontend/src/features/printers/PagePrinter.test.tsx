@@ -74,6 +74,53 @@ describe("page printer card", () => {
     expect(await within(await card(/Office laser/)).findByText("developer-low")).toBeVisible();
   });
 
+  it("an idle printer with a blocking reason says it in words, not as a raw code", async () => {
+    mockApi(
+      listRoutes(
+        pageStatus(P, { error_state: "media-empty", state_reasons: [reason("media-empty", "error", true)] }),
+      ),
+    );
+    await renderApp({ path: "/printers" });
+    const c = await card(/Office laser/);
+    expect(await within(c).findByText("Problem")).toBeVisible();
+    expect(within(c).getByText("media empty")).toBeVisible();
+    expect(within(c).queryByText("media-empty")).toBeNull();
+  });
+
+  it("an idle printer with an unknown blocking keyword shows it verbatim, not in the code font", async () => {
+    mockApi(
+      listRoutes(
+        pageStatus(P, { error_state: "developer-low", state_reasons: [reason("developer-low", "error", true)] }),
+      ),
+    );
+    await renderApp({ path: "/printers" });
+    const c = await card(/Office laser/);
+    expect(await within(c).findByText("developer-low")).toBeVisible();
+    expect(c.querySelector("code")).toBeNull();
+  });
+
+  it("the detail page and a tape printer's error text", async () => {
+    mockApi({
+      [`GET /api/printers/${P}`]: PAGE_PRINTER,
+      [`GET /api/printers/${P}/status`]: pageStatus(P, { error_state: "cover-open", state_reasons: [reason("cover-open", "error", true)] }),
+      [`GET /api/printers/${P}/queue`]: [],
+    });
+    await renderApp({ path: `/printers/${P}` });
+    expect(await screen.findByText("cover open")).toBeVisible();
+    expect(screen.queryByText("cover-open")).toBeNull();
+  });
+
+  it("a tape printer with error flags keeps its error text on the card", async () => {
+    mockApi({
+      ...listRoutes(pageStatus(P)),
+      [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, { error_state: "cover open" }),
+    });
+    await renderApp({ path: "/printers" });
+    const c = await card(/Workshop PT-P750W/);
+    expect(await within(c).findByText("Problem")).toBeVisible();
+    expect(within(c).getByText("cover open")).toBeVisible();
+  });
+
   it("a printer that never answered says so and invents no supplies (#206)", async () => {
     mockApi(listRoutes(pageStatus(P, { online: null, printer_state: null, markers: [], trays: [], state_reasons: [] })));
     await renderApp({ path: "/printers" });

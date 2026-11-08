@@ -93,7 +93,23 @@ test.describe("page printer status", () => {
     await page.goto("/printers");
     const tape = page.getByRole("link", { name: /Workshop PT-P750W/ });
     await expect(tape).toBeVisible();
+    // The card is rendered before its status arrives: wait for a word that comes with the status.
+    await expect(tape.getByText(/Tape not known yet|\d+ mm|No tape loaded/).first()).toBeVisible({ timeout: 15_000 });
     await expect(tape.getByText(/toner|supplies/i)).toHaveCount(0);
+  });
+
+  test("an unbreakable tape printer name wraps inside its card at 360 px", async ({ signedInPage: page }) => {
+    await page.route("**/api/printers", async (route) => {
+      const response = await route.fetch();
+      const list = (await response.json()) as { name: string; model: string }[];
+      list[0]!.name = `Workshop${"x".repeat(70)}`;
+      list[0]!.model = `Model${"y".repeat(70)}`;
+      await route.fulfill({ response, json: list });
+    });
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.goto("/printers");
+    await expect(page.getByRole("link", { name: /Workshopx{70}/ })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 
   const WORDS = {
