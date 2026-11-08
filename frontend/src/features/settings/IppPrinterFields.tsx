@@ -51,6 +51,16 @@ export function trayProblem(trays: TrayDraft[]): TrayProblem | null {
   return defaults[0]!.enabled ? null : "default_disabled";
 }
 
+/**
+ * Keeps the default on an enabled tray: when the default tray is switched off (or none is set), the first
+ * enabled tray takes over. With nothing enabled the list is left alone and the rule shows as a message.
+ */
+export function settleDefault(trays: TrayDraft[]): TrayDraft[] {
+  if (trays.some((tray) => tray.isDefault && tray.enabled)) return trays;
+  const first = trays.find((tray) => tray.enabled);
+  return first ? trays.map((tray) => ({ ...tray, isDefault: tray === first })) : trays;
+}
+
 const newTray = (key: string): TrayDraft => ({ key, label: key, loadHint: "", enabled: true, isDefault: false });
 
 export const trayDraftsOf = (printer: AdminPrinter | null): TrayDraft[] =>
@@ -71,11 +81,7 @@ export function mergeTrays(existing: TrayDraft[], sources: string[]): { trays: T
   const kept = keys.slice(0, TRAYS_MAX - 1);
   const byKey = new Map(existing.map((tray) => [tray.key, tray]));
   const trays = [...kept, AUTO].map((key) => byKey.get(key) ?? newTray(key));
-  if (!trays.some((tray) => tray.isDefault && tray.enabled)) {
-    const first = trays.find((tray) => tray.enabled) ?? trays[0]!;
-    return { trays: trays.map((tray) => ({ ...tray, isDefault: tray === first })), reported: keys.length };
-  }
-  return { trays, reported: keys.length };
+  return { trays: settleDefault(trays), reported: keys.length };
 }
 
 export const trayPayload = (trays: TrayDraft[]): TrayIn[] =>
@@ -95,7 +101,11 @@ export function useIppDraft(printer: AdminPrinter | null) {
   const [uri, setUriState] = useState(stored.uri ?? "");
   const [tlsVerify, setTlsVerifyState] = useState(stored.tls_verify ?? true);
   const [enabled, setEnabled] = useState(printer?.enabled ?? true);
-  const [trays, setTrays] = useState<TrayDraft[]>(() => trayDraftsOf(printer));
+  // A stored page printer without trays still shows the automatic one, so the table is never invisible.
+  const [trays, setTrays] = useState<TrayDraft[]>(() => {
+    const stored = trayDraftsOf(printer);
+    return printer?.backend === "ipp" && stored.length === 0 ? mergeTrays([], []).trays : stored;
+  });
   const [probed, setProbed] = useState<{ uri: string; tls: boolean; summary: IppProbeSummary } | null>(null);
   const [reported, setReported] = useState(0);
 
@@ -119,7 +129,7 @@ export function useIppDraft(printer: AdminPrinter | null) {
     setEnabled,
     trays,
     patchTray: (key: string, patch: Partial<TrayDraft>) =>
-      setTrays((list) => list.map((tray) => (tray.key === key ? { ...tray, ...patch } : tray))),
+      setTrays((list) => settleDefault(list.map((tray) => (tray.key === key ? { ...tray, ...patch } : tray)))),
     setDefault: (key: string) => setTrays((list) => list.map((tray) => ({ ...tray, isDefault: tray.key === key }))),
     summary: probed && probed.uri === trimmed && probed.tls === tlsVerify ? probed.summary : null,
     reported,
@@ -136,9 +146,9 @@ export function useIppDraft(printer: AdminPrinter | null) {
         {
           onSuccess: (summary) => {
             setProbed({ uri: trimmed, tls: tlsVerify, summary });
-            const merged = mergeTrays(trays, summary.media_sources);
-            setTrays(merged.trays);
-            setReported(merged.reported);
+            // Merge into the list as it is when the answer arrives, so edits made meanwhile survive.
+            setTrays((list) => mergeTrays(list, summary.media_sources).trays);
+            setReported(mergeTrays([], summary.media_sources).reported);
           },
         },
       );
@@ -292,7 +302,7 @@ function TrayCard({ tray, draft }: { tray: TrayDraft; draft: IppDraft }) {
           value={tray.loadHint}
           onChange={(loadHint) => draft.patchTray(tray.key, { loadHint })}
           maxLength={LOAD_HINT_MAX}
-          placeholder={t`For example: written side down`}
+          placeholder={t`For example: face down`}
         />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-x-6">
@@ -323,6 +333,8 @@ export function IppPrinterFields({ draft }: { draft: IppDraft }) {
   const shownProblem = draft.uri.trim() === "" ? null : draft.problem;
   const listed = TRAYS_MAX - 1;
   const reported = draft.reported;
+  const trayText = useTrayProblemText();
+  const inlineProblem = trayText(trayProblem(draft.trays));
   const defaultKey = draft.trays.find((tray) => tray.isDefault)?.key ?? "";
 
   return (
@@ -367,6 +379,11 @@ export function IppPrinterFields({ draft }: { draft: IppDraft }) {
               <TrayCard key={tray.key} tray={tray} draft={draft} />
             ))}
           </RadioGroup>
+          {inlineProblem ? (
+            <p role="status" className="text-small font-bold text-ink">
+              {inlineProblem}
+            </p>
+          ) : null}
           {draft.reported > TRAYS_MAX - 1 ? (
             <p className={HINT}>{t`Only the first ${listed} of ${reported} trays are listed.`}</p>
           ) : null}

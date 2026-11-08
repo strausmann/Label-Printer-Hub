@@ -167,10 +167,29 @@ describe("IPP page printer form", () => {
     }
     await userEvent.click(within(form).getByRole("button", { name: "Create printer" }));
     expect(await within(form).findByRole("alert")).toHaveTextContent("Enable at least one tray.");
-    await userEvent.click(within(form).getByRole("switch", { name: "Enabled: tray-2" }));
-    await userEvent.click(within(form).getByRole("button", { name: "Create printer" }));
-    expect(await within(form).findByRole("alert")).toHaveTextContent("The default tray must be one of the enabled trays.");
     expect(calls.some((c) => c.method === "POST" && c.path === "/api/v1/admin/printers")).toBe(false);
+  });
+
+  it("disabling the default tray moves the default to the next enabled tray, and the rule shows inline", async () => {
+    mockApi({ "GET /api/v1/admin/printers": [], "POST /api/v1/admin/printers/ipp/probe": PROBE });
+    const form = await openNewPagePrinter();
+    await fillAndRead(form);
+    await within(form).findByRole("region", { name: "What the printer reports" });
+    expect(within(form).getByRole("radio", { name: "Default: main-tray" })).toBeChecked();
+    await userEvent.click(within(form).getByRole("switch", { name: "Enabled: main-tray" }));
+    expect(within(form).getByRole("radio", { name: "Default: tray-2" })).toBeChecked();
+    // Switching the last enabled trays off says so next to the table, before any save.
+    await userEvent.click(within(form).getByRole("switch", { name: "Enabled: tray-2" }));
+    await userEvent.click(within(form).getByRole("switch", { name: "Enabled: auto" }));
+    expect(within(form).getByText("Enable at least one tray.")).toBeVisible();
+    expect(within(form).queryByRole("alert")).toBeNull();
+    // Enabling one again makes it the default.
+    await userEvent.click(within(form).getByRole("switch", { name: "Enabled: auto" }));
+    expect(within(form).getByRole("radio", { name: "Default: auto" })).toBeChecked();
+    expect(within(form).queryByText("Enable at least one tray.")).toBeNull();
+    // An empty label is shown inline too.
+    await userEvent.clear(within(within(form).getByRole("group", { name: "auto" })).getByRole("textbox", { name: "Label" }));
+    expect(within(form).getByText("Every tray needs a label.")).toBeVisible();
   });
 
   it("creates the printer with the trays and says it is ready after a restart", async () => {
@@ -412,5 +431,145 @@ describe("worst-case printer data (break-ui)", () => {
     expect(within(summary).getByText(make)).toBeVisible();
     expect(within(summary).getByText("processing-stopped-x")).toBeVisible();
     expect(within(summary).getByText("Not reported")).toBeVisible();
+  });
+});
+
+describe("review fixes", () => {
+  const probeResponse = (over: object = {}) =>
+    new Response(JSON.stringify({ ...PROBE, ...over }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  it("a probe that is still running does not overwrite tray fields edited meanwhile", async () => {
+    mockApi({ "GET /api/v1/admin/printers": [IPP_ADMIN] });
+    const base = globalThis.fetch;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).includes("/ipp/probe")) {
+          await gate;
+          return probeResponse();
+        }
+        return base(input, init);
+      }),
+    );
+    await renderApp({ path: "/settings/printers" });
+    await userEvent.click(await screen.findByRole("button", { name: "Edit Office laser" }));
+    const form = screen.getByRole("form", { name: "Edit Office laser" });
+    await userEvent.type(within(form).getByRole("textbox", { name: "IPP address" }), "2");
+    await userEvent.click(within(form).getByRole("button", { name: "Read printer" }));
+    const main = within(form).getByRole("group", { name: "main-tray" });
+    await userEvent.clear(within(main).getByRole("textbox", { name: "Label" }));
+    await userEvent.type(within(main).getByRole("textbox", { name: "Label" }), "Edited");
+    await userEvent.click(within(main).getByRole("switch", { name: "Enabled: main-tray" }));
+    release();
+    await within(form).findByRole("region", { name: "What the printer reports" });
+    const after = within(form).getByRole("group", { name: "main-tray" });
+    expect(within(after).getByRole("textbox", { name: "Label" })).toHaveValue("Edited");
+    expect(within(after).getByRole("switch", { name: "Enabled: main-tray" })).not.toBeChecked();
+    // The probe still adds the tray the printer reports and the stored list did not have.
+    expect(within(form).getByRole("group", { name: "tray-2" })).toBeVisible();
+  });
+
+  it("the restart note clears on cancel and when another printer is opened", async () => {
+    let printers: unknown[] = [];
+    mockApi({
+      "GET /api/v1/admin/printers": () => printers,
+      "POST /api/v1/admin/printers/ipp/probe": PROBE,
+      "POST /api/v1/admin/printers": () => {
+        printers = [IPP_ADMIN, ADMIN_PRINTER];
+        return IPP_ADMIN;
+      },
+    });
+    const form = await openNewPagePrinter();
+    await fillAndRead(form);
+    await within(form).findByRole("region", { name: "What the printer reports" });
+    await userEvent.click(within(form).getByRole("button", { name: "Create printer" }));
+    expect(await screen.findByText("The printer is ready after the hub restarts.")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Add printer" }));
+    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
+  });
+
+  it("the restart note is gone after a tape printer was saved", async () => {
+    mockApi({
+      "GET /api/v1/admin/printers": [IPP_ADMIN, ADMIN_PRINTER],
+      "POST /api/v1/admin/printers/office-laser/disable": { ...IPP_ADMIN, enabled: false },
+      "PUT /api/v1/admin/printers/workshop-pt": ADMIN_PRINTER,
+    });
+    await renderApp({ path: "/settings/printers" });
+    await userEvent.click(await screen.findByRole("button", { name: "Disable Office laser" }));
+    expect(await screen.findByText("The printer is ready after the hub restarts.")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Edit Workshop PT-P750W" }));
+    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
+    await waitFor(() => expect(screen.queryByRole("form")).toBeNull());
+    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
+  });
+
+  it("the restart note clears when the form is cancelled", async () => {
+    mockApi({ "GET /api/v1/admin/printers": [IPP_ADMIN], "POST /api/v1/admin/printers/office-laser/disable": { ...IPP_ADMIN, enabled: false } });
+    await renderApp({ path: "/settings/printers" });
+    await userEvent.click(await screen.findByRole("button", { name: "Disable Office laser" }));
+    expect(await screen.findByText("The printer is ready after the hub restarts.")).toBeVisible();
+    // Opening the form clears it; cancelling after a later note does too.
+    await userEvent.click(screen.getByRole("button", { name: "Edit Office laser" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
+  });
+
+  it("editing a page printer that has no stored trays shows the automatic tray", async () => {
+    const { calls } = mockApi({
+      "GET /api/v1/admin/printers": [{ ...IPP_ADMIN, trays: [] }],
+      "PUT /api/v1/admin/printers/office-laser": IPP_ADMIN,
+    });
+    await renderApp({ path: "/settings/printers" });
+    await userEvent.click(await screen.findByRole("button", { name: "Edit Office laser" }));
+    const form = screen.getByRole("form", { name: "Edit Office laser" });
+    expect(within(form).getByRole("group", { name: "auto" })).toBeVisible();
+    expect(within(form).getByRole("radio", { name: "Default: auto" })).toBeChecked();
+    await userEvent.click(within(form).getByRole("button", { name: "Save printer" }));
+    await waitFor(() => expect(lastBody(calls, "PUT", "/api/v1/admin/printers/office-laser")).toBeDefined());
+    expect(lastBody(calls, "PUT", "/api/v1/admin/printers/office-laser")!.trays).toEqual([
+      { key: "auto", label: "auto", load_hint: null, enabled: true, is_default: true },
+    ]);
+  });
+
+  it.each([
+    ["ipp_pdf_unsupported", 409, undefined, /cannot print PDF/i],
+    ["ipp_unreachable", 409, undefined, /cannot be reached at that address/i],
+    ["ipp_rejected", 502, { ipp_status: "server-error-busy" }, /refused the request \(server-error-busy\)/i],
+    ["tray_unknown", 422, undefined, /that the printer does not report/i],
+    ["ipp_bad_response", 502, undefined, /did not answer like an IPP printer/i],
+    ["invalid_connection", 422, undefined, /address or the certificate setting is not valid/i],
+  ])("the edit save error %s is shown as words", async (code, status, detail, words) => {
+    mockApi({
+      "GET /api/v1/admin/printers": [IPP_ADMIN],
+      "PUT /api/v1/admin/printers/office-laser": () => respond(status, apiErrorBody(code, "raw text", detail)),
+    });
+    await renderApp({ path: "/settings/printers" });
+    await userEvent.click(await screen.findByRole("button", { name: "Edit Office laser" }));
+    const form = screen.getByRole("form", { name: "Edit Office laser" });
+    await userEvent.click(within(form).getByRole("button", { name: "Save printer" }));
+    const alert = await within(form).findByRole("alert");
+    expect(alert).toHaveTextContent(words);
+    expect(alert).not.toHaveTextContent(code);
+    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
+  });
+
+  it("the edit save reports a network error", async () => {
+    mockApi({ "GET /api/v1/admin/printers": [IPP_ADMIN] });
+    const base = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if ((init?.method ?? "GET") === "PUT") throw new TypeError("offline");
+        return base(input, init);
+      }),
+    );
+    await renderApp({ path: "/settings/printers" });
+    await userEvent.click(await screen.findByRole("button", { name: "Edit Office laser" }));
+    const form = screen.getByRole("form", { name: "Edit Office laser" });
+    await userEvent.click(within(form).getByRole("button", { name: "Save printer" }));
+    expect(await within(form).findByRole("alert")).toHaveTextContent("The server cannot be reached.");
   });
 });

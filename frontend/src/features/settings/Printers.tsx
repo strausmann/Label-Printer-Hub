@@ -22,12 +22,15 @@ export function Printers() {
       {editing ? (
         <PrinterForm key={editing === "new" ? "new" : editing.slug} printer={editing === "new" ? null : editing} onDone={(result) => {
             setEditing(null);
-            if (result) setRestartNote(result.restartNote);
+            setRestartNote(result?.restartNote ?? false);
           }}
         />
       ) : (
         <div>
-          <Button onPress={() => setEditing("new")} className={PRIMARY_BUTTON}>
+          <Button onPress={() => {
+              setRestartNote(false);
+              setEditing("new");
+            }} className={PRIMARY_BUTTON}>
             {t`Add printer`}
           </Button>
         </div>
@@ -63,7 +66,10 @@ export function Printers() {
                 </div>
                 <StatusBadge state={printer.enabled ? "ok" : "idle"} label={printer.enabled ? t`Enabled` : t`Disabled`} />
                 <div className="flex gap-2">
-                  <Button aria-label={t`Edit ${printer.name}`} onPress={() => setEditing(printer)} className={SECONDARY_BUTTON}>
+                  <Button aria-label={t`Edit ${printer.name}`} onPress={() => {
+                      setRestartNote(false);
+                      setEditing(printer);
+                    }} className={SECONDARY_BUTTON}>
                     {t`Edit`}
                   </Button>
                   <Button
@@ -72,7 +78,7 @@ export function Printers() {
                     onPress={() =>
                       admin.toggle.mutate(
                         { slug: printer.slug, enable: !printer.enabled },
-                        { onSuccess: () => printer.backend === "ipp" && setRestartNote(true) },
+                        { onSuccess: () => setRestartNote(printer.backend === "ipp") },
                       )
                     }
                     className={SECONDARY_BUTTON}

@@ -948,13 +948,13 @@ msgstr "erste Version"
 msgid "For example ipp://printer.example.invalid:631/ipp/print"
 msgstr "Zum Beispiel ipp://printer.example.invalid:631/ipp/print"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "For example: face down"
+msgstr "Zum Beispiel: Schrift unten"
+
 #: src/features/archive/TypeForm.tsx
 msgid "For example: measured again with a ruler."
 msgstr "Zum Beispiel: mit dem Lineal neu gemessen."
-
-#: src/features/settings/IppPrinterFields.tsx
-msgid "For example: written side down"
-msgstr "Zum Beispiel: beschriebene Seite nach unten"
 
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"
@@ -2137,10 +2137,6 @@ msgstr "Bereiche der Einstellungen"
 #: src/features/sheets/SheetsPage.tsx
 msgid "Sheet"
 msgstr "Bogen"
-
-#: src/pages/placeholders.tsx
-#~ msgid "Sheet {code}"
-#~ msgstr "Bogen {code}"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Sheet {code} was added, but its ID label could not be queued."
