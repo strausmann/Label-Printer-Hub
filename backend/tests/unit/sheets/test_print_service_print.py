@@ -1148,3 +1148,29 @@ async def test_a_version_added_during_the_lookups_is_not_printed_on_unchecked_ge
         sheet = (await s.execute(select(Sheet))).scalar_one()
         version = await s.get(SheetTypeVersion, sheet.type_version_id)
     assert version is not None and version.version == 1
+
+
+def test_id_cell_fit_check_refuses_a_box_without_room_for_a_line_or_the_qr() -> None:
+    """Issue #210: the ID cell gets the checks an item gets, and nothing is echoed."""
+    from app.sheets.errors import IdCellContentMismatchError
+    from app.sheets.geometry import Geometry
+    from app.sheets.print_service import check_id_cell_fits
+
+    def scan(code: str) -> str:
+        return f"https://hub.example.invalid/s/{code}"
+
+    def check(label_mm: int, *, allow_qr: bool) -> None:
+        g = Geometry(
+            "A4", 21000, 29700, label_mm, label_mm, 1, 1, label_mm, label_mm, 1500, 2000, None,
+            "rectangle",
+        )  # fmt: skip
+        check_id_cell_fits(g, allow_qr=allow_qr, code="AT1-0001", scan=scan, render_dpi=300)
+
+    with pytest.raises(IdCellContentMismatchError) as no_line:
+        check(350, allow_qr=False)
+    assert no_line.value.detail == {"cell": "id", "missing_fields": ["label_size"]}
+    with pytest.raises(IdCellContentMismatchError) as no_qr:
+        check(600, allow_qr=True)  # room for a line, not for the symbol
+    assert no_qr.value.detail == {"cell": "id", "missing_fields": ["qr_payload"]}
+    check(600, allow_qr=False)  # text only: no symbol to fit
+    check(2000, allow_qr=True)

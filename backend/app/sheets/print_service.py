@@ -24,7 +24,7 @@ import base64
 import logging
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
-from typing import Any, Final, Protocol
+from typing import Any, Final, Literal, Protocol
 from uuid import UUID, uuid4
 
 from PIL import Image, ImageDraw
@@ -81,6 +81,7 @@ from app.sheets.cell_render import (
 )
 from app.sheets.errors import (
     CellsUnconfirmedError,
+    IdCellContentMismatchError,
     ItemContentMismatchError,
     ItemLookupFailedError,
     MediaKindMismatchError,
@@ -413,15 +414,26 @@ async def _new_view(
     """The view of a sheet this request would create, without creating it."""
     new = placement.new_sheet
     assert new is not None
-    t: SheetType | None = await repo.get_type_by_key(session, new.type)
+    return await _new_view_of(session, new.type, new.version, new.id_placement, ahead)
+
+
+async def _new_view_of(
+    session: AsyncSession,
+    type_key: str,
+    version: int | None,
+    id_placement: Literal["cell", "margin", "manual"],
+    ahead: dict[str, int],
+) -> tuple[SheetView, _SheetInfo]:
+    """The view of a sheet of ``type_key`` that would be created, without creating it."""
+    t: SheetType | None = await repo.get_type_by_key(session, type_key)
     if t is None:
         raise SheetTypeNotFoundError()
     if t.archived_at is not None:
         raise SheetTypeArchivedError()
     v = (
         await types_repo.current_version(session, t.id)
-        if new.version is None
-        else await types_repo.get_version(session, t.id, new.version)
+        if version is None
+        else await types_repo.get_version(session, t.id, version)
     )
     if v is None:
         raise SheetTypeVersionNotFoundError()
@@ -435,7 +447,7 @@ async def _new_view(
         geometry=version_geometry(v),
         allow_qr=t.allow_qr,
         non_free={},
-        id_placement=new.id_placement,
+        id_placement=id_placement,
         id_printed=False,
         has_hub_cell=False,
         margin_id_in_flight=False,
@@ -912,12 +924,45 @@ def check_item_fits(
         raise ItemContentMismatchError(index, ("qr_payload",))
 
 
+def check_id_cell_fits(
+    geometry: Geometry, *, allow_qr: bool, code: str, scan: Callable[[str], str], render_dpi: int
+) -> None:
+    """Whether the sheet ID label can be drawn in a cell of this geometry (issue #210).
+
+    The same two checks as ``check_item_fits``, on the cell the hub fills itself: its content box
+    must hold a line, and on a type with QR the short-URL symbol must fit. Every cell of a
+    geometry has the same box, so the answer does not depend on which cell is free. Raises
+    ``IdCellContentMismatchError`` (422) before anything is reserved; no value is echoed.
+    """
+    box = content_box(geometry, 1)
+    if not box_fits_a_line(box):
+        raise IdCellContentMismatchError(("label_size",))
+    content_type, _ = map_content_type(ContentType.QR_TWO_LINES, allow_qr)
+    if content_type.value.startswith("qr_") and not _qr_fits_at(
+        scan(code), box.w / 100, box.h / 100, render_dpi
+    ):
+        raise IdCellContentMismatchError(("qr_payload",))
+
+
 def _check_plan_items(
-    plan_pages: Sequence[PagePlan], items: Sequence[ResolvedItem], dpi: int
+    plan_pages: Sequence[PagePlan],
+    items: Sequence[ResolvedItem],
+    dpi: int,
+    scan: Callable[[str], str],
 ) -> None:
     """``check_item_fits`` for every item at the cell the plan gives it (CPU: run in a thread)."""
     index = 0
     for page in plan_pages:
+        if page.id_cell is not None:  # the hub's own label comes first, like in the job
+            code = page.sheet.code or page.sheet.code_hint
+            assert code is not None
+            check_id_cell_fits(
+                page.sheet.geometry,
+                allow_qr=page.sheet.allow_qr,
+                code=code,
+                scan=scan,
+                render_dpi=dpi,
+            )
         for cell in page.item_cells:
             check_item_fits(
                 items[index],
@@ -1190,6 +1235,9 @@ async def _queue_pages(
             ),
         )
         batch_id = batch.id
+        # ``create`` refreshes the row and so opens a read transaction. ``submit_page_job`` opens
+        # its own session; this one must not hold a pooled connection meanwhile (issue #210).
+        await session.commit()
         for page, payload in zip(reserved, payloads, strict=True):
             try:
                 await queue.submit_page_job(
@@ -1259,7 +1307,7 @@ async def print_sheets(
         )
         await session.commit()  # no read transaction stays open while the lookups run
         items = await resolve_items(request.items, lookup)
-        await asyncio.to_thread(_check_plan_items, dry.pages, items, facts.render_dpi)
+        await asyncio.to_thread(_check_plan_items, dry.pages, items, facts.render_dpi, scan)
 
         expected = (
             None
@@ -1338,7 +1386,18 @@ async def create_sheet_with_id_label(
             render_dpi=facts.render_dpi,
             language=language,
         )
+        # The ID cell is checked on the geometry the sheet would get, before anything exists.
+        view, info = await _new_view_of(session, new.type_key, new.version, "cell", {})
         await session.commit()  # no read transaction stays open into the reservation
+        assert info.hint is not None
+        await asyncio.to_thread(
+            check_id_cell_fits,
+            view.geometry,
+            allow_qr=view.allow_qr,
+            code=info.hint,
+            scan=scan,
+            render_dpi=facts.render_dpi,
+        )
         reserved = await reserve(
             session,
             placements=[PlacementRequest(sheet_code=None, new_sheet=new)],
@@ -1546,6 +1605,7 @@ async def retry_sheet_page(
                     "detail": new_detail.model_dump(mode="json"),
                 }
             )
+            await session.commit()  # no pooled connection is held while the job is submitted
             try:
                 await queue.submit_page_job(
                     job.printer_id,
