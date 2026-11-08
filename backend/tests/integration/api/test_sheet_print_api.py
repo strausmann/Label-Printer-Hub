@@ -676,3 +676,49 @@ async def test_a_print_onto_a_label_too_small_for_a_line_is_422_and_reserves_not
         assert "r.example.invalid" not in resp.text  # no echo of the item
         assert await _cells() == []
         assert not [r for r in rig.fake.received if r.operation == "Print-Job"]
+
+
+class _SubmitProbe:
+    """A stand-in for ``submit_page_job`` that waits until ``n`` callers are inside it, then
+    reads how many pooled connections are checked out, and refuses the job (issue #210)."""
+
+    def __init__(self, n: int) -> None:
+        self.n = n
+        self.inside = 0
+        self.checked_out: int | None = None
+        self.everyone_in = asyncio.Event()
+
+    async def __call__(self, *_a: Any, **_k: Any) -> UUID:
+        import app.db.engine as engine_module
+
+        self.inside += 1
+        if self.inside >= self.n:
+            await asyncio.sleep(0.1)  # let the others' sessions settle
+            self.checked_out = engine_module.engine.pool.checkedout()  # type: ignore[attr-defined]
+            self.everyone_in.set()
+        async with asyncio.timeout(10):
+            await self.everyone_in.wait()
+        raise KeyError("printer")  # -> PrinterUnavailableError, the reservation is freed
+
+
+async def test_no_connection_is_held_while_page_jobs_are_submitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #210 (the class of R10-1): ``_queue_pages`` kept the service session, and with it a
+    pooled connection, while ``submit_page_job`` opened its own. While eight concurrent prints
+    are all inside the submit, nothing is checked out, and another request still gets through."""
+    n = 8
+    async with running() as rig:
+        codes = [await _sheet() for _ in range(n)]
+        probe = _SubmitProbe(n)
+        monkeypatch.setattr(rig.app.state.print_queue, "submit_page_job", probe)
+        tasks = [asyncio.create_task(rig.print(_body(code, 1))) for code in codes]
+        async with asyncio.timeout(15):
+            await probe.everyone_in.wait()
+            other = await rig.client.get(f"/api/sheets/{codes[0]}", headers=rig.reader)
+        responses = await asyncio.gather(*tasks)
+
+    assert probe.checked_out == 0
+    assert other.status_code == 200, other.text
+    assert {r.status_code for r in responses} == {409}
+    assert await _cells() == []

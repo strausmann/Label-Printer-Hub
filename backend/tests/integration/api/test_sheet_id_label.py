@@ -520,3 +520,82 @@ async def test_creating_a_cell_sheet_holds_no_connection_while_the_service_works
         await asyncio.gather(*tasks)
 
     assert idle
+
+
+async def test_no_connection_is_held_while_the_id_job_is_submitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #210: the cell-sheet creation kept its service session while the ID job was
+    submitted. Eight concurrent creations inside the submit hold no connection."""
+    from tests.integration.api.test_sheet_print_api import _SubmitProbe
+
+    n = 8
+    async with running() as rig:
+        probe = _SubmitProbe(n)
+        monkeypatch.setattr(rig.app.state.print_queue, "submit_page_job", probe)
+        tasks = [asyncio.create_task(_create(rig, _create_body(QR_KEY))) for _ in range(n)]
+        async with asyncio.timeout(15):
+            await probe.everyone_in.wait()
+            other = await rig.client.get("/api/sheets", headers=rig.reader)
+        await asyncio.gather(*tasks)
+
+    assert probe.checked_out == 0
+    assert other.status_code == 200, other.text
+
+
+# A custom type of 3.5 mm labels with an unknown corner radius: the content box is 0.3 mm wide
+# (inset 1.6 mm per side), too small for any line, let alone the ID cell's QR (issue #210).
+G_TINY = Geometry("A4", 21000, 29700, 350, 350, 1, 2, 350, 350, 1500, 2000, None, "rectangle")
+TINY_KEY = "acme-tiny"
+
+
+async def _tiny_rig_state() -> tuple[int, int, int]:
+    from app.models.job import Job
+    from app.models.sheet import SheetCell
+
+    return await _count(Sheet), await _count(SheetCell), await _count(Job)
+
+
+async def test_a_cell_sheet_whose_id_cell_cannot_hold_a_line_is_refused() -> None:
+    """Issue #210: ``id_placement=cell`` on a type with a content box under 1.6 mm reserved a cell
+    and queued an ID job that failed at render time. Now it is a 422 before anything exists."""
+
+    async def seed() -> None:
+        await _type(TINY_KEY, "TNY", G_TINY)
+
+    async with running(seeds=seed) as rig:
+        before = await _tiny_rig_state()
+        resp = await _create(rig, _create_body(TINY_KEY))
+        after = await _tiny_rig_state()
+
+    assert resp.status_code == 422, resp.text
+    detail = _err(resp)
+    assert detail["error_code"] == "content_type_data_mismatch"
+    assert detail["error_detail"] == {"cell": "id", "missing_fields": ["label_size"]}
+    assert after == before  # no sheet, no cell, no job
+    assert not [r for r in rig.fake.received if r.operation == "Print-Job"]
+
+
+async def test_a_print_onto_a_new_cell_sheet_with_an_unusable_id_cell_is_refused() -> None:
+    """Issue #210, the print path: the ID cell of a new ``cell`` sheet is checked like an item,
+    before the reservation. The refusal names the ID cell, not an item."""
+
+    async def seed() -> None:
+        await _type(TINY_KEY, "TNY", G_TINY)
+
+    async with running(seeds=seed) as rig:
+        before = await _tiny_rig_state()
+        body = _body(
+            "unused",
+            1,
+            placements=[{"new_sheet": {"type": TINY_KEY, "id_placement": "cell"}}],
+        )
+        resp = await rig.print(body)
+        after = await _tiny_rig_state()
+
+    assert resp.status_code == 422, resp.text
+    detail = _err(resp)
+    assert detail["error_code"] == "content_type_data_mismatch"
+    assert detail["error_detail"] == {"cell": "id", "missing_fields": ["label_size"]}
+    assert "r.example.invalid" not in resp.text  # no echo of the item
+    assert after == before

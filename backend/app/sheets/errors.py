@@ -390,6 +390,18 @@ class ItemContentMismatchError(SheetApiError):
         super().__init__(detail={"item_index": item_index, "missing_fields": list(missing_fields)})
 
 
+class IdCellContentMismatchError(SheetApiError):
+    """The sheet ID cell of a new ``cell`` sheet cannot show its label: its content box holds no
+    line, or the short-URL QR does not fit. Nothing is created or reserved."""
+
+    status = 422
+    error_code = "content_type_data_mismatch"
+    message = "The sheet ID cell cannot show the ID label on this sheet type."
+
+    def __init__(self, missing_fields: tuple[str, ...]) -> None:
+        super().__init__(detail={"cell": "id", "missing_fields": list(missing_fields)})
+
+
 class PreviewTooLargeError(SheetApiError):
     """The plan has more pages than a preview renders (a load bound, spec 18)."""
 

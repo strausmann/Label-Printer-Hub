@@ -621,3 +621,29 @@ async def test_a_retry_holds_no_connection_while_the_service_works(
         await asyncio.gather(*tasks)
 
     assert idle
+
+
+async def test_no_connection_is_held_while_the_retry_is_submitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #210: the retry kept its service session while the new page job was submitted."""
+    from tests.integration.api.test_sheet_print_api import _SubmitProbe
+
+    n = 6
+    async with running() as rig:
+        failed = []
+        for _ in range(n):
+            code = await _sheet()
+            first_id, _ = await _fail_cleanly(rig, _body(code, 1))
+            failed.append(first_id)
+        probe = _SubmitProbe(n)
+        monkeypatch.setattr(rig.app.state.print_queue, "submit_page_job", probe)
+        tasks = [asyncio.create_task(_retry(rig, job_id)) for job_id in failed]
+        async with asyncio.timeout(15):
+            await probe.everyone_in.wait()
+            other = await rig.client.get("/api/sheets", headers=rig.reader)
+        responses = await asyncio.gather(*tasks)
+
+    assert probe.checked_out == 0
+    assert other.status_code == 200, other.text
+    assert {r.status_code for r in responses} == {409}
