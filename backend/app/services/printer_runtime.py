@@ -603,12 +603,21 @@ class PrinterRuntime:
         The state is re-read from the database, not taken from the direction of the call, so
         two hooks that interleave cannot leave the hold and the database disagreeing. The event
         carries the flag and its start, never an identity value."""
-        del since
-        current = await self._read_mismatch_since(printer_id)
-        self._queue().set_identity_hold(printer_id, current is not None)
+        try:
+            current = await self._read_mismatch_since(printer_id)
+        except Exception as exc:
+            # Fail closed: without the database's answer the direction of the call is the best
+            # there is, and a mismatched printer must never be left unheld.
+            _log.warning(
+                "identity mismatch re-read failed for %s (%s)", printer_id, type(exc).__name__
+            )
+            current = since
+        queue = self._queue()
+        changed = queue.is_identity_held(printer_id) != (current is not None)
+        queue.set_identity_hold(printer_id, current is not None)
         bus = getattr(self._app.state, "event_bus", None)
-        if bus is None:
-            return
+        if bus is None or not changed:
+            return  # a repeated call (the probe re-announces an unchanged mismatch) is silent
         channel = f"printer:{printer_id}:state"
         data: dict[str, Any] = {"mismatch": current is not None}
         if current is not None:

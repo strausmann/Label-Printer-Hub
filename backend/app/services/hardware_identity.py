@@ -182,7 +182,10 @@ async def record_identity(
                     and row.observed_id == observed_value
                     and row.observed_kind == stored_kind
                 ):
-                    return _done("different", stored_kind)  # nothing new to record
+                    # Nothing new to record. Re-announce anyway: the hook is idempotent and
+                    # restores a hold the caller lost while the database still says mismatch.
+                    await _announce(on_mismatch, printer_id, row.mismatch_since)
+                    return _done("different", stored_kind)
                 if await repo.mark_mismatch(
                     session,
                     printer_id,

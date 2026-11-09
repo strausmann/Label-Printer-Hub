@@ -358,6 +358,44 @@ async def test_the_hook_sets_the_hold_from_the_database() -> None:
         assert not queue.is_identity_held(rig.printer_id)
 
 
+async def test_the_hold_fails_closed_when_the_reread_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with running() as rig:
+        runtime = rig.app.state.printer_runtime
+        queue = rig.app.state.print_queue
+
+        async def broken(_pid: UUID) -> Any:
+            raise RuntimeError("database unavailable")
+
+        monkeypatch.setattr(runtime, "_read_mismatch_since", broken)
+
+        await runtime._mismatch_changed(rig.printer_id, T0)  # a mismatch started
+        assert queue.is_identity_held(rig.printer_id)  # never left unheld
+
+        await runtime._mismatch_changed(rig.printer_id, None)  # the direction is all it has
+        assert not queue.is_identity_held(rig.printer_id)
+
+
+async def test_a_lost_hold_is_restored_by_the_next_different_probe() -> None:
+    """The unchanged-reading shortcut must not leave a mismatched printer unheld."""
+    async with running() as rig:
+        queue = rig.app.state.print_queue
+        events = rig.app.state.event_bus.subscribe(f"printer:{rig.printer_id}:state", "t-lost")
+        sink = rig.app.state.printer_runtime._identity_sink
+        await sink(rig.printer_id, _serial(SERIAL_A))
+        await sink(rig.printer_id, _serial(SERIAL_B))
+        assert queue.is_identity_held(rig.printer_id)
+        assert len(_drain(events, "printer.identity_mismatch")) == 1
+        queue.set_identity_hold(rig.printer_id, False)  # the queue lost it; the database did not
+
+        assert await sink(rig.printer_id, _serial(SERIAL_B)) == "different"  # nothing new to store
+
+        assert queue.is_identity_held(rig.printer_id)
+        await sink(rig.printer_id, _serial(SERIAL_B))  # held again: no event storm
+        assert len(_drain(events, "printer.identity_mismatch")) <= 1
+
+
 async def _seed_mismatch() -> None:
     """A printer that was flagged before the hub was stopped, and one that never was."""
     async with _eng.async_session() as s:
