@@ -7,7 +7,7 @@ import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { SelectField } from "../settings/controls";
 import { SECONDARY_BUTTON } from "../ui";
-import { useTestPrint, type Printer, type PrinterStatus } from "./api";
+import type { Printer, PrinterStatus, useTestPrint } from "./api";
 import { isPagePrinter, unknownKind } from "./model";
 
 /** Why the button cannot be pressed, or null. Tape printers are not refused on status: the server's preflight decides. */
