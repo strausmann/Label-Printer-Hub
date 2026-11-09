@@ -26,6 +26,7 @@ module.exports = {
       [
         'printer-backends',
         'printer-models',
+        'printers',
         'queue',
         'status',
         'api',
