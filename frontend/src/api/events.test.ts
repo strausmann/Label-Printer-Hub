@@ -114,13 +114,13 @@ describe("useHubEvents", () => {
     it("invalidates the sheet lists, the sheet and previews", () => {
       const { invalidate } = setup();
       act(() => last().emit("sheet.updated", null, update));
-      expect(keys(invalidate)).toEqual([["sheets", "list"], ["sheets", "detail", "L4736-0001"], ["sheet-preview"]]);
+      expect(keys(invalidate)).toEqual([["sheets", "list"], ["sheet-types"], ["sheets", "detail", "L4736-0001"], ["sheet-preview"]]);
     });
 
     it("only previews that name the code are invalidated", () => {
       const { invalidate } = setup();
       act(() => last().emit("sheet.updated", null, update));
-      const predicate = invalidate.mock.calls[2]![0]!.predicate!;
+      const predicate = invalidate.mock.calls[3]![0]!.predicate!;
       const preview = (request: unknown) => ({ queryKey: ["sheet-preview", "p1", request] }) as never;
       expect(predicate(preview({ items: [], placements: [{ sheet: "L4736-0001", cells: "first_free" }] }))).toBe(true);
       expect(predicate(preview({ items: [], placements: [{ sheet: "L4736-0002", cells: "first_free" }] }))).toBe(false);
@@ -134,7 +134,16 @@ describe("useHubEvents", () => {
     it("an update without a code still refreshes the lists", () => {
       const { invalidate } = setup();
       act(() => last().emit("sheet.updated", null, {}));
-      expect(keys(invalidate)).toEqual([["sheets", "list"]]);
+      expect(keys(invalidate)).toEqual([["sheets", "list"], ["sheet-types"]]);
+    });
+
+    it("refreshes the sheet-type list and detail, whose sheet counts move with every sheet", async () => {
+      const { client } = setup();
+      client.setQueryData(["sheet-types", "list", {}], []);
+      client.setQueryData(["sheet-types", "detail", "L4736REV"], {});
+      act(() => last().emit("sheet.updated", null, update));
+      expect(client.getQueryState(["sheet-types", "list", {}])?.isInvalidated).toBe(true);
+      expect(client.getQueryState(["sheet-types", "detail", "L4736REV"])?.isInvalidated).toBe(true);
     });
   });
 

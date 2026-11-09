@@ -26,6 +26,8 @@ export interface SheetPickerProps {
   onChange: (target: Target) => void;
   /** The code a new sheet will probably get; null while it is not known. */
   newCode: string | null;
+  /** False for an archived type: it offers no new sheet. */
+  allowNew?: boolean;
 }
 
 /** Why a scanned sheet cannot take the print; null when it can (it is then selected). */
@@ -63,7 +65,7 @@ function useScanNote(typeKey: string, typeLabel: string) {
  * "New sheet" last; typing searches by code. The scan button reads a sheet's printed code with the
  * camera and selects that sheet, or says why it cannot be used.
  */
-export function SheetPicker({ typeKey, typeLabel, sheets, needed, value, onChange, newCode }: SheetPickerProps) {
+export function SheetPicker({ typeKey, typeLabel, sheets, needed, value, onChange, newCode, allowNew = true }: SheetPickerProps) {
   const { t } = useLingui();
   const scanNote = useScanNote(typeKey, typeLabel);
   const [scanning, setScanning] = useState(false);
@@ -124,9 +126,11 @@ export function SheetPicker({ typeKey, typeLabel, sheets, needed, value, onChang
                   </ListBoxItem>
                 );
               })}
-              <ListBoxItem id={NEW_KEY} textValue={newText} className="flex min-h-11 cursor-default items-center rounded-r1 px-3 text-ink outline-none data-[focused]:bg-sunken data-[selected]:font-bold">
-                {`+ ${newText}`}
-              </ListBoxItem>
+              {allowNew && (
+                <ListBoxItem id={NEW_KEY} textValue={newText} className="flex min-h-11 cursor-default items-center rounded-r1 px-3 text-ink outline-none data-[focused]:bg-sunken data-[selected]:font-bold">
+                  {`+ ${newText}`}
+                </ListBoxItem>
+              )}
             </ListBox>
           </Popover>
         </ComboBox>

@@ -55,6 +55,8 @@ function invalidate(client: QueryClient, type: EventType, { printerId, data }: F
     }
     case "sheet.updated": {
       run(sheetsListKey);
+      // Sheet counts of the types (sheets_in_use, per version) move with every sheet; the event names no type.
+      run(typesListKey.slice(0, 1));
       const code = typeof data.code === "string" ? data.code : null;
       if (!code) break;
       run(sheetKey(code));

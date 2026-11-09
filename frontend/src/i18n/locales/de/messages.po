@@ -531,6 +531,7 @@ msgid "Archive"
 msgstr "Archivieren"
 
 #: src/features/archive/TypeDetail.tsx
+#: src/features/sheets/print/SheetSection.tsx
 msgid "archived"
 msgstr "archiviert"
 
@@ -3939,6 +3940,10 @@ msgstr "Dieser Bogen ist verworfen."
 #: src/features/calibration/errors.ts
 msgid "This sheet type has fewer than two columns or two rows, so its calibration page has no crossings."
 msgstr "Dieser Bogentyp hat weniger als zwei Spalten oder zwei Zeilen, seine Kalibrierseite hat daher keine Kreuzungen."
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "This sheet type is archived. It offers no new sheets, but the sheets you have keep printing."
+msgstr "Dieser Bogentyp ist archiviert. Er bietet keine neuen Bögen an, die vorhandenen Bögen lassen sich aber weiter bedrucken."
 
 #: src/features/archive/errors.ts
 msgid "This type has sheets. Archive it instead."

@@ -197,6 +197,52 @@ describe("tray, sheet type and the sheet", () => {
   });
 });
 
+describe("an archived sheet type", () => {
+  const OLD = { ...SHEET_TYPE, key: "OLDTYPE", product_codes: ["OLD-1"], vendor: "Old", archived_at: "2026-11-01T00:00:00Z" };
+  const oldSheet = (code: string, used: number) => sheet(code, used, { type_key: "OLDTYPE", type_label: "Old OLD-1" });
+
+  it("stays selectable for its sheets with free cells, prints onto the existing sheet and offers no new one", async () => {
+    localStorage.setItem(`lph.sheetType.${P}`, "OLDTYPE");
+    const { calls } = await itemView(routes({ types: [SHEET_TYPE, OLD], sheets: [oldSheet("OLDX-0001", 17)], preview: previewFor("OLDX-0001", NEW_9, USED_17) }));
+    expect(await screen.findByRole("button", { name: /OLDTYPE.*archived/ })).toBeVisible();
+    expect(screen.getByText(/This sheet type is archived/)).toBeVisible();
+    await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
+    expect(body(previews(calls).at(-1)!).placements).toEqual([{ sheet: "OLDX-0001", cells: "first_free" }]);
+    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(options).toHaveLength(1);
+    expect(options.join("|")).not.toMatch(/New .* sheet/);
+  });
+
+  it("prints onto the existing sheet of the archived type", async () => {
+    localStorage.setItem(`lph.sheetType.${P}`, "OLDTYPE");
+    const { calls } = await itemView(routes({ types: [SHEET_TYPE, OLD], sheets: [oldSheet("OLDX-0001", 17)], preview: previewFor("OLDX-0001", NEW_9, USED_17) }));
+    // The server leaves archived types out unless asked: the mock cannot, so the question itself is checked.
+    expect(calls.filter((c) => c.path === "/api/sheet-types").every((c) => c.search.includes("include_archived=true"))).toBe(true);
+    await pressPrint();
+    await waitFor(() => expect(body(printCalls(calls).at(-1)!).placements[0]).toMatchObject({ sheet: "OLDX-0001" }));
+  });
+
+  it("a full sheet of the type does not make it a new-sheet target: the rest cannot go onto a new sheet either", async () => {
+    localStorage.setItem(`lph.sheetType.${P}`, "OLDTYPE");
+    const more = routes({
+      types: [SHEET_TYPE, OLD],
+      sheets: [oldSheet("OLDX-0001", 43)],
+      preview: conflict(409, "insufficient_cells", "Not enough.", { free_cells: [5], needed: 9, shortfall: 4 }),
+    });
+    await itemView(more);
+    expect(await screen.findByText(/has only 5 free cells/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Put the rest onto a new sheet" })).toBeNull();
+  });
+
+  it("stays hidden when no active sheet of it has a free cell", async () => {
+    await itemView(routes({ types: [SHEET_TYPE, OLD], sheets: [oldSheet("OLDX-0001", 48), sheet("L4736-0001", 17)] }));
+    await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
+    const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(options.join("|")).not.toMatch(/OLDTYPE/);
+  });
+});
+
 describe("defaults and hints", () => {
   it("with nothing remembered the type that has a sheet with room comes first", async () => {
     const empty = { ...SHEET_TYPE, key: "aaa-empty-type", product_codes: ["AAA-1"], vendor: "Aaa" };

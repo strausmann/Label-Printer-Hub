@@ -18,6 +18,8 @@ export interface CapacityAlertProps {
   fill: Fill;
   /** The other usable sheets of the type. */
   others: readonly SheetSummary[];
+  /** False for an archived type: the rest cannot go onto a new sheet. */
+  allowNew?: boolean;
   onChoose: (choice: { placements: PlacementIn[]; target?: Target }) => void;
 }
 
@@ -29,7 +31,7 @@ const MAX_OFFERED = 3;
  * placements of the next preview: the rest onto another sheet of the type, the rest onto a new
  * sheet, or the whole print onto a sheet that has room for it.
  */
-export function CapacityAlert({ needed, capacity, target, typeKey, fill, others, onChoose }: CapacityAlertProps) {
+export function CapacityAlert({ needed, capacity, target, typeKey, fill, others, allowNew = true, onChoose }: CapacityAlertProps) {
   const { t } = useLingui();
   const free = Math.max(0, capacity[0] ?? 0);
   const code = target.kind === "sheet" ? target.code : t`The new sheet`;
@@ -56,9 +58,11 @@ export function CapacityAlert({ needed, capacity, target, typeKey, fill, others,
             {t`Put the rest onto ${restCode}`}
           </Button>
         )}
-        <Button className={SECONDARY_BUTTON} onPress={() => rest({ kind: "new" })}>
-          {t`Put the rest onto a new sheet`}
-        </Button>
+        {allowNew && (
+          <Button className={SECONDARY_BUTTON} onPress={() => rest({ kind: "new" })}>
+            {t`Put the rest onto a new sheet`}
+          </Button>
+        )}
         {roomy.map(({ sheet }) => {
           const room = freeOf(sheet);
           const roomyCode = sheet.code;

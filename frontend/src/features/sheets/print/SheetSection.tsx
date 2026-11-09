@@ -53,8 +53,8 @@ const PREVIEW_DEBOUNCE_MS = 400;
 /** Stands in for the request while there is none: the query is off then and never sends it. */
 const NO_REQUEST: SheetPrintRequest = { items: [], placements: [] };
 
-const typeOption = (type: SheetTypeRead, locale: string) =>
-  `${typeLabelWithKey(type)} · ${formatMm(type.geometry.label_w, locale).replace(/ mm$/, "")} × ${formatMm(type.geometry.label_h, locale)}`;
+const typeOption = (type: SheetTypeRead, locale: string, archivedWord: string) =>
+  `${typeLabelWithKey(type)} · ${formatMm(type.geometry.label_w, locale).replace(/ mm$/, "")} × ${formatMm(type.geometry.label_h, locale)}${type.archived_at ? ` · ${archivedWord}` : ""}`;
 
 type PrintedPages = SheetPrintResponse["pages"];
 type Changed = { kind: "plan"; sheets: string[] } | { kind: "cells"; sheet: string };
@@ -67,7 +67,9 @@ type Changed = { kind: "plan"; sheets: string[] } | { kind: "cells"; sheet: stri
 export function SheetSection({ items, printer, preselectedSheet, onAccepted }: SheetSectionProps) {
   const { t, i18n } = useLingui();
   const status = usePrinterStatus(printer.id);
-  const types = useSheetTypes();
+  // Archived types are asked for too: their existing sheets keep printing, only new sheets are refused.
+  const types = useSheetTypes({ include_archived: true });
+  const sheetsQuery = useSheets({ state: "active" });
   const linked = useSheet(preselectedSheet ?? "");
   const print = usePrintSheets(printer.id);
 
@@ -78,7 +80,12 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   const activeIdx = leftover && leftover.key === itemsKey ? leftover.indices : allItems.map((_, i) => i);
   const needed = activeIdx.length;
   const tooMany = countItems(items) > MAX_ITEMS;
-  const typeList = types.data ?? [];
+  // An archived type is offered only while one of its active sheets still has a free cell; active types come first.
+  const typeList = useMemo(() => {
+    const roomy = (key: string) => (sheetsQuery.data ?? []).some((s) => s.type_key === key && s.state === "active" && freeOf(s) > 0);
+    const offered = (types.data ?? []).filter((x) => !x.archived_at || roomy(x.key));
+    return [...offered.filter((x) => !x.archived_at), ...offered.filter((x) => x.archived_at)];
+  }, [types.data, sheetsQuery.data]);
 
   // --- the choices; a null choice means "the default derived below" ---
   const [typeChoice, setTypeChoice] = useState<string | null>(null);
@@ -111,18 +118,20 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   const remembered = lastType.get(printer.id);
   const rememberedType = typeList.find((x) => x.key === remembered)?.key ?? null;
   // Nothing chosen or remembered: a type that has a sheet with room, else the first.
-  const sheetsQuery = useSheets({ state: "active" });
   const typeWithRoom = typeList.find((x) => (sheetsQuery.data ?? []).some((s) => s.type_key === x.key && s.state === "active" && freeOf(s) > 0))?.key ?? null;
   const typeKey = typeChoice ?? linkedUsable?.type_key ?? rememberedType ?? typeWithRoom ?? typeList[0]?.key ?? null;
   const type = typeList.find((x) => x.key === typeKey) ?? null;
   const typeName = type ? typeLabelWithKey(type) : (typeKey ?? "");
+  // An archived type offers no new sheet: neither as target, nor as the place for a rest.
+  const archivedType = !!type?.archived_at;
+  const archivedWord = t`archived`;
 
   // --- sheets of the type ---
   const usable = useMemo(
     () => (sheetsQuery.data ?? []).filter((s) => s.type_key === typeKey && s.state === "active" && freeOf(s) > 0),
     [sheetsQuery.data, typeKey],
   );
-  const nextCode = useNextCode(typeKey);
+  const nextCode = useNextCode(archivedType ? null : typeKey);
   const ranked = fittingFirst(usable, needed);
   const linkedHere = linkedUsable && linkedUsable.type_key === typeKey ? linkedUsable.code : null;
   const defaultTarget: Target | null = !typeKey
@@ -131,9 +140,13 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
       ? { kind: "sheet", code: linkedHere }
       : ranked[0]?.fits
         ? { kind: "sheet", code: ranked[0].sheet.code }
-        : sheetsQuery.isPending || types.isPending
-          ? null
-          : { kind: "new" };
+        : archivedType
+          ? ranked[0]
+            ? { kind: "sheet", code: ranked[0].sheet.code }
+            : null
+          : sheetsQuery.isPending || types.isPending
+            ? null
+            : { kind: "new" };
   const target = targetChoice ?? defaultTarget;
   const sheetCode = target?.kind === "sheet" ? target.code : null;
 
@@ -278,7 +291,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
             <SelectField
               label={t`Sheet type`}
               value={typeKey ?? ""}
-              options={typeList.map((x) => ({ id: x.key, label: typeOption(x, i18n.locale) }))}
+              options={typeList.map((x) => ({ id: x.key, label: typeOption(x, i18n.locale, archivedWord) }))}
               onChange={chooseType}
             />
             {tray && trays.length > 1 ? (
@@ -299,7 +312,11 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
               value={target}
               onChange={chooseTarget}
               newCode={nextCode.data?.code ?? null}
+              allowNew={!archivedType}
             />
+          )}
+          {archivedType && !tooMany && (
+            <p className={`${HINT} m-0`}>{t`This sheet type is archived. It offers no new sheets, but the sheets you have keep printing.`}</p>
           )}
           {linkNote && <p role="alert" className="text-small font-bold">{linkNote}</p>}
 
@@ -348,6 +365,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
               typeKey={typeKey}
               fill={fill}
               others={otherSheets}
+              allowNew={!archivedType}
               onChoose={(choice) => {
                 // A sheet with room replaces the target; a split is the placements of the next preview.
                 if (choice.target) chooseTarget(choice.target);

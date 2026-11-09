@@ -531,6 +531,7 @@ msgid "Archive"
 msgstr "Archive"
 
 #: src/features/archive/TypeDetail.tsx
+#: src/features/sheets/print/SheetSection.tsx
 msgid "archived"
 msgstr "archived"
 
@@ -3939,6 +3940,10 @@ msgstr "This sheet is discarded."
 #: src/features/calibration/errors.ts
 msgid "This sheet type has fewer than two columns or two rows, so its calibration page has no crossings."
 msgstr "This sheet type has fewer than two columns or two rows, so its calibration page has no crossings."
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "This sheet type is archived. It offers no new sheets, but the sheets you have keep printing."
+msgstr "This sheet type is archived. It offers no new sheets, but the sheets you have keep printing."
 
 #: src/features/archive/errors.ts
 msgid "This type has sheets. Archive it instead."
