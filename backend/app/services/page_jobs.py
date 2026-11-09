@@ -39,6 +39,14 @@ PageKind = Literal["sheet_page", "calibration_page", "test_page"]
 PAGE_KINDS: tuple[PageKind, ...] = ("sheet_page", "calibration_page", "test_page")
 
 
+IDENTITY_MISMATCH_CODE = "printer-identity-mismatch"
+"""Error code and problem type of a job refused or failed because the device behind its printer
+changed (#231)."""
+IDENTITY_HELD_KINDS: frozenset[str] = frozenset({"sheet_page", "calibration_page"})
+"""Page job kinds held while the device behind the printer is flagged as swapped. The test page
+is not: it is how an operator checks the printer."""
+
+
 class CalibrationSnapshot(BaseModel):
     """The calibration applied when the page is drawn (Task 11 fills it).
 

@@ -235,6 +235,14 @@ class PrinterStatus(BaseModel):
         default=True,
         description="False when no status producer runs for this printer",
     )
+    identity_mismatch: bool = Field(
+        default=False,
+        description=(
+            "True while the device behind the printer's address differs from the one the hub "
+            "stored (a swapped printer). Sheet and calibration jobs are held meanwhile. Only the "
+            "flag is returned here; the identity values are for admins."
+        ),
+    )
     # Page printers (IPP) only; all ``None`` for tape printers.
     kind: Literal["tape", "page"] | None = Field(
         default=None, description="'page' for IPP page printers; None for tape printers"

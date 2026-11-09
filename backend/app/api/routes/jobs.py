@@ -46,6 +46,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.identity_hold import ensure_not_held
 from app.api.routes.sheet_common import actor
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
@@ -56,7 +57,7 @@ from app.repositories import jobs as jobs_repo
 from app.repositories import printers as printers_repo
 from app.schemas.job import JobRead
 from app.schemas.problem import ProblemDetail
-from app.services.page_jobs import PagePayload
+from app.services.page_jobs import IDENTITY_HELD_KINDS, PagePayload
 from app.services.print_queue import UnrenderableJobError
 from app.sheets import print_service
 from app.sheets.errors import (
@@ -442,6 +443,8 @@ async def _retry_page_job(
     printer = await printers_repo.get(session, job.printer_id)
     if printer is not None and not printer.enabled:
         raise SheetPrinterDisabledError().to_http()  # pre-flight C18; #167 is the general fix
+    if kind in IDENTITY_HELD_KINDS:
+        ensure_not_held(queue, job.printer_id)  # #231 (a test page is never held)
     if kind == "sheet_page":
         return await _retry_sheet_page(request, session, queue, job, auth)
     if kind not in ("calibration_page", "test_page"):

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import update
+from sqlalchemy import func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,7 +51,10 @@ async def replace(
     value: str,
     now: datetime,
 ) -> bool:
-    """Set the stored identity while it still equals ``expect_*``; False when it changed."""
+    """Set the stored identity while it still equals ``expect_*``; False when it changed.
+
+    A new stored identity ends a mismatch: the device behind the address is the stored one.
+    """
     return await _cas(
         session,
         printer_id,
@@ -60,14 +63,58 @@ async def replace(
         hardware_id=value,
         hardware_id_kind=kind,
         hardware_id_seen_at=now,
+        **_NO_MISMATCH,
     )
 
 
 async def touch_seen(
-    session: AsyncSession, printer_id: UUID, *, kind: str, value: str, now: datetime
+    session: AsyncSession,
+    printer_id: UUID,
+    *,
+    kind: str,
+    value: str,
+    now: datetime,
+    clear_mismatch: bool = False,
 ) -> bool:
-    """Move ``hardware_id_seen_at`` while the stored identity is still ``(kind, value)``."""
-    return await _cas(session, printer_id, kind, value, hardware_id_seen_at=now)
+    """Move ``hardware_id_seen_at`` while the stored identity is still ``(kind, value)``.
+
+    ``clear_mismatch`` also ends a mismatch, in the same write.
+    """
+    extra = _NO_MISMATCH if clear_mismatch else {}
+    return await _cas(session, printer_id, kind, value, hardware_id_seen_at=now, **extra)
+
+
+async def mark_mismatch(
+    session: AsyncSession,
+    printer_id: UUID,
+    *,
+    kind: str,
+    value: str,
+    observed_kind: str,
+    observed_value: str,
+    now: datetime,
+) -> bool:
+    """Record a differing device while the stored identity is still ``(kind, value)``.
+
+    ``observed_*`` always follow the latest reading; ``mismatch_since`` is set once and kept for
+    as long as the mismatch lasts. The stored identity is never touched.
+    """
+    return await _cas(
+        session,
+        printer_id,
+        kind,
+        value,
+        observed_id=observed_value,
+        observed_kind=observed_kind,
+        mismatch_since=func.coalesce(PrinterIdentity.mismatch_since, now),
+    )
+
+
+_NO_MISMATCH: dict[str, object] = {
+    "observed_id": None,
+    "observed_kind": None,
+    "mismatch_since": None,
+}
 
 
 async def _cas(

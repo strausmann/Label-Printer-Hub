@@ -2548,6 +2548,12 @@ export interface components {
              */
             error_state?: string | null;
             /**
+             * Identity Mismatch
+             * @description True while the device behind the printer's address differs from the one the hub stored (a swapped printer). Sheet and calibration jobs are held meanwhile. Only the flag is returned here; the identity values are for admins.
+             * @default false
+             */
+            identity_mismatch: boolean;
+            /**
              * Jobs Ahead
              * @description Jobs on the printer ahead of the hub's own
              */
@@ -4659,7 +4665,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description Not a page printer (`media_kind_mismatch`), the printer is disabled (`printer_disabled`) or unknown to the print queue (`printer-unavailable`), the sheet is discarded or archived, the cells do not fit (`insufficient_cells`, `cells_taken`), or the plan differs from `expected_cells` (`plan_changed`, with the new plan). */
+            /** @description Not a page printer (`media_kind_mismatch`), the printer is disabled (`printer_disabled`) or unknown to the print queue (`printer-unavailable`), the device behind the printer changed (`printer-identity-mismatch`), the sheet is discarded or archived, the cells do not fit (`insufficient_cells`, `cells_taken`), or the plan differs from `expected_cells` (`plan_changed`, with the new plan). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5028,7 +5034,7 @@ export interface operations {
                     "application/json": components["schemas"]["PageJobAccepted"];
                 };
             };
-            /** @description The printer is a tape printer (`media_kind_mismatch`) or is not known to the print queue (`printer-unavailable`). */
+            /** @description The printer is a tape printer (`media_kind_mismatch`), is not known to the print queue (`printer-unavailable`), or the device behind it changed (`printer-identity-mismatch`). */
             409: {
                 headers: {
                     [name: string]: unknown;

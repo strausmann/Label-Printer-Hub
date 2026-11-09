@@ -59,6 +59,7 @@ from app.services.job_store import JobStore, MemoryJobStore
 from app.services.layout_engine import LayoutEngine
 from app.services.page_job_runner import Deferred, PageJobRunner
 from app.services.page_jobs import (
+    IDENTITY_HELD_KINDS,
     PageJob,
     PagePayload,
     PagePrinter,
@@ -284,6 +285,27 @@ class PrintQueue:
         # An add (or start()'s recovery) in progress, per printer: a remove of the same id
         # waits for it, so it never purges a printer whose recovery or worker is still coming.
         self._adds: dict[UUID, asyncio.Event] = {}
+        # #231: printers whose device was flagged as swapped. Sheet and calibration page jobs
+        # for them are refused at submit and failed at dispatch. Kept by the identity sink,
+        # loaded when a printer is attached; the page worker reads it without a database read.
+        self._identity_holds: set[UUID] = set()
+
+    # --- identity hold (#231) -----------------------------------------------
+
+    def set_identity_hold(self, printer_id: UUID, held: bool) -> None:
+        """Hold (or release) sheet and calibration page jobs of *printer_id*.
+
+        Held jobs already in the queue end ``failed`` with ``printer-identity-mismatch`` when
+        the worker reaches them; jobs that are printing are not touched.
+        """
+        if held:
+            self._identity_holds.add(printer_id)
+        else:
+            self._identity_holds.discard(printer_id)
+
+    def is_identity_held(self, printer_id: UUID) -> bool:
+        """True while the device behind *printer_id* is flagged as swapped."""
+        return printer_id in self._identity_holds
 
     # --- lifecycle ----------------------------------------------------------
 
@@ -490,6 +512,7 @@ class PrintQueue:
         self._worker_states.pop(printer_id, None)
         self._worker_resume_events.pop(printer_id, None)
         self._pause_info.pop(printer_id, None)
+        self._identity_holds.discard(printer_id)
         self._held.pop(printer_id, None)
         self._to_resume.pop(printer_id, None)
         self._printers.pop(printer_id, None)
@@ -1555,6 +1578,16 @@ class PrintQueue:
                 return
             if item.job.state != JobState.QUEUED:
                 continue  # cancelled (or cleared) while waiting
+            if item.payload.kind in IDENTITY_HELD_KINDS and printer_id in self._identity_holds:
+                # #231: the device behind the printer changed after the job was queued. It ends
+                # through the runner's not-started path, so its outcome handler runs.
+                try:
+                    await self._page_runner.fail_identity_mismatch(item)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Page job %s: could not end on an identity hold", item.job.id)
+                continue
             try:
                 await self._page_runner.run(printer, item)
             except Deferred as deferred:

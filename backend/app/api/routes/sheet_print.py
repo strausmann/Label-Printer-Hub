@@ -15,6 +15,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.identity_hold import ensure_not_held
 from app.api.routes.sheet_common import actor, mapped
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print, require_read
@@ -126,6 +127,7 @@ _PRINT_ERRORS: dict[int | str, dict[str, Any]] = {
         "description": (
             "Not a page printer (`media_kind_mismatch`), the printer is disabled "
             "(`printer_disabled`) or unknown to the print queue (`printer-unavailable`), the "
+            "device behind the printer changed (`printer-identity-mismatch`), the "
             "sheet is discarded or archived, the cells do not fit (`insufficient_cells`, "
             "`cells_taken`), or the plan differs from `expected_cells` (`plan_changed`, with the "
             "new plan)."
@@ -177,6 +179,7 @@ async def print_sheet(
     check_printer_access(auth, printer.id)
     if not printer.enabled:
         raise SheetPrinterDisabledError().to_http()
+    ensure_not_held(getattr(http.app.state, "print_queue", None), printer.id)  # #231
     language = http.app.state.settings_store.get("general.language")
     await session.commit()  # no connection held through the lookups (R10-1); see preview above
     with mapped():

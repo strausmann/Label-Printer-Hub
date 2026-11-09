@@ -38,6 +38,7 @@ from app.config import get_settings
 from app.db.session import get_session
 from app.models.job import JobState
 from app.repositories import jobs as jobs_repo
+from app.repositories import printer_identity as identity_repo
 from app.repositories import printer_roll as roll_repo
 from app.repositories import printer_state as printer_state_repo
 from app.repositories import printer_status_cache as cache_repo
@@ -383,7 +384,17 @@ async def get_printer_status(
     await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
+    status_ = await _cached_status(session, printer_id, runtime)
+    # #231: the flag is on every branch of the status (probed, stale, not polled, never probed);
+    # the identity values are not part of this response.
+    identity = await identity_repo.get(session, printer_id)
+    status_.identity_mismatch = identity is not None and identity.mismatch_since is not None
+    return status_
 
+
+async def _cached_status(
+    session: AsyncSession, printer_id: UUID, runtime: PrinterRuntime | None
+) -> PrinterStatus:
     polled = runtime is not None and runtime.is_polled(printer_id)
     row = await cache_repo.get(session, printer_id)
     if row is None or row.captured_at is None:

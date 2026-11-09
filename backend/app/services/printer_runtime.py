@@ -47,6 +47,7 @@ from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.snmp_helper import ObservedIdentity, query_model_pjl
 from app.printer_models.registry import ModelRegistry
+from app.repositories import printer_identity as identity_repo
 from app.services.backend_router import (
     BackendRouter,
     CutDefaults,
@@ -54,6 +55,7 @@ from app.services.backend_router import (
     QueueConfig,
     SNMPConfig,
 )
+from app.services.event_bus import BusEvent
 from app.services.hardware_identity import IdentityOutcome, record_identity
 from app.services.lookup_service import AppLookupService
 from app.services.page_jobs import IppPagePrinter
@@ -384,6 +386,7 @@ class PrinterRuntime:
             return
         self._wired[printer.id] = wiring
         self._refresh_backcompat()
+        await self._load_identity_hold(printer.id)  # #231: before the producer can probe
         if self._started:
             await self._start_producer(wiring)
 
@@ -587,7 +590,41 @@ class PrinterRuntime:
     async def _identity_sink(self, printer_id: UUID, observed: ObservedIdentity) -> IdentityOutcome:
         """The sink both status producers call after a successful probe (#231)."""
         return await record_identity(
-            printer_id, observed, datetime.now(UTC), session_factory=self._sessions()
+            printer_id,
+            observed,
+            datetime.now(UTC),
+            session_factory=self._sessions(),
+            on_mismatch=self._mismatch_changed,
+        )
+
+    def _mismatch_changed(self, printer_id: UUID, since: datetime | None) -> None:
+        """A mismatch started (``since``) or ended (``None``): hold or release, and tell the SSE
+        readers. The event carries the flag and its start, never an identity value."""
+        self._queue().set_identity_hold(printer_id, since is not None)
+        bus = getattr(self._app.state, "event_bus", None)
+        if bus is None:
+            return
+        channel = f"printer:{printer_id}:state"
+        data: dict[str, Any] = {"mismatch": since is not None}
+        if since is not None:
+            data["since"] = _aware(since).isoformat()
+        bus.publish(
+            channel,
+            BusEvent(
+                channel=channel,
+                event_id=bus.next_event_id(channel),
+                event_type="printer.identity_mismatch",
+                timestamp=datetime.now(UTC),
+                data=data,
+            ),
+        )
+
+    async def _load_identity_hold(self, printer_id: UUID) -> None:
+        """A mismatch that began before the hub stopped is held again when the printer attaches."""
+        async with self._sessions()() as session:
+            row = await identity_repo.get(session, printer_id)
+        self._queue().set_identity_hold(
+            printer_id, row is not None and row.mismatch_since is not None
         )
 
     def _queue(self) -> PrintQueue:

@@ -11,8 +11,9 @@ the best one, compares it with the stored one and stores it when there is none:
 - a probe that reports nothing, or nothing of the stored kind, never changes the stored
   identity and never counts as a mismatch.
 
-Identity values are never logged, at any level; outcomes are logged by kind only. This module
-only stores and reports (``IdentityOutcome``); acting on ``different`` is swap detection's job.
+Identity values are never logged, at any level; outcomes are logged by kind only. A ``different``
+reading is recorded beside the stored identity (never over it) and starts a mismatch; what a
+mismatch does (the hold, the event) is the caller's, told through ``on_mismatch``.
 """
 
 from __future__ import annotations
@@ -35,6 +36,8 @@ _log = logging.getLogger(__name__)
 IdentityKind = Literal["serial", "ipp_uuid", "mac"]
 IdentityOutcome = Literal["none", "stored", "seen", "kind_upgraded", "kept", "different"]
 IdentitySink = Callable[[UUID, ObservedIdentity], Awaitable[IdentityOutcome]]
+MismatchHook = Callable[[UUID, datetime | None], None]
+"""Called after a write that starts (``since``) or ends (``None``) a mismatch."""
 
 # Lowest rank first: an identity is only ever replaced by a higher-ranked kind.
 _RANK: dict[str, int] = {"mac": 0, "ipp_uuid": 1, "serial": 2}
@@ -122,6 +125,7 @@ async def record_identity(
     now: datetime,
     *,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
+    on_mismatch: MismatchHook | None = None,
 ) -> IdentityOutcome:
     """Store or compare the identity one successful probe saw; say what happened.
 
@@ -130,12 +134,22 @@ async def record_identity(
     - ``seen``: the observed value of the stored kind equals the stored one.
     - ``kind_upgraded``: as ``seen``, and a higher-ranked kind was observed; it is stored now.
     - ``kept``: the stored kind was not observed this time; nothing is written.
-    - ``different``: the observed value of the stored kind differs (acted on by swap detection).
+    - ``different``: the observed value of the stored kind differs. The differing value is
+      recorded next to the stored identity (``observed_*``, ``mismatch_since``); the stored
+      identity is never replaced.
+
+    A mismatch ends when the stored identity is seen again or a higher kind confirms it. A probe
+    that reports nothing of the stored kind neither starts nor ends one.
+
+    ``on_mismatch(printer_id, since)`` is called after the write that *starts* a mismatch
+    (``since`` is its start) and after the one that *ends* it (``since`` is ``None``), never for
+    a reading that leaves the state as it was. It receives no identity value.
     """
     clean = normalise(observed)
     picked = _pick(clean)
     if picked is None:
         return _done("none", None)
+    lost_different = False
     for _attempt in range(_MAX_ATTEMPTS):
         async with _session(session_factory) as session:
             row = await repo.get(session, printer_id)
@@ -161,8 +175,22 @@ async def record_identity(
             observed_value = _value_of(clean, stored_kind)
             if observed_value is None:
                 return _done("kept", stored_kind)
+            was_mismatched = row.mismatch_since is not None
             if observed_value != stored_value:
-                return _done("different", stored_kind)
+                if await repo.mark_mismatch(
+                    session,
+                    printer_id,
+                    kind=stored_kind,
+                    value=stored_value,
+                    observed_kind=stored_kind,
+                    observed_value=observed_value,
+                    now=now,
+                ):
+                    if not was_mismatched:
+                        _announce(on_mismatch, printer_id, now)
+                    return _done("different", stored_kind)
+                lost_different = True  # the stored identity moved under us: compare again
+                continue
             if _RANK.get(picked.kind, -1) > _RANK.get(stored_kind, -1):
                 if await repo.replace(
                     session,
@@ -173,16 +201,39 @@ async def record_identity(
                     value=picked.value,
                     now=now,
                 ):
+                    if was_mismatched:
+                        _announce(on_mismatch, printer_id, None)
                     return _done("kind_upgraded", picked.kind)
                 continue
             seen_at = row.hardware_id_seen_at
-            if seen_at is None or (now - _aware(seen_at)).total_seconds() >= SEEN_THROTTLE_S:
-                await repo.touch_seen(
-                    session, printer_id, kind=stored_kind, value=stored_value, now=now
+            stale = seen_at is None or (now - _aware(seen_at)).total_seconds() >= SEEN_THROTTLE_S
+            if stale or was_mismatched:
+                won = await repo.touch_seen(
+                    session,
+                    printer_id,
+                    kind=stored_kind,
+                    value=stored_value,
+                    now=now,
+                    clear_mismatch=was_mismatched,
                 )
+                if was_mismatched and won:
+                    _announce(on_mismatch, printer_id, None)
+                elif was_mismatched:
+                    continue  # the row changed under us: compare again
             return _done("seen", stored_kind)
-    # Lost the race every time; the next probe compares again.
-    return _done("kept", picked.kind)
+    # Lost the race every time; the next probe compares again. A ``different`` reading whose
+    # write kept losing is still ``different``: ``kept`` would say the stored kind was not seen.
+    return _done("different" if lost_different else "kept", picked.kind)
+
+
+def _announce(hook: MismatchHook | None, printer_id: UUID, since: datetime | None) -> None:
+    """Tell the caller a mismatch started (``since``) or ended (``None``); never raises."""
+    if hook is None:
+        return
+    try:
+        hook(printer_id, since)
+    except Exception as exc:
+        _log.warning("identity mismatch hook failed (%s)", type(exc).__name__)
 
 
 def _done(outcome: IdentityOutcome, kind: str | None) -> IdentityOutcome:
