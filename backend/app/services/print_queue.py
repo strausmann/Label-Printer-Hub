@@ -21,7 +21,7 @@ import asyncio
 import contextlib
 import logging
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -275,6 +275,12 @@ class PrintQueue:
         self._workers: dict[UUID, asyncio.Task[None]] = {}
         self._running: bool = False
         self._stopping: bool = False
+        # #224: printers being removed at runtime. Their workers leave a taken job untouched
+        # (it stays ``queued`` in the store) and exit; submits for them are refused.
+        self._stopping_printers: set[UUID] = set()
+        # A removal in progress, per printer: set when it is done (a second remove or an add
+        # of the same id waits for it).
+        self._removals: dict[UUID, asyncio.Event] = {}
 
     # --- lifecycle ----------------------------------------------------------
 
@@ -289,6 +295,7 @@ class PrintQueue:
         # I-1: Race-Guard — sofort setzen bevor erster await, damit ein zweiter
         # gleichzeitiger start()-Aufruf am Guard oben scheitert.
         self._running = True
+        ids = list(self._queues)
         try:
             for paused_id, since in (initially_paused or {}).items():
                 if paused_id in self._worker_states:
@@ -300,101 +307,258 @@ class PrintQueue:
             for orphan in await self._store.list_page_jobs_in_flight():
                 if orphan.printer_id not in self._page_printers:
                     await self._settle_unknown_page_job(orphan)
-            # Phase 2 Recovery: unterbrochene PRINTING-Jobs markieren + QUEUED re-enqueuen.
-            # mark_interrupted MUSS vor list_pending aufgerufen werden, damit die alten
-            # PRINTING-*Tape*-Jobs NICHT in list_pending zurückkommen. PRINTING *page* jobs
-            # bleiben (mark_interrupted lässt sie aus) und kommen zurück: _recover_page_jobs
-            # nimmt sie auf und filtert den Rest nach QUEUED.
-            for printer_id in self._queues:
-                interrupted = await self._store.mark_interrupted(printer_id)
-                if interrupted > 0:
-                    logger.warning(
-                        "Recovery: %d PRINTING-Jobs auf Drucker %s als FAILED_RESTART markiert",
-                        interrupted,
-                        printer_id,
-                    )
-                pending_db_jobs = await self._store.list_pending(printer_id)
-                if printer_id in self._page_printers:  # D18: page jobs render at send time
-                    await self._recover_page_jobs(printer_id, pending_db_jobs)
-                    continue
-                for db_job in pending_db_jobs:
-                    # S-1: StrEnum-Konsistenz — DbJobState.QUEUED.value statt String-Literal
-                    if db_job.state != DbJobState.QUEUED.value:
-                        continue
-                    # A row handed over via enqueue_persisted() before start() is
-                    # already known; enqueueing it again would print it twice.
-                    if str(db_job.id) in self._jobs:
-                        continue
-                    # C-1/I-2: fehlerhafte/veraltete Rows dürfen die Recovery nicht abbrechen.
-                    # KeyError (fehlendes label_data/content_type), ValidationError
-                    # (ungültige Struktur), ValueError (ungültiger ContentType-Wert) →
-                    # Job FAILED markieren und mit dem nächsten Job weitermachen.
-                    # MED-1/R2-1: Webhook-generated jobs (spoolman/<id>, grocy/<id>) have
-                    # template_key but NO content_type/label_data/rendered_tape_mm in
-                    # their payload. Skip gracefully before attempting rerender.
-                    # R2-1: check all three required keys — a job with content_type +
-                    # label_data but missing rendered_tape_mm would still fail in
-                    # _rerender_from_db_payload; guard must cover the full set.
-                    _missing_keys = _REQUIRED_RERENDER_KEYS - db_job.payload.keys()
-                    if _missing_keys:
-                        skip_msg = (
-                            f"Recovery: Skipping job {db_job.id} — payload lacks "
-                            f"{sorted(_missing_keys)} "
-                            f"(template_key={db_job.template_key!r}). "
-                            f"Legacy/webhook-generated jobs cannot be re-rendered."
-                        )
-                        logger.info(skip_msg)
-                        await self._store.mark_failed(
-                            db_job.id,
-                            f"recovery_skip_legacy_payload: {skip_msg}",
-                        )
-                        continue
-                    try:
-                        image = self._rerender_from_db_payload(db_job.payload)
-                    except Exception as exc:  # defensive: per-job failure must not abort startup
-                        logger.warning(
-                            "Recovery: Job %s rerender fehlgeschlagen (%s),"
-                            " wird als FAILED markiert und übersprungen",
-                            db_job.id,
-                            exc.__class__.__name__,
-                            exc_info=True,
-                        )
-                        await self._store.mark_failed(
-                            db_job.id,
-                            f"recovery_rerender_failed: {exc.__class__.__name__}",
-                        )
-                        continue
-                    payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
-                    wrapper = Job(
-                        id=str(db_job.id),
-                        printer_id=db_job.printer_id,
-                        image_payload=payload_bytes,
-                        tape_mm=db_job.payload.get("tape_mm"),
-                        options=db_job.payload.get("options", {}),
-                    )
-                    self._jobs[str(db_job.id)] = wrapper
-                    await self._queues[printer_id].put(wrapper)
-                    logger.info(
-                        "Recovery: QUEUED-Job %s auf Drucker %s re-enqueued",
-                        db_job.id,
-                        printer_id,
-                    )
+            # Phase 2 Recovery: unterbrochene PRINTING-Jobs markieren + QUEUED re-enqueuen,
+            # one printer at a time (``_recover_printer``, shared with a runtime add). A
+            # printer added while this runs is not in the snapshot: its add recovers it.
+            for printer_id in ids:
+                if printer_id in self._queues:  # not removed meanwhile
+                    await self._recover_printer(printer_id)
 
-            for printer_id in self._queues:
-                # D18: tape and page printers have different workers.
-                worker = (
-                    self._page_worker(printer_id)
-                    if printer_id in self._page_printers
-                    else self._worker(printer_id)
-                )
+            for printer_id in ids:
+                if printer_id in self._workers or printer_id not in self._queues:
+                    continue
                 self._workers[printer_id] = asyncio.create_task(
-                    worker, name=f"printer-worker-{printer_id}"
+                    self._worker_for(printer_id), name=f"printer-worker-{printer_id}"
                 )
         except Exception:
             # I-1: Bei Recovery-Fehler _running zurücksetzen, damit ein erneuter
             # start()-Aufruf nicht am Guard scheitert.
             self._running = False
             raise
+
+    # --- membership (#224) --------------------------------------------------
+
+    async def add_printer(
+        self, printer: _PrinterLike, *, paused_since: datetime | None = None
+    ) -> None:
+        """Add a tape printer; on a running queue its jobs are recovered and it starts.
+
+        *paused_since* is the persisted manual pause (``printer_state``); it is applied before
+        anything of this printer can print. The same object again is a no-op; another object
+        under a known id raises ``ValueError``.
+        """
+        await self._add(printer, page=False, paused_since=paused_since)
+
+    async def add_page_printer(
+        self, printer: PagePrinter, *, paused_since: datetime | None = None
+    ) -> None:
+        """Add a page (IPP) printer; see ``add_printer``."""
+        await self._add(printer, page=True, paused_since=paused_since)
+
+    async def _add(
+        self, printer: _PrinterLike | PagePrinter, *, page: bool, paused_since: datetime | None
+    ) -> None:
+        printer_id = printer.id
+        pending = self._removals.get(printer_id)
+        if pending is not None:
+            await pending.wait()
+        known: _PrinterLike | PagePrinter | None = self._printers.get(
+            printer_id
+        ) or self._page_printers.get(printer_id)
+        if known is not None:
+            if known is printer and (printer_id in self._page_printers) == page:
+                return
+            raise ValueError(f"Another printer is registered under {printer_id}")
+        # Registered before the first await: a submit from here on is accepted; it waits in
+        # the queue until the worker starts after the recovery.
+        if page:
+            self._page_printers[printer_id] = printer  # type: ignore[assignment]
+            self._held[printer_id] = None
+        else:
+            self._printers[printer_id] = printer  # type: ignore[assignment]
+        self._queues[printer_id] = asyncio.Queue()
+        self._worker_states[printer_id] = PrinterWorkerState.ACTIVE
+        resume = asyncio.Event()
+        resume.set()
+        self._worker_resume_events[printer_id] = resume
+        try:
+            # 1. the pause, so no recovered job can print
+            if paused_since is not None:
+                await self.pause_printer(
+                    printer_id, reason="user", source="user", since=paused_since
+                )
+            if not self._running:
+                return  # start() recovers and starts it
+            # 2. recovery (fills ``_to_resume``), 3. the worker last: it takes ``_to_resume``
+            # once, before its loop.
+            await self._recover_printer(printer_id)
+        except BaseException:
+            self._purge(printer_id)
+            raise
+        self._workers[printer_id] = asyncio.create_task(
+            self._worker_for(printer_id), name=f"printer-worker-{printer_id}"
+        )
+        logger.info("Printer %s added to the running queue", printer_id)
+
+    async def remove_printer(self, printer_id: UUID, timeout_s: float) -> None:
+        """Remove a printer from the queue without losing its jobs.
+
+        A job printing now may finish within *timeout_s*; past it the worker is cancelled: a
+        tape job still printing ends interrupted (as after a restart), a page job at the
+        printer stays ``printing`` and the next add resumes its tracking. Jobs waiting behind
+        it are not printed: their rows stay ``queued`` and a later add recovers them. Removing
+        an unknown printer is a no-op.
+        """
+        pending = self._removals.get(printer_id)
+        if pending is not None:
+            await pending.wait()
+            return
+        if printer_id not in self._queues:
+            return
+        done = asyncio.Event()
+        self._removals[printer_id] = done
+        self._stopping_printers.add(printer_id)
+        try:
+            # Wake the worker: out of the pause loop, or out of queue.get() (the sentinel
+            # lies behind any waiting job; the worker sees the flag on whatever it takes).
+            self._worker_resume_events[printer_id].set()
+            self._queues[printer_id].put_nowait(None)
+            task = self._workers.pop(printer_id, None)
+            if task is not None:
+                try:
+                    await asyncio.wait({task}, timeout=timeout_s)
+                finally:
+                    if not task.done():
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+            await self._end_removed_in_flight(printer_id)
+        finally:
+            self._purge(printer_id)
+            self._stopping_printers.discard(printer_id)
+            del self._removals[printer_id]
+            done.set()
+        logger.info("Printer %s removed from the queue", printer_id)
+
+    async def _end_removed_in_flight(self, printer_id: UUID) -> None:
+        """End what the cancelled worker left PRINTING, as ``stop()`` and a restart do."""
+        interrupted = False
+        for job in list(self._jobs.values()):
+            if job.printer_id != printer_id or job.state != JobState.PRINTING:
+                continue
+            if job.kind is not None:
+                continue  # page job at the printer: the row stays ``printing``
+            job.error_code = "interrupted"
+            job.error_message = "Printer removed during job execution"
+            job.error_msg = job.error_message
+            with contextlib.suppress(InvalidStateTransitionError):
+                JobStateMachine.transition(job, JobState.FAILED)
+            interrupted = True
+        if interrupted:
+            await self._store.mark_interrupted(printer_id)
+
+    def _purge(self, printer_id: UUID) -> None:
+        """Forget every per-printer entry; waiting jobs stay persisted as ``queued``."""
+        for job_id, job in list(self._jobs.items()):
+            if job.printer_id == printer_id and job.state in (
+                JobState.QUEUED,
+                JobState.PAUSED,
+                JobState.PRINTING,
+            ):
+                self._resuming.pop(UUID(job_id), None)
+                job._done_event.set()  # release wait_for_job(), as stop() does
+                del self._jobs[job_id]
+        self._queues.pop(printer_id, None)
+        self._worker_states.pop(printer_id, None)
+        self._worker_resume_events.pop(printer_id, None)
+        self._pause_info.pop(printer_id, None)
+        self._held.pop(printer_id, None)
+        self._to_resume.pop(printer_id, None)
+        self._printers.pop(printer_id, None)
+        self._page_printers.pop(printer_id, None)
+
+    def _removing(self, printer_id: UUID) -> bool:
+        return printer_id in self._stopping_printers
+
+    def _worker_for(self, printer_id: UUID) -> Coroutine[Any, Any, None]:
+        """The worker coroutine of *printer_id* (D18: tape and page printers differ)."""
+        if printer_id in self._page_printers:
+            return self._page_worker(printer_id)
+        return self._worker(printer_id)
+
+    async def _recover_printer(self, printer_id: UUID) -> None:
+        """Restart recovery of one printer, before its worker exists.
+
+        Shared by ``start()`` and a runtime add (``_add``). It does not apply a pause: the
+        caller does that first, so no recovered job can print on a printer the user stopped.
+        The worker is created afterwards: ``_page_worker`` takes ``_to_resume`` once.
+        """
+        # mark_interrupted MUSS vor list_pending aufgerufen werden, damit die alten
+        # PRINTING-*Tape*-Jobs NICHT in list_pending zurückkommen. PRINTING *page* jobs
+        # bleiben (mark_interrupted lässt sie aus) und kommen zurück: _recover_page_jobs
+        # nimmt sie auf und filtert den Rest nach QUEUED.
+        interrupted = await self._store.mark_interrupted(printer_id)
+        if interrupted > 0:
+            logger.warning(
+                "Recovery: %d PRINTING-Jobs auf Drucker %s als FAILED_RESTART markiert",
+                interrupted,
+                printer_id,
+            )
+        pending_db_jobs = await self._store.list_pending(printer_id)
+        if printer_id in self._page_printers:  # D18: page jobs render at send time
+            await self._recover_page_jobs(printer_id, pending_db_jobs)
+            return
+        for db_job in pending_db_jobs:
+            # S-1: StrEnum-Konsistenz — DbJobState.QUEUED.value statt String-Literal
+            if db_job.state != DbJobState.QUEUED.value:
+                continue
+            # A row handed over via enqueue_persisted() before start() is
+            # already known; enqueueing it again would print it twice.
+            if str(db_job.id) in self._jobs:
+                continue
+            # C-1/I-2: fehlerhafte/veraltete Rows dürfen die Recovery nicht abbrechen.
+            # KeyError (fehlendes label_data/content_type), ValidationError
+            # (ungültige Struktur), ValueError (ungültiger ContentType-Wert) →
+            # Job FAILED markieren und mit dem nächsten Job weitermachen.
+            # MED-1/R2-1: Webhook-generated jobs (spoolman/<id>, grocy/<id>) have
+            # template_key but NO content_type/label_data/rendered_tape_mm in
+            # their payload. Skip gracefully before attempting rerender.
+            # R2-1: check all three required keys — a job with content_type +
+            # label_data but missing rendered_tape_mm would still fail in
+            # _rerender_from_db_payload; guard must cover the full set.
+            _missing_keys = _REQUIRED_RERENDER_KEYS - db_job.payload.keys()
+            if _missing_keys:
+                skip_msg = (
+                    f"Recovery: Skipping job {db_job.id} — payload lacks "
+                    f"{sorted(_missing_keys)} "
+                    f"(template_key={db_job.template_key!r}). "
+                    f"Legacy/webhook-generated jobs cannot be re-rendered."
+                )
+                logger.info(skip_msg)
+                await self._store.mark_failed(
+                    db_job.id,
+                    f"recovery_skip_legacy_payload: {skip_msg}",
+                )
+                continue
+            try:
+                image = self._rerender_from_db_payload(db_job.payload)
+            except Exception as exc:  # defensive: per-job failure must not abort startup
+                logger.warning(
+                    "Recovery: Job %s rerender fehlgeschlagen (%s),"
+                    " wird als FAILED markiert und übersprungen",
+                    db_job.id,
+                    exc.__class__.__name__,
+                    exc_info=True,
+                )
+                await self._store.mark_failed(
+                    db_job.id,
+                    f"recovery_rerender_failed: {exc.__class__.__name__}",
+                )
+                continue
+            payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
+            wrapper = Job(
+                id=str(db_job.id),
+                printer_id=db_job.printer_id,
+                image_payload=payload_bytes,
+                tape_mm=db_job.payload.get("tape_mm"),
+                options=db_job.payload.get("options", {}),
+            )
+            self._jobs[str(db_job.id)] = wrapper
+            await self._queues[printer_id].put(wrapper)
+            logger.info(
+                "Recovery: QUEUED-Job %s auf Drucker %s re-enqueued",
+                db_job.id,
+                printer_id,
+            )
 
     async def _recover_page_jobs(self, printer_id: UUID, pending: list[DbJob]) -> None:
         """Restart recovery of one page printer's jobs.
@@ -528,7 +692,7 @@ class PrintQueue:
         # Release any wait_for_job() callers that are still waiting on a
         # PRINTING job whose worker was cancelled before completion.
         # Transition those jobs to FAILED so their _done_event is set.
-        for job in self._jobs.values():
+        for job in list(self._jobs.values()):
             if job.state == JobState.PRINTING and job.kind is not None:
                 # Page job at the printer: the row stays ``printing`` (the printer may
                 # still print it); only the in-memory waiters are released.
@@ -693,7 +857,9 @@ class PrintQueue:
         return batch_id
 
     def _require_tape(self, printer_id: UUID) -> None:
-        """D18: tape submission paths refuse page printers."""
+        """D18: tape submission paths refuse page printers; a printer being removed is unknown."""
+        if self._removing(printer_id):
+            raise KeyError(f"Unknown printer: {printer_id}")
         if printer_id in self._page_printers:
             raise MediaKindMismatchError()
         if printer_id not in self._queues:
@@ -725,6 +891,8 @@ class PrintQueue:
             MediaKindMismatchError: *printer_id* is a tape printer.
             KeyError: *printer_id* is unknown to the queue.
         """
+        if self._removing(printer_id):
+            raise KeyError(f"Unknown printer: {printer_id}")
         if printer_id in self._printers:
             raise MediaKindMismatchError()
         if printer_id not in self._page_printers:
@@ -1155,6 +1323,9 @@ class PrintQueue:
 
             if item is None:  # sentinel — stop() requested a clean exit
                 return
+            if self._removing(printer_id):
+                # #224: taken, not started: the job (or batch) stays ``queued`` in the store.
+                return
 
             # Phase 1k.2: BatchJob vs Job — dispatch per isinstance
             if isinstance(item, BatchJob):
@@ -1169,9 +1340,11 @@ class PrintQueue:
             # Wait while paused — pause may have been set while we were idle at
             # queue.get(), so this check must come AFTER the pop.
             while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
-                if self._stopping:
+                if self._stopping or self._removing(printer_id):
                     return
                 await self._worker_resume_events[printer_id].wait()
+            if self._removing(printer_id):
+                return  # resumed and removed at once
 
             # Job may have been cancelled or paused between submit and pop.
             if job.state != JobState.QUEUED:
@@ -1302,11 +1475,13 @@ class PrintQueue:
                     logger.error("Page printer %s got a tape item; dropped", printer_id)
                     continue
                 item = got
+            if self._removing(printer_id):
+                return  # #224: taken, not started: the row stays ``queued``
             while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
-                if self._stopping:
+                if self._stopping or self._removing(printer_id):
                     return
                 await self._worker_resume_events[printer_id].wait()
-            if self._stopping:
+            if self._stopping or self._removing(printer_id):
                 return
             if item.job.state != JobState.QUEUED:
                 continue  # cancelled (or cleared) while waiting
@@ -1385,7 +1560,7 @@ class PrintQueue:
             logger.info("Recovery: %s could not list its jobs (%s)", printer_id, type(exc).__name__)
             listed = None
         for item in items:
-            if self._stopping:
+            if self._stopping or self._removing(printer_id):
                 return
             ipp_job_id = (item.resume_result or {})["ipp_job_id"]
             expected = wire_job_name(item.payload.job_name, item.job.id)
@@ -1440,10 +1615,14 @@ class PrintQueue:
         - started_at/finished_at Timestamps bleiben None (UI-Probleme)
         """
         # Wait while paused (mirror _worker semantics)
+        waited = False
         while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
-            if self._stopping:
+            if self._stopping or self._removing(printer_id):
                 return
+            waited = True
             await self._worker_resume_events[printer_id].wait()
+        if waited and self._removing(printer_id):
+            return  # resumed and removed at once
 
         # Gemini-Review G2: in-memory transitions + SSE-Events + DB persist.
         # QUEUED -> PRINTING für jeden Job.
@@ -1461,6 +1640,10 @@ class PrintQueue:
         active_jobs: list[Job] = []
         active_indices: list[int] = []
         for idx, jid in enumerate(batch.job_ids):
+            if idx > 0 and self._removing(printer_id):
+                # #224: removed while the items were taken: the rest stays ``queued``; the
+                # items already taken (rows ``printing``) print together.
+                break
             job = self._jobs.get(str(jid))
             if job is None:
                 logger.warning("Batch %s: job_id %s not in _jobs (cancelled?)", batch.batch_id, jid)
