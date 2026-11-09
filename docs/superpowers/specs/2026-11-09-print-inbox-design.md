@@ -372,7 +372,7 @@ Possible feature requests to grocy/grocy, **only after a positive reaction from 
 
 ### 8.1a Spoolman
 
-`POST /api/v1/webhook/spoolman` keeps its payload and its shared-secret header `X-API-Key` (`access.webhook_api_key`) and additionally accepts `X-Label-Hub-Key` with `inbox` scope or higher (builder's call: a per-app key that can be revoked on its own). (Whether this payload matches what Spoolman sends was not checked for this design; it should be, the same way Grocy was.)
+`POST /api/v1/webhook/spoolman` keeps its payload and its shared-secret header `X-API-Key` (`access.webhook_api_key`) and additionally accepts `X-Label-Hub-Key` with `inbox` scope or higher (builder's call: a per-app key that can be revoked on its own). **Spoolman itself sends no webhooks** (checked against Donkie/Spoolman: no outgoing HTTP hooks; it only publishes change events over a WebSocket, `spoolman/ws.py`, events like `added`/`updated`/`deleted` per spool, filament or vendor). This route therefore serves third-party callers (an automation tool, a script, a printer host plugin), not Spoolman directly; its payload is ours to define and stays as it is. A hub-side WebSocket subscriber that parks a label when a spool is added is possible later and is a non-goal of this design.
 
 - Look the item up (snapshot), apply the routing rule (section 7), then park or print.
 - Idempotency: an `Idempotency-Key` header if the caller sends one; otherwise the 60-second duplicate window of section 6.2 over `(app, entity id, type)`.
