@@ -417,7 +417,7 @@ describe("a scanned code", () => {
 });
 
 describe("not enough free cells", () => {
-  const NEED = { free_cells: [40, 41, 42, 43, 44, 45, 46, 47, 48], needed: 10, shortfall: 1 };
+  const NEED = { free_cells: [9], needed: 10, shortfall: 1 };
   async function overflow() {
     const split = previewFor("L4736-0001", range9(40), USED_17);
     return itemView(
@@ -449,6 +449,26 @@ describe("not enough free cells", () => {
         { sheet: "L4736-0010", cells: "first_free" },
       ]),
     );
+  });
+
+  it("reads free_cells as one count per placement: with several placements the target's own count counts", async () => {
+    const split = previewFor("L4736-0001", range9(40), USED_17);
+    const { calls } = await itemView(
+      routes({
+        sheets: [sheet("L4736-0001", 39), sheet("L4736-0010", 20)],
+        preview: (init: RequestInit) => {
+          const request = JSON.parse(String(init.body)) as { placements: unknown[] };
+          return request.placements.length === 1 ? conflict(409, "insufficient_cells", "Not enough.", { free_cells: [9, 3], needed: 10, shortfall: 1 }) : split;
+        },
+      }),
+      10,
+    );
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("option", { name: /L4736-0001/ }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("only 9 free cells");
+    await userEvent.click(within(alert).getByRole("button", { name: "Put the rest onto a new sheet" }));
+    await waitFor(() => expect(body(previews(calls).at(-1)!).placements[0]).toEqual({ sheet: "L4736-0001", cells: "first_free", count: 9 }));
   });
 
   it("the rest can go onto a new sheet, or the whole print onto a sheet with room", async () => {

@@ -22,9 +22,9 @@ import {
 const err = (code: string | null, detail: Record<string, unknown> | null) => new ApiError(409, code, "text", detail);
 
 describe("typed error readers", () => {
-  it("insufficientCells reads the free cells, the need and the shortfall", () => {
+  it("insufficientCells reads the capacity per placement, the need and the shortfall", () => {
     expect(insufficientCells(err("insufficient_cells", { free_cells: [3, 4], needed: 5, shortfall: 3 }))).toEqual({
-      freeCells: [3, 4],
+      capacity: [3, 4],
       needed: 5,
       shortfall: 3,
     });

@@ -56,11 +56,11 @@ export function placementFor(target: Target, typeKey: string, fill: Fill, count?
   };
 }
 
-/** The first sheet takes what it still has, the rest goes to `rest` (which takes whatever remains). */
-export function splitPlacements(first: Target, typeKey: string, fill: Fill, freeCells: readonly number[], rest: Target): PlacementIn[] {
+/** The first sheet takes `freeCount` labels (what it still has), the rest goes to `rest` (which takes whatever remains). */
+export function splitPlacements(first: Target, typeKey: string, fill: Fill, freeCount: number, rest: Target): PlacementIn[] {
   const next = placementFor(rest, typeKey, { mode: "first_free", chosen: [], skipped: [] });
-  if (freeCells.length === 0) return [next];
-  return [placementFor(first, typeKey, { ...fill, mode: "first_free" }, freeCells.length), next];
+  if (freeCount <= 0) return [next];
+  return [placementFor(first, typeKey, { ...fill, mode: "first_free" }, freeCount), next];
 }
 
 /** Whether a sheet can take labels of `typeKey`; `null` is a code the hub does not know. */

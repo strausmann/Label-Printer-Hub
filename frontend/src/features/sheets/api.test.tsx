@@ -115,7 +115,7 @@ describe("sheet writes", () => {
     expect(JSON.parse(calls[0]!.body!)).toEqual({ type: "L4736REV", used_cells: [], id_placement: "cell" });
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).code).toBe("insufficient_cells");
-    expect(insufficientCells(error)).toEqual({ freeCells: [1, 2], needed: 5, shortfall: 3 });
+    expect(insufficientCells(error)).toEqual({ capacity: [1, 2], needed: 5, shortfall: 3 });
     expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual(["sheets", "list"]);
   });
 

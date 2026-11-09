@@ -8,8 +8,11 @@ import { fittingFirst, freeOf, placementFor, splitPlacements, type Fill, type Pl
 export interface CapacityAlertProps {
   /** Labels in this print. */
   needed: number;
-  /** The free cells the sheet still has. */
-  freeCells: readonly number[];
+  /**
+   * The server's capacity per placement (a count each). The alert is about the print's target, the
+   * first placement; when an earlier split was already too big, the split is rebuilt from that target.
+   */
+  capacity: readonly number[];
   target: Target;
   typeKey: string;
   fill: Fill;
@@ -26,9 +29,9 @@ const MAX_OFFERED = 3;
  * placements of the next preview: the rest onto another sheet of the type, the rest onto a new
  * sheet, or the whole print onto a sheet that has room for it.
  */
-export function CapacityAlert({ needed, freeCells, target, typeKey, fill, others, onChoose }: CapacityAlertProps) {
+export function CapacityAlert({ needed, capacity, target, typeKey, fill, others, onChoose }: CapacityAlertProps) {
   const { t } = useLingui();
-  const free = freeCells.length;
+  const free = Math.max(0, capacity[0] ?? 0);
   const code = target.kind === "sheet" ? target.code : t`The new sheet`;
   const shortfall = needed - free;
   const candidates = others.filter((s) => target.kind !== "sheet" || s.code !== target.code);
@@ -36,7 +39,7 @@ export function CapacityAlert({ needed, freeCells, target, typeKey, fill, others
   const roomy = fittingFirst(candidates, needed)
     .filter((r) => r.fits)
     .slice(0, MAX_OFFERED);
-  const rest = (next: Target) => onChoose({ placements: splitPlacements(target, typeKey, fill, freeCells, next) });
+  const rest = (next: Target) => onChoose({ placements: splitPlacements(target, typeKey, fill, free, next) });
   const restCode = restSheet?.code ?? "";
 
   return (

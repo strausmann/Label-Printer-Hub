@@ -55,21 +55,21 @@ describe("placementFor", () => {
 
 describe("splitPlacements", () => {
   it("fills the free cells of the first sheet, then the rest goes onto a new sheet", () => {
-    expect(splitPlacements(SHEET, "k", FILL, [7, 8, 9], { kind: "new" })).toEqual([
+    expect(splitPlacements(SHEET, "k", FILL, 3, { kind: "new" })).toEqual([
       { sheet: "L4736-0001", cells: "first_free", count: 3 },
       { new_sheet: { type: "k", id_placement: "margin" }, cells: "first_free" },
     ]);
   });
 
   it("or onto another sheet; the skipped cells stay skipped on the first", () => {
-    expect(splitPlacements(SHEET, "k", { ...FILL, skipped: [4] }, [7, 8], { kind: "sheet", code: "L4736-0004" })).toEqual([
+    expect(splitPlacements(SHEET, "k", { ...FILL, skipped: [4] }, 2, { kind: "sheet", code: "L4736-0004" })).toEqual([
       { sheet: "L4736-0001", cells: "first_free", skip: [4], count: 2 },
       { sheet: "L4736-0004", cells: "first_free" },
     ]);
   });
 
   it("a first sheet without a free cell is left out", () => {
-    expect(splitPlacements(SHEET, "k", FILL, [], { kind: "new" })).toEqual([{ new_sheet: { type: "k", id_placement: "margin" }, cells: "first_free" }]);
+    expect(splitPlacements(SHEET, "k", FILL, 0, { kind: "new" })).toEqual([{ new_sheet: { type: "k", id_placement: "margin" }, cells: "first_free" }]);
   });
 });
 

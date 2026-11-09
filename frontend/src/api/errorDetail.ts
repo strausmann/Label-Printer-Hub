@@ -19,15 +19,16 @@ const isNumbers = (v: unknown): v is number[] => Array.isArray(v) && v.every((n)
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((s) => typeof s === "string");
 
 export interface InsufficientCells {
-  freeCells: number[];
+  /** The capacity left for items, a COUNT per placement of the request (after skip and the ID cell), not cell numbers. */
+  capacity: number[];
   needed: number;
   shortfall: number;
 }
-/** `409 insufficient_cells`: the sheet cannot hold the items; the free cells let the cart split. */
+/** `409 insufficient_cells`: the placements cannot hold the items; `free_cells` is one count per placement, which lets the cart split. */
 export function insufficientCells(error: unknown): InsufficientCells | null {
   const d = detailOf(error, "insufficient_cells");
   if (!d || !isNumbers(d.free_cells) || typeof d.needed !== "number" || typeof d.shortfall !== "number") return null;
-  return { freeCells: d.free_cells, needed: d.needed, shortfall: d.shortfall };
+  return { capacity: d.free_cells, needed: d.needed, shortfall: d.shortfall };
 }
 
 const isExpectedPage = (v: unknown): v is ExpectedPage =>

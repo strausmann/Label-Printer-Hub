@@ -339,7 +339,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
           {insufficient && target && typeKey ? (
             <CapacityAlert
               needed={needed}
-              freeCells={insufficient.freeCells}
+              capacity={insufficient.capacity}
               target={target}
               typeKey={typeKey}
               fill={fill}
