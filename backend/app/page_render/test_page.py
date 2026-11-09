@@ -14,6 +14,7 @@ first print and a retry render the stored payload with ``render_test_page``.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Final
 
@@ -23,6 +24,8 @@ from app.page_render.transform import page_size_mm
 from app.schemas.capabilities import HardwareMargins
 from app.services.page_jobs import PagePayload
 from app.sheets.cell_render import build_qr
+
+_log = logging.getLogger(__name__)
 
 INSET_MM: Final = 5.0
 FRAME_MM: Final = 0.3
@@ -97,6 +100,9 @@ def render_test_page(payload: PagePayload, *, compress: bool = True) -> bytes:
     room = frame_w - 2 * _PAD_MM
 
     qr_img = build_qr(str(d["printer_url"]), round(QR_MM / 25.4 * RENDER_DPI))
+    if qr_img is None:
+        # Dropped, not fatal: the URL line below stays. The URL itself is not logged.
+        _log.warning("Test page: the printer URL does not fit in a QR code; printing it as text")
     qr_top = top + 62.0
     images = (
         []

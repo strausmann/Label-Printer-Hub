@@ -146,3 +146,16 @@ def test_a_very_long_printer_name_is_shortened_to_fit_the_frame() -> None:
     pdf = _pdf(_payload(printer=_printer(name=long_name)))
     shown = [t for t in pi.texts(pdf) if t.startswith("W")]
     assert shown and shown[0].endswith("…") and len(shown[0]) < 60
+
+
+def test_unfittable_qr_is_logged_once_and_the_url_line_stays(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr("app.page_render.test_page.build_qr", lambda *_a, **_k: None)
+    with caplog.at_level("WARNING", logger="app.page_render.test_page"):
+        pdf = _pdf(_payload())
+    assert pi.placed_images(pdf) == []
+    assert URL in pi.texts(pdf)
+    records = [r for r in caplog.records if r.name == "app.page_render.test_page"]
+    assert len(records) == 1
+    assert URL not in records[0].getMessage()

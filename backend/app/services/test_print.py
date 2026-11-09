@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import Final, Literal
 from uuid import UUID
 
+from pydantic import AnyHttpUrl
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
@@ -45,19 +46,18 @@ class TestPrintRefusal(Exception):  # noqa: N818 - a refusal, not an error of th
         self.status, self.code, self.title, self.detail = status, code, title, detail
 
 
-def printer_url(public_url: object, printer_id: UUID) -> str:
+def printer_url(public_url: AnyHttpUrl, printer_id: UUID) -> str:
     """The hub's page of the printer: ``{public_url}/printers/{id}``, one slash, no credentials.
 
-    ``public_url`` is the pydantic URL of the setting. Only scheme, host, port and path are
-    used; user info, query and fragment are dropped.
+    Only scheme, host, port and path are used; user info, query and fragment are dropped.
+    pydantic already returns an IPv6 host in brackets, so the host is used as is.
     """
-    scheme = str(getattr(public_url, "scheme", "https"))
-    host = str(getattr(public_url, "host", ""))
-    port = getattr(public_url, "port", None)
-    path = str(getattr(public_url, "path", "") or "").rstrip("/")
-    netloc = f"[{host}]" if ":" in host else host
+    scheme = public_url.scheme
+    netloc = public_url.host or ""
+    port = public_url.port
     if port is not None and port != _DEFAULT_PORTS.get(scheme):
         netloc = f"{netloc}:{port}"
+    path = (public_url.path or "").rstrip("/")
     return f"{scheme}://{netloc}{path}/printers/{printer_id}"
 
 
