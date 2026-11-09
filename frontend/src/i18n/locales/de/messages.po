@@ -3656,8 +3656,8 @@ msgid "The queue timeout must be between 1 and 600 seconds."
 msgstr "Das Warteschlangen-Zeitlimit muss zwischen 1 und 600 Sekunden liegen."
 
 #: src/features/sheets/print/PrintResult.tsx
-msgid "The queued labels are still in the cart and will print again if you leave them there."
-msgstr "Die eingereihten Etiketten liegen noch im Warenkorb und werden noch einmal gedruckt, wenn du sie dort lässt."
+msgid "The queued labels were taken out of the cart. The rest stays in it."
+msgstr "Die eingereihten Etiketten wurden aus dem Warenkorb genommen. Der Rest bleibt darin."
 
 #: src/features/settings/SettingField.tsx
 msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."

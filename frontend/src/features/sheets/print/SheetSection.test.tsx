@@ -733,21 +733,60 @@ describe("after printing", () => {
   // A Response body can be read once, so every route gets a fresh one.
   const interrupted = () => conflict(502, "print_interrupted", "Interrupted.", { batch_id: BATCH, job_ids: [JOB] });
 
-  it("a partial print in the cart previews only the items whose pages were not queued, and says the queued ones stay in the cart", async () => {
+  it("a partial print in the cart previews only the items whose pages were not queued, and says the queued ones left the cart", async () => {
     const { calls } = await cartView("/cart", [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")], routes({ preview: twoPages, print: interrupted }));
     await pressPrint();
     const note = await screen.findByRole("alert");
     expect(note).toHaveTextContent("5 labels were queued and will print.");
     expect(note).toHaveTextContent("4 labels were not queued. The preview below shows them.");
-    expect(note).toHaveTextContent("still in the cart and will print again if you leave them there");
+    expect(note).toHaveTextContent("The queued labels were taken out of the cart. The rest stays in it.");
     expect(note).not.toHaveTextContent("could not be sent");
     expect(within(note).getAllByRole("link", { name: /View job/ }).map((l) => l.getAttribute("href"))).toEqual([`/jobs/${JOB}`]);
     // What is previewed now: the four sugar labels only, never the queued flour.
     await waitFor(() => expect(body(previews(calls).at(-1)!).items).toHaveLength(4));
     const rest = body(previews(calls).at(-1)!).items;
     expect(rest.map((i) => i.lookup?.identifier)).toEqual(["9", "9", "9", "9"]);
-    // The cart is untouched until something is accepted.
-    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(2);
+    // The cart is the rest: the queued flour is out, the sugar stays.
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("9", 4, "Sugar")]);
+  });
+
+  it("a partial print takes exactly the queued copies out of the cart lines", async () => {
+    // Two pages again, but the first page holds only 3 of the 5 flour labels: the line keeps 2.
+    const threeThenRest = (init: RequestInit) => {
+      const count = (JSON.parse(String(init.body)) as { items: unknown[] }).items.length;
+      if (count !== 9) return previewFor("L4736-0001", Array.from({ length: count }, (_, i) => 18 + i), USED_17);
+      const first = previewPage("L4736-0001", [18, 19, 20], USED_17);
+      const second = previewPage(null, [1, 2, 3, 4, 5, 6], []);
+      second.cells = second.cells.map((c) => (c.item_index === null ? c : { ...c, item_index: c.item_index + 3 }));
+      return previewFor("L4736-0001", [], [], { pages: [first, second], free_after: [20, 44], expected_cells: [{ sheet: "L4736-0001", cells: [18, 19, 20], id_cell: null }, { sheet: "new", cells: [1, 2, 3, 4, 5, 6], id_cell: null }] });
+    };
+    await cartView("/cart", [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")], routes({ preview: threeThenRest, print: interrupted }));
+    await pressPrint();
+    const note = await screen.findByRole("alert");
+    expect(note).toHaveTextContent("3 labels were queued and will print.");
+    expect(note).toHaveTextContent("6 labels were not queued.");
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("7", 2, "Flour"), LINE("9", 4, "Sugar")]);
+  });
+
+  it("after a partial print, adding another line does not bring the queued labels back into the next preview or print", async () => {
+    let printN = 0;
+    const accepted = { batch_id: BATCH, pages: [{ job_id: JOB, sheet_code: "L4736-0001", cells: [18, 19, 20, 21, 22], id_cell: null, margin_id: false, margin_band: null, id_not_printed: false, feed_mark: false }] };
+    const { calls } = await cartView(
+      "/cart",
+      [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")],
+      routes({ preview: twoPages, print: () => (++printN === 1 ? interrupted() : accepted) }),
+    );
+    await pressPrint();
+    await screen.findByRole("alert");
+    act(() => {
+      // Another tab adds a line to whatever the cart holds now.
+      localStorage.setItem(CART_KEY, JSON.stringify([...JSON.parse(localStorage.getItem(CART_KEY)!), LINE("11", 1, "Salt")]));
+      reloadCart();
+    });
+    await waitFor(() => expect(body(previews(calls).at(-1)!).items.map((i) => i.lookup?.identifier)).toEqual(["9", "9", "9", "9", "11"]));
+    await pressPrint();
+    await waitFor(() => expect(printCalls(calls)).toHaveLength(2));
+    expect(body(printCalls(calls)[1]!).items.map((i) => i.lookup?.identifier)).toEqual(["9", "9", "9", "9", "11"]);
   });
 
   it("a partial print in the item view does not mention a cart", async () => {
@@ -758,6 +797,18 @@ describe("after printing", () => {
     expect(note).toHaveTextContent("4 labels were not queued.");
     expect(note).not.toHaveTextContent(/cart/i);
     await waitFor(() => expect(body(previews(calls).at(-1)!).items).toHaveLength(4));
+  });
+
+  it("a partial print in the item view still prints only the rest, which it keeps by index", async () => {
+    let printN = 0;
+    const accepted = { batch_id: BATCH, pages: [{ job_id: JOB, sheet_code: "L4736-0001", cells: [18, 19, 20, 21], id_cell: null, margin_id: false, margin_band: null, id_not_printed: false, feed_mark: false }] };
+    const { calls } = await itemView(routes({ preview: twoPages, print: () => (++printN === 1 ? interrupted() : accepted) }));
+    await pressPrint();
+    await screen.findByRole("alert");
+    await waitFor(() => expect(body(previews(calls).at(-1)!).items).toHaveLength(4));
+    await pressPrint();
+    await waitFor(() => expect(printCalls(calls)).toHaveLength(2));
+    expect(body(printCalls(calls)[1]!).items).toHaveLength(4);
   });
 
   it("printing what is left empties the cart", async () => {
@@ -786,10 +837,10 @@ describe("after printing", () => {
     );
     await pressPrint();
     await screen.findByRole("alert");
-    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(2);
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("9", 4, "Sugar")]);
     await pressPrint();
     act(() => {
-      localStorage.setItem(CART_KEY, JSON.stringify([LINE("7", 5, "Flour"), LINE("9", 4, "Sugar"), LINE("11", 1)]));
+      localStorage.setItem(CART_KEY, JSON.stringify([LINE("9", 4, "Sugar"), LINE("11", 1)]));
       reloadCart();
     });
     release();

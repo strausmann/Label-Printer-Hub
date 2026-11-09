@@ -48,6 +48,12 @@ export interface SheetSectionProps {
    * including lines whose pages an earlier partial print already queued). The caller removes exactly those.
    */
   onAccepted?: (submitted: CartItem[]) => void;
+  /**
+   * Called when only some pages were queued (`502 print_interrupted`), with the copies those pages took: one entry
+   * per line that lost copies, `copies` being the number queued. The caller takes exactly those out of the cart, so
+   * the cart itself is what is left. Without it (the item view has no cart) the section keeps the rest by index.
+   */
+  onQueued?: (queued: CartItem[]) => void;
 }
 
 /** A worst-case preview takes seconds to render on the server, so it is asked for only once the choices have settled. */
@@ -69,7 +75,7 @@ type Changed = { kind: "plan"; sheets: string[] } | { kind: "cells"; sheet: stri
  * will look like, and the print. The preview is the server's: the print sends back what the preview
  * promised (`expected_cells`), and a changed plan is shown again and confirmed again.
  */
-export function SheetSection({ items, printer, preselectedSheet, onAccepted }: SheetSectionProps) {
+export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQueued }: SheetSectionProps) {
   const { t, i18n } = useLingui();
   const status = usePrinterStatus(printer.id);
   // Archived types are asked for too: their existing sheets keep printing, only new sheets are refused.
@@ -78,7 +84,9 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   const linked = useSheet(preselectedSheet ?? "");
   const print = usePrintSheets(printer.id);
 
-  // After a partial print only the items whose pages were not queued are previewed and printed.
+  // After a partial print only the items whose pages were not queued are previewed and printed. With a cart the
+  // queued copies leave the cart, so the cart is the rest and nothing else is remembered; only the item view,
+  // which has no cart, keeps the indices of the rest.
   const allItems = expandItems(items);
   const itemsKey = JSON.stringify(items.map((i) => [i.app, i.id, i.content_type, i.copies]));
   const [leftover, setLeftover] = useState<{ key: string; indices: number[] } | null>(null);
@@ -258,7 +266,20 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
               .flatMap((page) => page.cells.filter((c) => c.state === "new" && c.item_index !== null).map((c) => activeIdx[c.item_index!]!)),
           );
           const rest = activeIdx.filter((i) => !done.has(i));
-          setLeftover({ key: itemsKey, indices: rest });
+          if (onQueued) {
+            // Per line: how many of its expanded items were queued (a line is `copies` consecutive items).
+            const queuedLines: CartItem[] = [];
+            let offset = 0;
+            for (const line of submitted) {
+              let count = 0;
+              for (let k = offset; k < offset + line.copies; k++) if (done.has(k)) count++;
+              if (count > 0) queuedLines.push({ ...line, copies: count });
+              offset += line.copies;
+            }
+            onQueued(queuedLines);
+          } else {
+            setLeftover({ key: itemsKey, indices: rest });
+          }
           setPartial({ jobIds: jobs, queued: done.size, left: rest.length, words: error instanceof ApiError && error.code !== "print_interrupted" ? errorText(error) : null });
           return;
         }

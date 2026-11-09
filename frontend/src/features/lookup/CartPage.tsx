@@ -136,6 +136,7 @@ export function CartPage() {
               items={cart.items}
               printer={selected}
               preselectedSheet={linkedSheet}
+              onQueued={(queued) => cart.removeItems(queued)}
               onAccepted={(submitted) => {
                 cart.removeItems(submitted);
                 setSheetPrinted(true);

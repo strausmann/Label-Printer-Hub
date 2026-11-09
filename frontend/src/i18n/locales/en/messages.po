@@ -3656,8 +3656,8 @@ msgid "The queue timeout must be between 1 and 600 seconds."
 msgstr "The queue timeout must be between 1 and 600 seconds."
 
 #: src/features/sheets/print/PrintResult.tsx
-msgid "The queued labels are still in the cart and will print again if you leave them there."
-msgstr "The queued labels are still in the cart and will print again if you leave them there."
+msgid "The queued labels were taken out of the cart. The rest stays in it."
+msgstr "The queued labels were taken out of the cart. The rest stays in it."
 
 #: src/features/settings/SettingField.tsx
 msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."
