@@ -57,6 +57,8 @@ const typeOption = (type: SheetTypeRead, locale: string, archivedWord: string) =
   `${typeLabelWithKey(type)} · ${formatMm(type.geometry.label_w, locale).replace(/ mm$/, "")} × ${formatMm(type.geometry.label_h, locale)}${type.archived_at ? ` · ${archivedWord}` : ""}`;
 
 type PrintedPages = SheetPrintResponse["pages"];
+const NO_CELLS: readonly number[] = [];
+
 type Changed = { kind: "plan"; sheets: string[] } | { kind: "cells"; sheet: string };
 
 /**
@@ -92,8 +94,8 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   const [targetChoice, setTargetChoice] = useState<Target | null>(null);
   const [trayChoice, setTrayChoice] = useState<string | null>(null);
   const [fillMode, setFillMode] = useState<Fill["mode"]>("first_free");
-  const [chosen, setChosen] = useState<readonly number[]>([]);
-  const [skipped, setSkipped] = useState<readonly number[]>([]);
+  // Chosen and skipped cells are cells of one sheet; they are read back only while that sheet is the target.
+  const [cellState, setCellState] = useState<{ sheet: string; chosen: readonly number[]; skipped: readonly number[] } | null>(null);
   const [override, setOverride] = useState<{ key: string; placements: PlacementIn[] } | null>(null);
   const [zoom, setZoom] = useState<1 | 2>(1);
   const [changed, setChanged] = useState<Changed | null>(null);
@@ -152,9 +154,16 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
           : sheetsQuery.isPending || types.isPending
             ? null
             : { kind: "new" };
-  // A target picked for the type that gave way belongs to that type.
-  const target = (typeChoice === null || choiceOffered ? targetChoice : null) ?? defaultTarget;
+  // A picked target counts only while it is valid for the CURRENT type, however the type came about (a choice,
+  // the link, the remembered type, a type with room): a sheet must still be one of the type's sheets with a free
+  // cell, a new sheet only for a type that is not archived. Anything else gives way to the default.
+  const targetValid =
+    targetChoice !== null && (targetChoice.kind === "sheet" ? usable.some((s) => s.code === targetChoice.code) : !archivedType);
+  const target = (targetValid ? targetChoice : null) ?? defaultTarget;
   const sheetCode = target?.kind === "sheet" ? target.code : null;
+  const mine = cellState && sheetCode !== null && cellState.sheet === sheetCode ? cellState : null;
+  const chosen = mine?.chosen ?? NO_CELLS;
+  const skipped = mine?.skipped ?? NO_CELLS;
 
   // --- tray ---
   const trays = (status.data?.trays ?? []).filter((x) => x.enabled);
@@ -207,14 +216,12 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
     lastType.set(printer.id, key);
     setTypeChoice(key);
     setTargetChoice(null);
-    setChosen([]);
-    setSkipped([]);
+    setCellState(null);
     forget();
   };
   const chooseTarget = (next: Target) => {
     setTargetChoice(next);
-    setChosen([]);
-    setSkipped([]);
+    setCellState(null);
     forget();
   };
   const toggle = (list: readonly number[], cell: number, limit = Infinity) =>
@@ -344,7 +351,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
           )}
 
           {sheetCode && fillMode === "choose" && !tooMany && (
-            <ChooseCells code={sheetCode} chosen={chosen} needed={needed} onToggle={(cell) => setChosen((c) => toggle(c, cell, needed))} />
+            <ChooseCells code={sheetCode} chosen={chosen} needed={needed} onToggle={(cell) => setCellState({ sheet: sheetCode, chosen: toggle(chosen, cell, needed), skipped })} />
           )}
         </>
       )}
@@ -391,7 +398,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
                 itemName={itemName}
                 zoom={zoom}
                 skipped={skipped}
-                onToggleSkip={sheetCode && fillMode === "first_free" && !activeOverride ? (cell) => { setSkipped((s) => toggle(s, cell)); forget(); } : undefined}
+                onToggleSkip={sheetCode && fillMode === "first_free" && !activeOverride ? (cell) => { setCellState({ sheet: sheetCode, chosen, skipped: toggle(skipped, cell) }); forget(); } : undefined}
               />
             </div>
           )}

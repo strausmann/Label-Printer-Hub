@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../../test-utils";
 import { CART_KEY, reloadCart } from "../../lookup/cart";
-import { mockApi, PAGE_PRINTER, PRINTER_A, respond, SHEET_TYPE, pageStatus, type Call } from "../../test-api";
+import { mockApi, PAGE_PRINTER, PRINTER_A, respond, SHEET_TYPE, pageStatus, sheetRead, type Call } from "../../test-api";
 import { BATCH, JOB, NEW_9, P, USED_17, body, conflict, pick, previewFor, previewPage, reason, routes, sheet } from "./testkit";
 
 const PREVIEW = `/api/print/${P}/sheet/preview`;
@@ -396,6 +396,114 @@ describe("the preview", () => {
     expect(grid.querySelector("image")?.getAttribute("href")).toBe("data:image/png;base64,iVBORw0KGgo=");
     expect(screen.getByText("PDF on A4, media type labels, no scaling")).toBeVisible();
   });
+});
+
+describe("a picked target belongs to the type it was picked for", () => {
+  const OLD = { ...SHEET_TYPE, key: "OLDTYPE", product_codes: ["OLD-1"], vendor: "Old", archived_at: "2026-11-01T00:00:00Z" };
+  const oldSheet = (code: string, used: number) => sheet(code, used, { type_key: "OLDTYPE", type_label: "Old OLD-1" });
+  const oldRead = (code: string, used: number) =>
+    sheetRead(code, { used: Array.from({ length: used }, (_, i) => i + 1) }, { type_key: "OLDTYPE", type_label: "Old OLD-1", used, free: 48 - used });
+
+  function fakeStream() {
+    const sources: Array<{ emit: (type: string, printerId: string | null, data: unknown) => void }> = [];
+    class FakeEventSource {
+      private listeners = new Map<string, Array<(e: MessageEvent) => void>>();
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor() {
+        sources.push(this);
+      }
+      addEventListener(type: string, fn: (e: MessageEvent) => void) {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+      }
+      close() {}
+      emit(type: string, printerId: string | null, data: unknown) {
+        const payload = JSON.stringify({ channel: "hub", printer_id: printerId, type, ts: "2026-01-01T00:00:00Z", data });
+        for (const fn of this.listeners.get(type) ?? []) fn(new MessageEvent(type, { data: payload }));
+      }
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+    return { stream: () => sources.at(-1)!, ready: () => waitFor(() => expect(sources.length).toBeGreaterThan(0)) };
+  }
+  const fullEvent = (code: string) => ({ code, free: 0, total: 48, changed: [48], state: "active" });
+  const lastPlacements = (calls: Call[]) => body(previews(calls).at(-1)!).placements;
+
+  it("a sheet picked in the remembered type does not follow the type when an event fills the type and the default type takes over", async () => {
+    localStorage.setItem(`lph.sheetType.${P}`, "OLDTYPE");
+    const { stream, ready } = fakeStream();
+    let taken = false;
+    const { calls } = await itemView(
+      routes({
+        types: [SHEET_TYPE, OLD],
+        extra: { "GET /api/sheets": () => [oldSheet("OLDX-0001", taken ? 48 : 47), oldSheet("OLDX-0002", taken ? 48 : 47), sheet("L4736-0001", 17)] },
+      }),
+      1,
+    );
+    expect(await screen.findByRole("button", { name: /OLDTYPE.*archived/ })).toBeVisible();
+    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("option", { name: /OLDX-0002/ }));
+    await waitFor(() => expect(lastPlacements(calls)).toEqual([{ sheet: "OLDX-0002", cells: "first_free" }]));
+    await ready();
+    taken = true;
+    await act(async () => {
+      stream().emit("sheet.updated", null, fullEvent("OLDX-0001"));
+      stream().emit("sheet.updated", null, fullEvent("OLDX-0002"));
+    });
+    // The remembered type is full and archived, so it is no longer offered; the default type takes over ...
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Sheet" })).toHaveValue("L4736-0001"), { timeout: 3000 });
+    // ... and the target is a sheet of THAT type, never the full sheet of the type that gave way.
+    await waitFor(() => expect(lastPlacements(calls)).toEqual([{ sheet: "L4736-0001", cells: "first_free" }]), { timeout: 3000 });
+    expect(screen.getByRole("combobox", { name: "Sheet" })).toHaveValue("L4736-0001");
+  }, 20_000);
+
+  it("a sheet picked next to the linked sheet does not follow the type when an event fills the type", async () => {
+    const { stream, ready } = fakeStream();
+    let taken = false;
+    const { calls } = await cartView(
+      "/cart?sheet=OLDX-0001",
+      [LINE("7", 1)],
+      routes({
+        types: [SHEET_TYPE, OLD],
+        extra: {
+          "GET /api/sheets": () => [oldSheet("OLDX-0001", taken ? 48 : 47), oldSheet("OLDX-0002", taken ? 48 : 47), sheet("L4736-0001", 17)],
+          "GET /api/sheets/OLDX-0001": () => oldRead("OLDX-0001", taken ? 48 : 47),
+          "GET /api/sheets/OLDX-0002": () => oldRead("OLDX-0002", taken ? 48 : 47),
+        },
+      }),
+    );
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Sheet" })).toHaveValue("OLDX-0001"));
+    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("option", { name: /OLDX-0002/ }));
+    await waitFor(() => expect(lastPlacements(calls)).toEqual([{ sheet: "OLDX-0002", cells: "first_free" }]));
+    await ready();
+    taken = true;
+    await act(async () => {
+      stream().emit("sheet.updated", null, fullEvent("OLDX-0001"));
+      stream().emit("sheet.updated", null, fullEvent("OLDX-0002"));
+    });
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Sheet" })).toHaveValue("L4736-0001"), { timeout: 3000 });
+    await waitFor(() => expect(lastPlacements(calls)).toEqual([{ sheet: "L4736-0001", cells: "first_free" }]), { timeout: 3000 });
+    expect(screen.getByRole("combobox", { name: "Sheet" })).toHaveValue("L4736-0001");
+  }, 20_000);
+
+  it("a picked new sheet on a type that is not archived stays the target while the type does not change", async () => {
+    const { stream, ready } = fakeStream();
+    let used = 17;
+    const { calls } = await itemView(routes({ extra: { "GET /api/sheets": () => [sheet("L4736-0001", used)] } }), 1);
+    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("option", { name: /New .* sheet/ }));
+    await waitFor(() => expect(lastPlacements(calls)).toEqual([{ new_sheet: { type: "L4736REV", id_placement: "margin" }, cells: "first_free" }]));
+    await ready();
+    used = 18;
+    await act(async () => {
+      stream().emit("sheet.updated", null, { code: "L4736-0001", free: 30, total: 48, changed: [18], state: "active" });
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 700));
+    });
+    expect(lastPlacements(calls)).toEqual([{ new_sheet: { type: "L4736REV", id_placement: "margin" }, cells: "first_free" }]);
+    expect((screen.getByRole("combobox", { name: "Sheet" }) as HTMLInputElement).value).toMatch(/New .* sheet/);
+  }, 20_000);
 });
 
 describe("another computer changes the sheet", () => {
