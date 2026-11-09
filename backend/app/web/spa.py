@@ -18,7 +18,6 @@ on that).
 from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -73,34 +72,6 @@ def _is_reserved(path: str) -> bool:
     return any(path == p.rstrip("/") or path.startswith(p) for p in _RESERVED_PREFIXES)
 
 
-# Old links (and the client route /jobs/$jobId) point a browser at the legacy JSON route.
-_JOB_LINK = re.compile(r"^/jobs/[^/]+$")
-
-
-class _BrowserJobLinks:
-    """Hand a browser navigation to ``GET /jobs/<id>`` the app shell, before route auth.
-
-    The client route ``/jobs/$jobId`` collides with the legacy JSON route of the same
-    path. Negotiating inside that route runs after authentication, so an unauthenticated
-    browser would get a JSON 401 instead of the app (which shows sign-in). Rewriting the
-    path to ``/`` before routing lets the catch-all serve ``index.html``. API clients
-    (no ``text/html`` in ``Accept``) keep the JSON route, auth included.
-    """
-
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if (
-            scope["type"] == "http"
-            and scope["method"] == "GET"
-            and _JOB_LINK.match(scope["path"])
-            and any(b"text/html" in value for name, value in scope["headers"] if name == b"accept")
-        ):
-            scope = {**scope, "path": "/", "raw_path": b"/"}
-        await self.app(scope, receive, send)
-
-
 def mount_spa(app: FastAPI, dist_dir: Path) -> None:
     """Serve ``dist_dir`` (a Vite build) from ``app``; call after all routers (D1)."""
     index = dist_dir / "index.html"
@@ -131,7 +102,6 @@ def mount_spa(app: FastAPI, dist_dir: Path) -> None:
         return response
 
     app.add_route("/{full_path:path}", spa, methods=["GET"], include_in_schema=False)
-    app.add_middleware(_BrowserJobLinks)
 
 
 class _SecurityHeaders:

@@ -1248,7 +1248,7 @@ class PrintQueue:
                 logger.exception("Job %s failed on %s (printer error)", job.id, printer_id)
                 if isinstance(exc, _RECOVERABLE_PRINTER_ERRORS):
                     # Halt the whole printer queue — user must change tape /
-                    # close cover / fix connectivity, then POST /printer/resume
+                    # close cover / fix connectivity, then POST /api/v1/printer/resume
                     # to release the queue.
                     await self.pause_printer(printer_id, reason=code)
             except Exception as exc:

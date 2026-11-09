@@ -1,4 +1,4 @@
-"""POST /print on an install without a tape printer (fresh, or only IPP page printers)."""
+"""POST /api/v1/print on an install without a tape printer (fresh, or only IPP page printers)."""
 
 from __future__ import annotations
 

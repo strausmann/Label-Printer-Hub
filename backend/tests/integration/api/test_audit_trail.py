@@ -38,7 +38,7 @@ async def _insert_print_key(factory):
 
 @pytest.mark.asyncio
 async def test_post_print_without_auth_still_returns_401(api_client_with_seed):
-    """POST /print without auth → 401 (auth wired correctly)."""
+    """POST /api/v1/print without auth → 401 (auth wired correctly)."""
     resp = await api_client_with_seed.post(
         "/api/v1/print",
         json={
@@ -51,7 +51,7 @@ async def test_post_print_without_auth_still_returns_401(api_client_with_seed):
 
 @pytest.mark.asyncio
 async def test_legacy_print_endpoint_requires_auth(api_client_with_seed):
-    """Legacy POST /print endpoint also requires print scope."""
+    """Legacy POST /api/v1/print endpoint also requires print scope."""
     for endpoint in ["/api/v1/print"]:
         resp = await api_client_with_seed.post(
             endpoint,

@@ -1,14 +1,13 @@
 """Unit tests for app.api.routes.print.
 
 Phase 1k.1a (Task 25): TemplateNotFoundError and template_loader removed.
-Tests using old template_id-based API (POST /print with template_id) adapted to
+Tests using old template_id-based API (POST /api/v1/print with template_id) adapted to
 content_type-based API. test_post_print_template_not_found_is_404 removed.
-All other tests for jobs, resume, printer-resume kept verbatim.
+The tests for the legacy job routes (GET /jobs/{id}, POST /jobs/{id}/resume) went with them.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 from uuid import uuid4 as _uuid4
@@ -18,9 +17,7 @@ from app.api.routes.print import router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
-from app.printer_backends.exceptions import PrinterOfflineError, SnmpQueryError
-from app.printer_backends.snmp_helper import LiveStatus
-from app.services.job_lifecycle import Job, JobState
+from app.printer_backends.exceptions import PrinterOfflineError
 from app.services.lookup_service import LookupFailedError, UnknownAppError
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -65,7 +62,7 @@ def _client(app):
 
 
 # ---------------------------------------------------------------------------
-# POST /print — content_type-based API (Phase 1k.1a)
+# POST /api/v1/print — content_type-based API (Phase 1k.1a)
 # ---------------------------------------------------------------------------
 
 
@@ -152,73 +149,8 @@ async def test_post_print_subclass_of_a_mapped_error_uses_its_parents_mapping(
     assert r.json()["error_code"] == "printer_offline"
 
 
-async def test_get_jobs_returns_status_with_live_block(
-    fake_service, fake_queue, monkeypatch
-) -> None:
-    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
-    job.state = JobState.PRINTING
-    job.submitted_at = datetime.now(UTC)
-    fake_queue.get = AsyncMock(return_value=job)
-
-    async def fake_live(host: str, *, community: str = "public", timeout_s: float = 3.0):
-        return LiveStatus(hr_printer_status="printing", error_flags=[])
-
-    monkeypatch.setattr("app.api.routes.print.query_live_status", fake_live)
-
-    app = _app(fake_service, fake_queue)
-    app.state.printer_host = "192.0.2.10"
-    app.state.printer_snmp_community = "public"
-    async with _client(app) as c:
-        r = await c.get("/jobs/job-1")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["job_id"] == "job-1"
-    assert body["status"] == "printing"
-    assert body["live"] == {"hr_printer_status": "printing", "error_flags": []}
-
-
-async def test_get_jobs_no_live_block_when_not_printing(fake_service, fake_queue) -> None:
-    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
-    job.state = JobState.COMPLETED
-    job.submitted_at = datetime.now(UTC)
-    fake_queue.get = AsyncMock(return_value=job)
-    async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.get("/jobs/job-1")
-    assert r.status_code == 200
-    assert r.json()["live"] is None
-
-
-async def test_get_jobs_live_snmp_failure_is_non_fatal(
-    fake_service, fake_queue, monkeypatch
-) -> None:
-    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
-    job.state = JobState.PRINTING
-    job.submitted_at = datetime.now(UTC)
-    fake_queue.get = AsyncMock(return_value=job)
-
-    async def fake_live(*_a, **_kw):
-        raise SnmpQueryError("timed out")
-
-    monkeypatch.setattr("app.api.routes.print.query_live_status", fake_live)
-
-    app = _app(fake_service, fake_queue)
-    app.state.printer_host = "192.0.2.10"
-    app.state.printer_snmp_community = "public"
-    async with _client(app) as c:
-        r = await c.get("/jobs/job-1")
-    assert r.status_code == 200
-    assert r.json()["live"] is None
-
-
-async def test_get_jobs_unknown_is_404(fake_service, fake_queue) -> None:
-    fake_queue.get = AsyncMock(side_effect=KeyError("nope"))
-    async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.get("/jobs/does-not-exist")
-    assert r.status_code == 404
-
-
 # ---------------------------------------------------------------------------
-# POST /print — new synchronous error types
+# POST /api/v1/print — new synchronous error types
 # ---------------------------------------------------------------------------
 
 
@@ -296,7 +228,7 @@ async def test_post_print_tape_empty_is_409(fake_service, fake_queue) -> None:
 
 
 async def test_post_print_printer_disabled_is_409(fake_service, fake_queue) -> None:
-    """POST /print mit deaktiviertem Drucker → 409 mit printer_disabled Body."""
+    """POST /api/v1/print mit deaktiviertem Drucker → 409 mit printer_disabled Body."""
     from app.printer_backends.exceptions import PrinterDisabledError
 
     fake_service.submit_print_job.side_effect = PrinterDisabledError(
@@ -333,7 +265,7 @@ async def test_post_print_cover_open_is_409(fake_service, fake_queue) -> None:
 
 
 # ---------------------------------------------------------------------------
-# POST /printer/resume
+# POST /api/v1/printer/resume
 # ---------------------------------------------------------------------------
 
 
@@ -358,73 +290,7 @@ async def test_resume_printer_404_when_no_printer_configured(fake_service, fake_
 
 
 # ---------------------------------------------------------------------------
-# POST /jobs/{job_id}/resume
-# ---------------------------------------------------------------------------
-
-
-async def test_resume_job_transitions_paused_to_queued(fake_service, fake_queue) -> None:
-    """Resume a PAUSED job → 200 with state=queued and cleared error metadata."""
-    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
-    # Manually set PAUSED state (as PrintService would after tape mismatch+queue)
-    from app.services.job_lifecycle import JobStateMachine
-
-    JobStateMachine.transition(job, JobState.PAUSED)
-    job.error_code = "tape_mismatch"
-    job.error_message = "Expected 24mm tape, loaded 12mm"
-    job.error_detail = {"expected_mm": 24, "loaded_mm": 12}
-    job.submitted_at = datetime.now(UTC)
-
-    fake_queue.get = AsyncMock(return_value=job)
-    fake_queue.resume_job = AsyncMock(side_effect=lambda job_id: _resume_side_effect(job))
-
-    async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/jobs/job-1/resume")
-
-    assert r.status_code == 200
-    body = r.json()
-    assert body["job_id"] == "job-1"
-    assert body["status"] == "queued"
-    assert body["error_code"] is None
-    assert body["error_message"] is None
-    assert body["error_detail"] is None
-
-
-def _resume_side_effect(job: Job) -> None:
-    """Simulate PrintQueue.resume_job transitioning PAUSED → QUEUED."""
-    from app.services.job_lifecycle import JobStateMachine
-
-    JobStateMachine.transition(job, JobState.QUEUED)
-
-
-async def test_resume_job_unknown_is_404(fake_service, fake_queue) -> None:
-    """Resuming an unknown job returns 404."""
-    fake_queue.get = AsyncMock(side_effect=KeyError("nope"))
-
-    async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/jobs/does-not-exist/resume")
-
-    assert r.status_code == 404
-
-
-async def test_resume_job_completed_is_409(fake_service, fake_queue) -> None:
-    """Resuming a COMPLETED job returns 409."""
-    from app.services.job_lifecycle import JobStateMachine
-
-    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
-    # Transition to COMPLETED via PRINTING
-    JobStateMachine.transition(job, JobState.PRINTING)
-    JobStateMachine.transition(job, JobState.COMPLETED)
-    job.submitted_at = datetime.now(UTC)
-    fake_queue.get = AsyncMock(return_value=job)
-
-    async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/jobs/job-1/resume")
-
-    assert r.status_code == 409
-
-
-# ---------------------------------------------------------------------------
-# POST /printer/resume — 409 contract (Commit B — Issue #67)
+# POST /api/v1/printer/resume — 409 contract (Commit B — Issue #67)
 # ---------------------------------------------------------------------------
 
 
@@ -453,27 +319,3 @@ async def test_resume_printer_paused_returns_200(fake_service, fake_queue) -> No
         r = await c.post("/api/v1/printer/resume")
     assert r.status_code == 200
     assert r.json() == {"printer_id": _PRINTER_ID_STR, "state": "active"}
-
-
-# ---------------------------------------------------------------------------
-# POST /jobs/{job_id}/resume — structured error_code (Commit B — Issue #67)
-# ---------------------------------------------------------------------------
-
-
-async def test_resume_job_not_paused_returns_409_with_error_code(fake_service, fake_queue) -> None:
-    """When resuming a non-PAUSED job the response must include
-    error_code='invalid_state' (structured ProblemDetail, not a plain detail string).
-    """
-    job = Job(id="job-1", printer_id=_PRINTER_ID, image_payload=b"", tape_mm=24, options={})
-    # job.state is QUEUED by default — not PAUSED
-    job.submitted_at = datetime.now(UTC)
-    fake_queue.get = AsyncMock(return_value=job)
-
-    async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/jobs/job-1/resume")
-
-    assert r.status_code == 409
-    body = r.json()
-    assert body.get("error_code") == "invalid_state", (
-        f"Expected error_code='invalid_state', got: {body}"
-    )

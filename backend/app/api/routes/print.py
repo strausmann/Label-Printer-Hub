@@ -1,4 +1,4 @@
-"""POST /print + GET /jobs/{job_id} + POST /jobs/{job_id}/resume + POST /api/v1/render/preview."""
+"""POST /api/v1/print, POST /api/v1/printer/resume and POST /api/v1/render/preview."""
 
 from __future__ import annotations
 
@@ -22,18 +22,15 @@ from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterDisabledError,
     PrinterOfflineError,
-    SnmpQueryError,
     TapeEmptyError,
     TapeMismatchError,
     UnsupportedTapeError,
 )
-from app.printer_backends.snmp_helper import LiveStatus, query_live_status
 from app.repositories import printer_state as printer_state_repo
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.print_request import PrintRequest, RawLabelData
-from app.schemas.print_response import PrintJobResponse, PrintJobStatusResponse
-from app.services.job_lifecycle import JobState
+from app.schemas.print_response import PrintJobResponse
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import LookupFailedError, UnknownAppError
 from app.services.print_queue import PrinterAlreadyActiveError
@@ -41,15 +38,13 @@ from app.services.print_queue import PrinterAlreadyActiveError
 _log = logging.getLogger(__name__)
 
 router = APIRouter()
-# Separate router with /api prefix for the render/preview endpoint so that
-# the effective URL matches the approved spec: POST /api/v1/render/preview.
-# The legacy /print, /jobs, /printer routes on `router` have no /api prefix
-# for backwards-compatibility with existing clients; render/preview is new.
+# `router` spells the full path in each decorator (/api/v1/print, /api/v1/printer/resume);
+# `render_router` carries the prefix for POST /api/v1/render/preview.
 render_router = APIRouter(prefix="/api/v1")
 
 
 class _PrinterResumeResponse(BaseModel):
-    """200 response body for POST /printer/resume."""
+    """200 response body for POST /api/v1/printer/resume."""
 
     printer_id: UUID | str
     state: str
@@ -138,55 +133,6 @@ async def create_print_job(
     return PrintJobResponse(job_id=str(job_id), status="queued")
 
 
-@router.get(
-    "/jobs/{job_id}",
-    response_model=PrintJobStatusResponse,
-    tags=["print"],
-    summary="Get print job status",
-    description=(
-        "Return the current status and metadata for a print job submitted "
-        "via ``POST /print``.  When the job is actively printing, the "
-        "response includes live SNMP status from the printer.  "
-        "Returns 404 when the job is not found."
-    ),
-)
-async def get_job_status(
-    job_id: str,
-    http: Request,
-    _auth: Annotated[AuthContext, Depends(require_read)],
-) -> PrintJobStatusResponse | Response:
-    queue = http.app.state.print_queue
-    try:
-        job = await queue.get(job_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"job not found: {job_id}") from exc
-
-    live: LiveStatus | None = None
-    if job.state == JobState.PRINTING:
-        host = getattr(http.app.state, "printer_host", None)
-        community = getattr(http.app.state, "printer_snmp_community", "public")
-        if host:
-            try:
-                # Short timeout — this is on the request path, must stay snappy.
-                # If SNMP is slow/unavailable, omit the live block (non-fatal).
-                live = await query_live_status(host, community=community, timeout_s=1.0)
-            except SnmpQueryError:
-                _log.warning("live SNMP query failed for job %s", job_id, exc_info=True)
-                live = None
-
-    return PrintJobStatusResponse(
-        job_id=job.id,
-        status=job.state,
-        error_code=getattr(job, "error_code", None),
-        error_message=getattr(job, "error_message", None),
-        error_detail=getattr(job, "error_detail", None),
-        created_at=job.submitted_at,
-        started_at=getattr(job, "started_at", None),
-        finished_at=getattr(job, "finished_at", None),
-        live=live,
-    )
-
-
 @router.post(
     "/api/v1/printer/resume",
     status_code=status.HTTP_200_OK,
@@ -236,72 +182,6 @@ async def resume_printer(
             content={"error_code": "already_active", "error_message": "Printer is already active"},
         )
     return _PrinterResumeResponse(printer_id=printer_id, state="active")
-
-
-@router.post(
-    "/jobs/{job_id}/resume",
-    status_code=status.HTTP_200_OK,
-    response_model=PrintJobStatusResponse,
-    tags=["print"],
-    summary="Resume a paused print job",
-    description=(
-        "Resume a print job that is in ``PAUSED`` state (waiting for a tape "
-        "change after a tape-mismatch error with ``on_tape_mismatch=queue``).  "
-        "Transitions the job from ``PAUSED`` to ``QUEUED`` so the worker picks "
-        "it up again.  Returns 200 with the updated status.  "
-        "Returns 404 when the job is not found.  "
-        "Returns 409 when the job is not in ``PAUSED`` state."
-    ),
-)
-async def resume_job(
-    job_id: str,
-    http: Request,
-    _auth: Annotated[AuthContext, Depends(require_print)],
-) -> PrintJobStatusResponse | JSONResponse:
-    """Resume a job that is PAUSED waiting for a tape change.
-
-    User-driven workflow: client posted /print with on_tape_mismatch=queue,
-    got 202 + job_id with state=PAUSED. User changes physical tape,
-    calls this endpoint. The job transitions PAUSED → QUEUED and the worker
-    picks it up.
-
-    Returns 200 with the updated status.
-    Returns 404 if job not found.
-    Returns 409 if job is not in PAUSED state (error_code=invalid_state).
-    """
-    queue = http.app.state.print_queue
-    try:
-        job = await queue.get(job_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"job not found: {job_id}") from exc
-
-    if job.state != JobState.PAUSED:
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content={
-                "error_code": "invalid_state",
-                "error_message": (f"job {job_id} is in state {job.state.value!r}, not PAUSED"),
-            },
-        )
-
-    # resume_job() transitions PAUSED → QUEUED and re-enqueues the job.
-    # It also clears error metadata on the job object.
-    await queue.resume_job(job_id)
-    job.error_code = None
-    job.error_message = None
-    job.error_detail = None
-
-    return PrintJobStatusResponse(
-        job_id=job.id,
-        status=job.state,
-        error_code=None,
-        error_message=None,
-        error_detail=None,
-        created_at=job.submitted_at,
-        started_at=getattr(job, "started_at", None),
-        finished_at=getattr(job, "finished_at", None),
-        live=None,
-    )
 
 
 class _PreviewRequest(BaseModel):
@@ -385,7 +265,7 @@ async def render_preview(
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
-                # R2-4: align with /print endpoint (_SYNC_ERROR_MAP) which uses
+                # R2-4: align with the print endpoint (_SYNC_ERROR_MAP) which uses
                 # "content_type_data_mismatch" — was inconsistently "data_mismatch"
                 "error_code": "content_type_data_mismatch",
                 "error_message": (

@@ -168,7 +168,7 @@ async def _seed_failed_job(factory, printer_id):
             printer_id=printer_id,
             template_key="audit-seed-template",
             state=JobState.FAILED.value,
-            # Renderable like a job created by POST /print: retry re-renders it.
+            # Renderable like a job created by POST /api/v1/print: retry re-renders it.
             payload={
                 "label_data": {
                     "title": "audit",

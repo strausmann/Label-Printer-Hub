@@ -32,7 +32,7 @@ from app.sheets.errors import MediaKindMismatchError
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 # prefix=/api → POST /api/v1/print/{...}/batch. print.py has no prefix
-# (POST /print), so this is a clean separation.
+# (POST /api/v1/print), so this is a clean separation.
 router = APIRouter(prefix="/api/v1")
 
 _SYNC_ERROR_MAP: dict[type[Exception], str] = {

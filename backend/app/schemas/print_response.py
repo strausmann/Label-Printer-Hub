@@ -1,4 +1,4 @@
-"""Response schemas for POST /print and GET /jobs/{job_id}."""
+"""Response schemas for POST /api/v1/print and the legacy job status body."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from app.services.job_lifecycle import JobState
 
 
 class PrintJobResponse(BaseModel):
-    """POST /print 202 body — queue accepted."""
+    """POST /api/v1/print 202 body — queue accepted."""
 
     model_config = ConfigDict(frozen=True)
     job_id: str
@@ -20,7 +20,7 @@ class PrintJobResponse(BaseModel):
 
 
 class PrintJobStatusResponse(BaseModel):
-    """GET /jobs/{job_id} body."""
+    """Status body of the removed legacy ``GET /jobs/{job_id}``; no route returns it any more."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
     job_id: str
