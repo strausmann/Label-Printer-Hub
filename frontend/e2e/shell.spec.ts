@@ -81,6 +81,26 @@ test.describe("shell", () => {
     await expect(page.getByRole("region", { name: "Sheets", exact: true })).toBeVisible();
   });
 
+  // Behind an auth proxy the manifest must be fetched with the session cookie (#225); the gate for the
+  // attribute is `src/manifest-link.test.ts`. Playwright cannot observe the cookie here: the request
+  // that `Page.getAppManifest` triggers is browser-initiated and its headers come back without `Cookie`
+  // with and without the fix, so a cookie assertion would prove nothing. What this checks is that the
+  // browser parses the manifest and that each icon it names loads with the page's cookies.
+  test("manifest parses and its icons load with credentials", async ({ signedInPage: page }) => {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Page.enable");
+    const { url, errors, data } = await cdp.send("Page.getAppManifest");
+    expect(errors).toEqual([]);
+    expect(url).toMatch(/\/manifest\.webmanifest$/);
+    const manifest = JSON.parse(data ?? "{}") as { icons?: { src: string }[] };
+    expect(manifest.icons?.length ?? 0).toBeGreaterThan(0);
+    for (const icon of manifest.icons ?? []) {
+      const response = await page.request.get(new URL(icon.src, url).toString());
+      expect(response.status(), icon.src).toBe(200);
+      expect(response.headers()["content-type"], icon.src).toMatch(/^image\//);
+    }
+  });
+
   test("keyboard: Tab reaches every nav entry with visible focus", async ({ signedInPage: page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const sidebar = page.getByRole("navigation", { name: "Main" });
