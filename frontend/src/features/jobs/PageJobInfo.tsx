@@ -62,11 +62,12 @@ export function PageJobInfo({ job, cancelRequested, printer }: { job: Job; cance
   const unconfirmed = (sheet.data?.cells ?? []).filter((c) => c.state === "unconfirmed" && c.job_id === job.id).map((c) => c.cell);
   const discarded = sheet.data?.state === "discarded";
   const calibration = page.kind === "calibration_page";
+  const testPage = page.kind === "test_page";
 
   return (
     <section aria-labelledby="page-h" className={`${PANEL} flex flex-col gap-3`}>
       <h2 id="page-h" className={SECTION_HEADING}>
-        {calibration ? t`Calibration page` : t`Sheet page`}
+        {calibration ? t`Calibration page` : testPage ? t`Test page` : t`Sheet page`}
       </h2>
       {(status || cancelRequested) && (
         <div role="status" className="flex flex-col gap-1">
@@ -76,7 +77,12 @@ export function PageJobInfo({ job, cancelRequested, printer }: { job: Job; cance
       )}
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
         <Row label={t`Printer`}>{printer}</Row>
-        {calibration ? (
+        {testPage ? (
+          <>
+            <Row label={t`Tray`}>{page.tray ?? "—"}</Row>
+            <Row label={t`Paper size`}>{page.media ?? "—"}</Row>
+          </>
+        ) : calibration ? (
           <Row label={t`Sheet type`}>{page.typeKey ? `${typeLabel ?? page.typeKey}${page.version === null ? "" : ` v${page.version}`}` : "—"}</Row>
         ) : (
           <>

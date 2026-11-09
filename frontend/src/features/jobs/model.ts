@@ -5,7 +5,7 @@ type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Json) : {});
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : typeof v === "number" ? String(v) : null);
 
-export type PageKind = "sheet_page" | "calibration_page";
+export type PageKind = "sheet_page" | "calibration_page" | "test_page";
 
 /** What a page job (a sheet page or a calibration page) stores in `payload.detail` and `job_summary`. */
 export interface PageInfo {
@@ -20,7 +20,13 @@ export interface PageInfo {
   /** Calibration page: the sheet type and version it was drawn for. */
   typeKey: string | null;
   version: number | null;
+  /** Test page: the tray key it goes to and the paper size it is drawn for. */
+  tray: string | null;
+  media: string | null;
 }
+
+/** The job kind of a tape test label (`template_key`); the print service names it, not the payload. */
+export const TEST_LABEL_KEY = "test_label";
 
 export interface PayloadSummary {
   page: PageInfo | null;
@@ -48,7 +54,7 @@ function cellNumbers(list: unknown): number[] {
 /** The page-job part of a payload, or null for a tape job. Values of the wrong shape count as missing. */
 export function pageInfoOf(job: Job): PageInfo | null {
   const p = obj(job.payload);
-  if (p.kind !== "sheet_page" && p.kind !== "calibration_page") return null;
+  if (p.kind !== "sheet_page" && p.kind !== "calibration_page" && p.kind !== "test_page") return null;
   const detail = obj(p.detail);
   const summary = obj(detail.job_summary);
   const cells = cellNumbers(detail.cells);
@@ -61,6 +67,8 @@ export function pageInfoOf(job: Job): PageInfo | null {
     cellCount: num(summary.cell_count) ?? cells.length,
     typeKey: str(detail.type_key),
     version: num(detail.version),
+    tray: str(p.tray),
+    media: str(p.media),
   };
 }
 
@@ -92,6 +100,10 @@ function pageTitle(page: PageInfo, typeLabel: string | null): string {
     const version = page.version;
     return version === null ? t`Calibration page · ${name}` : t`Calibration page · ${name} v${version}`;
   }
+  if (page.kind === "test_page") {
+    const tray = page.tray;
+    return tray === null ? t`Test page` : t`Test page · ${tray}`;
+  }
   if (page.sheetCode === null) return t`Sheet page`;
   const code = page.sheetCode;
   const labels = plural(page.cellCount, { one: "# label", other: "# labels" });
@@ -102,6 +114,7 @@ function pageTitle(page: PageInfo, typeLabel: string | null): string {
 export function jobTitle(job: Job, typeLabel: string | null = null): string | null {
   const s = summarizePayload(job);
   if (s.page) return pageTitle(s.page, typeLabel);
+  if (job.template_key === TEST_LABEL_KEY) return t`Test label`;
   return s.title ?? s.code ?? job.template_key;
 }
 

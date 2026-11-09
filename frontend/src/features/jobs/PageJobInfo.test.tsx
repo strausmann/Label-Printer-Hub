@@ -328,3 +328,15 @@ describe("job list", () => {
     expect(await screen.findByText("Stopped at the printer · media empty")).toBeVisible();
   });
 });
+
+describe("test page job", () => {
+  it("is titled by its tray and shows the tray and paper size, not sheet fields", async () => {
+    mockApi(routes("queued", { payload: { kind: "test_page", media: "A4", tray: "bypass", detail: { printer_name: "Office laser" } } }));
+    await renderApp({ path: `/jobs/${ID}` });
+    await screen.findByRole("heading", { level: 1, name: "Test page · bypass" });
+    const section = screen.getByRole("region", { name: "Test page" });
+    expect(within(section).getByText("bypass")).toBeVisible();
+    expect(within(section).getByText("A4")).toBeVisible();
+    expect(within(section).queryByText("Sheet")).toBeNull();
+  });
+});

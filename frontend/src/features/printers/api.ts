@@ -116,3 +116,22 @@ export function useSetRollColour(printerId: string) {
     },
   });
 }
+
+/**
+ * Queue a test print. A tape printer takes no body; a page printer takes the tray (the default
+ * tray when omitted). The queue and the job lists are read again whatever the answer was.
+ */
+export function useTestPrint(printerId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (tray: string | null) =>
+      apiFetch<components["schemas"]["TestPrintAccepted"]>(`/api/v1/printers/${printerId}/test-print`, {
+        method: "POST",
+        ...(tray === null ? {} : { json: { tray } }),
+      }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: queueKey(printerId) });
+      void client.invalidateQueries({ queryKey: ["jobs"] });
+    },
+  });
+}

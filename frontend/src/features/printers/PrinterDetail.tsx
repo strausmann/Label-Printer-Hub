@@ -7,12 +7,14 @@ import { ApiError } from "../../api/client";
 import { useFeature, useSession } from "../../app/session";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
+import { TEST_LABEL_KEY } from "../jobs/model";
 import { useCalibration, type CalibrationRead } from "../calibration/api";
 import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, type Printer, type PrinterStatus, type QueueJob } from "./api";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
 import { describePrinter, isPagePrinter, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, ReasonLine } from "./PageStatus";
+import { TestPrintButton } from "./TestPrintButton";
 import { PauseResumeButton } from "./PauseResumeButton";
 import { RollColourEdit, RollColourPrompt } from "./RollColourPrompt";
 import { TapeSwatch } from "./TapeSwatch";
@@ -75,7 +77,10 @@ function PrinterDetail({ printer }: { printer: Printer }) {
             </p>
           )}
         </div>
-        <PauseResumeButton printer={printer} />
+        <div className="flex min-w-0 max-w-full flex-wrap items-start gap-2">
+          <TestPrintButton printer={printer} status={status.data} />
+          <PauseResumeButton printer={printer} />
+        </div>
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -297,7 +302,7 @@ function QueueSection({
       {jobs && jobs.length > 0 && (
         <ul className="mt-3 flex flex-col gap-2">
           {jobs.map((job) => {
-            const label = job.template_key ?? t`Label`;
+            const label = job.template_key === TEST_LABEL_KEY ? t`Test label` : (job.template_key ?? t`Label`);
             const state = stateOf(job.state);
             return (
               <li key={job.id} className="flex flex-wrap items-center justify-between gap-3 rounded-r2 bg-sunken px-3 py-2">

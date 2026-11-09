@@ -2160,6 +2160,10 @@ msgstr "In {appName} öffnen"
 msgid "Open Settings › Integrations"
 msgstr "Einstellungen › Integrationen öffnen"
 
+#: src/features/printers/TestPrintButton.tsx
+msgid "Open the job"
+msgstr "Auftrag öffnen"
+
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Open the sheet"
 msgstr "Bogen öffnen"
@@ -2223,6 +2227,7 @@ msgid "Page size"
 msgstr "Papiergröße"
 
 #: src/features/archive/TypeForm.tsx
+#: src/features/jobs/PageJobInfo.tsx
 msgid "Paper size"
 msgstr "Papierformat"
 
@@ -2308,6 +2313,10 @@ msgstr "Auf den Bogen drucken"
 msgid "Print onto this sheet"
 msgstr "Auf diesen Bogen drucken"
 
+#: src/features/printers/TestPrintButton.tsx
+msgid "Print test page"
+msgstr "Testseite drucken"
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust."
 msgstr "Drucken Sie dieselbe Seite noch einmal, jetzt mit der Korrektur. Jede Kreuzung sollte dann innerhalb von 0,5 mm liegen. Wenn nicht, messen Sie erneut und passen Sie an."
@@ -2350,9 +2359,25 @@ msgstr "Drucker und Fach"
 msgid "Printer enabled"
 msgstr "Drucker eingeschaltet"
 
+#: src/features/printers/TestPrintButton.tsx
+msgid "Printer is disabled"
+msgstr "Der Drucker ist ausgeschaltet"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "Printer is not reachable"
+msgstr "Der Drucker ist nicht erreichbar"
+
 #: src/features/printers/PauseReason.tsx
 msgid "Printer is offline"
 msgstr "Der Drucker ist offline"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "Printer is paused"
+msgstr "Der Drucker ist pausiert"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "Printer status unknown"
+msgstr "Der Druckerstatus ist unbekannt"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrintersPage.tsx
@@ -3191,6 +3216,28 @@ msgstr "Banddrucker"
 msgid "Test connection"
 msgstr "Verbindung testen"
 
+#: src/features/jobs/model.ts
+#: src/features/printers/PrinterDetail.tsx
+msgid "Test label"
+msgstr "Testetikett"
+
+#: src/features/jobs/model.ts
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Test page"
+msgstr "Testseite"
+
+#: src/features/jobs/model.ts
+msgid "Test page · {tray}"
+msgstr "Testseite · {tray}"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "Test print"
+msgstr "Testdruck"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "Test print sent."
+msgstr "Testdruck ist unterwegs."
+
 #: src/features/settings/Integrations.tsx
 msgid "Testing…"
 msgstr "Wird getestet…"
@@ -3688,6 +3735,7 @@ msgid "The printer refused the request."
 msgstr "Der Drucker hat die Anfrage abgelehnt."
 
 #: src/features/printers/PrinterDetail.tsx
+#: src/features/printers/TestPrintButton.tsx
 msgid "The printer reports no trays."
 msgstr "Der Drucker meldet keine Fächer."
 
@@ -3814,6 +3862,10 @@ msgstr "Die Aufteilung dieses Drucks passt nicht mehr. Prüfe die Vorschau und v
 #: src/features/settings/Integrations.tsx
 msgid "The test could not be run."
 msgstr "Der Test konnte nicht ausgeführt werden."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The test print could not be started."
+msgstr "Der Testdruck konnte nicht gestartet werden."
 
 #: src/features/archive/ImportDialog.tsx
 msgid "The text is larger than 64 KB."
@@ -4084,6 +4136,8 @@ msgid "Top-edge mark"
 msgstr "Markierung an der Oberkante"
 
 #: src/features/calibration/CalibrationPage.tsx
+#: src/features/jobs/PageJobInfo.tsx
+#: src/features/printers/TestPrintButton.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Tray"
