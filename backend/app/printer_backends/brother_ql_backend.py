@@ -11,10 +11,14 @@ from __future__ import annotations
 import asyncio
 import logging
 
+# Must run before brother_ql is used: restores Image.ANTIALIAS (removed in Pillow 10),
+# which brother_ql 0.9.x calls in its resize branch. See _pillow_compat and issue #254.
+from app.printer_backends import _pillow_compat  # noqa: F401  # isort: skip
 from brother_ql.backends.helpers import (
     send as _helpers_send,
 )
 from brother_ql.conversion import convert
+from brother_ql.labels import ALL_LABELS
 from brother_ql.raster import BrotherQLRaster
 from PIL import Image
 
@@ -46,6 +50,30 @@ _TAPE_MM_TO_QL_LABEL: dict[int, str] = {
     54: "54",
     62: "62",
 }
+
+
+def _fit_to_printable_width(image: Image.Image, ql_label: str, *, dpi_600: bool) -> Image.Image:
+    """Orient *image* the way ``brother_ql.convert`` expects for endless labels.
+
+    The LayoutEngine renders landscape in the PT convention: image height equals the
+    print-head pin count and image width is the label length. ``convert`` instead wants
+    the image *width* to equal ``dots_printable[0]`` (rows span the tape, the image grows
+    along the feed direction) and otherwise resizes, which distorts the label (and crashed
+    on Pillow >= 10, issue #254).
+
+    A landscape image whose height equals the printable width is rotated 90 degrees
+    clockwise, so the left edge (start of text) becomes row 0 and is printed first.
+    Images that already have the printable width, or that match neither dimension, are
+    returned unchanged (the latter still hits convert's logged resize fallback).
+    """
+    matches = [x for x in ALL_LABELS if x.identifier == ql_label]
+    if not matches:
+        return image
+    expected = int(matches[0].dots_printable[0]) * (2 if dpi_600 else 1)
+    width, height = image.size
+    if width != expected and height == expected:
+        return image.transpose(Image.Transpose.ROTATE_270)
+    return image
 
 
 class BrotherQLBackend:
@@ -104,6 +132,7 @@ class BrotherQLBackend:
         # M6-Fix: red=False for monochrome; two_color capable models (QL-820NWB)
         # accept this without error — they only require red=False not to raise.
         qlr = BrotherQLRaster(self._model_id)
+        image = _fit_to_printable_width(image, ql_label, dpi_600=high_resolution)
         convert(
             qlr,
             [image],
