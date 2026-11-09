@@ -765,6 +765,18 @@ describe("after printing", () => {
     expect(screen.queryByText("The cart is empty.")).toBeNull();
   }, 15000);
 
+  it("after a print that emptied the cart, switching to a tape printer says the cart is empty and offers no print button", async () => {
+    const JOB2 = "66666666-6666-4666-8666-666666666666";
+    const allQueued = () => conflict(502, "print_interrupted", "Interrupted.", { batch_id: BATCH, job_ids: [JOB, JOB2] });
+    await cartView("/cart", [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")], routes({ preview: twoPages, print: allQueued }));
+    await pressPrint();
+    await screen.findByRole("alert");
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([]);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_A.id);
+    expect(await screen.findByText("The cart is empty.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^Print \d+ label/ })).toBeNull();
+  }, 15000);
+
   it("a partial print takes exactly the queued copies out of the cart lines", async () => {
     // Two pages again, but the first page holds only 3 of the 5 flour labels: the line keeps 2.
     const threeThenRest = (init: RequestInit) => {

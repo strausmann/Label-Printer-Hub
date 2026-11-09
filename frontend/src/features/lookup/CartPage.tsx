@@ -64,7 +64,7 @@ export function CartPage() {
         </p>
       )}
 
-      {cart.items.length === 0 && !sheetPrinted && (
+      {cart.items.length === 0 && (!sheetPrinted || !pagePrinter) && (
         <>
           <p className="text-ink-2">{t`The cart is empty.`}</p>
           {linkedSheet && (
@@ -118,7 +118,8 @@ export function CartPage() {
             <PrinterPicker printers={usable} value={selected?.id ?? null} onChange={choose} loading={printers.isPending} statuses={statuses} />
             <div className="flex flex-wrap gap-2">
               {/* A page printer prints through the sheet section below. */}
-              {!pagePrinter && (
+              {/* An emptied cart (a sheet print took everything out) leaves nothing to send. */}
+              {!pagePrinter && cart.items.length > 0 && (
                 <Button className={PRIMARY_BUTTON} isDisabled={!selected || busy} onPress={() => void send()}>
                   {plural(labels, { one: "Print # label", other: "Print # labels" })}
                 </Button>
