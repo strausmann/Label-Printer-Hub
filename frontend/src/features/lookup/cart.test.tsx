@@ -73,12 +73,12 @@ describe("cart", () => {
     vi.restoreAllMocks();
   });
 
-  it("removeItems drops the entries by key and leaves the others, whatever their copies", () => {
+  it("removeItems drops the entries by key and leaves the others", () => {
     const { result } = renderHook(() => useCart(), { wrapper });
     act(() => result.current.add(asset));
     act(() => result.current.add(spool));
     act(() => result.current.add({ ...spool, app: "snipeit" }));
-    act(() => result.current.removeItems([{ app: "spoolman", id: spool.id }]));
+    act(() => result.current.removeItems([spool]));
     expect(result.current.items.map((i) => `${i.app}:${i.id}`)).toEqual(["snipeit:42", `snipeit:${spool.id}`]);
     expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(2);
   });
@@ -95,6 +95,42 @@ describe("cart", () => {
       act(() => result.current.removeItems([asset]));
       expect(stored()).toEqual(["grocy:99:1"]);
       expect(result.current.items.map((i) => i.id)).toEqual(["99"]);
+    });
+
+    it("removeItems keeps the copies another tab added after the line was submitted", () => {
+      const { result } = renderHook(() => useCart(), { wrapper });
+      act(() => result.current.add({ ...asset, copies: 2 }));
+      otherTab({ ...asset, copies: 3 });
+      act(() => result.current.removeItems([{ ...asset, copies: 2 }]));
+      expect(stored()).toEqual(["snipeit:42:1"]);
+      expect(result.current.items.map((i) => i.copies)).toEqual([1]);
+    });
+
+    it("removeItems removes a line that is unchanged since the submit", () => {
+      const { result } = renderHook(() => useCart(), { wrapper });
+      act(() => result.current.add({ ...asset, copies: 2 }));
+      act(() => result.current.removeItems([{ ...asset, copies: 2 }]));
+      expect(stored()).toEqual([]);
+    });
+
+    it("removeItems removes a line that was lowered below the submitted count and never goes negative", () => {
+      const { result } = renderHook(() => useCart(), { wrapper });
+      act(() => result.current.add({ ...asset, copies: 3 }));
+      otherTab({ ...asset, copies: 1 }, other);
+      act(() => result.current.removeItems([{ ...asset, copies: 3 }]));
+      expect(stored()).toEqual(["grocy:99:1"]);
+    });
+
+    it("print keeps the copies another tab added while the request was in flight", async () => {
+      mockApi(batchRoutes());
+      const { result } = renderHook(() => useCart(), { wrapper });
+      act(() => result.current.add({ ...asset, copies: 2 }));
+      await act(async () => {
+        const printing = result.current.print(PRINTER);
+        otherTab({ ...asset, copies: 3 });
+        await printing;
+      });
+      expect(stored()).toEqual(["snipeit:42:1"]);
     });
 
     it("add keeps the other tab's new line", () => {

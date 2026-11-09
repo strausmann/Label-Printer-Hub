@@ -22,6 +22,9 @@ export type CartKey = Pick<CartItem, "app" | "id">;
 export const CART_KEY = "lph.cart";
 export const MAX_COPIES = 10;
 
+/** A line as a print took it: the key and the copies that were sent (labels, for a sheet print as well). */
+export type SubmittedLine = CartKey & Pick<CartItem, "copies">;
+
 const sameItem = (a: CartKey, b: CartKey) => a.app === b.app && a.id === b.id;
 const clampCopies = (n: number) => Math.min(MAX_COPIES, Math.max(1, Math.round(Number.isFinite(n) ? n : 1)));
 
@@ -102,9 +105,19 @@ function add(item: CartItem): void {
 }
 
 const remove = (key: CartKey): void => mutate((stored) => stored.filter((i) => !sameItem(i, key)));
-/** Drops the entries the given ones name. Entries added or changed elsewhere meanwhile stay; the copies of a match do not matter, the key does. */
-const removeItems = (list: readonly CartKey[]): void =>
-  mutate((stored) => stored.filter((i) => !list.some((s) => sameItem(s, i))));
+/**
+ * Takes out what was submitted, no more: a line another tab raised meanwhile keeps the copies that were never sent.
+ * A line left with nothing (or less, when it was lowered meanwhile) goes; the rest is clamped like `setCopies`.
+ */
+const removeItems = (list: readonly SubmittedLine[]): void =>
+  mutate((stored) =>
+    stored.flatMap((i) => {
+      const sent = list.filter((s) => sameItem(s, i)).reduce((sum, s) => sum + s.copies, 0);
+      if (sent === 0) return [i];
+      const left = i.copies - sent;
+      return left <= 0 ? [] : [{ ...i, copies: clampCopies(left) }];
+    }),
+  );
 /** Empties the cart whatever is stored: that is what the user asked for, so it needs no reconciling. */
 const clear = (): void => commit([]);
 const setCopies = (key: CartKey, copies: number): void =>
@@ -138,8 +151,8 @@ export interface Cart {
   items: CartItem[];
   add(item: CartItem): void;
   remove(key: CartKey): void;
-  /** Removes the entries with these keys (what a print took); anything else in the cart stays. */
-  removeItems(list: readonly CartKey[]): void;
+  /** Takes out the copies a print took; copies or lines added meanwhile stay. */
+  removeItems(list: readonly SubmittedLine[]): void;
   setCopies(key: CartKey, copies: number): void;
   clear(): void;
   /** Sends every item as ONE batch to the printer. The cart empties only once the server accepted it. */

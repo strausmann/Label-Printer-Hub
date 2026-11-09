@@ -906,7 +906,7 @@ describe("the cart", () => {
     expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("9", 2)]);
   });
 
-  it("matches by key: a submitted item whose copies changed in another tab is removed, the rest stays", async () => {
+  it("removes only the submitted copies: a line another tab raised keeps the extra copies, the rest stays", async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
     await cartView("/cart", [LINE("7", 1), LINE("8", 1)], routes({ extra: { [`POST ${PRINT}`]: async () => (await gate, accepted) } }));
@@ -914,7 +914,7 @@ describe("the cart", () => {
     otherTab([LINE("7", 3), LINE("8", 1), LINE("9", 1)]);
     release();
     expect(await screen.findByRole("status", { name: "Sent to the print queue" })).toBeVisible();
-    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("9", 1)]);
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("7", 2), LINE("9", 1)]);
   });
 
   it("keeps the cart when the print is refused", async () => {
