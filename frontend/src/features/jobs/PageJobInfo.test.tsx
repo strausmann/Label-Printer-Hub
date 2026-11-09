@@ -241,6 +241,34 @@ describe("retry and cancel of page jobs", () => {
     expect(await retryRefused(409, "printer_disabled")).toHaveTextContent("The printer is switched off.");
   });
 
+  // The queue refusals arrive as problems (`detail.type`, hyphen forms), not as error codes.
+  const problemRefused = async (status: number, type: string) => {
+    mockApi(routes("failed", {}, { [`POST /api/jobs/${ID}/retry`]: respond(status, { detail: { type, title: "Title", detail: "English detail" } }) }));
+    await renderApp({ path: `/jobs/${ID}` });
+    await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    return screen.findByRole("alert");
+  };
+
+  it("409 printer-unavailable (problem shape) says the queue does not know the printer yet", async () => {
+    expect(await problemRefused(409, "printer-unavailable")).toHaveTextContent("The print queue does not know this printer yet.");
+  });
+
+  it("422 job-not-retryable (problem shape) says the stored page cannot be drawn", async () => {
+    expect(await problemRefused(422, "job-not-retryable")).toHaveTextContent("its stored page can no longer be drawn");
+  });
+
+  it("409 tray_unknown has its own words", async () => {
+    expect(await retryRefused(409, "tray_unknown")).toHaveTextContent("The tray this job used is not available any more.");
+  });
+
+  it("403 insufficient_scope names the key a retry needs", async () => {
+    expect(await retryRefused(403, "insufficient_scope")).toHaveTextContent("Retrying needs a print or admin key.");
+  });
+
+  it("403 printer_not_allowed", async () => {
+    expect(await retryRefused(403, "printer_not_allowed")).toHaveTextContent("This key may not use this printer.");
+  });
+
   it("an unknown error ends in the plain sentence", async () => {
     expect(await retryRefused(500, "boom")).toHaveTextContent("The job could not be retried.");
   });

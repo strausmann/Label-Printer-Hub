@@ -1,6 +1,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { useMemo, useState } from "react";
 import { Button, Radio, RadioGroup } from "react-aria-components";
+import { useSession } from "../../../app/session";
 import { cellsTaken, insufficientCells, planChanged, queuedJobs } from "../../../api/errorDetail";
 import { PRIMARY_BUTTON } from "../../../shell/SignIn";
 import { useSheetTypes, type SheetTypeRead } from "../../archive/api";
@@ -170,6 +171,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   };
   const itemName = (index: number) => lineOf(index)?.name ?? t`An item`;
   const errorText = usePrintDialogErrorText(itemName);
+  const session = useSession();
   const view = describePrinter(printer, status.data, false);
   const waits = printerWaits(view.kind);
   const trayLabel = tray?.label ?? "";
@@ -251,7 +253,9 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   const handled = !!queuedJobs(printError) || !!planChanged(printError) || !!cellsTaken(printError);
   const showPrintError = print.isError && !partial && !changed && !handled;
   const busy = print.isPending || preview.isFetching || settled.pending || preview.isPlaceholderData;
-  const canPrint = !!previewData && !preview.isError && !busy && !tooMany && needed > 0;
+  // A read key sees the preview but may not print: say so before the press, not with a 403 after it.
+  const readOnly = session.scope === "read";
+  const canPrint = !!previewData && !preview.isError && !busy && !tooMany && needed > 0 && !readOnly;
   const buttonText = changed ? t`Print with the new plan` : waits ? t`Add to print queue` : t`Print onto sheet`;
 
   const idleNote = needed === 0 && !result && !partial ? t`There is nothing to print yet.` : null;
@@ -376,10 +380,11 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
       {result && <PrintResult pages={result} />}
 
       {needed > 0 && (
-        <div>
+        <div className="flex flex-col gap-2">
           <Button className={`${PRIMARY_BUTTON} max-sm:w-full`} isDisabled={!canPrint} onPress={submit}>
             {buttonText}
           </Button>
+          {readOnly && <p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
         </div>
       )}
     </section>

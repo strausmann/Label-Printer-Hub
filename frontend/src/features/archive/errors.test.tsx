@@ -22,18 +22,24 @@ describe("useArchiveErrorText", () => {
     [api(409, "sheet_type_archived"), "This type is archived. Bring it back first."],
     [api(404, "sheet_type_not_found"), "That sheet type does not exist."],
     [api(403, "scope_too_low"), "You need an admin key for this."],
-    [api(403, null, "HTTP 403"), "You need an admin key for this."],
+    [api(403, null, "HTTP 403"), "This key may not do this."],
+    [api(403, "insufficient_scope", "Key has scope 'read' but 'admin' is required"), "You need an admin key for this."],
+    [api(403, "insufficient_scope", "Key has scope 'read' but 'print' is required"), "Printing and marking cells need a print or admin key."],
+    [api(403, "insufficient_scope", "something else"), "This key may not do this."],
+    [api(403, "printer_not_allowed", "x"), "This key may not use this printer."],
+    [api(422, "invalid_placements", "The placements are not valid.", { reason: "count_mismatch" }), "The split of this print no longer fits. Check the preview and try again."],
+    [api(422, "some_new_code", "A sentence in English"), "The server did not accept this (some_new_code)."],
     [api(409, "type_in_use", "x", { reason: "has_sheets" }), "This type has sheets. Archive it instead."],
     [api(409, "type_in_use", "x", { reason: "seed_type" }), "Only your own types can be deleted. Archive this one instead."],
     [api(409, "prefix_taken", "x", { reason: "sheets_exist" }), "The code prefix cannot change while sheets of this type exist."],
     [api(409, "prefix_taken", "x", { reason: "prefix_in_use" }), "Another type already uses this code prefix."],
-    [api(500, null, "The database is busy"), "The database is busy"],
   ])("%#: reads the server's code", (error, sentence) => {
     expect(words(error)).toBe(sentence);
   });
 
   it("falls back to the caller's sentence or a generic one when the error says nothing", () => {
     expect(words(api(500, null, "HTTP 500"))).toBe("Saving failed.");
+    expect(words(api(500, null, "The database is busy"))).toBe("Saving failed.");
     expect(words(api(500, null, "HTTP 500"), "The import failed.")).toBe("The import failed.");
     expect(words(new Error("plain"))).toBe("Saving failed.");
   });

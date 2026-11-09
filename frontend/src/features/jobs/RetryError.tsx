@@ -28,7 +28,13 @@ export function RetryError({ error, sheetCode }: { error: unknown; sheetCode: st
       return <>{t`Cells ${cells} are in use by something else now. Print the labels again as a new page.`}</>;
     }
     if (error.code === "job_not_retryable") return <>{t`This job cannot be retried: nothing is left to print.`}</>;
+    // The same refusal in the problem shape (hyphen): the stored page can no longer be drawn.
+    if (error.code === "job-not-retryable") return <>{t`This job cannot be retried: its stored page can no longer be drawn.`}</>;
+    if (error.code === "printer-unavailable") return <>{t`The print queue does not know this printer yet. Try again in a moment.`}</>;
+    if (error.code === "tray_unknown") return <>{t`The tray this job used is not available any more. Print the labels again as a new page.`}</>;
     if (error.code === "printer_disabled") return <>{t`The printer is switched off. Switch it on in the settings, then retry.`}</>;
+    if (error.code === "insufficient_scope") return <>{t`Retrying needs a print or admin key.`}</>;
+    if (error.code === "printer_not_allowed") return <>{t`This key may not use this printer.`}</>;
   }
   return <>{t`The job could not be retried.`}</>;
 }

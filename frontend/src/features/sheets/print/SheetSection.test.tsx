@@ -416,6 +416,17 @@ describe("a scanned code", () => {
   });
 });
 
+describe("a read key", () => {
+  it("sees the preview but cannot print, and is told which key it needs", async () => {
+    mockApi(routes());
+    await renderApp({ path: "/lookup/grocy/7", session: { signed_in: true, scope: "read", source: "api-key", user: null, bootstrap: false, csrf_token: "c" } });
+    await screen.findByRole("heading", { level: 2, name: "Print onto a sheet" });
+    const button = await screen.findByRole("button", { name: "Print onto sheet" });
+    expect(await screen.findByText("Printing needs a print or admin key.")).toBeVisible();
+    expect(button).toBeDisabled();
+  });
+});
+
 describe("not enough free cells", () => {
   const NEED = { free_cells: [9], needed: 10, shortfall: 1 };
   async function overflow() {

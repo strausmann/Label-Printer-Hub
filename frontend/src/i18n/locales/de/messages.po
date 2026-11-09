@@ -449,6 +449,10 @@ msgstr "In den Warenkorb gelegt: {added}"
 msgid "Added version {0} to {1}."
 msgstr "Version {0} zu {1} hinzugefügt."
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "Address"
+msgstr "Adresse"
+
 #: src/features/jobs/JobsPage.tsx
 msgid "All"
 msgstr "Alle"
@@ -736,6 +740,10 @@ msgstr "Bereits benutzte Felder"
 #: src/features/sheets/SheetDetail.tsx
 msgid "Cells in use"
 msgstr "Belegte Zellen"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Certificate check"
+msgstr "Zertifikatsprüfung"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Check print with correction"
@@ -2029,6 +2037,10 @@ msgstr "Nichts braucht Aufmerksamkeit."
 msgid "Nothing opened yet."
 msgstr "Noch nichts geöffnet."
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "off"
+msgstr "aus"
+
 #: src/features/archive/TypeForm.tsx
 msgid "Off for labels too small to scan."
 msgstr "Aus für Etiketten, die zu klein zum Scannen sind."
@@ -2072,6 +2084,10 @@ msgstr "Versatz Y (mm)"
 #: src/shell/StatusBadge.tsx
 msgid "OK"
 msgstr "OK"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "on"
+msgstr "an"
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
@@ -2345,7 +2361,12 @@ msgctxt "page job at the printer"
 msgid "Printing"
 msgstr "Druckt"
 
+#: src/features/archive/errors.ts
+msgid "Printing and marking cells need a print or admin key."
+msgstr "Zum Drucken und Markieren von Zellen braucht es einen Druck- oder Admin-Schlüssel."
+
 #: src/features/calibration/CalibrationPage.tsx
+#: src/features/sheets/print/SheetSection.tsx
 msgid "Printing needs a print or admin key."
 msgstr "Zum Drucken ist ein Druck- oder Admin-Schlüssel nötig."
 
@@ -2561,6 +2582,10 @@ msgstr "Fortsetzen"
 #: src/features/jobs/JobDetail.tsx
 msgid "Retry"
 msgstr "Wiederholen"
+
+#: src/features/jobs/RetryError.tsx
+msgid "Retrying needs a print or admin key."
+msgstr "Zum erneuten Versuch braucht es einen Druck- oder Admin-Schlüssel."
 
 #: src/features/about/BuildRows.tsx
 msgid "Revision"
@@ -3143,6 +3168,10 @@ msgstr "Dieser Schlüssel wurde nicht akzeptiert."
 msgid "That name is already used by another printer."
 msgstr "Dieser Name wird schon von einem anderen Drucker verwendet."
 
+#: src/features/archive/errors.ts
+msgid "That printer cannot print sheets."
+msgstr "Dieser Drucker kann keine Bögen drucken."
+
 #: src/features/sheets/errors.ts
 msgid "That printer does not exist."
 msgstr "Diesen Drucker gibt es nicht."
@@ -3151,6 +3180,10 @@ msgstr "Diesen Drucker gibt es nicht."
 #: src/features/sheets/SheetDetail.tsx
 msgid "That sheet does not exist."
 msgstr "Diesen Bogen gibt es nicht."
+
+#: src/features/archive/errors.ts
+msgid "That sheet is of another type than this print needs."
+msgstr "Dieser Bogen ist von einem anderen Typ, als dieser Druck braucht."
 
 #: src/features/archive/errors.ts
 #: src/features/archive/TypeDetail.tsx
@@ -3538,6 +3571,7 @@ msgstr "Der Port muss zwischen 1 und 65535 liegen."
 msgid "The prefix is fixed once sheets of this type exist."
 msgstr "Das Präfix ist fest, sobald es Bögen dieses Typs gibt."
 
+#: src/features/jobs/RetryError.tsx
 #: src/features/sheets/errors.ts
 msgid "The print queue does not know this printer yet. Try again in a moment."
 msgstr "Die Druckwarteschlange kennt diesen Drucker noch nicht. Versuche es gleich noch einmal."
@@ -3638,6 +3672,10 @@ msgid "The server cannot be reached."
 msgstr "Der Server ist nicht erreichbar."
 
 #: src/features/archive/errors.ts
+msgid "The server did not accept this ({code})."
+msgstr "Der Server hat das nicht angenommen ({code})."
+
+#: src/features/archive/errors.ts
 msgid "The server did not accept this value. {what} ({reason})."
 msgstr "Der Server hat einen Wert nicht akzeptiert. {what} ({reason})."
 
@@ -3660,6 +3698,10 @@ msgstr "Der Bogen konnte nicht verworfen werden."
 #: src/features/sheets/SheetDetail.tsx
 msgid "The sheet could not be loaded."
 msgstr "Der Bogen konnte nicht geladen werden."
+
+#: src/features/archive/errors.ts
+msgid "The sheet has no free cell left for this."
+msgstr "Der Bogen hat dafür keine freie Zelle mehr."
 
 #: src/features/jobs/PageJobInfo.tsx
 msgid "The sheet is discarded, so these cells cannot be settled any more."
@@ -3698,6 +3740,10 @@ msgstr "Die Quelladresse muss mit http:// oder https:// beginnen."
 msgid "The source name"
 msgstr "Der Name der Quelle"
 
+#: src/features/archive/errors.ts
+msgid "The split of this print no longer fits. Check the preview and try again."
+msgstr "Die Aufteilung dieses Drucks passt nicht mehr. Prüfe die Vorschau und versuche es erneut."
+
 #: src/features/settings/Integrations.tsx
 msgid "The test could not be run."
 msgstr "Der Test konnte nicht ausgeführt werden."
@@ -3715,6 +3761,10 @@ msgstr "Der obere und der untere Rand unterscheiden sich ({0} und {1}). Miss den
 #: src/features/archive/errors.ts
 msgid "The top margin"
 msgstr "Der obere Rand"
+
+#: src/features/jobs/RetryError.tsx
+msgid "The tray this job used is not available any more. Print the labels again as a new page."
+msgstr "Das Fach, das dieser Auftrag nutzte, ist nicht mehr verfügbar. Drucke die Etiketten noch einmal als neue Seite."
 
 #: src/features/sheets/print/errors.ts
 msgid "The tray you chose is not available on this printer. It reports: {list}."
@@ -3801,6 +3851,10 @@ msgid "This item cannot be shown"
 msgstr "Dieser Eintrag kann nicht angezeigt werden"
 
 #: src/features/jobs/RetryError.tsx
+msgid "This job cannot be retried: its stored page can no longer be drawn."
+msgstr "Dieser Auftrag lässt sich nicht wiederholen: Seine gespeicherte Seite kann nicht mehr gezeichnet werden."
+
+#: src/features/jobs/RetryError.tsx
 msgid "This job cannot be retried: nothing is left to print."
 msgstr "Dieser Auftrag lässt sich nicht wiederholen: Es ist nichts mehr zu drucken."
 
@@ -3819,6 +3873,16 @@ msgstr "Dieser Schlüssel wird nur einmal angezeigt. Lege ihn in deinem Passwort
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "This key is shown only once. Store it in your password manager before you continue."
 msgstr "Dieser Schlüssel wird nur einmal angezeigt. Speichere ihn in deinem Passwortmanager, bevor du weitermachst."
+
+#: src/features/archive/errors.ts
+msgid "This key may not do this."
+msgstr "Dieser Schlüssel darf das nicht."
+
+#: src/features/archive/errors.ts
+#: src/features/calibration/CalibrationPage.tsx
+#: src/features/jobs/RetryError.tsx
+msgid "This key may not use this printer."
+msgstr "Dieser Schlüssel darf diesen Drucker nicht benutzen."
 
 #: src/pages/placeholders.tsx
 msgid "This page is not available yet."

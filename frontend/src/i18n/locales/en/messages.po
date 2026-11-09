@@ -449,6 +449,10 @@ msgstr "Added to the cart: {added}"
 msgid "Added version {0} to {1}."
 msgstr "Added version {0} to {1}."
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "Address"
+msgstr "Address"
+
 #: src/features/jobs/JobsPage.tsx
 msgid "All"
 msgstr "All"
@@ -736,6 +740,10 @@ msgstr "Cells already used"
 #: src/features/sheets/SheetDetail.tsx
 msgid "Cells in use"
 msgstr "Cells in use"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Certificate check"
+msgstr "Certificate check"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Check print with correction"
@@ -2029,6 +2037,10 @@ msgstr "Nothing needs attention."
 msgid "Nothing opened yet."
 msgstr "Nothing opened yet."
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "off"
+msgstr "off"
+
 #: src/features/archive/TypeForm.tsx
 msgid "Off for labels too small to scan."
 msgstr "Off for labels too small to scan."
@@ -2072,6 +2084,10 @@ msgstr "Offset Y (mm)"
 #: src/shell/StatusBadge.tsx
 msgid "OK"
 msgstr "OK"
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "on"
+msgstr "on"
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
@@ -2345,7 +2361,12 @@ msgctxt "page job at the printer"
 msgid "Printing"
 msgstr "Printing"
 
+#: src/features/archive/errors.ts
+msgid "Printing and marking cells need a print or admin key."
+msgstr "Printing and marking cells need a print or admin key."
+
 #: src/features/calibration/CalibrationPage.tsx
+#: src/features/sheets/print/SheetSection.tsx
 msgid "Printing needs a print or admin key."
 msgstr "Printing needs a print or admin key."
 
@@ -2561,6 +2582,10 @@ msgstr "Resume"
 #: src/features/jobs/JobDetail.tsx
 msgid "Retry"
 msgstr "Retry"
+
+#: src/features/jobs/RetryError.tsx
+msgid "Retrying needs a print or admin key."
+msgstr "Retrying needs a print or admin key."
 
 #: src/features/about/BuildRows.tsx
 msgid "Revision"
@@ -3143,6 +3168,10 @@ msgstr "That key was not accepted."
 msgid "That name is already used by another printer."
 msgstr "That name is already used by another printer."
 
+#: src/features/archive/errors.ts
+msgid "That printer cannot print sheets."
+msgstr "That printer cannot print sheets."
+
 #: src/features/sheets/errors.ts
 msgid "That printer does not exist."
 msgstr "That printer does not exist."
@@ -3151,6 +3180,10 @@ msgstr "That printer does not exist."
 #: src/features/sheets/SheetDetail.tsx
 msgid "That sheet does not exist."
 msgstr "That sheet does not exist."
+
+#: src/features/archive/errors.ts
+msgid "That sheet is of another type than this print needs."
+msgstr "That sheet is of another type than this print needs."
 
 #: src/features/archive/errors.ts
 #: src/features/archive/TypeDetail.tsx
@@ -3538,6 +3571,7 @@ msgstr "The port must be between 1 and 65535."
 msgid "The prefix is fixed once sheets of this type exist."
 msgstr "The prefix is fixed once sheets of this type exist."
 
+#: src/features/jobs/RetryError.tsx
 #: src/features/sheets/errors.ts
 msgid "The print queue does not know this printer yet. Try again in a moment."
 msgstr "The print queue does not know this printer yet. Try again in a moment."
@@ -3638,6 +3672,10 @@ msgid "The server cannot be reached."
 msgstr "The server cannot be reached."
 
 #: src/features/archive/errors.ts
+msgid "The server did not accept this ({code})."
+msgstr "The server did not accept this ({code})."
+
+#: src/features/archive/errors.ts
 msgid "The server did not accept this value. {what} ({reason})."
 msgstr "The server did not accept this value. {what} ({reason})."
 
@@ -3660,6 +3698,10 @@ msgstr "The sheet could not be discarded."
 #: src/features/sheets/SheetDetail.tsx
 msgid "The sheet could not be loaded."
 msgstr "The sheet could not be loaded."
+
+#: src/features/archive/errors.ts
+msgid "The sheet has no free cell left for this."
+msgstr "The sheet has no free cell left for this."
 
 #: src/features/jobs/PageJobInfo.tsx
 msgid "The sheet is discarded, so these cells cannot be settled any more."
@@ -3698,6 +3740,10 @@ msgstr "The source address must start with http:// or https://."
 msgid "The source name"
 msgstr "The source name"
 
+#: src/features/archive/errors.ts
+msgid "The split of this print no longer fits. Check the preview and try again."
+msgstr "The split of this print no longer fits. Check the preview and try again."
+
 #: src/features/settings/Integrations.tsx
 msgid "The test could not be run."
 msgstr "The test could not be run."
@@ -3715,6 +3761,10 @@ msgstr "The top and bottom margins differ ({0} and {1}). Measure the sheet again
 #: src/features/archive/errors.ts
 msgid "The top margin"
 msgstr "The top margin"
+
+#: src/features/jobs/RetryError.tsx
+msgid "The tray this job used is not available any more. Print the labels again as a new page."
+msgstr "The tray this job used is not available any more. Print the labels again as a new page."
 
 #: src/features/sheets/print/errors.ts
 msgid "The tray you chose is not available on this printer. It reports: {list}."
@@ -3801,6 +3851,10 @@ msgid "This item cannot be shown"
 msgstr "This item cannot be shown"
 
 #: src/features/jobs/RetryError.tsx
+msgid "This job cannot be retried: its stored page can no longer be drawn."
+msgstr "This job cannot be retried: its stored page can no longer be drawn."
+
+#: src/features/jobs/RetryError.tsx
 msgid "This job cannot be retried: nothing is left to print."
 msgstr "This job cannot be retried: nothing is left to print."
 
@@ -3819,6 +3873,16 @@ msgstr "This key is shown only once. Store it in your password manager before yo
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "This key is shown only once. Store it in your password manager before you continue."
 msgstr "This key is shown only once. Store it in your password manager before you continue."
+
+#: src/features/archive/errors.ts
+msgid "This key may not do this."
+msgstr "This key may not do this."
+
+#: src/features/archive/errors.ts
+#: src/features/calibration/CalibrationPage.tsx
+#: src/features/jobs/RetryError.tsx
+msgid "This key may not use this printer."
+msgstr "This key may not use this printer."
 
 #: src/pages/placeholders.tsx
 msgid "This page is not available yet."

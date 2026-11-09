@@ -87,6 +87,12 @@ function useGeometrySentence(): (field: string, reason: string) => string {
   };
 }
 
+/** The scope a `403 insufficient_scope` names (the server's text is "Key has scope 'x' but 'y' is required"); null when it names none we know. */
+function requiredScope(error: ApiError): "read" | "print" | "admin" | null {
+  const match = /but '(read|print|admin)' is required/.exec(error.detail);
+  return match ? (match[1] as "read" | "print" | "admin") : null;
+}
+
 /** The words for a failed archive request: the server's code first, its own text only as a last resort. */
 export function useArchiveErrorText(): (error: unknown, fallback?: string) => string {
   const { t } = useLingui();
@@ -118,9 +124,29 @@ export function useArchiveErrorText(): (error: unknown, fallback?: string) => st
           return t`That sheet type does not exist.`;
         case "scope_too_low":
           return t`You need an admin key for this.`;
+        case "insufficient_scope": {
+          const scope = requiredScope(error);
+          if (scope === "admin") return t`You need an admin key for this.`;
+          if (scope === "print") return t`Printing and marking cells need a print or admin key.`;
+          return t`This key may not do this.`;
+        }
+        case "printer_not_allowed":
+          return t`This key may not use this printer.`;
+        case "invalid_placements":
+          return t`The split of this print no longer fits. Check the preview and try again.`;
+        case "insufficient_cells":
+          return t`The sheet has no free cell left for this.`;
+        case "sheet_type_mismatch":
+          return t`That sheet is of another type than this print needs.`;
+        case "media_kind_mismatch":
+          return t`That printer cannot print sheets.`;
       }
-      if (error.status === 403) return t`You need an admin key for this.`;
-      if (error.detail && !/^HTTP \d+$/.test(error.detail)) return error.detail;
+      if (error.status === 403) return t`This key may not do this.`;
+      // An unknown code gets no echo of the server's English sentence: a localized line with the code to look up.
+      if (error.code && error.status !== 0) {
+        const code = error.code;
+        return t`The server did not accept this (${code}).`;
+      }
     }
     return fallback ?? t`Saving failed.`;
   };
