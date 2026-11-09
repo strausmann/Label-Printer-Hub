@@ -36,12 +36,12 @@ Preconditions for starting the branch:
 - PR #269 (GHCR cleanup + preview image) merged into `main` and synced into the milestone. If not, Task 4 edits only `docker-publish.yml` and #269 is rebased onto the new image name before it merges.
 - All other 1.5.0 tasks merged into the milestone. New work started after the rename branches from the renamed milestone.
 
-Release sequence (operator steps in Task 8):
+Release sequence (operator steps in Task 9):
 
-1. Merge `feat/labelyard-rename` into `milestone/1.5.0`; build preview `1.5.0-rc.N` and run the verification of Task 7.
+1. Merge `feat/labelyard-rename` into `milestone/1.5.0`; build preview `1.5.0-rc.N` and run the verification of Task 8.
 2. Create the Docker Hub repo `labelyard` (public) and rename the GitHub repo.
 3. Merge `milestone/1.5.0` → `main` (merge commit). The next release run publishes `labelyard:1.5.0` only.
-4. Edit the GitHub Release body with the release-notes text of Task 8.
+4. Edit the GitHub Release body with the release-notes text of Task 9.
 
 ## Inventory (baseline `6effebc`, history excluded)
 
@@ -116,6 +116,8 @@ Release sequence (operator steps in Task 8):
 | `frontend/public/brand/` (create) | Logo sources from the design task |
 | `docs/migration/labelyard.md` (create) | Operator upgrade guide |
 | `docs/decisions/0022-rename-to-labelyard.md` (create) | ADR; amends ADR 0007 (image name) |
+| `website/` (create) | Zensical source of https://labelyard.app (Task 7) |
+| `.github/workflows/website.yml` (create) | Strict site build + link check on PRs touching `website/**` |
 
 ---
 
@@ -234,7 +236,7 @@ Rules (constants in the script, each with a comment saying why it exists):
 
 **Files:**
 - Create: `docs/migration/labelyard.md`, `docs/decisions/0022-rename-to-labelyard.md` (next free number at implementation time; status Accepted, amends ADR 0007 image name, lists the compatibility table), entries in `docs/decisions/README.md` and `docs/decisions/register.md`
-- Modify: `README.md` (hero: wordmark image `frontend/public/brand/labelyard-wordmark.svg` with a dark variant via `<picture>`, H1 `Labelyard`, first line `**The self-hosted Label Printer Hub for all your labels.**`, one sentence "Formerly *Label Printer Hub*." with a link to the migration guide; badges and links to `strausmann/labelyard`; config table with `LABELYARD_*` names and a note that `PRINTER_HUB_*` is still read; image refs; `docker exec labelyard labelyard admin create-key …`), `CONTRIBUTING.md`, `SECURITY.md`, `CLA.md`, `CODE_OF_CONDUCT.md`, `THIRD_PARTY_NOTICES.md`, `.github/ISSUE_TEMPLATE/*.yml`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/copilot-instructions.md`, `CLAUDE.md`, `.gemini/*`, `codecov.yml` comment, `.releaserc.json:2` (`git@github.com:strausmann/labelyard.git`), `docs/architecture.md`, `docs/architecture/*`, `docs/site/**`, `docs/policies/*` (trademarks: add a short "Labelyard" section — our project name, no registered mark claimed), `docs/learnings/*`, `examples/compose.*.yml` (image `ghcr.io/strausmann/labelyard:1.5.0`, container/service `labelyard`, Pangolin/Traefik keys `labelyard`, `LABELYARD_HOST`), `examples/.env.example`, `examples/README.md` (client env `LABELYARD_URL`, header stays `X-Label-Hub-Key`), `licence-policy.yml` and `Makefile` if the guard lists them
+- Modify: `README.md` (hero: wordmark image `frontend/public/brand/labelyard-wordmark.svg` with a dark variant via `<picture>`, H1 `Labelyard`, first line `**The self-hosted Label Printer Hub for all your labels.**`, one sentence "Formerly *Label Printer Hub*." with a link to the migration guide; a "Website: https://labelyard.app" line under the hero; badges and links to `strausmann/labelyard`; config table with `LABELYARD_*` names and a note that `PRINTER_HUB_*` is still read; image refs; `docker exec labelyard labelyard admin create-key …`), `CONTRIBUTING.md`, `SECURITY.md`, `CLA.md`, `CODE_OF_CONDUCT.md`, `THIRD_PARTY_NOTICES.md`, `.github/ISSUE_TEMPLATE/*.yml`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/copilot-instructions.md`, `CLAUDE.md`, `.gemini/*`, `codecov.yml` comment, `.releaserc.json:2` (`git@github.com:strausmann/labelyard.git`), `docs/architecture.md`, `docs/architecture/*`, `docs/site/**`, `docs/policies/*` (trademarks: add a short "Labelyard" section — our project name, no registered mark claimed), `docs/learnings/*`, `examples/compose.*.yml` (image `ghcr.io/strausmann/labelyard:1.5.0`, container/service `labelyard`, Pangolin/Traefik keys `labelyard`, `LABELYARD_HOST`), `examples/.env.example`, `examples/README.md` (client env `LABELYARD_URL`, header stays `X-Label-Hub-Key`), `licence-policy.yml` and `Makefile` if the guard lists them
 
 **Interfaces:**
 - Consumes: names from Tasks 2–5.
@@ -253,7 +255,41 @@ Migration guide content to pin:
 - [ ] **Step 3:** `python3 scripts/brand_guard.py` → exit 0. `docker compose -f examples/compose.standalone.yml config --quiet` (and the caddy/traefik/pangolin variants with a dummy `.env`) succeeds; then **start** `compose.standalone.yml` against the locally built image from Task 3 (`IMAGE` override or temporary edit) and confirm `/healthz` returns 200 — a syntax check alone does not prove the example starts. Run the repo's markdown link check if one exists.
 - [ ] **Step 4:** Commit `docs: rename the project to Labelyard`.
 
-### Task 7: Gate and end-to-end verification
+### Task 7: Project website source (Zensical)
+
+**Files:**
+- Create: `website/zensical.toml`, `website/requirements.txt` (`zensical==0.1.0` — latest on PyPI on 2026-11-09, released 2026-11-05, needs Python ≥ 3.11; bump deliberately, not via a range), `website/docs/index.md`, `website/docs/features.md`, `website/docs/quick-start.md`, `website/docs/assets/` (logo and favicon copied from `frontend/public/brand/` by Task 5; screenshots `website/docs/assets/screenshots/*.png` from issue #260 once they exist), `website/.gitignore` (`site/`), `.github/workflows/website.yml`
+- Modify: `.github/dependabot.yml` (pip ecosystem for `/website`), `CONTRIBUTING.md` (one paragraph "Website": `pip install -r website/requirements.txt && zensical serve -f website/zensical.toml`)
+
+Config keys, each checked against the Zensical docs (not guessed) and smoke-tested with `zensical==0.1.0` on 2026-11-09 — a strict build passed, and a broken internal link aborted it with exit code 1:
+
+| Key | Value | Source |
+|---|---|---|
+| `[project]` `site_name` | `Labelyard` | https://zensical.org/docs/setup/basics/ |
+| `site_url` | `https://labelyard.app/` | same |
+| `site_description` | `The self-hosted Label Printer Hub for all your labels` | same |
+| `docs_dir`, `site_dir` | `docs`, `site` (relative to `website/`; `docs_dir` may not be `.`) | same |
+| `nav` | `Home` → `index.md`, `Features` → `features.md`, `Quick start` → `quick-start.md` | https://zensical.org/docs/setup/navigation/ |
+| `repo_url`, `repo_name` | `https://github.com/strausmann/labelyard`, `strausmann/labelyard` | https://zensical.org/docs/setup/repository/ |
+| `strict` | `true` | https://zensical.org/docs/setup/validation/ |
+| `[project.validation]` `invalid_links`, `invalid_link_anchors` | `true`, `true` | same |
+| `[project.theme]` `logo`, `favicon` | `assets/labelyard-mark.svg`, `assets/favicon.svg` (files inside `docs_dir`) | https://zensical.org/docs/setup/logo-and-icons/ |
+| `[project.theme]` `features` | `navigation.instant`, `navigation.top`, `toc.follow` | https://zensical.org/docs/setup/navigation/ |
+| CLI | `zensical build --strict -f website/zensical.toml` (`-s/--strict` aborts on warnings) | `zensical build --help` of 0.1.0; https://zensical.org/docs/usage/cli/ |
+
+Pages:
+- `index.md`: wordmark, H1 `Labelyard`, subtitle `The self-hosted Label Printer Hub for all your labels`, three-sentence pitch, screenshot slot (omitted until #260 delivers; no placeholder image is published), buttons/links to GitHub, GHCR package, Docker Hub repo, docs.
+- `features.md`: one short section per capability the README lists (PT/QL tape printers, IPP page printers and sheets, scan-to-print PWA, print queue, webhooks/API with keys, Snipe-IT/Grocy/Spoolman integrations, SSO behind a proxy). Brother named descriptively only (`docs/policies/trademarks.md`).
+- `quick-start.md`: the standalone compose with `ghcr.io/strausmann/labelyard:1.5.0`, the two required variables (`LABELYARD_SECRET_KEY`, `LABELYARD_PUBLIC_URL`), first admin key with `labelyard admin create-key`, a box "Coming from Label Printer Hub?" linking to the migration guide.
+
+**Link vs include — decision: link.** User documentation stays where it is reviewed and versioned with the code (`README.md`, `examples/`, `docs/site/operations/`, `docs/migration/labelyard.md`); the site links to those files on GitHub (`https://github.com/strausmann/labelyard/blob/main/…`). Including them would either duplicate text that drifts or require pointing `docs_dir` outside `website/`, which would publish internal plans and ADRs. The quick start is the one deliberate duplicate (short, landing-page shaped); it is checked by the same compose file the tests start (Task 6 Step 3).
+
+- [ ] **Step 1:** Write `.github/workflows/website.yml`: `on: pull_request` and `push` to `main` with `paths: ['website/**', '.github/workflows/website.yml']`; job 1 `actions/setup-python` 3.12, `pip install -r website/requirements.txt`, `zensical build --strict -f website/zensical.toml`; job 2 external link check of `website/site/**/*.html` with lychee (`lycheeverse/lychee-action`, pinned by commit SHA like every action in this repo; resolve the SHA from the action's latest release at implementation time), `--exclude https://labelyard.app` until the site is deployed. No deploy step, no artifact upload beyond what a reviewer needs (`actions/upload-artifact` of `website/site`, 7 days).
+- [ ] **Step 2:** Create the config and pages. Before the pages exist, run the build: expected failure (missing nav targets) → confirms strict mode bites.
+- [ ] **Step 3:** `zensical build --strict -f website/zensical.toml` exit 0; counter-test: add a link to `missing.md` → exit 1; remove. `python3 scripts/brand_guard.py` exit 0 (the site is scanned like any live file).
+- [ ] **Step 4:** Commit `docs(website): add the Labelyard project site source`.
+
+### Task 8: Gate and end-to-end verification
 
 **Files:**
 - Modify: `.github/workflows/ci.yml` (new job `brand-guard`: `python3 -m unittest scripts/test_brand_guard.py` then `python3 scripts/brand_guard.py`; no `continue-on-error`)
@@ -264,11 +300,11 @@ Migration guide content to pin:
 - [ ] **Step 4:** Open the PR `feat/labelyard-rename` → `milestone/1.5.0` with the Task 1 inventory and the Step 3 results; run the internal review with the four lenses (`code-review-lenses` checklist: taint — the warning path; outcome — run the container; unchanged dependencies — `settings_store.is_locked`; temporal — workflow image ref vs. repo rename order); external bot review before merge.
 - [ ] **Step 5:** After merge: run **Preview image** on `milestone/1.5.0` with version `1.5.0`; `docker pull ghcr.io/strausmann/labelyard:1.5.0-rc.N`, repeat Step 3 against it; confirm `ghcr.io/strausmann/label-printer-hub-backend` got no new tag.
 
-### Task 8: Maintainer steps outside the repo (checklist, no code)
+### Task 9: Maintainer steps outside the repo (checklist, no code)
 
 GitHub:
-- [ ] Rename the repo `strausmann/Label-Printer-Hub` → `strausmann/labelyard` (lowercase, matching the image and avoiding the lowercasing step registries need). GitHub redirects web, API and git URLs; update local remotes anyway (`git remote set-url origin git@github.com:strausmann/labelyard.git`). Do this after Task 7 Step 5 and before the milestone PR merges.
-- [ ] Description: `Labelyard — the self-hosted Label Printer Hub for Brother PT/QL label printers and office printers. Scan, print, queue, from any browser or app.`; website field: none until a domain exists.
+- [ ] Rename the repo `strausmann/Label-Printer-Hub` → `strausmann/labelyard` (lowercase, matching the image and avoiding the lowercasing step registries need). GitHub redirects web, API and git URLs; update local remotes anyway (`git remote set-url origin git@github.com:strausmann/labelyard.git`). Do this after Task 8 Step 5 and before the milestone PR merges.
+- [ ] Description: `Labelyard — the self-hosted Label Printer Hub for Brother PT/QL label printers and office printers. Scan, print, queue, from any browser or app.`; website field: `https://labelyard.app`.
 - [ ] Topics: `labelyard`, `label-printer`, `label-printer-hub`, `brother-ptouch`, `brother-ql`, `ipp`, `self-hosted`, `pwa`, `fastapi`, `homelab`.
 - [ ] Social preview image from the design task (1280×640).
 - [ ] GHCR: after the first push, set package `labelyard` to **public**, link it to the repo, and grant the repo the Admin role under "Manage Actions access" (needed by `ghcr-cleanup.yml`).
@@ -276,7 +312,7 @@ GitHub:
 - [ ] Release-run secrets (`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`) unchanged; confirm the token may push to the new repo.
 
 Docker Hub:
-- [ ] Create repo `labelyard` (public) before the release run. Short description: `Labelyard — the self-hosted Label Printer Hub for Brother PT/QL and office printers.` Full description: README hero section, image/tag table, link to the migration guide and GitHub.
+- [ ] Create repo `labelyard` (public) before the release run. Short description: `Labelyard — the self-hosted Label Printer Hub for Brother PT/QL and office printers.` Full description: README hero section, link to https://labelyard.app, image/tag table, link to the migration guide and GitHub.
 - [ ] Old repo `label-printer-hub-backend`: replace the short description with `Moved to <user>/labelyard — this image is no longer updated.` and add the same line at the top of the full description. Do not delete.
 
 Release notes (paste at the top of the `v1.5.0` GitHub Release body, above the generated notes):
@@ -299,7 +335,7 @@ This release also moves the API to `/api/v1` (see below). Full upgrade guide: do
 Maintainer decisions (not tasks):
 - When to delete the frozen packages `label-printer-hub-backend` on GHCR and Docker Hub (suggested: not before 2.0.0; deletion breaks every `docker pull` of an old version).
 - When to drop the `PRINTER_HUB_*` fallback and the `printer-hub` CLI alias (suggested: 2.0.0, announced one minor release earlier).
-- Register `labelyard.dev` and/or `labelyard.app` (unregistered on 2026-11-09; `labelyard.com` is for sale).
+- Register `labelyard.dev` as well (`labelyard.app` is registered; `labelyard.com` is for sale) — only if it is to redirect to `labelyard.app`.
 - Run a proper DPMA/EUIPO register search for "Labelyard" in classes 9 and 42 (the 2026-11-09 check was a web search, not a register search) before investing in a domain or logo rollout beyond the repo.
 
 Deployment follow-ups (internal, done by the operator, no details in this repo):
@@ -310,3 +346,6 @@ Deployment follow-ups (internal, done by the operator, no details in this repo):
 - [ ] Container-management stack: keep the stack name (renaming creates a new stack directory); rename the container only if desired.
 - [ ] Internal documentation, runbooks and the operator's agent skill for the hub: new name, new image, `labelyard admin create-key`.
 - [ ] Monitoring/uptime check names.
+- [ ] Website hosting: build `website/` (`zensical build --strict`) into a static artifact or a small static-file image (non-root web server, healthcheck), deployed as a GitOps stack behind the reverse proxy.
+- [ ] Proxy resource for `labelyard.app` (public, no SSO) and a permanent redirect `www.labelyard.app` → apex; TLS via the existing proxy setup; DNS already points apex + wildcard at the proxy.
+- [ ] After the first deploy: drop the `--exclude https://labelyard.app` from the website link check.
