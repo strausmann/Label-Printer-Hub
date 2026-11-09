@@ -12,6 +12,10 @@ export interface ArchiveSearch {
   type?: string | undefined;
 }
 
+/** What the API accepts (`GET /api/sheet-types`): longer values answer 422. */
+export const MAX_QUERY = 100;
+export const MAX_VENDOR = 200;
+
 // The router parses `?q=123` as the number 123, so text arrives as a string or a number.
 const text = (value: unknown): string | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
@@ -27,9 +31,9 @@ const size = (value: unknown): number | undefined => {
 export function parseArchiveSearch(search: Record<string, unknown>): ArchiveSearch {
   const page = text(search.page);
   return {
-    q: text(search.q),
+    q: text(search.q)?.slice(0, MAX_QUERY),
     page: page === "A4" || page === "Letter" ? page : undefined,
-    vendor: text(search.vendor),
+    vendor: text(search.vendor)?.slice(0, MAX_VENDOR),
     w: size(search.w),
     h: size(search.h),
     archived: search.archived === true || search.archived === "true" || search.archived === 1 ? true : undefined,

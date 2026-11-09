@@ -10,7 +10,7 @@ import { SelectField, SwitchField, TextInput } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { useSheetTypes, type SheetTypeRead } from "./api";
 import { ImportDialog } from "./ImportDialog";
-import { parseDecimal, type ArchiveSearch } from "./search";
+import { MAX_QUERY, parseDecimal, type ArchiveSearch } from "./search";
 import { TypeBadges, TypeDetail } from "./TypeDetail";
 import { TypeForm } from "./TypeForm";
 
@@ -33,13 +33,16 @@ function useTypedFilters(search: ArchiveSearch, commit: (next: Partial<ArchiveSe
   const typed = { q: q.trim() === "" ? undefined : q.trim(), w: sizeOf(w), h: sizeOf(h) };
   const inSync = typed.q === search.q && typed.w === search.w && typed.h === search.h;
 
-  // The address moved. If it is what the boxes already say (our own commit), leave them alone,
-  // or the box would be rewritten under the cursor ("45." becomes "45"). Otherwise follow it.
+  // The address moved. If it is what we committed ourselves (even if the boxes have moved on
+  // since: "4" lands after "45" was typed), leave them alone, or the box would be rewritten under
+  // the cursor. Otherwise it came from outside (a link, back and forward): follow it.
   // (React's pattern for state that follows a changing input: set it while rendering, not in an effect.)
+  const [committed, setCommitted] = useState<{ q: string | undefined; w: number | undefined; h: number | undefined } | null>(null);
   const [seen, setSeen] = useState({ q: search.q, w: search.w, h: search.h });
   if (seen.q !== search.q || seen.w !== search.w || seen.h !== search.h) {
     setSeen({ q: search.q, w: search.w, h: search.h });
-    if (!inSync) {
+    const ours = committed !== null && committed.q === search.q && committed.w === search.w && committed.h === search.h;
+    if (!inSync && !ours) {
       setQ(search.q ?? "");
       setW(search.w === undefined ? "" : String(search.w));
       setH(search.h === undefined ? "" : String(search.h));
@@ -48,7 +51,10 @@ function useTypedFilters(search: ArchiveSearch, commit: (next: Partial<ArchiveSe
 
   useEffect(() => {
     if (inSync) return;
-    const timer = setTimeout(() => commit({ q: typed.q, w: typed.w, h: typed.h }), FILTER_DELAY_MS);
+    const timer = setTimeout(() => {
+      setCommitted({ q: typed.q, w: typed.w, h: typed.h });
+      commit({ q: typed.q, w: typed.w, h: typed.h });
+    }, FILTER_DELAY_MS);
     return () => clearTimeout(timer);
   }, [typed.q, typed.w, typed.h, inSync, commit]);
   return { q, setQ, w, setW, h, setH, clear: () => { setQ(""); setW(""); setH(""); } };
@@ -157,7 +163,7 @@ export function SheetArchivePage() {
               onSubmit={(e) => e.preventDefault()}
               className={`${PANEL} ${filtersOpen ? "flex" : "hidden"} flex-col gap-4 lg:flex`}
             >
-              <TextInput label={t`Search`} value={typed.q} onChange={typed.setQ} description={t`Key, description or product code`} />
+              <TextInput label={t`Search`} value={typed.q} onChange={typed.setQ} maxLength={MAX_QUERY} description={t`Key, description or product code`} />
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                 <SelectField
                   label={t`Page size`}

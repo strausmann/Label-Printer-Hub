@@ -543,6 +543,33 @@ describe("filters, as a person uses them", () => {
     expect(router.state.location.search).toMatchObject({ q: "second", w: 45.7 });
   });
 
+  it("a commit that lands after more typing does not eat the keystrokes", async () => {
+    mockApi(LIST);
+    const { router } = await renderApp({ path: "/sheets/archive" });
+    const search = await screen.findByRole("textbox", { name: "Search" });
+    // The address answers 300 ms late: the commit of "4" arrives after "45" was typed.
+    const navigate = router.navigate.bind(router);
+    router.navigate = ((options: Parameters<typeof navigate>[0]) =>
+      new Promise((resolve) => setTimeout(() => resolve(navigate(options)), 300))) as typeof router.navigate;
+    await userEvent.type(search, "4");
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await userEvent.type(search, "5");
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(search).toHaveValue("45");
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ q: "45" }), { timeout: 3000 });
+    expect(search).toHaveValue("45");
+  });
+
+  it("caps the search at what the API takes: 100 characters in the box, and in a hand-edited address", async () => {
+    const { calls } = mockApi(LIST);
+    await renderApp({ path: `/sheets/archive?q=${"a".repeat(130)}&vendor=${"v".repeat(250)}` });
+    await screen.findByRole("link", { name: /L4736REV/ });
+    expect(screen.getByRole("textbox", { name: "Search" })).toHaveAttribute("maxlength", "100");
+    const asked = typeCalls(calls).map((c) => new URLSearchParams(c.search));
+    expect(asked.every((p) => (p.get("q") ?? "").length <= 100 && (p.get("vendor") ?? "").length <= 200)).toBe(true);
+    expect(asked.some((p) => p.get("q") === "a".repeat(100) && p.get("vendor") === "v".repeat(200))).toBe(true);
+  });
+
   it("the filter panel can be folded, starts folded without a filter and counts the ones in use", async () => {
     mockApi(LIST);
     const first = await renderApp({ path: "/sheets/archive" });
