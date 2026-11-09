@@ -109,7 +109,7 @@ function Start({ app }: { app: LookupApp }) {
 
 /**
  * The app's own address, known only once an item of it was shown in this session: the hub's
- * `/api/info` carries no URL on purpose, a lookup result does carry the deep link.
+ * `/api/v1/info` carries no URL on purpose, a lookup result does carry the deep link.
  */
 function useKnownBase(app: LookupApp): string | null {
   const queryClient = useQueryClient();

@@ -206,7 +206,7 @@ describe("session", () => {
   it("keeps the CSRF token of the session for state-changing requests", async () => {
     await renderApp({ path: "/" });
     const fetchMock = stubFetch(() => json({}, 200));
-    await apiFetch("/api/x", { method: "POST", json: {} });
+    await apiFetch("/api/v1/x", { method: "POST", json: {} });
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
     expect(headers.get("X-CSRF-Token")).toBe("csrf-test");
   });

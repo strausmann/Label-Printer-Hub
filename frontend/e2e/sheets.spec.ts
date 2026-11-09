@@ -166,7 +166,7 @@ test.describe.serial("sheets", () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
     // Relative: print-sheet.spec.ts prints onto this sheet before this file runs.
-    const used = ((await (await page.request.get("/api/sheets/L4736-0001")).json()) as { used: number }).used;
+    const used = ((await (await page.request.get("/api/v1/sheets/L4736-0001")).json()) as { used: number }).used;
     await page.goto("/sheets/L4736-0001");
     await expect(page.getByText(`${used} of 48 used`)).toBeVisible();
     await page.getByRole("button", { name: "Mark cells as used" }).click();

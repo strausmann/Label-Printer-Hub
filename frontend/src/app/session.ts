@@ -26,7 +26,7 @@ export const SIGNED_OUT: SessionData = { signed_in: false, bootstrap: false };
 export function useInfo(): UseQueryResult<InfoData> {
   return useQuery({
     queryKey: INFO_KEY,
-    queryFn: () => apiFetch<InfoData>("/api/info"),
+    queryFn: () => apiFetch<InfoData>("/api/v1/info"),
     staleTime: 60_000,
   });
 }

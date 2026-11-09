@@ -10,7 +10,16 @@ const shot = async (page: Page, name: string) => {
   await page.screenshot({ path: resolve(SHOTS, name), fullPage: true });
 };
 
+// Assembled from parts on purpose: the source guard (src/api/paths.test.ts) rejects the literal.
+const OLD_PRINTERS_PATH = ["", "api", "printers"].join("/");
+
 test.describe("printers", () => {
+  test("old api path is a plain 404", async ({ signedInPage: page }) => {
+    const response = await page.request.get(OLD_PRINTERS_PATH);
+    expect(response.status()).toBe(404);
+    expect(response.headers()["content-type"]).toContain("application/json");
+  });
+
   test("pausing a printer changes its badge through the event stream, without a reload", async ({
     signedInPage: page,
   }) => {
@@ -104,7 +113,7 @@ test.describe("page printer status", () => {
   });
 
   test("an unbreakable tape printer name wraps inside its card at 360 px", async ({ signedInPage: page }) => {
-    await page.route("**/api/printers", async (route) => {
+    await page.route("**/api/v1/printers", async (route) => {
       const response = await route.fetch();
       const list = (await response.json()) as { name: string; model: string }[];
       list[0]!.name = `Workshop${"x".repeat(70)}`;

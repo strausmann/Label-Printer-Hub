@@ -8,9 +8,9 @@ afterEach(() => vi.unstubAllGlobals());
 describe("Printers", () => {
   it("lists every printer with a state word, tape width and swatch name", async () => {
     mockApi({
-      "GET /api/printers": [PRINTER_A, PRINTER_B],
-      [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
-      [`GET /api/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { online: false }),
+      "GET /api/v1/printers": [PRINTER_A, PRINTER_B],
+      [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
+      [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { online: false }),
     });
     await renderApp({ path: "/printers" });
     expect(await screen.findByRole("heading", { level: 1, name: "Printers" })).toBeVisible();
@@ -21,7 +21,7 @@ describe("Printers", () => {
   });
 
   it("shows an empty state without printers", async () => {
-    mockApi({ "GET /api/printers": [] });
+    mockApi({ "GET /api/v1/printers": [] });
     await renderApp({ path: "/printers" });
     expect(await screen.findByText("No printers yet.")).toBeVisible();
   });

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 // proxy answers with a sign-in page and the browser refuses to install the app. A <link rel="manifest">
 // is fetched without credentials unless it says crossorigin="use-credentials".
 // This is a text check on index.html: it cannot see whether the browser really sends the cookie;
-// the e2e check "manifest request carries the session cookie" does.
+// no e2e check can: Playwright does not observe the cookie either (see e2e/shell.spec.ts).
 describe("index.html manifest link", () => {
   it("manifest link is fetched with credentials", () => {
     const html = readFileSync(resolve(__dirname, "../index.html"), "utf8");

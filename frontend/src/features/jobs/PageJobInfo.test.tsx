@@ -18,8 +18,8 @@ const sheetPayload = (over: Record<string, unknown> = {}) => ({
 
 function routes(state: string, over: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
   return {
-    [`GET /api/jobs/${ID}`]: job(ID, PAGE_PRINTER.id, state, { template_key: null, payload: sheetPayload(), ...over }),
-    "GET /api/printers": [PAGE_PRINTER],
+    [`GET /api/v1/jobs/${ID}`]: job(ID, PAGE_PRINTER.id, state, { template_key: null, payload: sheetPayload(), ...over }),
+    "GET /api/v1/printers": [PAGE_PRINTER],
     ...extra,
   };
 }
@@ -40,7 +40,7 @@ describe("page job at the printer", () => {
   });
 
   it("names the printer's reason when the job only says printer-stopped", async () => {
-    mockApi(routes("printing", {}, { [`GET /api/printers/${PAGE_PRINTER.id}/status`]: STOPPED_PRINTER }));
+    mockApi(routes("printing", {}, { [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: STOPPED_PRINTER }));
     const { queryClient } = await renderApp({ path: `/jobs/${ID}` });
     await screen.findByRole("heading", { level: 1, name: `Sheet ${CODE} · 3 labels` });
     act(() => void queryClient.setQueryData(pageJobStateKey(ID), event("stopped", ["printer-stopped"])));
@@ -49,7 +49,7 @@ describe("page job at the printer", () => {
 
   it("uses the printer's blocking reasons when it does not report itself as stopped", async () => {
     const jam = pageStatus(PAGE_PRINTER.id, { printer_state: "idle", state_reasons: [{ keyword: "media-empty", severity: "error", blocking: true }, { keyword: "toner-low", severity: "warning", blocking: false }] });
-    mockApi(routes("printing", {}, { [`GET /api/printers/${PAGE_PRINTER.id}/status`]: jam }));
+    mockApi(routes("printing", {}, { [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: jam }));
     const { queryClient } = await renderApp({ path: `/jobs/${ID}` });
     await screen.findByRole("heading", { level: 1, name: `Sheet ${CODE} · 3 labels` });
     act(() => void queryClient.setQueryData(pageJobStateKey(ID), event("stopped", ["printer-stopped"])));
@@ -58,7 +58,7 @@ describe("page job at the printer", () => {
 
   it("stays at 'stopped' when neither the job nor the printer names a cause", async () => {
     const quiet = pageStatus(PAGE_PRINTER.id, { printer_state: "stopped", state_reasons: [] });
-    mockApi(routes("printing", {}, { [`GET /api/printers/${PAGE_PRINTER.id}/status`]: quiet }));
+    mockApi(routes("printing", {}, { [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: quiet }));
     const { queryClient } = await renderApp({ path: `/jobs/${ID}` });
     await screen.findByRole("heading", { level: 1, name: `Sheet ${CODE} · 3 labels` });
     act(() => void queryClient.setQueryData(pageJobStateKey(ID), event("stopped", ["printer-stopped"])));
@@ -71,7 +71,7 @@ describe("page job at the printer", () => {
     await screen.findByText("At the printer");
     act(() => void queryClient.setQueryData(pageJobStateKey(ID), event("stopped", ["toner-empty"])));
     await screen.findByText("Stopped at the printer · toner empty");
-    expect(calls.some((c) => c.path === `/api/printers/${PAGE_PRINTER.id}/status`)).toBe(false);
+    expect(calls.some((c) => c.path === `/api/v1/printers/${PAGE_PRINTER.id}/status`)).toBe(false);
   });
 
   it("follows the sub-state: waiting, then printing", async () => {
@@ -110,7 +110,7 @@ describe("page job at the printer", () => {
 
   it("labels a calibration page by the sheet type's name, not its key", async () => {
     const payload = { kind: "calibration_page", detail: { type_key: TYPE_KEY, version: 1 } };
-    mockApi(routes("done", { payload }, { [`GET /api/sheet-types/${TYPE_KEY}`]: TYPE }));
+    mockApi(routes("done", { payload }, { [`GET /api/v1/sheet-types/${TYPE_KEY}`]: TYPE }));
     await renderApp({ path: `/jobs/${ID}` });
     expect(await screen.findByRole("heading", { level: 1, name: "Calibration page · Avery Zweckform L4736REV-25 v1" })).toBeVisible();
     const info = screen.getByRole("region", { name: "Calibration page" });
@@ -120,7 +120,7 @@ describe("page job at the printer", () => {
 
   it("falls back to the key when the sheet type cannot be read", async () => {
     const payload = { kind: "calibration_page", detail: { type_key: TYPE_KEY, version: 1 } };
-    mockApi(routes("done", { payload }, { [`GET /api/sheet-types/${TYPE_KEY}`]: respond(404, apiErrorBody("sheet_type_not_found", "gone")) }));
+    mockApi(routes("done", { payload }, { [`GET /api/v1/sheet-types/${TYPE_KEY}`]: respond(404, apiErrorBody("sheet_type_not_found", "gone")) }));
     await renderApp({ path: `/jobs/${ID}` });
     expect(await screen.findByRole("heading", { level: 1, name: `Calibration page · ${TYPE_KEY} v1` })).toBeVisible();
   });
@@ -163,7 +163,7 @@ describe("an interrupted page job", () => {
 
   for (const state of ["failed", "failed_restart", "cancelled"]) {
     it(`lists the unconfirmed cells of a ${state} job and links to resolve them`, async () => {
-      mockApi(routes(state, {}, { [`GET /api/sheets/${CODE}`]: sheet() }));
+      mockApi(routes(state, {}, { [`GET /api/v1/sheets/${CODE}`]: sheet() }));
       await renderApp({ path: `/jobs/${ID}` });
       expect(await screen.findByText("Not confirmed")).toBeVisible();
       const info = screen.getByRole("region", { name: "Sheet page" });
@@ -175,12 +175,12 @@ describe("an interrupted page job", () => {
 
   it("shows no such block when the job's cells are settled, or the sheet cannot be read", async () => {
     const settled = sheetRead(CODE, { used: [4, 5, 6] });
-    mockApi(routes("failed", {}, { [`GET /api/sheets/${CODE}`]: settled }));
+    mockApi(routes("failed", {}, { [`GET /api/v1/sheets/${CODE}`]: settled }));
     const { unmount } = await renderApp({ path: `/jobs/${ID}` });
     await screen.findByRole("region", { name: "Sheet page" });
     await waitFor(() => expect(screen.queryByText("Not confirmed")).toBeNull());
     unmount();
-    mockApi(routes("failed", {}, { [`GET /api/sheets/${CODE}`]: respond(404, apiErrorBody("sheet_not_found", "gone")) }));
+    mockApi(routes("failed", {}, { [`GET /api/v1/sheets/${CODE}`]: respond(404, apiErrorBody("sheet_not_found", "gone")) }));
     await renderApp({ path: `/jobs/${ID}` });
     await screen.findByRole("region", { name: "Sheet page" });
     expect(screen.queryByText("Not confirmed")).toBeNull();
@@ -188,7 +188,7 @@ describe("an interrupted page job", () => {
 
   it("does not offer to settle cells of a discarded sheet", async () => {
     const s = sheet();
-    mockApi(routes("failed", {}, { [`GET /api/sheets/${CODE}`]: { ...s, state: "discarded", discarded_at: "2026-11-04T09:00:00Z" } }));
+    mockApi(routes("failed", {}, { [`GET /api/v1/sheets/${CODE}`]: { ...s, state: "discarded", discarded_at: "2026-11-04T09:00:00Z" } }));
     await renderApp({ path: `/jobs/${ID}` });
     expect(await screen.findByText(/cannot be settled any more/)).toBeVisible();
     expect(screen.queryByRole("link", { name: "Settle the cells on the sheet" })).toBeNull();
@@ -209,15 +209,15 @@ describe("retry and cancel of page jobs", () => {
 
   it("retry opens the new job", async () => {
     const created = job(NEW, PAGE_PRINTER.id, "queued", { template_key: null, payload: sheetPayload() });
-    const { calls } = mockApi(routes("failed", {}, { [`POST /api/jobs/${ID}/retry`]: created, [`GET /api/jobs/${NEW}`]: created }));
+    const { calls } = mockApi(routes("failed", {}, { [`POST /api/v1/jobs/${ID}/retry`]: created, [`GET /api/v1/jobs/${NEW}`]: created }));
     const { router } = await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
     await waitFor(() => expect(router.state.location.pathname).toBe(`/jobs/${NEW}`));
-    expect(calls.some((c) => c.method === "POST" && c.path === `/api/jobs/${ID}/retry`)).toBe(true);
+    expect(calls.some((c) => c.method === "POST" && c.path === `/api/v1/jobs/${ID}/retry`)).toBe(true);
   });
 
   const retryRefused = async (status: number, code: string, detail?: Record<string, unknown>) => {
-    mockApi(routes("failed", {}, { [`POST /api/jobs/${ID}/retry`]: respond(status, apiErrorBody(code, "x", detail)) }));
+    mockApi(routes("failed", {}, { [`POST /api/v1/jobs/${ID}/retry`]: respond(status, apiErrorBody(code, "x", detail)) }));
     await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
     return screen.findByRole("alert");
@@ -243,7 +243,7 @@ describe("retry and cancel of page jobs", () => {
 
   // The queue refusals arrive as problems (`detail.type`, hyphen forms), not as error codes.
   const problemRefused = async (status: number, type: string) => {
-    mockApi(routes("failed", {}, { [`POST /api/jobs/${ID}/retry`]: respond(status, { detail: { type, title: "Title", detail: "English detail" } }) }));
+    mockApi(routes("failed", {}, { [`POST /api/v1/jobs/${ID}/retry`]: respond(status, { detail: { type, title: "Title", detail: "English detail" } }) }));
     await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
     return screen.findByRole("alert");
@@ -274,22 +274,22 @@ describe("retry and cancel of page jobs", () => {
   });
 
   it("a network error says the hub could not be reached", async () => {
-    mockApi(routes("failed", {}, { [`POST /api/jobs/${ID}/retry`]: () => Promise.reject(new TypeError("Failed to fetch")) }));
+    mockApi(routes("failed", {}, { [`POST /api/v1/jobs/${ID}/retry`]: () => Promise.reject(new TypeError("Failed to fetch")) }));
     await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("The hub could not be reached. Try again.");
   });
 
   it("cancel is offered while a page job prints, and the text says the printer was asked", async () => {
-    const { calls } = mockApi(routes("printing", {}, { [`POST /api/jobs/${ID}/cancel`]: job(ID, PAGE_PRINTER.id, "printing", { payload: sheetPayload() }) }));
+    const { calls } = mockApi(routes("printing", {}, { [`POST /api/v1/jobs/${ID}/cancel`]: job(ID, PAGE_PRINTER.id, "printing", { payload: sheetPayload() }) }));
     await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(await screen.findByText("Asked the printer to cancel. The cells are settled when it reports.")).toBeVisible();
-    expect(calls.some((c) => c.method === "POST" && c.path === `/api/jobs/${ID}/cancel`)).toBe(true);
+    expect(calls.some((c) => c.method === "POST" && c.path === `/api/v1/jobs/${ID}/cancel`)).toBe(true);
   });
 
   it("the Cancel button is gone once the printer was asked, so it cannot be pressed twice", async () => {
-    mockApi(routes("printing", {}, { [`POST /api/jobs/${ID}/cancel`]: job(ID, PAGE_PRINTER.id, "printing", { payload: sheetPayload() }) }));
+    mockApi(routes("printing", {}, { [`POST /api/v1/jobs/${ID}/cancel`]: job(ID, PAGE_PRINTER.id, "printing", { payload: sheetPayload() }) }));
     await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
     await screen.findByText(/Asked the printer to cancel/);
@@ -297,13 +297,13 @@ describe("retry and cancel of page jobs", () => {
   });
 
   it("a refused cancel says so; a network error says the hub could not be reached", async () => {
-    mockApi(routes("printing", {}, { [`POST /api/jobs/${ID}/cancel`]: respond(409, apiErrorBody("job_not_cancellable", "x")) }));
+    mockApi(routes("printing", {}, { [`POST /api/v1/jobs/${ID}/cancel`]: respond(409, apiErrorBody("job_not_cancellable", "x")) }));
     const { unmount } = await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("The job could not be cancelled.");
     expect(screen.queryByText(/Asked the printer to cancel/)).toBeNull();
     unmount();
-    mockApi(routes("printing", {}, { [`POST /api/jobs/${ID}/cancel`]: () => Promise.reject(new TypeError("Failed to fetch")) }));
+    mockApi(routes("printing", {}, { [`POST /api/v1/jobs/${ID}/cancel`]: () => Promise.reject(new TypeError("Failed to fetch")) }));
     await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("The hub could not be reached. Try again.");
@@ -320,7 +320,7 @@ describe("retry and cancel of page jobs", () => {
 describe("job list", () => {
   it("titles page jobs and shows where a printing one stands", async () => {
     const page = job(ID, PAGE_PRINTER.id, "printing", { template_key: null, payload: sheetPayload() });
-    mockApi({ "GET /api/printers": [PAGE_PRINTER], "GET /api/jobs": [page] });
+    mockApi({ "GET /api/v1/printers": [PAGE_PRINTER], "GET /api/v1/jobs": [page] });
     const { queryClient } = await renderApp({ path: "/jobs" });
     expect(await screen.findByRole("link", { name: `Sheet ${CODE} · 3 labels` })).toBeVisible();
     expect(screen.getByText("At the printer")).toBeVisible();

@@ -16,8 +16,8 @@ const mk = (n: number, state: string, at: string) =>
 describe("JobsPage", () => {
   it("lists jobs newest first with their printer and state", async () => {
     mockApi({
-      "GET /api/printers": [PRINTER_A],
-      "GET /api/jobs": [mk(1, "done", "2026-11-04T08:00:00Z"), mk(2, "failed", "2026-11-04T10:00:00Z"), mk(3, "queued", "2026-11-04T09:00:00Z")],
+      "GET /api/v1/printers": [PRINTER_A],
+      "GET /api/v1/jobs": [mk(1, "done", "2026-11-04T08:00:00Z"), mk(2, "failed", "2026-11-04T10:00:00Z"), mk(3, "queued", "2026-11-04T09:00:00Z")],
     });
     await renderApp({ path: "/jobs" });
     const list = await screen.findByRole("list", { name: "Jobs" });
@@ -28,15 +28,15 @@ describe("JobsPage", () => {
   });
 
   it("filters by state through the API", async () => {
-    const { calls } = mockApi({ "GET /api/printers": [PRINTER_A], "GET /api/jobs": [] });
+    const { calls } = mockApi({ "GET /api/v1/printers": [PRINTER_A], "GET /api/v1/jobs": [] });
     await renderApp({ path: "/jobs" });
     await screen.findByText("No jobs.");
     await userEvent.click(screen.getByRole("radio", { name: "Failed" }));
-    await waitFor(() => expect(calls.some((c) => c.path === "/api/jobs" && c.search.includes("state=failed"))).toBe(true));
+    await waitFor(() => expect(calls.some((c) => c.path === "/api/v1/jobs" && c.search.includes("state=failed"))).toBe(true));
   });
 
   it("each row links to the job", async () => {
-    mockApi({ "GET /api/printers": [PRINTER_A], "GET /api/jobs": [mk(1, "done", "2026-11-04T08:00:00Z")] });
+    mockApi({ "GET /api/v1/printers": [PRINTER_A], "GET /api/v1/jobs": [mk(1, "done", "2026-11-04T08:00:00Z")] });
     await renderApp({ path: "/jobs" });
     const link = await screen.findByRole("link", { name: "Label 1" });
     expect(link).toHaveAttribute("href", "/jobs/eeeeeeee-0000-4000-8000-000000000001");

@@ -95,7 +95,7 @@ function BootstrapScreen() {
     <BootstrapKeyCreated
       onCreate={async () =>
         (
-          await apiFetch<components["schemas"]["ApiKeyCreateResponse"]>("/api/admin/api-keys", {
+          await apiFetch<components["schemas"]["ApiKeyCreateResponse"]>("/api/v1/admin/api-keys", {
             method: "POST",
             json: { name: "First admin key", scopes: ["admin"] },
           })

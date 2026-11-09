@@ -32,7 +32,7 @@ test.describe("page printer test hub", () => {
     const card = page.getByRole("link", { name: /Office page printer/ });
     await expect(card).toBeVisible();
     const id = (await card.getAttribute("href"))!.split("/").pop()!;
-    const status = async () => (await (await page.request.get(`/api/printers/${id}/status`)).json()) as Record<string, unknown>;
+    const status = async () => (await (await page.request.get(`/api/v1/printers/${id}/status`)).json()) as Record<string, unknown>;
     await expect.poll(async () => (await status()).printer_state ?? null, { timeout: 10_000 }).toBe("idle");
 
     await setPagePrinter(page, { printer_state: 5, reasons: ["toner-empty-error"] });
@@ -44,7 +44,7 @@ test.describe("page printer test hub", () => {
   });
 
   test("seeds the sheets with fixed codes and counts", async ({ signedInPage: page }) => {
-    const get = async (code: string) => (await (await page.request.get(`/api/sheets/${code}`)).json()) as Record<string, unknown>;
+    const get = async (code: string) => (await (await page.request.get(`/api/v1/sheets/${code}`)).json()) as Record<string, unknown>;
     const partly = await get(SEEDED_CODES.partlyUsed);
     expect(partly).toMatchObject({ code: SEEDED_CODES.partlyUsed, used: 17, state: "active" });
     expect(await get(SEEDED_CODES.full)).toMatchObject({ used: 48, total: 48, state: "active" });
@@ -54,7 +54,7 @@ test.describe("page printer test hub", () => {
     const purposes = (edge.cells as { purpose: string | null }[]).map((c) => c.purpose);
     expect(purposes).toHaveLength(120);
     expect(purposes.every((p) => p?.length === 120)).toBe(true);
-    const custom = await (await page.request.get("/api/sheet-types/e2e-custom-unknown-radius")).json();
+    const custom = await (await page.request.get("/api/v1/sheet-types/e2e-custom-unknown-radius")).json();
     expect(JSON.stringify(custom)).toContain('"corner_radius":null');
   });
 

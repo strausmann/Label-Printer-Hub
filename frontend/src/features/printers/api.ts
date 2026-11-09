@@ -6,7 +6,7 @@ export type Printer = components["schemas"]["app__schemas__printer__PrinterRead"
 export type PrinterStatus = components["schemas"]["PrinterStatus"];
 export type Job = components["schemas"]["JobRead"];
 
-/** `GET /api/printers/{id}/queue` returns loose objects; these are the fields it sets. */
+/** `GET /api/v1/printers/{id}/queue` returns loose objects; these are the fields it sets. */
 export interface QueueJob {
   id: string;
   printer_id: string;
@@ -26,20 +26,20 @@ export const queueKey = (id: string) => ["printers", id, "queue"] as const;
 export const jobsKey = ["jobs", "recent"] as const;
 
 export const usePrinters = () =>
-  useQuery({ queryKey: printersKey, queryFn: () => apiFetch<Printer[]>("/api/printers") });
+  useQuery({ queryKey: printersKey, queryFn: () => apiFetch<Printer[]>("/api/v1/printers") });
 
 export const usePrinter = (id: string) =>
-  useQuery({ queryKey: printerKey(id), queryFn: () => apiFetch<Printer>(`/api/printers/${id}`) });
+  useQuery({ queryKey: printerKey(id), queryFn: () => apiFetch<Printer>(`/api/v1/printers/${id}`) });
 
 export const usePrinterStatus = (id: string, enabled = true) =>
-  useQuery({ queryKey: statusKey(id), queryFn: () => apiFetch<PrinterStatus>(`/api/printers/${id}/status`), enabled });
+  useQuery({ queryKey: statusKey(id), queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${id}/status`), enabled });
 
 /** One status per printer, keyed by printer id (a failed probe simply has no entry). */
 export function usePrinterStatuses(printers: Printer[] | undefined): Map<string, PrinterStatus> {
   const results = useQueries({
     queries: (printers ?? []).map((p) => ({
       queryKey: statusKey(p.id),
-      queryFn: () => apiFetch<PrinterStatus>(`/api/printers/${p.id}/status`),
+      queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${p.id}/status`),
     })),
   });
   const map = new Map<string, PrinterStatus>();
@@ -51,18 +51,18 @@ export function usePrinterStatuses(printers: Printer[] | undefined): Map<string,
 }
 
 export const useQueue = (id: string) =>
-  useQuery({ queryKey: queueKey(id), queryFn: () => apiFetch<QueueJob[]>(`/api/printers/${id}/queue`) });
+  useQuery({ queryKey: queueKey(id), queryFn: () => apiFetch<QueueJob[]>(`/api/v1/printers/${id}/queue`) });
 
 /** The newest jobs of all printers; the overview sorts out running, failed and recent ones. */
 export const useRecentJobs = () =>
-  useQuery({ queryKey: jobsKey, queryFn: () => apiFetch<Job[]>("/api/jobs?limit=100") });
+  useQuery({ queryKey: jobsKey, queryFn: () => apiFetch<Job[]>("/api/v1/jobs?limit=100") });
 
 /** Pause or resume dispatch; the event stream refreshes the rest, this makes it instant. */
 export function usePauseResume() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ id, action }: { id: string; action: "pause" | "resume" }) =>
-      apiFetch<void>(`/api/printers/${id}/${action}`, { method: "POST" }),
+      apiFetch<void>(`/api/v1/printers/${id}/${action}`, { method: "POST" }),
     onSettled: () => client.invalidateQueries({ queryKey: printersKey }),
   });
 }
@@ -70,7 +70,7 @@ export function usePauseResume() {
 export function useCancelJob(printerId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (jobId: string) => apiFetch<Job>(`/api/jobs/${jobId}/cancel`, { method: "POST" }),
+    mutationFn: (jobId: string) => apiFetch<Job>(`/api/v1/jobs/${jobId}/cancel`, { method: "POST" }),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: queueKey(printerId) });
       void client.invalidateQueries({ queryKey: ["jobs"] });
@@ -81,7 +81,7 @@ export function useCancelJob(printerId: string) {
 export function useClearQueue(printerId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () => apiFetch<void>(`/api/printers/${printerId}/queue/clear`, { method: "POST" }),
+    mutationFn: () => apiFetch<void>(`/api/v1/printers/${printerId}/queue/clear`, { method: "POST" }),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: queueKey(printerId) });
       void client.invalidateQueries({ queryKey: ["jobs"] });

@@ -9,7 +9,7 @@ import type { SheetRead } from "./api";
 const PRINT_SESSION = { ...SIGNED_IN, scope: "print" as const };
 const READ_SESSION = { ...SIGNED_IN, scope: "read" as const };
 const CODE = "L4736-0001";
-const PATH = `/api/sheets/${CODE}`;
+const PATH = `/api/v1/sheets/${CODE}`;
 
 // Whole-app renders with grids of 48 cells: under coverage and a loaded runner they need more than 5 s.
 vi.setConfig({ testTimeout: 15_000 });
@@ -41,7 +41,7 @@ describe("the sheet detail page", () => {
   });
 
   it("says plainly that an unknown code does not exist", async () => {
-    mockApi({ "GET /api/sheets/L4736-9999": () => respond(404, apiErrorBody("sheet_not_found", "Sheet not found.")) });
+    mockApi({ "GET /api/v1/sheets/L4736-9999": () => respond(404, apiErrorBody("sheet_not_found", "Sheet not found.")) });
     await renderApp({ path: "/sheets/L4736-9999", session: PRINT_SESSION });
     expect(await screen.findByText("That sheet does not exist.")).toBeVisible();
     expect(screen.getByRole("link", { name: "Back to the sheets" })).toHaveAttribute("href", "/sheets");

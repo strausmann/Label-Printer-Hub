@@ -22,7 +22,7 @@ afterAll(() => configure({ asyncUtilTimeout: defaultAsyncTimeout }));
 afterEach(() => vi.unstubAllGlobals());
 
 const P = PAGE_PRINTER.id;
-const BASE = `/api/printers/${P}/calibration`;
+const BASE = `/api/v1/printers/${P}/calibration`;
 const JOB = "dddddddd-0000-4000-8000-000000000001";
 const READ_SESSION = { ...SIGNED_IN, scope: "read" as const };
 const PRINT_SESSION = { ...SIGNED_IN, scope: "print" as const };
@@ -47,15 +47,15 @@ const disabledPrinter = { ...PAGE_PRINTER, id: "55555555-5555-4555-8555-55555555
 
 function routes(extra: Record<string, unknown> = {}) {
   return {
-    "GET /api/printers": [PAGE_PRINTER, secondPrinter, PRINTER_A, disabledPrinter],
-    [`GET /api/printers/${P}/status`]: pageStatus(P),
-    [`GET /api/printers/${secondPrinter.id}/status`]: pageStatus(secondPrinter.id),
-    [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
-    [`GET /api/printers/${P}/capabilities`]: PAGE_CAPABILITIES,
-    [`GET /api/printers/${secondPrinter.id}/capabilities`]: PAGE_CAPABILITIES,
+    "GET /api/v1/printers": [PAGE_PRINTER, secondPrinter, PRINTER_A, disabledPrinter],
+    [`GET /api/v1/printers/${P}/status`]: pageStatus(P),
+    [`GET /api/v1/printers/${secondPrinter.id}/status`]: pageStatus(secondPrinter.id),
+    [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
+    [`GET /api/v1/printers/${P}/capabilities`]: PAGE_CAPABILITIES,
+    [`GET /api/v1/printers/${secondPrinter.id}/capabilities`]: PAGE_CAPABILITIES,
     [`GET ${BASE}`]: [stored, none],
-    [`GET /api/printers/${secondPrinter.id}/calibration`]: [{ ...none, tray: "main" }],
-    "GET /api/sheet-types": [SHEET_TYPE, oneColumn],
+    [`GET /api/v1/printers/${secondPrinter.id}/calibration`]: [{ ...none, tray: "main" }],
+    "GET /api/v1/sheet-types": [SHEET_TYPE, oneColumn],
     ...extra,
   };
 }
@@ -166,7 +166,7 @@ describe("the page and its preselection (C10)", () => {
   });
 
   it("with no page printer it says what to do, and offers nothing to print", async () => {
-    mockApi({ "GET /api/printers": [PRINTER_A], [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id), "GET /api/sheet-types": [SHEET_TYPE] });
+    mockApi({ "GET /api/v1/printers": [PRINTER_A], [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id), "GET /api/v1/sheet-types": [SHEET_TYPE] });
     await renderApp({ path: "/calibration" });
     expect(await screen.findByText("There is no page printer yet. Add one under Settings › Printers.")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Print calibration page" })).toBeNull();
@@ -497,14 +497,14 @@ describe("readings: row identity", () => {
   });
 
   it("a sheet with two columns has no readings helper and says to enter the values directly", async () => {
-    await open({ "GET /api/sheet-types": [twoColumns] });
+    await open({ "GET /api/v1/sheet-types": [twoColumns] });
     expect(await screen.findByText("On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly.")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Fit" })).toBeNull();
   });
 });
 
 describe("which type the values were measured on", () => {
-  const two = { "GET /api/sheet-types": [SHEET_TYPE, typeB], [`PUT ${BASE}/main`]: stored, [`POST ${BASE}/main/fit`]: FIT };
+  const two = { "GET /api/v1/sheet-types": [SHEET_TYPE, typeB], [`PUT ${BASE}/main`]: stored, [`POST ${BASE}/main/fit`]: FIT };
   async function chooseB() {
     await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
     await userEvent.click(await screen.findByRole("option", { name: /OTHERTYPE/ }));

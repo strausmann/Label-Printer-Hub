@@ -129,7 +129,7 @@ test.describe.serial("sheet archive", () => {
     };
     try {
       expect(
-        await api(page, "POST", "/api/sheet-types", {
+        await api(page, "POST", "/api/v1/sheet-types", {
           key,
           prefix: "WORST",
           vendor: "Ünïcödé Etikettenfabrik ".repeat(8).slice(0, 200),
@@ -142,7 +142,7 @@ test.describe.serial("sheet archive", () => {
         }),
       ).toBe(201);
       for (let i = 1; i <= 11; i++) {
-        expect(await api(page, "POST", `/api/sheet-types/${key}/versions`, { geometry: { ...geometry, margin_top: 10 + i }, change_note: `Measured again, round ${i}: ${"very long note ".repeat(6)}` })).toBe(201);
+        expect(await api(page, "POST", `/api/v1/sheet-types/${key}/versions`, { geometry: { ...geometry, margin_top: 10 + i }, change_note: `Measured again, round ${i}: ${"very long note ".repeat(6)}` })).toBe(201);
       }
       for (const size of [{ width: 360, height: 780 }, { width: 1280, height: 800 }]) {
         await page.setViewportSize(size);
@@ -156,7 +156,7 @@ test.describe.serial("sheet archive", () => {
         await page.screenshot({ path: testInfo.outputPath(`worst-list-${size.width}-en-light.png`), fullPage: true });
       }
     } finally {
-      await api(page, "DELETE", `/api/sheet-types/${key}`);
+      await api(page, "DELETE", `/api/v1/sheet-types/${key}`);
     }
   });
 });

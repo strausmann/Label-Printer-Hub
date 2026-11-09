@@ -55,7 +55,7 @@ export async function resetPagePrinter(page: Page): Promise<void> {
  */
 export async function waitForQuietQueue(page: Page): Promise<void> {
   const named = async () => {
-    const list = await page.request.get(`${MAIN.url}/api/printers`);
+    const list = await page.request.get(`${MAIN.url}/api/v1/printers`);
     if (!list.ok()) return null; // not signed in: there is no queue to ask about
     const printers = (await list.json()) as { id: string; name: string; paused?: boolean }[];
     return printers.find((p) => p.name === "Office page printer") ?? null;
@@ -65,7 +65,7 @@ export async function waitForQuietQueue(page: Page): Promise<void> {
   await expect
     .poll(
       async () => {
-        const queue = await page.request.get(`${MAIN.url}/api/printers/${printer.id}/queue`);
+        const queue = await page.request.get(`${MAIN.url}/api/v1/printers/${printer.id}/queue`);
         const jobs = queue.ok() ? ((await queue.json()) as unknown[]).length : -1;
         return { jobs, paused: (await named())?.paused ?? null };
       },

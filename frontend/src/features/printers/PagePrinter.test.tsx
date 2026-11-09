@@ -20,10 +20,10 @@ const black = (over: Record<string, unknown> = {}) => ({
 
 function listRoutes(pageStat: Record<string, unknown>) {
   return {
-    "GET /api/printers": [PAGE_PRINTER, PRINTER_A],
-    [`GET /api/printers/${P}/status`]: pageStat,
-    [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
-    "GET /api/jobs": [],
+    "GET /api/v1/printers": [PAGE_PRINTER, PRINTER_A],
+    [`GET /api/v1/printers/${P}/status`]: pageStat,
+    [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
+    "GET /api/v1/jobs": [],
   };
 }
 const card = async (name: RegExp) => (await screen.findByRole("link", { name })) as HTMLElement;
@@ -101,9 +101,9 @@ describe("page printer card", () => {
 
   it("the detail page of a page printer shows its blocking reason in words", async () => {
     mockApi({
-      [`GET /api/printers/${P}`]: PAGE_PRINTER,
-      [`GET /api/printers/${P}/status`]: pageStatus(P, { error_state: "cover-open", state_reasons: [reason("cover-open", "error", true)] }),
-      [`GET /api/printers/${P}/queue`]: [],
+      [`GET /api/v1/printers/${P}`]: PAGE_PRINTER,
+      [`GET /api/v1/printers/${P}/status`]: pageStatus(P, { error_state: "cover-open", state_reasons: [reason("cover-open", "error", true)] }),
+      [`GET /api/v1/printers/${P}/queue`]: [],
     });
     await renderApp({ path: `/printers/${P}` });
     expect(await screen.findByText("cover open")).toBeVisible();
@@ -113,7 +113,7 @@ describe("page printer card", () => {
   it("a tape printer with error flags keeps its error text on the card", async () => {
     mockApi({
       ...listRoutes(pageStatus(P)),
-      [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, { error_state: "cover open" }),
+      [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, { error_state: "cover open" }),
     });
     await renderApp({ path: "/printers" });
     const c = await card(/Workshop PT-P750W/);
@@ -143,10 +143,10 @@ describe("page printer card", () => {
 
 describe("page printer detail", () => {
   const routes = (pageStat: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
-    [`GET /api/printers/${P}`]: PAGE_PRINTER,
-    [`GET /api/printers/${P}/status`]: pageStat,
-    [`GET /api/printers/${P}/queue`]: [],
-    [`GET /api/printers/${P}/calibration`]: [
+    [`GET /api/v1/printers/${P}`]: PAGE_PRINTER,
+    [`GET /api/v1/printers/${P}/status`]: pageStat,
+    [`GET /api/v1/printers/${P}/queue`]: [],
+    [`GET /api/v1/printers/${P}/calibration`]: [
       { tray: "main", offset_x_mm: 0.4, offset_y_mm: -0.2, scale_x: 1, scale_y: 1, rotation_deg: 0.1, method: "manual", updated_at: "2026-11-03T10:00:00Z", measured_on: null },
       { tray: "bypass", offset_x_mm: null, offset_y_mm: null, scale_x: null, scale_y: null, rotation_deg: null, method: null, updated_at: null, measured_on: null },
     ],
@@ -231,9 +231,9 @@ describe("page printer detail", () => {
 
   it("a tape printer's detail is unchanged: Material panel, no supplies or trays", async () => {
     mockApi({
-      [`GET /api/printers/${PRINTER_A.id}`]: PRINTER_A,
-      [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
-      [`GET /api/printers/${PRINTER_A.id}/queue`]: [job("aaaaaaaa-0000-4000-8000-000000000009", PRINTER_A.id, "queued")],
+      [`GET /api/v1/printers/${PRINTER_A.id}`]: PRINTER_A,
+      [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
+      [`GET /api/v1/printers/${PRINTER_A.id}/queue`]: [job("aaaaaaaa-0000-4000-8000-000000000009", PRINTER_A.id, "queued")],
     });
     await renderApp({ path: `/printers/${PRINTER_A.id}` });
     const material = await screen.findByRole("region", { name: "Material" });

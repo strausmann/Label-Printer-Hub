@@ -16,11 +16,11 @@ export const JOB_LIMIT = 100;
 export function useJobs(state: string | null) {
   const query = new URLSearchParams({ limit: String(JOB_LIMIT) });
   if (state) query.set("state", state);
-  return useQuery({ queryKey: jobsListKey(state), queryFn: () => apiFetch<Job[]>(`/api/jobs?${query}`) });
+  return useQuery({ queryKey: jobsListKey(state), queryFn: () => apiFetch<Job[]>(`/api/v1/jobs?${query}`) });
 }
 
 export const useJob = (id: string) =>
-  useQuery({ queryKey: jobKey(id), queryFn: () => apiFetch<Job>(`/api/jobs/${id}`) });
+  useQuery({ queryKey: jobKey(id), queryFn: () => apiFetch<Job>(`/api/v1/jobs/${id}`) });
 
 /** Refreshes every job view and the printer queues they feed. */
 function useRefreshJobs() {
@@ -35,7 +35,7 @@ function useRefreshJobs() {
 export function useRetryJob() {
   const refresh = useRefreshJobs();
   return useMutation({
-    mutationFn: (id: string) => apiFetch<Job>(`/api/jobs/${id}/retry`, { method: "POST" }),
+    mutationFn: (id: string) => apiFetch<Job>(`/api/v1/jobs/${id}/retry`, { method: "POST" }),
     onSettled: refresh,
   });
 }
@@ -43,7 +43,7 @@ export function useRetryJob() {
 export function useCancelJobById() {
   const refresh = useRefreshJobs();
   return useMutation({
-    mutationFn: (id: string) => apiFetch<Job>(`/api/jobs/${id}/cancel`, { method: "POST" }),
+    mutationFn: (id: string) => apiFetch<Job>(`/api/v1/jobs/${id}/cancel`, { method: "POST" }),
     onSettled: refresh,
   });
 }

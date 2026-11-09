@@ -184,7 +184,7 @@ export const PAGE_TRAYS: Schemas["TrayStatusRead"][] = [
   { key: "bypass", label: "Bypass", enabled: true, is_default: false, load_hint: null, media: null },
 ];
 
-/** `GET /api/printers/{id}/status` of a page printer. */
+/** `GET /api/v1/printers/{id}/status` of a page printer. */
 export const pageStatus = (printerId: string, over: Partial<Schemas["PrinterStatus"]> = {}): Schemas["PrinterStatus"] => ({
   printer_id: printerId,
   online: true,
@@ -318,7 +318,7 @@ export function sheetSummary(code = "L4736-0001", over: Partial<Schemas["SheetSu
   };
 }
 
-/** `POST /api/print/{printer}/sheet/preview`: one page with three new labels. */
+/** `POST /api/v1/print/{printer}/sheet/preview`: one page with three new labels. */
 export const sheetPreview = (over: Partial<Schemas["SheetPreview"]> = {}): Schemas["SheetPreview"] => ({
   pages: [
     {

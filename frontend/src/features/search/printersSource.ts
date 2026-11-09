@@ -11,7 +11,7 @@ export const printersSource: SearchSource = {
   async search(query, { queryClient }) {
     const printers = await queryClient.ensureQueryData({
       queryKey: printersKey,
-      queryFn: () => apiFetch<Printer[]>("/api/printers"),
+      queryFn: () => apiFetch<Printer[]>("/api/v1/printers"),
     });
     const q = query.toLowerCase();
     const group = i18n._(msg`Printers`);

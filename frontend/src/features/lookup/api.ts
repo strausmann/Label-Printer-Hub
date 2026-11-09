@@ -18,7 +18,7 @@ export const lookupKey = (app: string, id: string) => ["lookup", app, id] as con
 export const useLookup = (app: LookupApp, id: string) =>
   useQuery({
     queryKey: lookupKey(app, id),
-    queryFn: () => apiFetch<LookupResult>(`/api/lookup/${app}/${encodeURIComponent(id)}`),
+    queryFn: () => apiFetch<LookupResult>(`/api/v1/lookup/${app}/${encodeURIComponent(id)}`),
     retry: false,
   });
 
@@ -35,7 +35,7 @@ export function usePreviewImage(item: LookupResult, contentType: ContentType, ta
   const query = useQuery({
     queryKey: ["preview", item.app, item.id, item.name, item.url, contentType, tapeMm],
     queryFn: () =>
-      apiFetch<Blob>("/api/render/preview", {
+      apiFetch<Blob>("/api/v1/render/preview", {
         method: "POST",
         as: "blob",
         json: {

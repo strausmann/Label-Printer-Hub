@@ -7,10 +7,10 @@ import { job, mockApi, PAGE_PRINTER, PRINTER_A, PRINTER_B, pageStatus, status } 
 afterEach(() => vi.unstubAllGlobals());
 
 const base = (jobs: unknown[] = []) => ({
-  "GET /api/printers": [PRINTER_A, PRINTER_B],
-  [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
-  [`GET /api/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: null }),
-  "GET /api/jobs": jobs,
+  "GET /api/v1/printers": [PRINTER_A, PRINTER_B],
+  [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
+  [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: null }),
+  "GET /api/v1/jobs": jobs,
 });
 
 describe("Overview", () => {
@@ -85,7 +85,7 @@ describe("Overview", () => {
 
   it("shows why a printer was paused automatically", async () => {
     const pause = { source: "printer_error", reason_code: "tape_empty", since: "2026-11-04T10:00:00Z" };
-    mockApi({ ...base(), "GET /api/printers": [PRINTER_A, { ...PRINTER_B, pause }] });
+    mockApi({ ...base(), "GET /api/v1/printers": [PRINTER_A, { ...PRINTER_B, pause }] });
     await renderApp({ path: "/" });
     const section = await screen.findByRole("region", { name: "Needs attention" });
     expect(await within(section).findByText("Tape is empty")).toBeVisible();
@@ -94,7 +94,7 @@ describe("Overview", () => {
 
   it("shows an unknown pause code verbatim", async () => {
     const pause = { source: "printer_error", reason_code: "flux_capacitor", since: "2026-11-04T10:00:00Z" };
-    mockApi({ ...base(), "GET /api/printers": [PRINTER_A, { ...PRINTER_B, pause }] });
+    mockApi({ ...base(), "GET /api/v1/printers": [PRINTER_A, { ...PRINTER_B, pause }] });
     await renderApp({ path: "/" });
     const section = await screen.findByRole("region", { name: "Needs attention" });
     const code = await within(section).findByText("flux_capacitor");
@@ -103,14 +103,14 @@ describe("Overview", () => {
 
   it("says a manual pause was made by the user", async () => {
     const pause = { source: "user", reason_code: "user", since: "2026-11-04T10:00:00Z" };
-    mockApi({ ...base(), "GET /api/printers": [PRINTER_A, { ...PRINTER_B, pause }] });
+    mockApi({ ...base(), "GET /api/v1/printers": [PRINTER_A, { ...PRINTER_B, pause }] });
     await renderApp({ path: "/" });
     const section = await screen.findByRole("region", { name: "Needs attention" });
     expect(await within(section).findByText("Paused by user")).toBeVisible();
   });
 
   it("paused printer shows Resume", async () => {
-    const { calls } = mockApi({ ...base(), [`POST /api/printers/${PRINTER_B.id}/resume`]: null });
+    const { calls } = mockApi({ ...base(), [`POST /api/v1/printers/${PRINTER_B.id}/resume`]: null });
     await renderApp({ path: "/" });
     const section = await screen.findByRole("region", { name: "Needs attention" });
     expect(await within(section).findByText("Office QL-820NWB")).toBeVisible();
@@ -138,7 +138,7 @@ describe("Overview", () => {
   });
 
   it("says so when the printers cannot be loaded", async () => {
-    mockApi({ "GET /api/jobs": [] });
+    mockApi({ "GET /api/v1/jobs": [] });
     await renderApp({ path: "/" });
     expect(await screen.findByText("The printers could not be loaded.")).toBeVisible();
   });
@@ -190,8 +190,8 @@ describe("Overview", () => {
   describe("page printers", () => {
     const withPage = (pageStat: Record<string, unknown>) => ({
       ...base(),
-      "GET /api/printers": [PRINTER_A, PAGE_PRINTER],
-      [`GET /api/printers/${PAGE_PRINTER.id}/status`]: pageStat,
+      "GET /api/v1/printers": [PRINTER_A, PAGE_PRINTER],
+      [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: pageStat,
     });
     const lowBlack = { name: "Black toner", color: "#000000", level_percent: 4, low: true, empty: false, some_remaining: false, type: "toner" };
 

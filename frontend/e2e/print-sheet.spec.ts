@@ -13,7 +13,7 @@ const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => loca
 
 /** The cart holds `copies` Grocy labels and the page printer is the chosen one; then the cart page opens. */
 async function openCart(page: Page, path: string, copies: number) {
-  const printers = (await (await page.request.get("/api/printers")).json()) as Array<{ id: string; name: string }>;
+  const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string }>;
   const printerId = printers.find((p) => p.name === "Office page printer")!.id;
   await page.goto("/");
   await page.evaluate(
@@ -28,10 +28,10 @@ async function openCart(page: Page, path: string, copies: number) {
   await page.goto(path);
 }
 
-const sheetUsed = async (page: Page, code: string) => ((await (await page.request.get(`/api/sheets/${code}`)).json()) as { used: number }).used;
+const sheetUsed = async (page: Page, code: string) => ((await (await page.request.get(`/api/v1/sheets/${code}`)).json()) as { used: number }).used;
 /** Cells a completed Grocy job wrote: a retry of this group prints more, so counts are taken against this. */
 const grocyCells = async (page: Page, code: string) =>
-  ((await (await page.request.get(`/api/sheets/${code}`)).json()) as { cells: Array<{ source: string }> }).cells.filter((c) => c.source === "grocy").length;
+  ((await (await page.request.get(`/api/v1/sheets/${code}`)).json()) as { cells: Array<{ source: string }> }).cells.filter((c) => c.source === "grocy").length;
 
 // One sign-in for the whole file: the hub limits sign-ins per minute.
 test.describe.serial("print onto a sheet", () => {
@@ -99,7 +99,7 @@ test.describe.serial("print onto a sheet", () => {
   test("a print bigger than the sheet gets the server's 409 insufficient_cells, shows the free count and splits at exactly that count", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
-    const sheet = (await (await page.request.get(`/api/sheets/${EDGE}`)).json()) as { total: number; used: number; reserved: number; unconfirmed: number };
+    const sheet = (await (await page.request.get(`/api/v1/sheets/${EDGE}`)).json()) as { total: number; used: number; reserved: number; unconfirmed: number };
     const free = sheet.total - sheet.used - sheet.reserved - sheet.unconfirmed;
     const needed = free + 11;
     // The preview asks the server for real: its 409 carries free_cells as ONE COUNT per placement.
@@ -171,7 +171,7 @@ test.describe.serial("print onto a sheet", () => {
         await shot("item");
 
         // A tape printer keeps the tape preview.
-        const printers = (await (await page.request.get("/api/printers")).json()) as Array<{ id: string; name: string }>;
+        const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string }>;
         await page.evaluate((id) => localStorage.setItem("lph.printer", id), printers.find((p) => p.name === "Workshop PT-P750W")!.id);
         await page.goto("/lookup/grocy/7");
         await expect(page.getByRole("heading", { level: 2, name: heading })).toHaveCount(0);

@@ -15,13 +15,13 @@ export type CalibrationPageRequest = Schemas["PageRequest"];
 export type Capabilities = Schemas["Capabilities"];
 
 const encode = encodeURIComponent;
-const trayPath = (printerId: string, tray: string) => `/api/printers/${encode(printerId)}/calibration/${encode(tray)}`;
+const trayPath = (printerId: string, tray: string) => `/api/v1/printers/${encode(printerId)}/calibration/${encode(tray)}`;
 
 /** One calibration per tray of the printer. Nested under `["printers", id]`, so a printer event refreshes it. */
 export const useCalibration = (printerId: string) =>
   useQuery({
     queryKey: calibrationKey(printerId),
-    queryFn: () => apiFetch<CalibrationRead[]>(`/api/printers/${encode(printerId)}/calibration`),
+    queryFn: () => apiFetch<CalibrationRead[]>(`/api/v1/printers/${encode(printerId)}/calibration`),
   });
 
 export function useSaveCalibration(printerId: string) {
@@ -81,7 +81,7 @@ export function calibrationPdfUrl(
 export const useCapabilities = (printerId: string) =>
   useQuery({
     queryKey: capabilitiesKey(printerId),
-    queryFn: () => apiFetch<Capabilities>(`/api/printers/${encode(printerId)}/capabilities`),
+    queryFn: () => apiFetch<Capabilities>(`/api/v1/printers/${encode(printerId)}/capabilities`),
     // A screen that has not chosen a printer yet passes "" and asks for nothing.
     enabled: printerId !== "",
   });

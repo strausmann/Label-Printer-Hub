@@ -6,8 +6,8 @@ import { CART_KEY, reloadCart } from "../../lookup/cart";
 import { mockApi, PAGE_PRINTER, PRINTER_A, respond, SHEET_TYPE, pageStatus, sheetRead, type Call } from "../../test-api";
 import { BATCH, JOB, NEW_9, P, USED_17, body, conflict, pick, previewFor, previewPage, reason, routes, sheet } from "./testkit";
 
-const PREVIEW = `/api/print/${P}/sheet/preview`;
-const PRINT = `/api/print/${P}/sheet`;
+const PREVIEW = `/api/v1/print/${P}/sheet/preview`;
+const PRINT = `/api/v1/print/${P}/sheet`;
 
 // The preview is requested 400 ms after the last change (PREVIEW_DEBOUNCE_MS), so every
 // findBy that waits for it starts with a 400 ms real-time wait inside the default 1 s window.
@@ -75,7 +75,7 @@ describe("the sheet section replaces the tape preview for page printers", () => 
     const { calls } = await itemView(routes(), 1);
     expect(screen.queryByRole("img", { name: "Label preview" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Print now" })).toBeNull();
-    expect(calls.some((c) => c.path === "/api/render/preview")).toBe(false);
+    expect(calls.some((c) => c.path === "/api/v1/render/preview")).toBe(false);
     expect(screen.getByRole("button", { name: "Add to cart" })).toBeVisible();
   });
 
@@ -218,7 +218,7 @@ describe("an archived sheet type", () => {
     localStorage.setItem(`lph.sheetType.${P}`, "OLDTYPE");
     const { calls } = await itemView(routes({ types: [SHEET_TYPE, OLD], sheets: [oldSheet("OLDX-0001", 17)], preview: previewFor("OLDX-0001", NEW_9, USED_17) }));
     // The server leaves archived types out unless asked: the mock cannot, so the question itself is checked.
-    expect(calls.filter((c) => c.path === "/api/sheet-types").every((c) => c.search.includes("include_archived=true"))).toBe(true);
+    expect(calls.filter((c) => c.path === "/api/v1/sheet-types").every((c) => c.search.includes("include_archived=true"))).toBe(true);
     await pressPrint();
     await waitFor(() => expect(body(printCalls(calls).at(-1)!).placements[0]).toMatchObject({ sheet: "OLDX-0001" }));
   });
@@ -259,7 +259,7 @@ describe("an archived sheet type", () => {
       routes({
         types: [SHEET_TYPE, OLD],
         extra: {
-          "GET /api/sheets": () => [taken ? oldSheet("OLDX-0001", 48) : oldSheet("OLDX-0001", 47), sheet("L4736-0001", 17)],
+          "GET /api/v1/sheets": () => [taken ? oldSheet("OLDX-0001", 48) : oldSheet("OLDX-0001", 47), sheet("L4736-0001", 17)],
         },
       }),
       1,
@@ -435,7 +435,7 @@ describe("a picked target belongs to the type it was picked for", () => {
     const { calls } = await itemView(
       routes({
         types: [SHEET_TYPE, OLD],
-        extra: { "GET /api/sheets": () => [oldSheet("OLDX-0001", taken ? 48 : 47), oldSheet("OLDX-0002", taken ? 48 : 47), sheet("L4736-0001", 17)] },
+        extra: { "GET /api/v1/sheets": () => [oldSheet("OLDX-0001", taken ? 48 : 47), oldSheet("OLDX-0002", taken ? 48 : 47), sheet("L4736-0001", 17)] },
       }),
       1,
     );
@@ -465,9 +465,9 @@ describe("a picked target belongs to the type it was picked for", () => {
       routes({
         types: [SHEET_TYPE, OLD],
         extra: {
-          "GET /api/sheets": () => [oldSheet("OLDX-0001", taken ? 48 : 47), oldSheet("OLDX-0002", taken ? 48 : 47), sheet("L4736-0001", 17)],
-          "GET /api/sheets/OLDX-0001": () => oldRead("OLDX-0001", taken ? 48 : 47),
-          "GET /api/sheets/OLDX-0002": () => oldRead("OLDX-0002", taken ? 48 : 47),
+          "GET /api/v1/sheets": () => [oldSheet("OLDX-0001", taken ? 48 : 47), oldSheet("OLDX-0002", taken ? 48 : 47), sheet("L4736-0001", 17)],
+          "GET /api/v1/sheets/OLDX-0001": () => oldRead("OLDX-0001", taken ? 48 : 47),
+          "GET /api/v1/sheets/OLDX-0002": () => oldRead("OLDX-0002", taken ? 48 : 47),
         },
       }),
     );
@@ -489,7 +489,7 @@ describe("a picked target belongs to the type it was picked for", () => {
   it("a picked new sheet on a type that is not archived stays the target while the type does not change", async () => {
     const { stream, ready } = fakeStream();
     let used = 17;
-    const { calls } = await itemView(routes({ extra: { "GET /api/sheets": () => [sheet("L4736-0001", used)] } }), 1);
+    const { calls } = await itemView(routes({ extra: { "GET /api/v1/sheets": () => [sheet("L4736-0001", used)] } }), 1);
     await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /New .* sheet/ }));
     await waitFor(() => expect(lastPlacements(calls)).toEqual([{ new_sheet: { type: "L4736REV", id_placement: "margin" }, cells: "first_free" }]));
@@ -603,10 +603,10 @@ describe("a scanned code", () => {
   });
 
   it.each([
-    ["another type", "sheet:L4736-0020", { "GET /api/sheets/L4736-0020": { ...sheet("L4736-0020", 3), type_key: "other-type", type_label: "Other" } }, /not a sheet of this type/],
-    ["a discarded sheet", "sheet:L4736-0021", { "GET /api/sheets/L4736-0021": { ...sheet("L4736-0021", 3), state: "discarded" } }, /is discarded/],
-    ["a full sheet", "sheet:L4736-0022", { "GET /api/sheets/L4736-0022": sheet("L4736-0022", 48) }, /no free cell/],
-    ["an unknown code", "sheet:L4736-0023", { "GET /api/sheets/L4736-0023": respond(404, { detail: { error_code: "sheet_not_found", error_message: "no" } }) }, /does not know/],
+    ["another type", "sheet:L4736-0020", { "GET /api/v1/sheets/L4736-0020": { ...sheet("L4736-0020", 3), type_key: "other-type", type_label: "Other" } }, /not a sheet of this type/],
+    ["a discarded sheet", "sheet:L4736-0021", { "GET /api/v1/sheets/L4736-0021": { ...sheet("L4736-0021", 3), state: "discarded" } }, /is discarded/],
+    ["a full sheet", "sheet:L4736-0022", { "GET /api/v1/sheets/L4736-0022": sheet("L4736-0022", 48) }, /no free cell/],
+    ["an unknown code", "sheet:L4736-0023", { "GET /api/v1/sheets/L4736-0023": respond(404, { detail: { error_code: "sheet_not_found", error_message: "no" } }) }, /does not know/],
   ])("explains why %s cannot be used and keeps the selection", async (_n, text, extra, words) => {
     const { calls } = await scan(text, extra);
     const note = await screen.findByRole("alert");
@@ -954,7 +954,7 @@ describe("failures are words", () => {
 
 describe("the cart", () => {
   it("makes one label per copy and clears the cart only after the hub accepted it", async () => {
-    const { calls } = await cartView("/cart?sheet=L4736-0001", [LINE("7", 2), LINE("9", 3)], routes({ extra: { "GET /api/lookup/grocy/9": { ...{ app: "grocy", id: "9", name: "Item 9", url: "https://g.example.invalid/9", extra: {} } } } }));
+    const { calls } = await cartView("/cart?sheet=L4736-0001", [LINE("7", 2), LINE("9", 3)], routes({ extra: { "GET /api/v1/lookup/grocy/9": { ...{ app: "grocy", id: "9", name: "Item 9", url: "https://g.example.invalid/9", extra: {} } } } }));
     await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
     const request = body(previews(calls)[0]!);
     expect(request.items).toHaveLength(5);

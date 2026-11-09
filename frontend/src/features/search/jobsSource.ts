@@ -21,7 +21,7 @@ export const jobsSource: SearchSource = {
     if (!ID_PREFIX.test(q)) return [];
     const jobs = await queryClient.fetchQuery({
       queryKey: ["jobs", "search"],
-      queryFn: () => apiFetch<Job[]>(`/api/jobs?limit=${SEARCH_LIMIT}`),
+      queryFn: () => apiFetch<Job[]>(`/api/v1/jobs?limit=${SEARCH_LIMIT}`),
       staleTime: 5_000,
     });
     const group = i18n._(msg`Jobs`);

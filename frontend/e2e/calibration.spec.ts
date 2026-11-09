@@ -10,13 +10,13 @@ const noSideScroll = (page: Page) => page.evaluate(() => document.documentElemen
 const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
 
 async function printerId(page: Page): Promise<string> {
-  const printers = (await (await page.request.get("/api/printers")).json()) as Array<{ id: string; name: string }>;
+  const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string }>;
   return printers.find((p) => p.name === PRINTER)!.id;
 }
 
 /** What the capabilities say about the tray (the endpoint the print dialog reads). */
 async function trayCalibration(page: Page, id: string) {
-  const caps = (await (await page.request.get(`/api/printers/${id}/capabilities`)).json()) as {
+  const caps = (await (await page.request.get(`/api/v1/printers/${id}/capabilities`)).json()) as {
     trays: Array<{ key: string; calibration: { offset_x_mm: number | null; offset_y_mm: number | null } | null }>;
   };
   return caps.trays.find((t) => t.key === TRAY)!.calibration;
@@ -24,7 +24,7 @@ async function trayCalibration(page: Page, id: string) {
 const hasCorrection = (c: { offset_x_mm: number | null; offset_y_mm: number | null } | null) => !!c && (c.offset_x_mm != null || c.offset_y_mm != null);
 
 async function jobsOf(page: Page, id: string): Promise<string[]> {
-  const jobs = (await (await page.request.get("/api/jobs")).json()) as Array<{ id: string; printer_id: string }>;
+  const jobs = (await (await page.request.get("/api/v1/jobs")).json()) as Array<{ id: string; printer_id: string }>;
   return jobs.filter((j) => j.printer_id === id).map((j) => j.id);
 }
 
@@ -143,7 +143,7 @@ test.describe.serial("calibration", () => {
           const session = await (await fetch("/api/v1/auth/session")).json();
           return (await fetch(p as string, { method: "DELETE", headers: { "X-CSRF-Token": session.csrf_token } })).status;
         },
-        [`/api/printers/${id}/calibration/${TRAY}`] as const,
+        [`/api/v1/printers/${id}/calibration/${TRAY}`] as const,
       );
       // Not asserted here: a failing check in `finally` would replace the error of the test body. The state is asserted below.
       void status;
@@ -167,11 +167,11 @@ test.describe.serial("calibration", () => {
         // Worst case: a printer name and a sheet type that are as long as the hub accepts, and a
         // tray without a correction; the answers are the real ones with the names stretched.
         const long = "Büro-Laserdrucker im Erdgeschoss neben dem Besprechungsraum der Geschäftsführung";
-        await page.route("**/api/printers", async (route) => {
+        await page.route("**/api/v1/printers", async (route) => {
           const list = (await (await route.fetch()).json()) as Array<{ id: string; name: string }>;
           await route.fulfill({ json: list.map((p) => (p.id === id ? { ...p, name: long } : p)) });
         });
-        await page.route("**/api/sheet-types", async (route) => {
+        await page.route("**/api/v1/sheet-types", async (route) => {
           const list = (await (await route.fetch()).json()) as Array<{ key: string; vendor: string | null }>;
           await route.fulfill({ json: list.map((t) => (t.key === TYPE ? { ...t, vendor: "Zweckform Etiketten und Bürobedarf Vertriebsgesellschaft" } : t)) });
         });
@@ -182,9 +182,9 @@ test.describe.serial("calibration", () => {
         await shot("calibration-empty");
 
         // A fitted result with a flagged reading, the signs, and the stored values.
-        await page.unroute("**/api/printers");
-        await page.unroute("**/api/sheet-types");
-        await page.route(`**/api/printers/${id}/calibration/${TRAY}/fit`, (route) =>
+        await page.unroute("**/api/v1/printers");
+        await page.unroute("**/api/v1/sheet-types");
+        await page.route(`**/api/v1/printers/${id}/calibration/${TRAY}/fit`, (route) =>
           route.fulfill({
             json: {
               values: { offset_x_mm: 0.35, offset_y_mm: -0.15, scale_x: 1.0012, scale_y: 0.9995, rotation_deg: 0.03 },
@@ -209,7 +209,7 @@ test.describe.serial("calibration", () => {
         expect(flag!.x + flag!.width).toBeLessThanOrEqual(size.width);
         expect(await noSideScroll(page)).toBe(true);
         await shot("calibration-fitted");
-        await page.unroute(`**/api/printers/${id}/calibration/${TRAY}/fit`);
+        await page.unroute(`**/api/v1/printers/${id}/calibration/${TRAY}/fit`);
       });
     }
   }

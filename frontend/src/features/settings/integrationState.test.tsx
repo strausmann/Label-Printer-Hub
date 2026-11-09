@@ -14,7 +14,7 @@ const CONFIGURED = [
 ];
 
 async function openGrocy(testResult: unknown, language: "en" | "de" = "en") {
-  mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: testResult });
+  mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/v1/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: testResult });
   await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED }, language });
   return screen.findByRole("group", { name: "Grocy" });
 }
@@ -40,7 +40,7 @@ describe("integration card state (#176)", () => {
   });
 
   it("an integration that is not configured keeps 'Not set up'", async () => {
-    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/admin/api-keys": [] });
+    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/v1/admin/api-keys": [] });
     await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED } });
     const spool = await screen.findByRole("group", { name: "Spoolman" });
     expect(within(spool).getByText("Not set up")).toBeVisible();
@@ -95,7 +95,7 @@ describe("integration card state (#176)", () => {
 describe("a test result belongs to the configuration it tested", () => {
   it("is dropped when the settings refresh with another saved URL (e.g. saved in another tab)", async () => {
     let saved = settingsList();
-    mockApi({ "GET /api/v1/settings": () => saved, "GET /api/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: { ok: true, status: 200, detail: "ok" } });
+    mockApi({ "GET /api/v1/settings": () => saved, "GET /api/v1/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: { ok: true, status: 200, detail: "ok" } });
     const { queryClient } = await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED } });
     const card = await screen.findByRole("group", { name: "Grocy" });
     await userEvent.click(testButton(card));
@@ -115,7 +115,7 @@ describe("a test result belongs to the configuration it tested", () => {
 describe("a refresh of any tested value drops the result", () => {
   it("drops it when only the timeout changed elsewhere", async () => {
     let saved = settingsList();
-    mockApi({ "GET /api/v1/settings": () => saved, "GET /api/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: { ok: true, status: 200, detail: "ok" } });
+    mockApi({ "GET /api/v1/settings": () => saved, "GET /api/v1/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: { ok: true, status: 200, detail: "ok" } });
     const { queryClient } = await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED } });
     const card = await screen.findByRole("group", { name: "Grocy" });
     await userEvent.click(testButton(card));
@@ -132,7 +132,7 @@ describe("a refresh of any tested value drops the result", () => {
 
   it("drops it when a secret appears elsewhere", async () => {
     let saved = settingsList();
-    mockApi({ "GET /api/v1/settings": () => saved, "GET /api/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: { ok: false, status: 401, detail: "HTTP 401" } });
+    mockApi({ "GET /api/v1/settings": () => saved, "GET /api/v1/admin/api-keys": [KEY_ADMIN], [TEST_PATH]: { ok: false, status: 401, detail: "HTTP 401" } });
     const { queryClient } = await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED } });
     const card = await screen.findByRole("group", { name: "Grocy" });
     await userEvent.click(testButton(card));
@@ -157,7 +157,7 @@ describe("an error or a running test belongs to its configuration too", () => {
     let saved = settingsList();
     mockApi({
       "GET /api/v1/settings": () => saved,
-      "GET /api/admin/api-keys": [KEY_ADMIN],
+      "GET /api/v1/admin/api-keys": [KEY_ADMIN],
       [TEST_PATH]: () => respond(400, { error_code: "secret_required_for_new_url", error_message: "enter the secret again" }),
     });
     const { queryClient } = await renderApp({ path: "/settings/integrations", info: { integrations: CONFIGURED } });
@@ -172,7 +172,7 @@ describe("an error or a running test belongs to its configuration too", () => {
 
   it("a test still running for the old configuration neither blocks the button nor lands afterwards", async () => {
     let saved = settingsList();
-    const { fetchMock } = mockApi({ "GET /api/v1/settings": () => saved, "GET /api/admin/api-keys": [KEY_ADMIN] });
+    const { fetchMock } = mockApi({ "GET /api/v1/settings": () => saved, "GET /api/v1/admin/api-keys": [KEY_ADMIN] });
     const original = fetchMock.getMockImplementation()!;
     let finish: (r: Response) => void = () => undefined;
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {

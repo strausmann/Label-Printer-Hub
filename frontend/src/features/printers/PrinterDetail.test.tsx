@@ -11,9 +11,9 @@ const R = "bbbbbbbb-0000-4000-8000-000000000002";
 
 function routes(printer: Record<string, unknown> & { id: string } = PRINTER_A, extra: Record<string, unknown> = {}) {
   return {
-    [`GET /api/printers/${printer.id}`]: printer,
-    [`GET /api/printers/${printer.id}/status`]: status(printer.id),
-    [`GET /api/printers/${printer.id}/queue`]: [
+    [`GET /api/v1/printers/${printer.id}`]: printer,
+    [`GET /api/v1/printers/${printer.id}/status`]: status(printer.id),
+    [`GET /api/v1/printers/${printer.id}/queue`]: [
       { ...job(R, printer.id, "printing", { template_key: "run-label" }), created_at: "2026-11-04T09:00:00Z" },
       { ...job(Q, printer.id, "queued", { template_key: "wait-label" }), created_at: "2026-11-04T09:01:00Z" },
     ],
@@ -33,19 +33,19 @@ describe("PrinterDetail", () => {
   });
 
   it("cancel posts to the job with the CSRF header", async () => {
-    const { calls } = mockApi(routes(PRINTER_A, { [`POST /api/jobs/${Q}/cancel`]: job(Q, PRINTER_A.id, "cancelled") }));
+    const { calls } = mockApi(routes(PRINTER_A, { [`POST /api/v1/jobs/${Q}/cancel`]: job(Q, PRINTER_A.id, "cancelled") }));
     await renderApp({ path: `/printers/${PRINTER_A.id}` });
     await userEvent.click(await screen.findByRole("button", { name: "Cancel wait-label" }));
-    await waitFor(() => expect(calls.some((c) => c.path === `/api/jobs/${Q}/cancel`)).toBe(true));
+    await waitFor(() => expect(calls.some((c) => c.path === `/api/v1/jobs/${Q}/cancel`)).toBe(true));
   });
 
   it("pause posts with CSRF header", async () => {
-    const { calls } = mockApi(routes(PRINTER_A, { [`POST /api/printers/${PRINTER_A.id}/pause`]: null }));
+    const { calls } = mockApi(routes(PRINTER_A, { [`POST /api/v1/printers/${PRINTER_A.id}/pause`]: null }));
     await renderApp({ path: `/printers/${PRINTER_A.id}` });
     await userEvent.click(await screen.findByRole("button", { name: "Pause" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
     const post = calls.find((c) => c.method === "POST")!;
-    expect(post.path).toBe(`/api/printers/${PRINTER_A.id}/pause`);
+    expect(post.path).toBe(`/api/v1/printers/${PRINTER_A.id}/pause`);
     expect(post.headers.get("X-CSRF-Token")).toBe("csrf-test");
   });
 
@@ -103,7 +103,7 @@ describe("PrinterDetail", () => {
   });
 
   it("says when the queue is empty and when the printer is unknown", async () => {
-    mockApi(routes(PRINTER_A, { [`GET /api/printers/${PRINTER_A.id}/queue`]: [] }));
+    mockApi(routes(PRINTER_A, { [`GET /api/v1/printers/${PRINTER_A.id}/queue`]: [] }));
     await renderApp({ path: `/printers/${PRINTER_A.id}` });
     expect(await screen.findByText("Nothing is waiting.")).toBeVisible();
   });
@@ -115,7 +115,7 @@ describe("PrinterDetail", () => {
   });
 
   it("clears the queue only after a confirmation", async () => {
-    const { calls } = mockApi(routes(PRINTER_A, { [`POST /api/printers/${PRINTER_A.id}/queue/clear`]: null }));
+    const { calls } = mockApi(routes(PRINTER_A, { [`POST /api/v1/printers/${PRINTER_A.id}/queue/clear`]: null }));
     await renderApp({ path: `/printers/${PRINTER_A.id}` });
     await userEvent.click(await screen.findByRole("button", { name: "Clear queue" }));
     expect(calls.some((c) => c.path.endsWith("/queue/clear"))).toBe(false);

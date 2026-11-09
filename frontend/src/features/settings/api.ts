@@ -22,7 +22,7 @@ export const apiKeysKey = ["admin", "api-keys"] as const;
 export const useSettings = () =>
   useQuery({ queryKey: settingsKey, queryFn: () => apiFetch<SettingView[]>("/api/v1/settings") });
 
-/** PUT only what changed. The answer is the fresh list; the sidebar's integration entries follow `/api/info`. */
+/** PUT only what changed. The answer is the fresh list; the sidebar's integration entries follow `/api/v1/info`. */
 export function useSaveSettings() {
   const client = useQueryClient();
   return useMutation({
@@ -80,7 +80,7 @@ export const useProbeIpp = () =>
   });
 
 export const useApiKeys = () =>
-  useQuery({ queryKey: apiKeysKey, queryFn: () => apiFetch<ApiKey[]>("/api/admin/api-keys") });
+  useQuery({ queryKey: apiKeysKey, queryFn: () => apiFetch<ApiKey[]>("/api/v1/admin/api-keys") });
 
 export function useApiKeyAdmin() {
   const client = useQueryClient();
@@ -88,11 +88,11 @@ export function useApiKeyAdmin() {
   return {
     create: useMutation({
       mutationFn: (body: { name: string; scopes: string[] }) =>
-        apiFetch<ApiKeyCreated>("/api/admin/api-keys", { method: "POST", json: body }),
+        apiFetch<ApiKeyCreated>("/api/v1/admin/api-keys", { method: "POST", json: body }),
       onSuccess: done,
     }),
     revoke: useMutation({
-      mutationFn: (id: string) => apiFetch<void>(`/api/admin/api-keys/${id}`, { method: "DELETE" }),
+      mutationFn: (id: string) => apiFetch<void>(`/api/v1/admin/api-keys/${id}`, { method: "DELETE" }),
       onSuccess: done,
     }),
   };

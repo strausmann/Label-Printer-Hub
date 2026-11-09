@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/api/admin/api-keys": {
+    "/api/v1/admin/api-keys": {
         parameters: {
             query?: never;
             header?: never;
@@ -15,20 +15,20 @@ export interface paths {
          * List all API keys
          * @description Returns metadata for all API keys. key_hash and plaintext are never included.
          */
-        get: operations["list_api_keys_api_admin_api_keys_get"];
+        get: operations["list_api_keys_api_v1_admin_api_keys_get"];
         put?: never;
         /**
          * Create a new API key
          * @description Creates a new API key. The ``plaintext`` field in the response is the full key — it is shown ONCE and never stored. Copy it before closing this response. Subsequent GETs return only the prefix.
          */
-        post: operations["create_api_key_api_admin_api_keys_post"];
+        post: operations["create_api_key_api_v1_admin_api_keys_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/api-keys/{key_id}": {
+    "/api/v1/admin/api-keys/{key_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -39,848 +39,21 @@ export interface paths {
          * Get API key metadata
          * @description Returns metadata for a single API key. key_hash and plaintext are never included.
          */
-        get: operations["get_api_key_api_admin_api_keys__key_id__get"];
+        get: operations["get_api_key_api_v1_admin_api_keys__key_id__get"];
         put?: never;
         post?: never;
         /**
          * Revoke an API key
          * @description Sets ``enabled = False``. The key will be rejected on next use. The row is kept for audit purposes (jobs referencing this key_id remain intact).
          */
-        delete: operations["revoke_api_key_api_admin_api_keys__key_id__delete"];
+        delete: operations["revoke_api_key_api_v1_admin_api_keys__key_id__delete"];
         options?: never;
         head?: never;
         /**
          * Update API key metadata
          * @description Update ``enabled``, ``rate_limit_per_minute``, ``notes``, or ``allowed_printer_ids``. Cannot change scopes or the key value itself — revoke and recreate for that.
          */
-        patch: operations["update_api_key_api_admin_api_keys__key_id__patch"];
-        trace?: never;
-    };
-    "/api/batches/{batch_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Batch
-         * @description Snapshot eines Batches + aller aktuellen Job-States.
-         *
-         *     Wird von Hangar's /admin/print/result/{batch_id} für das initiale
-         *     Rendering genutzt. summary.all_terminal == False bedeutet, dass Hangar
-         *     den JSON-Stream /api/v1/events verfolgen sollte für
-         *     Live-Updates.
-         */
-        get: operations["get_batch_api_batches__batch_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/info": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Info */
-        get: operations["get_info_api_info_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List jobs
-         * @description Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).
-         */
-        get: operations["list_jobs_api_jobs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{job_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get a single job
-         * @description Return the full job record for the given UUID.  Returns 404 if not found.
-         */
-        get: operations["get_job_api_jobs__job_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{job_id}/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Cancel a queued job
-         * @description Cancels a job that is in ``queued`` state.  Returns 409 ProblemDetail when the job is in ``printing`` (or any other non-QUEUED) state — mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Exception: a page job (IPP printer) that the printer already holds is cancelled at the printer: the hub sends Cancel-Job and answers ``202`` with the job still ``printing``; the job ends ``cancelled`` (or ``failed``/``interrupted`` when the page had started) once the printer confirms.
-         */
-        post: operations["cancel_job_api_jobs__job_id__cancel_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{job_id}/pause": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Pause a job (not yet implemented)
-         * @description Placeholder — returns 501 ProblemDetail.  Mid-job pause will be implemented when the queue worker gains control-plane support for pausing an in-progress raster stream.  This endpoint exists so the Phase 7 UI can wire to a stable URL.
-         */
-        post: operations["pause_job_api_jobs__job_id__pause_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{job_id}/resume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Resume a paused job (not yet implemented)
-         * @description Placeholder — returns 501 ProblemDetail.  Resume will be implemented alongside pause in a later phase.  This endpoint exists so the Phase 7 UI can wire to a stable URL.
-         */
-        post: operations["resume_job_api_jobs__job_id__resume_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/jobs/{job_id}/retry": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Retry a failed job
-         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from its payload, so retry prints the same page again with its original calibration snapshot and date; a fresh check print with the current calibration is a new calibration-page request.  A sheet page is retried onto the same cells of the same sheet as a new job, with a fresh calibration snapshot and the margin ID and feed mark decided again for the printer.  It answers 409 ``job_not_retryable`` for a ``done`` job (or an ID-only job whose ID was printed since), 409 ``cells_unconfirmed`` while a cell of the job waits for confirmation, 409 ``cells_taken`` (with the cell numbers) when a cell is no longer free, 409 ``printer_disabled`` for a disabled printer (a calibration page too), 422 ``tray_unknown`` when the tray was removed or disabled since, and 409 ``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of these cases.
-         */
-        post: operations["retry_job_api_jobs__job_id__retry_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/lookup/{app}/{entity_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Resolve an integration entity
-         * @description Looks up an entity from the given integration app by its identifier.  ``app`` must be one of ``snipeit``, ``grocy``, or ``spoolman`` — an unsupported value returns 422.  Returns 404 ProblemDetail when the entity does not exist in the integration's backend.  The ``url`` field is the deep-link to the entity in the integration's own web UI, suitable for embedding in a QR code or label.
-         */
-        get: operations["lookup_api_lookup__app___entity_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/print/{printer_key}/batch": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Submit a batch of print jobs
-         * @description Atomic batch print. Validates all items and enqueues the entire batch as a unit — no per-item errors are returned. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch.
-         */
-        post: operations["create_batch_api_print__printer_key__batch_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/print/{printer_key}/sheet": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Print labels onto sheets
-         * @description Reserves the cells for the items and queues one page job per planned page; the cells turn `used` when a page has printed. Send the preview's `expected_cells` to be refused (`plan_changed`) if the plan moved since. Nothing is reserved if an item fails: a lookup, or a cell that cannot show the item (the error names `item_index`). A sheet job has no copies. The response names the job of each page, where its sheet ID and feed-direction mark are printed, and one batch id for all of them.
-         */
-        post: operations["print_sheet_api_print__printer_key__sheet_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/print/{printer_key}/sheet/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Preview a sheet print
-         * @description Plans where the items would go and draws them, without reserving or printing anything. Per page: every cell with its state, a 150 dpi PNG of the new content only, whether the sheet ID and the feed-direction mark are printed, and where. Also the cells left free, the plan to send back as `expected_cells`, and where lookup items were printed before. The picture is never calibrated. Only page (IPP) printers print sheets. A plan of more than 10 pages is refused (`preview_too_large`).
-         */
-        post: operations["preview_sheet_print_api_print__printer_key__sheet_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List all printers
-         * @description Returns every registered printer.  The ``paused`` flag is joined from ``printer_state``; it is ``false`` when no state row exists yet.  Pass ``?slug=<slug>`` to filter to a single printer by exact slug match (returns 404 when no printer with that slug exists).
-         */
-        get: operations["list_printers_api_printers_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get printer detail
-         * @description Returns full metadata for a single printer, including the ``paused`` flag joined from ``printer_state``. Returns 404 when the printer is not registered.
-         */
-        get: operations["get_printer_api_printers__printer_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/calibration": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Calibration of every enabled tray */
-        get: operations["get_calibration_api_printers__printer_id__calibration_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/calibration/{tray}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Set the manual calibration of a tray */
-        put: operations["put_calibration_api_printers__printer_id__calibration__tray__put"];
-        post?: never;
-        /** Reset a tray to no calibration */
-        delete: operations["delete_calibration_api_printers__printer_id__calibration__tray__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/calibration/{tray}/fit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Fit calibration values from measured readings (nothing is saved) */
-        post: operations["fit_calibration_api_printers__printer_id__calibration__tray__fit_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/calibration/{tray}/page": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Print the calibration page (no sheet is created) */
-        post: operations["print_calibration_page_api_printers__printer_id__calibration__tray__page_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/calibration/{tray}/page/pdf": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Download the calibration page as a PDF */
-        get: operations["download_calibration_page_api_printers__printer_id__calibration__tray__page_pdf_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/capabilities": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Capabilities of a tape or page printer (cache only)
-         * @description Resolution, media, trays with their calibration and accepted document formats. Served from the status cache: the printer is never contacted, so a printer that has not been probed yet answers 200 with ``media`` and ``captured_at`` null. No connection detail is part of the answer. A page printer that never answered a probe is reported as unknown (``media``, ``document_formats`` and ``captured_at`` null). A tape width without a geometry entry also gives ``media`` null. Only enabled trays carry a calibration.
-         */
-        get: operations["get_capabilities_api_printers__printer_id__capabilities_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/pause": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Pause job dispatch for a printer
-         * @description Sets ``printer_state.paused = true`` and pauses the queue worker.  New jobs can still be queued but the worker will not dispatch them until the printer is resumed.  Idempotent — pausing an already-paused printer returns 204 without error.
-         */
-        post: operations["pause_printer_api_printers__printer_id__pause_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/queue": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the active job queue for a printer
-         * @description Returns all jobs in ``queued`` or ``printing`` state for this printer, ordered by creation time.
-         */
-        get: operations["get_printer_queue_api_printers__printer_id__queue_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/queue/clear": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Cancel all queued jobs for a printer
-         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire; a page job the IPP printer already holds is left to finish as well (cancel it with ``POST /api/jobs/{id}/cancel``).  Returns 204 even when there are no queued jobs.
-         */
-        post: operations["clear_printer_queue_api_printers__printer_id__queue_clear_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/resume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Resume job dispatch for a printer
-         * @description Sets ``printer_state.paused = false`` and releases the queue worker, including an automatic pause after a printer error.  Idempotent — resuming an already-active printer returns 204 without error.
-         */
-        post: operations["resume_printer_api_printers__printer_id__resume_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Return the latest cached printer status
-         * @description Returns the most recent status written by the background probe worker (SNMP for tape printers, IPP for page printers; page printers add ``kind``, ``printer_state``, reasons, markers, trays and ``jobs_ahead``). The response is served from ``printer_status_cache`` — no synchronous SNMP probe is performed, so the response always returns in <10 ms. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Returns 404 when the printer is not registered.
-         */
-        get: operations["get_printer_status_api_printers__printer_id__status_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/printers/{printer_id}/tape": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get the current tape spec
-         * @description Returns the tape specification for the tape currently loaded in the printer, derived from the cached status block.  Returns 404 if the printer has no cached status or no tape is loaded.
-         */
-        get: operations["get_printer_tape_api_printers__printer_id__tape_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/render/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Render a label preview as PNG
-         * @description Render a label using the LayoutEngine and return the result as a PNG image (no printer interaction, no job created).  Useful for UI preview and debugging.  Returns 422 when ``data`` is missing fields required by ``content_type``.  Returns 409 when ``tape_mm`` is not a supported tape width.
-         */
-        post: operations["render_preview_api_render_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheet-cells": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Where an integration item was printed before, newest first */
-        get: operations["find_cells_api_sheet_cells_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheet-types": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List sheet types */
-        get: operations["list_sheet_types_api_sheet_types_get"];
-        put?: never;
-        /** Create a sheet type with version 1 */
-        post: operations["create_sheet_type_api_sheet_types_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheet-types/import": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Import a sheet type document */
-        post: operations["import_sheet_type_api_sheet_types_import_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheet-types/{key}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** One sheet type with its versions */
-        get: operations["get_sheet_type_api_sheet_types__key__get"];
-        put?: never;
-        post?: never;
-        /** Delete a custom sheet type without sheets */
-        delete: operations["delete_sheet_type_api_sheet_types__key__delete"];
-        options?: never;
-        head?: never;
-        /** Edit the non-geometric fields of a sheet type */
-        patch: operations["patch_sheet_type_api_sheet_types__key__patch"];
-        trace?: never;
-    };
-    "/api/sheet-types/{key}/archive": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Archive a sheet type */
-        post: operations["archive_sheet_type_api_sheet_types__key__archive_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheet-types/{key}/export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Export one version of a sheet type as a JSON document */
-        get: operations["export_sheet_type_api_sheet_types__key__export_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheet-types/{key}/unarchive": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Restore an archived sheet type */
-        post: operations["unarchive_sheet_type_api_sheet_types__key__unarchive_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheet-types/{key}/versions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Add a version with new geometry */
-        post: operations["add_sheet_type_version_api_sheet_types__key__versions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheet-types/{key}/versions/{n}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** One version of a sheet type */
-        get: operations["get_sheet_type_version_api_sheet_types__key__versions__n__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List sheets */
-        get: operations["list_sheets_api_sheets_get"];
-        put?: never;
-        /**
-         * Create a sheet, with the cells already used marked by hand
-         * @description `id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also reserves the first free cell for the sheet ID label and queues an ID-only job on the named page printer; `job_id` names it. If the job cannot be queued, the sheet stays without a reservation and the ID goes onto the next job's first free cell; the error names the sheet in `error_detail.sheet_code`.
-         */
-        post: operations["create_sheet_api_sheets_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheets/margin-check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Where the margin ID and the feed mark of a new sheet would go on a printer
-         * @description What the first job of a new sheet of the type would do on this printer and tray: the band and corner of the margin ID, whether a QR is drawn next to it, and whether the feed-direction mark prints (in the hub's current language). `printable=false` means no margin band is deep enough: the sheet can still be created and the ID added by hand. Read-only.
-         */
-        get: operations["margin_check_api_sheets_margin_check_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheets/next-code": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** The code a new sheet of a type would probably get */
-        get: operations["next_code_api_sheets_next_code_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheets/{code}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** One sheet with all cells that are not free (discarded sheets too) */
-        get: operations["get_sheet_api_sheets__code__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheets/{code}/cells/mark": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Mark free cells as used by hand */
-        post: operations["mark_cells_api_sheets__code__cells_mark_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheets/{code}/cells/resolve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Settle cells waiting for confirmation as printed or not printed */
-        post: operations["resolve_cells_api_sheets__code__cells_resolve_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheets/{code}/cells/unmark": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Free cells that were marked by hand */
-        post: operations["unmark_cells_api_sheets__code__cells_unmark_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sheets/{code}/discard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Discard a sheet; its code is never issued again */
-        post: operations["discard_sheet_api_sheets__code__discard_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
+        patch: operations["update_api_key_api_v1_admin_api_keys__key_id__patch"];
         trace?: never;
     };
     "/api/v1/admin/printers": {
@@ -1019,6 +192,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/batches/{batch_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Batch
+         * @description Snapshot eines Batches + aller aktuellen Job-States.
+         *
+         *     Wird von Hangar's /admin/print/result/{batch_id} für das initiale
+         *     Rendering genutzt. summary.all_terminal == False bedeutet, dass Hangar
+         *     den JSON-Stream /api/v1/events verfolgen sollte für
+         *     Live-Updates.
+         */
+        get: operations["get_batch_api_v1_batches__batch_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events": {
         parameters: {
             query?: never;
@@ -1033,6 +231,549 @@ export interface paths {
         get: operations["stream_events_api_v1_events_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Info */
+        get: operations["get_info_api_v1_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List jobs
+         * @description Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).
+         */
+        get: operations["list_jobs_api_v1_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a single job
+         * @description Return the full job record for the given UUID.  Returns 404 if not found.
+         */
+        get: operations["get_job_api_v1_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a queued job
+         * @description Cancels a job that is in ``queued`` state.  Returns 409 ProblemDetail when the job is in ``printing`` (or any other non-QUEUED) state — mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire.  Exception: a page job (IPP printer) that the printer already holds is cancelled at the printer: the hub sends Cancel-Job and answers ``202`` with the job still ``printing``; the job ends ``cancelled`` (or ``failed``/``interrupted`` when the page had started) once the printer confirms.
+         */
+        post: operations["cancel_job_api_v1_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause a job (not yet implemented)
+         * @description Placeholder — returns 501 ProblemDetail.  Mid-job pause will be implemented when the queue worker gains control-plane support for pausing an in-progress raster stream.  This endpoint exists so the Phase 7 UI can wire to a stable URL.
+         */
+        post: operations["pause_job_api_v1_jobs__job_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a paused job (not yet implemented)
+         * @description Placeholder — returns 501 ProblemDetail.  Resume will be implemented alongside pause in a later phase.  This endpoint exists so the Phase 7 UI can wire to a stable URL.
+         */
+        post: operations["resume_job_api_v1_jobs__job_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry a failed job
+         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from its payload, so retry prints the same page again with its original calibration snapshot and date; a fresh check print with the current calibration is a new calibration-page request.  A sheet page is retried onto the same cells of the same sheet as a new job, with a fresh calibration snapshot and the margin ID and feed mark decided again for the printer.  It answers 409 ``job_not_retryable`` for a ``done`` job (or an ID-only job whose ID was printed since), 409 ``cells_unconfirmed`` while a cell of the job waits for confirmation, 409 ``cells_taken`` (with the cell numbers) when a cell is no longer free, 409 ``printer_disabled`` for a disabled printer (a calibration page too), 422 ``tray_unknown`` when the tray was removed or disabled since, and 409 ``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of these cases.
+         */
+        post: operations["retry_job_api_v1_jobs__job_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lookup/{app}/{entity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve an integration entity
+         * @description Looks up an entity from the given integration app by its identifier.  ``app`` must be one of ``snipeit``, ``grocy``, or ``spoolman`` — an unsupported value returns 422.  Returns 404 ProblemDetail when the entity does not exist in the integration's backend.  The ``url`` field is the deep-link to the entity in the integration's own web UI, suitable for embedding in a QR code or label.
+         */
+        get: operations["lookup_api_v1_lookup__app___entity_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/print": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a print job
+         * @description Submit a label-print job.  The job is queued and dispatched asynchronously by the queue worker.  Returns 202 with the new job's UUID and state ``queued``.  Returns 4xx/5xx on printer errors (tape mismatch, offline, cover open, etc.).
+         */
+        post: operations["create_print_job_api_v1_print_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/print/{printer_key}/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a batch of print jobs
+         * @description Atomic batch print. Validates all items and enqueues the entire batch as a unit — no per-item errors are returned. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch.
+         */
+        post: operations["create_batch_api_v1_print__printer_key__batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/print/{printer_key}/sheet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Print labels onto sheets
+         * @description Reserves the cells for the items and queues one page job per planned page; the cells turn `used` when a page has printed. Send the preview's `expected_cells` to be refused (`plan_changed`) if the plan moved since. Nothing is reserved if an item fails: a lookup, or a cell that cannot show the item (the error names `item_index`). A sheet job has no copies. The response names the job of each page, where its sheet ID and feed-direction mark are printed, and one batch id for all of them.
+         */
+        post: operations["print_sheet_api_v1_print__printer_key__sheet_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/print/{printer_key}/sheet/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview a sheet print
+         * @description Plans where the items would go and draws them, without reserving or printing anything. Per page: every cell with its state, a 150 dpi PNG of the new content only, whether the sheet ID and the feed-direction mark are printed, and where. Also the cells left free, the plan to send back as `expected_cells`, and where lookup items were printed before. The picture is never calibrated. Only page (IPP) printers print sheets. A plan of more than 10 pages is refused (`preview_too_large`).
+         */
+        post: operations["preview_sheet_print_api_v1_print__printer_key__sheet_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printer/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume the printer queue
+         * @description Resume the printer queue after a recoverable error halted it (tape empty, cover open, tape mismatch, printer offline).  Returns 200 with the printer ID and state ``active``.  Returns 404 when no printer is configured.  Returns 409 when the printer is already active.
+         */
+        post: operations["resume_printer_api_v1_printer_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all printers
+         * @description Returns every registered printer.  The ``paused`` flag is joined from ``printer_state``; it is ``false`` when no state row exists yet.  Pass ``?slug=<slug>`` to filter to a single printer by exact slug match (returns 404 when no printer with that slug exists).
+         */
+        get: operations["list_printers_api_v1_printers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get printer detail
+         * @description Returns full metadata for a single printer, including the ``paused`` flag joined from ``printer_state``. Returns 404 when the printer is not registered.
+         */
+        get: operations["get_printer_api_v1_printers__printer_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Calibration of every enabled tray */
+        get: operations["get_calibration_api_v1_printers__printer_id__calibration_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/calibration/{tray}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set the manual calibration of a tray */
+        put: operations["put_calibration_api_v1_printers__printer_id__calibration__tray__put"];
+        post?: never;
+        /** Reset a tray to no calibration */
+        delete: operations["delete_calibration_api_v1_printers__printer_id__calibration__tray__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/calibration/{tray}/fit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fit calibration values from measured readings (nothing is saved) */
+        post: operations["fit_calibration_api_v1_printers__printer_id__calibration__tray__fit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/calibration/{tray}/page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Print the calibration page (no sheet is created) */
+        post: operations["print_calibration_page_api_v1_printers__printer_id__calibration__tray__page_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/calibration/{tray}/page/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the calibration page as a PDF */
+        get: operations["download_calibration_page_api_v1_printers__printer_id__calibration__tray__page_pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capabilities of a tape or page printer (cache only)
+         * @description Resolution, media, trays with their calibration and accepted document formats. Served from the status cache: the printer is never contacted, so a printer that has not been probed yet answers 200 with ``media`` and ``captured_at`` null. No connection detail is part of the answer. A page printer that never answered a probe is reported as unknown (``media``, ``document_formats`` and ``captured_at`` null). A tape width without a geometry entry also gives ``media`` null. Only enabled trays carry a calibration.
+         */
+        get: operations["get_capabilities_api_v1_printers__printer_id__capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause job dispatch for a printer
+         * @description Sets ``printer_state.paused = true`` and pauses the queue worker.  New jobs can still be queued but the worker will not dispatch them until the printer is resumed.  Idempotent — pausing an already-paused printer returns 204 without error.
+         */
+        post: operations["pause_printer_api_v1_printers__printer_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the active job queue for a printer
+         * @description Returns all jobs in ``queued`` or ``printing`` state for this printer, ordered by creation time.
+         */
+        get: operations["get_printer_queue_api_v1_printers__printer_id__queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/queue/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel all queued jobs for a printer
+         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire; a page job the IPP printer already holds is left to finish as well (cancel it with ``POST /api/v1/jobs/{id}/cancel``).  Returns 204 even when there are no queued jobs.
+         */
+        post: operations["clear_printer_queue_api_v1_printers__printer_id__queue_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume job dispatch for a printer
+         * @description Sets ``printer_state.paused = false`` and releases the queue worker, including an automatic pause after a printer error.  Idempotent — resuming an already-active printer returns 204 without error.
+         */
+        post: operations["resume_printer_api_v1_printers__printer_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Return the latest cached printer status
+         * @description Returns the most recent status written by the background probe worker (SNMP for tape printers, IPP for page printers; page printers add ``kind``, ``printer_state``, reasons, markers, trays and ``jobs_ahead``). The response is served from ``printer_status_cache`` — no synchronous SNMP probe is performed, so the response always returns in <10 ms. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Returns 404 when the printer is not registered.
+         */
+        get: operations["get_printer_status_api_v1_printers__printer_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/tape": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the current tape spec
+         * @description Returns the tape specification for the tape currently loaded in the printer, derived from the cached status block.  Returns 404 if the printer has no cached status or no tape is loaded.
+         */
+        get: operations["get_printer_tape_api_v1_printers__printer_id__tape_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/render/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Render a label preview as PNG
+         * @description Render a label using the LayoutEngine and return the result as a PNG image (no printer interaction, no job created).  Useful for UI preview and debugging.  Returns 422 when ``data`` is missing fields required by ``content_type``.  Returns 409 when ``tape_mm`` is not a supported tape width.
+         */
+        post: operations["render_preview_api_v1_render_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1091,6 +832,305 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sheet-cells": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where an integration item was printed before, newest first */
+        get: operations["find_cells_api_v1_sheet_cells_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheet-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List sheet types */
+        get: operations["list_sheet_types_api_v1_sheet_types_get"];
+        put?: never;
+        /** Create a sheet type with version 1 */
+        post: operations["create_sheet_type_api_v1_sheet_types_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheet-types/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import a sheet type document */
+        post: operations["import_sheet_type_api_v1_sheet_types_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheet-types/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One sheet type with its versions */
+        get: operations["get_sheet_type_api_v1_sheet_types__key__get"];
+        put?: never;
+        post?: never;
+        /** Delete a custom sheet type without sheets */
+        delete: operations["delete_sheet_type_api_v1_sheet_types__key__delete"];
+        options?: never;
+        head?: never;
+        /** Edit the non-geometric fields of a sheet type */
+        patch: operations["patch_sheet_type_api_v1_sheet_types__key__patch"];
+        trace?: never;
+    };
+    "/api/v1/sheet-types/{key}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a sheet type */
+        post: operations["archive_sheet_type_api_v1_sheet_types__key__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheet-types/{key}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export one version of a sheet type as a JSON document */
+        get: operations["export_sheet_type_api_v1_sheet_types__key__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheet-types/{key}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an archived sheet type */
+        post: operations["unarchive_sheet_type_api_v1_sheet_types__key__unarchive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheet-types/{key}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a version with new geometry */
+        post: operations["add_sheet_type_version_api_v1_sheet_types__key__versions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheet-types/{key}/versions/{n}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One version of a sheet type */
+        get: operations["get_sheet_type_version_api_v1_sheet_types__key__versions__n__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List sheets */
+        get: operations["list_sheets_api_v1_sheets_get"];
+        put?: never;
+        /**
+         * Create a sheet, with the cells already used marked by hand
+         * @description `id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also reserves the first free cell for the sheet ID label and queues an ID-only job on the named page printer; `job_id` names it. If the job cannot be queued, the sheet stays without a reservation and the ID goes onto the next job's first free cell; the error names the sheet in `error_detail.sheet_code`.
+         */
+        post: operations["create_sheet_api_v1_sheets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/margin-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where the margin ID and the feed mark of a new sheet would go on a printer
+         * @description What the first job of a new sheet of the type would do on this printer and tray: the band and corner of the margin ID, whether a QR is drawn next to it, and whether the feed-direction mark prints (in the hub's current language). `printable=false` means no margin band is deep enough: the sheet can still be created and the ID added by hand. Read-only.
+         */
+        get: operations["margin_check_api_v1_sheets_margin_check_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/next-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The code a new sheet of a type would probably get */
+        get: operations["next_code_api_v1_sheets_next_code_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One sheet with all cells that are not free (discarded sheets too) */
+        get: operations["get_sheet_api_v1_sheets__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/{code}/cells/mark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark free cells as used by hand */
+        post: operations["mark_cells_api_v1_sheets__code__cells_mark_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/{code}/cells/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Settle cells waiting for confirmation as printed or not printed */
+        post: operations["resolve_cells_api_v1_sheets__code__cells_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/{code}/cells/unmark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Free cells that were marked by hand */
+        post: operations["unmark_cells_api_v1_sheets__code__cells_unmark_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/{code}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discard a sheet; its code is never issued again */
+        post: operations["discard_sheet_api_v1_sheets__code__discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/logs": {
         parameters: {
             query?: never;
@@ -1111,7 +1151,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/webhook/grocy": {
+    "/api/v1/webhook/grocy": {
         parameters: {
             query?: never;
             header?: never;
@@ -1124,14 +1164,14 @@ export interface paths {
          * Accept a Grocy product event and enqueue a print job
          * @description Receives a Grocy webhook event for a product stock change.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, and 422 when required payload fields are missing.  On success returns 202 with the new job's UUID; the print is dispatched asynchronously by the queue worker.
          */
-        post: operations["grocy_webhook_api_webhook_grocy_post"];
+        post: operations["grocy_webhook_api_v1_webhook_grocy_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/webhook/spoolman": {
+    "/api/v1/webhook/spoolman": {
         parameters: {
             query?: never;
             header?: never;
@@ -1144,7 +1184,7 @@ export interface paths {
          * Accept a Spoolman spool event and enqueue a print job
          * @description Receives a Spoolman webhook event for a spool update.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, and 422 when required payload fields are missing.  On success returns 202 with the new job's UUID; the print is dispatched asynchronously by the queue worker.
          */
-        post: operations["spoolman_webhook_api_webhook_spoolman_post"];
+        post: operations["spoolman_webhook_api_v1_webhook_spoolman_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1165,86 +1205,6 @@ export interface paths {
         get: operations["healthz_healthz_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/jobs/{job_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get print job status
-         * @description Return the current status and metadata for a print job submitted via ``POST /print``.  When the job is actively printing, the response includes live SNMP status from the printer.  Returns 404 when the job is not found.
-         */
-        get: operations["get_job_status_jobs__job_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/jobs/{job_id}/resume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Resume a paused print job
-         * @description Resume a print job that is in ``PAUSED`` state (waiting for a tape change after a tape-mismatch error with ``on_tape_mismatch=queue``).  Transitions the job from ``PAUSED`` to ``QUEUED`` so the worker picks it up again.  Returns 200 with the updated status.  Returns 404 when the job is not found.  Returns 409 when the job is not in ``PAUSED`` state.
-         */
-        post: operations["resume_job_jobs__job_id__resume_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/print": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Submit a print job
-         * @description Submit a label-print job.  The job is queued and dispatched asynchronously by the queue worker.  Returns 202 with the new job's UUID and state ``queued``.  Returns 4xx/5xx on printer errors (tape mismatch, offline, cover open, etc.).
-         */
-        post: operations["create_print_job_print_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/printer/resume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Resume the printer queue
-         * @description Resume the printer queue after a recoverable error halted it (tape empty, cover open, tape mismatch, printer offline).  Returns 200 with the printer ID and state ``active``.  Returns 404 when no printer is configured.  Returns 409 when the printer is already active.
-         */
-        post: operations["resume_printer_printer_resume_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1378,7 +1338,7 @@ export interface components {
         };
         /**
          * BatchRequest
-         * @description Top-level POST /api/print/{slug_or_uuid}/batch body.
+         * @description Top-level POST /api/v1/print/{slug_or_uuid}/batch body.
          */
         BatchRequest: {
             /**
@@ -1931,11 +1891,6 @@ export interface components {
             updated_at: string;
         };
         /**
-         * JobState
-         * @enum {string}
-         */
-        JobState: "queued" | "paused" | "printing" | "completed" | "failed" | "cancelled";
-        /**
          * LabelDataItem
          * @description One row in a qr_with_listing label (e.g. Kallax-Regal-Uebersicht).
          */
@@ -1944,19 +1899,6 @@ export interface components {
             item: string;
             /** Qr Payload */
             qr_payload?: string | null;
-        };
-        /**
-         * LiveStatus
-         * @description Live phase + error flags read from SNMP during a print.
-         */
-        LiveStatus: {
-            /** Error Flags */
-            error_flags?: string[];
-            /**
-             * Hr Printer Status
-             * @enum {string}
-             */
-            hr_printer_status: "other" | "unknown" | "idle" | "printing" | "warmup";
         };
         /** LogEntry */
         LogEntry: {
@@ -2332,7 +2274,7 @@ export interface components {
         };
         /**
          * PrintJobResponse
-         * @description POST /print 202 body — queue accepted.
+         * @description POST /api/v1/print 202 body — queue accepted.
          */
         PrintJobResponse: {
             /** Job Id */
@@ -2342,33 +2284,6 @@ export interface components {
              * @constant
              */
             status: "queued";
-        };
-        /**
-         * PrintJobStatusResponse
-         * @description GET /jobs/{job_id} body.
-         */
-        PrintJobStatusResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Error Code */
-            error_code?: string | null;
-            /** Error Detail */
-            error_detail?: {
-                [key: string]: unknown;
-            } | null;
-            /** Error Message */
-            error_message?: string | null;
-            /** Finished At */
-            finished_at?: string | null;
-            /** Job Id */
-            job_id: string;
-            live?: components["schemas"]["LiveStatus"] | null;
-            /** Started At */
-            started_at?: string | null;
-            status: components["schemas"]["JobState"];
         };
         /**
          * PrintLookupRequest
@@ -2413,7 +2328,7 @@ export interface components {
         };
         /**
          * PrintRequest
-         * @description POST /api/print body.
+         * @description POST /api/v1/print body.
          *
          *     Either `data` (RawLabelData) or `lookup` (PrintLookupRequest) is provided.
          *     Exactly one of the two must be present.
@@ -2937,7 +2852,7 @@ export interface components {
         };
         /**
          * SheetCreated
-         * @description The response of ``POST /api/sheets``: the sheet, and the ID-only job of a ``cell`` sheet.
+         * @description The response of ``POST /api/v1/sheets``: the sheet and the ID-only job of a cell sheet.
          */
         SheetCreated: {
             /**
@@ -3551,7 +3466,7 @@ export interface components {
             /**
              * Job Id
              * Format: uuid
-             * @description UUID of the newly-created print job; poll GET /api/jobs/{job_id} for status
+             * @description UUID of the new print job; poll GET /api/v1/jobs/{job_id} for status
              */
             job_id: string;
         };
@@ -3572,7 +3487,7 @@ export interface components {
         };
         /**
          * _PrinterResumeResponse
-         * @description 200 response body for POST /printer/resume.
+         * @description 200 response body for POST /api/v1/printer/resume.
          */
         _PrinterResumeResponse: {
             /** Printer Id */
@@ -3671,7 +3586,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    list_api_keys_api_admin_api_keys_get: {
+    list_api_keys_api_v1_admin_api_keys_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3691,7 +3606,7 @@ export interface operations {
             };
         };
     };
-    create_api_key_api_admin_api_keys_post: {
+    create_api_key_api_v1_admin_api_keys_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3724,7 +3639,7 @@ export interface operations {
             };
         };
     };
-    get_api_key_api_admin_api_keys__key_id__get: {
+    get_api_key_api_v1_admin_api_keys__key_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3755,7 +3670,7 @@ export interface operations {
             };
         };
     };
-    revoke_api_key_api_admin_api_keys__key_id__delete: {
+    revoke_api_key_api_v1_admin_api_keys__key_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -3784,7 +3699,7 @@ export interface operations {
             };
         };
     };
-    update_api_key_api_admin_api_keys__key_id__patch: {
+    update_api_key_api_v1_admin_api_keys__key_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -3815,2004 +3730,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_batch_api_batches__batch_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                batch_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BatchRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_info_api_info_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Info"];
-                };
-            };
-        };
-    };
-    list_jobs_api_jobs_get: {
-        parameters: {
-            query?: {
-                /** @description Filter by job state (queued / printing / done / failed / …) */
-                state?: string | null;
-                /** @description Filter by printer UUID */
-                printer_id?: string | null;
-                /** @description Return only jobs created at or after this ISO-8601 datetime */
-                since?: string | null;
-                /** @description Maximum number of jobs to return (1-200, default 50) */
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobRead"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_job_api_jobs__job_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    cancel_job_api_jobs__job_id__cancel_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobRead"];
-                };
-            };
-            /** @description Cancel requested at the printer (page job) */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    pause_job_api_jobs__job_id__pause_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Successful Response */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    resume_job_api_jobs__job_id__resume_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Successful Response */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    retry_job_api_jobs__job_id__retry_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["JobRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    lookup_api_lookup__app___entity_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                app: "snipeit" | "grocy" | "spoolman";
-                entity_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LookupResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_batch_api_print__printer_key__batch_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Printer slug or UUID */
-                printer_key: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BatchRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BatchResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    print_sheet_api_print__printer_key__sheet_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Printer slug or UUID. */
-                printer_key: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SheetPrintRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetPrintResponse"];
-                };
-            };
-            /** @description The key lacks the `print` scope, or may not use this printer (`printer_not_allowed`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Unknown printer (`printer_not_found`), sheet (`sheet_not_found`), sheet type, or an item the integration does not have (`app-lookup-not-found`). */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Not a page printer (`media_kind_mismatch`), the printer is disabled (`printer_disabled`) or unknown to the print queue (`printer-unavailable`), the sheet is discarded or archived, the cells do not fit (`insufficient_cells`, `cells_taken`), or the plan differs from `expected_cells` (`plan_changed`, with the new plan). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Invalid request (`invalid_request`, field paths only), an unknown or disabled tray (`tray_unknown`), an item the cell cannot show (`content_type_data_mismatch`), or an unknown integration (`integration_unknown_app`). Item errors carry `item_index`. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description An integration lookup failed (`integration_lookup_failed`), or the print stopped after some pages were queued (`print_interrupted`, or the error of that page with `batch_id` and `job_ids` in `error_detail`: those pages keep printing). */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description An integration is not configured (`integration_not_configured`). */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    preview_sheet_print_api_print__printer_key__sheet_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Printer slug or UUID. */
-                printer_key: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SheetPrintRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetPreview"];
-                };
-            };
-            /** @description These credentials may not use this printer (`printer_not_allowed`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Unknown printer (`printer_not_found`), sheet (`sheet_not_found`), sheet type, or an item the integration does not have (`app-lookup-not-found`). */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Not a page printer (`media_kind_mismatch`), the printer is disabled (`printer_disabled`), the sheet is discarded or archived, or the cells do not fit (`insufficient_cells`, `cells_taken`). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Invalid request (`invalid_request`, field paths only), an unknown or disabled tray (`tray_unknown`), an item the cell cannot show (`content_type_data_mismatch`), a plan of more than 10 pages (`preview_too_large`), or an unknown integration (`integration_unknown_app`). Item errors carry `item_index`. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description An integration lookup failed (`integration_lookup_failed`). */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description An integration is not configured (`integration_not_configured`). */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    list_printers_api_printers_get: {
-        parameters: {
-            query?: {
-                /** @description Filter by exact slug */
-                slug?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["app__schemas__printer__PrinterRead"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_printer_api_printers__printer_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                printer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["app__schemas__printer__PrinterRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_calibration_api_printers__printer_id__calibration_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Printer id (a page printer). */
-                printer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CalibrationRead"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    put_calibration_api_printers__printer_id__calibration__tray__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Printer id (a page printer). */
-                printer_id: string;
-                /** @description Tray key. */
-                tray: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CalibrationPut"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CalibrationRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_calibration_api_printers__printer_id__calibration__tray__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Printer id (a page printer). */
-                printer_id: string;
-                /** @description Tray key. */
-                tray: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    fit_calibration_api_printers__printer_id__calibration__tray__fit_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Printer id (a page printer). */
-                printer_id: string;
-                /** @description Tray key. */
-                tray: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FitRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FitResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    print_calibration_page_api_printers__printer_id__calibration__tray__page_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Printer id (a page printer). */
-                printer_id: string;
-                /** @description Tray key. */
-                tray: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PageRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PageJobAccepted"];
-                };
-            };
-            /** @description The printer is a tape printer (`media_kind_mismatch`) or is not known to the print queue (`printer-unavailable`). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    download_calibration_page_api_printers__printer_id__calibration__tray__page_pdf_get: {
-        parameters: {
-            query: {
-                /** @description Sheet type key. */
-                type: string;
-                /** @description Defaults to the current version. */
-                version?: number | null;
-                corrected?: boolean;
-            };
-            header?: never;
-            path: {
-                /** @description Printer id (a page printer). */
-                printer_id: string;
-                /** @description Tray key. */
-                tray: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The calibration page. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/pdf": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_capabilities_api_printers__printer_id__capabilities_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Printer id. */
-                printer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Capabilities"];
-                };
-            };
-            /** @description No driver is registered for the tape printer's model (`printer_model_unknown`). */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    pause_printer_api_printers__printer_id__pause_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                printer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_printer_queue_api_printers__printer_id__queue_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                printer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    clear_printer_queue_api_printers__printer_id__queue_clear_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                printer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    resume_printer_api_printers__printer_id__resume_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                printer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_printer_status_api_printers__printer_id__status_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                printer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PrinterStatus"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_printer_tape_api_printers__printer_id__tape_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                printer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    render_preview_api_render_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["_PreviewRequest"];
-            };
-        };
-        responses: {
-            /** @description PNG label bitmap */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "image/png": unknown;
-                };
-            };
-            /** @description Unsupported tape width */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Data missing required fields for content_type */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    find_cells_api_sheet_cells_get: {
-        parameters: {
-            query: {
-                source: string;
-                ref: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CellHitRead"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    list_sheet_types_api_sheet_types_get: {
-        parameters: {
-            query?: {
-                page?: ("A4" | "Letter") | null;
-                vendor?: string | null;
-                /** @description Key, codes, description. */
-                q?: string | null;
-                /** @description Label width, ±0.5 mm. */
-                w?: number | null;
-                /** @description Label height, ±0.5 mm. */
-                h?: number | null;
-                include_archived?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetTypeRead"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    create_sheet_type_api_sheet_types_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SheetTypeCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetTypeRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    import_sheet_type_api_sheet_types_import_post: {
-        parameters: {
-            query?: {
-                mode?: "strict" | "new_version" | "as_new_key";
-                new_key?: string | null;
-                new_prefix?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExportDoc"];
-            };
-        };
-        responses: {
-            /** @description The same geometry exists already. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ImportResponse"];
-                };
-            };
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ImportResponse"];
-                };
-            };
-            /** @description Document larger than 64 KB. */
-            413: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    get_sheet_type_api_sheet_types__key__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Type key, e.g. `avery-l4736`. */
-                key: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetTypeDetail"];
-                };
-            };
-            /** @description Sheet type not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    delete_sheet_type_api_sheet_types__key__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Type key, e.g. `avery-l4736`. */
-                key: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Sheet type not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Type is in use or not custom. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    patch_sheet_type_api_sheet_types__key__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Type key, e.g. `avery-l4736`. */
-                key: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SheetTypePatch"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetTypeRead"];
-                };
-            };
-            /** @description Sheet type not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    archive_sheet_type_api_sheet_types__key__archive_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Type key, e.g. `avery-l4736`. */
-                key: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetTypeRead"];
-                };
-            };
-            /** @description Sheet type not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    export_sheet_type_api_sheet_types__key__export_get: {
-        parameters: {
-            query?: {
-                version?: number | null;
-            };
-            header?: never;
-            path: {
-                /** @description Type key, e.g. `avery-l4736`. */
-                key: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExportDoc"];
-                };
-            };
-            /** @description Sheet type not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    unarchive_sheet_type_api_sheet_types__key__unarchive_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Type key, e.g. `avery-l4736`. */
-                key: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetTypeRead"];
-                };
-            };
-            /** @description Sheet type not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    add_sheet_type_version_api_sheet_types__key__versions_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Type key, e.g. `avery-l4736`. */
-                key: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VersionCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VersionRead"];
-                };
-            };
-            /** @description Sheet type not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    get_sheet_type_version_api_sheet_types__key__versions__n__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Type key, e.g. `avery-l4736`. */
-                key: string;
-                n: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VersionRead"];
-                };
-            };
-            /** @description Sheet type not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    list_sheets_api_sheets_get: {
-        parameters: {
-            query?: {
-                /** @description Sheet type key. */
-                type?: string | null;
-                free_at_least?: number | null;
-                state?: "active" | "full" | "discarded" | "all";
-                /** @description Part of the code. */
-                q?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetSummary"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    create_sheet_api_sheets_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SheetCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetCreated"];
-                };
-            };
-            /** @description These credentials may not use the printer. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Sheet type or printer not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the printer is disabled (`printer_disabled`) or unknown to the queue. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description A cell number is outside the sheet, or `cell` without a printer. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description The ID-only job was queued only partly (`print_interrupted`). */
-            502: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    margin_check_api_sheets_margin_check_get: {
-        parameters: {
-            query: {
-                /** @description Sheet type key. */
-                type: string;
-                /** @description Slug or UUID. */
-                printer: string;
-                tray?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MarginCheckRead"];
-                };
-            };
-            /** @description These credentials may not use this printer. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Unknown printer (`printer_not_found`) or sheet type. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Not a page printer (`media_kind_mismatch`) or it is disabled. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Invalid request (`invalid_request`) or an unknown tray. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    next_code_api_sheets_next_code_get: {
-        parameters: {
-            query: {
-                /** @description Sheet type key. */
-                type: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NextCode"];
-                };
-            };
-            /** @description Sheet type not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    get_sheet_api_sheets__code__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Sheet code, e.g. `L4736-0002`. */
-                code: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetRead"];
-                };
-            };
-            /** @description Sheet not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    mark_cells_api_sheets__code__cells_mark_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Sheet code, e.g. `L4736-0002`. */
-                code: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MarkRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetRead"];
-                };
-            };
-            /** @description Sheet not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Sheet is discarded, or the cells are in the wrong state. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description A cell number is outside the sheet. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    resolve_cells_api_sheets__code__cells_resolve_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Sheet code, e.g. `L4736-0002`. */
-                code: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ResolveRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetRead"];
-                };
-            };
-            /** @description Sheet not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Sheet is discarded, or the cells are in the wrong state. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description A cell number is outside the sheet. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    unmark_cells_api_sheets__code__cells_unmark_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Sheet code, e.g. `L4736-0002`. */
-                code: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CellNumbers"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetRead"];
-                };
-            };
-            /** @description Sheet not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Sheet is discarded, or the cells are in the wrong state. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description A cell number is outside the sheet. */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-        };
-    };
-    discard_sheet_api_sheets__code__discard_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Sheet code, e.g. `L4736-0002`. */
-                code: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetRead"];
-                };
-            };
-            /** @description Sheet not found. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description A running job holds cells of the sheet. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
         };
@@ -6132,6 +4049,37 @@ export interface operations {
             };
         };
     };
+    get_batch_api_v1_batches__batch_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stream_events_api_v1_events_get: {
         parameters: {
             query?: {
@@ -6158,6 +4106,1060 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    get_info_api_v1_info_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Info"];
+                };
+            };
+        };
+    };
+    list_jobs_api_v1_jobs_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by job state (queued / printing / done / failed / …) */
+                state?: string | null;
+                /** @description Filter by printer UUID */
+                printer_id?: string | null;
+                /** @description Return only jobs created at or after this ISO-8601 datetime */
+                since?: string | null;
+                /** @description Maximum number of jobs to return (1-200, default 50) */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_api_v1_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_api_v1_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Cancel requested at the printer (page job) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_job_api_v1_jobs__job_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Successful Response */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    resume_job_api_v1_jobs__job_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Successful Response */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    retry_job_api_v1_jobs__job_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lookup_api_v1_lookup__app___entity_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: "snipeit" | "grocy" | "spoolman";
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LookupResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_print_job_api_v1_print_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PrintRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrintJobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_batch_api_v1_print__printer_key__batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer slug or UUID */
+                printer_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    print_sheet_api_v1_print__printer_key__sheet_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer slug or UUID. */
+                printer_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetPrintRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetPrintResponse"];
+                };
+            };
+            /** @description The key lacks the `print` scope, or may not use this printer (`printer_not_allowed`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Unknown printer (`printer_not_found`), sheet (`sheet_not_found`), sheet type, or an item the integration does not have (`app-lookup-not-found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Not a page printer (`media_kind_mismatch`), the printer is disabled (`printer_disabled`) or unknown to the print queue (`printer-unavailable`), the sheet is discarded or archived, the cells do not fit (`insufficient_cells`, `cells_taken`), or the plan differs from `expected_cells` (`plan_changed`, with the new plan). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Invalid request (`invalid_request`, field paths only), an unknown or disabled tray (`tray_unknown`), an item the cell cannot show (`content_type_data_mismatch`), or an unknown integration (`integration_unknown_app`). Item errors carry `item_index`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description An integration lookup failed (`integration_lookup_failed`), or the print stopped after some pages were queued (`print_interrupted`, or the error of that page with `batch_id` and `job_ids` in `error_detail`: those pages keep printing). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description An integration is not configured (`integration_not_configured`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    preview_sheet_print_api_v1_print__printer_key__sheet_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer slug or UUID. */
+                printer_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetPrintRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetPreview"];
+                };
+            };
+            /** @description These credentials may not use this printer (`printer_not_allowed`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Unknown printer (`printer_not_found`), sheet (`sheet_not_found`), sheet type, or an item the integration does not have (`app-lookup-not-found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Not a page printer (`media_kind_mismatch`), the printer is disabled (`printer_disabled`), the sheet is discarded or archived, or the cells do not fit (`insufficient_cells`, `cells_taken`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Invalid request (`invalid_request`, field paths only), an unknown or disabled tray (`tray_unknown`), an item the cell cannot show (`content_type_data_mismatch`), a plan of more than 10 pages (`preview_too_large`), or an unknown integration (`integration_unknown_app`). Item errors carry `item_index`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description An integration lookup failed (`integration_lookup_failed`). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description An integration is not configured (`integration_not_configured`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    resume_printer_api_v1_printer_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["_PrinterResumeResponse"];
+                };
+            };
+        };
+    };
+    list_printers_api_v1_printers_get: {
+        parameters: {
+            query?: {
+                /** @description Filter by exact slug */
+                slug?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__schemas__printer__PrinterRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_printer_api_v1_printers__printer_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__schemas__printer__PrinterRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_calibration_api_v1_printers__printer_id__calibration_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_calibration_api_v1_printers__printer_id__calibration__tray__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_calibration_api_v1_printers__printer_id__calibration__tray__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fit_calibration_api_v1_printers__printer_id__calibration__tray__fit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    print_calibration_page_api_v1_printers__printer_id__calibration__tray__page_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJobAccepted"];
+                };
+            };
+            /** @description The printer is a tape printer (`media_kind_mismatch`) or is not known to the print queue (`printer-unavailable`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_calibration_page_api_v1_printers__printer_id__calibration__tray__page_pdf_get: {
+        parameters: {
+            query: {
+                /** @description Sheet type key. */
+                type: string;
+                /** @description Defaults to the current version. */
+                version?: number | null;
+                corrected?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The calibration page. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_capabilities_api_v1_printers__printer_id__capabilities_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id. */
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Capabilities"];
+                };
+            };
+            /** @description No driver is registered for the tape printer's model (`printer_model_unknown`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_printer_api_v1_printers__printer_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_printer_queue_api_v1_printers__printer_id__queue_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_printer_queue_api_v1_printers__printer_id__queue_clear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_printer_api_v1_printers__printer_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_printer_status_api_v1_printers__printer_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrinterStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_printer_tape_api_v1_printers__printer_id__tape_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    render_preview_api_v1_render_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_PreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description PNG label bitmap */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description Unsupported tape width */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Data missing required fields for content_type */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -6270,6 +5272,972 @@ export interface operations {
             };
         };
     };
+    find_cells_api_v1_sheet_cells_get: {
+        parameters: {
+            query: {
+                source: string;
+                ref: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CellHitRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    list_sheet_types_api_v1_sheet_types_get: {
+        parameters: {
+            query?: {
+                page?: ("A4" | "Letter") | null;
+                vendor?: string | null;
+                /** @description Key, codes, description. */
+                q?: string | null;
+                /** @description Label width, ±0.5 mm. */
+                w?: number | null;
+                /** @description Label height, ±0.5 mm. */
+                h?: number | null;
+                include_archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    create_sheet_type_api_v1_sheet_types_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetTypeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    import_sheet_type_api_v1_sheet_types_import_post: {
+        parameters: {
+            query?: {
+                mode?: "strict" | "new_version" | "as_new_key";
+                new_key?: string | null;
+                new_prefix?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportDoc"];
+            };
+        };
+        responses: {
+            /** @description The same geometry exists already. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResponse"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResponse"];
+                };
+            };
+            /** @description Document larger than 64 KB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sheet_type_api_v1_sheet_types__key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeDetail"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_sheet_type_api_v1_sheet_types__key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Type is in use or not custom. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    patch_sheet_type_api_v1_sheet_types__key__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetTypePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    archive_sheet_type_api_v1_sheet_types__key__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    export_sheet_type_api_v1_sheet_types__key__export_get: {
+        parameters: {
+            query?: {
+                version?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportDoc"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    unarchive_sheet_type_api_v1_sheet_types__key__unarchive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    add_sheet_type_version_api_v1_sheet_types__key__versions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sheet_type_version_api_v1_sheet_types__key__versions__n__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Type key, e.g. `avery-l4736`. */
+                key: string;
+                n: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionRead"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    list_sheets_api_v1_sheets_get: {
+        parameters: {
+            query?: {
+                /** @description Sheet type key. */
+                type?: string | null;
+                free_at_least?: number | null;
+                state?: "active" | "full" | "discarded" | "all";
+                /** @description Part of the code. */
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    create_sheet_api_v1_sheets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetCreated"];
+                };
+            };
+            /** @description These credentials may not use the printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet type or printer not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the printer is disabled (`printer_disabled`) or unknown to the queue. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A cell number is outside the sheet, or `cell` without a printer. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description The ID-only job was queued only partly (`print_interrupted`). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    margin_check_api_v1_sheets_margin_check_get: {
+        parameters: {
+            query: {
+                /** @description Sheet type key. */
+                type: string;
+                /** @description Slug or UUID. */
+                printer: string;
+                tray?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarginCheckRead"];
+                };
+            };
+            /** @description These credentials may not use this printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Unknown printer (`printer_not_found`) or sheet type. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Not a page printer (`media_kind_mismatch`) or it is disabled. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Invalid request (`invalid_request`) or an unknown tray. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    next_code_api_v1_sheets_next_code_get: {
+        parameters: {
+            query: {
+                /** @description Sheet type key. */
+                type: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NextCode"];
+                };
+            };
+            /** @description Sheet type not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sheet_api_v1_sheets__code__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    mark_cells_api_v1_sheets__code__cells_mark_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet is discarded, or the cells are in the wrong state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A cell number is outside the sheet. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    resolve_cells_api_v1_sheets__code__cells_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet is discarded, or the cells are in the wrong state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A cell number is outside the sheet. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    unmark_cells_api_v1_sheets__code__cells_unmark_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CellNumbers"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet is discarded, or the cells are in the wrong state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A cell number is outside the sheet. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    discard_sheet_api_v1_sheets__code__discard_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A running job holds cells of the sheet. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
     get_system_logs_api_v1_system_logs_get: {
         parameters: {
             query?: {
@@ -6301,7 +6269,7 @@ export interface operations {
             };
         };
     };
-    grocy_webhook_api_webhook_grocy_post: {
+    grocy_webhook_api_v1_webhook_grocy_post: {
         parameters: {
             query?: never;
             header: {
@@ -6336,7 +6304,7 @@ export interface operations {
             };
         };
     };
-    spoolman_webhook_api_webhook_spoolman_post: {
+    spoolman_webhook_api_v1_webhook_spoolman_post: {
         parameters: {
             query?: never;
             header: {
@@ -6387,121 +6355,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Healthz"];
-                };
-            };
-        };
-    };
-    get_job_status_jobs__job_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PrintJobStatusResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    resume_job_jobs__job_id__resume_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                job_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PrintJobStatusResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_print_job_print_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PrintRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PrintJobResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    resume_printer_printer_resume_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["_PrinterResumeResponse"];
                 };
             };
         };

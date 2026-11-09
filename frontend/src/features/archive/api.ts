@@ -35,12 +35,12 @@ export interface ImportOptions {
 }
 
 const encode = encodeURIComponent;
-const typePath = (key: string) => `/api/sheet-types/${encode(key)}`;
+const typePath = (key: string) => `/api/v1/sheet-types/${encode(key)}`;
 
 export const useSheetTypes = (filters: TypeFilters = {}) =>
   useQuery({
     queryKey: typesKey(filters),
-    queryFn: () => apiFetch<SheetTypeRead[]>(`/api/sheet-types${queryString({ ...filters })}`),
+    queryFn: () => apiFetch<SheetTypeRead[]>(`/api/v1/sheet-types${queryString({ ...filters })}`),
   });
 
 export const useSheetType = (key: string, enabled = true) =>
@@ -64,7 +64,7 @@ function useTypeWrite<V, R>(run: (v: V) => Promise<R>, keyOf: (v: V, data: R | u
 }
 
 export const useCreateType = () =>
-  useTypeWrite((body: SheetTypeCreate) => apiFetch<SheetTypeRead>("/api/sheet-types", { method: "POST", json: body }), () => null);
+  useTypeWrite((body: SheetTypeCreate) => apiFetch<SheetTypeRead>("/api/v1/sheet-types", { method: "POST", json: body }), () => null);
 
 export const usePatchType = () =>
   useTypeWrite(
@@ -99,7 +99,7 @@ export function exportTypeUrl(key: string, version?: number | null): string {
 export const useImportType = () =>
   useTypeWrite(
     ({ doc, options = {} }: { doc: ExportDoc; options?: ImportOptions }) =>
-      apiFetch<ImportResponse>(`/api/sheet-types/import${queryString({ ...options })}`, { method: "POST", json: doc }),
+      apiFetch<ImportResponse>(`/api/v1/sheet-types/import${queryString({ ...options })}`, { method: "POST", json: doc }),
     // The type the import touched: a new version changes an open detail, a new key has none cached yet.
     (_v, data) => data?.key ?? null,
   );

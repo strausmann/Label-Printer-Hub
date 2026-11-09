@@ -131,7 +131,7 @@ export const toBatchItem = (item: CartItem) => ({
 });
 
 export function submitBatch(printerKey: string, list: CartItem[]): Promise<BatchResponse> {
-  return apiFetch<BatchResponse>(`/api/print/${encodeURIComponent(printerKey)}/batch`, {
+  return apiFetch<BatchResponse>(`/api/v1/print/${encodeURIComponent(printerKey)}/batch`, {
     method: "POST",
     json: { items: list.map(toBatchItem) },
   });
@@ -171,7 +171,7 @@ export function useCart(): Cart {
       removeItems(sending);
       void client.invalidateQueries({ queryKey: ["jobs"] });
       try {
-        return await apiFetch<BatchRead>(`/api/batches/${accepted.batch_id}`);
+        return await apiFetch<BatchRead>(`/api/v1/batches/${accepted.batch_id}`);
       } catch (error) {
         throw new BatchStatusError(accepted.batch_id, error);
       }

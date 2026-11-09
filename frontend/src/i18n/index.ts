@@ -29,7 +29,7 @@ export function storeLanguage(lang: Lang): void {
   }
 }
 
-/** Order: the user's choice → `/api/info.default_language` → `en`. */
+/** Order: the user's choice → `/api/v1/info.default_language` → `en`. */
 export function pickLanguage(serverDefault: string | undefined): Lang {
   return readStoredLanguage() ?? (isLang(serverDefault) ? serverDefault : DEFAULT_LANG);
 }

@@ -39,7 +39,7 @@ function useScanNote(typeKey: string, typeLabel: string) {
     if (!code) return { note: t`That is not a sheet code.` };
     let sheet: SheetRead | null;
     try {
-      sheet = await client.fetchQuery({ queryKey: sheetKey(code), queryFn: () => apiFetch<SheetRead>(`/api/sheets/${encodeURIComponent(code)}`), staleTime: 0 });
+      sheet = await client.fetchQuery({ queryKey: sheetKey(code), queryFn: () => apiFetch<SheetRead>(`/api/v1/sheets/${encodeURIComponent(code)}`), staleTime: 0 });
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) sheet = null;
       else return { note: t`${code} could not be checked. Try again.` };

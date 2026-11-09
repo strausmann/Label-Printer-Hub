@@ -26,7 +26,7 @@ test.describe("shell", () => {
     ] as const) {
       await expect(sidebar.getByRole("link", { name, exact: true })).toHaveAttribute("href", href);
     }
-    // Entries of modules that have not shipped stay hidden (features from /api/info): ASN and Kept.
+    // Entries of modules that have not shipped stay hidden (features from /api/v1/info): ASN and Kept.
     await expect(sidebar.getByRole("link", { name: "Paperless ASN" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Scan" }).first()).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Search" })).toBeVisible();

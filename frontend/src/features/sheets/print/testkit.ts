@@ -81,17 +81,17 @@ export interface RouteOptions {
 export function routes(o: RouteOptions = {}): Record<string, unknown> {
   const sheets = o.sheets ?? [sheet("L4736-0001", 17)];
   return {
-    "GET /api/lookup/grocy/7": GROCY_ITEM,
-    "GET /api/printers": o.printers ?? [PAGE_PRINTER, PRINTER_A],
-    [`GET /api/printers/${P}/status`]: o.status ?? pageStatus(P),
-    [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
-    "POST /api/render/preview": () => new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { "Content-Type": "image/png" } }),
-    "GET /api/sheet-types": o.types ?? [SHEET_TYPE],
-    "GET /api/sheets": sheets,
-    "GET /api/sheets/next-code": { code: "L4736-0005", hint: "probable" },
-    ...Object.fromEntries(sheets.map((s) => [`GET /api/sheets/${s.code}`, sheetRead(s.code, { used: USED_17 }, { used: s.used, free: s.free })])),
-    [`POST /api/print/${P}/sheet/preview`]: o.preview ?? previewFor("L4736-0001", NEW_9, USED_17),
-    [`POST /api/print/${P}/sheet`]: o.print ?? { batch_id: BATCH, pages: [{ ...PRINTED_PAGE, cells: NEW_9 }] },
+    "GET /api/v1/lookup/grocy/7": GROCY_ITEM,
+    "GET /api/v1/printers": o.printers ?? [PAGE_PRINTER, PRINTER_A],
+    [`GET /api/v1/printers/${P}/status`]: o.status ?? pageStatus(P),
+    [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
+    "POST /api/v1/render/preview": () => new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { "Content-Type": "image/png" } }),
+    "GET /api/v1/sheet-types": o.types ?? [SHEET_TYPE],
+    "GET /api/v1/sheets": sheets,
+    "GET /api/v1/sheets/next-code": { code: "L4736-0005", hint: "probable" },
+    ...Object.fromEntries(sheets.map((s) => [`GET /api/v1/sheets/${s.code}`, sheetRead(s.code, { used: USED_17 }, { used: s.used, free: s.free })])),
+    [`POST /api/v1/print/${P}/sheet/preview`]: o.preview ?? previewFor("L4736-0001", NEW_9, USED_17),
+    [`POST /api/v1/print/${P}/sheet`]: o.print ?? { batch_id: BATCH, pages: [{ ...PRINTED_PAGE, cells: NEW_9 }] },
     ...o.extra,
   };
 }

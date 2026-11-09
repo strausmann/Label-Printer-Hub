@@ -34,7 +34,7 @@ describe("global search", () => {
   });
 
   it("the first suggestion is active; arrows move, Enter opens it", async () => {
-    mockApi({ "GET /api/lookup/grocy/42": item("grocy", "42"), "GET /api/printers": [] });
+    mockApi({ "GET /api/v1/lookup/grocy/42": item("grocy", "42"), "GET /api/v1/printers": [] });
     const { router } = await renderApp({ path: "/", info: { integrations: set(true, true, true) } });
     await userEvent.type(field(), "42");
     const options = await screen.findAllByRole("option");
@@ -49,7 +49,7 @@ describe("global search", () => {
   });
 
   it("Enter straight after typing opens the first one (Snipe-IT)", async () => {
-    mockApi({ "GET /api/lookup/snipeit/42": item("snipeit", "42"), "GET /api/printers": [] });
+    mockApi({ "GET /api/v1/lookup/snipeit/42": item("snipeit", "42"), "GET /api/v1/printers": [] });
     const { router } = await renderApp({ path: "/", info: { integrations: set(true, true, true) } });
     await userEvent.type(field(), "42{Enter}");
     expect(router.state.location.pathname).toBe("/lookup/snipeit/42");
@@ -67,7 +67,7 @@ describe("global search", () => {
   });
 
   it("clicking a suggestion opens it", async () => {
-    mockApi({ "GET /api/lookup/spoolman/5": item("spoolman", "5"), "GET /api/printers": [] });
+    mockApi({ "GET /api/v1/lookup/spoolman/5": item("spoolman", "5"), "GET /api/v1/printers": [] });
     const { router } = await renderApp({ path: "/", info: { integrations: set(false, false, true) } });
     await userEvent.type(field(), "5");
     await userEvent.click(await screen.findByRole("option", { name: "Look up 5 in Spoolman" }));
@@ -105,7 +105,7 @@ describe("global search", () => {
 
   it("lists printers and jobs after the integration lookups, under their own headings", async () => {
     const wanted = job("0f3a9c1e-7b2d-4e5f-8a6b-1c2d3e4f5a6b", PRINTER_A.id, "queued", { template_key: "asset-label" });
-    mockApi({ "GET /api/printers": [PRINTER_A, PRINTER_B], "GET /api/jobs": [wanted] });
+    mockApi({ "GET /api/v1/printers": [PRINTER_A, PRINTER_B], "GET /api/v1/jobs": [wanted] });
     const { router } = await renderApp({ path: "/", info: { integrations: set(true, false, false) } });
     await userEvent.type(field(), "office");
     const list = await screen.findByRole("listbox", { name: "Search results" });
@@ -121,7 +121,7 @@ describe("global search", () => {
   });
 
   it("/ focuses the field, unless the person is typing somewhere else", async () => {
-    mockApi({ "GET /api/printers": [] });
+    mockApi({ "GET /api/v1/printers": [] });
     await renderApp({ path: "/", info: { integrations: set(true, false, false) } });
     expect(field()).not.toHaveFocus();
     await userEvent.keyboard("/");
