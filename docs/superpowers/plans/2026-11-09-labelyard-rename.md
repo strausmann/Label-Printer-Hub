@@ -14,7 +14,7 @@
 
 - New name: **Labelyard** (capital L only; lowercase `labelyard` in every technical identifier).
 - Subtitle for findability: **Label Printer Hub**. English tagline: `Labelyard — the self-hosted Label Printer Hub for all your labels`. German tagline (informal "du"): `Labelyard — der selbst gehostete Label Printer Hub für all deine Etiketten`.
-- Hard cut for images: after the cut, CI publishes **only** `ghcr.io/strausmann/labelyard` and `docker.io/${DOCKERHUB_USERNAME}/labelyard` (no `-backend` suffix). `ghcr.io/strausmann/label-printer-hub-backend` and `docker.io/${DOCKERHUB_USERNAME}/label-printer-hub-backend` receive no further pushes; they are not deleted by this plan.
+- Hard cut for images: after the cut, CI publishes (with identical tags and retention on both registries) **only** `ghcr.io/strausmann/labelyard` and `docker.io/${DOCKERHUB_USERNAME}/labelyard` (no `-backend` suffix). `ghcr.io/strausmann/label-printer-hub-backend` and `docker.io/${DOCKERHUB_USERNAME}/label-printer-hub-backend` receive no further pushes; they are not deleted by this plan.
 - No transition images, no dual publishing, no retagging of old versions under the new name.
 - Configuration and data compatibility: an upgrade from 1.4.x is "change the image line, pull, restart". Every break of that rule is listed in the compatibility table with its reason.
 - Public repo: English prose everywhere (commits, comments, docs). No AI attribution trailers or footers. Commit author `bjoern@strausmann.net`.
@@ -36,12 +36,12 @@ Preconditions for starting the branch:
 - PR #269 (GHCR cleanup + preview image) merged into `main` and synced into the milestone. If not, Task 4 edits only `docker-publish.yml` and #269 is rebased onto the new image name before it merges.
 - All other 1.5.0 tasks merged into the milestone. New work started after the rename branches from the renamed milestone.
 
-Release sequence (operator steps in Task 9):
+Release sequence (metadata in Task 9, operator steps in Task 10):
 
 1. Merge `feat/labelyard-rename` into `milestone/1.5.0`; build preview `1.5.0-rc.N` and run the verification of Task 8.
 2. Create the Docker Hub repo `labelyard` (public) and rename the GitHub repo.
 3. Merge `milestone/1.5.0` → `main` (merge commit). The next release run publishes `labelyard:1.5.0` only.
-4. Edit the GitHub Release body with the release-notes text of Task 9.
+4. Edit the GitHub Release body with the release-notes text of Task 10.
 
 ## Inventory (baseline `6effebc`, history excluded)
 
@@ -117,6 +117,8 @@ Release sequence (operator steps in Task 9):
 | `docs/migration/labelyard.md` (create) | Operator upgrade guide |
 | `docs/decisions/0022-rename-to-labelyard.md` (create) | ADR; amends ADR 0007 (image name) |
 | `website/` (create) | Source of https://labelyard.app and the user docs (Task 7; generator per decision D-W1) |
+| `scripts/registry_retention.py` (create) | One retention rule for GHCR and Docker Hub cleanup (Task 4) |
+| `.github/workflows/registry-cleanup.yml` (from `ghcr-cleanup.yml`), `.github/workflows/dockerhub-description.yml`, `.github/dockerhub/README.md` | Registry housekeeping and Docker Hub page (Task 4) |
 | `.github/workflows/website.yml` (create) | Strict site build + link check on PRs touching `website/**` |
 
 ---
@@ -201,26 +203,54 @@ Rules (constants in the script, each with a comment saying why it exists):
 - [ ] **Step 4:** Full backend suite and `pnpm -C frontend test` PASS; `docker build -f backend/Dockerfile -t labelyard:local .` succeeds and `docker inspect labelyard:local --format '{{index .Config.Labels "org.opencontainers.image.title"}}'` prints `labelyard`.
 - [ ] **Step 5:** Commit `feat: name the backend, CLI and API Labelyard`.
 
-### Task 4: Image publishing under `labelyard` (hard cut)
+### Task 4: Image publishing, Docker Hub as full release target, registry housekeeping
+
+Decisions:
+- **Docker Hub gets exactly the tags GHCR gets:** `x.y.z`, `x.y`, `x`, `latest` for releases, `dev` from `main`, and previews `x.y.z-rc.N`. Change against today: `docker-publish.yml:386` pushes to Docker Hub only for releases without `-`; after this task the Docker Hub ref is added for every flavor that GHCR receives (release, pre-release/preview, dev). Pre-releases still get only their exact tag on both registries (no `latest`/`x.y`/`x`). Branch images stay abolished (PR #269).
+- **Retention for `labelyard`, identical on both registries:** keep every release tag (`x.y.z`, `x.y`, `x`), `latest`, `dev` and open previews (`x.y.z-rc.N` whose release `x.y.z` does not exist yet); delete closed previews (release exists). On GHCR additionally delete untagged versions. Docker Hub exposes no untagged-manifest deletion through its API — untagged images there age out by Docker Hub's own policy; this is stated in the workflow header, not worked around.
+- **The old packages are not cleaned any more:** after the cut `label-printer-hub-backend` (GHCR and Docker Hub) is frozen; the cleanup from PR #269 is retargeted to `labelyard`, with no job for the old name.
 
 **Files:**
-- Modify: `.github/workflows/docker-publish.yml:136-142` (ref `${REGISTRY_GHCR}/strausmann/labelyard`, from a new top-level `env: IMAGE_NAME: labelyard`; no `-${matrix.service}`), `:204-213` (title `labelyard`, description, url/source), `:386` (`format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME)`); `.github/workflows/ghcr-cleanup.yml` header comment and `IMAGE_PATH: ${{ github.repository_owner }}/labelyard`; `.github/workflows/preview-image.yml` `IMAGE_PATH` likewise; `dev/docker-compose.smoke.yml`; `docs/decisions/0007-docker-image-tag-scheme.md` is **not** edited (history) — ADR 0022 amends it (Task 6)
+- Modify: `.github/workflows/docker-publish.yml:136-142` (ref `${REGISTRY_GHCR}/strausmann/labelyard` from a new top-level `env: IMAGE_NAME: labelyard`; no `-${matrix.service}`), `:204-213` (OCI annotations, see below), `:386` (`format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME)`, condition: `secrets.DOCKERHUB_USERNAME` set, any flavor except `branch`); `.github/workflows/ghcr-cleanup.yml` → rename to `registry-cleanup.yml` with two jobs `ghcr` (existing logic, `IMAGE_PATH: ${{ github.repository_owner }}/labelyard`, keep-regex per the decision) and `dockerhub`; `.github/workflows/preview-image.yml` (`IMAGE_PATH` → `labelyard`; the rc number is computed from the GHCR tags as today — both registries receive the same number); `dev/docker-compose.smoke.yml`
+- Create: `.github/workflows/dockerhub-description.yml`, `.github/dockerhub/README.md` (Docker Hub full description, ≤ 25,000 bytes), `scripts/registry_retention.py` + `scripts/test_registry_retention.py`
+- `docs/decisions/0007-docker-image-tag-scheme.md` is **not** edited (history) — ADR 0022 amends it (Task 6)
+
+OCI annotations/labels (index and per-platform; they fill the GHCR package page and link the package to the repo): `org.opencontainers.image.title=Labelyard`, `org.opencontainers.image.description=Labelyard — the self-hosted Label Printer Hub for all your labels`, `org.opencontainers.image.url=https://labelyard.app`, `org.opencontainers.image.documentation=https://labelyard.app/`, `org.opencontainers.image.source=https://github.com/strausmann/labelyard`, licences/version/revision/created as today. Same values in `backend/Dockerfile` (Task 3 sets `title`; this task aligns description/url/documentation).
 
 **Interfaces:**
-- Produces: published image refs `ghcr.io/strausmann/labelyard:<tag>` and `docker.io/<DOCKERHUB_USERNAME>/labelyard:<tag>`; tag scheme of ADR 0007 unchanged (`x.y.z`, `x.y`, `x`, `latest`, `dev`, `x.y.z-rc.N` GHCR-only).
-- The owner `strausmann` is written lowercase literally; nothing in the image ref depends on `github.repository` any more (it changes with the repo rename).
+- Produces: published refs `ghcr.io/strausmann/labelyard:<tag>` and `docker.io/<DOCKERHUB_USERNAME>/labelyard:<tag>`; `select_deletions(tags: Iterable[str], releases: set[str]) -> list[str]` in `scripts/registry_retention.py` — the one rule both cleanup jobs call (CLI: `python3 scripts/registry_retention.py --releases <file> < tags.txt` prints the tags to delete).
+- Docker Hub API (current reference https://docs.docker.com/reference/api/hub/latest/): list tags `GET /v2/namespaces/{namespace}/repositories/{repository}/tags` (paginated via `next`), bearer token from `POST /v2/auth/token`. **Tag deletion is not in the current reference**; the long-standing `DELETE https://hub.docker.com/v2/repositories/{namespace}/{repository}/tags/{tag}/` exists (answers `401` without auth on 2026-11-09) — confirm it in a spike before relying on it (Step 4).
+- Secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (push, unchanged) and new **`DOCKERHUB_ADMIN_TOKEN`** — a Docker Hub personal access token with Read, Write, Delete permission, created by the maintainer, used only by `registry-cleanup.yml` (`dockerhub` job) and `dockerhub-description.yml`.
+- Description action: `peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0` (latest release, 2025-10-01; inputs `username`, `password`, `repository`, `short-description`, `readme-filepath`, `enable-url-completion`; password must be a PAT with read/write/delete scope; limits: README 25,000 bytes, short description 100 bytes — from the action's README). Trigger: `workflow_dispatch` and `push` to `main` touching `.github/dockerhub/README.md`. `short-description: "Labelyard — the self-hosted Label Printer Hub for all your labels"` (66 bytes).
+- The owner `strausmann` is written lowercase literally; nothing in an image ref depends on `github.repository` (it changes with the repo rename).
 
-- [ ] **Step 1:** Add a check to `scripts/test_brand_guard.py`: `test_workflows_publish_only_labelyard` — parse the three workflow files as text; assert no `label-printer-hub` substring and that `docker-publish.yml` contains `IMAGE_NAME: labelyard`. Run → FAIL.
-- [ ] **Step 2:** Apply the workflow changes.
-- [ ] **Step 3:** `python3 -m unittest scripts/test_brand_guard.py -v` PASS; `actionlint .github/workflows/*.yml` clean (install per CONTRIBUTING if missing — report it if unavailable, do not skip silently).
-- [ ] **Step 4:** Commit `ci: publish the image as labelyard only`.
+- [ ] **Step 1: Failing tests.** `scripts/test_registry_retention.py`: `test_keeps_releases_latest_dev` (`1.5.0`, `1.5`, `1`, `latest`, `dev` never deleted), `test_keeps_open_preview` (`1.6.0-rc.2` kept when `1.6.0` not released), `test_deletes_closed_preview` (`1.5.0-rc.1`, `1.5.0-rc.3` deleted when `1.5.0` released), `test_ignores_foreign_tags` (`sha-abc`, `feat-x` → not deleted, reported; the job prints them so a stray tag is seen, it does not guess). `scripts/test_brand_guard.py`: `test_workflows_publish_only_labelyard` (no `label-printer-hub` in the four workflow files; `IMAGE_NAME: labelyard` present; the Docker Hub ref expression in `docker-publish.yml` no longer contains `!contains(steps.tag.outputs.tag, '-')`). Run → FAIL.
+- [ ] **Step 2:** Implement `select_deletions`; apply the workflow changes; write `.github/dockerhub/README.md` (hero line, `docker pull` for both registries, tag table, quick start, links to https://labelyard.app, GitHub and the migration guide; logo as absolute `raw.githubusercontent.com` URL — Docker Hub does not resolve relative paths).
+- [ ] **Step 3:** Unit tests PASS; `actionlint` clean (report if unavailable, do not skip).
+- [ ] **Step 4: Spike (one question, ≤ 30 min):** with `DOCKERHUB_ADMIN_TOKEN`, push a throwaway tag `labelyard:spike-delete`, delete it via the endpoint above, confirm it is gone with the list endpoint. If deletion does not work, the `dockerhub` job stays report-only (lists what it would delete, exits 0 with a summary) and that is written into the PR — no undocumented workaround.
+- [ ] **Step 5:** `registry-cleanup.yml` with `workflow_dispatch` input `dry_run: true` on the branch: both jobs list the same deletions for `labelyard` (empty at first) and nothing for `label-printer-hub-backend`.
+- [ ] **Step 6:** Commit `ci: publish labelyard to GHCR and Docker Hub with one tag and retention policy`.
 
 ### Task 5: Web app brand — name, PWA, icons, i18n
 
 **Files:**
-- Create: `frontend/public/brand/labelyard-mark.svg`, `frontend/public/brand/labelyard-wordmark.svg`, `frontend/public/brand/labelyard-wordmark-dark.svg`, `frontend/public/favicon.svg` (from the design task; until delivered, the task is blocked — no placeholder art is committed)
-- Replace (same paths, so the manifest paths stay): `frontend/public/icon-192.png`, `icon-512.png`, `icon-maskable-512.png` (safe zone: mark within the central 80 %), `apple-touch-icon.png` (180×180)
-- Modify: `frontend/public/manifest.webmanifest` (`name: "Labelyard"`, `short_name: "Labelyard"`, `description: "Label Printer Hub — print labels, scan codes and watch your label printers."`; `id`, `start_url`, `scope`, colours unchanged), `frontend/index.html` (`<title>Labelyard</title>`, `<link rel="icon" href="/favicon.svg" type="image/svg+xml" />`), `frontend/src/i18n/messages.ts:8` (`appName: msg\`Labelyard\``, new `tagline: msg\`The self-hosted Label Printer Hub for all your labels\``), `frontend/src/shell/Sidebar.tsx:35`, `frontend/src/shell/SignIn.tsx:64` (wordmark image with `alt="Labelyard"` above the tagline), `frontend/package.json` (`name: "labelyard-web"`), root `package.json` (`name: "labelyard"`, description, repository url), `frontend/pnpm-lock.yaml` (regenerated by `pnpm install`), `frontend/src/i18n/locales/{en,de}/messages.po` (extracted + compiled; German tagline `Der selbst gehostete Label Printer Hub für all deine Etiketten`), `frontend/e2e/settings.spec.ts:84`, `frontend/src/pwa.test.ts`
+- Logo: **blue-4** (hang tag whose string forms the L). The final set is committed in `docs/brand/labelyard/` (source of truth, with `palette.md`: light tag `#3F73EC` on tile `#0B1429`, dark tag `#7FA3F5` on tile `#22366A`, contrast table). This task **copies** the files to their destinations; it never edits them — a change to the logo is made in `docs/brand/labelyard/` and copied again.
+
+| Source (`docs/brand/labelyard/`) | Destination |
+|---|---|
+| `mark.svg`, `mark-dark.svg` | `frontend/public/brand/` (sidebar/app header); website theme `logo` (Task 7) |
+| `lockup.svg`, `lockup-dark.svg` | README hero (`<picture>` with `prefers-color-scheme`, referenced directly from `docs/brand/labelyard/`), website landing hero, Docker Hub README (absolute `raw.githubusercontent.com` URL) |
+| `wordmark.svg` | `frontend/public/brand/` — sign-in page above the tagline |
+| `mark-mono.svg` | `frontend/public/brand/` — single-colour use (print, docs) |
+| `favicon.svg`, `favicon.ico`, `favicon-16.png`, `favicon-32.png` | `frontend/public/`; website `favicon` |
+| `apple-touch-icon.png` | `frontend/public/apple-touch-icon.png` (replace) |
+| `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | `frontend/public/` (replace, same paths, so the manifest paths stay) |
+| `social-card.png` (1200×630) | GitHub social preview (Task 9), website `og:image` (Task 7), `frontend/public/brand/social-card.png` |
+| `icon-512.png` | Docker Hub repository logo, if the account offers one (UI only — Task 9) |
+
+- Add a test `it("brand copies match docs/brand/labelyard")` in `frontend/src/pwa.test.ts`: every copied file is byte-identical to its source (catches a stale copy after a logo change).
+- The manifest `theme_color`/`background_color` and the app's accent colour stay as they are: whether blue becomes the UI accent is decision **D-UI1** (maintainer), not part of this plan.
+- Modify: `frontend/public/manifest.webmanifest` (`name: "Labelyard"`, `short_name: "Labelyard"`, `description: "Label Printer Hub — print labels, scan codes and watch your label printers."`; `id`, `start_url`, `scope`, colours unchanged), `frontend/index.html` (`<title>Labelyard</title>`, `<link rel="icon" href="/favicon.svg" type="image/svg+xml" />`, `<link rel="icon" href="/favicon.ico" sizes="32x32" />`), `frontend/src/i18n/messages.ts:8` (`appName: msg\`Labelyard\``, new `tagline: msg\`The self-hosted Label Printer Hub for all your labels\``), `frontend/src/shell/Sidebar.tsx:35`, `frontend/src/shell/SignIn.tsx:64` (wordmark image with `alt="Labelyard"` above the tagline), `frontend/package.json` (`name: "labelyard-web"`), root `package.json` (`name: "labelyard"`, description, repository url), `frontend/pnpm-lock.yaml` (regenerated by `pnpm install`), `frontend/src/i18n/locales/{en,de}/messages.po` (extracted + compiled; German tagline `Der selbst gehostete Label Printer Hub für all deine Etiketten`), `frontend/e2e/settings.spec.ts:84`, `frontend/src/pwa.test.ts`
 
 **Interfaces:**
 - Consumes: Task 3 display-name default `Labelyard` (Sidebar falls back to `appName`).
@@ -236,7 +266,7 @@ Rules (constants in the script, each with a comment saying why it exists):
 
 **Files:**
 - Create: `docs/migration/labelyard.md`, `docs/decisions/0022-rename-to-labelyard.md` (next free number at implementation time; status Accepted, amends ADR 0007 image name, lists the compatibility table), entries in `docs/decisions/README.md` and `docs/decisions/register.md`
-- Modify: `README.md` (hero: wordmark image `frontend/public/brand/labelyard-wordmark.svg` with a dark variant via `<picture>`, H1 `Labelyard`, first line `**The self-hosted Label Printer Hub for all your labels.**`, one sentence "Formerly *Label Printer Hub*." with a link to the migration guide; a "Website: https://labelyard.app" line under the hero; badges and links to `strausmann/labelyard`; config table with `LABELYARD_*` names and a note that `PRINTER_HUB_*` is still read; image refs; `docker exec labelyard labelyard admin create-key …`), `CONTRIBUTING.md`, `SECURITY.md`, `CLA.md`, `CODE_OF_CONDUCT.md`, `THIRD_PARTY_NOTICES.md`, `.github/ISSUE_TEMPLATE/*.yml`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/copilot-instructions.md`, `CLAUDE.md`, `.gemini/*`, `codecov.yml` comment, `.releaserc.json:2` (`git@github.com:strausmann/labelyard.git`), `docs/architecture.md`, `docs/architecture/*`, `docs/site/**`, `docs/policies/*` (trademarks: add a short "Labelyard" section — our project name, no registered mark claimed), `docs/learnings/*`, `examples/compose.*.yml` (image `ghcr.io/strausmann/labelyard:1.5.0`, container/service `labelyard`, Pangolin/Traefik keys `labelyard`, `LABELYARD_HOST`), `examples/.env.example`, `examples/README.md` (client env `LABELYARD_URL`, header stays `X-Label-Hub-Key`), `licence-policy.yml` and `Makefile` if the guard lists them
+- Modify: `README.md` (hero: lockup `docs/brand/labelyard/lockup.svg` with `lockup-dark.svg` via `<picture>`, H1 `Labelyard`, first line `**The self-hosted Label Printer Hub for all your labels.**`, one sentence "Formerly *Label Printer Hub*." with a link to the migration guide; a "Website: https://labelyard.app" line under the hero; badges and links to `strausmann/labelyard`; config table with `LABELYARD_*` names and a note that `PRINTER_HUB_*` is still read; image refs; `docker exec labelyard labelyard admin create-key …`), `CONTRIBUTING.md`, `SECURITY.md`, `CLA.md`, `CODE_OF_CONDUCT.md`, `THIRD_PARTY_NOTICES.md`, `.github/ISSUE_TEMPLATE/*.yml`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/copilot-instructions.md`, `CLAUDE.md`, `.gemini/*`, `codecov.yml` comment, `.releaserc.json:2` (`git@github.com:strausmann/labelyard.git`), `docs/architecture.md`, `docs/architecture/*`, `docs/site/**`, `docs/policies/*` (trademarks: add a short "Labelyard" section — our project name, no registered mark claimed), `docs/learnings/*`, `examples/compose.*.yml` (image `ghcr.io/strausmann/labelyard:1.5.0`, container/service `labelyard`, Pangolin/Traefik keys `labelyard`, `LABELYARD_HOST`), `examples/.env.example`, `examples/README.md` (client env `LABELYARD_URL`, header stays `X-Label-Hub-Key`), `licence-policy.yml` and `Makefile` if the guard lists them
 
 **Interfaces:**
 - Consumes: names from Tasks 2–5.
@@ -300,7 +330,7 @@ Options and their cost:
 - **A — Zensical (maintainer's preference).** Two builds from one tree: `website/en/zensical.toml` (root) and `website/de/zensical.toml` (`site_dir` → `/de/`), each with its own `nav` (labels duplicated in two files instead of one label module), cross-linked via `extra.alternate`; no automatic "not translated yet" fallback — untranslated Developer/Reference pages are simply not in the German nav and link to the English site; `hreflang`/sitemap alternates handled by `alternate` only. API reference: a standalone static page that renders a committed `openapi.json` with a self-hosted renderer (e.g. Redoc or Scalar as a vendored bundle, no CDN), outside the site's navigation/search and styled separately. Gains: the tool the maintainer uses for other sites, Python-only toolchain. Risk: when Zensical ships i18n/OpenAPI, the two-build layout and the standalone API page get reworked.
 - **B — Starlight, as Kept.** Native locales with fallback, `starlight-openapi` generates the API reference into the sidebar, `starlight-links-validator` checks links; a working template exists in Kept. Costs: a second Node toolchain in the repo (`website/package.json`, pnpm lock, Dependabot npm entry), Astro/Starlight upgrade churn, and not the generator the maintainer uses elsewhere.
 
-My recommendation: **B if German must be there at launch; A if the site may launch English-only** (German as a second build later, API reference as a standalone page). Either way the content plan above stays the same.
+**Status: open — the maintainer has not decided.** Recommendation (controller, based on the verified comparison above): **B, Starlight like Kept**, because Zensical 0.1.0 has one language per project and no OpenAPI reference, both of which this site needs. A remains viable only if the site may launch English-only with a standalone API page. Either way the content plan above stays the same.
 
 #### Files (option A shown; for B the equivalents are `website/astro.config.mjs`, `website/src/content/docs/**`, `website/src/locales.mjs`, `website/src/sidebar-labels.mjs`, `website/package.json` pinned like Kept)
 
@@ -328,20 +358,36 @@ Landing page (`index.md`, both languages): wordmark, H1 `Labelyard`, subtitle `T
 - [ ] **Step 4:** Open the PR `feat/labelyard-rename` → `milestone/1.5.0` with the Task 1 inventory and the Step 3 results; run the internal review with the four lenses (`code-review-lenses` checklist: taint — the warning path; outcome — run the container; unchanged dependencies — `settings_store.is_locked`; temporal — workflow image ref vs. repo rename order); external bot review before merge.
 - [ ] **Step 5:** After merge: run **Preview image** on `milestone/1.5.0` with version `1.5.0`; `docker pull ghcr.io/strausmann/labelyard:1.5.0-rc.N`, repeat Step 3 against it; confirm `ghcr.io/strausmann/label-printer-hub-backend` got no new tag.
 
-### Task 9: Maintainer steps outside the repo (checklist, no code)
+### Task 9: GitHub repository, GHCR package and Docker Hub metadata
+
+Runs after the repo rename (Task 10, first GitHub item) and before the milestone PR merges. Commands use the maintainer's `gh` login; nothing here is a CI job except the Docker Hub description workflow from Task 4.
+
+Values:
+- Description (GitHub, ≤ 350 chars): `Labelyard — the self-hosted Label Printer Hub for all your labels. Brother P-touch and QL tape printers, office printers and sheets, scan-to-print from your phone, API and webhooks.`
+- Homepage: `https://labelyard.app`
+- Topics (lowercase, ≤ 20): `labelyard`, `label-printer`, `label-printer-hub`, `brother`, `ptouch`, `brother-ql`, `ql-printer`, `ipp`, `label-maker`, `barcode`, `qr-code`, `grocy`, `snipe-it`, `spoolman`, `paperless`, `self-hosted`, `homelab`, `pwa`, `fastapi`
+- Social preview: `docs/brand/labelyard/social-card.png` (1200×630)
+- Docker Hub: short description `Labelyard — the self-hosted Label Printer Hub for all your labels`, full description `.github/dockerhub/README.md`, logo = `docs/brand/labelyard/icon-512.png`.
+
+- [ ] **Step 1:** `gh repo edit strausmann/labelyard --description "<description>" --homepage https://labelyard.app` and `--add-topic` for each topic; remove stale topics (`gh repo view --json repositoryTopics`) that name the old project.
+- [ ] **Step 2:** Upload the social preview in Settings → General → Social preview (no API for it).
+- [ ] **Step 3:** After the first `labelyard` push (preview `1.5.0-rc.N`): GHCR package `labelyard` → public, "Connect repository" if not linked by `org.opencontainers.image.source`, Admin role for the repo under "Manage Actions access" (cleanup needs it). Package page shows title and description from the OCI annotations of Task 4.
+- [ ] **Step 4:** Run **Docker Hub description** (`workflow_dispatch`); upload the logo in the Docker Hub UI if the account offers repository logos, otherwise note it as not possible.
+- [ ] **Step 5: Verify at the outcome.** `gh api repos/strausmann/labelyard --jq '.description, .homepage, (.topics|length)'` prints the values and ≥ 15 topics; a link to the repo pasted into a chat/preview tool shows the social card; `https://github.com/users/strausmann/packages/container/package/labelyard` shows the description and the repo link; `curl -s https://hub.docker.com/v2/namespaces/<user>/repositories/labelyard | jq -r .description` prints the short description; the Docker Hub page renders the README with the logo.
+
+### Task 10: Maintainer steps outside the repo (checklist, no code)
 
 GitHub:
 - [ ] Rename the repo `strausmann/Label-Printer-Hub` → `strausmann/labelyard` (lowercase, matching the image and avoiding the lowercasing step registries need). GitHub redirects web, API and git URLs; update local remotes anyway (`git remote set-url origin git@github.com:strausmann/labelyard.git`). Do this after Task 8 Step 5 and before the milestone PR merges.
-- [ ] Description: `Labelyard — the self-hosted Label Printer Hub for Brother PT/QL label printers and office printers. Scan, print, queue, from any browser or app.`; website field: `https://labelyard.app`.
-- [ ] Topics: `labelyard`, `label-printer`, `label-printer-hub`, `brother-ptouch`, `brother-ql`, `ipp`, `self-hosted`, `pwa`, `fastapi`, `homelab`.
-- [ ] Social preview image from the design task (1280×640).
+- [ ] Repository metadata, social preview and package pages: Task 9.
 - [ ] GHCR: after the first push, set package `labelyard` to **public**, link it to the repo, and grant the repo the Admin role under "Manage Actions access" (needed by `ghcr-cleanup.yml`).
 - [ ] Codecov and CLA assistant: confirm the next CI run uploads and the CLA check reports on a PR; re-link the repo in their dashboards if not.
 - [ ] Release-run secrets (`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`) unchanged; confirm the token may push to the new repo.
 
 Docker Hub:
-- [ ] Create repo `labelyard` (public) before the release run. Short description: `Labelyard — the self-hosted Label Printer Hub for Brother PT/QL and office printers.` Full description: README hero section, link to https://labelyard.app, image/tag table, link to the migration guide and GitHub.
-- [ ] Old repo `label-printer-hub-backend`: replace the short description with `Moved to <user>/labelyard — this image is no longer updated.` and add the same line at the top of the full description. Do not delete.
+- [ ] Create the access token `DOCKERHUB_ADMIN_TOKEN` (Read, Write, Delete) and store it as a repo secret; confirm `DOCKERHUB_TOKEN` may push to the new repo.
+- [ ] Create repo `labelyard` (public) before the first preview run that pushes to Docker Hub (descriptions come from Task 9).
+- [ ] Old repo `label-printer-hub-backend`: short description `Moved to <user>/labelyard — this image is no longer updated.`, same line on top of its full description. Do not delete.
 
 Release notes (paste at the top of the `v1.5.0` GitHub Release body, above the generated notes):
 
@@ -361,6 +407,7 @@ This release also moves the API to `/api/v1` (see below). Full upgrade guide: do
 ```
 
 Maintainer decisions (not tasks):
+- **D-UI1:** whether the logo's blue (`#3F73EC`, dark `#7FA3F5`, see `docs/brand/labelyard/palette.md`) becomes the web app's accent colour and PWA `theme_color`. Not decided; this plan changes no UI colours.
 - When to delete the frozen packages `label-printer-hub-backend` on GHCR and Docker Hub (suggested: not before 2.0.0; deletion breaks every `docker pull` of an old version).
 - When to drop the `PRINTER_HUB_*` fallback and the `printer-hub` CLI alias (suggested: 2.0.0, announced one minor release earlier).
 - Register `labelyard.dev` as well (`labelyard.app` is registered; `labelyard.com` is for sale) — only if it is to redirect to `labelyard.app`.
