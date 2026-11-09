@@ -1,7 +1,7 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { pageJobStateFrom, pageJobStateKey } from "../features/jobs/pageJobState";
-import { previewNamesCode, SHEET_PREVIEW_KEY, sheetKey, sheetsListKey } from "../features/sheets/keys";
+import { previewNamesCode, SHEET_PREVIEW_KEY, sheetKey, sheetsListKey, typesListKey } from "../features/sheets/keys";
 import { isSessionUnknown, notifyUnauthorized, onSessionConfirmed } from "./client";
 
 const EVENTS_URL = "/api/v1/events";
@@ -99,6 +99,7 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
     let stopped = false;
     let disposed = false;
     let stopWaiting: (() => void) | null = null;
+    let openedBefore = false;
 
     const close = () => {
       if (source) {
@@ -137,6 +138,14 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
       const es = new EventSource(EVENTS_URL, { withCredentials: true });
       source = es;
       es.onopen = () => {
+        // The snapshot of a fresh stream has no sheet frames, so a `sheet.updated` sent while the
+        // stream was down never arrives: whatever shows sheets is fetched again.
+        if (openedBefore) {
+          void queryClient.invalidateQueries({ queryKey: sheetsListKey.slice(0, 1) });
+          void queryClient.invalidateQueries({ queryKey: typesListKey.slice(0, 1) });
+          void queryClient.invalidateQueries({ queryKey: [SHEET_PREVIEW_KEY] });
+        }
+        openedBefore = true;
         delay = BACKOFF_START_MS;
         setConnected(true);
         setConnecting(false);

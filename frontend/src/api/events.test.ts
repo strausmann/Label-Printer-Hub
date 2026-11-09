@@ -275,6 +275,17 @@ describe("useHubEvents", () => {
     expect(FakeEventSource.instances).toHaveLength(3);
   });
 
+  it("after an automatic reconnect the sheet lists, the types and the previews are fetched again; the first open fetches nothing", () => {
+    const { invalidate } = setup();
+    act(() => last().open());
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => last().fail());
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => last().open());
+    expect(keys(invalidate)).toEqual([["sheets"], ["sheet-types"], ["sheet-preview"]]);
+  });
+
   it("backoff doubles and caps at 30s", () => {
     setup();
     const delays = [1000, 2000, 4000, 8000, 16000, 30000, 30000];
