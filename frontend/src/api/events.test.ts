@@ -146,7 +146,7 @@ describe("useHubEvents", () => {
       kind: "sheet_page",
       at_printer: at,
       at_printer_reasons: [],
-      summary: "page 1 of 3",
+      summary: { sheet_code: "L4736-0001", cell_count: 3 },
       ...over,
     });
 
@@ -157,7 +157,7 @@ describe("useHubEvents", () => {
         kind: "sheet_page",
         atPrinter: "waiting",
         reasons: [],
-        summary: "page 1 of 3",
+        summary: { sheetCode: "L4736-0001", cellCount: 3 },
       });
       act(() => last().emit("job.state_changed", "p1", pageEvent("stopped", { at_printer_reasons: ["toner-empty"] })));
       expect(client.getQueryData(["jobs", "j1", "at_printer"])).toMatchObject({ atPrinter: "stopped", reasons: ["toner-empty"] });

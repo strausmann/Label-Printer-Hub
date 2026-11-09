@@ -560,6 +560,22 @@ describe("filters, as a person uses them", () => {
     expect(search).toHaveValue("45");
   });
 
+  it("a link to exactly the filter we committed earlier still re-syncs the boxes", async () => {
+    mockApi(LIST);
+    const { router } = await renderApp({ path: "/sheets/archive" });
+    const search = await screen.findByRole("textbox", { name: "Search" });
+    await userEvent.type(search, "flour");
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ q: "flour" }));
+    await act(async () => {
+      await router.navigate({ to: "/sheets/archive", search: { q: "sugar" } });
+    });
+    await waitFor(() => expect(search).toHaveValue("sugar"));
+    await act(async () => {
+      await router.navigate({ to: "/sheets/archive", search: { q: "flour" } });
+    });
+    await waitFor(() => expect(search).toHaveValue("flour"));
+  });
+
   it("caps the search at what the API takes: 100 characters in the box, and in a hand-edited address", async () => {
     const { calls } = mockApi(LIST);
     await renderApp({ path: `/sheets/archive?q=${"a".repeat(130)}&vendor=${"v".repeat(250)}` });

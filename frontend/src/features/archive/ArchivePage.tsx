@@ -37,11 +37,16 @@ function useTypedFilters(search: ArchiveSearch, commit: (next: Partial<ArchiveSe
   // since: "4" lands after "45" was typed), leave them alone, or the box would be rewritten under
   // the cursor. Otherwise it came from outside (a link, back and forward): follow it.
   // (React's pattern for state that follows a changing input: set it while rendering, not in an effect.)
-  const [committed, setCommitted] = useState<{ q: string | undefined; w: number | undefined; h: number | undefined } | null>(null);
+  type Filters = { q: string | undefined; w: number | undefined; h: number | undefined };
+  // Our own commits the address has not shown yet, oldest first.
+  const [committed, setCommitted] = useState<Filters[]>([]);
   const [seen, setSeen] = useState({ q: search.q, w: search.w, h: search.h });
   if (seen.q !== search.q || seen.w !== search.w || seen.h !== search.h) {
     setSeen({ q: search.q, w: search.w, h: search.h });
-    const ours = committed !== null && committed.q === search.q && committed.w === search.w && committed.h === search.h;
+    const index = committed.findIndex((c) => c.q === search.q && c.w === search.w && c.h === search.h);
+    const ours = index >= 0;
+    // Ours: it and everything older is shown now. Not ours: the list is stale, a later link to the same filter must follow too.
+    setCommitted(ours ? committed.slice(index + 1) : []);
     if (!inSync && !ours) {
       setQ(search.q ?? "");
       setW(search.w === undefined ? "" : String(search.w));
@@ -52,7 +57,7 @@ function useTypedFilters(search: ArchiveSearch, commit: (next: Partial<ArchiveSe
   useEffect(() => {
     if (inSync) return;
     const timer = setTimeout(() => {
-      setCommitted({ q: typed.q, w: typed.w, h: typed.h });
+      setCommitted((list) => [...list, { q: typed.q, w: typed.w, h: typed.h }]);
       commit({ q: typed.q, w: typed.w, h: typed.h });
     }, FILTER_DELAY_MS);
     return () => clearTimeout(timer);
