@@ -1,10 +1,11 @@
 # Prune the GHCR package label-printer-hub-backend.
 #
 # Kept: release images from 1.4.0 on (x.y.z), their floating tags (x.y, x,
-# latest) and the rolling `dev` tag from main. Everything else goes: branch
-# tags, CI test tags, pre-1.4.0 releases and untagged images. Platform
-# children and attestations of kept multi-arch images are never touched; the
-# action follows manifest lists and referrers.
+# latest), the rolling `dev` tag from main, and preview tags (x.y.z-rc.N
+# from preview-image.yml) whose release x.y.z does not exist yet. Everything
+# else goes: branch tags, CI test tags, pre-1.4.0 releases and untagged
+# images. Platform children and attestations of kept multi-arch images are
+# never touched; the action follows manifest lists and referrers.
 #
 # Safety:
 # - A manual run defaults to dry-run: it lists what would be deleted.
@@ -40,6 +41,31 @@ jobs:
     permissions:
       packages: write
     steps:
+      # Previews (x.y.z-rc.N) are kept until x.y.z is released. The registry
+      # tag list decides which ones are still open; they join the keep rule.
+      - name: Build the keep rule
+        id: keep
+        env:
+          ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_PATH: ${{ github.repository_owner }}/label-printer-hub-backend
+        run: |
+          set -euo pipefail
+          image="${IMAGE_PATH,,}"
+          registry_token=$(printf 'user = "%s:%s"\n' "$ACTOR" "$GHCR_TOKEN" \
+            | curl -fsS -K - "https://ghcr.io/token?scope=repository:${image}:pull" | jq -r .token)
+          tags=$(printf 'header = "Authorization: Bearer %s"\n' "$registry_token" \
+            | curl -fsS -K - "https://ghcr.io/v2/${image}/tags/list?n=10000" | jq -r '.tags[]?')
+          base='dev|latest|1|1\.([4-9]|[1-9][0-9]+)(\.(0|[1-9][0-9]*))?|([2-9]|[1-9][0-9]+)(\.(0|[1-9][0-9]*)){0,2}'
+          open_previews=""
+          while IFS= read -r t; do
+            [[ "$t" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc\.[0-9]+$ ]] || continue
+            grep -qxF "${BASH_REMATCH[1]}" <<<"$tags" && continue
+            open_previews+="|${t//./\\.}"
+          done <<<"$tags"
+          echo "regex=^(${base}${open_previews})\$" >> "$GITHUB_OUTPUT"
+          echo "Open previews kept: ${open_previews:-none}" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Prune label-printer-hub-backend
         uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
         with:
@@ -48,8 +74,9 @@ jobs:
           # Every tag is a candidate ...
           delete-tags: "^.+$"
           # ... except these, which take priority over every other rule:
-          # dev, latest, and releases >= 1.4.0 with their floating tags.
-          exclude-tags: "^(dev|latest|1|1\\.([4-9]|[1-9][0-9]+)(\\.(0|[1-9][0-9]*))?|([2-9]|[1-9][0-9]+)(\\.(0|[1-9][0-9]*)){0,2})$"
+          # dev, latest, releases >= 1.4.0 with their floating tags and open
+          # previews (built in the previous step).
+          exclude-tags: ${{ steps.keep.outputs.regex }}
           delete-untagged: true
           delete-orphaned-images: true
           delete-ghost-images: true
