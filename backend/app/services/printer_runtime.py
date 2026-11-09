@@ -634,6 +634,13 @@ class PrinterRuntime:
             ),
         )
 
+    async def resync_identity_hold(self, printer_id: UUID) -> None:
+        """Set the hold (and tell the readers) from the database, after an admin resolved a swap.
+
+        Same fail-closed path as a probe: the state is re-read, and a read that fails never
+        releases a hold. A different device seen right after the commit keeps the hold."""
+        await self._mismatch_changed(printer_id, None)
+
     async def _read_mismatch_since(self, printer_id: UUID) -> datetime | None:
         async with self._sessions()() as session:
             row = await identity_repo.get(session, printer_id)

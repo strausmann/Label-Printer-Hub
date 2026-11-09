@@ -62,6 +62,13 @@ class PrinterRead(BaseModel):
         default=None, description="When a probe last saw the stored device; admin callers only"
     )
 
+    observed_id: str | None = Field(
+        default=None, description="The differing device of a flagged swap; admin callers only"
+    )
+    observed_kind: str | None = Field(
+        default=None, description="serial | ipp_uuid | mac; admin callers only, else null"
+    )
+
     @field_serializer("created_at", "updated_at")
     def _serialise_datetimes(self, dt: datetime, _info: object) -> str:
         return serialize_datetime_utc(dt, _info)

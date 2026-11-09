@@ -12,18 +12,20 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
+from app.api.routes import admin_printers_api as admin_routes
 from app.models.printer import Printer, PrinterAudit
 from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_identity import PrinterIdentity
 from app.printer_backends.snmp_helper import ObservedIdentity
 from app.repositories import printer_identity as identity_repo
+from app.services.printer_admin_service import PrinterAdminService
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.helpers.fake_ipp_printer import FAKE_URI
 from tests.integration.api.test_sheet_print_api import Rig, _body, _sheet, running
@@ -33,6 +35,7 @@ pytestmark = pytest.mark.asyncio
 
 SERIAL_A = "E1234567ABC"
 SERIAL_B = "E7654321XYZ"
+SERIAL_C = "E5555555QQQ"
 
 
 class BoomError(RuntimeError):
@@ -107,13 +110,38 @@ def _url(printer_id: UUID) -> str:
 
 
 async def _resolve(
-    rig: Rig, resolution: str, headers: dict[str, str] | None = None, pid: UUID | None = None
+    rig: Rig,
+    resolution: str,
+    headers: dict[str, str] | None = None,
+    pid: UUID | None = None,
+    *,
+    expected: str = SERIAL_B,
 ) -> httpx.Response:
+    """Resolve the way the admin UI does: bound to the device the admin reviewed."""
     return await rig.client.post(
         _url(pid or rig.printer_id),
-        json={"resolution": resolution},
+        json={
+            "resolution": resolution,
+            "expected_observed_id": expected,
+            "expected_observed_kind": "serial",
+        },
         headers=headers if headers is not None else await _admin(),
     )
+
+
+def _on_service_session(
+    monkeypatch: pytest.MonkeyPatch, setup: Callable[[Any, pytest.MonkeyPatch], None]
+) -> None:
+    """Run ``setup(session, monkeypatch)`` on the session the resolve call uses.
+
+    Patches that one session instance, not ``AsyncSession`` for every session of the process."""
+    original = PrinterAdminService.resolve_identity
+
+    async def wrapped(self: PrinterAdminService, *args: Any, **kw: Any) -> Any:
+        setup(self._session, monkeypatch)
+        return await original(self, *args, **kw)
+
+    monkeypatch.setattr(PrinterAdminService, "resolve_identity", wrapped)
 
 
 # ---------------------------------------------------------------------------- resolve
@@ -171,18 +199,22 @@ async def test_replaced_is_atomic(monkeypatch: pytest.MonkeyPatch) -> None:
         await _seed_calibrations(rig.printer_id, "auto", "gone")
         await _flag_swap(rig)
         headers = await _admin()
-        original = AsyncSession.delete
         calls = 0
 
-        async def failing_delete(self: AsyncSession, instance: object) -> None:
-            nonlocal calls
-            calls += 1
-            if calls == 2:
-                raise BoomError
-            await original(self, instance)
+        def setup(session: Any, m: pytest.MonkeyPatch) -> None:
+            original = session.delete
+
+            async def failing_delete(instance: object) -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise BoomError
+                await original(instance)
+
+            m.setattr(session, "delete", failing_delete)
 
         with monkeypatch.context() as m:
-            m.setattr(AsyncSession, "delete", failing_delete)
+            _on_service_session(m, setup)
             with pytest.raises(BoomError):
                 await _resolve(rig, "replaced", headers)
 
@@ -200,7 +232,6 @@ async def test_a_failed_commit_keeps_the_hold(monkeypatch: pytest.MonkeyPatch) -
         headers = await _admin()
         armed = False
         adopt = identity_repo.adopt_observed
-        commit = AsyncSession.commit
 
         async def adopting(*args: Any, **kw: Any) -> Any:
             nonlocal armed
@@ -208,14 +239,19 @@ async def test_a_failed_commit_keeps_the_hold(monkeypatch: pytest.MonkeyPatch) -
             armed = True  # from here on the transaction is the only thing left to commit
             return result
 
-        async def failing_commit(self: AsyncSession) -> None:
-            if armed:
-                raise BoomError
-            await commit(self)
+        def setup(session: Any, m: pytest.MonkeyPatch) -> None:
+            commit = session.commit
+
+            async def failing_commit() -> None:
+                if armed:
+                    raise BoomError
+                await commit()
+
+            m.setattr(session, "commit", failing_commit)
 
         with monkeypatch.context() as m:
             m.setattr(identity_repo, "adopt_observed", adopting)
-            m.setattr(AsyncSession, "commit", failing_commit)
+            _on_service_session(m, setup)
             with pytest.raises(BoomError):
                 await _resolve(rig, "replaced", headers)
 
@@ -369,11 +405,163 @@ async def test_audit_row_has_no_identity_value() -> None:
         assert SERIAL_A not in text and SERIAL_B not in text
 
 
-async def test_resolve_logs_no_identity(caplog: pytest.LogCaptureFixture) -> None:
+@pytest.mark.parametrize("resolution", ["same_device", "replaced"])
+async def test_resolve_logs_no_identity(resolution: str, caplog: pytest.LogCaptureFixture) -> None:
+    async with running() as rig:
+        await _seed_calibrations(rig.printer_id, "auto")
+        await _flag_swap(rig)
+        headers = await _admin()
+        # INFO: aiosqlite's DEBUG logger prints every bound parameter, including the value the
+        # caller sent; the application's own logging is what is asserted here.
+        with caplog.at_level(logging.INFO):
+            resp = await _resolve(rig, resolution, headers)
+            changed = await _resolve(rig, resolution, headers, expected=SERIAL_A)  # 409 path
+        assert resp.status_code == 200 and changed.status_code == 409
+        assert SERIAL_A not in caplog.text and SERIAL_B not in caplog.text
+
+
+# ---------------------------------------------------------------------------- review round 1
+
+
+async def test_resolve_binds_to_the_reviewed_device() -> None:
+    """The device changes again between the admin's review and the click: nothing is resolved."""
+    async with running() as rig:
+        await _seed_calibrations(rig.printer_id, "auto", "gone")
+        await _flag_swap(rig)  # the admin reviewed SERIAL_B
+        sink = rig.app.state.printer_runtime._identity_sink
+        assert await sink(rig.printer_id, ObservedIdentity(SERIAL_C, None, None)) == "different"
+
+        resp = await _resolve(rig, "replaced")  # still expects SERIAL_B
+
+        assert resp.status_code == 409, resp.text
+        detail = resp.json()["detail"]
+        assert detail["type"] == "identity-changed" and detail["status"] == 409
+        assert str(rig.printer_id) in detail["detail"]
+        for value in (SERIAL_A, SERIAL_B, SERIAL_C):
+            assert value not in resp.text
+        assert await _calibration_trays(rig.printer_id) == ["auto", "gone"]
+        row = await _identity(rig.printer_id)
+        assert row.hardware_id == SERIAL_A and row.observed_id == SERIAL_C
+        assert row.mismatch_since is not None
+        assert rig.app.state.print_queue.is_identity_held(rig.printer_id)
+        again = await _resolve(rig, "replaced", expected=SERIAL_C)  # re-reviewed: accepted
+        assert again.status_code == 200, again.text
+
+
+async def test_resolve_needs_the_reviewed_device_in_the_body() -> None:
     async with running() as rig:
         await _flag_swap(rig)
         headers = await _admin()
-        with caplog.at_level(logging.DEBUG):
+        for body in (
+            {"resolution": "same_device"},
+            {"resolution": "same_device", "expected_observed_id": SERIAL_B},
+            {"resolution": "same_device", "expected_observed_kind": "serial"},
+        ):
+            resp = await rig.client.post(_url(rig.printer_id), json=body, headers=headers)
+            assert resp.status_code == 422, resp.text
+        assert rig.app.state.print_queue.is_identity_held(rig.printer_id)
+
+
+async def test_admin_sees_the_observed_device_read_key_does_not() -> None:
+    async with running() as rig:
+        await _flag_swap(rig)
+        headers = await _admin()
+
+        admin = await rig.client.get(f"/api/v1/printers/{rig.printer_id}", headers=headers)
+        admin_api = await rig.client.get("/api/v1/admin/printers/page-1", headers=headers)
+        reader = await rig.client.get(f"/api/v1/printers/{rig.printer_id}", headers=rig.reader)
+
+        for view in (admin.json(), admin_api.json()):
+            assert view["observed_id"] == SERIAL_B and view["observed_kind"] == "serial"
+        assert reader.json()["observed_id"] is None and reader.json()["observed_kind"] is None
+        assert SERIAL_B not in reader.text
+
+
+async def test_a_probe_between_commit_and_release_keeps_the_hold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A different device is seen right after the commit: the hold follows the database."""
+    async with running() as rig:
+        await _flag_swap(rig)
+        headers = await _admin()
+        sink = rig.app.state.printer_runtime._identity_sink
+        events = rig.app.state.event_bus.subscribe(f"printer:{rig.printer_id}:state", "t-race")
+        original = PrinterAdminService.resolve_identity
+
+        async def resolve_then_probe(self: PrinterAdminService, *a: Any, **kw: Any) -> Any:
+            result = await original(self, *a, **kw)
+            assert await sink(rig.printer_id, ObservedIdentity(SERIAL_C, None, None)) == "different"
+            return result
+
+        with monkeypatch.context() as m:
+            m.setattr(PrinterAdminService, "resolve_identity", resolve_then_probe)
             resp = await _resolve(rig, "same_device", headers)
-        assert resp.status_code == 200
-        assert SERIAL_A not in caplog.text and SERIAL_B not in caplog.text
+
+        assert resp.status_code == 200, resp.text
+        row = await _identity(rig.printer_id)
+        assert row.mismatch_since is not None and row.observed_id == SERIAL_C
+        assert rig.app.state.print_queue.is_identity_held(rig.printer_id)
+        seen = []
+        while not events.empty():
+            seen.append(events.get_nowait().data["mismatch"])
+        assert False not in seen  # the stream never announces "resolved"
+
+
+async def test_a_failure_after_the_commit_does_not_leave_a_stuck_hold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with running() as rig:
+        await _flag_swap(rig)
+        headers = await _admin()
+
+        async def broken_read(*_a: Any, **_kw: Any) -> Any:
+            raise BoomError
+
+        with monkeypatch.context() as m:
+            m.setattr(admin_routes, "_read", broken_read)
+            with pytest.raises(BoomError):
+                await _resolve(rig, "same_device", headers)
+
+        assert (await _identity(rig.printer_id)).mismatch_since is None
+        assert not rig.app.state.print_queue.is_identity_held(rig.printer_id)
+
+
+async def test_a_restricted_admin_key_cannot_resolve_another_printer() -> None:
+    async with running() as rig:
+        await _seed_calibrations(rig.printer_id, "auto")
+        await _flag_swap(rig)
+        other = {"X-Label-Hub-Key": await _insert_key(["admin"], [str(uuid4())])}
+        own = {"X-Label-Hub-Key": await _insert_key(["admin"], [str(rig.printer_id)])}
+
+        denied = await _resolve(rig, "replaced", other)
+
+        assert denied.status_code == 403, denied.text
+        assert denied.json()["detail"]["error_code"] == "printer_not_allowed"
+        assert await _calibration_trays(rig.printer_id) == ["auto"]
+        assert rig.app.state.print_queue.is_identity_held(rig.printer_id)
+        assert (await _resolve(rig, "replaced", own)).status_code == 200
+
+
+async def test_409_does_not_delete_before_the_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No mismatch pending: the calibration rows are not even touched."""
+    async with running() as rig:
+        sink = rig.app.state.printer_runtime._identity_sink
+        await sink(rig.printer_id, ObservedIdentity(SERIAL_A, None, None))
+        await _seed_calibrations(rig.printer_id, "auto")
+        deletes = 0
+
+        def setup(session: Any, m: pytest.MonkeyPatch) -> None:
+            original = session.delete
+
+            async def counting(instance: object) -> None:
+                nonlocal deletes
+                deletes += 1
+                await original(instance)
+
+            m.setattr(session, "delete", counting)
+
+        with monkeypatch.context() as m:
+            _on_service_session(m, setup)
+            resp = await _resolve(rig, "replaced", expected=SERIAL_A)
+
+        assert resp.status_code == 409 and deletes == 0

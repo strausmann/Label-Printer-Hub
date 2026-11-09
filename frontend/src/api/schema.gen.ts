@@ -1844,6 +1844,16 @@ export interface components {
          */
         IdentityResolve: {
             /**
+             * Expected Observed Id
+             * @description The flagged device the admin reviewed (``observed_id``)
+             */
+            expected_observed_id: string;
+            /**
+             * Expected Observed Kind
+             * @description Its kind (``observed_kind``); the call binds to this device
+             */
+            expected_observed_kind: string;
+            /**
              * Resolution
              * @description same_device: the flagged device is accepted and the calibration stays; replaced: the device was swapped, so its stored calibration is deleted
              * @enum {string}
@@ -3763,6 +3773,16 @@ export interface components {
             model: string;
             /** Name */
             name: string;
+            /**
+             * Observed Id
+             * @description The differing device a flagged swap is about; null otherwise
+             */
+            observed_id?: string | null;
+            /**
+             * Observed Kind
+             * @description serial | ipp_uuid | mac
+             */
+            observed_kind?: string | null;
             /** Queue */
             queue: {
                 [key: string]: unknown;
@@ -3818,6 +3838,16 @@ export interface components {
             model: string;
             /** Name */
             name: string;
+            /**
+             * Observed Id
+             * @description The differing device of a flagged swap; admin callers only
+             */
+            observed_id?: string | null;
+            /**
+             * Observed Kind
+             * @description serial | ipp_uuid | mac; admin callers only, else null
+             */
+            observed_kind?: string | null;
             pause?: components["schemas"]["PauseRead"] | null;
             /** Paused */
             paused: boolean;

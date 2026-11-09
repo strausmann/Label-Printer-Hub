@@ -120,6 +120,10 @@ class NoIdentityMismatchError(Exception):
     """The printer has no pending device-swap flag, so there is nothing to resolve."""
 
 
+class IdentityChangedError(Exception):
+    """The flagged device is no longer the one the caller reviewed."""
+
+
 class ConnectionKindMismatchError(Exception):
     """An update's ``connection`` does not fit the stored printer's backend."""
 
@@ -609,22 +613,44 @@ class PrinterAdminService:
         """The stored hardware identity row of a printer (admin views only)."""
         return await identity_repo.get(self._session, printer_id)
 
+    async def get_identities(self, printer_ids: Sequence[UUID]) -> dict[UUID, PrinterIdentity]:
+        """The stored identities of several printers in one query."""
+        return await identity_repo.get_many(self._session, printer_ids)
+
     async def resolve_identity(
-        self, printer_id: UUID, resolution: Literal["same_device", "replaced"]
+        self,
+        printer_id: UUID,
+        resolution: Literal["same_device", "replaced"],
+        *,
+        expected_observed_id: str,
+        expected_observed_kind: str,
     ) -> Printer:
         """End a flagged device swap (#231): keep the calibration or reset it.
 
-        One transaction: ``replaced`` deletes every calibration row of the printer (the rows
-        found, not every configured tray), then the observed device becomes the stored one and
-        the mismatch ends, then one audit row (no identity value), then one commit. Any failure
-        rolls everything back. Releasing the queue hold and the events belong to the caller and
-        happen only after this returns.
+        Bound to the device the admin reviewed: it only applies while the observed device still
+        is ``(expected_observed_kind, expected_observed_id)``. One transaction: the observed
+        device becomes the stored one and the mismatch ends (this is also the check, so a 409
+        deletes nothing), then ``replaced`` deletes every calibration row of the printer (the rows
+        found, not every configured tray), then one audit row (no identity value), then one
+        commit. Any failure rolls everything back. Releasing the queue hold and the events belong
+        to the caller and happen only after this returns.
         """
         printer = await printers_repo.get(self._session, printer_id)
         if printer is None:
             raise PrinterNotFoundError
         removed = 0
         async with write_transaction(self._session):
+            if not await identity_repo.adopt_observed(
+                self._session,
+                printer_id,
+                expected_id=expected_observed_id,
+                expected_kind=expected_observed_kind,
+                now=datetime.now(UTC),
+            ):
+                current = await identity_repo.get(self._session, printer_id)
+                if current is None or current.mismatch_since is None:
+                    raise NoIdentityMismatchError
+                raise IdentityChangedError
             if resolution == "replaced":
                 rows = (
                     await self._session.execute(
@@ -637,10 +663,6 @@ class PrinterAdminService:
                     await self._session.delete(row)
                     removed += 1
                 await self._session.flush()
-            if not await identity_repo.adopt_observed(
-                self._session, printer_id, now=datetime.now(UTC)
-            ):
-                raise NoIdentityMismatchError
             await self._record_audit(
                 printer_id=printer_id,
                 slug=printer.slug,
@@ -653,8 +675,7 @@ class PrinterAdminService:
                 ),
             )
             await self._session.commit()
-        await self._session.refresh(printer)
-        return printer
+        return printer  # nothing on the row changed; no refresh that could fail after the commit
 
     async def _record_audit(
         self,

@@ -37,6 +37,7 @@ from app.auth.scope_deps import require_print, require_read
 from app.config import get_settings
 from app.db.session import get_session
 from app.models.job import JobState
+from app.models.printer_identity import PrinterIdentity
 from app.repositories import jobs as jobs_repo
 from app.repositories import printer_identity as identity_repo
 from app.repositories import printer_roll as roll_repo
@@ -91,24 +92,33 @@ def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object
     return {"tls_verify": bool(connection.get("tls_verify", True))}
 
 
-async def _identity_view(
-    session: AsyncSession, printer_id: UUID, auth: AuthContext | None
-) -> dict[str, Any]:
-    """The stored hardware identity fields, for admin callers only (#231, M1).
+def _is_admin(auth: AuthContext | None) -> bool:
+    return auth is not None and auth.scope == "admin"
 
-    The serial is inventory data: every other caller gets ``null``. Filled field by field,
-    never through ``from_attributes``.
-    """
-    if auth is None or auth.scope != "admin":
-        return {}
-    row = await identity_repo.get(session, printer_id)
+
+def _identity_fields(row: PrinterIdentity | None) -> dict[str, Any]:
+    """Field by field, never through ``from_attributes``; the stored and the flagged device."""
     if row is None:
         return {}
     return {
         "hardware_id": row.hardware_id,
         "hardware_id_kind": row.hardware_id_kind,
         "hardware_id_seen_at": row.hardware_id_seen_at,
+        "observed_id": row.observed_id,
+        "observed_kind": row.observed_kind,
     }
+
+
+async def _identity_view(
+    session: AsyncSession, printer_id: UUID, auth: AuthContext | None
+) -> dict[str, Any]:
+    """The hardware identity fields, for admin callers only (#231, M1).
+
+    The serial is inventory data: every other caller gets ``null`` and no read happens.
+    """
+    if not _is_admin(auth):
+        return {}
+    return _identity_fields(await identity_repo.get(session, printer_id))
 
 
 # Type alias for the session dependency
@@ -191,6 +201,9 @@ async def list_printers(
                     "error_message": f"slug={slug!r} not found",
                 },
             )
+    identities = (
+        await identity_repo.get_many(session, [p.id for p in printers]) if _is_admin(_auth) else {}
+    )
     result: list[PrinterRead] = []
     for p in printers:
         state = await printer_state_repo.get(session, p.id)
@@ -208,7 +221,7 @@ async def list_printers(
                 pause=pause,
                 created_at=p.created_at,
                 updated_at=p.updated_at,
-                **await _identity_view(session, p.id, _auth),
+                **_identity_fields(identities.get(p.id)),
             )
         )
     return result

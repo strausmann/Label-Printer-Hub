@@ -47,20 +47,23 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import AuthContext
+from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_admin
 from app.db.session import get_session
 from app.models.printer import Printer
+from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import ProbeSummary
 from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.printer_admin import IppConnection, PrinterCreatePayload, PrinterUpdatePayload
+from app.schemas.problem import ProblemDetail
 from app.services.event_bus import BusEvent, EventBus
 from app.services.printer_admin_service import (
     IPP_BACKEND,
     ConnectionKindMismatchError,
     DuplicateNameError,
     DuplicateSlugError,
+    IdentityChangedError,
     IppTransportFactory,
     NoIdentityMismatchError,
     PrinterAdminService,
@@ -121,6 +124,10 @@ class PrinterRead(BaseModel):
     hardware_id_seen_at: str | None = Field(
         default=None, description="When a probe last saw the stored device"
     )
+    observed_id: str | None = Field(
+        default=None, description="The differing device a flagged swap is about; null otherwise"
+    )
+    observed_kind: str | None = Field(default=None, description="serial | ipp_uuid | mac")
 
 
 class IdentityResolve(BaseModel):
@@ -133,6 +140,12 @@ class IdentityResolve(BaseModel):
             "same_device: the flagged device is accepted and the calibration stays; "
             "replaced: the device was swapped, so its stored calibration is deleted"
         )
+    )
+    expected_observed_id: str = Field(
+        min_length=1, description="The flagged device the admin reviewed (``observed_id``)"
+    )
+    expected_observed_kind: str = Field(
+        min_length=1, description="Its kind (``observed_kind``); the call binds to this device"
     )
 
 
@@ -164,15 +177,24 @@ def _tray_read(tray: PrinterTray) -> TrayRead:
     )
 
 
-async def _read(svc: PrinterAdminService, printer: Printer) -> PrinterRead:
+async def _read(
+    svc: PrinterAdminService,
+    printer: Printer,
+    identities: dict[UUID, PrinterIdentity] | None = None,
+) -> PrinterRead:
+    """The admin view; a list passes ``identities`` (one query) instead of one read per row."""
     view = _row_to_read(printer)
     if printer.backend == IPP_BACKEND:
         view.trays = [_tray_read(t) for t in await svc.list_trays(printer.id)]
     # Explicit, never from_attributes: the identity is inventory data for admins (#231).
-    identity = await svc.get_identity(printer.id)
+    identity = (
+        await svc.get_identity(printer.id) if identities is None else identities.get(printer.id)
+    )
     if identity is not None:
         view.hardware_id = identity.hardware_id
         view.hardware_id_kind = identity.hardware_id_kind
+        view.observed_id = identity.observed_id
+        view.observed_kind = identity.observed_kind
         if identity.hardware_id_seen_at is not None:
             view.hardware_id_seen_at = serialize_datetime_utc(identity.hardware_id_seen_at, None)
     return view
@@ -266,7 +288,8 @@ async def list_printers(
 ) -> list[PrinterRead]:
     svc = PrinterAdminService(session, audit_user=_audit_user(_auth))
     printers = await svc.list_printers(include_disabled=include_disabled)
-    return [await _read(svc, p) for p in printers]
+    identities = await svc.get_identities([p.id for p in printers])
+    return [await _read(svc, p, identities) for p in printers]
 
 
 @router.post(
@@ -529,9 +552,25 @@ async def resolve_identity(
     session: SessionDep,
     _auth: AdminAuthDep,
 ) -> PrinterRead:
+    check_printer_access(_auth, printer_id)  # a key restricted to other printers: 403
     svc = PrinterAdminService(session, audit_user=_audit_user(_auth))
     try:
-        printer = await svc.resolve_identity(printer_id, body.resolution)
+        printer = await svc.resolve_identity(
+            printer_id,
+            body.resolution,
+            expected_observed_id=body.expected_observed_id,
+            expected_observed_kind=body.expected_observed_kind,
+        )
+    except IdentityChangedError as exc:
+        problem = ProblemDetail(
+            type="identity-changed",
+            title="The flagged device changed since it was reviewed",
+            status=status.HTTP_409_CONFLICT,
+            detail=f"Printer {printer_id}: review the flagged device again before resolving",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=problem.model_dump(exclude_none=True)
+        ) from exc
     except PrinterNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -548,29 +587,11 @@ async def resolve_identity(
                 "error_message": "No device swap is flagged for this printer.",
             },
         ) from exc
-    # Committed: only now is it safe to release the hold. A failed commit raised above and the
-    # hold stays (fail closed).
-    queue = getattr(request.app.state, "print_queue", None)
-    if queue is not None:
-        queue.set_identity_hold(printer.id, False)
-    _publish_identity_resolved(request, printer.id)
+    # Committed. A failed commit raised above and the hold stays (fail closed). The hold now
+    # follows the database through the runtime's fail-closed path, before anything below that
+    # can raise: a device seen after the commit keeps it, a failed read never releases it.
+    runtime = getattr(request.app.state, "printer_runtime", None)
+    if runtime is not None:
+        await runtime.resync_identity_hold(printer.id)
     _publish_changed(request, printer, "updated")
     return await _read(svc, printer)
-
-
-def _publish_identity_resolved(request: Request, printer_id: UUID) -> None:
-    """Tell open state streams the swap flag is gone; the event carries no identity value."""
-    bus: EventBus | None = getattr(request.app.state, "event_bus", None)
-    if bus is None:
-        return
-    channel = f"printer:{printer_id}:state"
-    bus.publish(
-        channel,
-        BusEvent(
-            channel=channel,
-            event_id=bus.next_event_id(channel),
-            event_type="printer.identity_mismatch",
-            timestamp=datetime.now(UTC),
-            data={"mismatch": False},
-        ),
-    )

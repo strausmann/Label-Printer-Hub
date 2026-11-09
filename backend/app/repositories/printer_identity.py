@@ -6,10 +6,11 @@ printer cannot overwrite each other's decision. All writes commit.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -110,21 +111,42 @@ async def mark_mismatch(
     )
 
 
-async def adopt_observed(session: AsyncSession, printer_id: UUID, *, now: datetime) -> bool:
+async def get_many(
+    session: AsyncSession, printer_ids: Sequence[UUID]
+) -> dict[UUID, PrinterIdentity]:
+    """The identity rows of several printers in one query, keyed by printer id."""
+    if not printer_ids:
+        return {}
+    result = await session.execute(
+        select(PrinterIdentity).where(PrinterIdentity.printer_id.in_(printer_ids))  # type: ignore[attr-defined]
+    )
+    return {row.printer_id: row for row in result.scalars()}
+
+
+async def adopt_observed(
+    session: AsyncSession,
+    printer_id: UUID,
+    *,
+    expected_id: str,
+    expected_kind: str,
+    now: datetime,
+) -> bool:
     """Make the observed device the stored one and end the mismatch; does NOT commit.
 
-    One UPDATE that copies ``observed_*`` onto the stored columns inside the database, so no
-    identity value passes through Python and a probe that races on the row cannot slip a
-    different value in between. False when no mismatch is pending (nothing was written). The
-    caller owns the transaction: it commits or rolls back this write with its other changes.
+    One UPDATE that copies ``observed_*`` onto the stored columns inside the database, so a
+    probe that races on the row cannot slip a different value in between. It only applies
+    while the observed device still is ``(expected_kind, expected_id)``, the one the caller
+    reviewed. False when no mismatch is pending or the observed device changed (nothing was
+    written). The caller owns the transaction: it commits or rolls back this write with its
+    other changes.
     """
     result = await session.execute(
         update(PrinterIdentity)
         .where(
             PrinterIdentity.printer_id == printer_id,  # type: ignore[arg-type]
             PrinterIdentity.mismatch_since.is_not(None),  # type: ignore[union-attr]
-            PrinterIdentity.observed_id.is_not(None),  # type: ignore[union-attr]
-            PrinterIdentity.observed_kind.is_not(None),  # type: ignore[union-attr]
+            PrinterIdentity.observed_id == expected_id,  # type: ignore[arg-type]
+            PrinterIdentity.observed_kind == expected_kind,  # type: ignore[arg-type]
         )
         .values(
             hardware_id=PrinterIdentity.observed_id,
