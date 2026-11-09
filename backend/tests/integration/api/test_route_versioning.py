@@ -107,7 +107,7 @@ async def test_sheet_print_validation_does_not_echo_input(spa: AsyncClient) -> N
     for dep in (require_read, require_print, require_admin):
         overrides[dep] = lambda _c=fake: _c
     overrides[require_webhook_key] = lambda: None
-    secret = "echo-me-0123456789a"
+    secret = "echo-me-0123456789ab"
     try:
         sheet = await spa.post("/api/v1/print/some-printer/sheet", json={"items": secret})
         assert sheet.status_code == 422, sheet.text

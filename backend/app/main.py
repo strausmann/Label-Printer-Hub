@@ -637,13 +637,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         first_cfg = _printer_configs[0]
         first_printer_id = slug_to_printer_id[first_cfg.slug]
         app.state.printer_id = first_printer_id
-        app.state.printer_host = first_cfg.host or ""
-        app.state.printer_snmp_community = first_cfg.snmp.community
         app.state.print_service = backend_router.service_for(first_cfg.slug)
     else:
         app.state.printer_id = None
-        app.state.printer_host = ""
-        app.state.printer_snmp_community = "public"
         app.state.print_service = None
 
     try:
