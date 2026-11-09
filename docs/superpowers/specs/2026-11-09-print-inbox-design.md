@@ -193,7 +193,8 @@ Response:
 ```
 
 - `items`: 1–50 per request (builder's call: small enough that one request's lookups stay within a webhook caller's timeout).
-- Each item has exactly one of `lookup` or `data`, like `SheetItem`. For `lookup` the server looks the item up **now** and stores the result as the snapshot. `data` is stored as given, bounded like `SheetRawLabelData`, with `source_app = "manual"`.
+- Each item has `lookup`, `data`, or both. `data` alone is stored as given, bounded like `SheetRawLabelData`, with `source_app = "manual"`. For `lookup` the server looks the item up **now** and stores the result as the snapshot; `data` sent **together with** `lookup` is display data (name, fields) that the server uses only when the source cannot be reached.
+- **Source down at enqueue** (controller's call): if the item carries display data, it is **parked** from that data with `snapshot_complete: false` (shown as incomplete) and the gaps are filled later by a background lookup, as on the Grocy route (section 8.1.3). If the item carries only a reference and nothing to show, the request is **refused with a retryable `503`** and a `Retry-After` header, so the caller retries — an API caller can retry, unlike Grocy. Under one request, either every item is stored or none (a single reference-only item that cannot be resolved refuses the whole request).
 - `idempotency_key`: optional, 1–128 printable ASCII characters. An `Idempotency-Key` header is accepted for single-item requests and means the same.
 - Without a key, a request with the same `(caller, request_hash)` within 60 seconds counts as a duplicate (builder's call: protects callers that cannot send a key, such as a plain Grocy webhook).
 - `copies`: 1–10, default 1.
@@ -215,7 +216,7 @@ Errors:
 | 422 | `invalid_request` | Schema error (field paths only) |
 | 422 | `integration_unknown_app` | Unknown or not installed integration |
 | 404 | `app-lookup-not-found` | The integration has no such item; carries `item_index` |
-| 502 | `integration_lookup_failed` | The source failed or is unreachable; nothing stored, safe to retry with the same keys (builder's call: this route's callers can retry, so refusing keeps snapshots complete; the remaining open question in section 18 asks whether to park instead. The Grocy label webhook, which never retries, parks from its payload, section 8.1.3) |
+| 503 | `integration_unavailable` | The source failed or is unreachable **and** a reference-only item carried no display data; `Retry-After` set (builder's call: 30 s); nothing stored, safe to retry with the same keys. Items with display data are parked incomplete instead (controller's call) |
 | 503 | `integration_not_configured` | |
 | 429 | existing rate-limit error | Per-key `rate_limit_per_minute` |
 
@@ -591,7 +592,7 @@ Every test that guards a rule has a counter-test against the code without the ru
 
 **Backend (pytest)**
 
-- Enqueue: lookup item → snapshot stored; `data` item → `manual`; same key twice → one line, second `duplicate: true`; same key with another body → `409 idempotency_conflict`; key reused after the line was printed → still no new line (counter-test: delete the record on print → the test sees a second line); 60-second window without key.
+- Enqueue: lookup item → snapshot stored; source down with display data → parked, `snapshot_complete: false`, filled by the background lookup once the source is back; source down, reference only → `503` with `Retry-After`, nothing stored (counter-test: park reference-only items → the test sees a line without anything to show); `data` item → `manual`; same key twice → one line, second `duplicate: true`; same key with another body → `409 idempotency_conflict`; key reused after the line was printed → still no new line (counter-test: delete the record on print → the test sees a second line); 60-second window without key.
 - Line identity: the same Grocy product twice with equal data → one line, copies 2; with another best-before date → two lines; two stock entries (different grocycodes) → two lines; two "label per unit" calls (same data, different `stock_id`) → two lines. Counter-test: merge on `(app, ref, format)` only → the best-before test turns red.
 - Event rules: a fresh integration has its preset rows, none with `print`; `none` → nothing stored, response `ignored`; per-event printer and format override the integration default; `print` onto an IPP printer parks; an unknown Kept event type → ignored; a `designer_layout` format → `422 format_not_supported` until #178. Grocy URL params never enable a `none` event (counter-test: let `mode=print` win over `none` → red).
 - Expiry: a line 3 days before `expires_at` raises `inbox.expiring` once (not daily again for the same line); at expiry the line is removed and the removal notification exists; no line ever disappears without one of the two (assert both events in a time-travel test).
@@ -664,7 +665,7 @@ The 1.6.1 items of #27 (cart icon with badge, grouping and confirmation) can fol
 | B6 | Refresh candidates stored server-side, 15 minutes | 5.4 |
 | B7 | ≤ 50 items per enqueue request; `200` not `202` | 6.2 |
 | B8 | 60-second duplicate window for callers without a key | 6.2, 8.1 |
-| B9 | Lookup failure at enqueue refuses with `502` on the generic route (Grocy label route parks from payload) | 6.2 |
+| B9 | `Retry-After: 30` on the generic route's `503`; all-or-nothing per request | 6.2 |
 | B10 | Changing, removing, refreshing and accepting need `print`; read-only access only adds and selects; import needs `read` | 6.3, 13 |
 | B11 | ≤ 4 concurrent lookups per integration during refresh; one refresh at a time | 6.4, 12.2 |
 | B12 | One render route for before/after; sheet items rendered as one cell | 6.4 |
@@ -711,9 +712,8 @@ The 1.6.1 items of #27 (cart icon with badge, grouping and confirmation) can fol
 | C7 | Under `fresh` the preview marks failing lines unavailable and renders the rest; print follows the fallback rule; failures cached like successes for 60 s | 9 |
 | C8 | `data_source` on the job row as an additive Alembic column | 9 |
 | C9 | Webhook default `park` is acceptable; #188 ships in the same release or earlier | 7, 15 |
+| C10 | Generic enqueue with the source down: display data sent → park incomplete, fill later; reference only → `503` + `Retry-After` | 6.2 |
 
 ## 18. Open questions for the maintainer
 
-The answers of 2026-11-09 are written in as decisions 11–16 (section 4). One question remains:
-
-- **Source down when a caller enqueues through the generic route.** For `POST /api/v1/inbox/items`, refuse with `502` so the caller retries (B9, today's text), or park with what the caller sent and mark it incomplete, as the Grocy label route does (section 8.1.3)?
+None. The maintainer's answers of 2026-11-09 are decisions 11–16 (section 4); the last open point (generic enqueue with the source down) is decided as controller's call C10 (section 6.2).
