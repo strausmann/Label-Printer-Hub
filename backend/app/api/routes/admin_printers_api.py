@@ -17,6 +17,19 @@ only; ``ipp``/``ipps``/``http``/``https`` without user info; the client's timeou
 cap and no redirects; the answer is the bounded summary, never raw attributes; errors
 never repeat the URI or the printer's answer beyond the IPP status name.
 
+Live changes (#224)
+-------------------
+Create, update, disable and enable take effect at once, without a hub restart: after the
+commit the route calls ``PrinterRuntime.reconcile`` (shielded, so a client that disconnects
+does not leave the printer half wired). Disable stands in for delete: the printer stops being
+polled and new jobs for it are refused (409 ``printer-unavailable``). A job printing on the
+printer finishes within its queue timeout, so the call can take that long; jobs waiting behind
+it stay ``queued`` and print after the printer is enabled again. A rename alone re-wires
+nothing. A printer whose stored connection cannot be wired is saved anyway and left detached.
+The backend of a printer is fixed here; should a row's kind change from tape to page in the
+store, its queued tape jobs fail with ``recovery_invalid_page_payload`` when the page printer
+is wired (as after a restart).
+
 Auth
 ----
 Alle Endpoints erfordern ``admin``-Scope (API-Key mit scope=admin).
@@ -25,6 +38,7 @@ Pangolin-SSO und claude-automation-Bypass gewähren nur ``read`` — kein Zugrif
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -150,6 +164,27 @@ def _row_to_read(printer: Printer) -> PrinterRead:
     )
 
 
+_RECONCILES: set[asyncio.Task[None]] = set()
+"""Strong references to running reconciles, so a shielded one outlives a cancelled request."""
+
+
+async def _apply_live(request: Request, printer_id: UUID) -> None:
+    """Wire the saved row into the running hub (#224); the response still reports the row.
+
+    Runs before ``hub.printers_changed`` is published: an open event stream re-subscribes on
+    that event (``events_v1.py``, ``frontend/src/api/events.ts``) and must find the new wiring.
+    Shielded: a client disconnect cancels the request, not the reconcile. ``reconcile`` logs
+    and swallows wiring and store failures itself.
+    """
+    runtime = getattr(request.app.state, "printer_runtime", None)
+    if runtime is None:  # an app without the lifespan (unit tests of the routes)
+        return
+    task = asyncio.ensure_future(runtime.reconcile(printer_id))
+    _RECONCILES.add(task)
+    task.add_done_callback(_RECONCILES.discard)
+    await asyncio.shield(task)
+
+
 def _publish_changed(
     request: Request,
     printer: Printer,
@@ -213,7 +248,8 @@ async def list_printers(
         "Gibt 409 zurück wenn Slug oder Name bereits vergeben ist. "
         "An ``ipp`` printer is probed first; nothing is saved when it is unreachable "
         "(409 ``ipp_unreachable``), accepts no PDF (409 ``ipp_pdf_unsupported``) or does "
-        "not report a configured tray (422 ``tray_unknown``)."
+        "not report a configured tray (422 ``tray_unknown``). "
+        "The printer is wired into the running hub before the answer; no restart is needed."
     ),
 )
 async def create_printer(
@@ -243,6 +279,7 @@ async def create_printer(
                 "error_message": f"Name {exc.name!r} ist bereits vergeben.",
             },
         ) from exc
+    await _apply_live(request, printer.id)  # before the event: see _apply_live
     _publish_changed(request, printer, "created")
     return await _read(svc, printer)
 
@@ -311,7 +348,10 @@ async def get_printer(
         "Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. "
         "``connection`` must fit the stored backend (422 ``invalid_connection``); "
         "``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). "
-        "An ``ipp`` printer is probed again when its URI changes or a tray key is new."
+        "An ``ipp`` printer is probed again when its URI changes or a tray key is new. "
+        "A change of the connection, the trays or the IPP queue timeout re-wires the printer "
+        "before the answer: a job printing on it finishes first (up to its queue timeout), "
+        "waiting jobs stay queued. A rename re-wires nothing."
     ),
 )
 async def update_printer(
@@ -350,6 +390,7 @@ async def update_printer(
                 "error_message": f"Drucker mit Slug {slug!r} nicht gefunden.",
             },
         ) from exc
+    await _apply_live(request, printer.id)  # before the event: see _apply_live
     _publish_changed(request, printer, "updated")
     return await _read(svc, printer)
 
@@ -361,7 +402,10 @@ async def update_printer(
     description=(
         "Deaktiviert einen Drucker (Soft-Delete). "
         "Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. "
-        "Gibt 409 zurück wenn der Drucker bereits deaktiviert ist."
+        "Gibt 409 zurück wenn der Drucker bereits deaktiviert ist. "
+        "Takes effect before the answer: polling stops and new jobs are refused (409 "
+        "``printer-unavailable``); a job printing on it finishes first (up to its queue "
+        "timeout), waiting jobs stay queued and print after enable."
     ),
 )
 async def disable_printer(
@@ -389,6 +433,7 @@ async def disable_printer(
                 "error_message": f"Drucker {slug!r} ist bereits deaktiviert.",
             },
         ) from exc
+    await _apply_live(request, printer.id)  # before the event: see _apply_live
     _publish_changed(request, printer, "disabled")
     return await _read(svc, printer)
 
@@ -400,7 +445,8 @@ async def disable_printer(
     description=(
         "Aktiviert einen deaktivierten Drucker. "
         "Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. "
-        "Gibt 409 zurück wenn der Drucker bereits aktiv ist."
+        "Gibt 409 zurück wenn der Drucker bereits aktiv ist. "
+        "The printer is wired again before the answer; no restart is needed."
     ),
 )
 async def enable_printer(
@@ -428,5 +474,6 @@ async def enable_printer(
                 "error_message": f"Drucker {slug!r} ist bereits aktiv.",
             },
         ) from exc
+    await _apply_live(request, printer.id)  # before the event: see _apply_live
     _publish_changed(request, printer, "enabled")
     return await _read(svc, printer)

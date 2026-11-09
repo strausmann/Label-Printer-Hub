@@ -71,7 +71,7 @@ export interface paths {
         put?: never;
         /**
          * Neuen Drucker anlegen
-         * @description Legt einen neuen Drucker an. Slug und Name müssen eindeutig sein. Gibt 409 zurück wenn Slug oder Name bereits vergeben ist. An ``ipp`` printer is probed first; nothing is saved when it is unreachable (409 ``ipp_unreachable``), accepts no PDF (409 ``ipp_pdf_unsupported``) or does not report a configured tray (422 ``tray_unknown``).
+         * @description Legt einen neuen Drucker an. Slug und Name müssen eindeutig sein. Gibt 409 zurück wenn Slug oder Name bereits vergeben ist. An ``ipp`` printer is probed first; nothing is saved when it is unreachable (409 ``ipp_unreachable``), accepts no PDF (409 ``ipp_pdf_unsupported``) or does not report a configured tray (422 ``tray_unknown``). The printer is wired into the running hub before the answer; no restart is needed.
          */
         post: operations["create_printer_api_v1_admin_printers_post"];
         delete?: never;
@@ -114,7 +114,7 @@ export interface paths {
         get: operations["get_printer_api_v1_admin_printers__slug__get"];
         /**
          * Drucker aktualisieren
-         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). An ``ipp`` printer is probed again when its URI changes or a tray key is new.
+         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). An ``ipp`` printer is probed again when its URI changes or a tray key is new. A change of the connection, the trays or the IPP queue timeout re-wires the printer before the answer: a job printing on it finishes first (up to its queue timeout), waiting jobs stay queued. A rename re-wires nothing.
          */
         put: operations["update_printer_api_v1_admin_printers__slug__put"];
         post?: never;
@@ -135,7 +135,7 @@ export interface paths {
         put?: never;
         /**
          * Drucker deaktivieren
-         * @description Deaktiviert einen Drucker (Soft-Delete). Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. Gibt 409 zurück wenn der Drucker bereits deaktiviert ist.
+         * @description Deaktiviert einen Drucker (Soft-Delete). Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. Gibt 409 zurück wenn der Drucker bereits deaktiviert ist. Takes effect before the answer: polling stops and new jobs are refused (409 ``printer-unavailable``); a job printing on it finishes first (up to its queue timeout), waiting jobs stay queued and print after enable.
          */
         post: operations["disable_printer_api_v1_admin_printers__slug__disable_post"];
         delete?: never;
@@ -155,7 +155,7 @@ export interface paths {
         put?: never;
         /**
          * Drucker aktivieren
-         * @description Aktiviert einen deaktivierten Drucker. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. Gibt 409 zurück wenn der Drucker bereits aktiv ist.
+         * @description Aktiviert einen deaktivierten Drucker. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. Gibt 409 zurück wenn der Drucker bereits aktiv ist. The printer is wired again before the answer; no restart is needed.
          */
         post: operations["enable_printer_api_v1_admin_printers__slug__enable_post"];
         delete?: never;

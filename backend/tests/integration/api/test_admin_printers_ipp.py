@@ -7,6 +7,7 @@ keys, so scope checks run as in production. All hosts are ``*.example.invalid``.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -22,7 +23,15 @@ from app.models.api_key import ApiKey
 from app.models.printer import Printer
 from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_tray import PrinterTray
-from app.printer_backends.ipp.codec import Attr, Group, Message, Tag, decode, encode
+from app.printer_backends.ipp.codec import (
+    OPERATIONS,
+    Attr,
+    Group,
+    Message,
+    Tag,
+    decode,
+    encode,
+)
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -33,6 +42,7 @@ URI = f"ipp://{HOST}/ipp/print"
 URI_2 = "ipps://second-printer.example.invalid/ipp/print"
 PROBE = "/api/v1/admin/printers/ipp/probe"
 ADMIN = "/api/v1/admin/printers"
+OPERATION_NAMES = {code: name for name, code in OPERATIONS.items()}
 
 
 def _factory():
@@ -103,16 +113,60 @@ def _unreachable_transport() -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
+def _from_runtime() -> bool:
+    """True when the transport factory is called by the printer runtime (live wiring, #224).
+
+    Since #224 a saved printer is wired at once: the runtime builds its own IPP clients and
+    its status producer probes the fake. These tests are about the admin probe, so the hub
+    keeps the two sources apart instead of counting the runtime's requests as probes.
+    """
+    frame = sys._getframe(1)
+    while frame is not None:
+        if frame.f_globals.get("__name__") == "app.services.printer_runtime":
+            return True
+        frame = frame.f_back  # type: ignore[assignment]
+    return False
+
+
+class _Tagged(httpx.AsyncBaseTransport):
+    """Records the IPP operation of every request under its source, then forwards it."""
+
+    def __init__(self, inner: httpx.AsyncBaseTransport, log: list[str]) -> None:
+        self.inner = inner
+        self.log = log
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        msg, _ = decode(request.read())
+        self.log.append(OPERATION_NAMES.get(msg.code, hex(msg.code)))
+        return await self.inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self.inner.aclose()
+
+
 @dataclass
 class Hub:
     client: AsyncClient
     fake: FakeIppPrinter
     app: Any
     uris: list[str] = field(default_factory=list)
+    """URIs the admin routes built a client for (the probe)."""
+    runtime_uris: list[str] = field(default_factory=list)
+    """URIs the printer runtime wired (live wiring, #224)."""
+    admin_log: list[str] = field(default_factory=list)
+    runtime_log: list[str] = field(default_factory=list)
     override: Callable[[str], httpx.AsyncBaseTransport] | None = None
 
     def ops(self) -> list[str]:
-        return [op.operation for op in self.fake.received]
+        """IPP operations the admin routes sent (the probe), in order."""
+        return list(self.admin_log)
+
+    def clear(self) -> None:
+        self.fake.received.clear()
+        self.uris.clear()
+        self.runtime_uris.clear()
+        self.admin_log.clear()
+        self.runtime_log.clear()
 
 
 @pytest_asyncio.fixture
@@ -131,10 +185,10 @@ async def hub() -> AsyncIterator[Hub]:
         h = Hub(client=client, fake=fake, app=app)
 
         def factory(uri: str) -> httpx.AsyncBaseTransport:
-            h.uris.append(uri)
-            if h.override is not None:
-                return h.override(uri)
-            return httpx.ASGITransport(app=fake)
+            runtime = _from_runtime()
+            (h.runtime_uris if runtime else h.uris).append(uri)
+            inner = h.override(uri) if h.override is not None else httpx.ASGITransport(app=fake)
+            return _Tagged(inner, h.runtime_log if runtime else h.admin_log)
 
         app._app.state.ipp_transport_factory = factory
         yield h
@@ -312,7 +366,8 @@ async def test_create_stores_trays_and_model(hub: Hub) -> None:
     assert body["model"] == "Fake IPP Printer"
     assert body["connection"] == {"uri": URI, "tls_verify": True}
     assert [t["key"] for t in body["trays"]] == ["auto", "tray-2"]
-    assert hub.ops() == ["Get-Printer-Attributes"]
+    assert hub.ops() == ["Get-Printer-Attributes"]  # the admin probe, before the save
+    assert hub.runtime_uris == [URI, URI]  # then wired live (#224): page + status client
     row = await _db_printer("office-laser")
     assert row is not None
     assert row.cut_defaults_half_cut is False
@@ -397,8 +452,7 @@ async def _created(hub: Hub) -> dict[str, str]:
     headers = await _key(["admin"])
     resp = await hub.client.post(ADMIN, json=_ipp_payload(), headers=headers)
     assert resp.status_code == 201, resp.text
-    hub.fake.received.clear()
-    hub.uris.clear()
+    hub.clear()
     return headers
 
 
@@ -417,8 +471,9 @@ async def test_update_without_uri_change_does_not_probe(hub: Hub) -> None:
     ):
         resp = await hub.client.put(f"{ADMIN}/office-laser", json=body, headers=headers)
         assert resp.status_code == 200, resp.text
-    assert hub.fake.received == []
+    assert hub.ops() == []  # no admin probe; the tls change re-wires (runtime clients)
     assert hub.uris == []
+    assert hub.runtime_uris == [URI, URI]  # one re-wire (page client + status client)
     row = await _db_printer("office-laser")
     assert row is not None
     assert row.connection == {"uri": URI, "tls_verify": False}
@@ -451,8 +506,9 @@ async def test_update_with_new_uri_probes(hub: Hub) -> None:
         f"{ADMIN}/office-laser", json={"connection": {"uri": URI_2}}, headers=headers
     )
     assert resp.status_code == 200, resp.text
-    assert hub.ops() == ["Get-Printer-Attributes"]
+    assert hub.ops() == ["Get-Printer-Attributes"]  # the admin probe, once, before the save
     assert hub.uris == [URI_2]
+    assert hub.runtime_uris == [URI_2, URI_2]  # the runtime wired the new URI
     row = await _db_printer("office-laser")
     assert row is not None
     assert row.connection == {"uri": URI_2, "tls_verify": True}
@@ -629,7 +685,8 @@ async def test_lifespan_ignores_ipp_rows_for_tape_wiring(hub: Hub) -> None:
     assert state.backend_router.get("office-laser") is None
     # Only the page-printer wiring reaches for the IPP printer at start: one client for the
     # page jobs (Task 7) and one for the status producer (Task 6). The tape wiring does not.
-    assert hub.uris == [URI, URI]
+    assert hub.runtime_uris == [URI, URI]
+    assert hub.uris == []
 
 
 @pytest.mark.asyncio

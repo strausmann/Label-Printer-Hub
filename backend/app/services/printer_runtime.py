@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 from collections.abc import Sequence
@@ -145,7 +146,8 @@ def wiring_key(printer: Printer, *, tray_keys: Sequence[str] = ()) -> tuple[obje
 
     Name, label and cut defaults are not in it (cut defaults come with each request).
     ``queue_timeout_s`` is in it for IPP printers only: both IPP clients take it at
-    construction; a tape printer uses it only for the shutdown wait, read from the row.
+    construction; a tape printer uses it only for the detach and shutdown waits, and
+    ``reconcile`` takes a changed value over without a re-wire.
     *tray_keys* are the page printer's tray keys (the trays live in their own table).
     """
     is_ipp = printer.backend == "ipp"
@@ -164,6 +166,12 @@ def wiring_key(printer: Printer, *, tray_keys: Sequence[str] = ()) -> tuple[obje
     )
 
 
+def _key_digest(key: tuple[object, ...]) -> str:
+    """A SHA-256 of *key*: the key holds the SNMP community and the IPP URI, so the runtime
+    keeps only the digest (never logged, never returned)."""
+    return hashlib.sha256(repr(key).encode("utf-8")).hexdigest()
+
+
 def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
@@ -177,7 +185,7 @@ class _Wiring:
     kind: Literal["tape", "page"]
     created_at: datetime
     queue_timeout_s: int
-    key: tuple[object, ...]
+    key_digest: str  # ``_key_digest(wiring_key(...))``; the key itself carries secrets
     producer: StatusProbeProducer | IppStatusProducer | None = None
     # tape
     driver: Any = None
@@ -230,7 +238,8 @@ class PrinterRuntime:
 
         ``fatal=True`` (lifespan only): an unresolvable tape model raises, as before #224.
         Otherwise a wiring failure is logged (slug and error class) and the printer stays
-        detached; this never raises then.
+        detached. Re-wiring an attached id detaches it first, and a store failure there
+        (``remove_printer`` ending the in-flight job) can still raise; ``reconcile`` catches it.
         """
         if self._closed:
             return
@@ -243,26 +252,65 @@ class PrinterRuntime:
         """Unwire a printer: stop its producer, take it out of the queue, close its clients.
 
         A job printing on it may finish within its queue timeout; waiting jobs stay queued.
-        Unknown ids are a no-op.
-        """
-        async with self._lock(printer_id):
-            await self._detach_locked(printer_id)
-
-    async def reconcile(self, printer_id: UUID) -> None:
-        """Bring the wiring of *printer_id* in line with its stored row (Task 7 calls this).
-
-        No-op after ``stop()``. A missing or disabled row ends detached.
+        Unknown ids are a no-op, and so is any call after ``stop()`` (the queue is stopped and
+        ``stop()`` closed every client).
         """
         if self._closed:
             return
         async with self._lock(printer_id):
             if self._is_closed():  # stop() may have run while this waited for the lock
                 return
-            async with self._sessions()() as session:
-                row = await session.get(Printer, printer_id)
             await self._detach_locked(printer_id)
-            if row is not None and row.enabled:
-                await self._attach_locked(row, fatal=False)
+
+    async def reconcile(self, printer_id: UUID) -> None:
+        """Bring the wiring of *printer_id* in line with its stored row (the admin routes).
+
+        No-op after ``stop()``. A missing or disabled row ends detached. When the row's
+        ``wiring_key`` (with its tray keys) equals the attached one, nothing is re-wired: a
+        rename keeps the producer, the clients and any job in flight; only the tape queue
+        timeout, which is not in the key, is taken over.
+
+        Does not raise on a wiring or store failure: it logs the printer id and the error
+        class and leaves the printer detached (no producer, unknown to the queue), so the
+        status endpoint shows the last probe with its age and new jobs are refused (409).
+        Cancellation still propagates (the admin routes shield the call).
+        """
+        if self._closed:
+            return
+        async with self._lock(printer_id):
+            if self._is_closed():  # stop() may have run while this waited for the lock
+                return
+            try:
+                await self._reconcile_locked(printer_id)
+            except Exception as exc:
+                _log.warning(
+                    "Printer id=%s not reconciled (%s); left detached",
+                    printer_id,
+                    type(exc).__name__,
+                )
+                try:
+                    await self._detach_locked(printer_id)
+                except Exception as exc2:  # the wiring is already dropped by its finally
+                    _log.warning(
+                        "Printer id=%s detach after a failed reconcile failed (%s)",
+                        printer_id,
+                        type(exc2).__name__,
+                    )
+
+    async def _reconcile_locked(self, printer_id: UUID) -> None:
+        async with self._sessions()() as session:
+            row = await session.get(Printer, printer_id)
+        wiring = self._wired.get(printer_id)
+        if row is not None and row.enabled and wiring is not None:
+            trays = await self._tray_keys(printer_id) if row.backend == "ipp" else []
+            if _key_digest(wiring_key(row, tray_keys=trays)) == wiring.key_digest:
+                # Not in the key for tape printers (only the shutdown and detach waits read
+                # it), so take it over here or those waits would use the old value.
+                wiring.queue_timeout_s = int(row.queue_timeout_s)
+                return
+        await self._detach_locked(printer_id)
+        if row is not None and row.enabled:
+            await self._attach_locked(row, fatal=False)
 
     async def start(self) -> None:
         """Start the producers of every attached printer; later attaches start theirs at once."""
@@ -389,7 +437,7 @@ class PrinterRuntime:
             kind="tape",
             created_at=_aware(printer.created_at),
             queue_timeout_s=int(printer.queue_timeout_s),
-            key=wiring_key(printer),
+            key_digest=_key_digest(wiring_key(printer)),
             producer=self._tape_producer(cfg, printer.id),
             driver=driver,
             service=service,
@@ -491,7 +539,9 @@ class PrinterRuntime:
             kind="page",
             created_at=_aware(printer.created_at),
             queue_timeout_s=int(printer.queue_timeout_s),
-            key=wiring_key(printer, tray_keys=await self._tray_keys(printer.id)),
+            key_digest=_key_digest(
+                wiring_key(printer, tray_keys=await self._tray_keys(printer.id))
+            ),
             producer=producer,
             page_client=page_client,
             state=state,

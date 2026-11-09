@@ -547,3 +547,148 @@ def test_wiring_key_ignores_name_label_and_cut_defaults() -> None:
 
 async def _async(value: bool) -> bool:
     return value
+
+
+# --- reconcile skip rule and failure handling (Task 7) -----------------------------------
+
+
+async def _add_tray(factory: async_sessionmaker[AsyncSession], printer_id: UUID, key: str) -> None:
+    from app.models.printer_tray import PrinterTray
+
+    async with factory() as s:
+        s.add(PrinterTray(printer_id=printer_id, tray_key=key, label=key, is_default=key == "auto"))
+        await s.commit()
+
+
+async def _update_row(
+    factory: async_sessionmaker[AsyncSession], printer_id: UUID, **changes: Any
+) -> None:
+    async with factory() as s:
+        row = await s.get(Printer, printer_id)
+        assert row is not None
+        for name, value in changes.items():
+            setattr(row, name, value)
+        await s.commit()
+
+
+async def test_reconcile_unchanged_ipp_row_with_trays_keeps_the_wiring(env: Env) -> None:
+    """The skip rule compares with the tray keys: an IPP printer with trays is not re-wired by
+    a rename (its trays live in their own table, the stored key includes them)."""
+    await _start(env)
+    printer = _ipp()
+    await _store_row(env.factory, printer)
+    await _add_tray(env.factory, printer.id, "auto")
+    await _add_tray(env.factory, printer.id, "tray-2")
+    await env.runtime.reconcile(printer.id)
+    state = env.app.state.ipp_printer_states[printer.id]
+    clients = len(env.transports)
+    await _update_row(env.factory, printer.id, name="Renamed")
+    await env.runtime.reconcile(printer.id)
+    assert len(env.transports) == clients  # no new IPP client: not re-wired
+    assert env.app.state.ipp_printer_states[printer.id] is state
+    assert not any(t.closed for t in env.transports)
+    # A changed tray set is a change of the wiring.
+    await _add_tray(env.factory, printer.id, "tray-3")
+    await env.runtime.reconcile(printer.id)
+    assert len(env.transports) == clients + 2
+    assert env.app.state.ipp_printer_states[printer.id] is not state
+
+
+async def test_reconcile_tape_timeout_only_change_takes_over_the_timeout(env: Env) -> None:
+    """Ruling (b): the tape queue timeout is not in the key; a timeout-only edit does not
+    re-wire, but the shutdown wait uses the new value (no stale timeout)."""
+    await _start(env)
+    printer = _tape()
+    printer.queue_timeout_s = 30
+    await _store_row(env.factory, printer)
+    resolve = AsyncMock(return_value="PT-P750W")
+    with patch("app.services.printer_runtime._resolve_model_id_from_config", resolve):
+        await env.runtime.reconcile(printer.id)
+        service = env.runtime.print_service_for(printer.id)
+        await _update_row(env.factory, printer.id, queue_timeout_s=90)
+        await env.runtime.reconcile(printer.id)
+    assert resolve.await_count == 1  # not re-wired
+    assert env.runtime.print_service_for(printer.id) is service
+    calls: list[float] = []
+    real_stop = env.queue.stop
+
+    async def _stop(timeout_s: float = 30.0) -> None:
+        calls.append(timeout_s)
+        await real_stop(timeout_s=1.0)
+
+    with patch.object(env.queue, "stop", _stop):
+        await env.runtime.stop()
+    assert calls == [90.0]
+
+
+async def test_reconcile_failure_is_logged_and_leaves_detached(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Ruling (d): a store failure during the re-wire does not raise into the caller; the
+    printer ends detached, the log names the id and the error class only."""
+    await _start(env)
+    printer = _ipp()
+    await _store_row(env.factory, printer)
+    await env.runtime.reconcile(printer.id)
+    await _update_row(env.factory, printer.id, connection={"uri": URI_2, "tls_verify": True})
+
+    async def _remove(printer_id: UUID, timeout_s: float) -> None:
+        raise RuntimeError(f"store down for {URI_2}")
+
+    with (
+        patch.object(env.queue, "remove_printer", _remove),
+        caplog.at_level(logging.WARNING, logger="app.services.printer_runtime"),
+    ):
+        await env.runtime.reconcile(printer.id)  # does not raise
+    assert not env.runtime.is_polled(printer.id)
+    assert printer.id not in env.app.state.ipp_printer_states
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(str(printer.id) in m and "RuntimeError" in m for m in warnings)
+    assert all("example.invalid" not in r.getMessage() for r in caplog.records)
+
+
+async def test_detach_after_stop_is_noop(env: Env) -> None:
+    """Ruling (c, task-6 minor 1): a detach after ``stop()`` touches neither the queue nor the
+    wiring."""
+    await _start(env)
+    printer = _ipp()
+    await env.runtime.attach(printer)
+    await env.runtime.stop()
+    removed: list[UUID] = []
+
+    async def _remove(printer_id: UUID, timeout_s: float) -> None:
+        removed.append(printer_id)
+
+    with patch.object(env.queue, "remove_printer", _remove):
+        await env.runtime.detach(printer.id)
+    assert removed == []
+
+
+async def test_kind_change_tape_to_page_fails_queued_tape_jobs(env: Env) -> None:
+    """Ruling (f): tape jobs queued for an id that becomes a page printer cannot be printed as
+    pages; the page printer's recovery fails them (``recovery_invalid_page_payload``), the same
+    outcome a restart gives."""
+    await _start(env)
+    printer = _tape()
+    await _store_row(env.factory, printer)
+    await env.runtime.reconcile(printer.id)
+    assert env.runtime.print_service_for(printer.id) is not None
+    async with env.factory() as s:
+        job = DbJob(printer_id=printer.id, payload={"tape_mm": 12, "options": {}})
+        s.add(job)
+        await s.commit()
+        jid = job.id
+    await _update_row(
+        env.factory,
+        printer.id,
+        backend="ipp",
+        model="x",
+        connection={"uri": FAKE_URI, "tls_verify": True},
+    )
+    await env.runtime.reconcile(printer.id)
+    assert env.queue.is_page_printer(printer.id)
+    async with env.factory() as s:
+        row = await s.get(DbJob, jid)
+        assert row is not None
+        assert row.state == DbJobState.FAILED.value
+        assert row.error == "recovery_invalid_page_payload"
