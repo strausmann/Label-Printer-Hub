@@ -83,6 +83,57 @@ describe("cart", () => {
     expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(2);
   });
 
+  describe("another tab wrote and this tab has not heard of it yet (no storage event, no reloadCart)", () => {
+    const other: CartItem = { app: "grocy", id: "99", name: "Rice", content_type: "qr_one_line", copies: 1 };
+    const otherTab = (...list: CartItem[]) => localStorage.setItem(CART_KEY, JSON.stringify(list));
+    const stored = () => (JSON.parse(localStorage.getItem(CART_KEY)!) as CartItem[]).map((i) => `${i.app}:${i.id}:${i.copies}`);
+
+    it("removeItems of a submitted line keeps the other tab's new line", () => {
+      const { result } = renderHook(() => useCart(), { wrapper });
+      act(() => result.current.add(asset));
+      otherTab(asset, other);
+      act(() => result.current.removeItems([asset]));
+      expect(stored()).toEqual(["grocy:99:1"]);
+      expect(result.current.items.map((i) => i.id)).toEqual(["99"]);
+    });
+
+    it("add keeps the other tab's new line", () => {
+      const { result } = renderHook(() => useCart(), { wrapper });
+      act(() => result.current.add(asset));
+      otherTab(asset, other);
+      act(() => result.current.add(spool));
+      expect(stored()).toEqual(["snipeit:42:1", "grocy:99:1", "spoolman:7:2"]);
+    });
+
+    it("setCopies keeps the other tab's new line", () => {
+      const { result } = renderHook(() => useCart(), { wrapper });
+      act(() => result.current.add(asset));
+      otherTab(asset, other);
+      act(() => result.current.setCopies(asset, 5));
+      expect(stored()).toEqual(["snipeit:42:5", "grocy:99:1"]);
+    });
+
+    it("remove keeps the other tab's new line", () => {
+      const { result } = renderHook(() => useCart(), { wrapper });
+      act(() => result.current.add(asset));
+      otherTab(asset, other);
+      act(() => result.current.remove(asset));
+      expect(stored()).toEqual(["grocy:99:1"]);
+    });
+
+    it("print keeps a line another tab wrote while the request was in flight", async () => {
+      mockApi(batchRoutes());
+      const { result } = renderHook(() => useCart(), { wrapper });
+      act(() => result.current.add(asset));
+      await act(async () => {
+        const printing = result.current.print(PRINTER);
+        otherTab(asset, other);
+        await printing;
+      });
+      expect(stored()).toEqual(["grocy:99:1"]);
+    });
+  });
+
   it("print sends one batch with all items and clears on success", async () => {
     const { calls } = mockApi(batchRoutes());
     const { result } = renderHook(() => useCart(), { wrapper });

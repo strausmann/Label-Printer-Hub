@@ -38,14 +38,15 @@ function isItem(value: unknown): value is CartItem {
 }
 
 /* The cart is a per-browser convenience: storage may be missing, full or hold junk. */
-function read(): CartItem[] {
+function readStored(): CartItem[] | null {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(CART_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter(isItem).map((i) => ({ ...i, copies: clampCopies(i.copies) })) : [];
+    return Array.isArray(parsed) ? parsed.filter(isItem).map((i) => ({ ...i, copies: clampCopies(i.copies) })) : null;
   } catch {
-    return [];
+    return null;
   }
 }
+const read = (): CartItem[] => readStored() ?? [];
 
 let items: CartItem[] = read();
 const listeners = new Set<() => void>();
@@ -58,6 +59,17 @@ function commit(next: CartItem[]): void {
     /* keep the in-memory cart; it just will not survive a reload */
   }
   listeners.forEach((l) => l());
+}
+
+/**
+ * The cart as it is stored right now. The in-memory copy only follows the asynchronous `storage` event, so
+ * another tab may have written since. Unreadable or corrupt storage falls back to the in-memory cart.
+ */
+const current = (): CartItem[] => readStored() ?? items;
+
+/** Every change of the cart goes through here: it starts from the stored cart, never from the possibly stale copy. */
+function mutate(fn: (stored: CartItem[]) => CartItem[]): void {
+  commit(fn(current()));
 }
 
 /** Takes the cart from storage again (another tab changed it; tests use it to simulate a fresh page). */
@@ -82,20 +94,21 @@ const getSnapshot = () => items;
 
 function add(item: CartItem): void {
   const copies = clampCopies(item.copies);
-  const existing = items.find((i) => sameItem(i, item));
-  if (existing) {
-    commit(items.map((i) => (i === existing ? { ...i, copies: clampCopies(i.copies + copies) } : i)));
-  } else {
-    commit([...items, { ...item, copies }]);
-  }
+  mutate((stored) =>
+    stored.some((i) => sameItem(i, item))
+      ? stored.map((i) => (sameItem(i, item) ? { ...i, copies: clampCopies(i.copies + copies) } : i))
+      : [...stored, { ...item, copies }],
+  );
 }
 
-const remove = (key: CartKey): void => commit(items.filter((i) => !sameItem(i, key)));
+const remove = (key: CartKey): void => mutate((stored) => stored.filter((i) => !sameItem(i, key)));
 /** Drops the entries the given ones name. Entries added or changed elsewhere meanwhile stay; the copies of a match do not matter, the key does. */
-const removeItems = (list: readonly CartKey[]): void => commit(items.filter((i) => !list.some((s) => sameItem(s, i))));
+const removeItems = (list: readonly CartKey[]): void =>
+  mutate((stored) => stored.filter((i) => !list.some((s) => sameItem(s, i))));
+/** Empties the cart whatever is stored: that is what the user asked for, so it needs no reconciling. */
 const clear = (): void => commit([]);
 const setCopies = (key: CartKey, copies: number): void =>
-  commit(items.map((i) => (sameItem(i, key) ? { ...i, copies: clampCopies(copies) } : i)));
+  mutate((stored) => stored.map((i) => (sameItem(i, key) ? { ...i, copies: clampCopies(copies) } : i)));
 
 /** The body item the batch endpoint takes: the server looks the item up again when it prints. */
 export const toBatchItem = (item: CartItem) => ({
@@ -134,11 +147,11 @@ export interface Cart {
 }
 
 export function useCart(): Cart {
-  const current = useSyncExternalStore(subscribe, getSnapshot);
+  const shown = useSyncExternalStore(subscribe, getSnapshot);
   const client = useQueryClient();
   const print = useCallback(
     async (printerKey: string): Promise<BatchRead> => {
-      const sending = items;
+      const sending = current();
       if (sending.length === 0) throw new Error("The cart is empty.");
       const accepted = await submitBatch(printerKey, sending);
       // Only now: a rejected batch leaves the cart as it was. Items added meanwhile stay.
@@ -152,5 +165,5 @@ export function useCart(): Cart {
     },
     [client],
   );
-  return { items: current, add, remove, removeItems, setCopies, clear, print };
+  return { items: shown, add, remove, removeItems, setCopies, clear, print };
 }
