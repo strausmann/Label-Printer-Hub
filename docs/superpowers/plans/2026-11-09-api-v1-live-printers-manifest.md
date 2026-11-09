@@ -741,3 +741,44 @@ Task 2 → Task 5 → Task 6 → Task 7 → Task 8 → Task 9 → Task 10 → Ta
    6. On each printer page: answer the one-time roll colour prompt (or skip), PT and QL alike.
    7. As admin, check each printer page shows a serial (PT, QL) or IPP UUID (HP); a printer without one keeps working without swap detection.
 6. **Release notes** cover #224–#231 and list: the path map and the two removed routes; that installed web clients keep calling the old paths until the service-worker update prompt is accepted (`registerType: "prompt"`), so they show errors until then; the new `stale`/`polled`/roll/test-print fields and endpoints; that tape colour is asked once per roll change on PT and QL (the printers do not report it over the network); hardware identity, the swap hold for sheet and calibration jobs and the resolve action; the sheet-type feedback links.
+
+---
+
+## Task 19: Searchable sheet type picker (#237) — added by controller ruling 2026-11-09
+
+**Spec:** https://github.com/strausmann/Label-Printer-Hub/issues/237 (read it with `gh issue view 237 --repo strausmann/Label-Printer-Hub`).
+
+**Files:**
+- Create: `frontend/src/features/sheets/SheetTypeCombobox.tsx` (+ `SheetTypeCombobox.test.tsx`), unless the project already has a combobox primitive (search `frontend/src` first; reuse it if present)
+- Modify: every sheet-type `SelectField` use: `features/calibration/CalibrationPage.tsx`, `features/sheets/AddSheetDialog.tsx`, `features/sheets/print/SheetSection.tsx`, and any further sheet-type select found by grep (`SheetsPage.tsx`, archive filters) — list them in the report
+- e2e: extend `frontend/e2e/calibration.spec.ts`
+- i18n: de + en catalogs
+
+**Interfaces:**
+- Produces: `SheetTypeCombobox({ label, types, value, onChange, disabled? })`. `types` is the same list the pickers pass today. The label format is unchanged. Filtering lives in a pure `matchSheetType(type, query): boolean`, exported for tests.
+
+**Decisions:**
+- **Match** on key, vendor, product codes, description and label size. Matching is case-insensitive and accent-insensitive (NFD + strip). The size accepts `101,6 × 38,1`, `101.6x38.1` and `101,6x38,1`.
+- **ARIA:** the WAI-ARIA 1.2 combobox with listbox pattern. Arrow keys move the active option; Enter selects; Escape closes and restores the previous value; Home/End jump to the first and last option.
+- **Touch:** the input font-size is at least 16 px (no iOS zoom), options are at least 44 px high, and the list scrolls inside its popover.
+- **Dependencies:** no new runtime dependency.
+- **Archived types:** the existing availability rules stay as each picker has them today. The combobox only displays the options it is given.
+
+- [ ] Step 1: failing tests:
+  - `matchSheetType` matches by key, vendor, product code and the three size spellings, and matches no unrelated query;
+  - `keyboard selects a type`: type "4736", ArrowDown, Enter, `onChange` called with the L4736REV id;
+  - `escape restores previous value`.
+- [ ] Step 2: run them red.
+- [ ] Step 3: implement, and replace the selects.
+- [ ] Step 4: green. Then e2e: on the calibration page, type `4736`, only matching options show, Enter, and the preview legend updates. Then `pnpm typecheck`, `lint`, `test:coverage`, `build`.
+- [ ] Step 5: design skills (`taste-skill:design-taste-frontend`, `emil-design-eng`, `mobile-native`, `break-ui`). Take screenshots of light and dark at 1280 px and 390 px into the workspace `shots/task-19/`.
+- [ ] Step 6: commit `fix(ui): searchable sheet type picker (#237)`.
+
+### Also in Task 19: #238 — calibration page keeps the chosen sheet type across tray/printer changes
+Cause: `CalibrationPage.tsx` renders the per-tray section with `key={`${printer.id}/${tray}`}` (~l.122) and holds the type in local state (`typeChoice`, ~l.155), so a tray change remounts it and resets the type. Decision: keep the type in the URL search as `type=<key>` next to `printer`/`tray`; `chooseTray`/`choosePrinter` preserve it; unknown/archived key → current default fallback. Tests (red first): `type survives a tray change`, `type survives a printer change`, `type survives a reload` (e2e). Separate commit: `fix(ui): keep the chosen sheet type when the calibration tray changes (#238)`.
+
+### Also in Task 19: #239 — calibration print result: no button shift, live job status
+Spec: `gh issue view 239`. Decisions: result line rendered below the button row (outside the `flex flex-wrap` button container, ~l.191 and ~l.252), height reserved / aria-live polite; status follows the submitted job via the existing SSE job events and hooks (`useJobStateBadge`, `usePageJobStatus`; reuse, no polling); done → "printed — measure the crossings" hint; failed → localised error + Retry where the job's retry rule allows. Tests (red first): `result does not sit in the button row`, `status follows job events queued→printing→done`, `failed shows error and retry`; e2e: bounding box of the PDF button unchanged after submit, line reaches done without reload. Separate commit: `fix(ui): show the live job status below the calibration print buttons (#239)`.
+
+### Also in Task 19 (built first, #239 uses it): #245 — live print status notification for every print action
+Spec: `gh issue view 245`. One shared notification stack in the app shell fed by the existing SSE job events (no polling); every print action (item print, sheet print, cart, calibration/check page, test print from Task 13) registers its job ids; states queued → printing → done (auto-dismiss) / failed (stays, error, retry where allowed); batches show progress; survives navigation; resync after SSE reconnect; mobile: bottom stack above the tab bar, swipe to dismiss; aria-live polite / assertive for failures; reduced motion. Library: if Sonner (MIT) is used, licence check + `ask-sonner` skill; otherwise small in-house stack — decide and report. #239's calibration status line reads the same state. Commit: `feat(ui): live print status notification for every print action (#245)`.
