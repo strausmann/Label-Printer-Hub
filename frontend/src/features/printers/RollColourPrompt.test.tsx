@@ -67,6 +67,14 @@ describe("RollColourPrompt (#229)", () => {
     expect(screen.queryByRole("button", { name: "Change colour" })).toBeNull();
   });
 
+  it("a roll that cannot be read says so and offers a retry instead of showing nothing", async () => {
+    mockApi(detail({}, () => new Response(JSON.stringify({ detail: "boom" }), { status: 500, headers: { "Content-Type": "application/json" } })));
+    await renderApp({ path: `/printers/${PRINTER_A.id}` });
+    expect(await screen.findByText("The roll could not be read.", {}, { timeout: 5000 })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+    expect(screen.queryByRole("group", { name: "Tape colour" })).toBeNull();
+  });
+
   it("no prompt for a stale status", async () => {
     mockApi(detail({ stale: true, online: null, roll_prompt: false, tape_loaded: null, tape_width_mm: null }));
     await renderApp({ path: `/printers/${PRINTER_A.id}` });

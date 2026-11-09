@@ -141,5 +141,5 @@ export function tapeWidthOf(status: Pick<PrinterStatus, "tape_loaded" | "tape_wi
 
 export function useColourNames(): Record<TapeColour, string> {
   const { t } = useLingui();
-  return { white: t`White`, yellow: t`Yellow`, green: t`Green`, blue: t`Blue`, red: t`Red`, black: t`Black`, clear: t`Clear` };
+  return { white: t`White`, yellow: t`Yellow`, green: t`Green`, blue: t`Blue`, red: t`Red`, black: t`Black`, clear: t({ message: "Clear", context: "tape colour" }) };
 }

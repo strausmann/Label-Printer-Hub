@@ -81,6 +81,18 @@ function ColourChoices({
   );
 }
 
+/** What stands in for the colour choices until the roll is known: a short wait, or the failure with a way out. */
+function RollUnavailable({ roll }: { roll: { isError: boolean; refetch: () => unknown } }) {
+  const { t } = useLingui();
+  if (!roll.isError) return <p role="status" className="text-small text-ink-2">{t`Loading…`}</p>;
+  return (
+    <div className="flex flex-col items-start gap-2">
+      <p role="alert" className="text-small font-bold text-bad">{t`The roll could not be read.`}</p>
+      <Button className={SECONDARY_BUTTON} onPress={() => void roll.refetch()}>{t`Retry`}</Button>
+    </div>
+  );
+}
+
 /**
  * Shown above the material when the roll was changed and nobody gave its colour yet. The printer
  * cannot read the colour, so the operator is asked once per roll. Only for keys that may write.
@@ -88,10 +100,10 @@ function ColourChoices({
 export function RollColourPrompt({ printer, status, onDone }: { printer: Printer; status: PrinterStatus | undefined; onDone: () => void }) {
   const { t } = useLingui();
   const roll = useRoll(printer.id, status?.roll_prompt === true);
-  if (status?.roll_prompt !== true || !roll.data) return null;
-  const width = roll.data.width_mm;
+  if (status?.roll_prompt !== true) return null;
+  const width = roll.data?.width_mm;
   return (
-    <section aria-labelledby="roll-prompt-h" className={`${PANEL} flex flex-col gap-3 border-accent bg-accent-soft`}>
+    <section aria-labelledby="roll-prompt-h" className={`${PANEL} flex flex-col gap-3 border-2 border-accent bg-accent-soft`}>
       <div className="flex flex-col gap-1">
         <h2 id="roll-prompt-h" className={SECTION_HEADING}>{t`The roll was changed`}</h2>
         <p className="text-small [overflow-wrap:anywhere]">
@@ -100,13 +112,17 @@ export function RollColourPrompt({ printer, status, onDone }: { printer: Printer
             : t`You put in a new roll. The printer does not report the tape colour. Which colour is it?`}
         </p>
       </div>
-      <ColourChoices
-        printerId={printer.id}
-        roll={roll.data}
-        current={null}
-        secondary={{ label: t`Skip`, hint: t`You can set the colour later on this page.` }}
-        onDone={onDone}
-      />
+      {roll.data ? (
+        <ColourChoices
+          printerId={printer.id}
+          roll={roll.data}
+          current={null}
+          secondary={{ label: t`Skip`, hint: t`You can set the colour later on this page.` }}
+          onDone={onDone}
+        />
+      ) : (
+        <RollUnavailable roll={roll} />
+      )}
     </section>
   );
 }
@@ -144,6 +160,7 @@ export function RollColourEdit({
       <Button ref={triggerRef} className={`${SECONDARY_BUTTON} self-start`} aria-expanded={open} onPress={() => (open ? close() : setOpen(true))}>
         {colour ? t`Change colour` : t`Set colour`}
       </Button>
+      {open && !roll.data && <RollUnavailable roll={roll} />}
       {open && roll.data && (
         <>
           <ColourChoices

@@ -2,19 +2,20 @@ import { useLingui } from "@lingui/react/macro";
 import { useColourNames, type TapeColour } from "./model";
 
 const SWATCH: Record<TapeColour, string> = {
-  white: "bg-tape-white",
-  yellow: "bg-tape-yellow",
-  green: "bg-tape-green",
-  blue: "bg-tape-blue",
-  red: "bg-tape-red",
-  black: "bg-tape-black",
-  // Clear tape has no colour of its own: an empty, dashed swatch reads as "see-through" in both themes.
-  clear: "bg-tape-clear border-dashed",
+  white: "bg-tape-white border-line-strong",
+  yellow: "bg-tape-yellow border-line-strong",
+  green: "bg-tape-green border-line-strong",
+  blue: "bg-tape-blue border-line-strong",
+  red: "bg-tape-red border-line-strong",
+  // Black and clear sit on a dark surface in the dark theme: their edge must show there too.
+  black: "bg-tape-black border-ink-3",
+
+  clear: "bg-tape-clear border-dashed border-ink-3",
 };
 
 /** The material colour as a small square. Never state, so it is hidden from assistive technology and always sits beside the colour's name. */
 export function ColourSwatch({ colour }: { colour: TapeColour }) {
-  return <span aria-hidden="true" className={`size-4 shrink-0 rounded-r1 border border-line-strong ${SWATCH[colour]}`} />;
+  return <span aria-hidden="true" className={`size-4 shrink-0 rounded-r1 border ${SWATCH[colour]}`} />;
 }
 
 /**

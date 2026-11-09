@@ -37,6 +37,8 @@ function readPo(locale: string): Map<string, string> {
   return entries;
 }
 
+const rawPo = (locale: string) => readFileSync(resolve(__dirname, "locales", locale, "messages.po"), "utf8");
+
 describe("message catalogues", () => {
   it("de catalogue has a translation for every en message id", () => {
     const en = readPo("en");
@@ -65,6 +67,18 @@ describe("message catalogues", () => {
   it("the tape colour is never reported as missing (#229)", () => {
     expect(readPo("en").has("Colour not reported")).toBe(false);
     expect(readPo("de").has("Colour not reported")).toBe(false);
+    // readPo skips obsolete blocks, so look at the raw text too: a removed string must not linger as `#~`.
+    for (const locale of ["en", "de"]) expect(rawPo(locale)).not.toContain('msgid "Colour not reported"');
+  });
+
+  it("removed strings are removed, not left as obsolete (#~) entries", () => {
+    for (const locale of ["en", "de"]) {
+      expect(rawPo(locale).split("\n").filter((l) => l.startsWith("#~"))).toEqual([]);
+    }
+  });
+
+  it("the colour Clear has its own context, apart from a Clear action", () => {
+    for (const locale of ["en", "de"]) expect(rawPo(locale)).toContain('msgctxt "tape colour"');
   });
 
   it("the ambiguous 'Set up' is not a live message id", () => {

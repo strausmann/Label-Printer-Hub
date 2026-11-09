@@ -72,11 +72,6 @@ msgstr "{0, plural, one {Markierung von # Zelle aufheben} other {Markierung von 
 msgid "{0} has no sheets. Deleting it removes it and all its versions for good."
 msgstr "{0} hat keine Bögen. Beim Löschen verschwinden der Typ und alle seine Versionen endgültig."
 
-#. placeholder {0}: tape.widthMm
-#: src/features/printers/TapeSwatch.tsx
-#~ msgid "{0} mm"
-#~ msgstr "{0} mm"
-
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/sheets/print/PrinterRow.tsx
 msgid "{ahead, plural, one {# job from another computer ahead} other {# jobs from other computers ahead}}"
@@ -804,6 +799,7 @@ msgid "Choose one tray as the default."
 msgstr "Wähle ein Fach als Standard."
 
 #: src/features/printers/model.ts
+msgctxt "tape colour"
 msgid "Clear"
 msgstr "Transparent"
 
@@ -854,10 +850,6 @@ msgstr "Code-Präfix"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Colour modes"
 msgstr "Farbmodi"
-
-#: src/features/printers/TapeSwatch.tsx
-#~ msgid "Colour not reported"
-#~ msgstr "Farbe nicht gemeldet"
 
 #: src/features/archive/TypeForm.tsx
 msgid "Columns"
@@ -1672,6 +1664,7 @@ msgstr "Einlegehinweis"
 #: src/features/lookup/PrinterPicker.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/printers/PrinterGrid.tsx
+#: src/features/printers/RollColourPrompt.tsx
 #: src/features/settings/AccessKeys.tsx
 #: src/features/settings/Integrations.tsx
 #: src/features/settings/Printers.tsx
@@ -2608,6 +2601,7 @@ msgid "Resume"
 msgstr "Fortsetzen"
 
 #: src/features/jobs/JobDetail.tsx
+#: src/features/printers/RollColourPrompt.tsx
 msgid "Retry"
 msgstr "Wiederholen"
 
@@ -3722,6 +3716,10 @@ msgstr "Die eingereihten Etiketten wurden aus dem Warenkorb genommen. Der Rest b
 #: src/features/printers/RollColourPrompt.tsx
 msgid "The roll changed again while you were choosing. Pick the colour of the new roll."
 msgstr "Die Rolle wurde noch einmal gewechselt, während du ausgewählt hast. Wähle die Farbe der neuen Rolle."
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "The roll could not be read."
+msgstr "Die Rolle konnte nicht gelesen werden."
 
 #: src/features/printers/RollColourPrompt.tsx
 msgid "The roll was changed"
