@@ -373,7 +373,15 @@ async def test_the_hold_fails_closed_when_the_reread_raises(
         await runtime._mismatch_changed(rig.printer_id, T0)  # a mismatch started
         assert queue.is_identity_held(rig.printer_id)  # never left unheld
 
-        await runtime._mismatch_changed(rig.printer_id, None)  # the direction is all it has
+        await runtime._mismatch_changed(rig.printer_id, None)  # unverified: may set, never release
+        assert queue.is_identity_held(rig.printer_id)
+
+        monkeypatch.undo()  # the database is back; the swap is over
+        sink = runtime._identity_sink
+        await sink(rig.printer_id, _serial(SERIAL_A))
+        await sink(rig.printer_id, _serial(SERIAL_B))
+        assert queue.is_identity_held(rig.printer_id)
+        await sink(rig.printer_id, _serial(SERIAL_A))  # a verified clear releases it
         assert not queue.is_identity_held(rig.printer_id)
 
 

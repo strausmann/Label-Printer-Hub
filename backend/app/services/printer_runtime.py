@@ -606,11 +606,12 @@ class PrinterRuntime:
         try:
             current = await self._read_mismatch_since(printer_id)
         except Exception as exc:
-            # Fail closed: without the database's answer the direction of the call is the best
-            # there is, and a mismatched printer must never be left unheld.
+            # Fail closed: an unverified answer may set a hold, never release one.
             _log.warning(
                 "identity mismatch re-read failed for %s (%s)", printer_id, type(exc).__name__
             )
+            if since is None:
+                return  # a clear that cannot be verified leaves the hold as it is
             current = since
         queue = self._queue()
         changed = queue.is_identity_held(printer_id) != (current is not None)
