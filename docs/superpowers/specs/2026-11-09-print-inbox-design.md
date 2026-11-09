@@ -408,6 +408,19 @@ Grocy cannot send headers, so the credential travels in the URL or the body:
 - **Browser mode** needs CORS for the Grocy origin: a setting `integrations.grocy.webhook_cors_origin` (empty = no CORS); only this route answers the preflight, with that single origin, `POST` only, no credentials (builder's call).
 - **Our side never logs the token**: the access log entry of this route has the query string removed, error bodies never echo it, and the token is not stored in the idempotency record (only the key id).
 
+#### 8.1.4a Setup in the Grocy integration page (maintainer decision 2026-11-09)
+
+The hub's Grocy integration settings page shows everything an operator needs to point Grocy at the hub. Nobody has to assemble the URL by hand.
+
+- **A "Grocy label webhook" panel.**
+  - It shows the full webhook URL built from `PRINTER_HUB_PUBLIC_URL`: `<public url>/api/v1/webhook/grocy/label`, with a **Copy** button.
+  - The token is not part of the URL until the operator creates or chooses a dedicated key in the panel. The panel offers "Create a Grocy key", which creates an `inbox` key with the name `grocy`, shows the value **once**, and builds the copyable URL with `?token=` from it. An existing key is never shown again, because keys are write-only. Reusing one means pasting it in.
+- **A ready-to-paste Grocy configuration block.** It covers `config.php`, or the matching environment variables for the Docker image: `LABEL_PRINTER_WEBHOOK`, `LABEL_PRINTER_RUN_SERVER=true`, `LABEL_PRINTER_HOOK_JSON=true` and `FEATURE_FLAG_LABEL_PRINTER=true`. A note recommends server mode and explains why: in browser mode the token reaches every Grocy client.
+- **"Send test label".** It runs the same code path with a fixed sample payload, honours the configured target (inbox or printer), and reports the outcome.
+- **"Last call received".** It shows the time, outcome and event type of the last real call from Grocy (no payload), so the operator can check after configuring Grocy that calls arrive.
+
+Tests: the panel URL uses the public URL, not the request host. The key value appears only in the create response. A test label lands in the inbox with the default rule.
+
 #### 8.1.5 Duplicates, responses, the old endpoint
 
 - Grocy sends no event id and never retries; the only duplicates are double clicks or two open tabs. Dedupe by `(key id, request hash)` within 10 seconds (builder's call: shorter than the generic 60 s, because printing the same label twice on purpose a minute later is normal in Grocy).
