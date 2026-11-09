@@ -163,3 +163,27 @@ async def test_probe_failure_preserves_prior_parsed_data(_printer_id, monkeypatc
     assert "last_error" in row.parsed
     # Prior tape data must be preserved
     assert row.parsed.get("loaded_tape_mm") == 24
+
+
+async def test_producer_writes_media_raw(_printer_id, monkeypatch):
+    """The trimmed media name text the printer reported lands in the cache (#229)."""
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    ok_status = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=62, error_flags=[], media_raw='62mm(2.44")'
+    )
+
+    async def _fake_query(host, *, community="public", timeout_s=3.0):
+        return ok_status
+
+    monkeypatch.setattr("app.services.producers.status_probe_producer.query_preflight", _fake_query)
+    await _make_producer(_printer_id)._probe_once()
+
+    import app.db.engine as _eng
+    from app.models.printer_status_cache import PrinterStatusCache
+
+    async with _eng.async_session() as s:
+        row = await s.get(PrinterStatusCache, _printer_id)
+    assert row is not None
+    assert row.parsed["media_raw"] == '62mm(2.44")'
+    assert row.parsed["loaded_tape_mm"] == 62

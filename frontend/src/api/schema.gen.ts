@@ -748,8 +748,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get the current tape spec
-         * @description Returns the tape specification for the tape currently loaded in the printer, derived from the cached status block.  Returns 404 if the printer has no cached status or no tape is loaded, and also when the status is stale or the printer is not polled (``Status older than N s`` / ``Not polled``, as in the status note): a tape nobody has looked at for a while is not reported.
+         * Get the tape loaded in a printer
+         * @description Returns the width, display label and raw media text of the tape loaded in the printer, read from the status cache that the SNMP status producer writes. ``colour`` comes from the operator's roll record and is null until one exists. Answers 404 when there is no tape to report; see the 404 response.
          */
         get: operations["get_printer_tape_api_v1_printers__printer_id__tape_get"];
         put?: never;
@@ -2557,10 +2557,20 @@ export interface components {
             /** State Reasons */
             state_reasons?: components["schemas"]["ReasonRead"][] | null;
             /**
+             * Tape Colour
+             * @description Tape colour from the operator's roll record. The printer reports none over the network, so this stays None until a roll is recorded.
+             */
+            tape_colour?: ("white" | "yellow" | "green" | "blue" | "red" | "black" | "clear") | null;
+            /**
              * Tape Loaded
              * @description e.g. "12mm laminated black/clear"; None when no tape is loaded
              */
             tape_loaded?: string | null;
+            /**
+             * Tape Width Mm
+             * @description Width of the loaded tape in mm; None when no tape is loaded or unknown
+             */
+            tape_width_mm?: number | null;
             /** Trays */
             trays?: components["schemas"]["TrayStatusRead"][] | null;
         };
@@ -3320,6 +3330,32 @@ export interface components {
              */
             type: string | null;
             /** Width Mm */
+            width_mm: number;
+        };
+        /**
+         * TapeRead
+         * @description The tape loaded in a polled tape printer (``GET /printers/{id}/tape``).
+         */
+        TapeRead: {
+            /**
+             * Colour
+             * @description Tape colour from the operator's roll record; None if unknown
+             */
+            colour?: ("white" | "yellow" | "green" | "blue" | "red" | "black" | "clear") | null;
+            /**
+             * Label
+             * @description Display label from the printer model, e.g. "62mm DK"
+             */
+            label: string;
+            /**
+             * Media Raw
+             * @description The media name text as the printer reported it
+             */
+            media_raw?: string | null;
+            /**
+             * Width Mm
+             * @description Width of the loaded tape in mm
+             */
             width_mm: number;
         };
         /** TapeResolution */
@@ -5136,10 +5172,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TapeRead"];
                 };
+            };
+            /** @description No tape to report: the printer is unknown, has no cached status (``no cached status for printer ...``), is not polled (``Not polled``), its status is stale (``Status older than N s``, as in the status note), or no tape is loaded (``no tape loaded in printer ...``). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

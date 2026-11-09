@@ -23,7 +23,6 @@ References:
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import logging
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -48,13 +47,14 @@ from app.schemas.printer import (
     PrinterRead,
     PrinterStatus,
     ReasonRead,
+    TapeRead,
     TrayStatusRead,
 )
 from app.services.print_queue import PrinterAlreadyActiveError
 from app.services.printer_runtime import PrinterRuntime
-from app.services.status_block import MediaType, PrinterError, StatusBlockParser
+from app.services.status_block import PrinterError, StatusBlockParser
 from app.services.status_freshness import backoff_of, is_stale, stale_after_s
-from app.services.tape_registry import TapeRegistry, UnknownTapeError
+from app.services.tape_status import read_tape_status
 
 _log = logging.getLogger(__name__)
 
@@ -419,20 +419,22 @@ async def get_printer_status(
     if parsed.get("kind") == "page":
         return await _page_status(session, printer_id, parsed, row.captured_at, age_s)
 
-    loaded_tape_mm = parsed.get("loaded_tape_mm")
+    tape = read_tape_status(parsed)
+    loaded_tape_mm = tape.get("loaded_tape_mm")
     tape_loaded = f"{loaded_tape_mm}mm" if loaded_tape_mm else None
 
-    error_flags = parsed.get("error_flags") or []
+    error_flags = tape.get("error_flags") or []
     error_state = ", ".join(error_flags) if error_flags else None
 
     return PrinterStatus(
         printer_id=printer_id,
-        online=parsed.get("online"),
+        online=tape.get("online"),
         tape_loaded=tape_loaded,
+        tape_width_mm=loaded_tape_mm,
         error_state=error_state,
         captured_at=row.captured_at,
         last_probe_age_s=age_s,
-        last_error=parsed.get("last_error"),
+        last_error=tape.get("last_error"),
         polled=polled,
     )
 
@@ -444,13 +446,23 @@ async def get_printer_status(
 
 @router.get(
     "/{printer_id}/tape",
-    summary="Get the current tape spec",
+    summary="Get the tape loaded in a printer",
+    response_model=TapeRead,
+    responses={
+        404: {
+            "description": (
+                "No tape to report: the printer is unknown, has no cached status "
+                "(``no cached status for printer ...``), is not polled (``Not polled``), "
+                "its status is stale (``Status older than N s``, as in the status note), or "
+                "no tape is loaded (``no tape loaded in printer ...``)."
+            )
+        }
+    },
     description=(
-        "Returns the tape specification for the tape currently loaded in the "
-        "printer, derived from the cached status block.  Returns 404 if the "
-        "printer has no cached status or no tape is loaded, and also when the status is "
-        "stale or the printer is not polled (``Status older than N s`` / ``Not polled``, "
-        "as in the status note): a tape nobody has looked at for a while is not reported."
+        "Returns the width, display label and raw media text of the tape loaded in the "
+        "printer, read from the status cache that the SNMP status producer writes. "
+        "``colour`` comes from the operator's roll record and is null until one exists. "
+        "Answers 404 when there is no tape to report; see the 404 response."
     ),
 )
 async def get_printer_tape(
@@ -458,8 +470,8 @@ async def get_printer_tape(
     session: SessionDep,
     _auth: ReadAuthDep,
     runtime: RuntimeDep = None,
-) -> dict[str, object]:
-    """Return the current tape spec for a printer."""
+) -> TapeRead:
+    """Return the tape loaded in a polled tape printer."""
     await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
@@ -481,28 +493,19 @@ async def get_printer_tape(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Status older than {int(stale_after_s(interval_s, backoff_s))} s",
         )
-    width_mm = int(parsed.get("media_width_mm", 0))
-    if width_mm == 0:
+    tape = read_tape_status(parsed)
+    width_mm = tape.get("loaded_tape_mm")
+    if not width_mm:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no tape loaded in printer {printer_id}",
         )
-
-    try:
-        media_type = MediaType[str(parsed.get("media_type", "UNKNOWN"))]
-    except KeyError:
-        media_type = MediaType.UNKNOWN
-
-    tape_registry = TapeRegistry()
-    try:
-        spec = tape_registry.lookup_pt(width_mm, media_type)
-    except UnknownTapeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-
-    return dataclasses.asdict(spec)
+    return TapeRead(
+        width_mm=width_mm,
+        label=runtime.describe_tape_for(printer_id, width_mm).label,
+        media_raw=tape.get("media_raw"),
+        colour=None,
+    )
 
 
 # ---------------------------------------------------------------------------

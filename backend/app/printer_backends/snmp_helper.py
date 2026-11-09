@@ -138,6 +138,8 @@ class PreflightStatus:
     hr_printer_status: Literal["other", "unknown", "idle", "printing", "warmup"]
     loaded_tape_mm: int | None
     error_flags: list[str] = field(default_factory=list)
+    # Trimmed ``prtInputMediaName`` text as the printer reported it; ``None`` when blank.
+    media_raw: str | None = None
 
 
 async def query_loaded_tape_mm(
@@ -192,6 +194,7 @@ async def query_preflight(
         hr_printer_status=_PRINTER_STATUS_MAP.get(raw_status, "other"),
         loaded_tape_mm=parse_loaded_tape_mm(raw_media_text),
         error_flags=decode_error_flags(raw_error_blob),
+        media_raw=raw_media_text.strip() or None,
     )
 
 

@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.schemas._datetime import serialize_datetime_utc
+from app.services.tape_status import TapeColourName
 
 
 class PauseRead(BaseModel):
@@ -89,6 +90,19 @@ class TrayStatusRead(BaseModel):
     )
 
 
+class TapeRead(BaseModel):
+    """The tape loaded in a polled tape printer (``GET /printers/{id}/tape``)."""
+
+    width_mm: int = Field(description="Width of the loaded tape in mm")
+    label: str = Field(description='Display label from the printer model, e.g. "62mm DK"')
+    media_raw: str | None = Field(
+        default=None, description="The media name text as the printer reported it"
+    )
+    colour: TapeColourName | None = Field(
+        default=None, description="Tape colour from the operator's roll record; None if unknown"
+    )
+
+
 class PrinterStatus(BaseModel):
     """Printer status sourced from the printer_status_cache table.
 
@@ -127,6 +141,17 @@ class PrinterStatus(BaseModel):
     tape_loaded: str | None = Field(
         default=None,
         description='e.g. "12mm laminated black/clear"; None when no tape is loaded',
+    )
+    tape_width_mm: int | None = Field(
+        default=None,
+        description="Width of the loaded tape in mm; None when no tape is loaded or unknown",
+    )
+    tape_colour: TapeColourName | None = Field(
+        default=None,
+        description=(
+            "Tape colour from the operator's roll record. The printer reports none over the "
+            "network, so this stays None until a roll is recorded."
+        ),
     )
     error_state: str | None = Field(
         default=None,

@@ -287,7 +287,7 @@ async def test_tape_row_200_s_old_keeps_the_old_bound(api) -> None:
     assert body["note"] == "Status older than 90 s"
 
 
-TAPE_BLOCK = {"online": True, "loaded_tape_mm": 12, "media_width_mm": 12, "media_type": "LAMINATED"}
+TAPE_BLOCK = {"online": True, "loaded_tape_mm": 12, "media_raw": '12mm(0.47")'}
 
 
 async def test_tape_route_refuses_a_stale_tape(api) -> None:

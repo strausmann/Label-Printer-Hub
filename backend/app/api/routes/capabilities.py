@@ -38,6 +38,7 @@ from app.schemas.capabilities import (
 from app.schemas.tape_geometry import TAPE_GEOMETRY
 from app.services.printer_runtime import PrinterRuntime
 from app.services.status_freshness import backoff_of, is_stale
+from app.services.tape_status import read_tape_status
 from app.sheets.errors import PrinterNotFoundError
 from app.sheets.printer_facts import facts_of, read_status
 
@@ -121,7 +122,7 @@ def _tape(printer: Printer, parsed: dict[str, Any], captured: datetime | None) -
             },
         ) from None
     media: TapeMedia | None = None
-    width = parsed.get("loaded_tape_mm")
+    width = read_tape_status(parsed).get("loaded_tape_mm")
     geometry = TAPE_GEOMETRY.get(width) if isinstance(width, int) else None
     if isinstance(width, int) and geometry is not None:
         media = TapeMedia(

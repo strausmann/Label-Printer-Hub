@@ -48,11 +48,13 @@ import asyncio
 import contextlib
 import logging
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from app.printer_backends.snmp_helper import PreflightStatus, query_preflight
 from app.services.event_bus import BusEvent, EventBus
 from app.services.producers.tape_change_producer import TapeChangeProducer
+from app.services.tape_status import TapeStatusParsed
 
 _log = logging.getLogger(__name__)
 
@@ -119,12 +121,14 @@ class StatusProbeProducer:
         except (ValueError, AttributeError):
             _log.debug("_upsert_cache: printer_id %r is not a valid UUID — skip", self._printer_id)
             return
-        parsed = {
+        tape: TapeStatusParsed = {
             "online": True,
             "loaded_tape_mm": snmp_result.loaded_tape_mm,
+            "media_raw": snmp_result.media_raw,
             "hr_printer_status": snmp_result.hr_printer_status,
             "error_flags": list(snmp_result.error_flags),
         }
+        parsed: dict[str, Any] = dict(tape)
         now = datetime.now(UTC)
         async with async_session() as s:
             row = await s.get(PrinterStatusCache, printer_uuid)

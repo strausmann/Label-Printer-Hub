@@ -223,15 +223,7 @@ async def test_get_printer_tape_returns_tape_spec_from_cache(session) -> None:
     cache = PrinterStatusCache(
         printer_id=printer.id,
         raw_block=b"\x80" + b"\x00" * 31,
-        parsed={
-            "media_width_mm": 12,
-            "media_type": "LAMINATED",
-            "status_type": "REPLY",
-            "phase_type": "EDITING",
-            "errors": 0,
-            "tape_color": "BLACK",
-            "text_color": "WHITE",
-        },
+        parsed={"online": True, "loaded_tape_mm": 12, "media_raw": '12mm(0.47")'},
         captured_at=datetime.now(UTC),
     )
     session.add(cache)
@@ -450,10 +442,7 @@ async def test_get_printer_tape_no_cache_returns_404(session) -> None:
 
 @pytest.mark.asyncio
 async def test_get_printer_tape_zero_width_returns_404(session) -> None:
-    """GET /api/v1/printers/{id}/tape returns 404 when media_width_mm is 0.
-
-    Exercises lines 260-265 (no tape loaded branch) of printers.py.
-    """
+    """GET /api/v1/printers/{id}/tape returns 404 when no tape is loaded."""
     from datetime import UTC, datetime
 
     printer = await _make_printer(session)
@@ -461,15 +450,7 @@ async def test_get_printer_tape_zero_width_returns_404(session) -> None:
     cache = PrinterStatusCache(
         printer_id=printer.id,
         raw_block=b"\x80" + b"\x00" * 31,
-        parsed={
-            "media_width_mm": 0,  # ← no tape loaded
-            "media_type": "UNKNOWN",
-            "status_type": "REPLY",
-            "phase_type": "EDITING",
-            "errors": 0,
-            "tape_color": "UNKNOWN",
-            "text_color": "UNKNOWN",
-        },
+        parsed={"online": True, "loaded_tape_mm": None},  # no tape loaded
         captured_at=datetime.now(UTC),
     )
     session.add(cache)
@@ -773,15 +754,7 @@ async def test_get_printer_tape_direct_with_cache(session) -> None:
     cache = PrinterStatusCache(
         printer_id=printer.id,
         raw_block=b"\x80" + b"\x00" * 31,
-        parsed={
-            "media_width_mm": 12,
-            "media_type": "LAMINATED",
-            "status_type": "REPLY",
-            "phase_type": "EDITING",
-            "errors": 0,
-            "tape_color": "BLACK",
-            "text_color": "WHITE",
-        },
+        parsed={"online": True, "loaded_tape_mm": 12, "media_raw": '12mm(0.47")'},
         captured_at=datetime.now(UTC),
     )
     session.add(cache)
@@ -791,8 +764,8 @@ async def test_get_printer_tape_direct_with_cache(session) -> None:
         printer_id=printer.id, session=session, _auth=None, runtime=FakeRuntime({printer.id})
     )
 
-    assert isinstance(result, dict)
-    assert result["width_mm"] == 12
+    assert result.width_mm == 12
+    assert result.media_raw == '12mm(0.47")'
 
 
 @pytest.mark.asyncio
@@ -835,87 +808,6 @@ async def test_get_printer_tape_direct_no_cache_raises_404(session) -> None:
 
     assert exc_info.value.status_code == 404
     assert "no cached status" in exc_info.value.detail
-
-
-@pytest.mark.asyncio
-async def test_get_printer_tape_direct_invalid_media_type_falls_back(session) -> None:
-    """get_printer_tape falls back to MediaType.UNKNOWN for unrecognised media_type.
-
-    Exercises lines 267-270 (except KeyError branch) of printers.py.
-    """
-    from datetime import UTC, datetime
-
-    from app.api.routes.printers import get_printer_tape
-
-    printer = await _make_printer(session)
-
-    cache = PrinterStatusCache(
-        printer_id=printer.id,
-        raw_block=b"\x80" + b"\x00" * 31,
-        parsed={
-            "media_width_mm": 12,
-            "media_type": "INVALID_MEDIA_TYPE_XYZ",  # ← triggers KeyError → UNKNOWN fallback
-            "status_type": "REPLY",
-            "phase_type": "EDITING",
-            "errors": 0,
-            "tape_color": "BLACK",
-            "text_color": "WHITE",
-        },
-        captured_at=datetime.now(UTC),
-    )
-    session.add(cache)
-    await session.commit()
-
-    # Either returns a tape spec (if UNKNOWN type matches something) or raises 404
-    # (UnknownTapeError). Both are valid — we just want lines 267-270 executed.
-    from fastapi import HTTPException
-
-    try:
-        result = await get_printer_tape(
-            printer_id=printer.id, session=session, _auth=None, runtime=FakeRuntime({printer.id})
-        )
-        assert isinstance(result, dict)
-    except HTTPException as exc:
-        assert exc.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_get_printer_tape_direct_unknown_tape_size_raises_404(session) -> None:
-    """get_printer_tape raises 404 when TapeRegistry can't find the spec.
-
-    Exercises lines 272-279 (except UnknownTapeError branch) of printers.py.
-    """
-    from datetime import UTC, datetime
-
-    from app.api.routes.printers import get_printer_tape
-    from fastapi import HTTPException
-
-    printer = await _make_printer(session)
-
-    # Use a width that doesn't exist in TapeRegistry (e.g. 99mm)
-    cache = PrinterStatusCache(
-        printer_id=printer.id,
-        raw_block=b"\x80" + b"\x00" * 31,
-        parsed={
-            "media_width_mm": 99,  # ← non-existent tape size
-            "media_type": "LAMINATED",
-            "status_type": "REPLY",
-            "phase_type": "EDITING",
-            "errors": 0,
-            "tape_color": "BLACK",
-            "text_color": "WHITE",
-        },
-        captured_at=datetime.now(UTC),
-    )
-    session.add(cache)
-    await session.commit()
-
-    with pytest.raises(HTTPException) as exc_info:
-        await get_printer_tape(
-            printer_id=printer.id, session=session, _auth=None, runtime=FakeRuntime({printer.id})
-        )
-
-    assert exc_info.value.status_code == 404
 
 
 @pytest.mark.asyncio
