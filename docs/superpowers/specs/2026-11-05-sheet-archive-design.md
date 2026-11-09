@@ -534,6 +534,8 @@ The response is a stable schema for clients that render themselves (Kept in Part
 
 ## 15. API surface
 
+> Paths below predate #226; all API paths are now under `/api/v1/`.
+
 All under `/api`, Pydantic models, complete OpenAPI (ADR 0011), errors in the existing `{error_code, error_message, error_detail}` shape.
 
 | Method and path | Scope | Purpose |

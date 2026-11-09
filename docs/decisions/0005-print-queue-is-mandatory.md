@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Amended by:** [0020](0020-backend-kinds-ipp-page-printers.md) — for IPP page printers a job that is printing can be cancelled (Cancel-Job) and may end `cancelled`; the rule below stays for TCP/9100 streams
+- **Amended:** 2026-11-09 (#226) — every API route now lives under `/api/v1/`; the paths quoted below are the original ones, the decision is unchanged
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 

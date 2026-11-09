@@ -1,6 +1,7 @@
 # 0020 — Page printers are a backend kind (IPP) with the hub's own client
 
 - **Status:** Proposed
+- **Amended:** 2026-11-09 (#226) — every API route now lives under `/api/v1/`; the paths quoted below are the original ones, the decision is unchanged
 - **Date:** 2026-11-06
 - **Deciders:** maintainer
 - **Amends:** ADR-0004 (does not supersede it), and narrows ADR-0005's cancel rule to raw streams

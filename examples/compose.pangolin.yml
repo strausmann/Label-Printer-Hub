@@ -70,7 +70,7 @@ services:
       - "pangolin.public-resources.printerhub-webhooks.targets[0].method=http"
       - "pangolin.public-resources.printerhub-webhooks.targets[0].port=${BACKEND_PORT:-8000}"
       - "pangolin.public-resources.printerhub-webhooks.targets[0].path-match=prefix"
-      - "pangolin.public-resources.printerhub-webhooks.targets[0].path=/api/webhook/"
+      - "pangolin.public-resources.printerhub-webhooks.targets[0].path=/api/v1/webhook/"
       - "pangolin.public-resources.printerhub-webhooks.auth.bypass=true"
 
 networks:

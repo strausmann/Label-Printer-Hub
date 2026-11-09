@@ -27,7 +27,7 @@ Why: [ADR 0015](../decisions/0015-single-process-deployment.md) (single process)
 
 The backend image is now built from the repository root (`docker build -f backend/Dockerfile .`) because the web app is built into it. The `examples/compose.backend-only.yml` file still builds an API-only image (no web UI) for driving the REST API directly.
 
-If your proxy routed `/api/webhook/` separately (Traefik and Pangolin examples), keep that route and point it at the backend.
+If your proxy routed the webhook path separately (Traefik and Pangolin examples), keep that route and point it at the backend. Since 1.5.0 the path is `/api/v1/webhook/` (see "Moved API paths (1.5.0)" in the README).
 
 ## New required variables
 
@@ -81,7 +81,7 @@ Existing installations keep their API keys; sign in with one of them.
 - **Removed pages:** `/templates` and `/templates/{id}` (they were already non-functional). The admin pages `/admin/api-keys` and `/admin/printers` are now Settings > Access and keys and Settings > Printers.
 - **QR label paths keep working.** `/loc`, `/asset`, `/spool` and `/product` are served by the backend, so labels you printed earlier still open the right item.
 - **Session sign-in:** browsers sign in with an API key (or SSO) and get a session cookie with CSRF protection. API clients keep using their key header. The sign-in route allows 10 attempts per minute per client address, keyed on the direct peer: behind a reverse proxy all clients share that one bucket.
-- **`GET /api/lookup/{app}/{entity_id}` now needs a key or a signed-in session** (read scope). It used to be anonymous because server-rendered QR pages called it; those pages are gone, and the lookup returns data from your connected apps. Scanning a label therefore asks anonymous visitors to sign in first. Scripts that call the lookup without credentials must send a key.
+- **`GET /api/v1/lookup/{app}/{entity_id}` (`/api/lookup/…` before 1.5.0) now needs a key or a signed-in session** (read scope). It used to be anonymous because server-rendered QR pages called it; those pages are gone, and the lookup returns data from your connected apps. Scanning a label therefore asks anonymous visitors to sign in first. Scripts that call the lookup without credentials must send a key.
 - **Third-party integration plugins** must implement `bind(store)`, `is_configured()` and `async reconfigure()`; they are required members of the plugin protocol now (live configuration from the UI). A plugin without them is rejected at registration.
 
 ## What clients must change
@@ -89,7 +89,7 @@ Existing installations keep their API keys; sign in with one of them.
 | Client | Change |
 |---|---|
 | Browser bookmarks, PWA installs | The address is the same as before when your proxy still points at the hub; open it once to update the installed app. |
-| Scripts that called `/api/*` through the frontend | Call the backend address instead (same paths). Hangar and Kept already talk to the backend directly and need no change. |
+| Scripts that called `/api/*` through the frontend | Call the backend address instead. The paths were unchanged in this release; since 1.5.0 they live under `/api/v1/` (see the README). Hangar and Kept already talk to the backend directly and need no change. |
 | Anything reading `/api/events` | Switch to `/api/v1/events` (JSON). |
 | Pulling `label-printer-hub-frontend` | Remove it from your compose files and image update tooling. |
 

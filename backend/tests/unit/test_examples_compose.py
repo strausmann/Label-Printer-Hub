@@ -271,3 +271,11 @@ def test_image_ships_third_party_notices() -> None:
     notices = (REPO / "THIRD_PARTY_NOTICES.md").read_text()
     for needle in ("cryptography", "greenlet", "OFL-1.1", "zxing"):
         assert needle in notices
+
+
+def test_webhook_bypass_routes_use_the_versioned_path() -> None:
+    """The SSO-bypass route must match the real webhook path (/api/v1/webhook/, #226)."""
+    for name in ("compose.traefik.yml", "compose.pangolin.yml"):
+        text = (EXAMPLES / name).read_text()
+        assert "/api/v1/webhook/" in text, name
+        assert "/api/webhook/" not in text, name

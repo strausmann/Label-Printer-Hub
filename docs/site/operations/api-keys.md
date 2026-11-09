@@ -28,7 +28,7 @@ The key starts with `lh_` (Label Hub prefix, ~43 URL-safe chars).
 
 ```bash
 # List printers
-curl -H "X-Label-Hub-Key: lh_abc..." https://your-hub/api/printers
+curl -H "X-Label-Hub-Key: lh_abc..." https://your-hub/api/v1/printers
 
 # Submit a print job
 curl -X POST \
@@ -96,4 +96,4 @@ docker compose exec backend printer-hub admin create-key --scope admin --name re
 ```
 
 Whoever can run commands in the container already controls the hub, so this adds
-no new attack surface. Revoke the lost keys afterwards via `/api/admin/api-keys`.
+no new attack surface. Revoke the lost keys afterwards via `/api/v1/admin/api-keys`.

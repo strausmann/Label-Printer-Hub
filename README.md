@@ -68,7 +68,7 @@ $EDITOR .env
 docker compose -f compose.standalone.yml up -d
 
 curl http://localhost:8000/healthz
-curl http://localhost:8000/api/info
+curl http://localhost:8000/api/v1/info
 # Open http://localhost:8000/ and sign in. A fresh install has no admin key:
 # either set PRINTER_HUB_BOOTSTRAP_ADMIN_KEY (one-time key, 32+ characters) or run
 docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
@@ -92,12 +92,36 @@ For the REST API alone, without the web UI, see [`examples/compose.backend-only.
 
 | Method | Path | Purpose | Body |
 |---|---|---|---|
-| `POST` | `/print` | Submit a print job | `PrintRequest` (see below) |
-| `GET` | `/jobs/{job_id}` | Poll job status (includes live SNMP block while printing) | — |
-| `POST` | `/jobs/{job_id}/resume` | Resume a job paused by tape mismatch (after the user changed the tape physically) | — |
-| `POST` | `/printer/resume` | Resume the printer queue after a recoverable error halted it (tape empty / cover open / offline) | — |
+| `POST` | `/api/v1/print` | Submit a print job | `PrintRequest` (see below) |
+| `GET` | `/api/v1/jobs/{job_id}` | Poll job status | — |
+| `POST` | `/api/v1/printer/resume` | Resume the printer queue after a recoverable error halted it (tape empty / cover open / offline) | — |
 | `GET` | `/healthz` | Liveness probe for orchestrators | — |
 | `GET` | `/readiness` | Readiness probe — deep check for reverse-proxy routing | — |
+
+### Moved API paths (1.5.0)
+
+Since 1.5.0 every API route lives under `/api/v1/`. There are no aliases and no redirects: update scripts, reverse-proxy rules (the webhook bypass in particular) and bookmarks.
+
+| Before | Now |
+|---|---|
+| `/api/admin/api-keys…` | `/api/v1/admin/api-keys…` |
+| `/api/printers…` (printers, calibration, capabilities) | `/api/v1/printers…` |
+| `/api/jobs…` | `/api/v1/jobs…` |
+| `/api/batches/{batch_id}` | `/api/v1/batches/{batch_id}` |
+| `/api/print/{printer_key}/batch`, `…/sheet`, `…/sheet/preview` | `/api/v1/print/{printer_key}/…` |
+| `/api/render/preview` | `/api/v1/render/preview` |
+| `/api/lookup/{app}/{entity_id}` | `/api/v1/lookup/{app}/{entity_id}` |
+| `/api/sheet-types…`, `/api/sheets…`, `/api/sheet-cells` | `/api/v1/sheet-types…`, `/api/v1/sheets…`, `/api/v1/sheet-cells` |
+| `/api/webhook/spoolman`, `/api/webhook/grocy` | `/api/v1/webhook/spoolman`, `/api/v1/webhook/grocy` |
+| `/api/info` | `/api/v1/info` |
+| `POST /print` | `POST /api/v1/print` |
+| `POST /printer/resume` | `POST /api/v1/printer/resume` |
+| `GET /jobs/{job_id}` | removed: it duplicated `GET /api/v1/jobs/{job_id}`, which reads the stored job and applies the per-key printer ACL |
+| `POST /jobs/{job_id}/resume` | removed: nothing produces a paused job any more (the tape-mismatch pause was removed with the layout engine) |
+
+Unchanged: `/healthz`, `/readiness`, `/openapi.json`, `/docs`, the label links `/loc/…`, `/asset/…`, `/spool/…`, `/product/…`, and `/jobs/{id}`, which now opens the web UI.
+
+**Installed web app:** the service worker updates the app in the background and asks before switching. A client that has not accepted the update prompt yet keeps calling the old paths until the user accepts, so expect old-path 404s from such clients after the upgrade.
 
 ### Health Probes
 
@@ -114,7 +138,7 @@ Pangolin's `targets[0].healthcheck.path` can use `/readiness` for deep checks in
 
 See `docs/superpowers/specs/2026-05-17-phase-7b-foundation-design.md` for the full check list and rationale.
 
-### `POST /print` request body
+### `POST /api/v1/print` request body
 
 ```jsonc
 {
@@ -130,12 +154,12 @@ See `docs/superpowers/specs/2026-05-17-phase-7b-foundation-design.md` for the fu
                "high_resolution": false },
   // Default "fail" → synchronous 409 + error_detail{expected_mm, loaded_mm}.
   // "queue"        → 202 + job_id; job lands in PAUSED until the user POSTs
-  //                  /jobs/{id}/resume after physically swapping the tape.
+  //                  /api/v1/jobs/{id}/resume after physically swapping the tape.
   "on_tape_mismatch": "fail"
 }
 ```
 
-### Synchronous error codes (`POST /print`)
+### Synchronous error codes (`POST /api/v1/print`)
 
 | HTTP | `error_code` | When |
 |---|---|---|

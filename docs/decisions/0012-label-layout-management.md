@@ -1,6 +1,7 @@
 # 0012 — Label layouts are first-class, integration-scoped, and multi-instance
 
 - **Status:** Accepted
+- **Amended:** 2026-11-09 (#226) — every API route now lives under `/api/v1/`; the paths quoted below are the original ones, the decision is unchanged
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 

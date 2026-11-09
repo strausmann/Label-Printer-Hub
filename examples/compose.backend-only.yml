@@ -16,7 +16,7 @@
 #
 # Then:
 #   curl http://localhost:8090/healthz
-#   curl http://localhost:8090/api/info
+#   curl http://localhost:8090/api/v1/info
 #
 # Add printers through the API (POST /api/v1/admin/printers with an admin key); create
 # the first key with:
