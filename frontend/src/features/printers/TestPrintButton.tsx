@@ -4,9 +4,8 @@ import { useState } from "react";
 import { Button, Dialog, DialogTrigger, Popover } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { useSession } from "../../app/session";
-import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { SelectField } from "../settings/controls";
-import { SECONDARY_BUTTON } from "../ui";
+import { PRIMARY_BUTTON, SECONDARY_BUTTON } from "../ui";
 import type { Printer, PrinterStatus, useTestPrint } from "./api";
 import { isPagePrinter, unknownKind } from "./model";
 
@@ -23,10 +22,25 @@ function useBlockedReason(printer: Printer, status: PrinterStatus | undefined): 
   return null;
 }
 
-/** The API's own words, or a plain sentence when the answer carried none (a bare `HTTP 500`). */
+/**
+ * The app's own words for the refusals a person can act on (so a German UI does not show the hub's English);
+ * the API's detail for a type it does not know; a plain sentence when the answer carried none (a bare `HTTP 500`).
+ */
 function useErrorText(error: unknown): string {
   const { t } = useLingui();
-  if (error instanceof ApiError && !/^HTTP \d+$/.test(error.detail)) return error.detail;
+  if (error instanceof ApiError) {
+    switch (error.code?.split("/").pop()) {
+      case "printer-offline":
+        return t`The printer is not reachable. Check that it is switched on and connected, then try again.`;
+      case "no-tape-loaded":
+        return t`No tape is loaded. Put in a tape and try again.`;
+      case "media-unknown":
+        return t`The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray.`;
+      case "printer-disabled":
+        return t`The printer is switched off in the hub. Switch it on in the printer settings.`;
+    }
+    if (!/^HTTP \d+$/.test(error.detail)) return error.detail;
+  }
   return t`The test print could not be started.`;
 }
 

@@ -91,17 +91,18 @@ export function summarizePayload(job: Job): PayloadSummary {
   };
 }
 
-/** "Sheet L4736-0002 · 9 labels", "Calibration page · <sheet type> v1" (`typeLabel`: the type's name, when known). */
-function pageTitle(page: PageInfo, typeLabel: string | null): string {
+/** "Sheet L4736-0002 · 9 labels", "Calibration page · <sheet type> v1" (`label`: the type's name or the tray's, when known). */
+function pageTitle(page: PageInfo, label: string | null): string {
   if (page.kind === "calibration_page") {
     // The payload stores the type's key; the label is known once the type has been read.
-    const name = typeLabel ?? page.typeKey;
+    const name = label ?? page.typeKey;
     if (name === null) return t`Calibration page`;
     const version = page.version;
     return version === null ? t`Calibration page · ${name}` : t`Calibration page · ${name} v${version}`;
   }
   if (page.kind === "test_page") {
-    const tray = page.tray;
+    // The payload stores the tray's key; the label is known once the printer's status has been read.
+    const tray = label ?? page.tray;
     return tray === null ? t`Test page` : t`Test page · ${tray}`;
   }
   if (page.sheetCode === null) return t`Sheet page`;
@@ -111,9 +112,9 @@ function pageTitle(page: PageInfo, typeLabel: string | null): string {
 }
 
 /** What the person calls this job: the page, else the label's title, else its code, else the template. */
-export function jobTitle(job: Job, typeLabel: string | null = null): string | null {
+export function jobTitle(job: Job, label: string | null = null): string | null {
   const s = summarizePayload(job);
-  if (s.page) return pageTitle(s.page, typeLabel);
+  if (s.page) return pageTitle(s.page, label);
   if (job.template_key === TEST_LABEL_KEY) return t`Test label`;
   return s.title ?? s.code ?? job.template_key;
 }

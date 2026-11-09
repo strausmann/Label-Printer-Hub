@@ -121,6 +121,8 @@ describe("test print jobs", () => {
 
   it("names a test page by its tray and a test label by its template", () => {
     expect(jobTitle(testPage() as never)).toBe("Test page · main");
+    // The tray's label, once known, replaces the key.
+    expect(jobTitle(testPage() as never, "Main tray")).toBe("Test page · Main tray");
     expect(jobTitle(testPage({ payload: { kind: "test_page", detail: {} } }) as never)).toBe("Test page");
     expect(jobTitle(testLabel() as never)).toBe("Test label");
   });

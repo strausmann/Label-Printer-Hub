@@ -330,6 +330,27 @@ describe("job list", () => {
 });
 
 describe("test page job", () => {
+  it("shows the tray's label from the printer, not its key, and falls back to the key", async () => {
+    mockApi(
+      routes(
+        "queued",
+        { payload: { kind: "test_page", media: "A4", tray: "main", detail: {} } },
+        { [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: pageStatus(PAGE_PRINTER.id) },
+      ),
+    );
+    await renderApp({ path: `/jobs/${ID}` });
+    await screen.findByRole("heading", { level: 1, name: "Test page · Main tray" });
+    expect(within(screen.getByRole("region", { name: "Test page" })).getByText("Main tray")).toBeVisible();
+  });
+
+  it("does not talk about cells when a printing test page is cancelled", async () => {
+    mockApi(routes("printing", { payload: { kind: "test_page", media: "A4", tray: "main", detail: {} } }, { [`POST /api/v1/jobs/${ID}/cancel`]: job(ID, PAGE_PRINTER.id, "printing") }));
+    await renderApp({ path: `/jobs/${ID}` });
+    await userEvent.click(await screen.findByRole("button", { name: /Cancel/ }));
+    expect(await screen.findByText("Asked the printer to cancel.")).toBeVisible();
+    expect(screen.queryByText(/cells are settled/)).toBeNull();
+  });
+
   it("is titled by its tray and shows the tray and paper size, not sheet fields", async () => {
     mockApi(routes("queued", { payload: { kind: "test_page", media: "A4", tray: "bypass", detail: { printer_name: "Office laser" } } }));
     await renderApp({ path: `/jobs/${ID}` });

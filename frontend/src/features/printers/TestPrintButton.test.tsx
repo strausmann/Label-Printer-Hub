@@ -38,12 +38,11 @@ describe("TestPrintButton", () => {
     expect(await screen.findByRole("button", { name: "Test print" })).toBeEnabled();
   });
 
-  it("shows the API detail after a refusal, and nothing was queued", async () => {
-    const detail = "The printer is offline. Check the power and the network, then try again.";
-    mockApi(routes(PRINTER_A, status(PRINTER_A.id), { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type: "printer-offline", title: "Printer offline", status: 409, detail } }) }));
+  it("shows an answer after a refusal, and no job link", async () => {
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type: "printer-offline", title: "Printer offline", status: 409, detail: "The printer did not answer" } }) }));
     await open(PRINTER_A);
     await userEvent.click(await screen.findByRole("button", { name: "Test print" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(detail);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/not reachable/);
     expect(screen.queryByRole("link", { name: "Open the job" })).toBeNull();
   });
 
@@ -63,19 +62,23 @@ describe("TestPrintButton", () => {
     expect(screen.getByText("Printer is disabled")).toBeVisible();
   });
 
-  it("is disabled with a reason when a page printer is offline, unpolled or stale", async () => {
-    for (const [over, reason] of [
-      [{ online: false }, "Printer is not reachable"],
-      [{ stale: true }, "Printer is not reachable"],
-      [{ polled: false, online: null }, "Printer status unknown"],
-    ] as const) {
-      mockApi(routes(PAGE_PRINTER, pageStatus(PAGE_PRINTER.id, over)));
-      const { unmount } = await open(PAGE_PRINTER);
-      expect(await screen.findByText(reason)).toBeVisible();
-      expect(screen.getByRole("button", { name: "Test print" })).toBeDisabled();
-      unmount();
-      vi.unstubAllGlobals();
-    }
+  it.each([
+    ["offline", { online: false }, "Printer is not reachable"],
+    ["stale", { stale: true }, "Printer is not reachable"],
+    ["unpolled", { polled: false, online: null }, "Printer status unknown"],
+  ] as const)("is disabled with a reason when a page printer is %s", async (_name, over, reason) => {
+    mockApi(routes(PAGE_PRINTER, pageStatus(PAGE_PRINTER.id, over)));
+    await open(PAGE_PRINTER);
+    expect(await screen.findByText(reason)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Test print" })).toBeDisabled();
+  });
+
+  it("is disabled as 'status unknown' while a page printer's status is still loading", async () => {
+    // The status never answers: the button must not offer a print it cannot vouch for.
+    mockApi(routes(PAGE_PRINTER, new Promise(() => undefined)));
+    await open(PAGE_PRINTER);
+    expect(await screen.findByText("Printer status unknown")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Test print" })).toBeDisabled();
   });
 
   it("is absent for a read-only key", async () => {
@@ -111,5 +114,34 @@ describe("TestPrintButton", () => {
     await open(PRINTER_A, SIGNED_IN, "de");
     expect(await screen.findByRole("button", { name: "Testdruck" })).toBeDisabled();
     expect(screen.getByText("Der Drucker ist pausiert")).toBeVisible();
+  });
+
+  it.each([
+    ["printer-offline", "The printer is not reachable. Check that it is switched on and connected, then try again."],
+    ["no-tape-loaded", "No tape is loaded. Put in a tape and try again."],
+    ["media-unknown", "The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray."],
+    ["printer-disabled", "The printer is switched off in the hub. Switch it on in the printer settings."],
+  ])("explains %s in the app's own words, not the server's English", async (type, words) => {
+    const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type, title: "T", status: 409, detail: "server text" } }) };
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
+    await open(PRINTER_A);
+    await userEvent.click(await screen.findByRole("button", { name: "Test print" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(words);
+  });
+
+  it("says the same in German", async () => {
+    const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type: "no-tape-loaded", title: "T", status: 409, detail: "server text" } }) };
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
+    await open(PRINTER_A, SIGNED_IN, "de");
+    await userEvent.click(await screen.findByRole("button", { name: "Testdruck" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Es ist kein Band eingelegt. Lege ein Band ein und versuche es noch einmal.");
+  });
+
+  it("keeps the API detail for a problem type it does not know", async () => {
+    const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type: "something-new", title: "T", status: 409, detail: "The hub says this." } }) };
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
+    await open(PRINTER_A);
+    await userEvent.click(await screen.findByRole("button", { name: "Test print" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The hub says this.");
   });
 });

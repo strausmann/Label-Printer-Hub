@@ -539,6 +539,10 @@ msgid "Ask an admin to set it up."
 msgstr "Bitten Sie einen Admin, es einzurichten."
 
 #: src/features/jobs/PageJobInfo.tsx
+msgid "Asked the printer to cancel."
+msgstr "Der Drucker wurde gebeten abzubrechen."
+
+#: src/features/jobs/PageJobInfo.tsx
 msgid "Asked the printer to cancel. The cells are settled when it reports."
 msgstr "Der Drucker wurde gebeten abzubrechen. Die Zellen werden geklärt, sobald er sich meldet."
 
@@ -1921,6 +1925,10 @@ msgstr "Noch kein Status"
 #: src/features/printers/PageStatus.tsx
 msgid "No supplies reported"
 msgstr "Keine Verbrauchsmaterialien gemeldet"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "No tape is loaded. Put in a tape and try again."
+msgstr "Es ist kein Band eingelegt. Lege ein Band ein und versuche es noch einmal."
 
 #: src/features/printers/TapeSwatch.tsx
 msgid "No tape loaded"
@@ -3718,9 +3726,21 @@ msgstr "Der Drucker hat nicht gemeldet, ob diese Etiketten herauskamen. Sieh dir
 msgid "The printer does not report that tray."
 msgstr "Der Drucker meldet dieses Fach nicht."
 
+#: src/features/printers/TestPrintButton.tsx
+msgid "The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray."
+msgstr "Der Drucker meldet nicht, welches Papier im Fach liegt. Stelle das Papierformat am Drucker ein oder wähle ein anderes Fach."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The printer is not reachable. Check that it is switched on and connected, then try again."
+msgstr "Der Drucker ist nicht erreichbar. Prüfe, ob er eingeschaltet und verbunden ist, und versuche es noch einmal."
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The printer is not ready. The pages go into the print queue and print when it is ready again."
 msgstr "Der Drucker ist nicht bereit. Die Seiten kommen in die Druckwarteschlange und werden gedruckt, sobald er wieder bereit ist."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The printer is switched off in the hub. Switch it on in the printer settings."
+msgstr "Der Drucker ist im Hub ausgeschaltet. Schalte ihn in den Druckereinstellungen ein."
 
 #: src/features/jobs/RetryError.tsx
 msgid "The printer is switched off. Switch it on in the settings, then retry."

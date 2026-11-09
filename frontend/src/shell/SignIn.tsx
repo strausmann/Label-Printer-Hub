@@ -1,11 +1,12 @@
+import { PRIMARY_BUTTON } from "../features/ui";
 import { useLingui } from "@lingui/react/macro";
 import { useState, type FormEvent } from "react";
 import { Button, Input, Label, TextField } from "react-aria-components";
 import { ApiError } from "../api/client";
 import { SourceLink } from "../features/about/SourceLink";
 
-export const PRIMARY_BUTTON =
-  "press inline-flex h-11 items-center justify-center rounded-r2 bg-accent px-5 font-bold text-accent-ink transition-colors duration-150 hover:bg-amber-600 hover:text-white data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-link data-[disabled]:opacity-60";
+// Defined with the other button styles in `features/ui`; re-exported because the screens import it from here.
+export { PRIMARY_BUTTON };
 
 export const FIELD =
   "h-11 w-full rounded-r2 border border-line-strong bg-sunken px-3 text-ink placeholder:text-ink-3 data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-link";

@@ -539,6 +539,10 @@ msgid "Ask an admin to set it up."
 msgstr "Ask an admin to set it up."
 
 #: src/features/jobs/PageJobInfo.tsx
+msgid "Asked the printer to cancel."
+msgstr "Asked the printer to cancel."
+
+#: src/features/jobs/PageJobInfo.tsx
 msgid "Asked the printer to cancel. The cells are settled when it reports."
 msgstr "Asked the printer to cancel. The cells are settled when it reports."
 
@@ -1921,6 +1925,10 @@ msgstr "No status yet"
 #: src/features/printers/PageStatus.tsx
 msgid "No supplies reported"
 msgstr "No supplies reported"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "No tape is loaded. Put in a tape and try again."
+msgstr "No tape is loaded. Put in a tape and try again."
 
 #: src/features/printers/TapeSwatch.tsx
 msgid "No tape loaded"
@@ -3718,9 +3726,21 @@ msgstr "The printer did not say whether these labels came out. Look at the sheet
 msgid "The printer does not report that tray."
 msgstr "The printer does not report that tray."
 
+#: src/features/printers/TestPrintButton.tsx
+msgid "The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray."
+msgstr "The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The printer is not reachable. Check that it is switched on and connected, then try again."
+msgstr "The printer is not reachable. Check that it is switched on and connected, then try again."
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The printer is not ready. The pages go into the print queue and print when it is ready again."
 msgstr "The printer is not ready. The pages go into the print queue and print when it is ready again."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The printer is switched off in the hub. Switch it on in the printer settings."
+msgstr "The printer is switched off in the hub. Switch it on in the printer settings."
 
 #: src/features/jobs/RetryError.tsx
 msgid "The printer is switched off. Switch it on in the settings, then retry."
