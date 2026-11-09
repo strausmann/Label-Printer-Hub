@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -31,6 +31,7 @@ from sqlmodel import col
 
 from app.models.printer import Printer, PrinterAudit
 from app.models.printer_calibration import PrinterCalibration
+from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import PRINTER_ATTRS, ProbeSummary, summarise
 from app.printer_backends.ipp.client import IppClient, to_http_url
@@ -40,6 +41,8 @@ from app.printer_backends.ipp.errors import (
     IppTransportError,
     IppUnreachableError,
 )
+from app.repositories import printer_identity as identity_repo
+from app.repositories import printers as printers_repo
 from app.schemas.printer_admin import (
     IppConnection,
     PrinterConnection,
@@ -57,6 +60,7 @@ from app.sheets.errors import (
     TrayUnknownError,
 )
 from app.sheets.text import log_value
+from app.sheets.type_service import write_transaction
 
 _log = logging.getLogger(__name__)
 
@@ -106,6 +110,14 @@ class PrinterNotFoundBySlugError(Exception):
     def __init__(self, slug: str) -> None:
         self.slug = slug
         super().__init__(f"Drucker {slug!r} nicht gefunden")
+
+
+class PrinterNotFoundError(Exception):
+    """No printer with this id."""
+
+
+class NoIdentityMismatchError(Exception):
+    """The printer has no pending device-swap flag, so there is nothing to resolve."""
 
 
 class ConnectionKindMismatchError(Exception):
@@ -590,6 +602,57 @@ class PrinterAdminService:
             after=after_view,
         )
         await self._session.commit()
+        await self._session.refresh(printer)
+        return printer
+
+    async def get_identity(self, printer_id: UUID) -> PrinterIdentity | None:
+        """The stored hardware identity row of a printer (admin views only)."""
+        return await identity_repo.get(self._session, printer_id)
+
+    async def resolve_identity(
+        self, printer_id: UUID, resolution: Literal["same_device", "replaced"]
+    ) -> Printer:
+        """End a flagged device swap (#231): keep the calibration or reset it.
+
+        One transaction: ``replaced`` deletes every calibration row of the printer (the rows
+        found, not every configured tray), then the observed device becomes the stored one and
+        the mismatch ends, then one audit row (no identity value), then one commit. Any failure
+        rolls everything back. Releasing the queue hold and the events belong to the caller and
+        happen only after this returns.
+        """
+        printer = await printers_repo.get(self._session, printer_id)
+        if printer is None:
+            raise PrinterNotFoundError
+        removed = 0
+        async with write_transaction(self._session):
+            if resolution == "replaced":
+                rows = (
+                    await self._session.execute(
+                        select(PrinterCalibration).where(
+                            col(PrinterCalibration.printer_id) == printer_id
+                        )
+                    )
+                ).scalars()
+                for row in list(rows):
+                    await self._session.delete(row)
+                    removed += 1
+                await self._session.flush()
+            if not await identity_repo.adopt_observed(
+                self._session, printer_id, now=datetime.now(UTC)
+            ):
+                raise NoIdentityMismatchError
+            await self._record_audit(
+                printer_id=printer_id,
+                slug=printer.slug,
+                action="identity_resolved",
+                before=None,
+                after=(
+                    {"resolution": resolution, "calibrations_removed": removed}
+                    if resolution == "replaced"
+                    else {"resolution": resolution}
+                ),
+            )
+            await self._session.commit()
         await self._session.refresh(printer)
         return printer
 

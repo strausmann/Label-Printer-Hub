@@ -44,7 +44,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import AuthContext
@@ -53,6 +53,7 @@ from app.db.session import get_session
 from app.models.printer import Printer
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import ProbeSummary
+from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.printer_admin import IppConnection, PrinterCreatePayload, PrinterUpdatePayload
 from app.services.event_bus import BusEvent, EventBus
 from app.services.printer_admin_service import (
@@ -61,10 +62,12 @@ from app.services.printer_admin_service import (
     DuplicateNameError,
     DuplicateSlugError,
     IppTransportFactory,
+    NoIdentityMismatchError,
     PrinterAdminService,
     PrinterAlreadyDisabledError,
     PrinterAlreadyEnabledError,
     PrinterNotFoundBySlugError,
+    PrinterNotFoundError,
     TraysNotAllowedError,
     probe_ipp,
 )
@@ -110,6 +113,27 @@ class PrinterRead(BaseModel):
     created_at: str
     updated_at: str
     trays: list[TrayRead] | None = None
+    hardware_id: str | None = Field(
+        default=None,
+        description="Serial, IPP printer-uuid or MAC the hub stored for the device; admin only",
+    )
+    hardware_id_kind: str | None = Field(default=None, description="serial | ipp_uuid | mac")
+    hardware_id_seen_at: str | None = Field(
+        default=None, description="When a probe last saw the stored device"
+    )
+
+
+class IdentityResolve(BaseModel):
+    """Body of ``POST /admin/printers/{id}/identity/resolve``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    resolution: Literal["same_device", "replaced"] = Field(
+        description=(
+            "same_device: the flagged device is accepted and the calibration stays; "
+            "replaced: the device was swapped, so its stored calibration is deleted"
+        )
+    )
 
 
 def _ipp_transport_factory(request: Request) -> IppTransportFactory | None:
@@ -144,6 +168,13 @@ async def _read(svc: PrinterAdminService, printer: Printer) -> PrinterRead:
     view = _row_to_read(printer)
     if printer.backend == IPP_BACKEND:
         view.trays = [_tray_read(t) for t in await svc.list_trays(printer.id)]
+    # Explicit, never from_attributes: the identity is inventory data for admins (#231).
+    identity = await svc.get_identity(printer.id)
+    if identity is not None:
+        view.hardware_id = identity.hardware_id
+        view.hardware_id_kind = identity.hardware_id_kind
+        if identity.hardware_id_seen_at is not None:
+            view.hardware_id_seen_at = serialize_datetime_utc(identity.hardware_id_seen_at, None)
     return view
 
 
@@ -477,3 +508,69 @@ async def enable_printer(
     await _apply_live(request, printer.id)  # before the event: see _apply_live
     _publish_changed(request, printer, "enabled")
     return await _read(svc, printer)
+
+
+@router.post(
+    "/{printer_id}/identity/resolve",
+    response_model=PrinterRead,
+    summary="Resolve a flagged device swap",
+    description=(
+        "Ends the device-swap flag of a printer (#231). ``same_device`` accepts the flagged "
+        "device as the printer and keeps its calibration; ``replaced`` does the same and "
+        "deletes every stored calibration of the printer, in one transaction. The held "
+        "sheet and calibration jobs are released once the change is committed. 404 for an "
+        "unknown printer, 409 ``no-identity-mismatch`` when no swap is flagged. Admin only."
+    ),
+)
+async def resolve_identity(
+    printer_id: UUID,
+    body: IdentityResolve,
+    request: Request,
+    session: SessionDep,
+    _auth: AdminAuthDep,
+) -> PrinterRead:
+    svc = PrinterAdminService(session, audit_user=_audit_user(_auth))
+    try:
+        printer = await svc.resolve_identity(printer_id, body.resolution)
+    except PrinterNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error_code": "not_found",
+                "error_message": f"Printer {printer_id} not found.",
+            },
+        ) from exc
+    except NoIdentityMismatchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "no-identity-mismatch",
+                "error_message": "No device swap is flagged for this printer.",
+            },
+        ) from exc
+    # Committed: only now is it safe to release the hold. A failed commit raised above and the
+    # hold stays (fail closed).
+    queue = getattr(request.app.state, "print_queue", None)
+    if queue is not None:
+        queue.set_identity_hold(printer.id, False)
+    _publish_identity_resolved(request, printer.id)
+    _publish_changed(request, printer, "updated")
+    return await _read(svc, printer)
+
+
+def _publish_identity_resolved(request: Request, printer_id: UUID) -> None:
+    """Tell open state streams the swap flag is gone; the event carries no identity value."""
+    bus: EventBus | None = getattr(request.app.state, "event_bus", None)
+    if bus is None:
+        return
+    channel = f"printer:{printer_id}:state"
+    bus.publish(
+        channel,
+        BusEvent(
+            channel=channel,
+            event_id=bus.next_event_id(channel),
+            event_type="printer.identity_mismatch",
+            timestamp=datetime.now(UTC),
+            data={"mismatch": False},
+        ),
+    )

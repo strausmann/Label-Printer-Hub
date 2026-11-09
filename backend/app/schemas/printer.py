@@ -51,10 +51,24 @@ class PrinterRead(BaseModel):
     pause: PauseRead | None = None  # reason, when the queue knows one
     created_at: datetime
     updated_at: datetime
+    hardware_id: str | None = Field(
+        default=None,
+        description="Stored device serial, IPP printer-uuid or MAC; admin callers only, else null",
+    )
+    hardware_id_kind: str | None = Field(
+        default=None, description="serial | ipp_uuid | mac; admin callers only, else null"
+    )
+    hardware_id_seen_at: datetime | None = Field(
+        default=None, description="When a probe last saw the stored device; admin callers only"
+    )
 
     @field_serializer("created_at", "updated_at")
     def _serialise_datetimes(self, dt: datetime, _info: object) -> str:
         return serialize_datetime_utc(dt, _info)
+
+    @field_serializer("hardware_id_seen_at")
+    def _serialise_seen_at(self, dt: datetime | None, _info: object) -> str | None:
+        return serialize_datetime_utc(dt, _info) if dt is not None else None
 
 
 class ReasonRead(BaseModel):

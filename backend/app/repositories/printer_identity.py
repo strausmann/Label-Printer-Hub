@@ -110,6 +110,32 @@ async def mark_mismatch(
     )
 
 
+async def adopt_observed(session: AsyncSession, printer_id: UUID, *, now: datetime) -> bool:
+    """Make the observed device the stored one and end the mismatch; does NOT commit.
+
+    One UPDATE that copies ``observed_*`` onto the stored columns inside the database, so no
+    identity value passes through Python and a probe that races on the row cannot slip a
+    different value in between. False when no mismatch is pending (nothing was written). The
+    caller owns the transaction: it commits or rolls back this write with its other changes.
+    """
+    result = await session.execute(
+        update(PrinterIdentity)
+        .where(
+            PrinterIdentity.printer_id == printer_id,  # type: ignore[arg-type]
+            PrinterIdentity.mismatch_since.is_not(None),  # type: ignore[union-attr]
+            PrinterIdentity.observed_id.is_not(None),  # type: ignore[union-attr]
+            PrinterIdentity.observed_kind.is_not(None),  # type: ignore[union-attr]
+        )
+        .values(
+            hardware_id=PrinterIdentity.observed_id,
+            hardware_id_kind=PrinterIdentity.observed_kind,
+            hardware_id_seen_at=now,
+            **_NO_MISMATCH,
+        )
+    )
+    return bool(result.rowcount)  # type: ignore[attr-defined]
+
+
 _NO_MISMATCH: dict[str, object] = {
     "observed_id": None,
     "observed_kind": None,

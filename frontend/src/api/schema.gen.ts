@@ -100,6 +100,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/printers/{printer_id}/identity/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve a flagged device swap
+         * @description Ends the device-swap flag of a printer (#231). ``same_device`` accepts the flagged device as the printer and keeps its calibration; ``replaced`` does the same and deletes every stored calibration of the printer, in one transaction. The held sheet and calibration jobs are released once the change is committed. 404 for an unknown printer, 409 ``no-identity-mismatch`` when no swap is flagged. Admin only.
+         */
+        post: operations["resolve_identity_api_v1_admin_printers__printer_id__identity_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/printers/{slug}": {
         parameters: {
             query?: never;
@@ -1817,6 +1837,18 @@ export interface components {
             status: string;
             /** Version */
             version: string;
+        };
+        /**
+         * IdentityResolve
+         * @description Body of ``POST /admin/printers/{id}/identity/resolve``.
+         */
+        IdentityResolve: {
+            /**
+             * Resolution
+             * @description same_device: the flagged device is accepted and the calibration stays; replaced: the device was swapped, so its stored calibration is deleted
+             * @enum {string}
+             */
+            resolution: "same_device" | "replaced";
         };
         /** ImportResponse */
         ImportResponse: {
@@ -3708,6 +3740,21 @@ export interface components {
             /** Enabled */
             enabled: boolean;
             /**
+             * Hardware Id
+             * @description Serial, IPP printer-uuid or MAC the hub stored for the device; admin only
+             */
+            hardware_id?: string | null;
+            /**
+             * Hardware Id Kind
+             * @description serial | ipp_uuid | mac
+             */
+            hardware_id_kind?: string | null;
+            /**
+             * Hardware Id Seen At
+             * @description When a probe last saw the stored device
+             */
+            hardware_id_seen_at?: string | null;
+            /**
              * Id
              * Format: uuid
              */
@@ -3747,6 +3794,21 @@ export interface components {
             created_at: string;
             /** Enabled */
             enabled: boolean;
+            /**
+             * Hardware Id
+             * @description Stored device serial, IPP printer-uuid or MAC; admin callers only, else null
+             */
+            hardware_id?: string | null;
+            /**
+             * Hardware Id Kind
+             * @description serial | ipp_uuid | mac; admin callers only, else null
+             */
+            hardware_id_kind?: string | null;
+            /**
+             * Hardware Id Seen At
+             * @description When a probe last saw the stored device; admin callers only
+             */
+            hardware_id_seen_at?: string | null;
             /**
              * Id
              * Format: uuid
@@ -4008,6 +4070,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProbeSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_identity_api_v1_admin_printers__printer_id__identity_resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityResolve"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["app__api__routes__admin_printers_api__PrinterRead"];
                 };
             };
             /** @description Validation Error */

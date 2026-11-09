@@ -91,6 +91,26 @@ def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object
     return {"tls_verify": bool(connection.get("tls_verify", True))}
 
 
+async def _identity_view(
+    session: AsyncSession, printer_id: UUID, auth: AuthContext | None
+) -> dict[str, Any]:
+    """The stored hardware identity fields, for admin callers only (#231, M1).
+
+    The serial is inventory data: every other caller gets ``null``. Filled field by field,
+    never through ``from_attributes``.
+    """
+    if auth is None or auth.scope != "admin":
+        return {}
+    row = await identity_repo.get(session, printer_id)
+    if row is None:
+        return {}
+    return {
+        "hardware_id": row.hardware_id,
+        "hardware_id_kind": row.hardware_id_kind,
+        "hardware_id_seen_at": row.hardware_id_seen_at,
+    }
+
+
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
@@ -188,6 +208,7 @@ async def list_printers(
                 pause=pause,
                 created_at=p.created_at,
                 updated_at=p.updated_at,
+                **await _identity_view(session, p.id, _auth),
             )
         )
     return result
@@ -231,6 +252,7 @@ async def get_printer(
         pause=pause,
         created_at=printer.created_at,
         updated_at=printer.updated_at,
+        **await _identity_view(session, printer_id, _auth),
     )
 
 
