@@ -26,8 +26,8 @@ export function PrinterForm({
   onDone,
 }: {
   printer: AdminPrinter | null;
-  /** Called when the form closes. `restartNote` is set when what was saved only applies after a restart (page printers). */
-  onDone: (result?: { restartNote: boolean }) => void;
+  /** Called when the form closes. What was saved applies at once; the hub needs no restart. */
+  onDone: () => void;
 }) {
   const { t } = useLingui();
   const errorText = useErrorText();
@@ -66,10 +66,9 @@ export function PrinterForm({
     const queue = { timeout_s: timeoutNumber };
     const trays = trayPayload(ipp.trays);
     if (printer) {
-      const restartNote = ipp.connectionChanged || ipp.enabledChanged;
-      admin.update.mutate({ slug: printer.slug, body: { name: name.trim(), connection, queue, enabled: ipp.enabled, trays } }, { onSuccess: () => onDone({ restartNote }) });
+      admin.update.mutate({ slug: printer.slug, body: { name: name.trim(), connection, queue, enabled: ipp.enabled, trays } }, { onSuccess: () => onDone() });
     } else {
-      admin.create.mutate({ name: name.trim(), slug, backend: "ipp", connection, queue, enabled: ipp.enabled, trays }, { onSuccess: () => onDone({ restartNote: true }) });
+      admin.create.mutate({ name: name.trim(), slug, backend: "ipp", connection, queue, enabled: ipp.enabled, trays }, { onSuccess: () => onDone() });
     }
   }
 

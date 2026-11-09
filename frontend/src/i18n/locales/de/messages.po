@@ -3621,10 +3621,6 @@ msgstr "Der Drucker meldet dieses Fach nicht."
 msgid "The printer is not ready. The pages go into the print queue and print when it is ready again."
 msgstr "Der Drucker ist nicht bereit. Die Seiten kommen in die Druckwarteschlange und werden gedruckt, sobald er wieder bereit ist."
 
-#: src/features/settings/Printers.tsx
-msgid "The printer is ready after the hub restarts."
-msgstr "Der Drucker ist nach einem Neustart des Hubs bereit."
-
 #: src/features/jobs/RetryError.tsx
 msgid "The printer is switched off. Switch it on in the settings, then retry."
 msgstr "Der Drucker ist ausgeschaltet. Schalte ihn in den Einstellungen ein und versuche es dann erneut."

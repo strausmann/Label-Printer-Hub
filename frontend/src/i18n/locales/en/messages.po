@@ -3621,10 +3621,6 @@ msgstr "The printer does not report that tray."
 msgid "The printer is not ready. The pages go into the print queue and print when it is ready again."
 msgstr "The printer is not ready. The pages go into the print queue and print when it is ready again."
 
-#: src/features/settings/Printers.tsx
-msgid "The printer is ready after the hub restarts."
-msgstr "The printer is ready after the hub restarts."
-
 #: src/features/jobs/RetryError.tsx
 msgid "The printer is switched off. Switch it on in the settings, then retry."
 msgstr "The printer is switched off. Switch it on in the settings, then retry."
