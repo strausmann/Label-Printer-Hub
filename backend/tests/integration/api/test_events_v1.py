@@ -282,8 +282,12 @@ async def test_unknown_printer_filter_is_404(hub_app):
 
 
 @pytest.mark.asyncio
-async def test_snapshot_is_emitted_per_printer(hub_app):
+async def test_snapshot_is_emitted_per_printer(hub_app, monkeypatch):
     app, _ = hub_app
+    # The row is inserted directly, so the runtime does not poll this printer; a polled one
+    # keeps its reading in the snapshot (an unpolled or stale one is covered in
+    # test_printer_status_staleness.py).
+    monkeypatch.setattr(app._app.state.printer_runtime, "is_polled", lambda _id: True)
     key, _ = await _insert_key(["read"])
     printer_id = await _insert_printer("alpha")
     from app.repositories import printer_status_cache as status_cache_repo
