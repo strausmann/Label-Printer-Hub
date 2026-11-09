@@ -16,7 +16,7 @@ name: Release impact
 #
 # Logic and tests: scripts/release_impact.py, scripts/test_release_impact.py.
 # The same script guards the release itself (verifyReleaseCmd in .releaserc.json).
-# See CONTRIBUTING.md, "Milestones, branches and releases", and ADR 0021.
+# See CONTRIBUTING.md, "Milestones, branches and releases", and ADR 0025.
 #
 # Untrusted input (title, branch names) reaches the script only through env
 # and argv, never through `${{ }}` inside `run:`.

@@ -5,7 +5,7 @@ The project releases from ``main`` only (semantic-release, ``.releaserc.json``).
 Minor and major versions come from a milestone integration branch
 ``milestone/x.y.z`` that is merged into ``main`` as one pull request; ``main``
 itself only takes patch-level or non-releasing changes. See CONTRIBUTING.md,
-section "Milestones, branches and releases", and ADR 0021.
+section "Milestones, branches and releases", and ADR 0025.
 
 Two modes:
 

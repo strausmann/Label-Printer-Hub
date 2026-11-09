@@ -28,6 +28,7 @@ A guard test (`backend/tests/unit/test_decision_register.py`) fails if a `D<n>` 
 | D17 | Calibration stores the printer's deviation around the page centre; the hub applies the inverse | 2026-11-06 | Accepted | [0023](0023-sheet-archive.md) |
 | D18 | IPP backend kind with an own client | 2026-11-06 | Accepted | [0020](0020-backend-kinds-ipp-page-printers.md) |
 | D19 | Imported sheet types are never marked verified | 2026-11-05 | Accepted | [0023](0023-sheet-archive.md) |
+| D21 | Minor and major releases come from `milestone/x.y.0` branches; main takes patch and non-releasing changes only | 2026-11-09 | Accepted | [0025](0025-milestone-branches-for-minor-and-major-releases.md) |
 | V1 | Media type `labels` is settable on the test printer via `media-col` | 2026-11-06 | To verify | — |
 | V2 | L4731REV has no vertical gap (pitch 10 mm) | 2026-11-05 | To verify | — |
 | V3 | A QR does not scan reliably on 25.4 × 10 mm cells | 2026-11-05 | To verify | — |
