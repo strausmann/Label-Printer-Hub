@@ -53,6 +53,9 @@ export const test = base.extend<{ signedInPage: Page }>({
     await signInWith(page, mainKey());
     await expect(page.getByRole("navigation", { name: /^(Main|Tabs)$/ }).first()).toBeVisible();
     await use(page);
+    // A route handler that is still inside `route.fetch()` when the test ends throws "Test ended"
+    // into whatever test is reported next. Drop every route and let in-flight handlers fail quietly.
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   },
 });
 
