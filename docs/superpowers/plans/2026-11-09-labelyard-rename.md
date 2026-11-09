@@ -18,6 +18,7 @@
 - No transition images, no dual publishing, no retagging of old versions under the new name.
 - Configuration and data compatibility: an upgrade from 1.4.x is "change the image line, pull, restart". Every break of that rule is listed in the compatibility table with its reason.
 - Website: English and German always together for every page, in the same pull request (maintainer rule, enforced by the locale parity check in Task 7).
+- Terminology: one canonical term per concept and language from `docs/glossary.toml` (Task 8), used by the UI catalogues and all docs; house style "German written natively, not translated word for word; informal du; short sentences; reader first".
 - Public repo: English prose everywhere (commits, comments, docs). No AI attribution trailers or footers. Commit author `bjoern@strausmann.net`.
 - No private deployment details (hostnames, IPs, stack names) in any file of this repo; the internal follow-ups at the end stay generic.
 - Commit types: `feat:`/`docs:`/`ci:`/`chore:` only. **No `!` and no `BREAKING CHANGE:` footer on any commit of this branch** — the release guard of ADR 0021 would compute `2.0.0` and stop the `1.5.0` release. The break is announced in the migration guide and the release notes instead.
@@ -37,12 +38,12 @@ Preconditions for starting the branch:
 - PR #269 (GHCR cleanup + preview image) merged into `main` and synced into the milestone. If not, Task 4 edits only `docker-publish.yml` and #269 is rebased onto the new image name before it merges.
 - All other 1.5.0 tasks merged into the milestone. New work started after the rename branches from the renamed milestone.
 
-Release sequence (metadata in Task 9, operator steps in Task 10):
+Release sequence (metadata in Task 10, operator steps in Task 11):
 
-1. Merge `feat/labelyard-rename` into `milestone/1.5.0`; build preview `1.5.0-rc.N` and run the verification of Task 8.
+1. Merge `feat/labelyard-rename` into `milestone/1.5.0`; build preview `1.5.0-rc.N` and run the verification of Task 9.
 2. Create the Docker Hub repo `labelyard` (public) and rename the GitHub repo.
 3. Merge `milestone/1.5.0` → `main` (merge commit). The next release run publishes `labelyard:1.5.0` only.
-4. Edit the GitHub Release body with the release-notes text of Task 10.
+4. Edit the GitHub Release body with the release-notes text of Task 11.
 
 ## Inventory (baseline `6effebc`, history excluded)
 
@@ -118,6 +119,7 @@ Release sequence (metadata in Task 9, operator steps in Task 10):
 | `docs/migration/labelyard.md` (create) | Operator upgrade guide |
 | `docs/decisions/0022-rename-to-labelyard.md` (create) | ADR; amends ADR 0007 (image name) |
 | `website/` (create) | Source of https://labelyard.app and the user docs (Task 7; Astro Starlight) |
+| `docs/glossary.toml`, `scripts/glossary.py`, `.vale.ini`, `.vale/styles/**`, `.github/workflows/prose.yml` (create) | Terminology source, generated glossary/vocabularies, prose checks (Task 8) |
 | `scripts/registry_retention.py` (create) | One retention rule for GHCR and Docker Hub cleanup (Task 4) |
 | `.github/workflows/registry-cleanup.yml` (from `ghcr-cleanup.yml`), `.github/workflows/dockerhub-description.yml`, `.github/dockerhub/README.md` | Registry housekeeping and Docker Hub page (Task 4) |
 | `.github/workflows/website.yml` (create) | Freshness check, Starlight build with link validation, external link check on PRs touching `website/**` |
@@ -143,7 +145,7 @@ Rules (constants in the script, each with a comment saying why it exists):
 | `nickname` | `Print-Hub\|PrintHub\|printerhub\|Label Hub` | `Label Hub` inside `X-Label-Hub-Key` |
 | `display` | `Label Printer Hub` | the same line contains `Labelyard` |
 
-- `EXCLUDED` (history, never scanned): `CHANGELOG.md`, `docs/superpowers/`, `docs/plans/`, `docs/designs/`, `docs/research/`, `docs/decisions/00(0[1-9]|1[0-9]|2[01])-`, `docs/migration/v-next-single-container.md`, `frontend/pnpm-lock.yaml`, binary files.
+- `EXCLUDED` (history, never scanned): `CHANGELOG.md`, `docs/superpowers/`, `docs/plans/`, `docs/designs/`, `docs/research/`, `docs/decisions/00(0[1-9]|1[0-9]|2[01])-`, `docs/migration/v-next-single-container.md`, `frontend/pnpm-lock.yaml`, binary files, and the files that must name the old names to reject them: `docs/glossary.toml`, `.vale/styles/**/OldName.yml`, `.vale/styles/config/vocabularies/*/reject.txt`, `scripts/fixtures/vale/`.
 - `LEGACY_ENV_FILES`: `backend/app/config_legacy.py`, `backend/app/page_render/pdf.py`, `backend/tests/unit/test_config_legacy_prefix.py`, `backend/tests/unit/test_pdf_font_env.py`, `docs/migration/labelyard.md`, `docs/decisions/0022-rename-to-labelyard.md`, `scripts/brand_guard.py`, `scripts/test_brand_guard.py`.
 - `LEGACY_CLI_FILES`: `backend/pyproject.toml`, `backend/tests/unit/test_brand_identity.py`, `docs/migration/labelyard.md`, the two guard files.
 
@@ -246,11 +248,11 @@ OCI annotations/labels (index and per-platform; they fill the GHCR package page 
 | `favicon.svg`, `favicon.ico`, `favicon-16.png`, `favicon-32.png` | `frontend/public/`; website `favicon` |
 | `apple-touch-icon.png` | `frontend/public/apple-touch-icon.png` (replace) |
 | `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` | `frontend/public/` (replace, same paths, so the manifest paths stay) |
-| `social-card.png` (1200×630) | GitHub social preview (Task 9), website `og:image` (Task 7), `frontend/public/brand/social-card.png` |
-| `icon-512.png` | Docker Hub repository logo, if the account offers one (UI only — Task 9) |
+| `social-card.png` (1200×630) | GitHub social preview (Task 10), website `og:image` (Task 7), `frontend/public/brand/social-card.png` |
+| `icon-512.png` | Docker Hub repository logo, if the account offers one (UI only — Task 10) |
 
 - Add a test `it("brand copies match docs/brand/labelyard")` in `frontend/src/pwa.test.ts`: every copied file is byte-identical to its source (catches a stale copy after a logo change).
-- The manifest `theme_color`/`background_color` and the app's accent colour stay as they are: whether blue becomes the UI accent is decision **D-UI1** (maintainer), not part of this plan.
+- The manifest `theme_color`/`background_color` and the app's accent colour stay as they are: D-UI1 (2026-11-09): blue stays logo-only, the accent stays amber.
 - Modify: `frontend/public/manifest.webmanifest` (`name: "Labelyard"`, `short_name: "Labelyard"`, `description: "Label Printer Hub — print labels, scan codes and watch your label printers."`; `id`, `start_url`, `scope`, colours unchanged), `frontend/index.html` (`<title>Labelyard</title>`, `<link rel="icon" href="/favicon.svg" type="image/svg+xml" />`, `<link rel="icon" href="/favicon.ico" sizes="32x32" />`), `frontend/src/i18n/messages.ts:8` (`appName: msg\`Labelyard\``, new `tagline: msg\`The self-hosted Label Printer Hub for all your labels\``), `frontend/src/shell/Sidebar.tsx:35`, `frontend/src/shell/SignIn.tsx:64` (wordmark image with `alt="Labelyard"` above the tagline), `frontend/package.json` (`name: "labelyard-web"`), root `package.json` (`name: "labelyard"`, description, repository url), `frontend/pnpm-lock.yaml` (regenerated by `pnpm install`), `frontend/src/i18n/locales/{en,de}/messages.po` (extracted + compiled; German tagline `Der selbst gehostete Label Printer Hub für all deine Etiketten`), `frontend/e2e/settings.spec.ts:84`, `frontend/src/pwa.test.ts`
 
 **Interfaces:**
@@ -302,12 +304,12 @@ Labelyard sidebar (URL folder → group):
 
 | Group | Pages (folder) |
 |---|---|
-| Try | `try/` — what it is, screenshots (#260), the demo/quick look |
+| Try | `try/` — what it is, screenshots (#260); the in-browser demo with fake printers ("Try Labelyard", like Kept's try-app) is a separate future issue, not part of this plan |
 | Install | `install/` — compose (standalone), reverse proxy (Caddy, Traefik, Pangolin), HTTPS, hardware/printer connection |
-| Using | `using/` — printers (PT/QL tape, IPP page printers), sheets and layouts, print inbox and queue, scanning, cart and bulk print |
+| Using | `using/` — printers (PT/QL tape, IPP page printers), sheets and layouts, print inbox and queue, scanning, cart and bulk print, glossary (Task 8) |
 | Admin | `admin/` — API keys, users and SSO, backups and restore, upgrades (incl. *Coming from Label Printer Hub*), security model, troubleshooting |
 | Integrations | `integrations/` — Snipe-IT, Grocy, Spoolman (plugins); Paperless and Kept as apps that print through the API; webhooks |
-| Developers | `developers/` — API reference (generated), architecture, plugin authoring, contributing |
+| Developers | `developers/` — API reference (generated), architecture, plugin authoring, contributing, writing the docs (house style, Task 8) |
 | Reference | `reference/configuration` — every `LABELYARD_*` variable, generated from `app/config.py` + `settings_store/registry.py` |
 
 Languages (binding maintainer rule): **English and German are always maintained together, for the whole site.** Every page exists in `en` (root) and `de` (`/de/`) from the first commit — landing page, Try, Install, Using, Admin, Integrations, Developers, Reference — with the same slug; German in informal "du", same tone as the web app. No Starlight "not translated yet" fallback is relied on anywhere.
@@ -343,11 +345,13 @@ Rule text (CONTRIBUTING, verbatim): *"The website is maintained in English and G
 - `site: "https://labelyard.app"`; `starlight({ title: "Labelyard", description: "The self-hosted Label Printer Hub for all your labels", logo: { light: "./src/assets/lockup.svg", dark: "./src/assets/lockup-dark.svg", alt: "Labelyard", replacesTitle: true }, favicon: "/favicon.svg", defaultLocale: "root", locales, social: [GitHub → https://github.com/strausmann/labelyard], customCss: ["./src/styles/labelyard.css"], routeMiddleware: "./src/route-data.ts", sidebar, plugins: [starlightLinksValidator(), starlightOpenAPI([{ base: "developers/api", schema: "./openapi/labelyard.json", sidebar: { label: "API reference" } }, { base: "de/developers/api", schema: "./openapi/labelyard.json", sidebar: { label: "API-Referenz" } }])] })`.
 - Sidebar built with Kept's `group(label, items)` helper that throws when a label has no entry in `sidebar-labels.mjs`, so a missing German label fails the build.
 - No remote fonts, scripts or stylesheets; `ASTRO_TELEMETRY_DISABLED=1` in the package scripts.
-- `labelyard.css` maps Starlight's `--sl-color-*` variables onto the web app's theme tokens (ground/text/neutral scale from `frontend/src/design/`, imported by relative path like Kept imports `apps/web/src/styles/tokens.css`). The brand blue from `docs/brand/labelyard/palette.md` appears only in the logo files; it becomes `--sl-color-accent` **only if D-UI1 decides blue is the UI accent** — until then the accent is the app's current accent token.
+- `labelyard.css` maps Starlight's `--sl-color-*` variables onto the web app's theme tokens (ground/text/neutral scale from `frontend/src/design/`, imported by relative path like Kept imports `apps/web/src/styles/tokens.css`). The brand blue from `docs/brand/labelyard/palette.md` appears only in the logo files; per D-UI1 the accent stays the app's amber accent token.
 
 Parity gate `website/scripts/check-locale-parity.mjs`: exports `findParityGaps(root: string): { missingDe: string[], missingEn: string[] }` — slugs are paths under `src/content/docs/` without extension (`.md`/`.mdx` equal), English = everything outside `de/`, German = everything under `de/`; the CLI prints `missing de: using/printers` / `missing en: …` per gap and exits 1 on any gap. No allow-list (the API reference is generated by the plugin, not a content file). Tests (`node --test`): `reports a page missing in de`, `reports a page missing in en`, `md and mdx count as the same slug`, `index pages pair up` (`index.mdx` ↔ `de/index.mdx`), `passes on a complete tree`.
 
-Landing page (`index.mdx`, `template: splash`, both languages): lockup, H1 `Labelyard`, tagline `The self-hosted Label Printer Hub for all your labels` / `Der selbst gehostete Label Printer Hub für all deine Etiketten`, three-sentence pitch, screenshots (#260; omitted until they exist, no placeholder images), feature cards (PT/QL tape printers, IPP page printers and sheets, scan-to-print PWA, print queue and inbox, API keys and webhooks, Snipe-IT/Grocy/Spoolman), quick start with `ghcr.io/strausmann/labelyard:1.5.0` and `LABELYARD_SECRET_KEY` / `LABELYARD_PUBLIC_URL`, links to GitHub, the GHCR package, Docker Hub and each docs group. Brother named descriptively only (`docs/policies/trademarks.md`).
+Screenshots (maintainer decision): the generator from #260 renders every screenshot from the e2e fixtures in **en and de, light and dark** — four files per shot, named `website/src/assets/screens/<shot>.<en|de>.<light|dark>.webp`. Pages use the file of their own language inside `<picture>` with a `prefers-color-scheme: dark` source; README and the Docker Hub README use the `en` pair the same way. `check-locale-parity.mjs` also exports `findScreenshotGaps(dir: string): string[]` (a shot missing any of its four variants) — test `reports a screenshot missing its de dark variant`; the CLI fails on it like on a page gap.
+
+Landing page (`index.mdx`, `template: splash`, both languages): lockup, H1 `Labelyard`, tagline `The self-hosted Label Printer Hub for all your labels` / `Der selbst gehostete Label Printer Hub für all deine Etiketten`, three-sentence pitch, screenshots (#260; omitted until they exist, no placeholder images) in the page's language and in both themes, feature cards (PT/QL tape printers, IPP page printers and sheets, scan-to-print PWA, print queue and inbox, API keys and webhooks, Snipe-IT/Grocy/Spoolman), quick start with `ghcr.io/strausmann/labelyard:1.5.0` and `LABELYARD_SECRET_KEY` / `LABELYARD_PUBLIC_URL`, links to GitHub, the GHCR package, Docker Hub and each docs group. Brother named descriptively only (`docs/policies/trademarks.md`).
 
 - [ ] **Step 1:** Write `.github/workflows/website.yml`: on `pull_request` and `push` to `main` with `paths: ['website/**', 'docs/brand/labelyard/**', 'backend/app/**', '.github/workflows/website.yml']`. Jobs: (0) **locale parity** — `node website/scripts/check-locale-parity.mjs` (no install needed); (1) **freshness** — set up Python 3.12 + backend deps, run `website/scripts/export-openapi.mjs` and `gen-config-reference.py`, then `git diff --exit-code website/openapi website/src/content/docs/reference` (a changed API or setting without regenerated site files fails); (2) **build** — `pnpm/action-setup` + `actions/setup-node` with `node-version-file: website/.nvmrc`, `pnpm -C website install --frozen-lockfile`, `pnpm -C website build` (links validator fails the build on a broken internal link or anchor); (3) **external links** — lychee (`lycheeverse/lychee-action`, pinned by commit SHA like every action here; resolve it from the latest release at implementation time) over `website/dist/**/*.html`, excluding `https://labelyard.app` until it is deployed. No deploy; upload `website/dist` as an artifact (7 days) for review.
 - [ ] **Step 2:** Write the parity tests, `node --test website/scripts` → FAIL; implement `check-locale-parity.mjs` → PASS. Scaffold `package.json`, config, locales, sidebar labels and one page per group in both languages; spike (≤ 30 min): does the second `starlightOpenAPI` entry render `/de/developers/api/…` with German Starlight chrome? Record the answer in the PR; `pnpm -C website build` → expect a failure from the links validator for sidebar entries whose pages do not exist yet (proves the validator runs).
@@ -355,7 +359,65 @@ Landing page (`index.mdx`, `template: splash`, both languages): lockup, H1 `Labe
 - [ ] **Step 4:** `pnpm -C website build` exit 0. Counter-tests: delete `de/using/printers.md` → `locale parity` fails with `missing de: using/printers` (an English-only new page fails the same way); a link to `/using/missing/` → build fails; add a field to `Settings` without regenerating → freshness job red; drop the German label of one group → build fails. Each copied brand file is byte-identical to its source (`cmp` in the freshness job). `python3 scripts/brand_guard.py` exit 0 (the site is scanned like any live file). `pnpm -C website preview` and walk every sidebar group in English and German; the language menu switches to the same page on every page, including the API reference; the API reference lists the `/api/v1` operations.
 - [ ] **Step 5:** Commit `docs(website): add the Labelyard site with audience-grouped user docs`.
 
-### Task 8: Gate and end-to-end verification
+### Task 8: Glossary, house style and Vale
+
+One terminology source feeds the website glossary, the prose linter and a check of the UI catalogues, so the three cannot drift.
+
+**House style** (rule text for `CONTRIBUTING.md` section "Writing", short form in `CLAUDE.md` and `.github/copilot-instructions.md`, full form on the website page `developers/writing-docs` in en and de): *"Write for the reader: what they want to do, then how. Short sentences, one idea each. German is written natively, not translated word for word, and addresses the reader as „du". Use the glossary term for every concept, in both languages. A change to the docs is complete only with English and German in the same pull request."*
+
+**Glossary** — source `docs/glossary.toml` (stdlib `tomllib`), one entry per concept: `id`, `en`, `de`, `definition_en`, `definition_de`, optional `reject_en = [...]`, `reject_de = [...]`. Starting set (German terms marked † are not in the 1.4.1 catalogue yet and are proposals the maintainer confirms in the PR review; the others are the terms the catalogue already uses most):
+
+| id | en | de | reject_de |
+|---|---|---|---|
+| sheet | sheet | Bogen | — |
+| cell | cell | Zelle | — |
+| sheet-type | sheet type | Bogentyp | — |
+| inbox | print inbox | Druckeingang † | `Inbox`, `Posteingang` |
+| tape | tape | Band | `Schriftband` |
+| roll | roll | Rolle † | — |
+| template | template | Vorlage † | `Template` |
+| printer | printer | Drucker | — |
+| tray | tray | Fach | `Schacht` |
+| calibration | calibration | Kalibrierung | — |
+| preview | preview | Vorschau | — |
+| job | print job | Auftrag | `Job`, `Druckjob` |
+| batch | batch | Stapel † | `Batch` |
+| queue | queue | Warteschlange | `Queue` |
+| label | label | Etikett | `Label` (except in the product subtitle and `X-Label-Hub-Key`) |
+| api-key | API key | API-Schlüssel | `API-Key` |
+
+Product-name entries (both languages): accept `Labelyard`; reject `Label Printer Hub` except on a line that also contains `Labelyard` (the subtitle rule of the brand guard), and reject `printer-hub`, `Print-Hub`, `PrintHub`.
+
+**Vale** — verified 2026-11-09: Vale `v3.26.0` (released 2026-10-31, https://github.com/errata-ai/vale/releases); config reference https://docs.vale.sh/topics/.vale.ini.md (a later matching section replaces `BasedOnStyles`; a section may name its own `Vocab` from v3.22.0); vocabularies https://docs.vale.sh/keys/vocabularies.md (`<StylesPath>/config/vocabularies/<name>/accept.txt|reject.txt`, `reject.txt` entries are errors via `Vale.Avoid`). Packages: the official package library (`errata-ai/packages`, `library.json`) has **no German style**; for English only `write-good` `v0.4.1` (https://github.com/vale-cli/write-good) is used, and of it only `Weasel` and `TooWordy`; `MDX` `v0.3.0` for `.mdx` comments. German rules are our own. `Vale.Spelling` is off in both languages (dictionaries for product terms and German compounds would make the check red without a defect).
+
+Levels — **error fails CI, warning and suggestion are reported only:**
+
+| Rule | Level | en | de |
+|---|---|---|---|
+| `Vale.Avoid` from `reject.txt` (old names, rejected glossary terms) | error | ✓ | ✓ |
+| `Labelyard.OldName` / `Labelyard-de.OldName` (existence; `Label Printer Hub` without `Labelyard` on the line) | error | ✓ | ✓ |
+| `Labelyard.Terms` / `Labelyard-de.Terms` (substitution, rejected → canonical glossary term) | warning | ✓ | ✓ |
+| `…Filler` (existence: en `simply`, `just`, `basically`, `obviously`, `easily`; de `einfach`, `eigentlich`, `halt`, `natürlich`, `ja` as filler is not matchable and is left out) | warning | ✓ | ✓ |
+| `…SentenceLength` (occurrence, scope `sentence`, max tokens en 30, de 25) | warning | ✓ | ✓ |
+| `write-good.Weasel`, `write-good.TooWordy` | suggestion | ✓ | — |
+
+Scope: `README.md`, `CONTRIBUTING.md`, `docs/**/*.md` except the history paths of the brand guard (`docs/superpowers/`, `docs/plans/`, `docs/designs/`, `docs/research/`, ADRs 0001–0021, `docs/migration/v-next-single-container.md`), `website/src/content/docs/**/*.{md,mdx}`. Code blocks are not linted (Vale default). Sections: `[*.{md,mdx}]` → `BasedOnStyles = Vale, Labelyard, write-good`, `Vocab = Labelyard-en`; then `[website/src/content/docs/de/**/*.{md,mdx}]` → `BasedOnStyles = Vale, Labelyard-de`, `Vocab = Labelyard-de`.
+
+**Files:**
+- Create: `docs/glossary.toml`, `scripts/glossary.py` + `scripts/test_glossary.py`, `.vale.ini`, `.vale/styles/Labelyard/{OldName,Terms,Filler,SentenceLength}.yml`, `.vale/styles/Labelyard-de/{OldName,Terms,Filler,SentenceLength}.yml`, `.vale/styles/config/vocabularies/Labelyard-en/{accept,reject}.txt`, `.vale/styles/config/vocabularies/Labelyard-de/{accept,reject}.txt`, `website/src/content/docs/using/glossary.md`, `website/src/content/docs/de/using/glossary.md`, `website/src/content/docs/developers/writing-docs.md` + `de/` counterpart, `.github/workflows/prose.yml`, `scripts/fixtures/vale/rejected-term.md` (counter-test fixture, outside the linted scope)
+- Modify: `CONTRIBUTING.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.gitignore` (`.vale/styles/write-good/`, `.vale/styles/MDX/` — installed by `vale sync`), `frontend/src/i18n/locales/de/messages.po` and docs pages where the catalogue check or Vale flags a rejected term
+
+**Interfaces:**
+- Produces: `load_glossary(path: Path) -> list[Term]`; `render(terms, target: Literal["glossary-en", "glossary-de", "vale-terms-en", "vale-terms-de", "accept-en", "reject-en", "accept-de", "reject-de"]) -> str`; CLI `python3 scripts/glossary.py write` (regenerates the two glossary pages, the two `Terms.yml` and the four vocabulary files) and `python3 scripts/glossary.py check-catalog frontend/src/i18n/locales/de/messages.po` (exit 1 when a `msgstr` contains a `reject_de` term as a whole word; English catalogue against `reject_en`). Generated files carry a header line `Generated from docs/glossary.toml — edit that file`.
+
+- [ ] **Step 1: Failing tests** (`scripts/test_glossary.py`): `test_every_term_has_both_languages` (a term without `de` or `definition_de` → error naming the id), `test_rendered_glossary_pages_pair` (en and de page list the same ids in the same order), `test_reject_list_written`, `test_catalog_check_flags_rejected` (`msgstr "Der Job läuft"` → hit `job`), `test_catalog_check_ignores_substrings` (`Jobs` inside `Jobsuche` → no hit; `Label` inside `X-Label-Hub-Key` → no hit). Run → FAIL.
+- [ ] **Step 2:** Implement `scripts/glossary.py`; write `docs/glossary.toml`; `python3 scripts/glossary.py write`; write the Vale styles and `.vale.ini`; `vale sync`.
+- [ ] **Step 3:** `.github/workflows/prose.yml` on `pull_request`/`push` to `main` with `paths: ['**/*.md', '**/*.mdx', '.vale.ini', '.vale/**', 'docs/glossary.toml', 'frontend/src/i18n/locales/**']`: install Vale `v3.26.0` from the release archive with its published checksum (or `errata-ai/vale-action` `v3.0.0`, pinned by commit SHA), `vale sync`; job **errors**: `vale --minAlertLevel=error <scope>` (fails on any error); job **report**: `vale --minAlertLevel=suggestion --no-exit <scope>` (warnings and suggestions in the job summary, never failing); job **glossary**: `python3 scripts/glossary.py write && git diff --exit-code` plus `check-catalog` for both catalogues.
+- [ ] **Step 4: Start small, then green.** Run the errors job locally on the branch; fix every error in the live files (they are real: old names, rejected terms). If a rule produces an error that is not a defect, narrow the rule — never add `continue-on-error` or lower the job; record each narrowing in the PR. Warnings are triaged, not fixed in this PR unless trivial.
+- [ ] **Step 5: Counter-tests.** `vale --minAlertLevel=error scripts/fixtures/vale/rejected-term.md` (contains `printer-hub` and `Label Printer Hub` alone) → exit 1 with `Vale.Avoid` and `Labelyard.OldName`; copy one German page with `Druckjob` into a temp path under the de glob → `Vale.Avoid` error; a sentence of 40 words → warning only, exit 0.
+- [ ] **Step 6:** Commit `docs: add the glossary, house style and Vale prose checks`.
+
+### Task 9: Gate and end-to-end verification
 
 **Files:**
 - Modify: `.github/workflows/ci.yml` (new job `brand-guard`: `python3 -m unittest scripts/test_brand_guard.py` then `python3 scripts/brand_guard.py`; no `continue-on-error`)
@@ -366,9 +428,9 @@ Landing page (`index.mdx`, `template: splash`, both languages): lockup, H1 `Labe
 - [ ] **Step 4:** Open the PR `feat/labelyard-rename` → `milestone/1.5.0` with the Task 1 inventory and the Step 3 results; run the internal review with the four lenses (`code-review-lenses` checklist: taint — the warning path; outcome — run the container; unchanged dependencies — `settings_store.is_locked`; temporal — workflow image ref vs. repo rename order); external bot review before merge.
 - [ ] **Step 5:** After merge: run **Preview image** on `milestone/1.5.0` with version `1.5.0`; `docker pull ghcr.io/strausmann/labelyard:1.5.0-rc.N`, repeat Step 3 against it; confirm `ghcr.io/strausmann/label-printer-hub-backend` got no new tag.
 
-### Task 9: GitHub repository, GHCR package and Docker Hub metadata
+### Task 10: GitHub repository, GHCR package and Docker Hub metadata
 
-Runs after the repo rename (Task 10, first GitHub item) and before the milestone PR merges. Commands use the maintainer's `gh` login; nothing here is a CI job except the Docker Hub description workflow from Task 4.
+Runs after the repo rename (Task 11, first GitHub item) and before the milestone PR merges. Commands use the maintainer's `gh` login; nothing here is a CI job except the Docker Hub description workflow from Task 4.
 
 Values:
 - Description (GitHub, ≤ 350 chars): `Labelyard — the self-hosted Label Printer Hub for all your labels. Brother P-touch and QL tape printers, office printers and sheets, scan-to-print from your phone, API and webhooks.`
@@ -383,18 +445,18 @@ Values:
 - [ ] **Step 4:** Run **Docker Hub description** (`workflow_dispatch`); upload the logo in the Docker Hub UI if the account offers repository logos, otherwise note it as not possible.
 - [ ] **Step 5: Verify at the outcome.** `gh api repos/strausmann/labelyard --jq '.description, .homepage, (.topics|length)'` prints the values and ≥ 15 topics; a link to the repo pasted into a chat/preview tool shows the social card; `https://github.com/users/strausmann/packages/container/package/labelyard` shows the description and the repo link; `curl -s https://hub.docker.com/v2/namespaces/<user>/repositories/labelyard | jq -r .description` prints the short description; the Docker Hub page renders the README with the logo.
 
-### Task 10: Maintainer steps outside the repo (checklist, no code)
+### Task 11: Maintainer steps outside the repo (checklist, no code)
 
 GitHub:
-- [ ] Rename the repo `strausmann/Label-Printer-Hub` → `strausmann/labelyard` (lowercase, matching the image and avoiding the lowercasing step registries need). GitHub redirects web, API and git URLs; update local remotes anyway (`git remote set-url origin git@github.com:strausmann/labelyard.git`). Do this after Task 8 Step 5 and before the milestone PR merges.
-- [ ] Repository metadata, social preview and package pages: Task 9.
-- [ ] GHCR: after the first push, set package `labelyard` to **public**, link it to the repo, and grant the repo the Admin role under "Manage Actions access" (needed by `ghcr-cleanup.yml`).
+- [ ] Rename the repo `strausmann/Label-Printer-Hub` → `strausmann/labelyard` (lowercase, matching the image and avoiding the lowercasing step registries need). GitHub redirects web, API and git URLs; update local remotes anyway (`git remote set-url origin git@github.com:strausmann/labelyard.git`). Do this after Task 9 Step 5 and before the milestone PR merges.
+- [ ] Repository metadata, social preview and package pages: Task 10.
+- [ ] GHCR: after the first push, set package `labelyard` to **public**, link it to the repo, and grant the repo the Admin role under "Manage Actions access" (needed by `registry-cleanup.yml`).
 - [ ] Codecov and CLA assistant: confirm the next CI run uploads and the CLA check reports on a PR; re-link the repo in their dashboards if not.
 - [ ] Release-run secrets (`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`) unchanged; confirm the token may push to the new repo.
 
 Docker Hub:
 - [ ] Create the access token `DOCKERHUB_ADMIN_TOKEN` (Read, Write, Delete) and store it as a repo secret; confirm `DOCKERHUB_TOKEN` may push to the new repo.
-- [ ] Create repo `labelyard` (public) before the first preview run that pushes to Docker Hub (descriptions come from Task 9).
+- [ ] Create repo `labelyard` (public) before the first preview run that pushes to Docker Hub (descriptions come from Task 10).
 - [ ] Old repo `label-printer-hub-backend`: short description `Moved to <user>/labelyard — this image is no longer updated.`, same line on top of its full description. Do not delete.
 
 Release notes (paste at the top of the `v1.5.0` GitHub Release body, above the generated notes):
@@ -415,7 +477,7 @@ This release also moves the API to `/api/v1` (see below). Full upgrade guide: do
 ```
 
 Maintainer decisions (not tasks):
-- **D-UI1:** whether the logo's blue (`#3F73EC`, dark `#7FA3F5`, see `docs/brand/labelyard/palette.md`) becomes the web app's accent colour and PWA `theme_color`. Not decided; this plan changes no UI colours.
+- **D-UI1 (decided for now, 2026-11-09):** blue stays logo-only; the UI accent stays amber. Revisit once logo and UI have been seen together — no task.
 - When to delete the frozen packages `label-printer-hub-backend` on GHCR and Docker Hub (suggested: not before 2.0.0; deletion breaks every `docker pull` of an old version).
 - When to drop the `PRINTER_HUB_*` fallback and the `printer-hub` CLI alias (suggested: 2.0.0, announced one minor release earlier).
 - Register `labelyard.dev` as well (`labelyard.app` is registered; `labelyard.com` is for sale) — only if it is to redirect to `labelyard.app`.
