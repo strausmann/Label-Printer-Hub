@@ -72,9 +72,10 @@ def test_printer_attrs_cover_the_brief() -> None:
         "marker-low-levels",
         "queued-job-count",
         "media-right-margin-supported",
+        "media-default",
     ):
         assert name in PRINTER_ATTRS
-    assert len(PRINTER_ATTRS) == 29
+    assert len(PRINTER_ATTRS) == 30
     assert "document-format-version-supported" in PRINTER_ATTRS
 
 
@@ -808,3 +809,10 @@ def test_warnings_are_bounded_like_the_displayed_reasons() -> None:
     rec = map_status(_base(printer_state_reasons=reasons))
     assert len(rec.warnings) == 32
     assert rec.warnings[0] == "vendor-thing-0"
+
+
+def test_media_default_is_summarised_and_requested() -> None:
+    # The test print falls back to it when a tray reports no media (the HP reports only this).
+    assert "media-default" in PRINTER_ATTRS
+    assert summarise(_base(media_default=["iso_a4_210x297mm"])).media_default == "iso_a4_210x297mm"
+    assert summarise(_base()).media_default is None

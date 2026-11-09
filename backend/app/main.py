@@ -90,6 +90,7 @@ from app.api.routes import printer_roll as printer_roll_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
 from app.api.routes import sheet_print as sheet_print_routes
+from app.api.routes import test_print as test_print_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.admin_printers_api import router as admin_printers_api_router
@@ -116,6 +117,7 @@ from app.db.lifespan import (
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
 from app.observability.log_buffer import install_log_buffer
+from app.page_render.test_page import render_test_page
 from app.printer_models.registry import ModelRegistry
 from app.repositories import printers as printers_repo
 from app.schemas.readiness import ReadinessResponse
@@ -554,6 +556,7 @@ class _LifespanManager:
 # Once per process, at import: a page job of this kind is drawn by this renderer (spec 13.2).
 register_page_renderer("calibration_page", render_calibration_page)
 register_page_renderer("sheet_page", render_sheet_page)
+register_page_renderer("test_page", render_test_page)
 
 
 def create_app() -> _LifespanManager:
@@ -657,6 +660,7 @@ def create_app() -> _LifespanManager:
     app.include_router(sheets_router)
     app.include_router(sheet_print_routes.router)
     app.include_router(calibration_router)
+    app.include_router(test_print_routes.router)
     app.include_router(capabilities_router)
     app.include_router(info_routes.router)
 

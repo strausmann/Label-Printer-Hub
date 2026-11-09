@@ -76,6 +76,7 @@ def _empty_summary() -> ProbeSummary:
         pdf_versions=[],
         resolutions_dpi=[],
         media_sizes=[],
+        media_default=None,
         media_types=[],
         media_sources=[],
         color_modes=[],

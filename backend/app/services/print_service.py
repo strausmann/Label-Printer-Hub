@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -22,8 +23,9 @@ from PIL import Image
 
 from app.models.job import Job
 from app.printer_backends.exceptions import NoTapeLoadedError, PrinterDisabledError
+from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
-from app.schemas.print_request import PrintRequest
+from app.schemas.print_request import PrintOptions, PrintRequest, RawLabelData
 from app.services.layout_engine import LayoutEngine
 
 _log = logging.getLogger(__name__)
@@ -62,35 +64,79 @@ class PrintService:
             UnsupportedTapeError (409): tape_mm not in TAPE_GEOMETRY.
             ContentTypeDataMismatchError (422): data missing required fields.
         """
+
+        async def resolve(_tape_mm: int) -> LabelData:
+            return await self._resolve_label_data(request)
+
+        return await self._submit_label(
+            resolve,
+            content_type=request.content_type,
+            options=request.options,
+            template_key=None,
+        )
+
+    async def submit_test_label(self, build: Callable[[int], RawLabelData]) -> UUID:
+        """Submit the test label (#228): the same path as ``submit_print_job``.
+
+        One preflight decides the tape; ``build`` gets its width and returns the label data.
+        The job is stored with ``template_key="test_label"`` and content type
+        ``QR_THREE_LINES``, one copy.
+
+        Raises: as ``submit_print_job``, plus ``PrinterOfflineError`` from the preflight.
+        """
+
+        async def resolve(tape_mm: int) -> LabelData:
+            raw = build(tape_mm)
+            return LabelData(
+                source_app="manual",
+                title=raw.title,
+                primary_id=raw.primary_id,
+                qr_payload=raw.qr_payload,
+                secondary=raw.secondary,
+                items=raw.items,
+            )
+
+        return await self._submit_label(
+            resolve,
+            content_type=ContentType.QR_THREE_LINES,
+            options=PrintOptions(),
+            template_key="test_label",
+        )
+
+    async def _submit_label(
+        self,
+        resolve: Callable[[int], Awaitable[LabelData]],
+        *,
+        content_type: ContentType,
+        options: PrintOptions,
+        template_key: str | None,
+    ) -> UUID:
+        """enabled check → one preflight → label data → render → persist → queue."""
         if not self._printer_enabled:
             raise PrinterDisabledError(self._printer_id, self._printer_slug)
 
         preflight = await self._backend.preflight_check()
         if preflight.loaded_tape_mm is None:
             raise NoTapeLoadedError()
+        tape_mm = preflight.loaded_tape_mm
 
-        label_data = await self._resolve_label_data(request)
+        label_data = await resolve(tape_mm)
         # asyncio.to_thread: render() is CPU-bound (QR generation + font rendering).
         # Offloading keeps the event loop responsive for concurrent requests.
         # Matches the pattern already used in submit_batch_job._prepare_one.
-        image = await asyncio.to_thread(
-            self._engine.render,
-            preflight.loaded_tape_mm,
-            request.content_type,
-            label_data,
-        )
+        image = await asyncio.to_thread(self._engine.render, tape_mm, content_type, label_data)
 
         job_id = uuid4()
         job = Job(
             id=job_id,
             printer_id=self._printer_id,
-            template_key=None,
+            template_key=template_key,
             payload={
                 "label_data": label_data.model_dump(),
-                "content_type": str(request.content_type),
-                "rendered_tape_mm": preflight.loaded_tape_mm,
-                "tape_mm": preflight.loaded_tape_mm,
-                "options": request.options.model_dump(),
+                "content_type": str(content_type),
+                "rendered_tape_mm": tape_mm,
+                "tape_mm": tape_mm,
+                "options": options.model_dump(),
             },
             api_key_id=None,
             source_ip=None,
@@ -100,11 +146,11 @@ class PrintService:
             job_id,
             self._printer_id,
             image,
-            tape_mm=preflight.loaded_tape_mm,
-            auto_cut=request.options.auto_cut,
-            high_resolution=request.options.high_resolution,
-            half_cut=request.options.half_cut,
-            last_page=request.options.last_page,
+            tape_mm=tape_mm,
+            auto_cut=options.auto_cut,
+            high_resolution=options.high_resolution,
+            half_cut=options.half_cut,
+            last_page=options.last_page,
         )
         return job_id
 

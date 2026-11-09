@@ -784,6 +784,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/printers/{printer_id}/test-print": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Print a test label (tape) or a test page (page printer)
+         * @description Prints one test label on a tape printer (printer name, tape width, time, a QR to the printer's page in the hub) or one test page on a page printer (a frame on the printable area, name, tray, time, a QR). A tape printer is asked at submit time what tape is loaded, so the answer needs no polling; a page printer needs a fresh status.
+         */
+        post: operations["test_print_api_v1_printers__printer_id__test_print_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/render/preview": {
         parameters: {
             query?: never;
@@ -2644,6 +2664,8 @@ export interface components {
             media_col_members: string[];
             /** Media Col Supported */
             media_col_supported: boolean;
+            /** Media Default */
+            media_default?: string | null;
             /** Media Sizes */
             media_sizes: string[];
             /** Media Sources */
@@ -3453,6 +3475,22 @@ export interface components {
              * @description Dots per inch along the tape.
              */
             y: number;
+        };
+        /** TestPrintAccepted */
+        TestPrintAccepted: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /** TestPrintRequest */
+        TestPrintRequest: {
+            /**
+             * Tray
+             * @description Tray key (page printers only); the default tray when omitted.
+             */
+            tray?: string | null;
         };
         /** TrayCapability */
         TrayCapability: {
@@ -5346,6 +5384,54 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    test_print_api_v1_printers__printer_id__test_print_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id. */
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TestPrintRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestPrintAccepted"];
+                };
+            };
+            /** @description Unknown printer (`printer-not-found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline`, `no-tape-loaded` (tape printer), `media-unknown` (page printer) or `printer-unavailable`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

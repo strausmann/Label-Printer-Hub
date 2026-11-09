@@ -428,10 +428,10 @@ async def _retry_page_job(
 ) -> JobRead:
     """Re-submit a page job through the queue (it renders at send time).
 
-    A calibration page is re-sent from its payload. Retry means "the same page again": the
-    stored payload carries the calibration snapshot and the date of the first submit, and both
-    are kept on purpose. After the admin has corrected the values, a new check print is a new
-    calibration-page request.
+    A calibration page and a test page are re-sent from their payload. Retry means "the same
+    page again": the stored payload carries the calibration snapshot and the date of the first
+    submit, and both are kept on purpose. After the admin has corrected the values, a new check
+    print is a new calibration-page request.
 
     A sheet page goes to ``print_service.retry_sheet_page``: the same cells, a new job, a fresh
     snapshot. A ``done`` sheet page is not retried (its labels came out).
@@ -444,7 +444,7 @@ async def _retry_page_job(
         raise SheetPrinterDisabledError().to_http()  # pre-flight C18; #167 is the general fix
     if kind == "sheet_page":
         return await _retry_sheet_page(request, session, queue, job, auth)
-    if kind != "calibration_page":
+    if kind not in ("calibration_page", "test_page"):
         raise PageJobNotRetryableError().to_http()
     try:
         payload = PagePayload.model_validate(job.payload)
