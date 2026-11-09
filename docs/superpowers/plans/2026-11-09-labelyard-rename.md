@@ -365,7 +365,7 @@ One terminology source feeds the website glossary, the prose linter and a check 
 
 **House style** (rule text for `CONTRIBUTING.md` section "Writing", short form in `CLAUDE.md` and `.github/copilot-instructions.md`, full form on the website page `developers/writing-docs` in en and de): *"Write for the reader: what they want to do, then how. Short sentences, one idea each. German is written natively, not translated word for word, and addresses the reader as „du". Use the glossary term for every concept, in both languages. A change to the docs is complete only with English and German in the same pull request."*
 
-**Glossary** — source `docs/glossary.toml` (stdlib `tomllib`), one entry per concept: `id`, `en`, `de`, `definition_en`, `definition_de`, optional `reject_en = [...]`, `reject_de = [...]`. Starting set (German terms marked † are not in the 1.4.1 catalogue yet and are proposals the maintainer confirms in the PR review; the others are the terms the catalogue already uses most):
+**Glossary** — source `docs/glossary.toml` (stdlib `tomllib`), one entry per concept: `id`, `en`, `de`, `definition_en`, `definition_de`, optional `reject_en = [...]`, `reject_de = [...]`. Starting set (German terms marked † are not in the 1.4.1 catalogue yet; the maintainer confirmed all four on 2026-11-09 — Druckeingang, Rolle, Vorlage, Stapel; the others are the terms the catalogue already uses most):
 
 | id | en | de | reject_de |
 |---|---|---|---|
