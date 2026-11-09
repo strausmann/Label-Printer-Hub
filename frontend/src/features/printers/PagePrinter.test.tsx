@@ -99,7 +99,7 @@ describe("page printer card", () => {
     expect(c.querySelector("code")).toBeNull();
   });
 
-  it("the detail page and a tape printer's error text", async () => {
+  it("the detail page of a page printer shows its blocking reason in words", async () => {
     mockApi({
       [`GET /api/printers/${P}`]: PAGE_PRINTER,
       [`GET /api/printers/${P}/status`]: pageStatus(P, { error_state: "cover-open", state_reasons: [reason("cover-open", "error", true)] }),

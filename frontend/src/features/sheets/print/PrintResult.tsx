@@ -35,7 +35,7 @@ export function PrintResult({ pages }: { pages: Page[] }) {
           const number = i + 1;
           const code = page.sheet_code;
           const cells = cellsWords(page.cells);
-                  return (
+          return (
             <li key={page.job_id} className="flex min-w-0 flex-col gap-0.5">
               <span className="[overflow-wrap:anywhere]">{t`Page ${number}: ${code}, cells ${cells}`}</span>
               {page.id_not_printed ? (

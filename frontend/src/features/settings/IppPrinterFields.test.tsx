@@ -471,7 +471,7 @@ describe("review fixes", () => {
     expect(within(form).getByRole("group", { name: "tray-2" })).toBeVisible();
   });
 
-  it("the restart note clears on cancel and when another printer is opened", async () => {
+  it("the restart note clears when the form for a new printer is opened", async () => {
     let printers: unknown[] = [];
     mockApi({
       "GET /api/v1/admin/printers": () => printers,

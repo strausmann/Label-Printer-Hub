@@ -22,7 +22,7 @@ export function Printers() {
       {editing ? (
         <PrinterForm key={editing === "new" ? "new" : editing.slug} printer={editing === "new" ? null : editing} onDone={(result) => {
             setEditing(null);
-            setRestartNote(result?.restartNote ?? false);
+            setRestartNote(result?.restartNote === true);
           }}
         />
       ) : (
