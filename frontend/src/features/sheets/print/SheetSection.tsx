@@ -119,11 +119,16 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
   const rememberedType = typeList.find((x) => x.key === remembered)?.key ?? null;
   // Nothing chosen or remembered: a type that has a sheet with room, else the first.
   const typeWithRoom = typeList.find((x) => (sheetsQuery.data ?? []).some((s) => s.type_key === x.key && s.state === "active" && freeOf(s) > 0))?.key ?? null;
-  const typeKey = typeChoice ?? linkedUsable?.type_key ?? rememberedType ?? typeWithRoom ?? typeList[0]?.key ?? null;
+  // A hand-made choice holds only while its type is still offered: a sheet.updated event can take the last
+  // free cell of an archived type, and the picker then stops listing it. The choice gives way to the same
+  // default as when nothing was chosen, instead of keeping a type that can neither be listed nor get a new sheet.
+  const choiceOffered = typeChoice !== null && typeList.some((x) => x.key === typeChoice);
+  const typeKey = (choiceOffered ? typeChoice : null) ?? linkedUsable?.type_key ?? rememberedType ?? typeWithRoom ?? typeList[0]?.key ?? null;
   const type = typeList.find((x) => x.key === typeKey) ?? null;
   const typeName = type ? typeLabelWithKey(type) : (typeKey ?? "");
   // An archived type offers no new sheet: neither as target, nor as the place for a rest.
-  const archivedType = !!type?.archived_at;
+  // Asked of the complete list, not of `typeList`, which leaves out an archived type without room.
+  const archivedType = !!(types.data ?? []).find((x) => x.key === typeKey)?.archived_at;
   const archivedWord = t`archived`;
 
   // --- sheets of the type ---
@@ -147,7 +152,8 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
           : sheetsQuery.isPending || types.isPending
             ? null
             : { kind: "new" };
-  const target = targetChoice ?? defaultTarget;
+  // A target picked for the type that gave way belongs to that type.
+  const target = (typeChoice === null || choiceOffered ? targetChoice : null) ?? defaultTarget;
   const sheetCode = target?.kind === "sheet" ? target.code : null;
 
   // --- tray ---

@@ -235,6 +235,53 @@ describe("an archived sheet type", () => {
     expect(screen.queryByRole("button", { name: "Put the rest onto a new sheet" })).toBeNull();
   });
 
+  it("a chosen archived type whose last free cell is taken by a sheet.updated event gives way to an offered type and offers no new sheet", async () => {
+    const sources: Array<{ emit: (type: string, printerId: string | null, data: unknown) => void }> = [];
+    class FakeEventSource {
+      private listeners = new Map<string, Array<(e: MessageEvent) => void>>();
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor() {
+        sources.push(this);
+      }
+      addEventListener(type: string, fn: (e: MessageEvent) => void) {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]);
+      }
+      close() {}
+      emit(type: string, printerId: string | null, data: unknown) {
+        const payload = JSON.stringify({ channel: "hub", printer_id: printerId, type, ts: "2026-01-01T00:00:00Z", data });
+        for (const fn of this.listeners.get(type) ?? []) fn(new MessageEvent(type, { data: payload }));
+      }
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let taken = false;
+    const { calls } = await itemView(
+      routes({
+        types: [SHEET_TYPE, OLD],
+        extra: {
+          "GET /api/sheets": () => [taken ? oldSheet("OLDX-0001", 48) : oldSheet("OLDX-0001", 47), sheet("L4736-0001", 17)],
+        },
+      }),
+      1,
+    );
+    // The user picks the archived type by hand: that is a typeChoice, not a default.
+    await pick(/Sheet type/, /OLDTYPE/);
+    expect(await screen.findByRole("button", { name: /OLDTYPE.*archived/ })).toBeVisible();
+    await waitFor(() => expect(sources.length).toBeGreaterThan(0));
+    taken = true;
+    await act(async () => {
+      sources.at(-1)!.emit("sheet.updated", null, { code: "OLDX-0001", free: 0, total: 48, changed: [48], state: "active" });
+    });
+    // The type is no longer offered, so the choice moves to an offered type ...
+    expect(await screen.findByRole("button", { name: /L4736REV/ }, { timeout: 2500 })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /OLDTYPE/ })).toBeNull();
+    // ... and no preview asks for a new sheet of the archived type, which the server refuses.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+    });
+    expect(previews(calls).some((c) => c.body?.includes("OLDTYPE") && c.body.includes('"new_sheet"'))).toBe(false);
+  }, 20_000);
+
   it("stays hidden when no active sheet of it has a free cell", async () => {
     await itemView(routes({ types: [SHEET_TYPE, OLD], sheets: [oldSheet("OLDX-0001", 48), sheet("L4736-0001", 17)] }));
     await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
