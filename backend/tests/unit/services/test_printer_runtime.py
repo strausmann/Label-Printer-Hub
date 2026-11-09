@@ -520,12 +520,13 @@ async def test_reconcile_waits_for_a_running_detach_of_the_same_printer(env: Env
         detach = asyncio.create_task(env.runtime.detach(printer.id))
         await entered.wait()
         reconcile = asyncio.create_task(env.runtime.reconcile(printer.id))
-        await asyncio.sleep(0.05)
-        assert not reconcile.done()  # waits for the detach
-        gate.set()
-        async with asyncio.timeout(TEST_TIMEOUT_S):
-            await detach
-            await reconcile
+        try:
+            await asyncio.sleep(0.05)
+            assert not reconcile.done()  # waits for the detach
+        finally:
+            gate.set()  # a red run must not leave the detach (and the teardown) blocked
+            async with asyncio.timeout(TEST_TIMEOUT_S):
+                await asyncio.gather(detach, reconcile, return_exceptions=True)
     assert env.queue.is_page_printer(printer.id)
     assert env.runtime.is_polled(printer.id)
     assert list(env.app.state.ipp_printer_states) == [printer.id]
