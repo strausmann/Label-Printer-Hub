@@ -384,11 +384,14 @@ async def test_limiter_bounds_concurrent_probes(async_session_factory) -> None:
 async def test_loop_survives_and_stops(async_session_factory) -> None:
     fake = FakeIppPrinter()
     producer, _pid, bus, _s = _make(fake, async_session_factory, interval_s=0.01)
+    # Wait for a condition, not a fixed time: under CPU load the first probe can take longer
+    # than any small budget. Three probes show the loop keeps running after the first.
     async with asyncio.timeout(TEST_TIMEOUT_S):
         await producer.start()
-        await asyncio.sleep(0.15)
+        while [r.operation for r in fake.received].count("Get-Printer-Attributes") < 3:
+            await asyncio.sleep(0.01)
         await producer.stop()
-    assert bus.publish.call_count == 1
+    assert bus.publish.call_count == 1  # published once: the later probes saw no change
 
 
 async def test_loop_backs_off_between_failed_probes(
