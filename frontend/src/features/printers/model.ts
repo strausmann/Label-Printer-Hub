@@ -43,8 +43,10 @@ export function printerStopReasons(status: PrinterStatus | undefined): string[] 
 }
 
 /** The status is not a reading of the printer now: nobody polls it, or the last probe is too old. */
-export const statusIsUnknown = (status: PrinterStatus | undefined): boolean =>
-  status?.polled === false || status?.stale === true;
+export const unknownKind = (status: PrinterStatus | undefined): "not_polled" | "stale" | null =>
+  status?.polled === false ? "not_polled" : status?.stale === true ? "stale" : null;
+
+export const statusIsUnknown = (status: PrinterStatus | undefined): boolean => unknownKind(status) !== null;
 
 /**
  * What the operator can act on wins: a paused printer says Paused even when it is also
@@ -53,8 +55,8 @@ export const statusIsUnknown = (status: PrinterStatus | undefined): boolean =>
 export function describePrinter(printer: Printer, status: PrinterStatus | undefined, printing: boolean): PrinterView {
   if (printer.paused) return { kind: "paused", badge: "warn", detail: null, reasons: [] };
   // Before any `online` branch: a status nobody refreshes says nothing about the printer (#227).
-  if (status?.polled === false) return { kind: "not_polled", badge: "idle", detail: null, reasons: [] };
-  if (status?.stale === true) return { kind: "stale", badge: "idle", detail: null, reasons: [] };
+  const unknown = unknownKind(status);
+  if (unknown) return { kind: unknown, badge: "idle", detail: null, reasons: [] };
   if (status?.online === false) {
     return { kind: "offline", badge: "bad", detail: status.last_error ?? status.error_state ?? null, reasons: [] };
   }

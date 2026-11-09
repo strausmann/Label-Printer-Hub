@@ -3096,6 +3096,7 @@ msgstr "Stopped at the printer"
 msgid "Supplies"
 msgstr "Supplies"
 
+#: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterCard.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/sheets/print/PrinterRow.tsx
@@ -3144,6 +3145,7 @@ msgstr "Tape"
 msgid "Tape is empty"
 msgstr "Tape is empty"
 
+#: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterCard.tsx
 #: src/features/printers/PrinterDetail.tsx
 msgid "Tape not known"

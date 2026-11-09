@@ -8,7 +8,7 @@ import { PANEL, SECTION_HEADING } from "../ui";
 import { SheetTiles } from "./SheetTiles";
 import { usePrinters, usePrinterStatuses, useRecentJobs, type Job, type Printer, type PrinterStatus } from "../printers/api";
 import { formatAge } from "../printers/age";
-import { describePrinter, isFailed, isPagePrinter, useJobStateBadge, useKindLabel } from "../printers/model";
+import { describePrinter, unknownKind, isFailed, isPagePrinter, useJobStateBadge, useKindLabel } from "../printers/model";
 import { MarkerList, noAnswerYet, ReasonLine, runningOut } from "../printers/PageStatus";
 import { PauseReason } from "../printers/PauseReason";
 import { PauseResumeButton } from "../printers/PauseResumeButton";
@@ -176,12 +176,23 @@ export function OverviewPage() {
 }
 
 function MaterialRow({ printer, status }: { printer: Printer; status: PrinterStatus | undefined }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
+  const kinds = useKindLabel();
   const page = isPagePrinter(printer, status);
+  // The same wording and age as the printer card; a stale or unpolled status shows no tape and no supplies.
+  const unknown = unknownKind(status);
+  const age = unknown === "stale" ? status?.last_probe_age_s : null;
+  const ageWord = typeof age === "number" ? formatAge(age, i18n.locale) : "";
   return (
     <li className="flex min-w-0 flex-col gap-1">
       <span className="break-words text-small text-ink-2">{printer.name}</span>
-      {!page ? (
+      {unknown ? (
+        <>
+          <span className="text-ink-2 [overflow-wrap:anywhere]">{kinds[unknown]}</span>
+          {typeof age === "number" && <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{t`Last status ${ageWord}`}</span>}
+          <span className="text-ink-2">{page ? t`Supplies not known` : t`Tape not known`}</span>
+        </>
+      ) : !page ? (
         <TapeSwatch tapeLoaded={status?.tape_loaded} probed={status?.captured_at != null} />
       ) : noAnswerYet(status) ? (
         <span className="text-ink-2">{t`No answer yet`}</span>

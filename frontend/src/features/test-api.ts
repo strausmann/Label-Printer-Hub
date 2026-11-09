@@ -209,6 +209,7 @@ export const pageStatus = (printerId: string, over: Partial<Schemas["PrinterStat
 
 export const PAGE_CAPABILITIES: Schemas["Capabilities"] = {
   kind: "page",
+  stale: false,
   captured_at: "2026-11-04T10:00:00Z",
   document_formats: ["application/pdf", "image/png"],
   media: {

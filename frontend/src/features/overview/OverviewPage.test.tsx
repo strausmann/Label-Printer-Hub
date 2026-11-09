@@ -237,4 +237,54 @@ describe("Overview", () => {
       expect(await within(section).findByText("Blue")).toBeVisible();
     });
   });
+
+  describe("Material block for a status nobody refreshes (#227)", () => {
+    const material = async () => {
+      const heading = await screen.findByRole("heading", { level: 2, name: "Material" });
+      return heading.closest("section") as HTMLElement;
+    };
+    const stale = { online: null, stale: true, tape_loaded: null, last_probe_age_s: 12349795 };
+
+    it("a stale tape printer says Status unknown with its age, not No tape loaded", async () => {
+      mockApi({ ...base(), [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, stale) });
+      await renderApp({ path: "/" });
+      const block = await material();
+      expect(await within(block).findByText("Status unknown")).toBeVisible();
+      expect(within(block).getByText("Last status 142 days ago")).toBeVisible();
+      expect(within(block).getByText("Tape not known")).toBeVisible();
+      expect(within(block).getAllByText("No tape loaded")).toHaveLength(1); // only the second, polled printer
+    });
+
+    it("an unpolled tape printer says Not monitored", async () => {
+      mockApi({
+        ...base(),
+        [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, { online: null, polled: false, tape_loaded: null }),
+      });
+      await renderApp({ path: "/" });
+      const block = await material();
+      expect(await within(block).findByText("Not monitored")).toBeVisible();
+      expect(within(block).getByText("Tape not known")).toBeVisible();
+      expect(within(block).queryByText(/Last status/)).toBeNull();
+    });
+
+    it("a stale page printer says Supplies not known, not No answer yet", async () => {
+      mockApi({
+        "GET /api/v1/printers": [PAGE_PRINTER],
+        [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: pageStatus(PAGE_PRINTER.id, {
+          online: null,
+          stale: true,
+          markers: null,
+          trays: null,
+          last_probe_age_s: 7200,
+        }),
+        "GET /api/v1/jobs": [],
+      });
+      await renderApp({ path: "/" });
+      const block = await material();
+      expect(await within(block).findByText("Status unknown")).toBeVisible();
+      expect(within(block).getByText("Last status 2 hours ago")).toBeVisible();
+      expect(within(block).getByText("Supplies not known")).toBeVisible();
+      expect(within(block).queryByText("No answer yet")).toBeNull();
+    });
+  });
 });
