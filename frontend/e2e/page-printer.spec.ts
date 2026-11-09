@@ -68,22 +68,59 @@ test.describe("page printer test hub", () => {
     expect((await pagePrinterControl(page)).state).toMatchObject({ margins_hmm: 423, cancel_steps: 0 });
   });
 
-  // The fake reports no paper size for its tray (`media-col-default`/`media-default` are missing), so the
-  // hub rightly refuses a test page with 409 `media-unknown`. This spec proves what the UI does with the
-  // real answer: the tray goes out in the request and the hub's own words come back next to the button.
-  test("test print on a page printer sends the tray and shows the hub's refusal", async ({ signedInPage: page }) => {
+  test("test print reaches done on a page printer, titled by the tray's label", async ({ signedInPage: page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
+    await setPagePrinter(page, { job_script: [3, 5, 9] });
     await page.goto("/printers");
     await page.getByRole("link", { name: /Office page printer/ }).click();
     await page.getByRole("button", { name: "Test print" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("button", { name: /Tray/ })).toBeVisible();
-    if (SHOTS) await page.screenshot({ path: `${SHOTS}/task-13-popover-1280-light.png`, fullPage: true });
     const request = page.waitForRequest((r) => r.url().endsWith("/test-print") && r.method() === "POST");
     await dialog.getByRole("button", { name: "Print test page" }).click();
     expect((await request).postDataJSON()).toEqual({ tray: "main-tray" });
-    await expect(page.getByRole("alert").filter({ hasText: "neither the media" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open the job" })).toHaveCount(0);
+    const link = page.getByRole("link", { name: "Open the job" });
+    await expect(link).toBeVisible();
+    await link.click();
+    // The payload keeps the key; the page shows the tray's label.
+    await expect(page.getByRole("heading", { level: 1, name: "Test page · Main tray" })).toBeVisible();
+    await expect(page.getByText("Done", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test("a page printer without any paper size is refused in the app's words", async ({ signedInPage: page }) => {
+    await setPagePrinter(page, { media_default: "" });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/printers");
+    await page.getByRole("link", { name: /Office page printer/ }).click();
+    await page.getByRole("button", { name: "Test print" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Print test page" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "does not report which paper" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open the job" })).toHaveCount(0);
+  });
+
+  test("screenshots: the tray popover and the jobs list with a test page", async ({ signedInPage: page }) => {
+    test.skip(!SHOTS, "screenshots are an artifact, taken only with E2E_SHOTS_DIR");
+    await setPagePrinter(page, { job_script: [3, 9] });
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const [width, height] of [
+        [1280, 800],
+        [390, 844],
+      ] as const) {
+        await page.setViewportSize({ width, height });
+        await page.goto("/printers");
+        await page.getByRole("link", { name: /Office page printer/ }).click();
+        await page.getByRole("button", { name: "Test print" }).click();
+        await expect(page.getByRole("dialog").getByRole("button", { name: /Tray/ })).toBeVisible();
+        await page.screenshot({ path: `${SHOTS}/task-13-popover-${width}-${scheme}.png`, fullPage: true });
+        await page.getByRole("dialog").getByRole("button", { name: "Print test page" }).click();
+        await expect(page.getByText("Test print sent.")).toBeVisible();
+        await page.getByRole("navigation", { name: width > 800 ? "Main" : "Tabs" }).getByRole("link", { name: "Jobs" }).click();
+        await expect(page.getByRole("list", { name: "Jobs" }).getByText("Test page · Main tray").first()).toBeVisible();
+        await page.screenshot({ path: `${SHOTS}/task-13-jobs-testpage-${width}-${scheme}.png`, fullPage: true });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      }
+    }
   });
 });

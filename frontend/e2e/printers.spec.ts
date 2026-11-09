@@ -269,7 +269,12 @@ test.describe("roll colour", () => {
     }
   });
 
-  test("test print reaches done on a tape printer", async ({ signedInPage: page }) => {
+});
+
+test.describe("test print", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("reaches done on a tape printer", async ({ signedInPage: page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Printers" }).click();
     await page.getByRole("link", { name: /Workshop PT-P750W/ }).click();
@@ -282,7 +287,7 @@ test.describe("roll colour", () => {
     await expect(page.getByText("Done", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
   });
 
-  test("test print screenshots: idle, sent, error, and the jobs list", async ({ signedInPage: page }) => {
+  test("screenshots: idle, disabled with its reason, sent, error, and the jobs list", async ({ signedInPage: page }) => {
     test.skip(!SHOTS, "screenshots are an artifact, taken only with E2E_SHOTS_DIR");
     for (const scheme of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: scheme });
@@ -297,6 +302,13 @@ test.describe("roll colour", () => {
         await expect(page.getByRole("button", { name: "Test print" })).toBeVisible();
         await shot(page, name("idle"));
         expect(await noSideScroll(page)).toBe(true);
+        // A paused printer: the button is off and the reason stands beside it as text.
+        await page.getByRole("button", { name: "Pause" }).click();
+        await expect(page.getByRole("button", { name: "Test print" })).toBeDisabled();
+        await expect(page.getByText("Printer is paused").first()).toBeVisible();
+        await shot(page, name("disabled"));
+        await page.getByRole("button", { name: "Resume" }).click();
+        await expect(page.getByRole("button", { name: "Test print" })).toBeEnabled();
         await page.getByRole("button", { name: "Test print" }).click();
         await expect(page.getByText("Test print sent.")).toBeVisible();
         await shot(page, name("sent"));
@@ -317,7 +329,7 @@ test.describe("roll colour", () => {
           }),
         );
         await page.getByRole("button", { name: "Test print" }).click();
-        await expect(page.getByRole("alert").filter({ hasText: "did not answer" })).toBeVisible();
+        await expect(page.getByRole("alert").filter({ hasText: "not reachable" })).toBeVisible();
         await shot(page, name("error"));
         expect(await noSideScroll(page)).toBe(true);
         await page.unroute("**/test-print");

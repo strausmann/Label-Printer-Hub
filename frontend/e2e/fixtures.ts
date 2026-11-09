@@ -26,6 +26,8 @@ export type PagePrinterState = {
   margins_hmm?: number;
   /** Polls that report "stopping" after a Cancel-Job. */
   cancel_steps?: number;
+  /** The `media-default` keyword the printer reports; `""` stops it reporting one. */
+  media_default?: string;
 };
 
 /** Switches the fake page printer; the hub notices on its next status probe (1 s in the test hub). */
