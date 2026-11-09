@@ -38,6 +38,7 @@ from app.config import get_settings
 from app.db.session import get_session
 from app.models.job import JobState
 from app.repositories import jobs as jobs_repo
+from app.repositories import printer_roll as roll_repo
 from app.repositories import printer_state as printer_state_repo
 from app.repositories import printer_status_cache as cache_repo
 from app.repositories import printers as printers_repo
@@ -110,6 +111,13 @@ async def _get_printer_or_404(session: AsyncSession, printer_id: UUID) -> Any:
             detail=f"printer {printer_id} not found",
         )
     return printer
+
+
+def roll_colour(roll: Any, loaded_width_mm: int | None) -> str | None:
+    """The operator's colour of the loaded roll; None when unknown or for another width."""
+    if roll is None or not loaded_width_mm or roll.width_mm != loaded_width_mm:
+        return None
+    return roll.colour  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -425,12 +433,15 @@ async def get_printer_status(
 
     error_flags = tape.get("error_flags") or []
     error_state = ", ".join(error_flags) if error_flags else None
+    roll = await roll_repo.get(session, printer_id)
 
     return PrinterStatus(
         printer_id=printer_id,
         online=tape.get("online"),
         tape_loaded=tape_loaded,
         tape_width_mm=loaded_tape_mm,
+        tape_colour=roll_colour(roll, loaded_tape_mm),  # type: ignore[arg-type]
+        roll_prompt=bool(roll is not None and roll.prompt_pending and loaded_tape_mm),
         error_state=error_state,
         captured_at=row.captured_at,
         last_probe_age_s=age_s,
@@ -504,7 +515,7 @@ async def get_printer_tape(
         width_mm=width_mm,
         label=runtime.describe_tape_for(printer_id, width_mm).label,
         media_raw=tape.get("media_raw"),
-        colour=None,
+        colour=roll_colour(await roll_repo.get(session, printer_id), width_mm),  # type: ignore[arg-type]
     )
 
 

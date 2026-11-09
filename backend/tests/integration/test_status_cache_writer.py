@@ -187,3 +187,46 @@ async def test_producer_writes_media_raw(_printer_id, monkeypatch):
     assert row is not None
     assert row.parsed["media_raw"] == '62mm(2.44")'
     assert row.parsed["loaded_tape_mm"] == 62
+
+
+# ---------------------------------------------------------------------------
+# Roll tracking (#229) — the producer hands each successful probe to the RollTracker
+# ---------------------------------------------------------------------------
+
+
+async def test_probe_records_the_roll_and_a_tracker_failure_does_not_fail_the_probe(
+    _printer_id, monkeypatch
+):
+    import app.db.engine as _eng
+    from app.models.printer_roll import PrinterRoll
+    from app.models.printer_status_cache import PrinterStatusCache
+    from app.printer_backends.snmp_helper import PreflightStatus
+    from app.services.event_bus import EventBus
+    from app.services.producers.status_probe_producer import StatusProbeProducer
+    from app.services.roll_tracker import RollTracker
+
+    ok = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=12, error_flags=[], media_raw='12mm(0.47")'
+    )
+
+    async def _fake_query(host, *, community="public", timeout_s=3.0):
+        return ok
+
+    monkeypatch.setattr("app.services.producers.status_probe_producer.query_preflight", _fake_query)
+    bus = EventBus()
+    producer = StatusProbeProducer(
+        bus=bus, printer_id=str(_printer_id), host="127.0.0.1", roll_tracker=RollTracker(bus)
+    )
+    await producer._probe_once()
+    async with _eng.async_session() as s:
+        roll = await s.get(PrinterRoll, _printer_id)
+    assert (roll.width_mm, roll.media_raw, roll.prompt_pending) == (12, '12mm(0.47")', True)
+
+    async def _boom(*_a, **_k):
+        raise RuntimeError("tracker down")
+
+    producer._roll_tracker.observe = _boom  # type: ignore[method-assign]
+    await producer._probe_once()
+    async with _eng.async_session() as s:
+        cache = await s.get(PrinterStatusCache, _printer_id)
+    assert cache.parsed["online"] is True  # not marked offline by the tracker failure

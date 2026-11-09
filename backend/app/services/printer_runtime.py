@@ -61,6 +61,7 @@ from app.services.producers.ipp_status_producer import IppPrinterState, IppStatu
 from app.services.producers.status_probe_producer import StatusProbeProducer
 from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.producers.tape_description import TapeDescription
+from app.services.roll_tracker import RollTracker
 from app.services.tape_registry import TapeRegistry
 
 if TYPE_CHECKING:
@@ -461,6 +462,7 @@ class PrinterRuntime:
                 interval_s=self._settings.sse_probe_interval_s,
                 community=cfg.snmp.community,
                 tape_change_producer=tape_producer,
+                roll_tracker=RollTracker(self._app.state.event_bus),
             )
         except Exception as exc:
             _log.warning(

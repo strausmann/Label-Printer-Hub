@@ -54,6 +54,7 @@ from uuid import UUID
 from app.printer_backends.snmp_helper import PreflightStatus, query_preflight
 from app.services.event_bus import BusEvent, EventBus
 from app.services.producers.tape_change_producer import TapeChangeProducer
+from app.services.roll_tracker import RollTracker
 from app.services.tape_status import TapeStatusParsed
 
 _log = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ class StatusProbeProducer:
         interval_s: float = 30.0,
         community: str = "public",
         tape_change_producer: TapeChangeProducer | None = None,
+        roll_tracker: RollTracker | None = None,
     ) -> None:
         self._bus = bus
         self._printer_id = printer_id
@@ -78,6 +80,7 @@ class StatusProbeProducer:
         self._interval_s = interval_s
         self._community = community
         self._tape_producer = tape_change_producer
+        self._roll_tracker = roll_tracker
         self._last: PreflightStatus | None = None
         # Track online state separately so that online→offline transitions
         # are detected even when hr_printer_status is unchanged (Finding #5).
@@ -149,6 +152,19 @@ class StatusProbeProducer:
                 )
             await s.commit()
 
+    async def _observe_roll(self, status: PreflightStatus) -> None:
+        """Hand the probe's roll identity to the tracker; a tracker failure never fails a probe."""
+        if self._roll_tracker is None:
+            return
+        try:
+            printer_uuid = UUID(self._printer_id)
+        except (ValueError, AttributeError):
+            return
+        try:
+            await self._roll_tracker.observe(printer_uuid, status.loaded_tape_mm, status.media_raw)
+        except Exception:
+            _log.exception("RollTracker failed for printer=%s", self._printer_id)
+
     async def _mark_offline(self, exc: Exception) -> None:
         """Persist a failed probe; preserves any previous parsed snapshot."""
         from app.db.engine import async_session
@@ -198,6 +214,7 @@ class StatusProbeProducer:
 
             # Write to cache first (always)
             await self._upsert_cache(status)
+            await self._observe_roll(status)
 
             # Notify tape producer BEFORE updating _last so it receives
             # the correct 'previous' tape state (old=self._last, new=status).

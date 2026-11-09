@@ -11,6 +11,7 @@ from app.models.preset import Preset
 from app.models.print_batch import PrintBatch
 from app.models.printer import Printer, PrinterAudit
 from app.models.printer_calibration import PrinterCalibration
+from app.models.printer_roll import PrinterRoll
 from app.models.printer_state import PrinterState
 from app.models.printer_status_cache import PrinterStatusCache
 from app.models.printer_tray import PrinterTray
@@ -34,6 +35,7 @@ __all__ = [
     "Printer",
     "PrinterAudit",
     "PrinterCalibration",
+    "PrinterRoll",
     "PrinterState",
     "PrinterStatusCache",
     "PrinterTray",

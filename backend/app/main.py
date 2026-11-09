@@ -86,6 +86,7 @@ from app.api.routes import events_v1 as events_v1_routes
 from app.api.routes import info as info_routes
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
+from app.api.routes import printer_roll as printer_roll_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
 from app.api.routes import sheet_print as sheet_print_routes
@@ -643,6 +644,7 @@ def create_app() -> _LifespanManager:
     app.include_router(batches_routes.router)
     app.include_router(events_v1_routes.router)
     app.include_router(printers_routes.router)
+    app.include_router(printer_roll_routes.router)
     app.include_router(jobs_routes.router)
     app.include_router(lookup_routes.router)
     app.include_router(webhooks_routes.router)

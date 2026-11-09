@@ -103,6 +103,43 @@ class TapeRead(BaseModel):
     )
 
 
+class RollRead(BaseModel):
+    """The roll recorded for a printer (``GET/PUT /printers/{id}/roll``)."""
+
+    width_mm: int | None = Field(default=None, description="Width of the roll last seen, in mm")
+    media_raw: str | None = Field(
+        default=None, description="The media name text of the roll as the printer reported it"
+    )
+    colour: TapeColourName | None = Field(
+        default=None, description="Tape colour the operator gave this roll; None if unknown"
+    )
+    set_at: datetime | None = Field(default=None, description="When the colour was recorded")
+    prompt_pending: bool = Field(
+        default=False, description="True while the operator is still to be asked for the colour"
+    )
+
+    @field_serializer("set_at")
+    def _serialise_set_at(self, dt: datetime | None, _info: object) -> str | None:
+        return serialize_datetime_utc(dt, _info) if dt is not None else None
+
+
+class RollColourUpdate(BaseModel):
+    """Body of ``PUT /printers/{id}/roll``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    colour: TapeColourName | None = Field(
+        description="The tape colour; null skips the question and clears a recorded colour"
+    )
+    width_mm: int | None = Field(
+        default=None,
+        description=(
+            "Width of the roll the operator saw. When given and different from the stored "
+            "roll, the call answers 409 roll-changed instead of colouring the new roll."
+        ),
+    )
+
+
 class PrinterStatus(BaseModel):
     """Printer status sourced from the printer_status_cache table.
 
@@ -151,6 +188,13 @@ class PrinterStatus(BaseModel):
         description=(
             "Tape colour from the operator's roll record. The printer reports none over the "
             "network, so this stays None until a roll is recorded."
+        ),
+    )
+    roll_prompt: bool = Field(
+        default=False,
+        description=(
+            "True when the roll changed and the operator is still to be asked for the tape "
+            "colour (``PUT /printers/{id}/roll``); False for an unpolled or stale printer"
         ),
     )
     error_state: str | None = Field(

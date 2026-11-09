@@ -720,6 +720,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/printers/{printer_id}/roll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the roll recorded for a printer
+         * @description Returns the roll identity last seen by the status probe, the tape colour the operator gave it and whether the operator is still to be asked. All fields are empty until the first probe. Answers 404 for an unknown printer.
+         */
+        get: operations["get_roll_api_v1_printers__printer_id__roll_get"];
+        /**
+         * Set the tape colour of the loaded roll
+         * @description Records the tape colour of the roll in the printer and ends the prompt. ``colour`` null is both skip and clear. Send the ``width_mm`` the operator saw: a roll change detected meanwhile answers 409 ``roll-changed`` instead of colouring the new roll.
+         */
+        put: operations["put_roll_api_v1_printers__printer_id__roll_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printers/{printer_id}/status": {
         parameters: {
             query?: never;
@@ -2549,6 +2573,12 @@ export interface components {
             /** Printer State */
             printer_state?: ("idle" | "printing" | "stopped") | null;
             /**
+             * Roll Prompt
+             * @description True when the roll changed and the operator is still to be asked for the tape colour (``PUT /printers/{id}/roll``); False for an unpolled or stale printer
+             * @default false
+             */
+            roll_prompt: boolean;
+            /**
              * Stale
              * @description True when the last probe attempt is older than the staleness bound
              * @default false
@@ -2778,6 +2808,54 @@ export interface components {
              * @enum {string}
              */
             outcome: "printed" | "not_printed";
+        };
+        /**
+         * RollColourUpdate
+         * @description Body of ``PUT /printers/{id}/roll``.
+         */
+        RollColourUpdate: {
+            /**
+             * Colour
+             * @description The tape colour; null skips the question and clears a recorded colour
+             */
+            colour: ("white" | "yellow" | "green" | "blue" | "red" | "black" | "clear") | null;
+            /**
+             * Width Mm
+             * @description Width of the roll the operator saw. When given and different from the stored roll, the call answers 409 roll-changed instead of colouring the new roll.
+             */
+            width_mm?: number | null;
+        };
+        /**
+         * RollRead
+         * @description The roll recorded for a printer (``GET/PUT /printers/{id}/roll``).
+         */
+        RollRead: {
+            /**
+             * Colour
+             * @description Tape colour the operator gave this roll; None if unknown
+             */
+            colour?: ("white" | "yellow" | "green" | "blue" | "red" | "black" | "clear") | null;
+            /**
+             * Media Raw
+             * @description The media name text of the roll as the printer reported it
+             */
+            media_raw?: string | null;
+            /**
+             * Prompt Pending
+             * @description True while the operator is still to be asked for the colour
+             * @default false
+             */
+            prompt_pending: boolean;
+            /**
+             * Set At
+             * @description When the colour was recorded
+             */
+            set_at?: string | null;
+            /**
+             * Width Mm
+             * @description Width of the roll last seen, in mm
+             */
+            width_mm?: number | null;
         };
         /**
          * SNMPConfig
@@ -5108,6 +5186,79 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_roll_api_v1_printers__printer_id__roll_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RollRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_roll_api_v1_printers__printer_id__roll_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RollColourUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RollRead"];
+                };
+            };
+            /** @description ``no-roll-loaded``: no tape is recorded for the printer. ``roll-changed``: the sent ``width_mm`` differs from the stored roll, so the roll changed after the operator looked; ask again. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
