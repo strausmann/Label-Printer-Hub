@@ -7,6 +7,7 @@ import { IntegrationTiles } from "../integrations/IntegrationTiles";
 import { PANEL, SECTION_HEADING } from "../ui";
 import { SheetTiles } from "./SheetTiles";
 import { usePrinters, usePrinterStatuses, useRecentJobs, type Job, type Printer, type PrinterStatus } from "../printers/api";
+import { formatAge } from "../printers/age";
 import { describePrinter, isFailed, isPagePrinter, useJobStateBadge, useKindLabel } from "../printers/model";
 import { MarkerList, noAnswerYet, ReasonLine, runningOut } from "../printers/PageStatus";
 import { PauseReason } from "../printers/PauseReason";
@@ -32,7 +33,7 @@ const jobLabel = (job: Job, fallback: string) => job.template_key ?? fallback;
 
 /** The three questions of the spec (5.3): what is printing, what is stuck and why, is material running out. */
 export function OverviewPage() {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const printers = usePrinters();
   const statuses = usePrinterStatuses(printers.data);
   const jobs = useRecentJobs();
@@ -47,7 +48,7 @@ export function OverviewPage() {
   const failed = all.filter((j) => isFailed(j) && jobs.dataUpdatedAt - Date.parse(j.updated_at) < ATTENTION_WINDOW_MS);
   const stuck = list
     .map((p) => ({ printer: p, view: describePrinter(p, statuses.get(p.id), busy.has(p.id)) }))
-    .filter(({ view }) => ["paused", "offline", "error", "stopped"].includes(view.kind));
+    .filter(({ view }) => ["paused", "stale", "offline", "error", "stopped"].includes(view.kind));
   const lowCount = list.filter((p) => runningOut(statuses.get(p.id))).length;
   const recent = [...all].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 8);
 
@@ -79,7 +80,10 @@ export function OverviewPage() {
             <p className="text-ink-2">{t`Nothing needs attention.`}</p>
           ) : (
             <ul className="flex flex-col gap-4">
-              {stuck.map(({ printer, view }) => (
+              {stuck.map(({ printer, view }) => {
+                const lastAge = statuses.get(printer.id)?.last_probe_age_s;
+                const ageWord = typeof lastAge === "number" ? formatAge(lastAge, i18n.locale) : "";
+                return (
                 <li key={printer.id} className="flex flex-col items-start gap-2">
                   <span className="font-bold">{printer.name}</span>
                   <StatusBadge state={view.badge} label={kinds[view.kind]} />
@@ -87,8 +91,14 @@ export function OverviewPage() {
                   {view.kind === "paused" && <PauseReason pause={printer.pause} />}
                   <ReasonLine reasons={view.reasons} />
                   {view.kind === "paused" && <PauseResumeButton printer={printer} named />}
+                  {view.kind === "stale" && typeof lastAge === "number" && (
+                    <span className="text-small text-ink-2 [overflow-wrap:anywhere]">
+                      {t`Last status ${ageWord}`}
+                    </span>
+                  )}
                 </li>
-              ))}
+                );
+              })}
               {failed.map((job) => {
                 const state = stateOf(job.state);
                 return (

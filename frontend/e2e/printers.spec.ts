@@ -108,7 +108,7 @@ test.describe("page printer status", () => {
     const tape = page.getByRole("link", { name: /Workshop PT-P750W/ });
     await expect(tape).toBeVisible();
     // The card is rendered before its status arrives: wait for a word that comes with the status.
-    await expect(tape.getByText(/Tape not known yet|\d+ mm|No tape loaded/).first()).toBeVisible({ timeout: 15_000 });
+    await expect(tape.getByText(/Tape not known( yet)?|\d+ mm|No tape loaded/).first()).toBeVisible({ timeout: 15_000 });
     await expect(tape.getByText(/toner|supplies/i)).toHaveCount(0);
   });
 

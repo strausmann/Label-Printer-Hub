@@ -10,7 +10,8 @@ import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { useCalibration, type CalibrationRead } from "../calibration/api";
 import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, type Printer, type PrinterStatus, type QueueJob } from "./api";
 import { PauseReason } from "./PauseReason";
-import { describePrinter, isPagePrinter, useJobStateBadge, useKindLabel } from "./model";
+import { formatAge } from "./age";
+import { describePrinter, isPagePrinter, statusIsUnknown, useJobStateBadge, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, ReasonLine } from "./PageStatus";
 import { PauseResumeButton } from "./PauseResumeButton";
 import { TapeSwatch } from "./TapeSwatch";
@@ -37,7 +38,7 @@ export function PrinterPage() {
 }
 
 function PrinterDetail({ printer }: { printer: Printer }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const kinds = useKindLabel();
   const status = usePrinterStatus(printer.id);
   const queue = useQueue(printer.id);
@@ -47,9 +48,11 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const page = isPagePrinter(printer, status.data);
   // The union is wider than what the server sends: an IPP printer's address is left out for keys below admin.
   const connection: Record<string, unknown> = printer.connection;
-  const unanswered = page && noAnswerYet(status.data);
+  const unknown = statusIsUnknown(status.data);
+  const unanswered = page && !unknown && noAnswerYet(status.data);
   // A page printer that never answered has no reading to be "last updated".
   const age = unanswered ? undefined : status.data?.last_probe_age_s;
+  const ageWord = typeof age === "number" ? formatAge(age, i18n.locale) : "";
   const ahead = status.data?.jobs_ahead ?? 0;
 
   return (
@@ -77,10 +80,16 @@ function PrinterDetail({ printer }: { printer: Printer }) {
               <section aria-labelledby="supplies-h" className={PANEL}>
                 <h2 id="supplies-h" className={SECTION_HEADING}>{t`Supplies`}</h2>
                 <div className="mt-3">
-                  {unanswered ? <span className="text-ink-2">{t`No answer yet`}</span> : <MarkerList markers={status.data?.markers} />}
+                  {unknown ? (
+                    <span className="text-ink-2">{t`Supplies not known`}</span>
+                  ) : unanswered ? (
+                    <span className="text-ink-2">{t`No answer yet`}</span>
+                  ) : (
+                    <MarkerList markers={status.data?.markers} />
+                  )}
                 </div>
                 {typeof age === "number" && (
-                  <p className="mt-2 text-small text-ink-2">{t`Last status ${age} s ago`}</p>
+                  <p className="mt-2 text-small text-ink-2">{t`Last status ${ageWord}`}</p>
                 )}
               </section>
               <TraysSection trays={status.data?.trays} unanswered={unanswered} />
@@ -89,10 +98,14 @@ function PrinterDetail({ printer }: { printer: Printer }) {
             <section aria-labelledby="material-h" className={PANEL}>
               <h2 id="material-h" className={SECTION_HEADING}>{t`Material`}</h2>
               <p className="mt-3">
-                <TapeSwatch tapeLoaded={status.data?.tape_loaded} probed={status.data?.captured_at != null} />
+                {unknown ? (
+                  <span className="text-ink-2">{t`Tape not known`}</span>
+                ) : (
+                  <TapeSwatch tapeLoaded={status.data?.tape_loaded} probed={status.data?.captured_at != null} />
+                )}
               </p>
               {typeof age === "number" && (
-                <p className="mt-2 text-small text-ink-2">{t`Last status ${age} s ago`}</p>
+                <p className="mt-2 text-small text-ink-2">{t`Last status ${ageWord}`}</p>
               )}
             </section>
           )}

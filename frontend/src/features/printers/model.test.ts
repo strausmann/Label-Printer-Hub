@@ -40,6 +40,26 @@ describe("describePrinter", () => {
   });
 });
 
+describe("describePrinter for a status nobody refreshes (#227)", () => {
+  it("describePrinter stale row is not ready", () => {
+    const view = describePrinter(PRINTER_A, status(PRINTER_A.id, { online: true, stale: true }), false);
+    expect(view).toMatchObject({ kind: "stale", badge: "idle" });
+  });
+  it("describePrinter unpolled", () => {
+    expect(describePrinter(PRINTER_A, status(PRINTER_A.id, { online: null, polled: false }), false)).toMatchObject({
+      kind: "not_polled",
+      badge: "idle",
+    });
+  });
+  it("unpolled wins over stale, paused wins over both", () => {
+    expect(describePrinter(PRINTER_A, status(PRINTER_A.id, { polled: false, stale: true }), false).kind).toBe("not_polled");
+    expect(describePrinter({ ...PRINTER_A, paused: true }, status(PRINTER_A.id, { stale: true }), false).kind).toBe("paused");
+  });
+  it("a fresh, polled status is untouched", () => {
+    expect(describePrinter(PRINTER_A, status(PRINTER_A.id, { stale: false, polled: true }), false).kind).toBe("ready");
+  });
+});
+
 describe("describePrinter for a page printer", () => {
   const PAGE = { ...PRINTER_A, backend: "ipp" };
   const page = (over: Record<string, unknown> = {}) => status(PAGE.id, { kind: "page", tape_loaded: null, printer_state: "idle", state_reasons: [], ...over });

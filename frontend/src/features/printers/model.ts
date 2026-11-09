@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { BadgeState } from "../../shell/StatusBadge";
 import type { Job, Printer, PrinterStatus } from "./api";
 
-export type PrinterKind = "paused" | "offline" | "error" | "stopped" | "printing" | "ready" | "unknown";
+export type PrinterKind = "paused" | "stale" | "not_polled" | "offline" | "error" | "stopped" | "printing" | "ready" | "unknown";
 
 export interface PrinterView {
   kind: PrinterKind;
@@ -42,12 +42,19 @@ export function printerStopReasons(status: PrinterStatus | undefined): string[] 
   return (status?.state_reasons ?? []).filter((r) => r.blocking).map((r) => r.keyword);
 }
 
+/** The status is not a reading of the printer now: nobody polls it, or the last probe is too old. */
+export const statusIsUnknown = (status: PrinterStatus | undefined): boolean =>
+  status?.polled === false || status?.stale === true;
+
 /**
  * What the operator can act on wins: a paused printer says Paused even when it is also
  * offline. The reason for a pause comes from `printer.pause` (see PauseReason).
  */
 export function describePrinter(printer: Printer, status: PrinterStatus | undefined, printing: boolean): PrinterView {
   if (printer.paused) return { kind: "paused", badge: "warn", detail: null, reasons: [] };
+  // Before any `online` branch: a status nobody refreshes says nothing about the printer (#227).
+  if (status?.polled === false) return { kind: "not_polled", badge: "idle", detail: null, reasons: [] };
+  if (status?.stale === true) return { kind: "stale", badge: "idle", detail: null, reasons: [] };
   if (status?.online === false) {
     return { kind: "offline", badge: "bad", detail: status.last_error ?? status.error_state ?? null, reasons: [] };
   }
@@ -78,6 +85,8 @@ export function useKindLabel(): Record<PrinterKind, string> {
   const { t } = useLingui();
   return {
     paused: t`Paused`,
+    stale: t`Status unknown`,
+    not_polled: t`Not monitored`,
     offline: t`Offline`,
     error: t`Problem`,
     stopped: t`Stopped`,

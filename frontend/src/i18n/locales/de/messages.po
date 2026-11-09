@@ -1571,9 +1571,11 @@ msgstr "Sprache"
 msgid "Last changed"
 msgstr "Zuletzt geändert"
 
+#: src/features/overview/OverviewPage.tsx
+#: src/features/printers/PrinterCard.tsx
 #: src/features/printers/PrinterDetail.tsx
-msgid "Last status {age} s ago"
-msgstr "Letzter Status vor {age} s"
+msgid "Last status {ageWord}"
+msgstr "Letzter Status {ageWord}"
 
 #: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -1949,6 +1951,10 @@ msgstr "Nicht gefunden"
 #: src/features/lookup/ItemView.tsx
 msgid "Not found in {name}"
 msgstr "Nicht gefunden in {name}"
+
+#: src/features/printers/model.ts
+msgid "Not monitored"
+msgstr "Nicht überwacht"
 
 #: src/features/sheets/SheetDetail.tsx
 msgctxt "resolve an unconfirmed cell"
@@ -3062,6 +3068,10 @@ msgstr "Zustand"
 msgid "state unknown"
 msgstr "Zustand unbekannt"
 
+#: src/features/printers/model.ts
+msgid "Status unknown"
+msgstr "Status unbekannt"
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Step 1: Print the calibration page"
 msgstr "Schritt 1: Kalibrierseite drucken"
@@ -3085,6 +3095,12 @@ msgstr "Beim Drucker angehalten"
 #: src/features/printers/PrinterDetail.tsx
 msgid "Supplies"
 msgstr "Verbrauchsmaterial"
+
+#: src/features/printers/PrinterCard.tsx
+#: src/features/printers/PrinterDetail.tsx
+#: src/features/sheets/print/PrinterRow.tsx
+msgid "Supplies not known"
+msgstr "Verbrauchsmaterial unbekannt"
 
 #: src/features/printers/reasons.ts
 msgid "supply empty"
@@ -3127,6 +3143,11 @@ msgstr "Band"
 #: src/features/printers/PauseReason.tsx
 msgid "Tape is empty"
 msgstr "Das Band ist leer"
+
+#: src/features/printers/PrinterCard.tsx
+#: src/features/printers/PrinterDetail.tsx
+msgid "Tape not known"
+msgstr "Band unbekannt"
 
 #: src/features/printers/TapeSwatch.tsx
 msgid "Tape not known yet"

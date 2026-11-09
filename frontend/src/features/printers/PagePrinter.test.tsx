@@ -240,6 +240,6 @@ describe("page printer detail", () => {
     expect(await within(material).findByText("12 mm")).toBeVisible();
     expect(screen.queryByRole("region", { name: "Supplies" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Trays" })).toBeNull();
-    expect(screen.getByText("Last status 4 s ago")).toBeVisible();
+    expect(screen.getByText("Last status 4 seconds ago")).toBeVisible();
   });
 });
