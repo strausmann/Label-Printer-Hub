@@ -116,10 +116,10 @@ Release sequence (metadata in Task 9, operator steps in Task 10):
 | `frontend/public/brand/` (create) | Logo sources from the design task |
 | `docs/migration/labelyard.md` (create) | Operator upgrade guide |
 | `docs/decisions/0022-rename-to-labelyard.md` (create) | ADR; amends ADR 0007 (image name) |
-| `website/` (create) | Source of https://labelyard.app and the user docs (Task 7; generator per decision D-W1) |
+| `website/` (create) | Source of https://labelyard.app and the user docs (Task 7; Astro Starlight) |
 | `scripts/registry_retention.py` (create) | One retention rule for GHCR and Docker Hub cleanup (Task 4) |
 | `.github/workflows/registry-cleanup.yml` (from `ghcr-cleanup.yml`), `.github/workflows/dockerhub-description.yml`, `.github/dockerhub/README.md` | Registry housekeeping and Docker Hub page (Task 4) |
-| `.github/workflows/website.yml` (create) | Strict site build + link check on PRs touching `website/**` |
+| `.github/workflows/website.yml` (create) | Freshness check, Starlight build with link validation, external link check on PRs touching `website/**` |
 
 ---
 
@@ -287,8 +287,6 @@ Migration guide content to pin:
 
 ### Task 7: Project website and user docs (labelyard.app)
 
-**Blocked on maintainer decision D-W1 (generator) below.** Everything else in this task holds for both options.
-
 #### Model: Kept's documentation site
 
 Read on 2026-11-09 from `keptinventory/kept` → `apps/docs/astro.config.mjs` and `apps/docs/src/content/docs/` (live at https://keptinventory.info). Starlight 0.42.5, Astro 7.3.5, `starlight-links-validator` 0.26.0, `starlight-openapi` 0.26.3. What we copy is the **structure**, not the code:
@@ -315,36 +313,39 @@ Languages: `en` at root (complete), `de` with its own copies of Try, Install, Us
 
 **Link vs include — decision: move, then link back.** The audience structure and the translations need the pages inside the site tree, so the user-facing docs move there: `docs/site/operations/api-keys.md`, `docs/site/operations/templates/*`, the README configuration table and the example walkthroughs (`examples/README.md`) become site pages; `docs/migration/labelyard.md` (Task 6) becomes `admin/upgrades/from-label-printer-hub` and the old path keeps a one-line pointer (update the guard's `LEGACY_ENV_FILES` path). README keeps a short quick start and links to https://labelyard.app for the rest. Repo-internal material (ADRs, plans, research, learnings) stays out of the site.
 
-#### Decision D-W1 (maintainer): Zensical or Starlight
+#### Decision D-W1 (resolved 2026-11-09): Astro Starlight
 
-Verified against Zensical's own documentation on 2026-11-09, version `zensical==0.1.0` (latest on PyPI, released 2026-11-05):
+The maintainer chose Starlight, structured like Kept. Reason, verified in Zensical's own docs the same day: `zensical==0.1.0` supports only one language per project (https://zensical.org/docs/setup/language/) and has no OpenAPI reference (https://zensical.org/compatibility/plugins/, https://zensical.org/roadmap/); both are required here.
 
-| Need | Zensical 0.1.0 | Source |
+Pinned versions (exact, no ranges; checked on npm 2026-11-09):
+
+| Package | Version | Published |
 |---|---|---|
-| en + de in one site | **Not supported.** "Zensical only supports setting a canonical language for the entire project"; a header language selector (`[project.extra] alternate = [{ name, link, lang }]`) can only link to *separately built* sites. Internationalization appears on the roadmap without status or date. | https://zensical.org/docs/setup/language/ , https://zensical.org/roadmap/ |
-| OpenAPI reference | **Not supported.** No OpenAPI plugin in the supported list; "Zensical does not currently run arbitrary MkDocs plugins"; OpenAPI references are a planned capability (API docs today only via mkdocstrings for Python). | https://zensical.org/compatibility/plugins/ , https://zensical.org/roadmap/ |
-| Strict link validation | **Supported.** `strict = true` / `--strict` aborts with exit 1; `[project.validation] invalid_links`, `invalid_link_anchors`. Smoke-tested locally: a broken internal link failed the build with exit 1. | https://zensical.org/docs/setup/validation/ |
+| `astro` | `7.4.7` | 2026-11-05 |
+| `@astrojs/starlight` | `0.42.10` (peer `astro ^7.2.10`) | 2026-11-06 |
+| `starlight-openapi` | `0.27.0` (peers `astro >=7.0.2`, `@astrojs/starlight >=0.41.0`, `@astrojs/markdown-satteri >=0.3.2`) | 2026-10-07 |
+| `starlight-links-validator` | `0.27.0` (peer `@astrojs/starlight >=0.42.0`) | 2026-10-09 |
+| `@astrojs/markdown-satteri` | latest satisfying `>=0.3.2`, pinned exactly at implementation | — |
 
-Options and their cost:
+Node: `website/.nvmrc` = `22` (same as `frontend/.nvmrc`), `engines.node: ">=22"`, `packageManager: "pnpm@9.15.9"` (same as `frontend/package.json`).
 
-- **A — Zensical (maintainer's preference).** Two builds from one tree: `website/en/zensical.toml` (root) and `website/de/zensical.toml` (`site_dir` → `/de/`), each with its own `nav` (labels duplicated in two files instead of one label module), cross-linked via `extra.alternate`; no automatic "not translated yet" fallback — untranslated Developer/Reference pages are simply not in the German nav and link to the English site; `hreflang`/sitemap alternates handled by `alternate` only. API reference: a standalone static page that renders a committed `openapi.json` with a self-hosted renderer (e.g. Redoc or Scalar as a vendored bundle, no CDN), outside the site's navigation/search and styled separately. Gains: the tool the maintainer uses for other sites, Python-only toolchain. Risk: when Zensical ships i18n/OpenAPI, the two-build layout and the standalone API page get reworked.
-- **B — Starlight, as Kept.** Native locales with fallback, `starlight-openapi` generates the API reference into the sidebar, `starlight-links-validator` checks links; a working template exists in Kept. Costs: a second Node toolchain in the repo (`website/package.json`, pnpm lock, Dependabot npm entry), Astro/Starlight upgrade churn, and not the generator the maintainer uses elsewhere.
+#### Files
 
-**Status: open — the maintainer has not decided.** Recommendation (controller, based on the verified comparison above): **B, Starlight like Kept**, because Zensical 0.1.0 has one language per project and no OpenAPI reference, both of which this site needs. A remains viable only if the site may launch English-only with a standalone API page. Either way the content plan above stays the same.
+- Create: `website/package.json` (name `labelyard-website`, private; scripts `dev`, `build` = `node scripts/export-openapi.mjs && astro build`, `check:openapi`), `website/pnpm-lock.yaml`, `website/.nvmrc`, `website/astro.config.mjs`, `website/src/locales.mjs` (`root` = English `lang: "en"`, `de` = Deutsch `lang: "de"`), `website/src/sidebar-labels.mjs` (German label for every group), `website/src/content.config.ts` (Starlight `docsLoader`/`docsSchema`), `website/src/content/docs/**` (English, root) and `website/src/content/docs/de/**` (Try, Install, Using, Admin complete; Developers/Reference fall back to English with Starlight's "not translated yet" notice), `website/src/styles/labelyard.css`, `website/src/assets/` (copied from `docs/brand/labelyard/`: `mark.svg`, `mark-dark.svg`, `lockup.svg`, `lockup-dark.svg`), `website/public/` (`favicon.svg`, `favicon.ico`, `social-card.png` copied from `docs/brand/labelyard/`), `website/src/route-data.ts` (`og:image`/`twitter:image` = absolute `https://labelyard.app/social-card.png`, `og:locale` per language), `website/openapi/labelyard.json` (committed, generated), `website/scripts/export-openapi.mjs` (runs `python backend/scripts/export_openapi.py` into `website/openapi/labelyard.json`), `website/scripts/gen-config-reference.py` (writes `src/content/docs/reference/configuration.md` from `app/config.py` + `settings_store/registry.py`), `.github/workflows/website.yml`
+- Modify: `.github/dependabot.yml` (npm ecosystem for `/website`, grouped like `/frontend`), `README.md` (website link, slimmed config section), `docs/site/operations/*` and `docs/migration/labelyard.md` (one-line pointers after the move), `CONTRIBUTING.md` (paragraph "Website": `pnpm -C website install && pnpm -C website dev`)
 
-#### Files (option A shown; for B the equivalents are `website/astro.config.mjs`, `website/src/content/docs/**`, `website/src/locales.mjs`, `website/src/sidebar-labels.mjs`, `website/package.json` pinned like Kept)
+`astro.config.mjs` decisions (Kept's config as the model):
+- `site: "https://labelyard.app"`; `starlight({ title: "Labelyard", description: "The self-hosted Label Printer Hub for all your labels", logo: { light: "./src/assets/lockup.svg", dark: "./src/assets/lockup-dark.svg", alt: "Labelyard", replacesTitle: true }, favicon: "/favicon.svg", defaultLocale: "root", locales, social: [GitHub → https://github.com/strausmann/labelyard], customCss: ["./src/styles/labelyard.css"], routeMiddleware: "./src/route-data.ts", sidebar, plugins: [starlightLinksValidator(), starlightOpenAPI([{ base: "developers/api", schema: "./openapi/labelyard.json", sidebar: { label: "API reference" } }])] })`.
+- Sidebar built with Kept's `group(label, items)` helper that throws when a label has no entry in `sidebar-labels.mjs`, so a missing German label fails the build.
+- No remote fonts, scripts or stylesheets; `ASTRO_TELEMETRY_DISABLED=1` in the package scripts.
+- `labelyard.css` maps Starlight's `--sl-color-*` variables onto the web app's theme tokens (ground/text/neutral scale from `frontend/src/design/`, imported by relative path like Kept imports `apps/web/src/styles/tokens.css`). The brand blue from `docs/brand/labelyard/palette.md` appears only in the logo files; it becomes `--sl-color-accent` **only if D-UI1 decides blue is the UI accent** — until then the accent is the app's current accent token.
 
-- Create: `website/requirements.txt` (`zensical==0.1.0`, bumped deliberately), `website/en/zensical.toml`, `website/de/zensical.toml`, `website/en/docs/**` and `website/de/docs/**` per the sidebar table, `website/shared/assets/` (logo/favicon from `frontend/public/brand/` (Task 5), screenshots from #260 when they exist — no placeholder images are published), `website/api/index.html` + `website/api/openapi.json` (exported by `backend/scripts/export_openapi.py`), `website/scripts/gen_config_reference.py` (writes `website/en/docs/reference/configuration.md` from the settings schema), `website/scripts/render_social_card.py` (1200×630 PNG; optional, same card for GitHub's social preview), `.github/workflows/website.yml`
-- Modify: `README.md` (website link and slimmed config section), `docs/site/operations/*` and `docs/migration/labelyard.md` (pointers), `.github/dependabot.yml`, `CONTRIBUTING.md` (paragraph "Website": build and serve commands)
+Landing page (`index.mdx`, `template: splash`, both languages): lockup, H1 `Labelyard`, tagline `The self-hosted Label Printer Hub for all your labels` / `Der selbst gehostete Label Printer Hub für all deine Etiketten`, three-sentence pitch, screenshots (#260; omitted until they exist, no placeholder images), feature cards (PT/QL tape printers, IPP page printers and sheets, scan-to-print PWA, print queue and inbox, API keys and webhooks, Snipe-IT/Grocy/Spoolman), quick start with `ghcr.io/strausmann/labelyard:1.5.0` and `LABELYARD_SECRET_KEY` / `LABELYARD_PUBLIC_URL`, links to GitHub, the GHCR package, Docker Hub and each docs group. Brother named descriptively only (`docs/policies/trademarks.md`).
 
-Zensical keys used (each from the docs, not guessed): `[project]` `site_name = "Labelyard"`, `site_url = "https://labelyard.app/"` (de: `https://labelyard.app/de/`), `site_description = "The self-hosted Label Printer Hub for all your labels"` (de: `Der selbst gehostete Label Printer Hub für all deine Etiketten`), `docs_dir = "docs"`, `site_dir` (relative), `nav`, `repo_url = "https://github.com/strausmann/labelyard"`, `repo_name = "strausmann/labelyard"`, `strict = true` — https://zensical.org/docs/setup/basics/ , /setup/navigation/ , /setup/repository/ , /setup/validation/ ; `[project.validation] invalid_links = true, invalid_link_anchors = true` — /setup/validation/ ; `[project.theme] language` (`"en"` / `"de"`) — /setup/language/ ; `logo`, `favicon` (files inside `docs_dir`) — /setup/logo-and-icons/ ; `features = ["navigation.instant", "navigation.sections", "navigation.indexes", "navigation.top", "toc.follow"]` — /setup/navigation/ ; `[project.extra] alternate = [{ name = "English", link = "/", lang = "en" }, { name = "Deutsch", link = "/de/", lang = "de" }]` — /setup/language/ . CLI: `zensical build --strict -f <config>` (`-s/--strict`, `-f/--config-file`; from `zensical build --help` of 0.1.0).
-
-Landing page (`index.md`, both languages): wordmark, H1 `Labelyard`, subtitle `The self-hosted Label Printer Hub for all your labels`, three-sentence pitch, screenshots (#260), feature list (PT/QL tape printers, IPP page printers and sheets, scan-to-print PWA, print queue and inbox, API keys and webhooks, Snipe-IT/Grocy/Spoolman), quick start with `ghcr.io/strausmann/labelyard:1.5.0` and `LABELYARD_SECRET_KEY` / `LABELYARD_PUBLIC_URL`, links to GitHub, the GHCR package, Docker Hub and the docs groups. Brother named descriptively only (`docs/policies/trademarks.md`).
-
-- [ ] **Step 1:** Maintainer decides D-W1; record it in ADR 0022 (or its own ADR 0023 if it grows).
-- [ ] **Step 2:** Write `.github/workflows/website.yml`: on `pull_request` and `push` to `main`, `paths: ['website/**', 'backend/app/config.py', 'backend/app/settings_store/registry.py', '.github/workflows/website.yml']`. Jobs: (1) regenerate the configuration reference and the OpenAPI export, `git diff --exit-code website/` (drift check); (2) strict build of every config; (3) external link check of the built HTML with lychee (`lycheeverse/lychee-action`, pinned by commit SHA like every action here; resolve it from the latest release at implementation time), excluding `https://labelyard.app` until it is deployed. No deploy. Upload the built site as an artifact (7 days) for review.
-- [ ] **Step 3:** Run the build before the pages exist → fails on the missing nav targets (strict mode bites). Then write the pages per the sidebar table.
-- [ ] **Step 4:** All builds exit 0. Counter-tests: a link to `missing.md` → exit 1; an extra variable in `Settings` without regenerating → drift job red. `python3 scripts/brand_guard.py` exit 0 (the site is scanned like any live file). Open the built site locally and walk Try → Install → Admin/Upgrades in both languages.
+- [ ] **Step 1:** Write `.github/workflows/website.yml`: on `pull_request` and `push` to `main` with `paths: ['website/**', 'docs/brand/labelyard/**', 'backend/app/**', '.github/workflows/website.yml']`. Jobs: (1) **freshness** — set up Python 3.12 + backend deps, run `website/scripts/export-openapi.mjs` and `gen-config-reference.py`, then `git diff --exit-code website/openapi website/src/content/docs/reference` (a changed API or setting without regenerated site files fails); (2) **build** — `pnpm/action-setup` + `actions/setup-node` with `node-version-file: website/.nvmrc`, `pnpm -C website install --frozen-lockfile`, `pnpm -C website build` (links validator fails the build on a broken internal link or anchor); (3) **external links** — lychee (`lycheeverse/lychee-action`, pinned by commit SHA like every action here; resolve it from the latest release at implementation time) over `website/dist/**/*.html`, excluding `https://labelyard.app` until it is deployed. No deploy; upload `website/dist` as an artifact (7 days) for review.
+- [ ] **Step 2:** Scaffold `package.json`, config, locales, sidebar labels and one page per group; `pnpm -C website build` → expect a failure from the links validator for sidebar entries whose pages do not exist yet (proves the validator runs).
+- [ ] **Step 3:** Move/write the pages per the sidebar table; German copies for Try, Install, Using, Admin; brand files copied from `docs/brand/labelyard/`.
+- [ ] **Step 4:** `pnpm -C website build` exit 0. Counter-tests: a link to `/using/missing/` → build fails; add a field to `Settings` without regenerating → freshness job red; drop the German label of one group → build fails. Each copied brand file is byte-identical to its source (`cmp` in the freshness job). `python3 scripts/brand_guard.py` exit 0 (the site is scanned like any live file). `pnpm -C website preview` and walk Try → Install → Admin/Upgrades in English and German; the language menu switches between the same page; the API reference lists the `/api/v1` operations.
 - [ ] **Step 5:** Commit `docs(website): add the Labelyard site with audience-grouped user docs`.
 
 ### Task 8: Gate and end-to-end verification
@@ -421,7 +422,6 @@ Deployment follow-ups (internal, done by the operator, no details in this repo):
 - [ ] Container-management stack: keep the stack name (renaming creates a new stack directory); rename the container only if desired.
 - [ ] Internal documentation, runbooks and the operator's agent skill for the hub: new name, new image, `labelyard admin create-key`.
 - [ ] Monitoring/uptime check names.
-- [ ] Website hosting: build `website/` (strict build of the chosen generator) into a static artifact or a small static-file image (non-root web server, healthcheck), deployed as a GitOps stack behind the reverse proxy.
+- [ ] Website hosting: build `website/` (`pnpm -C website build`, output `website/dist/`) into a static artifact or a small static-file image (non-root web server, healthcheck), deployed as a GitOps stack behind the reverse proxy.
 - [ ] Proxy resource for `labelyard.app` (public, no SSO) and a permanent redirect `www.labelyard.app` → apex; TLS via the existing proxy setup; DNS already points apex + wildcard at the proxy.
 - [ ] After the first deploy: drop the `--exclude https://labelyard.app` from the website link check.
-- [ ] If option A (two Zensical builds): serve `/` and `/de/` from the same artifact.
