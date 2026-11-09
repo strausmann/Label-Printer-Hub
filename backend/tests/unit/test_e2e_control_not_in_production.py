@@ -13,16 +13,20 @@ from pathlib import Path
 import pytest
 from app.main import create_app
 
+from tests.helpers.routes import iter_routes
+
 BACKEND = Path(__file__).resolve().parents[2]
 
 
 def _paths(app: object) -> list[str]:
     inner = getattr(app, "_app", app)
-    return [str(getattr(route, "path", "")) for route in inner.routes]  # type: ignore[attr-defined]
+    return [str(getattr(route, "path", "")) for route in iter_routes(inner.routes)]  # type: ignore[attr-defined]
 
 
 def test_e2e_control_route_absent_in_production_app() -> None:
-    assert [p for p in _paths(create_app()) if p.startswith("/__e2e")] == []
+    paths = _paths(create_app())
+    assert "/api/v1/admin/printers" in paths, "the walk must reach the included routers"
+    assert [p for p in paths if p.startswith("/__e2e")] == []
 
 
 REPO = BACKEND.parent
