@@ -26,6 +26,7 @@ from uuid import UUID
 import app.models  # noqa: F401 — registers all SQLModel tables with metadata
 import pytest
 import pytest_asyncio
+from app.api.dependencies.printer_runtime import get_printer_runtime
 from app.api.routes.printers import router
 from app.db.engine import _apply_pragmas
 from app.db.session import get_session
@@ -42,6 +43,7 @@ from sqlmodel import SQLModel
 # ---------------------------------------------------------------------------
 # In-memory DB fixtures
 # ---------------------------------------------------------------------------
+from tests.helpers.fake_printer_runtime import FakeRuntime
 
 
 def _make_engine():
@@ -195,6 +197,7 @@ async def test_get_printer_status_reads_cache_and_returns_online(session) -> Non
     await session.commit()
 
     app = _build_app(session)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({printer.id})
     client = TestClient(app, raise_server_exceptions=True)
     r = client.get(f"/api/v1/printers/{printer.id}/status")
 
@@ -743,7 +746,9 @@ async def test_get_printer_status_direct_reads_cache(session) -> None:
     session.add(cache)
     await session.commit()
 
-    result = await get_printer_status(printer_id=printer.id, session=session, _auth=None)
+    result = await get_printer_status(
+        printer_id=printer.id, session=session, _auth=None, runtime=FakeRuntime({printer.id})
+    )
 
     assert result.printer_id == printer.id
     assert result.online is True

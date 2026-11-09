@@ -20,6 +20,10 @@ from app.services.producers.ipp_status_producer import IppPrinterState, IppStatu
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.helpers.fake_ipp_printer import FAKE_URI, FakeIppPrinter
+from tests.helpers.fake_printer_runtime import FakeRuntime
+
+# Printers made by ``_printer`` count as polled: the status route needs a runtime to say so.
+_RUNTIME = FakeRuntime()
 
 
 @pytest.fixture(autouse=True)
@@ -35,6 +39,7 @@ def _trust_legacy_pangolin_user(monkeypatch: pytest.MonkeyPatch):
 
 @pytest_asyncio.fixture
 async def api(async_session_factory: async_sessionmaker[AsyncSession]) -> AsyncIterator:
+    from app.api.dependencies.printer_runtime import get_printer_runtime
     from app.api.routes.printers import router
     from app.db.session import get_session
     from fastapi import FastAPI
@@ -47,6 +52,7 @@ async def api(async_session_factory: async_sessionmaker[AsyncSession]) -> AsyncI
             yield session
 
         app.dependency_overrides[get_session] = _override
+        app.dependency_overrides[get_printer_runtime] = lambda: _RUNTIME
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app),
             base_url="http://t",
@@ -66,6 +72,7 @@ async def _printer(factory: async_sessionmaker[AsyncSession], backend: str) -> U
         )
         s.add(p)
         await s.commit()
+        _RUNTIME.polled.add(p.id)
         return p.id
 
 

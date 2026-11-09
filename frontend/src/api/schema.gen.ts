@@ -2476,6 +2476,13 @@ export interface components {
          *     offline page printer: since its last successful reading).
          *     ``last_error`` is the exception message from the most recent failed probe.
          *     ``note`` carries a human-readable hint (e.g. "No probe yet").
+         *     ``polled`` is ``False`` when no status producer runs for the printer (SNMP discovery
+         *     off, printer disabled or not wired). ``stale`` is ``True`` when the last probe attempt
+         *     (``printer_status_cache.updated_at``) is older than ``max(90, 3 * probe interval)``
+         *     seconds, or implausibly in the future. For an unpolled or stale printer ``online`` is
+         *     ``None`` and the cached values (tape, error state, markers, trays) are not returned;
+         *     ``captured_at`` and ``last_probe_age_s`` stay so a client can show how old the last
+         *     reading is.
          */
         PrinterStatus: {
             /**
@@ -2521,12 +2528,24 @@ export interface components {
              */
             online?: boolean | null;
             /**
+             * Polled
+             * @description False when no status producer runs for this printer
+             * @default true
+             */
+            polled: boolean;
+            /**
              * Printer Id
              * Format: uuid
              */
             printer_id: string;
             /** Printer State */
             printer_state?: ("idle" | "printing" | "stopped") | null;
+            /**
+             * Stale
+             * @description True when the last probe attempt is older than the staleness bound
+             * @default false
+             */
+            stale: boolean;
             /** State Reasons */
             state_reasons?: components["schemas"]["ReasonRead"][] | null;
             /**

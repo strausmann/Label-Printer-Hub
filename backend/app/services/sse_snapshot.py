@@ -17,13 +17,16 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.config import get_settings
 from app.models.job import Job, JobState
 from app.repositories import jobs as jobs_repo
 from app.repositories import printer_status_cache as status_cache_repo
 from app.services.producers.ipp_status_producer import page_status_event_data
+from app.services.status_freshness import is_stale
 
 if TYPE_CHECKING:
     from app.services.print_queue import PrintQueue
+    from app.services.printer_runtime import PrinterRuntime
 
 _log = logging.getLogger(__name__)
 
@@ -57,7 +60,10 @@ async def _page_job_fields(queue: PrintQueue | None, job_id: uuid.UUID) -> dict[
 
 
 async def build_snapshot(
-    session: AsyncSession, printer_id: uuid.UUID, queue: PrintQueue | None = None
+    session: AsyncSession,
+    printer_id: uuid.UUID,
+    queue: PrintQueue | None = None,
+    runtime: PrinterRuntime | None = None,
 ) -> list[dict[str, Any]]:
     """Return synthetic events describing the current state of ``printer_id``.
 
@@ -66,6 +72,10 @@ async def build_snapshot(
     ``SNAPSHOT_JOB_LIMIT``; a page job's frame also carries ``kind``, ``at_printer``,
     ``at_printer_reasons`` and ``summary`` when ``queue`` tracks it. Read failures are logged
     and skipped, never raised.
+
+    A stale cache row (same bound as the status route) or, when a ``runtime`` is given, a printer
+    nobody polls yields a ``printer.status`` frame with ``online: null`` and ``stale: true`` and
+    no ``printer.tape_changed`` frame. Without a ``runtime`` only staleness is judged.
     """
     snapshot: list[dict[str, Any]] = []
     now = datetime.now(UTC)
@@ -75,9 +85,23 @@ async def build_snapshot(
 
     try:
         cache = await status_cache_repo.get(session, printer_id)
+        parsed: dict[str, Any] | None = None
         if cache is not None and cache.parsed:
             parsed = cache.parsed
             ts = cache.captured_at or now
+            unpolled = runtime is not None and not runtime.is_polled(printer_id)
+            if unpolled or is_stale(cache.updated_at, now, get_settings().sse_probe_interval_s):
+                # Unknown, not "ready": the cached values describe a printer nobody has seen.
+                snapshot.append(
+                    {
+                        "channel": f"printer:{pid}:state",
+                        "type": "printer.status",
+                        "ts": ts,
+                        "data": {"online": None, "stale": True},
+                    }
+                )
+                parsed = None
+        if cache is not None and parsed is not None:
             snapshot.append(
                 {
                     "channel": f"printer:{pid}:state",

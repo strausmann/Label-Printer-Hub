@@ -364,6 +364,16 @@ async def test_attach_tape_with_snmp_starts_producer(env: Env) -> None:
     assert env.app.state.backend_router.get(printer.slug) is not None
 
 
+async def test_tape_printer_without_snmp_discovery_is_not_polled(env: Env) -> None:
+    """No producer is built without ``snmp.discover``: the status endpoint reports it unpolled."""
+    await _start(env)
+    printer = _tape(model="PT-P750W", discover=False)
+    await _store_row(env.factory, printer)
+    await env.runtime.attach(printer)
+    assert env.runtime.print_service_for(printer.id) is not None  # attached ...
+    assert not env.runtime.is_polled(printer.id)  # ... but nobody probes it
+
+
 async def test_attach_unresolvable_tape_model_degrades_at_runtime(
     env: Env, caplog: pytest.LogCaptureFixture
 ) -> None:

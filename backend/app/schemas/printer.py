@@ -108,6 +108,13 @@ class PrinterStatus(BaseModel):
     offline page printer: since its last successful reading).
     ``last_error`` is the exception message from the most recent failed probe.
     ``note`` carries a human-readable hint (e.g. "No probe yet").
+    ``polled`` is ``False`` when no status producer runs for the printer (SNMP discovery
+    off, printer disabled or not wired). ``stale`` is ``True`` when the last probe attempt
+    (``printer_status_cache.updated_at``) is older than ``max(90, 3 * probe interval)``
+    seconds, or implausibly in the future. For an unpolled or stale printer ``online`` is
+    ``None`` and the cached values (tape, error state, markers, trays) are not returned;
+    ``captured_at`` and ``last_probe_age_s`` stay so a client can show how old the last
+    reading is.
     """
 
     printer_id: UUID
@@ -144,6 +151,14 @@ class PrinterStatus(BaseModel):
     note: str | None = Field(
         default=None,
         description="Human-readable hint, e.g. 'No probe yet'",
+    )
+    stale: bool = Field(
+        default=False,
+        description="True when the last probe attempt is older than the staleness bound",
+    )
+    polled: bool = Field(
+        default=True,
+        description="False when no status producer runs for this printer",
     )
     # Page printers (IPP) only; all ``None`` for tape printers.
     kind: Literal["tape", "page"] | None = Field(

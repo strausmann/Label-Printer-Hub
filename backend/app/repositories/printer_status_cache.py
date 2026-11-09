@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -35,12 +35,14 @@ async def upsert(
             raw_block=raw_block,
             parsed=parsed,
             captured_at=captured_at,
+            updated_at=datetime.now(UTC),
         )
         session.add(cache)
     else:
         existing.raw_block = raw_block
         existing.parsed = parsed
         existing.captured_at = captured_at
+        existing.updated_at = datetime.now(UTC)
         session.add(existing)
     await session.commit()
     result = await session.get(PrinterStatusCache, printer_id)

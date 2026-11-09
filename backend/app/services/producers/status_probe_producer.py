@@ -132,6 +132,7 @@ class StatusProbeProducer:
                 row.parsed = parsed
                 row.raw_block = None
                 row.captured_at = now
+                row.updated_at = now  # onupdate does not fire when no column changed
             else:
                 s.add(
                     PrinterStatusCache(
@@ -139,6 +140,7 @@ class StatusProbeProducer:
                         parsed=parsed,
                         raw_block=None,
                         captured_at=now,
+                        updated_at=now,
                     )
                 )
             await s.commit()
@@ -164,12 +166,14 @@ class StatusProbeProducer:
             if row is not None:
                 row.parsed = parsed
                 row.captured_at = now
+                row.updated_at = now  # age of the last attempt, even if nothing else changed
             else:
                 s.add(
                     PrinterStatusCache(
                         printer_id=printer_uuid,
                         parsed=parsed,
                         captured_at=now,
+                        updated_at=now,
                     )
                 )
             await s.commit()

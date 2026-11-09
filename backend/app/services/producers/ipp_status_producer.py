@@ -282,10 +282,16 @@ class IppStatusProducer:
                     row.raw_block = None
                     if not keep_captured_at or row.captured_at is None:
                         row.captured_at = now
+                    # The age of the last probe attempt; ``onupdate`` does not fire when an
+                    # identical offline write changes no column.
+                    row.updated_at = now
                 else:
                     s.add(
                         PrinterStatusCache(
-                            printer_id=self._printer_id, parsed=parsed, captured_at=now
+                            printer_id=self._printer_id,
+                            parsed=parsed,
+                            captured_at=now,
+                            updated_at=now,
                         )
                     )
                 await s.commit()

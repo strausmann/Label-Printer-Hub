@@ -32,8 +32,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies.printer_runtime import get_printer_runtime
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print, require_read
+from app.config import get_settings
 from app.db.session import get_session
 from app.models.job import JobState
 from app.repositories import jobs as jobs_repo
@@ -49,7 +51,9 @@ from app.schemas.printer import (
     TrayStatusRead,
 )
 from app.services.print_queue import PrinterAlreadyActiveError
+from app.services.printer_runtime import PrinterRuntime
 from app.services.status_block import MediaType, PrinterError, StatusBlockParser
+from app.services.status_freshness import is_stale, stale_after_s
 from app.services.tape_registry import TapeRegistry, UnknownTapeError
 
 _log = logging.getLogger(__name__)
@@ -88,6 +92,7 @@ def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
+RuntimeDep = Annotated[PrinterRuntime | None, Depends(get_printer_runtime)]
 PrintAuthDep = Annotated[AuthContext, Depends(require_print)]
 
 
@@ -364,12 +369,14 @@ async def get_printer_status(
     printer_id: UUID,
     session: SessionDep,
     _auth: ReadAuthDep,
+    runtime: RuntimeDep = None,
 ) -> PrinterStatus:
     """Return the latest cached status for a printer; no sync SNMP probe."""
     await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
 
+    polled = runtime is not None and runtime.is_polled(printer_id)
     row = await cache_repo.get(session, printer_id)
     if row is None or row.captured_at is None:
         return PrinterStatus(
@@ -377,13 +384,36 @@ async def get_printer_status(
             online=None,
             captured_at=None,
             note="No probe yet — wait up to 30s for first probe cycle",
+            polled=polled,
         )
 
     parsed = row.parsed or {}
     captured = row.captured_at
     if captured.tzinfo is None:
         captured = captured.replace(tzinfo=UTC)
-    age_s = int((datetime.now(UTC) - captured).total_seconds())
+    now = datetime.now(UTC)
+    age_s = int((now - captured).total_seconds())
+
+    interval_s = get_settings().sse_probe_interval_s
+    stale = is_stale(row.updated_at, now, interval_s)
+    if not polled or stale:
+        # The cached values describe a printer nobody has looked at for a while (or at all):
+        # returning them next to "no tape" is the bug this guards against.
+        return PrinterStatus(
+            printer_id=printer_id,
+            online=None,
+            captured_at=row.captured_at,
+            last_probe_age_s=age_s,
+            last_error=parsed.get("last_error"),
+            note=(
+                "Not polled"
+                if not polled
+                else f"Status older than {int(stale_after_s(interval_s))} s"
+            ),
+            kind="page" if parsed.get("kind") == "page" else None,
+            stale=True,
+            polled=polled,
+        )
 
     if parsed.get("kind") == "page":
         return await _page_status(session, printer_id, parsed, row.captured_at, age_s)
@@ -402,6 +432,7 @@ async def get_printer_status(
         captured_at=row.captured_at,
         last_probe_age_s=age_s,
         last_error=parsed.get("last_error"),
+        polled=polled,
     )
 
 

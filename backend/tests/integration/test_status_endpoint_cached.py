@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 import pytest
 import pytest_asyncio
 
+from tests.helpers.fake_printer_runtime import FakeRuntime
+
 
 @pytest.fixture(autouse=True)
 def _trust_legacy_pangolin_user(monkeypatch: pytest.MonkeyPatch):
@@ -29,6 +31,10 @@ pytestmark = pytest.mark.asyncio
 # ---------------------------------------------------------------------------
 
 
+# Every printer inserted here counts as polled: the status route needs a runtime to say so.
+_RUNTIME = FakeRuntime()
+
+
 async def _insert_printer(session_factory):
     """Insert one Printer row and return its UUID."""
     from app.models.printer import Printer
@@ -43,6 +49,7 @@ async def _insert_printer(session_factory):
         s.add(p)
         await s.commit()
         await s.refresh(p)
+        _RUNTIME.polled.add(p.id)
         return p.id
 
 
@@ -64,6 +71,7 @@ def _build_test_app(session):
     """Return a minimal FastAPI app with only the printers router."""
     from collections.abc import AsyncIterator
 
+    from app.api.dependencies.printer_runtime import get_printer_runtime
     from app.api.routes.printers import router
     from app.db.session import get_session
     from fastapi import FastAPI
@@ -76,6 +84,7 @@ def _build_test_app(session):
         yield session
 
     app.dependency_overrides[get_session] = _override
+    app.dependency_overrides[get_printer_runtime] = lambda: _RUNTIME
     return app
 
 
