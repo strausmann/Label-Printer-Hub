@@ -1,10 +1,12 @@
 name: CI
 
 on:
+  # milestone/** too: feature PRs target the milestone integration branch
+  # (CONTRIBUTING.md, "Milestones, branches and releases").
   push:
-    branches: [main]
+    branches: [main, 'milestone/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'milestone/**']
 
 permissions:
   contents: read
