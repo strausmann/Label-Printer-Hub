@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## 1.4.0 (2026-11-09)
+
+* feat(ui): sheet archive, sheet printing, page jobs and calibration in the web UI (#216) ([adc38a8](https://github.com/strausmann/Label-Printer-Hub/commit/adc38a8)), closes [#216](https://github.com/strausmann/Label-Printer-Hub/issues/216)
+
 ## 1.3.0 (2026-11-08)
 
 * fix(api): release the session before submitting page jobs and validate the ID cell (#214) ([1906ad8](https://github.com/strausmann/Label-Printer-Hub/commit/1906ad8)), closes [#214](https://github.com/strausmann/Label-Printer-Hub/issues/214) [#210](https://github.com/strausmann/Label-Printer-Hub/issues/210)
