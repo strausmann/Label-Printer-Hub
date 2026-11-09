@@ -10,49 +10,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-09-print-inbox-design.md`. It is approved. These are binding: decisions 1–17 (§4), builder's calls B1–B41, and controller's calls C1–C16. C11–C16 were added after the plan review on 2026-11-09. Read the spec alongside this plan; "§n" refers to its sections.
 
-**Base:** this plan starts on `main` after 1.5.0 is merged (#224–#231: `/api/v1` paths, `PrinterRuntime`). It expects Alembic head `20261109b1` (`printer_identity`, from the 1.5.0 plan, Task 14). At the time of the review the 1.5.0 branch was still at `20261108a1`. So before Task 1, run `alembic heads`, set the `down_revision` of Task 3 to the real head, and keep the chain linear. **Branching:** each PR targets the inbox's integration branch, `milestone/<version>`. The milestone is not set yet. No release is cut from the milestone branch before PR 3 is merged. Task 1 alone would make Spoolman webhooks print again, and Task 18 brings back the default "park".
+**Base:** this plan starts on `main` after 1.5.0 is merged (#224–#231: `/api/v1` paths, `PrinterRuntime`). It expects Alembic head `20261109b1` (`printer_identity`, from the 1.5.0 plan, Task 14). At the time of the review the 1.5.0 branch was still at `20261108a1`. So before Task 1, run `alembic heads`, set the `down_revision` of Task 3 to the real head, and keep the chain linear. **Branching and release:** every PR targets the integration branch `milestone/<version>` (version TBD). Releases come from `main` only: the milestone ships when `milestone/<version>` is merged into `main` with a merge commit, after PR 3. Nothing of the inbox reaches `main` earlier (Task 1 alone would make Spoolman webhooks print again until Task 18). **Dependency:** CI for PRs into `milestone/**` comes from the separate CI PR for the milestone release model; it must be merged before PR 1 opens. It is not an inbox task.
 
-## Revision 2: response to the plan review (2026-11-09)
-
-The review of `f39acdd` (report `inbox-plan-review.md`) found 3 critical, 10 important and 20 minor issues. Each row below says where an issue was handled.
-
-| Finding | Disposition |
-|---|---|
-| C-1: the next-sheet algorithm read `free_cells` wrongly | Task 6. It keeps `sum(free_cells)` items, truncates `count`/`cells` per placement, drops placements with no capacity, and tests ≥2 free cells and an explicit `count` |
-| C-2: Grocy webhook lines could not be looked up again | C11 (spec §5.1, §8.1.2, §9). `item_ref` holds the product id; the grocycode and `stock_id` go into `item_meta`. A Grocy line resolver (new Task 16) reads the product and the stock entry and keeps the grocycode. The freshness test asserts `data_source == "fresh"` |
-| C-3: the global lock was held across lookups and renders | C12 (spec §6.5). Lines are copied under the lock; lookups and renders run outside it; printed lines are removed under a brief second lock by version. Tests in Tasks 5, 6 and 15 cover an add or a Grocy call during a slow print |
-| I-1: new routes echoed input in 422 bodies | Global Constraints, plus Tasks 4, 13, 14 and 19. `answers_with_envelope` gets the new prefixes, and each prefix has a marker test |
-| I-2: the access-log test could not turn red | C13, Task 14. A unit test feeds a real uvicorn-shaped `LogRecord`; a subprocess test runs real uvicorn with the Dockerfile `CMD` arguments. Task 21 docs and Task 19 panel recommend the body field |
-| I-3: a flood could grow the call log without bound | C14, Task 14. The 2,000-row cap and the 2 KiB cap hold at write time; a test sends 2,100 calls without a sweep |
-| I-4: Grocy's form bodies use PHP bracket notation | C16, Task 15. A `parse_php_form()` decoder; the form fixtures use `http_build_query` encoding; a form stock entry maps to `grocy.stock_entry` |
-| I-5: tape print needs more than `submit_labels` | Task 5. `dispatch_resolved_batch()` is shared by the batch route and the inbox route; it writes the `PrintBatch` row and keeps one error map |
-| I-6: G3 could not be built from Task 6's files | Task 6. `print_sheets(..., item_data_sources=…)` in `app/sheets/print_service.py` writes the worst value per page row and the value per cell into the payload; test added |
-| I-7: `AuthContext` call sites and the fake-auth fixture would break | Task 2. `capabilities` defaults from `scope` through a validator; the fixture also overrides `require_inbox`; the `scope_deps` docstring is updated |
-| I-8: no read-only browser session can exist | C15 (spec §12.1). Read-key sign-in stays refused. The UI keys on "the session has no `print`", tested with a simulated session. Read-key sign-in is listed as a follow-up. `auth_session.py` is in Task 2 |
-| I-9: no settings UI for the `inbox.*` settings | Task 10 adds the "Print inbox" settings section; Task 19 adds the Grocy CORS origin field |
-| I-10: a Task 4 test needed Task 5 | Task 4 tests reuse after removal; Task 5 tests reuse after print |
-| Minor 1 (names) | fixed: `_SYNC_ERROR_MAP`, `detail["item_index"]` |
-| Minor 2 (Task 1 expected failure, recovery test) | fixed: retry answers `409 invalid-job-state`; restart-recovery test added |
-| Minor 3 (`webhook` caller, `evaluate` without auth) | fixed: Task 2 `caller_id`; Task 13 `evaluate(..., auth: AuthContext \| None)`, where `None` = shared secret with `{inbox, print}` and no printer restriction |
-| Minor 4 (§6.2 details) | fixed in Task 4: `Idempotency-Key` header, order, three named error tests |
-| Minor 5 (`OPTIONS` route in the allow-list) | fixed in Task 15 |
-| Minor 6 (`__init__.py`) | fixed: Global Constraints |
-| Minor 7 (scope validation, test via DB edit) | fixed in Task 2 |
-| Minor 8 (`cli.py`) | fixed in Task 2 |
-| Minor 9 (lock lifetime) | fixed: the locks live on `app.state`, created in the lifespan |
-| Minor 10 (Task 7 intermediate state) | fixed: a `legacyPrint` shim stays until Task 9 |
-| Minor 11 (`snapshot_hash` vs `line_hash`) | fixed: the column `snapshot_hash` holds the hash of the snapshot only; `merge_key()` is separate (spec §5.1 amended) |
-| Minor 12 (Task 15 omissions) | fixed: `snapshot_complete=False` + `on_incomplete`, the `next_due_date` fallback |
-| Minor 13 (UI protocol for Tasks 5, 7) | fixed |
-| Minor 14 ("the response sent") | fixed: `response_body` field (≤ 2 KiB, the hub's own answer) |
-| Minor 15 (replay on redacted data) | fixed: `redacted_paths` is stored; replay is refused when a redaction touched a non-auth field |
-| Minor 16 (paste an existing Grocy key) | fixed in Task 19 |
-| Minor 17 (releases between PRs) | fixed: the Base paragraph |
-| Minor 18 (body caps while reading) | fixed: `read_capped_body()` in Task 4 |
-| Minor 19 (counter-tests per redaction path) | fixed in Task 14 |
-| Minor 20 (`current_call` handoff) | fixed in Task 14: a mutable note set by the middleware; a failed log write never fails the request |
-
-**Follow-up, not built (C15):** allow `read` keys to sign in to the browser, which would make the read-only UI of decision 15 reachable outside tests. This is a separate, security-relevant change with its own issue.
+Review history (findings and where they went) is kept in the plan report, not here. **Follow-up, not built (C15):** read-key browser sign-in.
 
 ## Global Constraints
 
@@ -74,8 +34,8 @@ The review of `f39acdd` (report `inbox-plan-review.md`) found 3 critical, 10 imp
 ## Review Focus
 
 1. **The same line changes on two devices at once.** The copies are edited on the phone before or while the desktop prints. If the edit comes before the print, the print gets `409`. If the edit comes during the print, the line stays and is listed in `kept_changed`. Nothing is lost. Tests: `test_print_after_concurrent_copies_edit_is_409` and `test_edit_during_print_keeps_line_reported` (Task 5).
-2. **A Grocy call arrives during a long print.** It answers in under 0.5 s and parks. Test: `test_grocy_label_during_slow_print_answers_fast` (Task 15).
-3. **A real Grocy payload in default form encoding with awkward values.** Bracket notation, no `details`, best-before `2999-12-31`, a product name of 600 characters, emoji. The call parks, the values are bounded, and it never answers `422`. Test: `test_grocy_label_awkward_payloads_park` (Task 15).
+2. **A Grocy call arrives during a long print.** It answers in under 0.5 s and parks. Test: `test_grocy_label_during_slow_print_answers_fast` (Task 16).
+3. **A real Grocy payload in default form encoding with awkward values.** Bracket notation, no `details`, best-before `2999-12-31`, a product name of 600 characters, emoji. The call parks, the values are bounded, and it never answers `422`. Test: `test_grocy_label_awkward_payloads_park` (Task 16).
 4. **The limit with merges and copies.** A merge clamps the copies to 10, and the limit counts labels after that clamp. Test: `test_merge_clamps_and_limit_counts_after_clamp` (Task 4).
 5. **A key changes after a session was minted.** The session's capabilities follow the key on its next use. Test: `test_session_follows_key_capability_change` (Task 2).
 
@@ -91,7 +51,7 @@ All three PRs target the milestone branch.
 | **PR 2 — inbox UI** | 7–12 | The server cart and its migration, selection, sheet preview and scan, the expiry notices and the inbox settings section, refresh and diff |
 | **PR 3 — integrations** | 13–21 | Event rules, the webhook call log, the Grocy label route, Grocy line resolution, the background fill, Spoolman routing, the settings UI, and the docs |
 
-The security audit runs on each PR at the ship gate. Its focus is Task 2 in PR 1, Task 7's import route in PR 2, and Tasks 14–16 in PR 3. The **Kept receiver (§8.3) is not in this plan**; it waits for #173.
+The security audit runs on each PR at the ship gate. Its focus is Tasks 2, 5 and 6 (auth, claims) in PR 1, Task 7's import route in PR 2, and Tasks 14–16 in PR 3. The **Kept receiver (§8.3) is not in this plan**; it waits for #173.
 
 ## Migrations (linear chain)
 
@@ -119,7 +79,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 - Test: `backend/tests/unit/api/test_webhooks_routes.py` (extend), `backend/tests/integration/api/test_webhook_prints.py`
 
 **Interfaces:**
-- Produces: `PrintService.submit_label(content_type: ContentType, label: LabelData, options: PrintOptions = PrintOptions(), *, extra_payload: Mapping[str, Any] | None = None, data_source: DataSource | None = None) -> UUID`. It runs preflight, render, `save_queued` and `submit_with_id`. The payload keeps `label.source_app`; `extra_payload` goes under `"origin"`.
+- Produces: `PrintService.submit_label(content_type: ContentType, label: LabelData, options: PrintOptions = PrintOptions(), *, extra_payload: Mapping[str, Any] | None = None) -> UUID` (Task 5 adds `data_source`). It runs preflight, render, `save_queued` and `submit_with_id`. The payload keeps `label.source_app`; `extra_payload` goes under `"origin"`.
 - Produces: `submit_webhook_label(request, session, *, app, entity_id, event_type) -> UUID` in `webhooks.py`. It runs the lookup, takes the first enabled tape printer, gets the service via `request.app.state.backend_router.service_for(slug)` and prints with `ContentType.QR_TWO_LINES`. That content type is the plan's call; Task 18 replaces it with the format from the event rule. Errors map through `print.py`'s `_SYNC_ERROR_MAP`.
 
 - [ ] **Step 1: Write the failing tests.**
@@ -162,13 +122,9 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 
 - [ ] **Step 1: Write the failing tests.**
   - `test_inbox_only_key_authenticates_for_inbox`: `403 insufficient_scope` on `require_read`.
-  - `test_read_key_has_inbox`.
-  - `test_unknown_only_scopes_still_key_no_scopes`.
-  - `test_bypass_downgrade_read_grants_inbox_not_print`.
+  - `test_read_key_has_inbox`, `test_unknown_only_scopes_still_key_no_scopes`, `test_bypass_downgrade_read_grants_inbox_not_print`.
   - `test_session_follows_key_capability_change` (Review Focus 5): mint a session from `["inbox","print"]`, then edit the key row **in the DB** (the API cannot change scopes) to `["inbox"]`. The same cookie gets `403` on print and still passes inbox.
-  - `test_sign_in_refuses_read_and_inbox_only_keys`.
-  - `test_create_key_rejects_unknown_scope`.
-  - `test_authcontext_without_capabilities_defaults_from_scope`.
+  - `test_sign_in_refuses_read_and_inbox_only_keys`, `test_create_key_rejects_unknown_scope`, `test_authcontext_without_capabilities_defaults_from_scope`.
   - Vitest: the inbox-only box sends `["inbox"]`.
 - [ ] **Step 2: Run them.** Expected: `["inbox"]` gets `401 key_no_scopes`, and the session test fails.
 - [ ] **Step 3: Implement.** Re-run the route-auth guardrail test.
@@ -178,10 +134,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 ### Task 3: Inbox data model, revision counter and events
 
 **Files:**
-- Create:
-  - `backend/app/models/inbox.py` and migration `20261110a1`;
-  - `backend/app/inbox/__init__.py`, `snapshot.py`, `events.py`;
-  - `backend/app/repositories/inbox.py`.
+- Create: `backend/app/models/inbox.py`, migration `20261110a1`, `backend/app/inbox/{__init__,snapshot,events}.py`, `backend/app/repositories/inbox.py`.
 - Modify:
   - `backend/app/settings_store/registry.py`: the `inbox.*` settings;
   - `backend/app/api/routes/events_v1.py` and `backend/app/services/sse_snapshot.py`: the `inbox` channel and the counts in the snapshot;
@@ -196,20 +149,11 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 - Produces `snapshot_hash(snapshot: dict) -> str`: the SHA-256 of the canonical JSON, stored in the column `snapshot_hash`.
 - Produces `merge_key(source_app, item_ref, fmt, item_meta, snapshot_hash) -> tuple`: the five-part key of spec §5.1, with `item_meta.grocycode` and `item_meta.stock_id` (each `None` when absent).
 - Produces `INBOX_CHANNEL = "inbox"`, `InboxCounts(count, labels, waiting_for_sheet)` and `publish_inbox_changed(bus, *, revision, reason, item_ids, counts)`, plus `publish_inbox_expiring(bus, *, count, labels, earliest_expires_at)`. Neither carries any text (B21).
-- Produces in the repo:
-  - `bump_revision(session) -> int`, in the same transaction as the write;
-  - `counts(session, now) -> InboxCounts`, where `waiting_for_sheet` is the sum of copies of the lines whose intended printer is a page printer.
-- Produces settings, all with `env_field=None`:
-  - `inbox.freshness`: enum `snapshot`, `fresh`, `fresh_with_fallback`; default `fresh_with_fallback`;
-  - `inbox.max_items` 500;
-  - `inbox.expiry_days` 30;
-  - `inbox.expiry_warning_days` 3;
-  - `inbox.idempotency_days` 7.
+- Produces in the repo `bump_revision(session) -> int` (same transaction as the write) and `counts(session, now) -> InboxCounts` (`waiting_for_sheet` = copies of lines whose intended printer is a page printer).
+- Produces settings (`env_field=None`): `inbox.freshness` (enum `snapshot`/`fresh`/`fresh_with_fallback`, default `fresh_with_fallback`), `inbox.max_items` 500, `inbox.expiry_days` 30, `inbox.expiry_warning_days` 3, `inbox.idempotency_days` 7.
 
 - [ ] **Step 1: Write the failing tests.**
-  - `test_hash_differs_on_best_before`.
-  - `test_merge_key_differs_on_stock_id_and_grocycode`.
-  - `test_hash_stable_across_key_order`.
+  - `test_hash_differs_on_best_before`, `test_merge_key_differs_on_stock_id_and_grocycode`, `test_hash_stable_across_key_order`.
   - The migration test.
   - `test_stream_subscribes_inbox_for_read`.
   - `test_inbox_only_key_cannot_open_stream`: `403`.
@@ -255,29 +199,19 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
   - A stale version gives `409 inbox_item_changed` with the current lines; a missing line gives `404 inbox_item_not_found`.
 
 - [ ] **Step 1: Write the failing tests:**
-  - `test_lookup_add_stores_snapshot`.
-  - `test_source_down_with_data_parks_incomplete_and_calls_on_incomplete`.
+  - `test_lookup_add_stores_snapshot`, `test_source_down_with_data_parks_incomplete_and_calls_on_incomplete`.
   - `test_source_down_reference_only_503_nothing_stored`. Counter-test: park reference-only items; the test then sees a line.
-  - `test_data_only_is_manual`.
-  - `test_same_key_twice_one_line_duplicate`.
-  - `test_idempotency_header_single_item`.
-  - `test_same_key_other_body_409_conflict_index_only`.
+  - `test_data_only_is_manual`, `test_same_key_twice_one_line_duplicate`, `test_idempotency_header_single_item`, `test_same_key_other_body_409_conflict_index_only`.
   - `test_key_reused_after_removal_no_new_line`. Counter-test: delete the record on removal.
-  - `test_no_key_60s_window`.
-  - `test_same_product_equal_data_merges_copies_2`.
+  - `test_no_key_60s_window`, `test_same_product_equal_data_merges_copies_2`.
   - `test_other_best_before_two_lines`. Counter-test: merge on `(app, ref, format)` only.
   - `test_label_per_unit_two_lines`.
   - `test_limit_counts_labels_not_lines`. Counter-test: count lines.
   - `test_merge_clamps_and_limit_counts_after_clamp`.
   - `test_not_configured_503`, `test_unknown_app_422`, `test_rate_limit_429`.
-  - `test_inbox_key_403_on_get_patch_delete`.
-  - `test_read_key_adds_but_403_on_patch_remove`.
-  - `test_enqueue_response_has_no_snapshot_raw_json`.
+  - `test_inbox_key_403_on_get_patch_delete`, `test_read_key_adds_but_403_on_patch_remove`, `test_enqueue_response_has_no_snapshot_raw_json`.
   - `test_invalid_item_422_does_not_echo_marker_title`. Counter-test: remove the prefix from `answers_with_envelope`.
-  - `test_body_over_256_kib_413_while_streaming`.
-  - `test_every_write_publishes_increasing_revision_without_title`.
-  - `test_stale_version_409_with_current_lines`.
-  - `test_items_ordered_by_created_at`.
+  - `test_body_over_256_kib_413_while_streaming`, `test_every_write_publishes_increasing_revision_without_title`, `test_stale_version_409_with_current_lines`, `test_items_ordered_by_created_at`.
 - [ ] **Step 2: Run them.** Expected: `404`, because the route does not exist yet.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Verify,** running each counter-test.
@@ -286,18 +220,18 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 ### Task 5: Freshness resolution, tape print from the inbox, `jobs.data_source`
 
 **Files:**
-- Create: `backend/app/inbox/resolve.py`, `backend/app/inbox/print_tape.py`, `backend/app/services/batch_submit.py`, `backend/app/api/routes/inbox_print.py`, migration `20261110a2`
+- Create: `backend/app/inbox/resolve.py`, `backend/app/inbox/claims.py`, `backend/app/inbox/print_tape.py`, `backend/app/services/batch_submit.py`, `backend/app/api/routes/inbox_print.py`, migration `20261110a2`
 - Modify:
   - `backend/app/services/print_service.py`: `submit_labels`; `submit_batch_job` delegates to it.
   - `backend/app/api/routes/batch.py`: its body moves to `dispatch_resolved_batch`.
   - `backend/app/models/job.py`: `data_source`.
   - `backend/app/schemas/job.py`: `data_source` and `printed_from_snapshot`.
   - `frontend/src/features/jobs/*`: the "Printed from snapshot" badge.
-- Test: `backend/tests/unit/inbox/test_resolve.py`, `backend/tests/integration/api/test_inbox_print_tape.py`, `backend/tests/integration/api/test_batch_api.py` (unchanged behaviour), the migration test, a jobs Vitest
+- Test: `backend/tests/unit/inbox/test_resolve.py`, `backend/tests/integration/api/test_inbox_print_tape.py`, the existing `backend/tests/integration/test_batch_endpoint_*.py` and `test_batch_lookup_errors.py` (unchanged behaviour), `backend/tests/unit/inbox/test_claims.py`, the migration test, a jobs Vitest
 
 **Interfaces:**
 - Produces: `DataSource = Literal["fresh","snapshot","snapshot_fallback"]` and `ResolvedLine(item, label: LabelData, data_source, unavailable: bool)`.
-- Produces: `LINE_RESOLVERS: dict[str, LineResolver]` with `LineResolver = Callable[[InboxItem, AppLookupService], Awaitable[LabelData]]`. The default is `lookup(app, item_ref)`. Task 16 registers the Grocy resolver. A line with a null `item_ref` always resolves as `snapshot`.
+- Produces: `LINE_RESOLVERS: dict[str, LineResolver]` with `LineResolver = Callable[[InboxItem, AppLookupService], Awaitable[LabelData]]`. The default is `lookup(app, item_ref)`. Task 15 registers the Grocy resolver. A line with a null `item_ref` always resolves as `snapshot`.
 - Produces: `resolve_lines(items, *, freshness, lookup, cache: LookupCache | None) -> list[ResolvedLine]`. The rules of §9 per setting:
   - `snapshot`: no call.
   - `fresh`: a failure or not-found sets `unavailable`.
@@ -305,30 +239,28 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
   - `manual` lines resolve as `snapshot`.
   - A snapshot-built `LabelData` keeps `source_app`. At most 4 lookups per app are in flight.
 - Produces: `LookupCache(ttl_s=60)`, which caches failures too (C7). Only previews use it; prints pass `None` (B20).
-- Produces: `ResolvedLabel(content_type, label, copies, data_source)` and `PrintService.submit_labels(labels, *, half_cut) -> list[UUID]`. It writes `jobs.data_source` and the payload key `data_source`.
-- Produces: `dispatch_resolved_batch(http: Request, session, auth, printer, labels: Sequence[ResolvedLabel], half_cut_override: bool | None) -> BatchResponse`. It does what `create_batch` does today: the backend lookup and `service_for` with their `503`s, the half-cut capability rule, the `PrintBatch` row, and the fixed-message error map. `POST /api/v1/print/{key}/batch` resolves its items and calls it; the batch tests stay green unchanged.
+- Produces: `ResolvedLabel(content_type, label, copies, data_source)` and `PrintService.submit_labels(labels, *, half_cut) -> list[UUID]`. It writes `jobs.data_source` and the payload key `data_source`. `submit_label` (Task 1) gains `data_source: DataSource | None = None`.
+- Produces: `class InboxClaims` on `app.state.inbox_claims` (N-1): `claim(ids, owner: UUID, now) -> None` raises `InboxItemPrintingError` (`409 inbox_item_printing`, `error_detail` lists the ids) when any id holds an unexpired claim of another owner; `release(owner)`; claims expire after 5 minutes, so a hung or crashed print never blocks a line for good. Callers take claims only under `inbox_lock` and release them in a `finally` (success, error, cancellation). `PATCH` and `DELETE` on a claimed line still proceed; the print then lists the line in `kept_changed`.
+- Produces: `dispatch_resolved_batch(http: Request, session, auth, printer, labels: Sequence[ResolvedLabel], half_cut_override: bool | None) -> BatchResponse`. It does what `create_batch` does today: the backend lookup and `service_for` with their `503`s, the half-cut capability rule, the `PrintBatch` row, and the fixed-message error map. It takes a `resolve: Callable[[], Awaitable[Sequence[ResolvedLabel]]]` instead of finished labels and runs the printer preflight (`no_tape_loaded`, disabled printer) **before** calling it, as `submit_batch_job` does today (`print_service.py:153-155`, R-10). `POST /api/v1/print/{key}/batch` and the inbox route both use it; the batch tests stay green unchanged.
 - Route: `POST /api/v1/inbox/print/{printer_key}` (`print`, printer ACL). Body: `{items: [{id, version}], half_cut_override}`. Response: `BatchResponse` plus `data_sources` and `kept_changed: [id]`. Order (C12):
-  1. Under the lock: check the versions (a mismatch gives `409 inbox_item_changed`, nothing queued) and copy the lines.
+  1. Under the lock: check the versions (a mismatch gives `409 inbox_item_changed`), claim the ids (`409 inbox_item_printing`), copy the lines. Nothing is queued on either refusal.
   2. Refuse more than 500 labels with `422 selection_too_large` `{labels, max}`, and an IPP printer with `409 media_kind_mismatch`.
-  3. Without the lock, resolve. Under `fresh`, an unavailable line gives `502` with the integration error, and nothing is printed.
-  4. Without the lock, call `dispatch_resolved_batch`.
-  5. Under the lock again, delete each sent line whose version is unchanged, set `released_at`, bump the revision and publish `printed`. A changed line goes into `kept_changed`.
+  3. Without the lock, `dispatch_resolved_batch`: preflight, then resolve (under `fresh` an unavailable line gives `502` with the integration error, nothing printed), then submit.
+  4. Under the lock again, delete each sent line whose version is unchanged, set `released_at`, bump the revision and publish `printed`. A changed line goes into `kept_changed`.
+  5. In a `finally`, release the claims.
 
 - [ ] **Step 1: Write the failing tests:**
   - `test_snapshot_mode_makes_no_lookup_call`: the mock is called 0 times.
   - `test_fallback_prints_snapshot_and_flags_job`: the mock **was** called, and the job has `data_source == "snapshot_fallback"`.
-  - `test_fallback_on_deleted_item`.
-  - `test_fresh_source_down_502_nothing_printed_lines_unchanged`.
-  - `test_print_removes_exactly_sent_lines`.
-  - `test_print_after_concurrent_copies_edit_is_409`.
+  - `test_fallback_on_deleted_item`, `test_fresh_source_down_502_nothing_printed_lines_unchanged`, `test_print_removes_exactly_sent_lines`, `test_print_after_concurrent_copies_edit_is_409`.
   - `test_edit_during_print_keeps_line_reported`: the lookup is held on an event, the copies are edited, then the lookup is released.
   - `test_add_during_slow_print_completes_within_200ms`: the lookups hang, and `POST /inbox/items` (data only) answers in under 200 ms. Counter-test: hold the lock across resolve; the add then times out.
   - `test_key_reused_after_print_no_new_line`. Counter-test: delete the record on print; a second line appears.
-  - `test_selection_501_labels_422_nothing_queued`.
-  - `test_job_payload_keeps_source_app_not_manual`.
-  - `test_ipp_printer_409_media_kind_mismatch`.
-  - `test_inbox_print_returns_batch_id_readable_via_batches_route`.
-  - `test_job_read_printed_from_snapshot`.
+  - `test_two_concurrent_prints_of_same_lines_print_once`: lookups held on an event, two prints of the same ids; one answers `409 inbox_item_printing`, the mock records exactly one print. Counter-test: drop the claim; two prints are recorded.
+  - `test_claim_released_on_dispatch_error_and_on_cancel`: after a failing submit and after a cancelled request, the same lines print again.
+  - `test_expired_claim_does_not_block`.
+  - `test_batch_route_no_tape_answers_before_any_lookup`: zero lookup calls on `409 no_tape_loaded`.
+  - `test_selection_501_labels_422_nothing_queued`, `test_job_payload_keeps_source_app_not_manual`, `test_ipp_printer_409_media_kind_mismatch`, `test_inbox_print_returns_batch_id_readable_via_batches_route`, `test_job_read_printed_from_snapshot`.
   - The migration test.
   - Vitest: the badge.
 - [ ] **Step 2: Run them.** Expected: FAIL.
@@ -367,32 +299,22 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
      - go through the placements in order: placement *i* takes `min(remaining, caps[i])`. An explicit `count` shrinks to that number, and an explicit `cells` list keeps its first that many cells;
      - drop a placement that takes 0 from the request (no placement is ever added, so C1 holds);
      - if `sum(caps) == 0`, re-raise `insufficient_cells`;
-     - repeat once.
+     - repeat once. A second `InsufficientCellsError` (for example a missing ID cell, which adds to the shortfall while `available` leaves it out, `planner.py:611`) is re-raised (R-6).
   4. With `overflow: refuse`, re-raise.
 - Produces: `print_sheets` takes `item_data_sources`, one value per item. Each page job row gets `data_source` = the worst value of its cells (`snapshot_fallback` > `snapshot` > `fresh`), and each cell payload gets its own value (G3, spec §9 amended).
 - Routes:
   - `POST /api/v1/inbox/sheet/preview/{printer_key}` (`read`).
-  - `POST /api/v1/inbox/sheet/print/{printer_key}` (`print`). The print follows the C12 order of Task 5. It re-plans with `cache=None` and passes `expected_cells` (so `409 plan_changed` holds).
+  - `POST /api/v1/inbox/sheet/print/{printer_key}` (`print`). The print follows the C12 order of Task 5, claims included. It re-plans with `cache=None` and passes `expected_cells` (so `409 plan_changed` holds).
 - Removal: the print removes the lines whose copies were all queued. A line with only some copies queued keeps the rest, and its version is bumped. On `502 print_interrupted`, only the queued copies are removed.
 
 - [ ] **Step 1: Write the failing tests:**
   - `test_preview_maps_items_to_lines_and_copies`.
   - `test_overflow_keeps_sum_of_free_cells`: one placement with 3 free cells and 5 labels gives 3 placed and 2 in `next_sheet`. Counter-test: use `len(free_cells)`; only 1 is placed.
-  - `test_overflow_two_placements_truncated_in_order`.
-  - `test_overflow_explicit_count_shrinks`.
-  - `test_overflow_zero_capacity_placement_dropped`.
-  - `test_overflow_all_full_409`.
-  - `test_overflow_refuse_keeps_409`.
-  - `test_next_sheet_never_adds_a_placement`.
+  - `test_overflow_two_placements_truncated_in_order`, `test_overflow_explicit_count_shrinks`, `test_overflow_zero_capacity_placement_dropped`, `test_overflow_all_full_409`, `test_overflow_refuse_keeps_409`, `test_next_sheet_never_adds_a_placement`.
   - `test_unrenderable_line_not_printable_others_print`. Counter-test: re-raise the mismatch; the test gets `422`.
-  - `test_fresh_source_down_line_unavailable_others_render`.
-  - `test_second_preview_within_60s_no_new_lookup_for_failed`.
-  - `test_print_removes_placed_keeps_next_sheet_and_not_printable`.
-  - `test_partial_print_removes_only_queued_copies`.
-  - `test_sheet_print_ignores_line_added_after_preview`.
-  - `test_sheet_print_501_labels_422`.
-  - `test_sheet_page_job_row_has_worst_data_source`.
-  - `test_add_during_slow_sheet_print_completes_within_200ms`.
+  - `test_fresh_source_down_line_unavailable_others_render`, `test_second_preview_within_60s_no_new_lookup_for_failed`, `test_print_removes_placed_keeps_next_sheet_and_not_printable`, `test_partial_print_removes_only_queued_copies`, `test_sheet_print_ignores_line_added_after_preview`, `test_sheet_print_501_labels_422`, `test_sheet_page_job_row_has_worst_data_source`, `test_add_during_slow_sheet_print_completes_within_200ms`.
+  - `test_two_concurrent_sheet_prints_of_same_lines_print_once`. Counter-test: drop the claim.
+  - `test_second_insufficient_cells_after_truncation_is_raised`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement,** then `pnpm gen:api`.
 - [ ] **Step 4: Verify** with the counter-tests.
@@ -420,14 +342,10 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
   - Body: `{device_id (8–64 chars, [A-Za-z0-9-]), lines: [{app, id, name, content_type, copies}] ≤ 500}`.
   - When a lookup fails, the line is stored with the snapshot `{title: name}` and `snapshot_complete=False`.
   - The `scope_key` is `device:<device_id>:<app>:<id>` (C5); the origin is `ui`.
-- Produces, frontend:
-  - `useInbox()`, using query key `["inbox"]`.
-  - `useInboxMutations()`, with `add`, `setCopies(id, version, copies)`, `remove(refs)` and `clear(revision)`. Any `409` triggers a refetch.
+- Produces, frontend: `useInbox()` (query key `["inbox"]`) and `useInboxMutations()` with `add`, `setCopies(id, version, copies)`, `remove(refs)`, `clear(revision)`; any `409` refetches.
 - Produces `useCart()`, which keeps `{items, add, remove, setCopies, clear}`. `items` are `InboxLine` (`CartItem` plus `lineId`, `version`, `origin`, `snapshotComplete`, `expiresInDays`).
   - `print`/`removeItems` stay as a `legacyPrint` shim (today's batch path, removing the sent lines through the inbox). `CartPage` and `SheetSection` keep working that way until Tasks 8 and 9 replace the shim, and Task 9 deletes it (review Minor 10).
-- Produces `migrateLocalCart(fetcher): Promise<"none"|"done"|"failed">`.
-  - Keys: `lph.cart`, `lph.cart.migrated`, `lph.device`.
-  - `lph.cart` is removed only after a `2xx`.
+- Produces `migrateLocalCart(fetcher): Promise<"none"|"done"|"failed">` with the keys `lph.cart`, `lph.cart.migrated`, `lph.device`; `lph.cart` is removed only after a `2xx`.
 - Copies edits are debounced for 400 ms and sent with the line's `version`. On a `409` the typed value stays, with a note (B23).
 
 - [ ] **Step 1: Write the failing tests.**
@@ -440,10 +358,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
     - `add` sends a `POST` to `/api/v1/inbox/items`;
     - a newer revision triggers a refetch, an older one does not;
     - `legacyPrint` removes exactly the lines it sent.
-  - pytest:
-    - `test_import_lookup_failure_name_only_snapshot`;
-    - `test_import_twice_one_line`;
-    - `test_inbox_only_key_403_on_import`.
+  - pytest: `test_import_lookup_failure_name_only_snapshot`, `test_import_twice_one_line`, `test_inbox_only_key_403_on_import`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement** under the UI protocol. Run `pnpm gen:api`. i18n: add "N items from this browser could not be moved yet" (plural).
 - [ ] **Step 4: Verify.**
@@ -468,12 +383,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
   - A click on the row toggles it. Clicks on the name link, the copies field or Remove do not.
   - Targets are at least 44 px.
   - A session without `print` sees no copies field, no Remove and no print button, and gets a note that printing needs a print key (C15).
-- Print button copy:
-  - "Print {n} of {total} labels";
-  - "Print {total} labels" when every line is selected;
-  - disabled when nothing is selected;
-  - disabled with "At most 500 labels per print" above 500 (C3).
-- Origin badge "from {app}".
+- Print button, header box, "Clear selection" and the origin badge follow §11.2 and §11.1 word for word (C3: disabled with its reason above 500 labels).
 
 - [ ] **Step 1: Write the failing tests:**
   - select all, untick two: the print body has exactly the remaining ids;
@@ -563,8 +473,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
   - `inbox.max_items`, `inbox.expiry_days`, `inbox.expiry_warning_days` and `inbox.idempotency_days` as numbers.
 
 - [ ] **Step 1: Write the failing tests:**
-  - `test_warning_raised_once_not_daily_again`.
-  - `test_expired_removed_with_notice`.
+  - `test_warning_raised_once_not_daily_again`, `test_expired_removed_with_notice`.
   - `test_no_line_disappears_without_warning_or_notice`: time travel over 31 days.
   - `test_idempotency_rows_kept_7_days_after_release`.
   - Vitest:
@@ -595,17 +504,9 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 - Routes (§6.4). `POST /api/v1/inbox/refresh/{rid}/accept` (`print`) writes under the lock, checking each line's version. It can answer `409 inbox_item_changed` (nothing written), `409 refresh_expired`, `404 refresh_not_found` or `422 not_changed`, and it publishes `accepted`.
 
 - [ ] **Step 1: Write the failing tests:**
-  - `test_refresh_writes_no_snapshot`.
-  - `test_diff_one_changed_field_one_entry`.
-  - `test_accept_all_writes_only_changed`.
+  - `test_refresh_writes_no_snapshot`, `test_diff_one_changed_field_one_entry`, `test_accept_all_writes_only_changed`.
   - `test_accept_after_copies_edit_409_nothing_written`. Counter-test: skip the version check.
-  - `test_expired_refresh_409`.
-  - `test_manual_lines_unchanged`.
-  - `test_deleted_vs_unavailable`.
-  - `test_second_refresh_409_running`.
-  - `test_render_before_after_png`.
-  - `test_render_page_printer_without_sheet_type_422`.
-  - `test_add_during_refresh_not_blocked`.
+  - `test_expired_refresh_409`, `test_manual_lines_unchanged`, `test_deleted_vs_unavailable`, `test_second_refresh_409_running`, `test_render_before_after_png`, `test_render_page_printer_without_sheet_type_422`, `test_add_during_refresh_not_blocked`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement,** then `pnpm gen:api`.
 - [ ] **Step 4: Verify,** including the migration test.
@@ -624,14 +525,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
   - `primary_id` → "Code";
   - for Grocy, `secondary[*]` maps to "Best before", "Amount", "Location" and "Note";
   - an unknown path shows itself.
-- Copy and behaviour follow §11.5:
-  - the line badges "Changed", "Source unreachable" and "Deleted at source";
-  - a summary line;
-  - Accept and Keep per line, plus "Accept all changes" (sends `{all: true}`) and "Keep all" (client-side only);
-  - before and after side by side, stacked below 640 px, and a full-height sheet on phones;
-  - on a `409`, "This item changed since the refresh. Refresh again.";
-  - one sentence per freshness mode;
-  - long values wrap with `overflow-wrap: anywhere`.
+- Copy, badges and behaviour follow §11.5 word for word. "Accept all changes" sends `{all: true}`; "Keep all" stays on the client. Before and after stack below 640 px (§11.6).
 
 - [ ] **Step 1: Write the failing tests:**
   - the summary counts;
@@ -679,18 +573,9 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 - Produces the routes `GET/PUT /api/v1/integrations/{name}/event-rules` (`admin`). `PUT` refuses `print` with an IPP target (`422 page_printer_always_parks`) and `designer_layout` (`422 format_not_supported`).
 
 - [ ] **Step 1: Write the failing tests:**
-  - `test_fresh_integration_has_presets_none_print`.
-  - `test_none_ignored`.
-  - `test_event_printer_and_format_override_default`.
-  - `test_print_onto_ipp_parks`.
-  - `test_offline_tape_printer_parks_with_reason`.
-  - `test_unknown_event_ignored`.
-  - `test_designer_layout_422`.
+  - `test_fresh_integration_has_presets_none_print`, `test_none_ignored`, `test_event_printer_and_format_override_default`, `test_print_onto_ipp_parks`, `test_offline_tape_printer_parks_with_reason`, `test_unknown_event_ignored`, `test_designer_layout_422`.
   - `test_mode_print_never_enables_none` (counter-test: let `mode` win).
-  - `test_mode_print_inbox_key_parks_key_cannot_print`.
-  - `test_shared_secret_may_print`.
-  - `test_put_print_with_ipp_422`.
-  - `test_put_invalid_422_no_echo`.
+  - `test_mode_print_inbox_key_parks_key_cannot_print`, `test_shared_secret_may_print`, `test_put_print_with_ipp_422`, `test_put_invalid_422_no_echo`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Verify,** including the migration test.
@@ -720,7 +605,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
   - **Before the app is called,** it puts a fresh mutable `CallNote` into the ContextVar `current_call`. Handlers only change fields of that object and never call `.set()` (review Minor 20). It captures the body (≤ 64 KiB), the status, the duration and up to 2 KiB of the response body.
   - **After the response,** it writes one record in a short session. Several rules hold at write time (C14):
     - a call without `key_id` that ends in `401`/`403` keeps at most 2 KiB of payload;
-    - after the insert, rows beyond the newest 2,000 are deleted in the same session;
+    - after the insert, two caps are trimmed in the same session (R-8): records **without** `key_id` keep only their newest 500, and all records keep only their newest 2,000. An unauthenticated flood therefore evicts at most 500 rows of its own kind and never the authenticated history;
     - a failure to write the log is logged, and the response is unaffected.
 - Produces `class StripQueryForWebhooks(logging.Filter)` (C13).
   - It works on uvicorn's access records, whose `args` are `(client_addr, method, full_path, http_version, status_code)`.
@@ -738,124 +623,100 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
     - `test_token_in_query_never_stored`, counter-test: make `redact_query` a no-op.
   - Access log:
     - `test_filter_strips_query_from_uvicorn_shaped_record`, counter-test: remove the filter;
-    - `test_filter_attached_to_uvicorn_access_after_import`;
-    - `test_real_uvicorn_access_log_has_no_token`: start uvicorn as a subprocess with the module and arguments parsed from the `CMD` in `backend/Dockerfile`, on 127.0.0.1 with a random port and a temporary DB. Send a request with `?token=marker`; stderr must not contain `marker`. Counter-test: disable the filter; `marker` then appears.
-  - `test_rejected_401_logged_without_key_id`.
-  - `test_final_status_follows_line_to_printed`.
-  - `test_2100_unauthenticated_calls_leave_at_most_2000_rows_without_sweep`, counter-test: drop the write-time trim.
-  - `test_unauthenticated_payload_capped_2kib`.
-  - `test_log_write_failure_does_not_fail_request`.
-  - `test_note_set_by_threadpool_dependency_is_kept`.
-  - `test_read_and_inbox_keys_403_on_log`.
-  - `test_ui_session_inbox_add_not_logged`.
-  - `test_replay_only_config_rejections_without_field_redaction`.
-  - `test_prune_older_than_14_days`.
+    - `test_filter_attached_to_uvicorn_access_after_import`.
+    - `test_real_uvicorn_access_log_has_no_token` (N-2): start uvicorn as a subprocess with the module and arguments taken from the `CMD` in `backend/Dockerfile`. Override `--host` with `127.0.0.1`, and set `PORT` to a free port, `FORWARDED_ALLOW_IPS` and a temporary DB. Wait until `/healthz` answers. Send `POST /api/v1/webhook/grocy/label?token=marker`. Capture **stdout and stderr**: uvicorn writes access lines to stdout. First assert that an access line with `/api/v1/webhook/grocy/label` and the status exists, so the test cannot pass vacuously. Then assert that neither stream contains `marker`. Counter-test: disable the filter. The access line then carries `marker`, and the test turns red.
+  - `test_rejected_401_logged_without_key_id`, `test_final_status_follows_line_to_printed`.
+  - `test_unauthenticated_flood_keeps_500_and_spares_authenticated_records`: 100 authenticated calls, then 2,100 unauthenticated ones, with no sweep. Afterwards 100 authenticated and 500 unauthenticated rows remain. Counter-test: use only the single 2,000-row cap, and the authenticated rows are evicted.
+  - `test_total_cap_2000_at_write_time`, `test_unauthenticated_payload_capped_2kib`, `test_log_write_failure_does_not_fail_request`, `test_note_set_by_threadpool_dependency_is_kept`, `test_read_and_inbox_keys_403_on_log`, `test_ui_session_inbox_add_not_logged`, `test_replay_only_config_rejections_without_field_redaction`, `test_prune_older_than_14_days`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Verify** with every counter-test and the migration test.
 - [ ] **Step 5: Commit** `feat(webhooks): log every webhook call with built-in redaction and admin-only access`.
 
-### Task 15: Grocy label route in Grocy's own format (security)
+### Task 15: Grocy line resolution (C11)
 
-**Files:**
-- Create:
-  - `backend/app/schemas/grocy_label.py`;
-  - `backend/app/inbox/php_form.py`;
-  - `backend/app/inbox/grocy_label.py`;
-  - `backend/app/api/routes/webhook_grocy_label.py`;
-  - fixtures `backend/tests/fixtures/grocy_label/{product_form.txt, stock_entry_form.txt, stock_entry.json, no_details.json}`. The form fixtures are encoded the way PHP's `http_build_query` encodes them (bracket notation, the way Guzzle sends `form_params`). Their fields are those cited in §8.1, from Grocy 4.5's `WebhookRunner.php` and `GetProductDetails`.
-- Modify:
-  - `webhooks.py`: delete `/grocy` and `GrocyWebhookPayload`;
-  - `registry.py`: add `integrations.grocy.webhook_cors_origin`;
-  - `test_route_auth_coverage_guardrail.py`: add `_PUBLIC_BY_DESIGN` entries for `POST` and `OPTIONS` `/api/v1/webhook/grocy/label` with the reason "authenticates the token inside the handler; Grocy cannot send headers".
-- Test: `backend/tests/unit/inbox/test_php_form.py`, `backend/tests/unit/inbox/test_grocy_mapping.py`, `backend/tests/integration/api/test_webhook_grocy_label.py`
-
-**Interfaces:**
-- Produces `parse_php_form(body: bytes) -> dict[str, Any]` (C16).
-  - `a[b][c]=v` becomes nested dicts.
-  - `a[]=v` becomes a list.
-  - For repeated scalars the last value wins.
-  - Nesting stops at depth 8 and at 1,000 keys; anything beyond is ignored.
-- Produces `GrocyLabelPayload` with `extra="ignore"` and these fields:
-  - `product`, `grocycode`, `due_date` (never parsed), `details: dict | None`;
-  - `stock_entry: GrocyStockEntry | None`, holding `amount`, `best_before_date`, `location_id`, `note` and `stock_id`;
-  - `token`, `printer`, `mode`.
-- Produces `map_grocy_label(p, *, language) -> GrocyMapped(snapshot, item_ref, event_type, item_meta)`. It follows §8.1.2 with C11:
-  - `item_ref` is the product id, taken from `details.product.id`, else from the grocycode's second field, else `None`.
-  - `item_meta` holds `{grocycode, stock_id?}`.
-  - The best-before line:
-    - is taken from `stock_entry.best_before_date`, else from `details.next_due_date` (B39);
-    - reads en `"Best before {YYYY-MM-DD}"`, de `"MHD {DD.MM.YYYY}"`;
-    - is omitted for `2999-12-31`.
-  - The amount reads `"{amount} {unit}"`, with the unit's singular or plural form from `details.quantity_unit_stock.name/name_plural`.
-  - The location comes from `details.location.name`, the note from `stock_entry.note`.
-  - Every value is cut to the bounds of `SheetRawLabelData`; a value is never refused.
-- Route `POST /api/v1/webhook/grocy/label`:
-  1. `read_capped_body(64 KiB)`.
-  2. Parse: JSON, or `parse_php_form`.
-  3. Take the token from the query, else from the body. An unknown token gives `401` with a fixed message; an `admin` token gives `403 token_scope_too_broad`.
-  4. `evaluate`.
-  5. Park or print:
-     - **Park** through `InboxService.add_entries` with `origin=webhook`, `origin_detail="grocy"`, `origin_event` and `intended_printer_id`. The line is `snapshot_complete=False` and `on_incomplete` is called (§8.1.3).
-     - **Print** through `submit_label` with the payload data and the rule's format.
-  6. Answer `200 {outcome, item_id?, job_id?, reason?}`.
-- The route never calls the Grocy plugin.
-- Duplicates are caught by `RecentRequests(10)` over `(key id, request hash)`.
-- CORS is answered only when the `Origin` header equals the setting, on `OPTIONS` and on `POST`. It allows `POST` only, sends no credentials, and allows the header `content-type`.
-- The route fills `current_call`. The token never appears in logs, error bodies or idempotency rows.
-
-- [ ] **Step 1: Write the failing tests:**
-  - `test_php_form_nested_and_lists_last_wins`.
-  - `test_php_form_depth_and_key_limits`.
-  - `test_form_stock_entry_maps_to_stock_entry_event_with_best_before` (counter-test: a flat form parser classifies it as `grocy.product`).
-  - `test_mapping_fixtures`.
-  - `test_item_ref_is_product_id_meta_has_grocycode`.
-  - `test_token_in_query_and_in_body`.
-  - `test_no_header_needed`.
-  - `test_route_never_calls_grocy_plugin`.
-  - `test_answers_within_budget_with_plugin_hanging`.
-  - `test_grocy_label_during_slow_print_answers_fast`: a tape print whose lookups hang runs alongside, and the call answers in under 0.5 s and parks. Counter-test: hold the lock across the resolve step of Task 5.
-  - `test_identical_within_10s_duplicate`.
-  - `test_admin_token_403`.
-  - `test_mode_print_inbox_key_parks_reason`.
-  - `test_mode_print_page_printer_parks`.
-  - `test_token_never_in_caplog_or_body`.
-  - `test_cors_only_configured_origin`.
-  - `test_old_grocy_route_404`.
-  - `test_grocy_label_awkward_payloads_park`.
-  - `test_parked_line_incomplete_and_fill_scheduled`.
-- [ ] **Step 2: Run them.** Expected: FAIL.
-- [ ] **Step 3: Implement,** then `pnpm gen:api`.
-- [ ] **Step 4: Verify,** including the counter-tests.
-- [ ] **Step 5: Commit** in two steps: `feat(webhooks): accept Grocy's label webhook as it is and park or print by event rule`, then `refactor(webhooks): remove the unused JSON Grocy webhook`.
-
-### Task 16: Grocy line resolution (C11)
+This task comes before the route (review R-9), so that no Grocy webhook line is ever resolved by the default resolver. It needs only `item_meta` from Task 3 and `LINE_RESOLVERS` from Task 5.
 
 **Files:**
 - Create: `backend/app/inbox/grocy_lines.py`
 - Modify: `backend/app/integrations/grocy/plugin.py`
-- Test: `backend/tests/unit/integrations/test_grocy_stock_entry.py`, `backend/tests/integration/api/test_inbox_grocy_freshness.py`
+- Test: `backend/tests/unit/integrations/test_grocy_stock_entry.py`, `backend/tests/unit/inbox/test_grocy_lines.py`, `backend/tests/integration/api/test_inbox_grocy_freshness.py`
 
 **Interfaces:**
 - Produces `GrocyPlugin.stock_entry(product_id: int, stock_id: str) -> GrocyStockEntry | None`.
-  - It calls Grocy's `GET /api/stock/products/{productId}/entries` and filters the result by `stock_id`. The Grocy OpenAPI (`grocy.openapi.json`, master, checked on 2026-11-09) confirms the endpoint exists.
-  - `GET /api/stock/entry/{entryId}` also exists, but it takes the numeric row `id`, and the label webhook does not document that field.
-- Produces `GrocyPlugin.location_name(location_id: int) -> str | None`, read from `GET /api/objects/locations/{id}`.
-- Produces `grocy_line_label(item: InboxItem, lookup: AppLookupService) -> LabelData`, registered in `LINE_RESOLVERS["grocy"]`.
-  - **Steps.** It looks the product up by `item_ref` to get the name and default location. A stock-entry line also reads the stock entry for best-before, amount and location name. `qr_payload` and `primary_id` stay set to `item_meta.grocycode`, and the secondary lines use the format of Task 15.
-  - **Missing entry.** When the stock entry is gone it raises `AppLookupNotFoundError`. Under `fresh_with_fallback` such a line prints from the snapshot, and refresh reports it as "deleted at source".
-  - **Product-label lines.** The plain product lookup is used, but with the grocycode as the code.
+  - It calls `GET /api/stock/products/{productId}/entries?query[]=stock_id=<id>` and filters by `stock_id` again on our side. Grocy's OpenAPI confirms the endpoint (`grocy.openapi.json`, master, 2026-11-09).
+  - Not `GET /api/stock/entry/{entryId}`: that one takes the numeric row `id`, which the label webhook does not document.
+  - A `400` answer ("Not existing product") maps to `AppLookupNotFoundError` (R-4).
+- Produces `GrocyPlugin.location_name(location_id: int) -> str | None`, which calls `GET /api/objects/locations/{id}`.
+- Produces `grocy_label_lines(*, best_before: date | None, amount: float | None, unit: tuple[str, str] | None, location: str | None, note: str | None, language: Literal["en","de"]) -> tuple[str, ...]`, the secondary lines in the order of §8.1.2:
+  - best before: en `"Best before {YYYY-MM-DD}"`, de `"MHD {DD.MM.YYYY}"`; left out for `2999-12-31`;
+  - amount: `"{amount} {singular|plural}"`.
+- Produces `grocy_line_label(item, lookup) -> LabelData`, registered as `LINE_RESOLVERS["grocy"]`.
+  - **A line with `item_meta.grocycode`:** looks the product up by `item_ref`. For a stock-entry line it also reads the stock entry, for best-before, amount and location name. The secondary lines come from `grocy_label_lines`. `qr_payload` and `primary_id` stay the grocycode. If the stock entry is gone, it raises `AppLookupNotFoundError`, which means fallback or "deleted at source".
+  - **A line without a grocycode** (added in the UI or imported, where `item_ref` may also be a barcode): uses the plain plugin lookup unchanged, product-URL QR included (R-4).
 
 - [ ] **Step 1: Write the failing tests:**
   - `test_grocy_stock_line_fresh_print_is_fresh_not_fallback`: under `fresh_with_fallback`, with a mocked Grocy, the job has `data_source == "fresh"` and `qr_payload == grocycode`. Counter-test: the default resolver gives `snapshot_fallback`.
-  - `test_fresh_best_before_comes_from_stock_entry`.
-  - `test_consumed_entry_is_deleted_at_source_in_refresh`.
-  - `test_product_line_keeps_grocycode`.
-  - `test_stock_entry_filters_by_stock_id`.
+  - `test_fresh_best_before_comes_from_stock_entry`, `test_consumed_entry_is_deleted_at_source_in_refresh`, `test_unknown_product_400_is_not_found`, `test_line_without_grocycode_uses_plain_lookup`, `test_stock_entry_filters_by_stock_id`, `test_label_lines_never_date_and_plural`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Verify.**
 - [ ] **Step 5: Commit** `feat(inbox): look Grocy lines up by product and stock entry and keep the grocycode`.
+
+### Task 16: Grocy label route in Grocy's own format (security)
+
+**Files:**
+- Create:
+  - `backend/app/schemas/grocy_label.py`, `backend/app/inbox/php_form.py`, `backend/app/inbox/grocy_label.py`, `backend/app/api/routes/webhook_grocy_label.py`;
+  - fixtures `backend/tests/fixtures/grocy_label/{product_form.txt, stock_entry_form.txt, stock_entry.json, no_details.json}`. The form fixtures are encoded like `http_build_query` (Guzzle's `form_params`) and use the fields of §8.1.
+- Modify:
+  - `webhooks.py`: delete `/grocy` and `GrocyWebhookPayload`;
+  - `registry.py`: add `integrations.grocy.webhook_cors_origin`;
+  - `test_route_auth_coverage_guardrail.py`: add `_PUBLIC_BY_DESIGN` entries for `POST` and `OPTIONS` on `/api/v1/webhook/grocy/label`, with the reason "authenticates the token inside the handler; Grocy cannot send headers".
+- Test: `backend/tests/unit/inbox/test_php_form.py`, `backend/tests/unit/inbox/test_grocy_mapping.py`, `backend/tests/integration/api/test_webhook_grocy_label.py`
+
+**Interfaces:**
+- Produces `parse_php_form(body: bytes) -> dict[str, Any]` (C16):
+  - `a[b][c]=v` becomes nested dicts, and `a[]=v` becomes a list;
+  - for a repeated scalar the last value wins;
+  - parsing stops at depth 8 and at 1,000 keys; the rest is ignored.
+- Produces `GrocyLabelPayload` (`extra="ignore"`). It holds `product`, `grocycode`, `due_date` (never parsed), `details: dict | None`, `stock_entry: GrocyStockEntry | None`, `token`, `printer` and `mode`.
+- Produces `map_grocy_label(p, *, language) -> GrocyMapped(snapshot, item_ref, event_type, item_meta)`.
+  - It follows §8.1.2 as amended by C11, with the secondary lines from Task 15's `grocy_label_lines`.
+  - If `best_before_date` is missing, the best-before line falls back to `details.next_due_date` (B39).
+  - Every value is cut to the `SheetRawLabelData` bounds and never refused.
+- Route `POST /api/v1/webhook/grocy/label`:
+  1. Read the body with `read_capped_body(64 KiB)` and parse it: JSON, or `parse_php_form`.
+  2. Read the token from the query string, else from the body. An unknown token gives `401` with a fixed message; an `admin` token gives `403 token_scope_too_broad`.
+  3. Run `evaluate`.
+  4. Park through `InboxService.add_entries` (`origin=webhook`, `origin_detail="grocy"`, `origin_event`, `intended_printer_id`, `snapshot_complete=False`, then `on_incomplete`), or print through `submit_label` with the rule's format.
+  5. Answer `200 {outcome, item_id?, job_id?, reason?}`.
+- Never calls the Grocy plugin.
+- Deduplicates with `RecentRequests(10)` over `(key id, request hash)`.
+- Sends CORS headers only when the `Origin` equals the setting, on `OPTIONS` and `POST`: `POST` only, header `content-type`, no credentials.
+- Fills `current_call`.
+- The token never reaches logs, error bodies or idempotency rows.
+
+- [ ] **Step 1: Write the failing tests:**
+  - Form parsing:
+    - `test_php_form_nested_and_lists_last_wins`, `test_php_form_depth_and_key_limits`.
+    - `test_form_stock_entry_maps_to_stock_entry_event_with_best_before`. Counter-test: a flat form parser classifies the request as `grocy.product`.
+  - Mapping:
+    - `test_mapping_fixtures`, `test_item_ref_is_product_id_meta_has_grocycode`.
+  - Token: `test_token_in_query_and_in_body`, `test_no_header_needed`, `test_admin_token_403`.
+  - No plugin call and timing:
+    - `test_route_never_calls_grocy_plugin`, `test_answers_within_budget_with_plugin_hanging`.
+    - `test_grocy_label_during_slow_print_answers_fast`: while a tape print with hanging lookups runs, the call answers in < 0.5 s and parks. Counter-test: hold the lock across Task 5's dispatch.
+  - Routing and duplicates:
+    - `test_identical_within_10s_duplicate`, `test_mode_print_inbox_key_parks_reason`, `test_mode_print_page_printer_parks`.
+  - Leaks, CORS and the old route: `test_token_never_in_caplog_or_body`, `test_cors_only_configured_origin`, `test_old_grocy_route_404`.
+  - Parked lines:
+    - `test_grocy_label_awkward_payloads_park`, `test_parked_line_incomplete_and_fill_scheduled`.
+    - `test_parked_line_fresh_print_keeps_grocycode`, end to end with Task 15.
+- [ ] **Step 2: Run them.** Expected: FAIL.
+- [ ] **Step 3: Implement,** then run `pnpm gen:api`.
+- [ ] **Step 4: Verify,** including the counter-tests.
+- [ ] **Step 5: Commit** in two steps: `feat(webhooks): accept Grocy's label webhook as it is and park or print by event rule`, then `refactor(webhooks): remove the unused JSON Grocy webhook`.
 
 ### Task 17: Background fill for incomplete lines
 
@@ -870,7 +731,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 - Produces `GrocyPlugin.enrichment(product_group_id, shopping_location_id, product_id) -> GrocyEnrichment(product_group_name, shopping_location_name, userfields, picture_file_name)`. It reads Grocy's `/objects/{entity}/{id}` and `/userfields/products/{id}`.
 - Produces `IncompleteFiller.schedule(item_id)`, with at most 2 fills in flight. A fill is retried after 1, 5 and 30 minutes, then given up.
 - What one run does:
-  - It resolves the line through `LINE_RESOLVERS`, which gives Grocy lines the location name from Task 16.
+  - It resolves the line through `LINE_RESOLVERS`, which gives Grocy lines the location name from Task 15.
   - For Grocy it stores the enrichment fields in `item_meta` (B40).
   - It writes **only** if the line's `version` is unchanged, and only after its network calls are done (C12). It then sets `snapshot_complete=True`, adds 1 to `version` and publishes `updated`.
   - If the plugin is not configured, it does nothing.
@@ -878,8 +739,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 - [ ] **Step 1: Write the failing tests:**
   - `test_fill_replaces_location_line_and_marks_complete`.
   - `test_fill_skips_when_version_changed`. Counter-test: drop the version check.
-  - `test_fill_unconfigured_plugin_leaves_line_printable`.
-  - `test_generic_incomplete_filled_when_source_back`.
+  - `test_fill_unconfigured_plugin_leaves_line_printable`, `test_generic_incomplete_filled_when_source_back`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Verify.**
@@ -900,14 +760,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 - Test: `test_webhooks_routes.py`, `backend/tests/integration/api/test_webhook_spoolman_rules.py`
 
 - [ ] **Step 1: Write the failing tests:**
-  - `test_default_parks`.
-  - `test_rule_print_reaches_queue_and_prints`.
-  - `test_ipp_target_parks`.
-  - `test_hub_key_inbox_scope_accepted`.
-  - `test_quantity_not_copies`.
-  - `test_shared_secret_61st_request_429`.
-  - `test_idempotency_header_dedupes`.
-  - `test_response_keeps_job_id_name`.
+  - `test_default_parks`, `test_rule_print_reaches_queue_and_prints`, `test_ipp_target_parks`, `test_hub_key_inbox_scope_accepted`, `test_quantity_not_copies`, `test_shared_secret_61st_request_429`, `test_idempotency_header_dedupes`, `test_response_keeps_job_id_name`.
 - [ ] **Step 2: Run them.** Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Verify.** Counter-test: skip `evaluate` so the route always prints; `test_default_parks` turns red.
@@ -925,7 +778,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
   - `GET /api/v1/integrations/grocy/label-webhook` → `{url, cors_origin, last_call}`.
     - `url` is built from `general.public_url`.
     - `last_call` is the newest record from Task 14.
-  - `POST /api/v1/integrations/grocy/label-test` runs the code path of Task 15 with a fixed sample payload: product "Sample product", grocycode `grcy:p:0:test`, caller `test`.
+  - `POST /api/v1/integrations/grocy/label-test` runs the code path of Task 16 with a fixed sample payload: product "Sample product", grocycode `grcy:p:0:test`, caller `test`.
 - Frontend: the section "Incoming events" (§7.3).
   - It has the integration default and one row per event type.
   - It notes that a page printer always collects, and blocks `print` with an IPP target.
@@ -940,8 +793,7 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
   - "Send test label" and "Last call received".
 
 - [ ] **Step 1: Write the failing tests:**
-  - `test_panel_url_uses_public_url_not_host`.
-  - `test_test_label_parks_with_default_rule`.
+  - `test_panel_url_uses_public_url_not_host`, `test_test_label_parks_with_default_rule`.
   - Vitest:
     - the key value appears only after create and is gone after a reload;
     - a pasted key fills both forms and is never sent to the server;
@@ -984,18 +836,10 @@ All migrations are additive, and each downgrade drops what its upgrade added. Ea
 - [ ] **Step 2:** Write the release notes per §16. They include the follow-up note that read keys still cannot sign in to the browser (C15).
 - [ ] **Step 3: Commit** `docs: document the print inbox, the inbox scope and the Grocy label webhook`.
 
-**PR 3 gate:** run the full gate and the e2e tests, then the security audit focused on Tasks 14–16 (token taint, redaction, CORS, the flood cap). Then open the PR against the milestone branch. The release is cut from the milestone branch once all three PRs are in.
+**PR 3 gate:** run the full gate and the e2e tests, then the security audit focused on Tasks 14–16 (token taint, redaction, CORS, the flood cap). Then open the PR against the milestone branch. After it is merged, `milestone/<version>` is merged into `main` with a merge commit, and the release runs from `main`.
 
 ---
 
-## Spec gaps found while planning
+## Spec gaps
 
-The spec is amended for each of these.
-
-- **G1** `item_meta` was missing. Spec §5.1 is amended by C11.
-- **G2** "The same transaction" was not achievable. Spec §6.5 is amended by C12.
-- **G3** `data_source` of a page job. Spec §9 is amended: the worst value goes on the row, and the value per cell goes into the payload.
-- **G4** The expired notice has no store before #255. The plan keeps it in `inbox_state`, with a read mark per device (this is the interim).
-- **G5** The resolver is synchronous. Spec §11.4 is amended: the resolver always goes to the cart, which redirects when the inbox is empty.
-- **G6** `sheet_type` on the render route. Spec §6.4 is amended.
-- **G7** (review C-2) Grocy lines could not be looked up again. Spec §5.1, §8.1.2 and §9 are amended by C11.
+G1–G7, found while planning and reviewing, are amended into the spec (C11, C12, §6.4, §9, §11.4). The full list is in the plan report.

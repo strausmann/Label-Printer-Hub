@@ -299,7 +299,7 @@ Resolves each line (section 9), submits **one batch** through the same path as `
   - `not_printable`: per line `{ "inbox_item_id", "reason": "content_type_not_supported" | "unavailable" }`;
   - `data_sources`: per line, as above.
 - The print takes `expected_cells` from the preview as today (`409 plan_changed`), prints only the placed labels, removes them from the inbox, and leaves the `next_sheet` and `not_printable` lines in it. A partial print (`502 print_interrupted`) removes only the copies whose pages were queued, as `SheetSection` does today (`SheetSection.tsx:262-282`), now on the server.
-- **Locking (controller's call C12).** No network lookup and no render runs while the hub-wide inbox lock is held. Under the lock the server checks the sent versions (a stale version gives `409 inbox_item_changed`, nothing queued) and copies the lines. Then it releases the lock, resolves and renders, and submits. After the queue accepted, it takes the lock again only briefly, to remove the printed lines guarded by their version. A line changed meanwhile stays and is listed in the response under `kept_changed`. Adds never wait on a print. JobStore writes jobs in its own sessions, so the removal is not in the same DB transaction as the job rows. A crash in between leaves a printed line in the inbox, and never loses an unprinted one.
+- **Locking (controller's call C12).** No network lookup and no render runs while the hub-wide inbox lock is held. Under the lock the server checks the sent versions (a stale version gives `409 inbox_item_changed`, nothing queued), **claims** the line ids for this print and copies the lines. A line already claimed by another print answers `409 inbox_item_printing`, nothing queued, so two devices printing the same lines print them once. The claim is released on every exit path (success, failure, cancellation) and expires after 5 minutes, which covers a crash. Copies edits and removals of a claimed line still proceed; the print then reports the line under `kept_changed`. Then it releases the lock, resolves and renders, and submits. After the queue accepted, it takes the lock again only briefly, to remove the printed lines guarded by their version. A line changed meanwhile stays and is listed in the response under `kept_changed`. Adds never wait on a print. JobStore writes jobs in its own sessions, so the removal is not in the same DB transaction as the job rows. A crash in between leaves a printed line in the inbox, and never loses an unprinted one.
 - Removal happens when the hub **accepts** the print (`202`), not when the printer reports it done — today's behaviour. A job that fails later is retried from the job history, not from the inbox. (builder's call: unchanged semantics; a failed sheet job leaves its cells `unconfirmed` per D15 anyway.)
 
 ## 7. Event → action rules
@@ -489,7 +489,7 @@ The **final status** is not copied. The log view joins it live from the inbox li
 
 The rest of the payload is kept, because the operator explicitly wants to see it. It is product or item data from the operator's own systems.
 
-**Retention.** 14 days or 2,000 records, whichever is reached first (builder's call). Both caps hold **at write time** (controller's call C14): a write that brings the table above 2,000 rows deletes the oldest ones in the same session, and a payload of a rejected call from an unknown source is cut to 2 KiB before it is stored. The daily retention job removes records older than 14 days. So an unauthenticated flood cannot fill the table.
+**Retention.** 14 days or 2,000 records, whichever is reached first (builder's call). Both caps hold **at write time** (controller's call C14): a write that brings the table above 2,000 rows deletes the oldest ones in the same session; records without a key id have their own cap of 500, so an unauthenticated flood never evicts the authenticated history; and a payload of a rejected call from an unknown source is cut to 2 KiB before it is stored. The daily retention job removes records older than 14 days. So an unauthenticated flood cannot fill the table.
 
 **Access.** Admin only: payloads can contain item data and source addresses. Read-only and inbox keys do not see the log.
 
@@ -715,6 +715,7 @@ The 1.6.1 items of #27 (cart icon with badge, grouping and confirmation) can fol
 
 ## 16. Rollout
 
+- The inbox is built on `milestone/<version>` and ships when that branch is merged into `main` with a merge commit; releases run from `main` only.
 - Release notes: the cart moves to the server on first visit; read-only sessions can add and select but not print or remove; webhook responses gain `outcome`; a webhook routed to a page printer now parks instead of failing silently.
 - Grocy: the old `/api/v1/webhook/grocy` is gone; the notes show how to set `LABEL_PRINTER_WEBHOOK` to `/api/v1/webhook/grocy/label?token=…`, recommend `LABEL_PRINTER_RUN_SERVER=true`, and say why the token must be a dedicated `inbox` key (it appears in Grocy's logs and, in browser mode, in every client).
 - The migration needs no operator action. `inbox.*` settings have defaults; routes default to `park`. Nothing printed through a webhook before (#188, and the Grocy format mismatch), so no working setup changes behaviour; the notes name the one setting for "print now".
@@ -780,9 +781,9 @@ The 1.6.1 items of #27 (cart icon with badge, grouping and confirmation) can fol
 | C9 | Webhook default `park` is acceptable; #188 ships in the same release or earlier | 7, 15 |
 | C10 | Generic enqueue with the source down: display data sent → park incomplete, fill later; reference only → `503` + `Retry-After` | 6.2 |
 | C11 | Grocy lines store the product id as `item_ref`; `grocycode` and `stock_id` in `item_meta`; fresh and refresh read product + stock entry, the code stays the grocycode | 5.1, 8.1.2, 9 |
-| C12 | No lookup or render under the inbox lock; versions checked and lines copied under it, printed lines removed under a brief second lock by version; changed lines stay and are reported | 6.5 |
+| C12 | No lookup or render under the inbox lock; versions checked, lines claimed (`409 inbox_item_printing` for a claimed line) and copied under it, printed lines removed under a brief second lock by version; changed lines stay and are reported; claims released on every exit path, expiring after 5 minutes | 6.5 |
 | C13 | Token stripped from uvicorn's access log by an app-installed filter, tested against real uvicorn with the container command | 8.1.4 |
-| C14 | Call-log caps (2,000 rows, 2 KiB for unauthenticated) enforced at write time | 8.4 |
+| C14 | Call-log caps (2,000 rows overall, 500 rows and 2 KiB for unauthenticated) enforced at write time | 8.4 |
 | C15 | Browser sign-in with read keys stays refused; decision 15 holds at API/scope level and in the UI for sessions with inbox capability; read-key sign-in is a follow-up | 12.1 |
 | C16 | Grocy form bodies are decoded with PHP bracket notation | 8.1.1 |
 
