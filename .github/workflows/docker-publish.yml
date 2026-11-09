@@ -22,7 +22,10 @@ name: Docker — publish to GHCR + Docker Hub
 
 on:
   push:
-    branches: ['**']
+    # Only main publishes (rolling `dev` tag). Feature branches are built
+    # without pushing by ci.yml on their pull request; branch tags in GHCR
+    # were never kept and only had to be cleaned up (ghcr-cleanup.yml).
+    branches: [main]
     # Only rebuild when something that affects an image actually changes —
     # avoids tying up runners on docs-only pushes.
     paths:
