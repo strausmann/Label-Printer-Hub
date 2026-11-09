@@ -205,6 +205,8 @@ def _write_key_file(path: Path, key: str) -> None:
 E2E_PAGE_PRINTER_NAME = "Office page printer"
 E2E_PAGE_PRINTER_SLUG = "office-page"
 E2E_PAGE_TRAY = "main-tray"
+# What the real HP CP1525N reports (spike #231): a default paper size, no per-tray media.
+E2E_MEDIA_DEFAULT = "iso_a4_210x297mm"
 E2E_CONTROL_PREFIX = "/__e2e/"
 # Short probe interval: the hub learns of a state switch within about a second (default: 30 s).
 E2E_PROBE_INTERVAL_S = "1"
@@ -217,7 +219,7 @@ E2E_CUSTOM_TYPE_KEY = "e2e-custom-unknown-radius"
 def _new_fake() -> Any:
     from tests.helpers.fake_ipp_printer import FakeIppPrinter
 
-    return FakeIppPrinter(media_sources=[E2E_PAGE_TRAY])
+    return FakeIppPrinter(media_sources=[E2E_PAGE_TRAY], media_default=E2E_MEDIA_DEFAULT)
 
 
 class _PageState(BaseModel):
@@ -232,6 +234,8 @@ class _PageState(BaseModel):
     job_script: list[int] | None = None
     margins_hmm: int | None = Field(default=None, ge=0, le=5000)
     cancel_steps: int | None = Field(default=None, ge=0, le=20)
+    media_default: str | None = Field(default=None, max_length=64)
+    """A media keyword; ``""`` clears it (a real ``None`` means "leave unchanged")."""
 
 
 _RESET_KEEP = frozenset({"received", "_jobs", "_next_job_id"})
@@ -255,6 +259,7 @@ def _fake_state(fake: Any) -> dict[str, Any]:
         "job_script": list(fake.job_script),
         "margins_hmm": fake.margins_hmm,
         "cancel_steps": fake.cancel_steps,
+        "media_default": fake.media_default,
         "media_sources": list(fake.media_sources),
     }
 
@@ -322,7 +327,7 @@ class E2EApp:
                 response = JSONResponse({"error": str(exc)}, status_code=422)
             else:
                 for name, value in body.model_dump(exclude_none=True).items():
-                    setattr(self.fake, name, value)
+                    setattr(self.fake, name, value or None if name == "media_default" else value)
                 response = JSONResponse({"uri": self.uri, "state": _fake_state(self.fake)})
         elif path == "/__e2e/page-printer/reset" and method == "POST":
             _reset_fake(self.fake)

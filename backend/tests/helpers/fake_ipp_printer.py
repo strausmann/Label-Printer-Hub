@@ -110,6 +110,8 @@ class FakeIppPrinter:
     accepting_jobs: bool = True
     scaling_supported: bool = True
     margins_hmm: int = 423
+    media_default: str | None = None
+    """``media-default`` (a media keyword such as ``iso_a4_210x297mm``); ``None``: not reported."""
     resolutions: list[int] = field(default_factory=lambda: [600])
     job_script: list[int] = field(default_factory=lambda: [3, 5, 9])
     """Job states returned by successive Get-Job-Attributes; the last one sticks."""
@@ -233,6 +235,7 @@ class FakeIppPrinter:
             ),
             Attr("media-col-supported", Tag.KEYWORD, list(self.media_col_members)),
             Attr("media-supported", Tag.KEYWORD, ["iso_a4_210x297mm", "na_letter_8.5x11in"]),
+            Attr("media-default", Tag.KEYWORD, [self.media_default] if self.media_default else []),
             Attr(
                 "media-size-supported",
                 Tag.BEG_COLLECTION,
