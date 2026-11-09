@@ -6,7 +6,7 @@
 - **Builds on:** [`2026-06-04-multi-label-batch-design.md`](2026-06-04-multi-label-batch-design.md) (batch print), [`2026-11-05-sheet-archive-design.md`](2026-11-05-sheet-archive-design.md) (sheets, sheet preview and print), [`2026-05-16-phase6b-sse-eventbus-design.md`](2026-05-16-phase6b-sse-eventbus-design.md) (event bus), [`2026-05-17-phase-7c-api-auth-design.md`](2026-05-17-phase-7c-api-auth-design.md) (scopes).
 - **API paths:** every path is written as it will be after 1.5.0 (#226, branch `feat/api-v1-status-manifest`), which moves all routes under `/api/v1`. Where this document cites today's code it names today's path.
 - **Also related:** #11 (Grocy labels use case).
-- **How decisions are marked:** the maintainer's decisions are listed in section 4 and followed as written. Rulings of the controller from the builder check (2026-11-09) are marked **(controller's call: …)** and are decided. A smaller decision this document makes on its own is marked inline as **(builder's call: …)**; all of them are collected in section 17. Questions only the maintainer can answer are in section 18.
+- **How decisions are marked:** the maintainer's decisions are listed in section 4 and followed as written (1–10 from #27, 11–16 the answers of 2026-11-09 to this document's open questions). Rulings of the controller from the builder check (2026-11-09) are marked **(controller's call: …)** and are decided. A smaller decision this document makes on its own is marked inline as **(builder's call: …)**; all of them are collected in section 17. Questions only the maintainer can answer are in section 18.
 
 ## 1. Intent
 
@@ -36,6 +36,7 @@ The print inbox is that collection, kept by the hub. It replaces the local cart,
 - The global cart icon and the grouping/confirmation step decided for 1.6.1 in #27; this design keeps them possible (section 11.1) but does not specify them.
 - A Kept lookup plugin. That is #173; the Kept receiver in section 8.3 needs it.
 - Free-text search (#242) and item details (#244).
+- A daily e-mail/JMAP report. It is a separate issue (being filed); it will consume the "expires in N days" data this design exposes (section 10), nothing more.
 - Changes to Grocy itself. Possible later feature requests to grocy/grocy are listed in section 8.1.6, to be filed only after a positive reaction from the Grocy maintainer.
 
 **Anti-goals** (must not happen)
@@ -73,7 +74,7 @@ All references are to `main`.
 ## 4. Maintainer decisions (binding)
 
 1. **Server-side cart = print inbox**, replacing the localStorage cart, so phone and desktop share it and other apps can add to it. Existing local carts migrate to the server once on first load, then local storage is cleared. → sections 5, 13.
-2. **Other apps park instead of printing.** Grocy (after a shopping scan), later Kept, put items into the inbox via API or webhook. A **routing rule per printer/integration** decides "print now" vs "park in inbox"; **page (sheet) printers always park**, because a sheet must be loaded first. → sections 7, 8.
+2. **Other apps park instead of printing.** Grocy (after a shopping scan), later Kept, put items into the inbox via API or webhook. A **routing rule per printer/integration** (realised as the event rules of decision 11) decides "print now" vs "park in inbox"; **page (sheet) printers always park**, because a sheet must be loaded first. → sections 7, 8.
 3. **Flow at the laser:** load sheet → scan the sheet's QR → the inbox selection is applied onto that sheet. → section 11.4.
 4. **Selection in the cart UI:** checkbox per line; header "select all" tri-state; typical flow select all then untick some; deselect all in one click (header box when all are selected, plus an always-visible "Clear selection" while anything is selected); the print button names the count ("Print 7 of 12 labels"); only printed lines leave the cart, the rest stays; the sheet capacity check counts selected labels × copies; selection is per device, not part of cart data; the whole row toggles, 44 px targets, Space toggles. → section 11.2.
 5. **Sheet preview shows the selected items placed on the sheet:** rebuilt (debounced) on selection or copies change; cell number in the image plus a list "cell → item (app, name)" with two-way highlight; labels that do not fit shown as "next sheet"; used cells, new labels and the sheet ID stay distinct; cell numbers in their own colour (#249). → section 11.3.
@@ -82,6 +83,12 @@ All references are to `main`.
 8. **Idempotency key per enqueued item** so retried webhooks never duplicate; inbox limits (max entries, expiry); an API key scope that may only enqueue, not print. → sections 5.3, 5.4, 12.
 9. **Notification** "N labels wait for sheet printing" via #255. → section 10.
 10. **#188 is fixed first.** → section 15.
+11. **Event → action rules are user-defined, per integration.** For every integration that emits events (the Grocy label webhook now; Kept once its integration exists, e.g. `thing.created`, `thing.moved`, `thing.updated`; others later) the user configures per event type: action `none` | park in inbox | print now; target printer (or the integration's default); template/format (today a content type, later a Label-Designer layout id from #178, without a schema break). A newly connected integration parks every known event; no event prints automatically. Presets ship but are editable (Kept: created + moved park, updated none). → section 7.
+12. **Grocy integration settings** configure the Grocy label endpoint: target (inbox or a specific printer) and template/format; the `printer=`/`mode=` URL parameters are an optional per-call override. → sections 7, 8.1.4.
+13. **Separate lines when the code or a print-relevant field differs;** merge into copies only for an identical label. Grocy: every stock entry has its own grocycode, so stock-entry labels are always separate lines; "label per unit" sends one call per unit with its own `stock_id`. → section 5.1.
+14. **Limits:** 500 labels (copies included) and 30-day expiry; a notification 3 days before expiry, never silent removal. → sections 10, 12.2.
+15. **Read-only access may add to and select in the inbox, but not print.** → sections 6.3, 12.1, 13.
+16. **Webhook default = park in inbox**, switchable per integration and event (through the rules of 11). → section 7.
 
 ## 5. Data model
 
@@ -94,7 +101,8 @@ One row per inbox line. (builder's call: a new SQLModel table with an Alembic mi
 | `id` | UUID | Line id; the client's selection refers to it |
 | `source_app` | enum `snipeit`, `grocy`, `spoolman`, `kept`, `manual` | Where the item lives. `kept` only once #173 ships a plugin; `manual` for raw data from the API (builder's call: `paperless` is left out until the cart can add Paperless items; the enum is the lookup route's `AppLiteral` plus `kept` and `manual`) |
 | `item_ref` | str ≤ 120 | The identifier the plugin's `lookup` takes (same cap as `SheetItem.lookup.identifier`); null for `manual` |
-| `content_type` | `ContentType` | How the label is laid out |
+| `format` | JSON `{"kind": "content_type", "content_type": …}`; later `{"kind": "designer_layout", "layout_id": …}` (#178) | How the label is laid out. Only `content_type` is accepted until #178 ships; the tagged shape lets a designer layout be added without a schema change (decision 11). The API also accepts a plain `content_type` field as shorthand |
+| `snapshot_hash` | str | SHA-256 of the normalised snapshot; used for the merge rule |
 | `copies` | int 1–10 | Same bounds as `MAX_COPIES` and `PrintOptions.copies` |
 | `snapshot` | JSON, the `SheetRawLabelData` shape (title, primary_id, qr_payload, secondary, items) with its bounds | The label data captured when the item was added or last accepted. **Always present** (decision 6) |
 | `snapshot_at` | datetime | When the snapshot was captured |
@@ -102,11 +110,13 @@ One row per inbox line. (builder's call: a new SQLModel table with an Alembic mi
 | `version` | int, starts at 1 | Bumped by every write to the row (copies, snapshot accept, merge). Guards print and accept against concurrent changes |
 | `origin` | enum `ui`, `webhook`, `api` | Who added it |
 | `origin_detail` | str ≤ 64, nullable | Webhook source (`grocy`, `kept`, …) or the API key's name; never the key itself |
-| `intended_printer_id` | UUID, nullable | The printer the routing rule named when it parked the item (section 7); null for UI adds. Used for the notification and the default printer choice, never as a restriction |
+| `origin_event` | str ≤ 64, nullable | The integration's event type that parked it (`grocy.stock_entry`, `kept.thing.created`, …) |
+| `intended_printer_id` | UUID, nullable | The printer the event rule named when it parked the item (section 7); null for UI adds. Used for the notification and the default printer choice, never as a restriction |
 | `created_at`, `updated_at` | datetime | |
-| `expires_at` | datetime | `created_at` + `inbox.expiry_days`; a merge does not extend it (builder's call: so a webhook firing daily cannot keep an item forever) |
+| `expires_at` | datetime | `created_at` + `inbox.expiry_days` (30); a merge does not extend it (builder's call: so a webhook firing daily cannot keep an item forever) |
+| `expiry_warned_at` | datetime, nullable | When the 3-day warning for this line was raised (section 10) |
 
-**Line identity.** Like today's cart, a line is unique per `(source_app, item_ref, content_type)`; `manual` lines are never merged. Adding an item that already has a line adds the copies (clamped to 10), replaces the snapshot with the newly captured one and bumps `version`. (builder's call: the newer capture is the newer truth; open question Q2 carries the recommendation to split into two lines when a print-relevant field such as the best-before date differs.) A Grocy stock-entry label (section 8.1.2) uses the grocycode as `item_ref`, so two stock entries of one product are two lines anyway.
+**Line identity** (decision 13). An add merges into an existing line **only for an identical label**: same `source_app`, same `item_ref` (the code; for a Grocy stock entry also the same `stock_id`), same `format`, and a snapshot that is equal field by field (compared as a hash of the normalised snapshot, `snapshot_hash`). Then the copies are added (clamped to 10) and `version` is bumped; the snapshot is unchanged because it is the same. If the code or any print-relevant field differs — a new best-before date, another amount, another name — the add creates a **separate line**. `manual` lines merge by the same rule (builder's call: identical raw data is an identical label). Grocy: every stock entry has its own grocycode (`item_ref`), so stock-entry labels are always separate lines; Grocy's "label per unit" sends one call per unit with its own `stock_id` and becomes one line per unit. A refresh accept (section 6.4) can make two lines identical; they are **not** merged afterwards (builder's call: a merge the user did not ask for would surprise the selection).
 
 **Single process.** The hub runs as one backend process (D1). `revision` (section 6.1) is a counter persisted in the database (a one-row table, incremented in the same transaction as the write) (controller's call). Several workers would break three things: SSE events are published on the in-process event bus, so a second worker's clients would miss them; the 60-second preview lookup cache (section 9) and the duplicate windows (sections 6.2, 8.1) are in memory per process; the "one refresh at a time" rule (section 12.2) is an in-process lock. All three would need a shared store before the hub could scale out.
 
@@ -166,7 +176,7 @@ Response:
 
 ### 6.2 Adding
 
-`POST /api/v1/inbox/items` — `inbox` scope (section 12.1).
+`POST /api/v1/inbox/items` — `inbox` capability, which `read`, `print` and `admin` also grant (section 12.1, decision 15).
 
 ```json
 {
@@ -205,13 +215,13 @@ Errors:
 | 422 | `invalid_request` | Schema error (field paths only) |
 | 422 | `integration_unknown_app` | Unknown or not installed integration |
 | 404 | `app-lookup-not-found` | The integration has no such item; carries `item_index` |
-| 502 | `integration_lookup_failed` | The source failed or is unreachable; nothing stored, safe to retry with the same keys (builder's call: this route's callers can retry, so refusing keeps snapshots complete; see Q3. The Grocy label webhook, which never retries, parks from its payload instead, section 8.1.3) |
+| 502 | `integration_lookup_failed` | The source failed or is unreachable; nothing stored, safe to retry with the same keys (builder's call: this route's callers can retry, so refusing keeps snapshots complete; the remaining open question in section 18 asks whether to park instead. The Grocy label webhook, which never retries, parks from its payload, section 8.1.3) |
 | 503 | `integration_not_configured` | |
 | 429 | existing rate-limit error | Per-key `rate_limit_per_minute` |
 
 ### 6.3 Changing and removing
 
-All `print` scope (builder's call: changing the shared inbox is closer to printing than to reading; an enqueue-only key must not delete what others parked, and a read-only session must not either; see Q5).
+All `print` scope. Read-only access may add and select (decision 15) but not change or remove lines (builder's call: an add is harmless, a removal can take away what someone else parked; the decision names adding and selecting only).
 
 | Route | Body | Effect |
 |---|---|---|
@@ -288,43 +298,80 @@ Resolves each line (section 9), submits **one batch** through the same path as `
 - The print takes `expected_cells` from the preview as today (`409 plan_changed`), prints only the placed labels, removes them from the inbox, and leaves the `next_sheet` and `not_printable` lines in it. A partial print (`502 print_interrupted`) removes only the copies whose pages were queued, as `SheetSection` does today (`SheetSection.tsx:262-282`), now on the server.
 - Removal happens when the hub **accepts** the print (`202`), not when the printer reports it done — today's behaviour. A job that fails later is retried from the job history, not from the inbox. (builder's call: unchanged semantics; a failed sheet job leaves its cells `unconfirmed` per D15 anyway.)
 
-## 7. Routing rule
+## 7. Event → action rules
 
-Decides what a webhook or a routed API call does: print now or park. Stored as settings per integration (builder's call: the settings store already has per-integration keys, an admin UI and env locks; a table is not needed for four integrations):
+Decides what an incoming event does: nothing, park in the inbox, or print now (decisions 2, 11, 12, 16). The rules are **user-defined in the hub, per integration and per event type**.
 
-| Key | Kind | Default | Meaning |
-|---|---|---|---|
-| `inbox.route.<app>.action` | enum `park`, `print` | `park` | What a webhook from `<app>` does |
-| `inbox.route.<app>.printer` | str (printer slug), empty = none | empty | The target printer |
-| `inbox.route.<app>.content_type` | enum `ContentType` | per app, the content type the integration page offers first (builder's call) | Webhooks carry no content type (`schemas/webhook.py`) |
+### 7.1 Model
 
-`<app>` ∈ `grocy`, `spoolman`, later `kept`. The Grocy label webhook can override the rule per call with `printer` and `mode` parameters (section 8.1.4).
+Two tables (builder's call: rules are a list per integration with event types that differ by integration, which the flat settings store does not express well; the settings page edits them through their own admin API):
 
-The default `park` is acceptable although it changes what a webhook does: because of #188 nothing prints through a webhook today, and #188 ships in the same release or earlier (controller's call).
+**`integration_event_defaults`** — one row per event-emitting integration:
 
-Evaluation, in this order:
+| Field | Meaning |
+|---|---|
+| `integration` | `grocy`, `spoolman`, later `kept`, … |
+| `action` | `none` \| `park` \| `print` — default `park` (decision 16) |
+| `printer_id` | nullable; the default target ("routing default" for the event rows) |
+| `format` | the tagged format of section 5.1; default per integration, the content type the integration page offers first (builder's call) |
 
-1. The target printer is a **page printer** (`backend == "ipp"`) → **park**, whatever `action` says (decision 2). `intended_printer_id` is set to it.
-2. `action = park` → park; `intended_printer_id` = the printer if one is set.
-3. `action = print` and a tape printer is set, enabled and reachable → print now through the path #188 repairs; the response names the job.
-4. `action = print` and no printer is set → the first enabled tape printer, as today (`webhooks.py:66-82`).
-5. `action = print` and the printer is disabled, missing or offline → **park** and log a warning (builder's call: a label that waits is better than one that is lost); the webhook response says `parked` and why (`reason: "printer_unavailable"`).
+**`integration_event_rules`** — one row per `(integration, event_type)`:
 
-The settings page validates that a `print` route does not name an IPP printer and says that such a route parks. The rule applies per integration and names a printer, which covers "per printer/integration": the printer's kind decides rule 1, the integration selects the rule.
+| Field | Meaning |
+|---|---|
+| `event_type` | from the integration's list of known event types (section 7.2) |
+| `action` | `none` \| `park` \| `print` \| `default` (inherit) |
+| `printer_id` | nullable = the integration default |
+| `format` | nullable = the integration default; the same tagged shape, so a Label-Designer layout id (#178) can be stored later without a schema break |
 
-`POST /api/v1/inbox/items` (section 6.2) always parks; it never consults the rule (an enqueue-only key cannot print).
+Every integration declares its known event types and a preset in code. When an integration is connected (or a hub without rows starts), the rows are created from the preset; the user can change every row. **Presets never print:** every known event is `park` or `none` (decision 11).
+
+| Integration | Event types | Preset |
+|---|---|---|
+| Grocy (label webhook) | `grocy.product` (a product label: no `stock_entry` in the payload), `grocy.stock_entry` (a stock-entry label: `stock_entry` present — a purchase with "one label" or "label per unit", a manual stock-entry print, and Grocy's automatic re-print on due-date change all arrive as this) | both `park` |
+| Spoolman | the `type` of its payload (`created`, `updated`, …) | all `park` |
+| Kept (after #173) | `thing.created`, `thing.moved`, `thing.updated`, others Kept documents | `thing.created` park, `thing.moved` park, `thing.updated` none, all others none |
+
+(builder's call: Grocy's payload does not say whether a stock-entry call came from a purchase, a manual print or an automatic re-print, so the hub can only tell the two kinds above apart; finer types would need a change in Grocy, section 8.1.6.) An event type the integration does not know yet (a new Kept event) is treated as `none` and logged once, until the user adds a rule.
+
+### 7.2 Evaluation
+
+For an incoming event: take its rule row, fill `default` fields from the integration default, apply the per-call override of the Grocy route (section 8.1.4), then:
+
+1. `action = none` → nothing is stored or printed; the response says `ignored`.
+2. The target printer is a **page printer** (`backend == "ipp"`) → **park**, whatever the action (decision 2). `intended_printer_id` is set to it.
+3. `action = park` → park; `intended_printer_id` = the target printer if one is set.
+4. `action = print` and a tape printer is set, enabled and reachable → print now through the path #188 repairs; the response names the job.
+5. `action = print` and no printer is set → the first enabled tape printer, as today (`webhooks.py:66-82`).
+6. `action = print` and the printer is disabled, missing or offline → **park** and log a warning (builder's call: a label that waits is better than one that is lost); the response says `parked` with `reason: "printer_unavailable"`.
+
+The default `park` changes what a webhook did on paper, which is acceptable: because of #188 nothing prints through a webhook today, and #188 ships in the same release or earlier (controller's call).
+
+### 7.3 Settings UI and API
+
+- Each integration's settings page gets a section "Incoming events": the integration default (target: "Collect in the print inbox" or a printer; format) and one row per known event type (action, printer or "integration default", format or "integration default"). For Grocy this is where the label endpoint is configured (decision 12), next to the generated webhook URL and the token hint of section 8.1.4.
+- The page says that a page printer always collects, and refuses saving `print` with an IPP printer as target (it would park).
+- API: `GET/PUT /api/v1/integrations/{name}/event-rules` — `admin`. The format field validates against the known content types now; `designer_layout` is refused with `422 format_not_supported` until #178.
+
+`POST /api/v1/inbox/items` (section 6.2) always parks; it never consults the rules (an enqueue-only key cannot print).
 
 ## 8. Webhook changes
 
 ### 8.1 Grocy label webhook (new, in Grocy's own format)
 
-**What Grocy actually sends** (verified against Grocy's `docs/label-printing.md` and `helpers/WebhookRunner.php`, 2026-11-09):
+**What Grocy actually sends** (verified against Grocy's `docs/label-printing.md`, `helpers/WebhookRunner.php`, `controllers/StockApiController.php` and `services/StockService.php`, 2026-11-09):
 
 - Configured through `LABEL_PRINTER_WEBHOOK` (URL), `LABEL_PRINTER_RUN_SERVER` (server or browser sends it), `LABEL_PRINTER_PARAMS` (fixed extra fields) and `LABEL_PRINTER_HOOK_JSON` (JSON instead of form encoding).
-- A POST with the fields `product`, `grocycode`, `due_date` and others; since Grocy 4.5.0 also `details` (the full object); for a stock-entry label `stock_entry`. **Form-encoded by default**, JSON only with `LABEL_PRINTER_HOOK_JSON`. The grocycode is printed as a 1D (Code128) or 2D (DataMatrix) code; its content is the grocycode string.
+- A POST with these fields. **Form-encoded by default**, JSON only with `LABEL_PRINTER_HOOK_JSON`:
+  - `product` — the product name;
+  - `grocycode` — the code's content; Grocy prints it as 1D (Code128) or 2D (DataMatrix);
+  - `due_date` — a **localized display string** ("DD: …"), not a date;
+  - `details` (since 4.5.0) — the result of `GetProductDetails`: the product row, `product_barcodes`, `location` (the product's **default** location object), the quantity units, stock amounts, prices, `next_due_date`, `average_shelf_life_days` and more;
+  - `stock_entry` — on purchase and stock-entry prints only: `amount`, `best_before_date`, `purchased_date`, `location_id`, `price`, `open`, `note`, `stock_id`.
+- Not in the payload: the stock entry's location **name** (only `location_id`), the product group and the shopping location (ids only), userfields, the product picture (only its file name).
 - The server-side runner uses a Guzzle client with a **2.0 s timeout**, sends **no custom headers** (only `form_params` or `json`), catches every failure and only logs it to stderr — **no retry** — and logs the full request arguments, `LABEL_PRINTER_PARAMS` included, to stderr.
 - With `LABEL_PRINTER_RUN_SERVER=false` the browser sends the call, and the configuration values, params included, are delivered to every Grocy client.
-- Grocy also prints on its own: on an automatic due-date change and when a recipe "produces" a product (server-side webhook only).
+- Automatic triggers, **all only with `LABEL_PRINTER_RUN_SERVER=true`**: a purchase with `stock_label_type` 1 (one label) or 2 (one call per unit, each with its own `stock_id`), and the automatic re-print on a due-date change (`product.auto_reprint_stock_label`). Recipes that "produce" a product print the same way.
 
 The existing `/api/webhook/grocy` matches none of this (section 3). The design adds a receiver that takes Grocy's format as it is.
 
@@ -334,20 +381,21 @@ The existing `/api/webhook/grocy` matches none of this (section 3). The design a
 
 #### 8.1.2 Mapping into the snapshot
 
-| Grocy field | Snapshot |
+| Snapshot field | Taken from |
 |---|---|
-| `product` (name) | `title` |
-| `grocycode` | `qr_payload` (the code's content) and `primary_id`; also `item_ref` |
-| `due_date` | first `secondary` line, formatted per `general.language` ("Best before …"); omitted when empty or Grocy's "never" date |
-| `stock_entry` (amount, unit, location when present) | further `secondary` lines |
-| `details` | read for name, unit and default location when the flat fields are missing; never stored as a whole |
+| `title` | `product` (fallback `details.product.name`) |
+| `primary_id`, `qr_payload` | `grocycode` (the code's content); also `item_ref` |
+| best-before line | `stock_entry.best_before_date` (an ISO date), formatted per `general.language` ("Best before …"); omitted for Grocy's "never" date. Without `stock_entry`, `details.next_due_date`. **`due_date` is not parsed** — it is a localized display string |
+| amount line | `stock_entry.amount` with the quantity unit from `details` (singular/plural by amount) |
+| location line | the product's default location from `details.location.name` at first; the stock entry's own location name replaces it after enrichment (only `location_id` is sent) |
+| further lines | `stock_entry.note` when set (builder's call: notes are often what the label is for) |
 
-`source_app = grocy`. The content type comes from the routing rule (`inbox.route.grocy.content_type`). The grocycode is the line identity, so a product label and a stock-entry label are different lines, and two stock entries are two lines. Every value is bounded like `SheetRawLabelData` and treated as untrusted text (section 12.4).
+`source_app = grocy`; `origin_event` is `grocy.stock_entry` when `stock_entry` is present, else `grocy.product`. `stock_entry.stock_id` is kept in the line's metadata so "label per unit" calls stay distinguishable even with equal data. `price`, `open`, `purchased_date` and the stock amounts are not printed (builder's call: not label content today; the format can pick them up later). `details` is read, never stored as a whole. Every value is bounded like `SheetRawLabelData` and treated as untrusted text (section 12.4). The format comes from the event rule (section 7).
 
 #### 8.1.3 Answer within Grocy's 2-second budget
 
 - The receiver parks or submits **from the payload alone**, synchronously, and answers well inside 2 s. It does **not** call Grocy's API in the request. Because Grocy never retries, a slow or failed request loses the label — persisting from the payload is mandatory.
-- An enrichment lookup (the Grocy plugin, when configured) may run afterwards as a background task and replaces the snapshot only while the line is unchanged (`version` check); until it succeeds the line is `snapshot_complete: false`. If the plugin is not configured or Grocy's API is down, the line stays as parked from the payload and is printable (this answers open question Q3 for Grocy; it stays open for the generic route, section 6.2). (builder's call: enrichment is optional and never blocks.)
+- An enrichment lookup through the Grocy API (the Grocy plugin, when configured) runs afterwards as a background task and fills what the payload lacks: the stock entry's location name (from `location_id`), the product group and shopping location names, userfields, and the product picture (by its file name). It replaces the snapshot only while the line is unchanged (`version` check); until it succeeds the line is `snapshot_complete: false`. (builder's call: userfields and the picture are fetched but only used once a format shows them.) If the plugin is not configured or Grocy's API is down, the line stays as parked from the payload and is printable (so Grocy never loses a label to a slow or absent API). (builder's call: enrichment is optional and never blocks.)
 - "Print now" (section 8.1.4) submits through the #188 path with the payload data; it waits for the queue's acceptance, not for the printer.
 
 #### 8.1.4 Auth, target and mode — without headers
@@ -355,7 +403,7 @@ The existing `/api/webhook/grocy` matches none of this (section 3). The design a
 Grocy cannot send headers, so the credential travels in the URL or the body:
 
 - `token=<key>` as a query parameter in `LABEL_PRINTER_WEBHOOK` or as a field in `LABEL_PRINTER_PARAMS`. It is a normal hub API key (`lh_…`) and **must be a dedicated low-privilege key**: `inbox` scope, or `print` limited to one printer through `allowed_printer_ids`. The token ends up in Grocy's stderr log and, in browser mode, in every Grocy client; the key form says so when the key is created for Grocy, and the docs recommend server mode. An `admin` key is refused on this route (`403 token_scope_too_broad`, builder's call).
-- `printer=<slug or id>` and `mode=print|collect` (`collect` = park in the inbox), as query or body parameters; both default to the routing rule. Rule 1 of section 7 still applies: a page printer always parks. `mode=print` needs a key with `print` on that printer; an `inbox`-only key with `mode=print` parks and answers `reason: "key_cannot_print"` (builder's call: the label is not lost).
+- The behaviour comes from the **Grocy integration settings** (decision 12, section 7.3): target (inbox or a printer) and format, per event type. `printer=<slug or id>` and `mode=print|collect` (`collect` = park in the inbox), as query or body parameters, are an **optional per-call override**. (builder's call: they may override target and mode, but only within bounds — they never enable an event whose rule is `none`, `mode=print` needs a key with `print` on that printer, and rule 2 of section 7.2 still applies: a page printer always parks.) An `inbox`-only key with `mode=print` parks and answers `reason: "key_cannot_print"`, so the label is not lost.
 - **Browser mode** needs CORS for the Grocy origin: a setting `integrations.grocy.webhook_cors_origin` (empty = no CORS); only this route answers the preflight, with that single origin, `POST` only, no credentials (builder's call).
 - **Our side never logs the token**: the access log entry of this route has the query string removed, error bodies never echo it, and the token is not stored in the idempotency record (only the key id).
 
@@ -363,7 +411,7 @@ Grocy cannot send headers, so the credential travels in the URL or the body:
 
 - Grocy sends no event id and never retries; the only duplicates are double clicks or two open tabs. Dedupe by `(key id, request hash)` within 10 seconds (builder's call: shorter than the generic 60 s, because printing the same label twice on purpose a minute later is normal in Grocy).
 - Response `200` `{ "outcome": "parked" | "printed" | "duplicate", "item_id"?, "job_id"?, "reason"? }`. Grocy ignores the body; it is for logs and tests. Errors keep the envelope; an unknown token is `401` with a fixed message.
-- Automatic prints Grocy sends (due-date change, recipe "produces") arrive the same way and follow the same rule; with the default `park` they collect in the inbox instead of printing unasked.
+- Automatic prints Grocy sends (purchase, due-date re-print, recipe "produces") arrive as `grocy.stock_entry` and follow its rule; with the default `park` they collect in the inbox instead of printing unasked.
 - **The old `POST /api/v1/webhook/grocy`** (JSON `{product_id, type, quantity}`, `X-API-Key`) is **removed** (builder's call: nothing working uses it — every real Grocy call fails there — and 1.x carries no compatibility promise for it). The release notes point to `/grocy/label`. A caller with its own JSON events uses `POST /api/v1/inbox/items`.
 
 #### 8.1.6 Future, outside this design
@@ -374,7 +422,7 @@ Possible feature requests to grocy/grocy, **only after a positive reaction from 
 
 `POST /api/v1/webhook/spoolman` keeps its payload and its shared-secret header `X-API-Key` (`access.webhook_api_key`) and additionally accepts `X-Label-Hub-Key` with `inbox` scope or higher (builder's call: a per-app key that can be revoked on its own). **Spoolman itself sends no webhooks** (checked against Donkie/Spoolman: no outgoing HTTP hooks; it only publishes change events over a WebSocket, `spoolman/ws.py`, events like `added`/`updated`/`deleted` per spool, filament or vendor). This route therefore serves third-party callers (an automation tool, a script, a printer host plugin), not Spoolman directly; its payload is ours to define and stays as it is. A hub-side WebSocket subscriber that parks a label when a spool is added is possible later and is a non-goal of this design.
 
-- Look the item up (snapshot), apply the routing rule (section 7), then park or print.
+- Look the item up (snapshot), apply the event rule for the payload's `type` (section 7), then park, print or ignore.
 - Idempotency: an `Idempotency-Key` header if the caller sends one; otherwise the 60-second duplicate window of section 6.2 over `(app, entity id, type)`.
 - `quantity` is remaining grams and is **not** used as copies (`schemas/webhook.py`); copies are 1.
 - Response `202` with `{ "outcome": "parked" | "printed", "item_id"?, "job_id"?, "reason"? }`. `job_id` keeps its name for existing callers.
@@ -392,8 +440,8 @@ Design:
 
 - `POST /api/v1/webhook/kept`, authenticated **only** by the signature: constant-time compare, timestamp no older than 5 minutes, secret in a new secret setting `integrations.kept.webhook_secret` (D5, write-only). No API key header (Kept cannot send one).
 - Kept's event `id` is the idempotency key, so Kept's retries never duplicate.
-- Events that enqueue: `thing.created` (builder's call; which events should print is open question Q1). Other events answer `202 { "outcome": "ignored" }`; `ping` answers `200`.
-- The receiver looks the thing up through the Kept plugin of #173 and applies the routing rule for `kept`. **Until #173 ships, the route does not exist.** Alternatively Kept (or a script around it) can call `POST /api/v1/inbox/items` with an `inbox` key and `data` it already has — that works from day one.
+- Which events do what is the user's event rule per Kept event type (decision 11, section 7). An event whose rule is `none`, or an unknown event type, answers `202 { "outcome": "ignored" }`; `ping` answers `200`.
+- The receiver looks the thing up through the Kept plugin of #173 and applies the event rules for `kept` (section 7; preset: `thing.created` and `thing.moved` park, `thing.updated` none). **Until #173 ships, the route does not exist.** Alternatively Kept (or a script around it) can call `POST /api/v1/inbox/items` with an `inbox` key and `data` it already has — that works from day one.
 - Kept's docs mark thing names as user-written data; the hub treats them as untrusted text (section 12.4).
 
 ## 9. Data freshness
@@ -420,6 +468,8 @@ Hub setting `inbox.freshness`, enum `snapshot` | `fresh` | `fresh_with_fallback`
 - The SSE snapshot on connect includes the current `inbox` counts, so a reconnect resyncs.
 - The cart page refetches on `inbox.changed` when `revision` is newer than its own; a second device sees an add within one event.
 - **Notification (#255):** while `waiting_for_sheet > 0`, the notification centre shows one entry "N labels wait for sheet printing", severity info, updated in place by `inbox.changed`, opening `/cart` with the intended page printer preselected. `waiting_for_sheet` = sum of copies of lines whose `intended_printer_id` is a page printer (builder's call: lines added in the UI have no intended printer and do not count). If #255 is not built when this ships, the cart link in the top bar shows the count instead and the entry is added with #255.
+- **Expiry warning (decision 14):** a line is never removed silently. Once a day the cleanup task marks lines whose `expires_at` is at most 3 days away (`expiry_warned_at`) and publishes `inbox.expiring` with `{ "count", "labels", "earliest_expires_at" }`. The notification centre shows "N labels expire in 3 days or less" (severity warning) opening `/cart`, where those lines carry an "Expires in N days" badge. At expiry the lines are removed and a notification "N labels expired and were removed" (warning) stays until read; `inbox.changed reason=expired` carries the ids. Without #255 the cart page shows both as a banner. (builder's call: warning entries are aggregated, not one per line.)
+- `GET /api/v1/inbox` returns `expires_in_days` per line and a summary `expiring_soon: {count, labels}`; this is the data the separate daily e-mail/JMAP report issue will consume.
 
 ## 11. UI
 
@@ -431,7 +481,7 @@ Design skills for the build: `taste-skill:design-taste-frontend` and `emil-desig
 
 Per line: checkbox, name (link to the item view), app and id, origin badge for `webhook`/`api` ("from Grocy"), copies, Remove, and the badges of section 11.5. Copies changes are sent debounced with the line's `version`; a `409` refetches and keeps the user's value in the field with a note (builder's call).
 
-Read-only sessions see the inbox but no checkboxes, copies fields or buttons; the page says that printing needs a print key.
+Read-only sessions (decision 15) see the inbox, can add items from the item views and select lines, but get no print button, copies fields or Remove; the page says that printing needs a print key.
 
 The grouping/confirmation step and the global cart icon of #27 (1.6.1) build on this page: both read the server inbox; the badge counts `labels`.
 
@@ -488,20 +538,21 @@ English and German for every new string (D8). Counts through `plural`.
 
 ### 12.1 Scope `inbox`
 
-- **Scopes become a set, not only a chain** (controller's call). The chain `read` ⊂ `print` ⊂ `admin` stays; `inbox` is **additive**: a key's `scopes` list may hold `inbox` alone or together with others (for example `inbox` + `read`), and the effective permission is the **union** of what each listed scope grants. `print` and `admin` grant `inbox`; `inbox` grants neither `read` nor `print`.
+- **Scopes become a set, not only a chain** (controller's call). The chain `read` ⊂ `print` ⊂ `admin` stays; `inbox` is **additive**: a key's `scopes` list may hold `inbox` alone or together with others, and the effective permission is the **union** of what each listed scope grants. `read`, `print` and `admin` grant `inbox` (for `read`: decision 15, read-only access may add); `inbox` grants neither `read` nor `print`. So the enqueue-only key of decision 8 is a key whose list is exactly `["inbox"]`.
 - An `inbox`-only key can call `POST /api/v1/inbox/items` and the webhook routes, and nothing else — not `GET /api/v1/inbox`, not the event stream, not any print route.
 - `auth/dependencies.py` today reduces `scopes` to one effective scope from `["admin", "print", "read"]` and answers `401 key_no_scopes` for any other list (`dependencies.py:244-262`); `AuthContext.scope` is a single `Literal`. This changes to a set of granted capabilities on `AuthContext`; `require_scope(x)` checks membership; `require_inbox` joins `scope_deps.py`. The existing single `scope` field stays for logging and for routes that read it (the highest chain scope, or `inbox`). The admin key form offers `inbox` as a checkbox next to the chain with the text "Can add items to the print inbox".
 - **Browser sessions** carry the capabilities of the key they were minted from, `inbox` included; the session row's scope becomes the same set (builder's call: stored as the key's scope list, re-read from the key on every use as `load_valid` already does for `allowed_printer_ids`).
 - The enqueue response never returns stored data (section 6.2), so the key cannot be used to read the inventory back through lookups.
 - `allowed_printer_ids` does not restrict enqueue (nothing prints). It restricts the inbox print routes as everywhere.
-- The Basic bypass and SSO header paths resolve to the required scope today; for `inbox` they behave the same as for `print` (builder's call; with `pangolin_bypass_scope_downgrade` the bypass cannot enqueue).
+- The Basic bypass and SSO header paths resolve to the required scope today; since `read` grants `inbox`, the bypass can add to the inbox even with `pangolin_bypass_scope_downgrade` (consequence of decision 15; it still cannot print or remove).
 
 ### 12.2 Limits
 
 | Setting | Default | Effect |
 |---|---|---|
 | `inbox.max_items` | 500 (the batch and sheet item cap) | Counts **labels**, copies included (controller's call); more → `409 inbox_full` |
-| `inbox.expiry_days` | 30 | Lines older than this are removed by the existing cleanup task (`services/cleanup_task.py`) with `inbox.changed reason=expired`, and hidden from reads once past `expires_at` even before the sweep |
+| `inbox.expiry_days` | 30 | Lines older than this are removed by the existing cleanup task (`services/cleanup_task.py`) — never silently: a warning 3 days before and a notification on removal (section 10) |
+| `inbox.expiry_warning_days` | 3 | When the expiry warning is raised |
 | `inbox.idempotency_days` | 7 | Retention of idempotency records |
 
 A print selection above the existing `MAX_ITEMS` (500 labels) is refused with `422 selection_too_large` (section 6.5).
@@ -527,11 +578,10 @@ Titles, secondary lines, list rows and QR payloads come from Grocy (including th
 
 ## 13. Migration from `localStorage`
 
-- On the first load of the cart page or of any page that uses `useCart()`, if `lph.cart` holds lines and the key `lph.cart.migrated` is absent, the client sends them to `POST /api/v1/inbox/import` (`print` scope, builder's call: same as other inbox writes; `inbox` would let an enqueue key bypass the add path's rules).
+- On the first load of the cart page or of any page that uses `useCart()`, if `lph.cart` holds lines and the key `lph.cart.migrated` is absent, the client sends them to `POST /api/v1/inbox/import` (`read` scope, builder's call: read-only access may add (decision 15); an `inbox`-only key cannot use it, so the import's softer lookup rule is not open to other apps).
 - `import` takes the old line shape `{app, id, name, content_type, copies}` (≤ 500 lines), looks each item up for a snapshot, and on lookup failure stores a snapshot with only `title = name` and `snapshot_complete: false` instead of refusing (builder's call: the user's cart must not be lost because a source is down). Lines merge into existing ones by the rule of section 5.1. `origin = ui`.
 - Idempotency: the client generates a random device id once (`lph.device`), and each line's key is `<device id>:<app>:<id>`, so two tabs migrating at the same time, or a retry after a lost response, import once.
 - After a `2xx` the client writes `lph.cart.migrated` and removes `lph.cart`. On any error it keeps `lph.cart` and tries again on the next load; the page shows the server inbox plus a note "N items from this browser could not be moved yet".
-- A read-only session does not migrate; it keeps `lph.cart` untouched and says that a print key is needed to move it.
 - The `storage`-event sync between tabs (`cart.ts:84-95`) is removed; SSE replaces it.
 - After two releases the migration code can go (builder's call).
 
@@ -542,9 +592,12 @@ Every test that guards a rule has a counter-test against the code without the ru
 **Backend (pytest)**
 
 - Enqueue: lookup item → snapshot stored; `data` item → `manual`; same key twice → one line, second `duplicate: true`; same key with another body → `409 idempotency_conflict`; key reused after the line was printed → still no new line (counter-test: delete the record on print → the test sees a second line); 60-second window without key.
+- Line identity: the same Grocy product twice with equal data → one line, copies 2; with another best-before date → two lines; two stock entries (different grocycodes) → two lines; two "label per unit" calls (same data, different `stock_id`) → two lines. Counter-test: merge on `(app, ref, format)` only → the best-before test turns red.
+- Event rules: a fresh integration has its preset rows, none with `print`; `none` → nothing stored, response `ignored`; per-event printer and format override the integration default; `print` onto an IPP printer parks; an unknown Kept event type → ignored; a `designer_layout` format → `422 format_not_supported` until #178. Grocy URL params never enable a `none` event (counter-test: let `mode=print` win over `none` → red).
+- Expiry: a line 3 days before `expires_at` raises `inbox.expiring` once (not daily again for the same line); at expiry the line is removed and the removal notification exists; no line ever disappears without one of the two (assert both events in a time-travel test).
 - Limits: an add that brings the inbox to 501 **labels** (e.g. 499 labels + one line with 2 copies) → `409 inbox_full` and nothing of the request stored (counter-test: count lines instead of labels → the test turns red); expired lines hidden before the sweep and removed by it; a print selection of 501 labels → `422 selection_too_large`, nothing queued.
-- Scope set: a key with `["inbox", "read"]` can enqueue **and** read; `["inbox"]` only enqueue; a session minted from an `inbox`+`read` key can enqueue. Counter-test: keep the old "highest of three" reduction → the `["inbox", "read"]` key loses one of the two and a test turns red.
-- Scope: an `inbox` key can enqueue; it gets `403` on `GET /api/v1/inbox`, the event stream, every print route, PATCH/DELETE; a `read` key gets `403` on enqueue; `print` and `admin` can enqueue. Counter-test: make `inbox` imply `read` → the read test turns red. The enqueue response contains no snapshot field (assert on the raw JSON, not the parsed model).
+- Scope set: `["inbox"]` only enqueues; `["read"]` enqueues and reads but gets `403` on PATCH/DELETE/remove/refresh/print; a session minted from a `["inbox", "print"]` key can enqueue and print. Counter-test: keep the old "highest of three" reduction → an `["inbox"]` key gets `401 key_no_scopes` and the test turns red.
+- Scope: an `inbox` key can enqueue; it gets `403` on `GET /api/v1/inbox`, the event stream, every print route, PATCH/DELETE; `read`, `print` and `admin` can enqueue. Counter-test: make `inbox` imply `read` → the read test turns red. The enqueue response contains no snapshot field (assert on the raw JSON, not the parsed model).
 - Routing: IPP target with `action=print` → parked (counter-test: drop rule 1 → printed); `park` → parked with `intended_printer_id`; `print` with an offline tape printer → parked with reason; `print` → job reaches the queue and a recording backend prints it (depends on #188).
 - Freshness: `snapshot` → the integration client receives **no** call (assert on the client mock's call count, not on the output); `fresh_with_fallback` with the source down → snapshot printed, job row `data_source = snapshot_fallback`; with the item deleted → same; `fresh` with the source down → `502`, nothing printed, lines unchanged. The fallback test must distinguish "snapshot because fallback" from "snapshot because the lookup was skipped": assert the client **was** called.
 - Print: stale version → `409`, nothing queued, nothing removed; success → exactly the sent lines removed in the same transaction; partial sheet print → only queued copies removed; `next_sheet` labels stay; job payload keeps `source_app` (not `manual`).
@@ -562,7 +615,8 @@ Every test that guards a rule has a counter-test against the code without the ru
 - Selection storage: survives a reload; ids no longer in the inbox are pruned; a line arriving through SSE is unselected; nothing about the selection is sent in any request except the print/preview id list.
 - Preview: a selection change sends a new preview request with exactly the selected ids (debounced: three quick changes → one request); `next_sheet` labels listed; list entry and cell agree on the cell for each item; hover on the entry highlights the cell and the reverse.
 - Refresh: summary counts; diff shows only changed fields; accept-all sends `all: true`; `409` shows the refresh-again note; the preview rebuilds after accept.
-- Migration: lines sent once with the derived keys; `lph.cart` removed only after `2xx`; kept on error; a read-only session does not send.
+- Migration: lines sent once with the derived keys; `lph.cart` removed only after `2xx`; kept on error; a read-only session migrates too.
+- Read-only session: "Add to cart" works, checkboxes work, no print button, no Remove, no copies field.
 - Taint: a title `<img src=x onerror=…>` renders as text in the list, the cell list and the diff.
 
 **End-to-end (Playwright, fake printers and fake upstreams)**
@@ -578,10 +632,10 @@ Every test that guards a rule has a counter-test against the code without the ru
 2. **1.5.0 (#226)** — paths under `/api/v1`. This design assumes it.
 3. **Backend inbox:** table, migration, scope `inbox`, enqueue/read/change routes, idempotency, limits, events.
 4. **Freshness + inbox print** (tape and sheet routes, job flag).
-5. **Routing rule + webhook changes:** the new Grocy label route (section 8.1), removal of the old `/grocy` route, Spoolman.
+5. **Event rules + webhook changes:** the rule tables with presets and their settings UI (section 7), the new Grocy label route (section 8.1) with background enrichment, removal of the old `/grocy` route, Spoolman.
 6. **UI:** server cart, selection, migration, then the sheet preview changes (with #249 for the colour token), then scan → sheet.
 7. **Refresh and diff** (backend + UI).
-8. **Notification** — with #255, or the top-bar count as interim (section 10).
+8. **Notifications** (waiting for sheet, expiry warning, expired) — with #255, or the top-bar count and cart banner as interim (section 10).
 9. **Kept receiver** — after #173.
 
 The 1.6.1 items of #27 (cart icon with badge, grouping and confirmation) can follow step 6.
@@ -594,7 +648,7 @@ The 1.6.1 items of #27 (cart icon with badge, grouping and confirmation) can fol
 
 ## 16. Rollout
 
-- Release notes: the cart moves to the server on first visit; read-only sessions see but cannot change it (unless Q5 decides otherwise); webhook responses gain `outcome`; a webhook routed to a page printer now parks instead of failing silently.
+- Release notes: the cart moves to the server on first visit; read-only sessions can add and select but not print or remove; webhook responses gain `outcome`; a webhook routed to a page printer now parks instead of failing silently.
 - Grocy: the old `/api/v1/webhook/grocy` is gone; the notes show how to set `LABEL_PRINTER_WEBHOOK` to `/api/v1/webhook/grocy/label?token=…`, recommend `LABEL_PRINTER_RUN_SERVER=true`, and say why the token must be a dedicated `inbox` key (it appears in Grocy's logs and, in browser mode, in every client).
 - The migration needs no operator action. `inbox.*` settings have defaults; routes default to `park`. Nothing printed through a webhook before (#188, and the Grocy format mismatch), so no working setup changes behaviour; the notes name the one setting for "print now".
 
@@ -605,22 +659,22 @@ The 1.6.1 items of #27 (cart icon with badge, grouping and confirmation) can fol
 | B1 | Own table `inbox_items`, not settings/JSON blob | 5.1 |
 | B2 | `paperless` not in the inbox app enum yet; `manual` for raw data | 5.1 |
 | B3 | A merge does not extend `expires_at` | 5.1 |
-| B4 | Re-adding an item merges into its line, adds copies, replaces the snapshot | 5.1 |
+| B4 | Identical raw `manual` data merges like any label; lines that become identical after an accept are not merged | 5.1 |
 | B5 | Idempotency records kept 7 days after print/removal | 5.3 |
 | B6 | Refresh candidates stored server-side, 15 minutes | 5.4 |
 | B7 | ≤ 50 items per enqueue request; `200` not `202` | 6.2 |
 | B8 | 60-second duplicate window for callers without a key | 6.2, 8.1 |
 | B9 | Lookup failure at enqueue refuses with `502` on the generic route (Grocy label route parks from payload) | 6.2 |
-| B10 | Changing, removing, refreshing, accepting and importing need `print` | 6.3, 13 |
+| B10 | Changing, removing, refreshing and accepting need `print`; read-only access only adds and selects; import needs `read` | 6.3, 13 |
 | B11 | ≤ 4 concurrent lookups per integration during refresh; one refresh at a time | 6.4, 12.2 |
 | B12 | One render route for before/after; sheet items rendered as one cell | 6.4 |
 | B13 | Server builds the print from line ids, flags fallbacks, removes lines in the same transaction | 6.5 |
 | B14 | Removal on acceptance (`202`), not on printer completion — unchanged | 6.5 |
-| B15 | Routing rules as settings per integration; default `park`; content type default per app | 7 |
+| B15 | Event rules in two tables (integration default + per event type), own admin API; default format per app | 7.1, 7.3 |
 | B16 | `print` route with unavailable printer parks with a reason | 7 |
 | B17 | Spoolman webhook also accepts an `inbox`-scoped `X-Label-Hub-Key` | 8.1a |
 | B18 | Webhook `quantity` is not copies; copies = 1 | 8.1a |
-| B19 | Kept: only `thing.created` enqueues until Q1 is answered (recommendation: also `thing.moved`) | 8.3 |
+| B19 | Grocy event types limited to `grocy.product` / `grocy.stock_entry` (the payload cannot tell purchase, manual print and auto re-print apart); unknown event types of any integration are ignored | 7.1 |
 | B20 | Print always looks up again (the preview cache does not apply to it) | 9 |
 | B21 | `inbox.changed` carries counts and ids, no text | 10 |
 | B22 | `waiting_for_sheet` counts only lines with an intended page printer; top-bar count until #255 | 10 |
@@ -634,12 +688,15 @@ The 1.6.1 items of #27 (cart icon with badge, grouping and confirmation) can fol
 | B30 | Migration: lookup failure stores a name-only snapshot; device-derived idempotency keys; code removed after two releases | 13 |
 | B31 | Grocy label route body cap 64 KiB; unknown fields ignored | 8.1.1 |
 | B32 | Grocy enrichment lookup optional, in the background, version-guarded | 8.1.3 |
-| B33 | Grocy route refuses `admin` tokens; `mode=print` with an `inbox`-only key parks with a reason | 8.1.4 |
+| B33 | Grocy route refuses `admin` tokens; URL params override target/mode only within bounds (never enable `none`, need print rights, page printer parks); `mode=print` with an `inbox`-only key parks with a reason | 8.1.4 |
 | B34 | Browser-mode CORS: one configured origin, `POST` only, no credentials | 8.1.4 |
 | B35 | Grocy duplicate window 10 s over `(key id, request hash)` | 8.1.5 |
 | B36 | Old `/api/v1/webhook/grocy` removed, not kept as a generic JSON endpoint | 8.1.5 |
 | B37 | Sessions store the key's scope list, re-read on use | 12.1 |
 | B38 | `next_sheet` labels stay selected after the print | 11.3 |
+| B39 | Grocy mapping: best-before from `stock_entry.best_before_date` (else `details.next_due_date`), `due_date` never parsed; note printed; price/open/purchase date not printed; `stock_id` kept as metadata | 8.1.2 |
+| B40 | Enrichment fetches stock-entry location, product group, shopping location, userfields, picture; userfields and picture used only once a format shows them | 8.1.3 |
+| B41 | Expiry warnings aggregated into one entry; banner on the cart page until #255 | 10 |
 
 **Controller's calls** (decided at the builder check, 2026-11-09):
 
@@ -657,10 +714,6 @@ The 1.6.1 items of #27 (cart icon with badge, grouping and confirmation) can fol
 
 ## 18. Open questions for the maintainer
 
-Each question carries the recommendation of the builder check; none of them is decided.
+The answers of 2026-11-09 are written in as decisions 11–16 (section 4). One question remains:
 
-- **Q1 — Kept events.** Which Kept events should put a thing into the inbox? *Recommendation:* `thing.created` and `thing.moved` (a moved thing needs a new location label). B19 implements only `thing.created` until this is answered.
-- **Q2 — Same item twice.** When the same item is added again (Grocy: two purchases), one line with more copies or a second line? *Recommendation:* two lines when a print-relevant field (for example the best-before date) differs, otherwise merge and add copies. B4 merges always until this is answered.
-- **Q3 — Source down when a caller enqueues (generic route).** For the Grocy label route this is settled (park from the payload, section 8.1.3). For `POST /api/v1/inbox/items`: refuse with `502` so the caller retries (B9), or park with what the caller sent and mark it incomplete?
-- **Q4 — Limits.** 500 labels and 30 days expiry? *Recommendation:* yes, plus a notification 3 days before a line expires unprinted.
-- **Q5 — Read-only users.** Today anyone who can open the hub fills the local cart. *Recommendation:* `read` sessions may add to the inbox and select, but not print; that would grant `read` sessions the `inbox` capability for UI adds (B10 currently requires `print` for every inbox write).
+- **Source down when a caller enqueues through the generic route.** For `POST /api/v1/inbox/items`, refuse with `502` so the caller retries (B9, today's text), or park with what the caller sent and mark it incomplete, as the Grocy label route does (section 8.1.3)?
