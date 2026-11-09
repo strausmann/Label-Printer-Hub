@@ -110,8 +110,10 @@ class PrinterStatus(BaseModel):
     ``note`` carries a human-readable hint (e.g. "No probe yet").
     ``polled`` is ``False`` when no status producer runs for the printer (SNMP discovery
     off, printer disabled or not wired). ``stale`` is ``True`` when the last probe attempt
-    (``printer_status_cache.updated_at``) is older than ``max(90, 3 * probe interval)``
-    seconds, or implausibly in the future. For an unpolled or stale printer ``online`` is
+    (``printer_status_cache.updated_at``) is older than
+    ``max(90, 3 * probe interval, 2 * max backoff)`` seconds (an IPP printer that stopped answering
+    is probed with a backoff of up to 300 s, so its bound is 600 s),
+    or implausibly in the future. For an unpolled or stale printer ``online`` is
     ``None`` and the cached values (tape, error state, markers, trays) are not returned;
     ``captured_at`` and ``last_probe_age_s`` stay so a client can show how old the last
     reading is.

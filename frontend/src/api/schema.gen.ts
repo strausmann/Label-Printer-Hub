@@ -629,7 +629,7 @@ export interface paths {
         };
         /**
          * Capabilities of a tape or page printer (cache only)
-         * @description Resolution, media, trays with their calibration and accepted document formats. Served from the status cache: the printer is never contacted, so a printer that has not been probed yet answers 200 with ``media`` and ``captured_at`` null. No connection detail is part of the answer. A page printer that never answered a probe is reported as unknown (``media``, ``document_formats`` and ``captured_at`` null). A tape width without a geometry entry also gives ``media`` null. Only enabled trays carry a calibration.
+         * @description Resolution, media, trays with their calibration and accepted document formats. Served from the status cache: the printer is never contacted, so a printer that has not been probed yet answers 200 with ``media`` and ``captured_at`` null. No connection detail is part of the answer. A page printer that never answered a probe is reported as unknown (``media``, ``document_formats`` and ``captured_at`` null). A tape width without a geometry entry also gives ``media`` null. A stale reading or an unpolled printer is reported as unknown too (``media`` null, ``stale`` true, ``captured_at`` kept). Only enabled trays carry a calibration.
          */
         get: operations["get_capabilities_api_v1_printers__printer_id__capabilities_get"];
         put?: never;
@@ -749,7 +749,7 @@ export interface paths {
         };
         /**
          * Get the current tape spec
-         * @description Returns the tape specification for the tape currently loaded in the printer, derived from the cached status block.  Returns 404 if the printer has no cached status or no tape is loaded.
+         * @description Returns the tape specification for the tape currently loaded in the printer, derived from the cached status block.  Returns 404 if the printer has no cached status or no tape is loaded, and also when the status is stale or the printer is not polled (``Status older than N s`` / ``Not polled``, as in the status note): a tape nobody has looked at for a while is not reported.
          */
         get: operations["get_printer_tape_api_v1_printers__printer_id__tape_get"];
         put?: never;
@@ -1529,6 +1529,12 @@ export interface components {
             media: components["schemas"]["TapeMedia"] | components["schemas"]["PageMedia"] | null;
             /** Resolution Dpi */
             resolution_dpi: components["schemas"]["TapeResolution"] | components["schemas"]["PageResolution"];
+            /**
+             * Stale
+             * @description True when the cached reading is older than the status bound or the printer is not polled: ``media`` is then null (unknown), ``captured_at`` stays so a client can show the age. Same rule as ``stale`` on the status endpoint.
+             * @default false
+             */
+            stale: boolean;
             /**
              * Trays
              * @description Page printers only.
@@ -2478,8 +2484,10 @@ export interface components {
          *     ``note`` carries a human-readable hint (e.g. "No probe yet").
          *     ``polled`` is ``False`` when no status producer runs for the printer (SNMP discovery
          *     off, printer disabled or not wired). ``stale`` is ``True`` when the last probe attempt
-         *     (``printer_status_cache.updated_at``) is older than ``max(90, 3 * probe interval)``
-         *     seconds, or implausibly in the future. For an unpolled or stale printer ``online`` is
+         *     (``printer_status_cache.updated_at``) is older than
+         *     ``max(90, 3 * probe interval, 2 * max backoff)`` seconds (an IPP printer that stopped answering
+         *     is probed with a backoff of up to 300 s, so its bound is 600 s),
+         *     or implausibly in the future. For an unpolled or stale printer ``online`` is
          *     ``None`` and the cached values (tape, error state, markers, trays) are not returned;
          *     ``captured_at`` and ``last_probe_age_s`` stay so a client can show how old the last
          *     reading is.

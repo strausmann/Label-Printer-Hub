@@ -53,7 +53,7 @@ from app.schemas.printer import (
 from app.services.print_queue import PrinterAlreadyActiveError
 from app.services.printer_runtime import PrinterRuntime
 from app.services.status_block import MediaType, PrinterError, StatusBlockParser
-from app.services.status_freshness import is_stale, stale_after_s
+from app.services.status_freshness import backoff_of, is_stale, stale_after_s
 from app.services.tape_registry import TapeRegistry, UnknownTapeError
 
 _log = logging.getLogger(__name__)
@@ -395,7 +395,8 @@ async def get_printer_status(
     age_s = int((now - captured).total_seconds())
 
     interval_s = get_settings().sse_probe_interval_s
-    stale = is_stale(row.updated_at, now, interval_s)
+    backoff_s = backoff_of(parsed)
+    stale = is_stale(row.updated_at, now, interval_s, backoff_s)
     if not polled or stale:
         # The cached values describe a printer nobody has looked at for a while (or at all):
         # returning them next to "no tape" is the bug this guards against.
@@ -408,7 +409,7 @@ async def get_printer_status(
             note=(
                 "Not polled"
                 if not polled
-                else f"Status older than {int(stale_after_s(interval_s))} s"
+                else f"Status older than {int(stale_after_s(interval_s, backoff_s))} s"
             ),
             kind="page" if parsed.get("kind") == "page" else None,
             stale=True,
@@ -447,13 +448,16 @@ async def get_printer_status(
     description=(
         "Returns the tape specification for the tape currently loaded in the "
         "printer, derived from the cached status block.  Returns 404 if the "
-        "printer has no cached status or no tape is loaded."
+        "printer has no cached status or no tape is loaded, and also when the status is "
+        "stale or the printer is not polled (``Status older than N s`` / ``Not polled``, "
+        "as in the status note): a tape nobody has looked at for a while is not reported."
     ),
 )
 async def get_printer_tape(
     printer_id: UUID,
     session: SessionDep,
     _auth: ReadAuthDep,
+    runtime: RuntimeDep = None,
 ) -> dict[str, object]:
     """Return the current tape spec for a printer."""
     await _get_printer_or_404(session, printer_id)
@@ -468,6 +472,15 @@ async def get_printer_tape(
         )
 
     parsed = cache.parsed
+    interval_s = get_settings().sse_probe_interval_s
+    backoff_s = backoff_of(parsed)
+    if runtime is None or not runtime.is_polled(printer_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not polled")
+    if is_stale(cache.updated_at, datetime.now(UTC), interval_s, backoff_s):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Status older than {int(stale_after_s(interval_s, backoff_s))} s",
+        )
     width_mm = int(parsed.get("media_width_mm", 0))
     if width_mm == 0:
         raise HTTPException(

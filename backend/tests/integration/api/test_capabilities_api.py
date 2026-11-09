@@ -26,6 +26,16 @@ from app.services.producers.ipp_status_producer import _empty_summary
 
 pytestmark = pytest.mark.asyncio
 
+
+@pytest.fixture(autouse=True)
+def _printers_are_polled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The printers here are inserted directly, so the runtime does not poll them; the cache
+    rows stand for what a producer wrote. Tests of the unpolled case switch this off again."""
+    from app.services.printer_runtime import PrinterRuntime
+
+    monkeypatch.setattr(PrinterRuntime, "is_polled", lambda self, _id: True)
+
+
 SECRET_URI = "ipps://printer-secret.example.invalid:631/ipp/print"
 
 
@@ -346,3 +356,56 @@ async def test_disabled_tray_lists_without_calibration(api_client_with_seed):
     body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
     off = next(t for t in body["trays"] if t["key"] == "off")
     assert off["enabled"] is False and off["calibration"] is None
+
+
+async def _age_cache(pid: UUID, seconds: float) -> None:
+    from datetime import timedelta
+
+    stamp = datetime.now(UTC) - timedelta(seconds=seconds)
+    async with _factory()() as s:
+        row = await s.get(PrinterStatusCache, pid)
+        assert row is not None
+        row.updated_at = stamp
+        row.captured_at = stamp
+        await s.commit()
+
+
+async def test_stale_tape_is_reported_as_unknown(api_client_with_seed):
+    c, reader = api_client_with_seed, await _key(["read"])
+    pid = await _tape_printer("PT-P750W", 12)
+    await _age_cache(pid, 12_349_795)
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
+    assert body["stale"] is True
+    assert body["media"] is None
+    assert body["captured_at"] is not None  # kept: the client shows the age
+
+
+async def test_fresh_tape_is_not_stale(api_client_with_seed):
+    c, reader = api_client_with_seed, await _key(["read"])
+    pid = await _tape_printer("PT-P750W", 12)
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
+    assert body["stale"] is False
+    assert body["media"]["width_mm"] == 12
+
+
+async def test_unpolled_tape_printer_is_reported_as_unknown(
+    api_client_with_seed, monkeypatch: pytest.MonkeyPatch
+):
+    from app.services.printer_runtime import PrinterRuntime
+
+    monkeypatch.setattr(PrinterRuntime, "is_polled", lambda self, _id: False)
+    c, reader = api_client_with_seed, await _key(["read"])
+    pid = await _tape_printer("PT-P750W", 12)
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
+    assert body["stale"] is True
+    assert body["media"] is None
+
+
+async def test_stale_page_printer_is_reported_as_unknown(api_client_with_seed):
+    c, reader = api_client_with_seed, await _key(["read"])
+    await c.get("/healthz")  # start the app first: its startup would probe a stored printer
+    pid = await _ipp_printer()
+    await _age_cache(pid, 12_349_795)
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
+    assert body["stale"] is True
+    assert body["media"] is None and body["document_formats"] is None

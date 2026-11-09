@@ -30,3 +30,15 @@ def test_naive_updated_at_is_read_as_utc() -> None:
     naive = (NOW - timedelta(seconds=10)).replace(tzinfo=None)
     assert not is_stale(naive, NOW, 30)
     assert is_stale((NOW - timedelta(days=1)).replace(tzinfo=None), NOW, 30)
+
+
+def test_stale_after_covers_the_ipp_backoff() -> None:
+    assert stale_after_s(30, 300) == 600
+    assert stale_after_s(30, 0) == 90
+    assert stale_after_s(300, 100) == 900  # the interval multiple still wins when it is larger
+
+
+def test_offline_ipp_gap_is_not_stale_with_the_backoff() -> None:
+    assert not is_stale(NOW - timedelta(seconds=200), NOW, 30, 300)
+    assert is_stale(NOW - timedelta(seconds=200), NOW, 30)  # a tape row of the same age
+    assert is_stale(NOW - timedelta(seconds=601), NOW, 30, 300)

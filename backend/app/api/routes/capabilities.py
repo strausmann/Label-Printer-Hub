@@ -12,9 +12,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.api.dependencies.printer_runtime import get_printer_runtime
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_read
 from app.calibration import service as calibration_service
+from app.config import get_settings
 from app.db.session import get_session
 from app.models.printer import Printer
 from app.models.printer_status_cache import PrinterStatusCache
@@ -34,6 +36,8 @@ from app.schemas.capabilities import (
     TrayCapability,
 )
 from app.schemas.tape_geometry import TAPE_GEOMETRY
+from app.services.printer_runtime import PrinterRuntime
+from app.services.status_freshness import backoff_of, is_stale
 from app.sheets.errors import PrinterNotFoundError
 from app.sheets.printer_facts import facts_of, read_status
 
@@ -41,6 +45,7 @@ router = APIRouter(prefix="/api/v1/printers", tags=["printers"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]
+RuntimeDep = Annotated[PrinterRuntime | None, Depends(get_printer_runtime)]
 PrinterPath = Annotated[UUID, Path(description="Printer id.")]
 
 _SIZE = re.compile(
@@ -201,11 +206,13 @@ async def _page(
         "probed yet answers 200 with ``media`` and ``captured_at`` null. No connection detail "
         "is part of the answer. A page printer that never answered a probe is reported as unknown "
         "(``media``, ``document_formats`` and ``captured_at`` null). A tape width without a "
-        "geometry entry also gives ``media`` null. Only enabled trays carry a calibration."
+        "geometry entry also gives ``media`` null. A stale reading or an unpolled printer is "
+        "reported as unknown too (``media`` null, ``stale`` true, ``captured_at`` kept). "
+        "Only enabled trays carry a calibration."
     ),
 )
 async def get_capabilities(
-    printer_id: PrinterPath, session: SessionDep, auth: ReadDep
+    printer_id: PrinterPath, session: SessionDep, auth: ReadDep, runtime: RuntimeDep = None
 ) -> Capabilities:
     check_printer_access(auth, printer_id)
     printer = await session.get(Printer, printer_id)
@@ -214,6 +221,17 @@ async def get_capabilities(
     row = await session.get(PrinterStatusCache, printer_id)
     parsed = (row.parsed if row is not None else None) or {}
     captured = _utc(row.captured_at) if row is not None else None
-    if printer.backend == "ipp":
-        return await _page(session, printer, parsed, captured)
-    return _tape(printer, parsed, captured)
+    # A reading nobody refreshes (stale) or nobody takes (unpolled) is unknown, not current.
+    unpolled = runtime is None or not runtime.is_polled(printer_id)
+    stale = row is not None and is_stale(
+        row.updated_at, datetime.now(UTC), get_settings().sse_probe_interval_s, backoff_of(parsed)
+    )
+    unknown = row is not None and (unpolled or stale)
+    if unknown:
+        parsed = {}
+    caps = (
+        await _page(session, printer, parsed, captured)
+        if printer.backend == "ipp"
+        else _tape(printer, parsed, captured)
+    )
+    return caps.model_copy(update={"stale": True}) if unknown else caps

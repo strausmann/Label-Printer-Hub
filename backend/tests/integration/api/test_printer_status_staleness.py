@@ -249,3 +249,72 @@ async def test_snapshot_omits_unpolled_status(api) -> None:
         frames = await build_snapshot(s, pid, runtime=FakeRuntime(set()))
     assert [f["type"] for f in frames] == ["printer.status"]
     assert frames[0]["data"]["online"] is None
+
+
+OFFLINE_PAGE = {"online": False, "kind": "page", "last_error": "IppUnreachableError"}
+
+
+async def test_offline_ipp_row_200_s_old_is_not_stale(api) -> None:
+    """The IPP producer backs off to 300 s while the printer is down: 200 s is a normal gap."""
+    client, app, factory = api
+    pid = await _printer(factory, backend="ipp", connection={"uri": FAKE_URI})
+    await _cache_row(factory, pid, age_s=200, parsed=OFFLINE_PAGE)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    body = await _status(client, pid)
+    assert body["stale"] is False
+    assert body["online"] is False
+    assert body["last_error"] == "IppUnreachableError"
+
+
+async def test_ipp_row_700_s_old_is_stale(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory, backend="ipp", connection={"uri": FAKE_URI})
+    await _cache_row(factory, pid, age_s=700, parsed=OFFLINE_PAGE)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    body = await _status(client, pid)
+    assert body["stale"] is True
+    assert body["online"] is None
+    assert body["note"] == "Status older than 600 s"
+
+
+async def test_tape_row_200_s_old_keeps_the_old_bound(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(factory, pid, age_s=200)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    body = await _status(client, pid)
+    assert body["stale"] is True
+    assert body["note"] == "Status older than 90 s"
+
+
+TAPE_BLOCK = {"online": True, "loaded_tape_mm": 12, "media_width_mm": 12, "media_type": "LAMINATED"}
+
+
+async def test_tape_route_refuses_a_stale_tape(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(factory, pid, age_s=12_349_795, parsed=TAPE_BLOCK)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    r = await client.get(f"/api/v1/printers/{pid}/tape")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Status older than 90 s"
+
+
+async def test_tape_route_refuses_an_unpolled_printer(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(factory, pid, age_s=5, parsed=TAPE_BLOCK)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime(set())
+    r = await client.get(f"/api/v1/printers/{pid}/tape")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Not polled"
+
+
+async def test_tape_route_serves_a_fresh_tape(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(factory, pid, age_s=5, parsed=TAPE_BLOCK)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    r = await client.get(f"/api/v1/printers/{pid}/tape")
+    assert r.status_code == 200
+    assert r.json()["width_mm"] == 12

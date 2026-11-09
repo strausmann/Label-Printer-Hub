@@ -238,6 +238,7 @@ async def test_get_printer_tape_returns_tape_spec_from_cache(session) -> None:
     await session.commit()
 
     app = _build_app(session)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({printer.id})
     client = TestClient(app, raise_server_exceptions=True)
     r = client.get(f"/api/v1/printers/{printer.id}/tape")
 
@@ -475,6 +476,7 @@ async def test_get_printer_tape_zero_width_returns_404(session) -> None:
     await session.commit()
 
     app = _build_app(session)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({printer.id})
     client = TestClient(app, raise_server_exceptions=True)
     r = client.get(f"/api/v1/printers/{printer.id}/tape")
 
@@ -785,7 +787,9 @@ async def test_get_printer_tape_direct_with_cache(session) -> None:
     session.add(cache)
     await session.commit()
 
-    result = await get_printer_tape(printer_id=printer.id, session=session, _auth=None)
+    result = await get_printer_tape(
+        printer_id=printer.id, session=session, _auth=None, runtime=FakeRuntime({printer.id})
+    )
 
     assert isinstance(result, dict)
     assert result["width_mm"] == 12
@@ -867,7 +871,9 @@ async def test_get_printer_tape_direct_invalid_media_type_falls_back(session) ->
     from fastapi import HTTPException
 
     try:
-        result = await get_printer_tape(printer_id=printer.id, session=session, _auth=None)
+        result = await get_printer_tape(
+            printer_id=printer.id, session=session, _auth=None, runtime=FakeRuntime({printer.id})
+        )
         assert isinstance(result, dict)
     except HTTPException as exc:
         assert exc.status_code == 404
@@ -905,7 +911,9 @@ async def test_get_printer_tape_direct_unknown_tape_size_raises_404(session) -> 
     await session.commit()
 
     with pytest.raises(HTTPException) as exc_info:
-        await get_printer_tape(printer_id=printer.id, session=session, _auth=None)
+        await get_printer_tape(
+            printer_id=printer.id, session=session, _auth=None, runtime=FakeRuntime({printer.id})
+        )
 
     assert exc_info.value.status_code == 404
 

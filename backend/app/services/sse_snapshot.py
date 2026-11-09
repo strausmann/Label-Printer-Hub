@@ -22,7 +22,7 @@ from app.models.job import Job, JobState
 from app.repositories import jobs as jobs_repo
 from app.repositories import printer_status_cache as status_cache_repo
 from app.services.producers.ipp_status_producer import page_status_event_data
-from app.services.status_freshness import is_stale
+from app.services.status_freshness import backoff_of, is_stale
 
 if TYPE_CHECKING:
     from app.services.print_queue import PrintQueue
@@ -90,7 +90,9 @@ async def build_snapshot(
             parsed = cache.parsed
             ts = cache.captured_at or now
             unpolled = runtime is not None and not runtime.is_polled(printer_id)
-            if unpolled or is_stale(cache.updated_at, now, get_settings().sse_probe_interval_s):
+            if unpolled or is_stale(
+                cache.updated_at, now, get_settings().sse_probe_interval_s, backoff_of(parsed)
+            ):
                 # Unknown, not "ready": the cached values describe a printer nobody has seen.
                 snapshot.append(
                     {
