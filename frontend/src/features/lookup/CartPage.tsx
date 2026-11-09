@@ -1,14 +1,17 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
-import { Link } from "@tanstack/react-router";
+import { getRouteApi, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "react-aria-components";
 import { FIELD, PRIMARY_BUTTON } from "../../shell/SignIn";
-import { usePrinters } from "../printers/api";
+import { usePrinters, usePrinterStatuses } from "../printers/api";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { useAppName } from "./apps";
 import { BatchStatusError, MAX_COPIES, useCart, type BatchRead } from "./cart";
 import { PrinterPicker, usePrinterChoice, usePrintErrorText } from "./PrinterPicker";
+import { SheetSection } from "../sheets/print/SheetSection";
+
+const cartApi = getRouteApi("/cart");
 
 type Outcome = { kind: "sent"; labels: number; printer: string; batch: BatchRead | null } | { kind: "failed"; error: unknown };
 
@@ -20,8 +23,15 @@ export function CartPage() {
   const cart = useCart();
   const printers = usePrinters();
   const { usable, selected, choose } = usePrinterChoice(printers.data);
+  const statuses = usePrinterStatuses(usable);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  // `/cart?sheet=<code>` (the link from a sheet's page) preselects that sheet in the sheet section.
+  const { sheet: linkedSheet } = cartApi.useSearch();
+  // The cart empties when the hub accepts a sheet print, or queues all of it before a partial failure; the section
+  // stays to show where the labels went (the result, or the partial-result note with the links to the queued jobs).
+  const [sheetPrinted, setSheetPrinted] = useState(false);
+  const pagePrinter = selected?.backend === "ipp";
   const labels = cart.items.reduce((sum, i) => sum + i.copies, 0);
 
   const send = async () => {
@@ -54,11 +64,18 @@ export function CartPage() {
         </p>
       )}
 
-      {cart.items.length === 0 ? (
-        <p className="text-ink-2">{t`The cart is empty.`}</p>
-      ) : (
+      {cart.items.length === 0 && (!sheetPrinted || !pagePrinter) && (
         <>
-          <ul aria-label={t`Cart`} className="flex flex-col gap-2">
+          <p className="text-ink-2">{t`The cart is empty.`}</p>
+          {linkedSheet && (
+            <p className="text-ink-2">{t`Add items to print onto ${linkedSheet}.`}</p>
+          )}
+        </>
+      )}
+
+      {(cart.items.length > 0 || sheetPrinted) && (
+        <>
+          {cart.items.length > 0 && <ul aria-label={t`Cart`} className="flex flex-col gap-2">
             {cart.items.map((item) => {
               const itemName = item.name;
               return (
@@ -94,21 +111,43 @@ export function CartPage() {
               </li>
               );
             })}
-          </ul>
+          </ul>}
 
           <section aria-labelledby="cart-print-h" className={`${PANEL} flex max-w-md flex-col gap-4`}>
             <h2 id="cart-print-h" className="text-section font-bold">{t`Print`}</h2>
-            <PrinterPicker printers={usable} value={selected?.id ?? null} onChange={choose} loading={printers.isPending} />
+            <PrinterPicker printers={usable} value={selected?.id ?? null} onChange={choose} loading={printers.isPending} statuses={statuses} />
             <div className="flex flex-wrap gap-2">
-              <Button className={PRIMARY_BUTTON} isDisabled={!selected || busy} onPress={() => void send()}>
-                {plural(labels, { one: "Print # label", other: "Print # labels" })}
-              </Button>
-              <Button className={SECONDARY_BUTTON} isDisabled={busy} onPress={cart.clear}>
-                {t`Empty the cart`}
-              </Button>
+              {/* A page printer prints through the sheet section below. */}
+              {/* An emptied cart (a sheet print took everything out) leaves nothing to send. */}
+              {!pagePrinter && cart.items.length > 0 && (
+                <Button className={PRIMARY_BUTTON} isDisabled={!selected || busy} onPress={() => void send()}>
+                  {plural(labels, { one: "Print # label", other: "Print # labels" })}
+                </Button>
+              )}
+              {cart.items.length > 0 && (
+                <Button className={SECONDARY_BUTTON} isDisabled={busy} onPress={cart.clear}>
+                  {t`Empty the cart`}
+                </Button>
+              )}
             </div>
             {outcome?.kind === "failed" && <p role="alert" className="text-bad">{errorText(outcome.error)}</p>}
           </section>
+
+          {pagePrinter && selected && (
+            <SheetSection
+              items={cart.items}
+              printer={selected}
+              preselectedSheet={linkedSheet}
+              onQueued={(queued) => {
+                cart.removeItems(queued);
+                setSheetPrinted(true);
+              }}
+              onAccepted={(submitted) => {
+                cart.removeItems(submitted);
+                setSheetPrinted(true);
+              }}
+            />
+          )}
         </>
       )}
     </div>

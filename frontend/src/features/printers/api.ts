@@ -31,8 +31,8 @@ export const usePrinters = () =>
 export const usePrinter = (id: string) =>
   useQuery({ queryKey: printerKey(id), queryFn: () => apiFetch<Printer>(`/api/printers/${id}`) });
 
-export const usePrinterStatus = (id: string) =>
-  useQuery({ queryKey: statusKey(id), queryFn: () => apiFetch<PrinterStatus>(`/api/printers/${id}/status`) });
+export const usePrinterStatus = (id: string, enabled = true) =>
+  useQuery({ queryKey: statusKey(id), queryFn: () => apiFetch<PrinterStatus>(`/api/printers/${id}/status`), enabled });
 
 /** One status per printer, keyed by printer id (a failed probe simply has no entry). */
 export function usePrinterStatuses(printers: Printer[] | undefined): Map<string, PrinterStatus> {

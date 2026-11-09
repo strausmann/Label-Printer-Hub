@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
 import { MAIN } from "./env";
-import { expect, mainKey, signInWith, test } from "./fixtures";
+import { expect, mainKey, pagePrinterControl, signInWith, test } from "./fixtures";
 
 const SHOTS = process.env.E2E_SHOTS_DIR;
 const shot = async (page: Page, name: string, fullPage = false) => {
@@ -10,6 +10,18 @@ const shot = async (page: Page, name: string, fullPage = false) => {
   mkdirSync(SHOTS, { recursive: true });
   await page.screenshot({ path: resolve(SHOTS, name), fullPage });
 };
+const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
+/** A write the way the page does it: session cookie plus the CSRF token of the session. */
+async function api(page: Page, method: string, path: string): Promise<number> {
+  return page.evaluate(
+    async ([m, p]) => {
+      const session = await (await fetch("/api/v1/auth/session")).json();
+      const response = await fetch(p as string, { method: m as string, headers: { "X-CSRF-Token": session.csrf_token } });
+      return response.status;
+    },
+    [method, path] as const,
+  );
+}
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 
 // One sign-in for the whole file: the hub limits sign-ins per minute, and every
@@ -119,6 +131,129 @@ test.describe.serial("settings", () => {
     await page.getByRole("alertdialog").getByRole("button", { name: "Revoke key" }).click();
     await expect(keys.getByText("Revoked")).toBeVisible();
   });
+
+  // Whatever a test changes about the browser is put back, so the next test starts in English, light, desktop.
+  test.afterEach(async () => {
+    await page.unroute("**/api/v1/admin/printers/ipp/probe");
+    await setLanguage(page, "en");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.setViewportSize({ width: 1280, height: 800 });
+  });
+
+  test("printers: add a second IPP page printer from the fake, then switch it off", async () => {
+    // The e2e state is shared across specs: count relative to the start, use a slug and name that are
+    // unique per attempt (a retry must not meet the printer of the failed attempt), and switch the printer
+    // off whatever happens (it is never wired in this hub, so it must not turn up in later pickers).
+    const stamp = `${test.info().retry}-${Date.now().toString(36)}`;
+    const slug = `second-page-${stamp}`;
+    const name = `Second page printer ${stamp}`;
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/settings/printers");
+      const edits = page.getByRole("button", { name: /^Edit / });
+      await expect(edits.first()).toBeVisible();
+      const before = await edits.count();
+      const { uri } = await pagePrinterControl(page);
+
+      await page.getByRole("button", { name: "Add printer" }).click();
+      const form = page.getByRole("form", { name: "Add a printer" });
+      await form.getByRole("textbox", { name: "Name" }).fill(name);
+      await form.getByRole("textbox", { name: "Slug" }).fill(slug);
+      await form.getByRole("button", { name: /Driver/ }).click();
+      await page.getByRole("option", { name: "Page printer (IPP)" }).click();
+      await expect(form.getByRole("textbox", { name: "Host" })).toHaveCount(0);
+      await expect(form.getByRole("textbox", { name: "Model" })).toHaveCount(0);
+      await expect(form.getByRole("button", { name: "Create printer" })).toBeDisabled();
+      await form.getByRole("textbox", { name: "IPP address" }).fill(uri);
+      await form.getByRole("button", { name: "Read printer" }).click();
+      const summary = form.getByRole("region", { name: "What the printer reports" });
+      await expect(summary).toBeVisible();
+      await expect(summary.getByText("PDF printing")).toBeVisible();
+      await expect(form.getByRole("group", { name: "auto" })).toBeVisible();
+      await expect(form.getByRole("button", { name: "Create printer" })).toBeEnabled();
+      await form.getByRole("button", { name: "Create printer" }).click();
+
+      await expect(page.getByText("The printer is ready after the hub restarts.")).toBeVisible();
+      await expect(edits).toHaveCount(before + 1);
+      const row = page.getByRole("listitem").filter({ hasText: name });
+      await expect(row.getByText(uri)).toBeVisible();
+      await row.getByRole("button", { name: `Disable ${name}` }).click();
+      await expect(row.getByText("Disabled", { exact: true })).toBeVisible();
+    } finally {
+      // 404 when the printer was never created; both are fine.
+      await api(page, "POST", `/api/v1/admin/printers/${slug}/disable`);
+    }
+  });
+
+  // What a printer can report at its worst: a very long make and model, more trays than a form should
+  // hold (20 reported, 16 kept), 40 media sizes and a tray key as long as real firmware makes them.
+  const WORST_PROBE = {
+    accepting_jobs: true,
+    color_modes: ["monochrome", "color", "auto", "highlight", "process-monochrome"],
+    ipp_versions: ["2.0"],
+    make_and_model: "Example Industries Professional Colour Laser Multifunction Printer with Finisher Model 7000-XL Edition",
+    margins_hmm: { bottom: 423, left: 423, right: 423, top: 423 },
+    media_col_members: [],
+    media_col_supported: true,
+    media_sizes: Array.from({ length: 40 }, (_, i) => `custom_size-${i + 1}-name_${100 + i}x${200 + i}mm`),
+    media_sources: [
+      "manual-bypass-tray-with-a-very-long-name-from-the-printer-firmware",
+      ...Array.from({ length: 19 }, (_, i) => `tray-${i + 1}`),
+    ],
+    media_types: ["stationery", "labels", "transparency", "envelope", "cardstock", "recycled", "photographic-glossy"],
+    monochrome_supported: true,
+    one_sided_supported: true,
+    pdf_supported: true,
+    pdf_versions: ["1.4"],
+    resolutions_dpi: [150, 300, 600, 1200],
+    scaling_none_supported: true,
+    state: "idle",
+  };
+  const AUTO_ONLY_PROBE = { ...WORST_PROBE, make_and_model: "Example LaserJet 4000", media_sizes: ["iso_a4_210x297mm"], media_types: ["stationery"], media_sources: [] };
+
+  for (const [lang, size] of [
+    ["de", { width: 360, height: 780 }],
+    ["en", { width: 1280, height: 800 }],
+  ] as const) {
+    for (const scheme of ["light", "dark"] as const) {
+      test(`page printer form with worst-case data, ${lang} at ${size.width} px, ${scheme}`, async () => {
+        const testInfo = test.info();
+        const words =
+          lang === "de"
+            ? { add: "Drucker hinzufügen", form: "Drucker hinzufügen", driver: /Treiber/, ipp: "Seitendrucker (IPP)", uri: "IPP-Adresse", read: "Drucker auslesen", region: "Das meldet der Drucker", all: "Alle 40 anzeigen" }
+            : { add: "Add printer", form: "Add a printer", driver: /Driver/, ipp: "Page printer (IPP)", uri: "IPP address", read: "Read printer", region: "What the printer reports", all: "Show all 40" };
+        await setLanguage(page, lang);
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.setViewportSize(size);
+        const longUri = `ipp://printer-with-a-long-host-name.office.example.invalid:631/ipp/print/${"queue-".repeat(8)}end`;
+        const { uri } = await pagePrinterControl(page);
+
+        for (const [label, probe] of [["worst", WORST_PROBE], ["auto-only", AUTO_ONLY_PROBE]] as const) {
+          await page.unroute("**/api/v1/admin/printers/ipp/probe");
+          await page.route("**/api/v1/admin/printers/ipp/probe", (route) => route.fulfill({ json: probe }));
+          await page.goto("/settings/printers");
+          await page.getByRole("button", { name: words.add }).click();
+          const form = page.getByRole("form", { name: words.form });
+          await form.getByRole("button", { name: words.driver }).click();
+          await page.getByRole("option", { name: words.ipp }).click();
+          await form.getByRole("textbox", { name: words.uri }).fill(label === "worst" ? longUri : uri);
+          await form.getByRole("button", { name: words.read }).click();
+          const region = form.getByRole("region", { name: words.region });
+          await expect(region).toBeVisible();
+          if (label === "worst") {
+            await expect(form.getByRole("group", { name: "tray-14" })).toBeVisible();
+            await expect(form.getByRole("group", { name: "tray-15" })).toHaveCount(0);
+            await region.getByRole("button", { name: words.all }).click();
+          } else {
+            await expect(form.getByRole("group")).toHaveCount(1);
+            await expect(form.getByRole("radio")).toHaveCount(1);
+          }
+          expect(await noSideScroll(page)).toBe(true);
+          await page.screenshot({ path: testInfo.outputPath(`ipp-form-${label}-${size.width}-${lang}-${scheme}.png`), fullPage: true });
+        }
+      });
+    }
+  }
 
   test("system: version, health and the log", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });

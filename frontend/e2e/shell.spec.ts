@@ -11,11 +11,23 @@ test.describe("shell", () => {
     const sidebar = page.getByRole("navigation", { name: "Main" });
     await expect(sidebar).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Tabs" })).toBeHidden();
-    for (const name of ["Overview", "Printers", "Jobs", "Snipe-IT", "Grocy", "Spoolman", "Settings"]) {
-      await expect(sidebar.getByRole("link", { name })).toBeVisible();
+    for (const name of ["Overview", "Printers", "Jobs", "Sheets", "Sheet archive", "Calibration", "Snipe-IT", "Grocy", "Spoolman", "Settings"]) {
+      await expect(sidebar.getByRole("link", { name, exact: true })).toBeVisible();
     }
-    // Entries of modules that have not shipped stay hidden (features from /api/info).
-    await expect(sidebar.getByRole("link", { name: "Sheets" })).toHaveCount(0);
+    // Each entry leads where its name says, not only somewhere.
+    for (const [name, href] of [
+      ["Overview", "/"],
+      ["Printers", "/printers"],
+      ["Jobs", "/jobs"],
+      ["Sheets", "/sheets"],
+      ["Sheet archive", "/sheets/archive"],
+      ["Calibration", "/calibration"],
+      ["Settings", "/settings"],
+    ] as const) {
+      await expect(sidebar.getByRole("link", { name, exact: true })).toHaveAttribute("href", href);
+    }
+    // Entries of modules that have not shipped stay hidden (features from /api/info): ASN and Kept.
+    await expect(sidebar.getByRole("link", { name: "Paperless ASN" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Scan" }).first()).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Search" })).toBeVisible();
     if (SHOTS) {
@@ -27,7 +39,7 @@ test.describe("shell", () => {
     await expect(sidebar).toBeHidden();
     const tabs = page.getByRole("navigation", { name: "Tabs" });
     await expect(tabs).toBeVisible();
-    await expect(tabs.getByRole("link")).toHaveText(["Overview", "Printers", "Scan", "Jobs"]);
+    await expect(tabs.getByRole("link")).toHaveText(["Overview", "Printers", "Scan", "Jobs", "Sheets"]);
     const scan = await tabs.getByRole("link", { name: "Scan" }).boundingBox();
     const bar = await tabs.boundingBox();
     expect(scan && bar).toBeTruthy();
@@ -36,16 +48,55 @@ test.describe("shell", () => {
     const overview = await tabs.getByRole("link", { name: "Overview" }).boundingBox();
     expect(scan!.height).toBeGreaterThan(overview!.height - 1);
     expect(scan!.width).toBeGreaterThanOrEqual(56);
+    for (const [name, href] of [
+      ["Overview", "/"],
+      ["Printers", "/printers"],
+      ["Jobs", "/jobs"],
+      ["Scan", "/scan"],
+      ["Sheets", "/sheets"],
+    ] as const) {
+      await expect(tabs.getByRole("link", { name, exact: true })).toHaveAttribute("href", href);
+    }
     // No horizontal scrolling on a phone.
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     if (SHOTS) await page.screenshot({ path: resolve(SHOTS, "task-9-phone.png") });
+
+    // Sheet archive and Calibration have no tab: the Overview leads to them in one tap (spec 5.3), at 360 px too.
+    await page.setViewportSize({ width: 360, height: 780 });
+    for (const [name, path] of [
+      ["Sheet archive", "/sheets/archive"],
+      ["Calibration", "/calibration"],
+    ] as const) {
+      await page.goto("/");
+      const group = page.getByRole("region", { name: "Sheets", exact: true });
+      const link = group.getByRole("link", { name, exact: true });
+      await expect(link).toBeVisible();
+      expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await link.click();
+      // The calibration page adds its own printer and tray to the address: the path is what counts.
+      await expect.poll(() => new URL(page.url()).pathname).toBe(path);
+    }
+    await page.goto("/");
+    await expect(page.getByRole("region", { name: "Sheets", exact: true })).toBeVisible();
   });
 
   test("keyboard: Tab reaches every nav entry with visible focus", async ({ signedInPage: page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     const sidebar = page.getByRole("navigation", { name: "Main" });
     const names = await sidebar.getByRole("link").allInnerTexts();
-    expect(names.map((n) => n.trim())).toEqual(["Overview", "Printers", "Jobs", "Snipe-IT", "Grocy", "Spoolman", "Settings"]);
+    expect(names.map((n) => n.trim())).toEqual([
+      "Overview",
+      "Printers",
+      "Jobs",
+      "Sheets",
+      "Sheet archive",
+      "Calibration",
+      "Snipe-IT",
+      "Grocy",
+      "Spoolman",
+      "Settings",
+    ]);
 
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     const reached = new Set<string>();

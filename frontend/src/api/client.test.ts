@@ -83,6 +83,22 @@ describe("apiFetch", () => {
     });
   });
 
+  it("reads a problem object that FastAPI wrapped in `detail` (the calibration page's printer-unavailable)", async () => {
+    fetchMock.mockResolvedValue(
+      respond(409, { detail: { type: "printer-unavailable", title: "Printer is not available to the print queue", status: 409, detail: "Printer x is not known" } }),
+    );
+    await expect(apiFetch("/api/x", { method: "POST" })).rejects.toMatchObject({
+      status: 409,
+      code: "printer-unavailable",
+      detail: "Printer x is not known",
+    });
+  });
+
+  it("an about:blank problem inside `detail` has no code", async () => {
+    fetchMock.mockResolvedValue(respond(409, { detail: { type: "about:blank", title: "Conflict", status: 409 } }));
+    await expect(apiFetch("/api/x", { method: "POST" })).rejects.toMatchObject({ status: 409, code: null, detail: "Conflict" });
+  });
+
   it("falls back to a string detail, then to the status text", async () => {
     fetchMock.mockResolvedValueOnce(respond(404, { detail: "Not Found" }));
     await expect(apiFetch("/api/v1/x")).rejects.toMatchObject({ status: 404, code: null, detail: "Not Found" });
@@ -112,5 +128,37 @@ describe("apiFetch", () => {
     const err = await apiFetch("/api/info").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status: 0, code: "network_error" });
+  });
+
+  describe("errorDetail", () => {
+    it("keeps detail.error_detail from the envelope shape", async () => {
+      fetchMock.mockResolvedValue(
+        respond(409, { detail: { error_code: "insufficient_cells", error_message: "Short.", error_detail: { needed: 5, shortfall: 2 } } }),
+      );
+      const err = await apiFetch("/api/sheets").catch((e: unknown) => e);
+      expect(err).toMatchObject({ status: 409, code: "insufficient_cells", errorDetail: { needed: 5, shortfall: 2 } });
+    });
+
+    it("keeps extensions from the problem shape", async () => {
+      fetchMock.mockResolvedValue(
+        respond(503, { type: "printer-unavailable", title: "Printer unavailable", extensions: { printer: "p1" } }),
+      );
+      const err = await apiFetch("/api/x").catch((e: unknown) => e);
+      expect(err).toMatchObject({ code: "printer-unavailable", errorDetail: { printer: "p1" } });
+    });
+
+    it("is null when the body carries no detail object", async () => {
+      fetchMock.mockResolvedValueOnce(respond(404, { detail: "Not Found" }));
+      expect(await apiFetch("/x").catch((e: unknown) => e)).toMatchObject({ errorDetail: null });
+      fetchMock.mockResolvedValueOnce(respond(409, { detail: { error_code: "a", error_message: "b", error_detail: null } }));
+      expect(await apiFetch("/x").catch((e: unknown) => e)).toMatchObject({ errorDetail: null });
+      fetchMock.mockResolvedValueOnce(respond(409, { detail: { error_code: "a", error_message: "b", error_detail: ["no"] } }));
+      expect(await apiFetch("/x").catch((e: unknown) => e)).toMatchObject({ errorDetail: null });
+    });
+
+    it("network and session errors have a null errorDetail", async () => {
+      fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+      expect(await apiFetch("/x").catch((e: unknown) => e)).toMatchObject({ errorDetail: null });
+    });
   });
 });

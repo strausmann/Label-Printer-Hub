@@ -17,5 +17,5 @@
     "noEmit": true,
     "types": ["vite/client", "node", "@testing-library/jest-dom"]
   },
-  "include": ["src", "vite.config.ts", "pwa.config.ts", "lingui.config.ts", "playwright.config.ts", "e2e"]
+  "include": ["src", "harness", "vite.config.ts", "pwa.config.ts", "lingui.config.ts", "playwright.config.ts", "playwright.harness.config.ts", "e2e"]
 }

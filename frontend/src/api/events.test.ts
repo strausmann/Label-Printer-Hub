@@ -39,13 +39,12 @@ class FakeEventSource {
 
 const last = () => FakeEventSource.instances[FakeEventSource.instances.length - 1]!;
 
-function setup() {
-  const client = new QueryClient();
+function setup(client = new QueryClient()) {
   const invalidate = vi.spyOn(client, "invalidateQueries");
   const wrapper = ({ children }: { children: ReactNode }) =>
     createElement(QueryClientProvider, { client }, children);
   const hook = renderHook(() => useHubEvents(), { wrapper });
-  return { ...hook, invalidate };
+  return { ...hook, invalidate, client };
 }
 
 const keys = (spy: ReturnType<typeof setup>["invalidate"]) => spy.mock.calls.map((c) => c[0]?.queryKey);
@@ -107,6 +106,92 @@ describe("useHubEvents", () => {
         fn(new MessageEvent("printer.status", { data: "not json" }));
     });
     expect(keys(invalidate)).toEqual([["printers"]]);
+  });
+
+  describe("sheet.updated", () => {
+    const update = { code: "L4736-0001", free: 40, total: 48, changed: [3], state: "active" };
+
+    it("invalidates the sheet lists, the sheet and previews", () => {
+      const { invalidate } = setup();
+      act(() => last().emit("sheet.updated", null, update));
+      expect(keys(invalidate)).toEqual([["sheets", "list"], ["sheet-types"], ["sheets", "detail", "L4736-0001"], ["sheet-preview"]]);
+    });
+
+    it("only previews that name the code are invalidated", () => {
+      const { invalidate } = setup();
+      act(() => last().emit("sheet.updated", null, update));
+      const predicate = invalidate.mock.calls[3]![0]!.predicate!;
+      const preview = (request: unknown) => ({ queryKey: ["sheet-preview", "p1", request] }) as never;
+      expect(predicate(preview({ items: [], placements: [{ sheet: "L4736-0001", cells: "first_free" }] }))).toBe(true);
+      expect(predicate(preview({ items: [], placements: [{ sheet: "L4736-0002", cells: "first_free" }] }))).toBe(false);
+      expect(predicate(preview({ items: [], placements: [{ sheet: "new", cells: "first_free" }] }))).toBe(false);
+      expect(
+        predicate(preview({ items: [], placements: [{ cells: "first_free" }], expected_cells: [{ sheet: "L4736-0001", cells: [1] }] })),
+      ).toBe(true);
+      expect(predicate({ queryKey: ["sheet-preview", "p1"] } as never)).toBe(false);
+    });
+
+    it("an update without a code still refreshes the lists", () => {
+      const { invalidate } = setup();
+      act(() => last().emit("sheet.updated", null, {}));
+      expect(keys(invalidate)).toEqual([["sheets", "list"], ["sheet-types"]]);
+    });
+
+    it("refreshes the sheet-type list and detail, whose sheet counts move with every sheet", async () => {
+      const { client } = setup();
+      client.setQueryData(["sheet-types", "list", {}], []);
+      client.setQueryData(["sheet-types", "detail", "L4736REV"], {});
+      act(() => last().emit("sheet.updated", null, update));
+      expect(client.getQueryState(["sheet-types", "list", {}])?.isInvalidated).toBe(true);
+      expect(client.getQueryState(["sheet-types", "detail", "L4736REV"])?.isInvalidated).toBe(true);
+    });
+  });
+
+  describe("page job sub-state", () => {
+    const pageEvent = (at: string, over: Record<string, unknown> = {}) => ({
+      job_id: "j1",
+      from_state: "running",
+      to_state: "running",
+      kind: "sheet_page",
+      at_printer: at,
+      at_printer_reasons: [],
+      summary: { sheet_code: "L4736-0001", cell_count: 3 },
+      ...over,
+    });
+
+    it("keeps the latest sub-state per job", () => {
+      const { client } = setup();
+      act(() => last().emit("job.state_changed", "p1", pageEvent("waiting")));
+      expect(client.getQueryData(["jobs", "j1", "at_printer"])).toEqual({
+        kind: "sheet_page",
+        atPrinter: "waiting",
+        reasons: [],
+        summary: { sheetCode: "L4736-0001", cellCount: 3 },
+      });
+      act(() => last().emit("job.state_changed", "p1", pageEvent("stopped", { at_printer_reasons: ["toner-empty"] })));
+      expect(client.getQueryData(["jobs", "j1", "at_printer"])).toMatchObject({ atPrinter: "stopped", reasons: ["toner-empty"] });
+    });
+
+    it("keeps jobs apart and ignores jobs without a kind", () => {
+      const { client } = setup();
+      act(() => last().emit("job.state_changed", "p1", pageEvent("waiting")));
+      act(() => last().emit("job.state_changed", "p1", pageEvent("printing", { job_id: "j2" })));
+      act(() => last().emit("job.state_changed", "p1", { job_id: "j3", from_state: "queued", to_state: "running" }));
+      expect(client.getQueryData(["jobs", "j1", "at_printer"])).toMatchObject({ atPrinter: "waiting" });
+      expect(client.getQueryData(["jobs", "j2", "at_printer"])).toMatchObject({ atPrinter: "printing" });
+      expect(client.getQueryData(["jobs", "j3", "at_printer"])).toBeUndefined();
+    });
+
+    it("an unreadable sub-state is stored as unknown, never guessed", () => {
+      const { client } = setup();
+      act(() => last().emit("job.state_changed", "p1", pageEvent("something-new", { at_printer_reasons: "x", summary: 5 })));
+      expect(client.getQueryData(["jobs", "j1", "at_printer"])).toEqual({
+        kind: "sheet_page",
+        atPrinter: null,
+        reasons: [],
+        summary: null,
+      });
+    });
   });
 
   it("printers_changed invalidates printers and reopens the stream", () => {
@@ -197,6 +282,17 @@ describe("useHubEvents", () => {
     act(() => last().fail());
     act(() => void vi.advanceTimersByTime(1000));
     expect(FakeEventSource.instances).toHaveLength(3);
+  });
+
+  it("after an automatic reconnect the sheet lists, the types and the previews are fetched again; the first open fetches nothing", () => {
+    const { invalidate } = setup();
+    act(() => last().open());
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => last().fail());
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(invalidate).not.toHaveBeenCalled();
+    act(() => last().open());
+    expect(keys(invalidate)).toEqual([["sheets"], ["sheet-types"], ["sheet-preview"]]);
   });
 
   it("backoff doubles and caps at 30s", () => {

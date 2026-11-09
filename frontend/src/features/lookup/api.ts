@@ -31,7 +31,7 @@ const secondaryOf = (item: LookupResult): string[] => {
  * The label as a PNG, drawn from what the lookup returned. The print itself looks the item
  * up again on the server, so the preview is a close picture, not a promise.
  */
-export function usePreviewImage(item: LookupResult, contentType: ContentType, tapeMm: number) {
+export function usePreviewImage(item: LookupResult, contentType: ContentType, tapeMm: number, enabled = true) {
   const query = useQuery({
     queryKey: ["preview", item.app, item.id, item.name, item.url, contentType, tapeMm],
     queryFn: () =>
@@ -46,6 +46,7 @@ export function usePreviewImage(item: LookupResult, contentType: ContentType, ta
       }).then(toDataUrl),
     retry: false,
     staleTime: 60_000,
+    enabled,
   });
   return { url: query.data ?? null, isPending: query.isPending, isError: query.isError };
 }

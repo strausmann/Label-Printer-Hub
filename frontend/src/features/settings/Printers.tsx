@@ -14,19 +14,33 @@ export function Printers() {
   const errorText = useErrorText();
   const printers = useAdminPrinters();
   const admin = usePrinterAdmin();
+  const [restartNote, setRestartNote] = useState(false);
   const [editing, setEditing] = useState<AdminPrinter | "new" | null>(null);
 
   return (
     <Section title={t`Printers`} intro={t`Printers live here; there is no configuration file. A disabled printer keeps its history but receives no jobs.`}>
       {editing ? (
-        <PrinterForm key={editing === "new" ? "new" : editing.slug} printer={editing === "new" ? null : editing} onDone={() => setEditing(null)} />
+        <PrinterForm key={editing === "new" ? "new" : editing.slug} printer={editing === "new" ? null : editing} onDone={(result) => {
+            setEditing(null);
+            setRestartNote(result?.restartNote === true);
+          }}
+        />
       ) : (
         <div>
-          <Button onPress={() => setEditing("new")} className={PRIMARY_BUTTON}>
+          <Button onPress={() => {
+              setRestartNote(false);
+              setEditing("new");
+            }} className={PRIMARY_BUTTON}>
             {t`Add printer`}
           </Button>
         </div>
       )}
+
+      {restartNote ? (
+        <p role="status" className={`${PANEL} font-bold`}>
+          {t`The printer is ready after the hub restarts.`}
+        </p>
+      ) : null}
 
       {printers.isPending ? (
         <p role="status" className="text-ink-2">{t`Loading…`}</p>
@@ -37,25 +51,36 @@ export function Printers() {
       ) : (
         <ul className="grid gap-2">
           {printers.data.map((printer) => {
-            const host = String((printer.connection as { host?: unknown }).host ?? "");
-            const port = String((printer.connection as { port?: unknown }).port ?? "");
+            const address =
+              printer.backend === "ipp"
+                ? String((printer.connection as { uri?: unknown }).uri ?? "")
+                : `${String((printer.connection as { host?: unknown }).host ?? "")}:${String((printer.connection as { port?: unknown }).port ?? "")}`;
             return (
               <li key={printer.id} className={`${PANEL} flex flex-wrap items-center gap-x-6 gap-y-3`}>
                 <div className="min-w-48 flex-1">
                   <div className="font-bold">{printer.name}</div>
                   <div className="text-small text-ink-2">
-                    {printer.model} · <span className="font-mono">{host}:{port}</span>
+                    {printer.model ? `${printer.model} · ` : ""}
+                    <span className="font-mono break-all">{address}</span>
                   </div>
                 </div>
                 <StatusBadge state={printer.enabled ? "ok" : "idle"} label={printer.enabled ? t`Enabled` : t`Disabled`} />
                 <div className="flex gap-2">
-                  <Button aria-label={t`Edit ${printer.name}`} onPress={() => setEditing(printer)} className={SECONDARY_BUTTON}>
+                  <Button aria-label={t`Edit ${printer.name}`} onPress={() => {
+                      setRestartNote(false);
+                      setEditing(printer);
+                    }} className={SECONDARY_BUTTON}>
                     {t`Edit`}
                   </Button>
                   <Button
                     aria-label={printer.enabled ? t`Disable ${printer.name}` : t`Enable ${printer.name}`}
                     isDisabled={admin.toggle.isPending}
-                    onPress={() => admin.toggle.mutate({ slug: printer.slug, enable: !printer.enabled })}
+                    onPress={() =>
+                      admin.toggle.mutate(
+                        { slug: printer.slug, enable: !printer.enabled },
+                        { onSuccess: () => setRestartNote(printer.backend === "ipp") },
+                      )
+                    }
                     className={SECONDARY_BUTTON}
                   >
                     {printer.enabled ? t`Disable` : t`Enable`}

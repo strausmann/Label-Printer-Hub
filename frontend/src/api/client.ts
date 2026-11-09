@@ -13,13 +13,19 @@ export class ApiError extends Error {
   /** Machine-readable code (`error_code`, or the problem `type`); null when the body has none. */
   readonly code: string | null;
   readonly detail: string;
+  /**
+   * The structured data an error carries (`detail.error_detail` of the envelope, `extensions` of
+   * a problem): the free cells of `insufficient_cells`, the plan of `plan_changed`. Null when none.
+   */
+  readonly errorDetail: Record<string, unknown> | null;
 
-  constructor(status: number, code: string | null, detail: string) {
+  constructor(status: number, code: string | null, detail: string, errorDetail: Record<string, unknown> | null = null) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.detail = detail;
+    this.errorDetail = errorDetail;
   }
 }
 
@@ -106,14 +112,24 @@ function parseProblem(status: number, body: unknown): ApiError {
   if (!isObject(body)) return new ApiError(status, null, fallback);
   const d = body.detail;
   if (isObject(d)) {
-    const code = typeof d.error_code === "string" ? d.error_code : null;
-    const message = typeof d.error_message === "string" ? d.error_message : fallback;
-    return new ApiError(status, code, message);
+    // A problem object raised as a FastAPI exception arrives wrapped: `detail: { type, title, detail }`.
+    const wrapped = typeof d.type === "string" && d.type !== "about:blank" ? d.type : null;
+    const code = typeof d.error_code === "string" ? d.error_code : wrapped;
+    const message =
+      typeof d.error_message === "string"
+        ? d.error_message
+        : typeof d.detail === "string"
+          ? d.detail
+          : typeof d.title === "string"
+            ? d.title
+            : fallback;
+    return new ApiError(status, code, message, isObject(d.error_detail) ? d.error_detail : null);
   }
   const code = typeof body.type === "string" && body.type !== "about:blank" ? body.type : null;
-  if (typeof d === "string") return new ApiError(status, code, d);
+  const extensions = isObject(body.extensions) ? body.extensions : null;
+  if (typeof d === "string") return new ApiError(status, code, d, extensions);
   const title = typeof body.title === "string" ? body.title : fallback;
-  return new ApiError(status, code, title);
+  return new ApiError(status, code, title, extensions);
 }
 
 async function readBody(response: Response): Promise<unknown> {

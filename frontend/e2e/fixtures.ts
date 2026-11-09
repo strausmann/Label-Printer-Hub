@@ -12,12 +12,84 @@ export async function signInWith(page: Page, key: string): Promise<void> {
   await page.getByRole("button", { name: "Sign in" }).click();
 }
 
+/** What `GET /__e2e/page-printer` answers: the fake's address and what it currently reports. */
+export type PagePrinterControl = { uri: string; state: Record<string, unknown> };
+
+/** The state the fake page printer can be switched to (test-only control path, loopback only). */
+export type PagePrinterState = {
+  printer_state?: number;
+  reasons?: string[];
+  markers?: { name: string; color?: string; level?: number; low_level?: number; type?: string }[];
+  accepting_jobs?: boolean;
+  job_script?: number[];
+  /** Hardware margins the printer reports, in hundredths of a millimetre. */
+  margins_hmm?: number;
+  /** Polls that report "stopping" after a Cancel-Job. */
+  cancel_steps?: number;
+};
+
+/** Switches the fake page printer; the hub notices on its next status probe (1 s in the test hub). */
+export async function setPagePrinter(page: Page, state: PagePrinterState): Promise<void> {
+  const response = await page.request.post(`${MAIN.url}/__e2e/page-printer/state`, { data: state });
+  expect(response.ok(), await response.text()).toBe(true);
+}
+
+/**
+ * Puts the fake page printer back to idle and ready. Every spec that switches it calls this in `afterEach`.
+ * It then waits until the hub's queue for that printer is empty again (see `waitForQuietQueue`).
+ */
+export async function resetPagePrinter(page: Page): Promise<void> {
+  const response = await page.request.post(`${MAIN.url}/__e2e/page-printer/reset`);
+  expect(response.ok(), await response.text()).toBe(true);
+  await waitForQuietQueue(page);
+}
+
+/**
+ * Waits until no job is queued or printing for the page printer and the hub has not paused it.
+ *
+ * The fake printer is not the only shared state: the hub's print queue is too. A job that is still
+ * queued behind a running one is dispatched when that one ends, and if the printer is stopped by
+ * then, the queue defers the job and PAUSES the printer until the stop is cleared. A spec that sets a
+ * stopped state at that moment (printers.spec does) sees "Paused" where it expects "Stopped".
+ * Specs that start jobs and end without waiting for them hand such a queue to the next spec.
+ */
+export async function waitForQuietQueue(page: Page): Promise<void> {
+  const named = async () => {
+    const list = await page.request.get(`${MAIN.url}/api/printers`);
+    if (!list.ok()) return null; // not signed in: there is no queue to ask about
+    const printers = (await list.json()) as { id: string; name: string; paused?: boolean }[];
+    return printers.find((p) => p.name === "Office page printer") ?? null;
+  };
+  const printer = await named();
+  if (!printer) return;
+  await expect
+    .poll(
+      async () => {
+        const queue = await page.request.get(`${MAIN.url}/api/printers/${printer.id}/queue`);
+        const jobs = queue.ok() ? ((await queue.json()) as unknown[]).length : -1;
+        return { jobs, paused: (await named())?.paused ?? null };
+      },
+      { message: "the hub still has page jobs in flight or the page printer paused", timeout: 60_000, intervals: [250, 500, 1000] },
+    )
+    .toEqual({ jobs: 0, paused: false });
+}
+
+/** The fake's `ipp://` address and its current state. */
+export async function pagePrinterControl(page: Page): Promise<PagePrinterControl> {
+  const response = await page.request.get(`${MAIN.url}/__e2e/page-printer`);
+  expect(response.headers()["content-type"]).toContain("application/json");
+  return (await response.json()) as PagePrinterControl;
+}
+
 export const test = base.extend<{ signedInPage: Page }>({
   signedInPage: async ({ page }, use) => {
     await page.goto("/");
     await signInWith(page, mainKey());
     await expect(page.getByRole("navigation", { name: /^(Main|Tabs)$/ }).first()).toBeVisible();
     await use(page);
+    // A route handler that is still inside `route.fetch()` when the test ends throws "Test ended"
+    // into whatever test is reported next. Drop every route and let in-flight handlers fail quietly.
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   },
 });
 

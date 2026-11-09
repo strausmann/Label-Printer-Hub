@@ -15,12 +15,10 @@ import { apiFetch } from "../api/client";
 import type { components } from "../api/schema.gen";
 import {
   AsnPage,
-  CalibrationPage,
   KeptPage,
   NotFoundPage,
-  SheetArchivePage,
-  SheetsPage,
 } from "../pages/placeholders";
+import { CalibrationPage } from "../features/calibration/CalibrationPage";
 import { IntegrationPage } from "../features/integrations/IntegrationPage";
 import { AboutPage } from "../features/about/AboutPage";
 import { JobPage } from "../features/jobs/JobDetail";
@@ -34,6 +32,12 @@ import { General, Jobs } from "../features/settings/sections";
 import { SettingsLayout } from "../features/settings/SettingsPage";
 import { System } from "../features/settings/System";
 import { ScanScreen } from "../features/scan/ScanScreen";
+import { SheetArchivePage } from "../features/archive/ArchivePage";
+import { parseArchiveSearch } from "../features/archive/search";
+import { parseSheetCode } from "../features/sheets/resolver";
+import { parseSheetsSearch } from "../features/sheets/search";
+import { SheetsPage } from "../features/sheets/SheetsPage";
+import { SheetDetail } from "../features/sheets/SheetDetail";
 import { OverviewPage } from "../features/overview/OverviewPage";
 import { PrinterPage } from "../features/printers/PrinterDetail";
 import { PrintersPage } from "../features/printers/PrintersPage";
@@ -140,6 +144,46 @@ function SignInRoute() {
 const page = <P extends string>(path: P, component: () => React.JSX.Element) =>
   createRoute({ getParentRoute: () => rootRoute, path, component });
 
+const text = (value: unknown): string | undefined => (typeof value === "string" && value !== "" ? value : undefined);
+
+// The search parameters other pages link with (`<Link to="/cart" search={{ sheet }}>`), declared
+// here so the typed links compile; the pages read them. A value that is not a sheet code is dropped.
+// Every key stays in the result even when rejected: the router merges the result over the raw
+// query string, so leaving it out would let the unchecked value through.
+const cartRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/cart",
+  component: CartPage,
+  validateSearch: (search: Record<string, unknown>): { sheet?: string | undefined } => {
+    const sheet = text(search.sheet);
+    return { sheet: sheet && parseSheetCode(`sheet:${sheet}`) ? sheet : undefined };
+  },
+});
+
+const archiveRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sheets/archive",
+  component: SheetArchivePage,
+  validateSearch: parseArchiveSearch,
+});
+
+const sheetsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sheets",
+  component: SheetsPage,
+  validateSearch: parseSheetsSearch,
+});
+
+const calibrationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/calibration",
+  component: CalibrationPage,
+  validateSearch: (search: Record<string, unknown>): { printer?: string | undefined; tray?: string | undefined } => ({
+    printer: text(search.printer),
+    tray: text(search.tray),
+  }),
+});
+
 // Settings is a layout (admin gate and section navigation) with one child per section.
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsLayout });
 const settingsChild = <P extends string>(path: P, component: () => React.JSX.Element) =>
@@ -169,7 +213,7 @@ const routeTree = rootRoute.addChildren([
   page("/asset/$id", AssetPage),
   page("/spool/$id", SpoolPage),
   page("/product/$id", ProductPage),
-  page("/cart", CartPage),
+  cartRoute,
   page("/about", AboutPage),
   page("/scan", ScanScreen),
   settingsRoute.addChildren([
@@ -180,9 +224,12 @@ const routeTree = rootRoute.addChildren([
     settingsChild("/jobs", Jobs),
     settingsChild("/system", System),
   ]),
-  page("/sheets", SheetsPage),
-  page("/sheets/archive", SheetArchivePage),
-  page("/calibration", CalibrationPage),
+  sheetsRoute,
+  archiveRoute,
+  // The second path is the one printed in the QR code of a sheet.
+  page("/sheets/$code", SheetDetail),
+  page("/sheet/$code", SheetDetail),
+  calibrationRoute,
   page("/asn", AsnPage),
   page("/kept", KeptPage),
   signInRoute,

@@ -1,5 +1,7 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { pageJobStateFrom, pageJobStateKey } from "../features/jobs/pageJobState";
+import { previewNamesCode, SHEET_PREVIEW_KEY, sheetKey, sheetsListKey, typesListKey } from "../features/sheets/keys";
 import { isSessionUnknown, notifyUnauthorized, onSessionConfirmed } from "./client";
 
 const EVENTS_URL = "/api/v1/events";
@@ -13,30 +15,58 @@ const EVENT_TYPES = [
   "printer.tape_changed",
   "hub.printers_changed",
   "auth.expired",
+  // The `sheets` channel (no printer restriction); the client filters by event type, not channel.
+  "sheet.updated",
 ] as const;
 type EventType = (typeof EVENT_TYPES)[number];
 
-function printerIdOf(frame: MessageEvent): string | null {
+interface Frame {
+  printerId: string | null;
+  data: Record<string, unknown>;
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+function parseFrame(frame: MessageEvent): Frame {
   try {
     const payload: unknown = JSON.parse(String(frame.data));
-    if (typeof payload === "object" && payload !== null && "printer_id" in payload) {
-      const id = (payload as { printer_id: unknown }).printer_id;
-      return typeof id === "string" && id !== "" ? id : null;
+    if (isRecord(payload)) {
+      const id = payload.printer_id;
+      return { printerId: typeof id === "string" && id !== "" ? id : null, data: isRecord(payload.data) ? payload.data : {} };
     }
   } catch {
     // Unreadable body: the event type alone still says which lists are stale.
   }
-  return null;
+  return { printerId: null, data: {} };
 }
 
 /** Which cached queries an event makes stale. Task 11 relies on these keys. */
-function invalidate(client: QueryClient, type: EventType, printerId: string | null): void {
+function invalidate(client: QueryClient, type: EventType, { printerId, data }: Frame): void {
   const run = (queryKey: readonly unknown[]) => void client.invalidateQueries({ queryKey });
   switch (type) {
-    case "job.state_changed":
+    case "job.state_changed": {
+      // A page job's place at the printer changes with from_state == to_state, so a refetch of the
+      // job returns nothing new: keep the event's own data for the job views.
+      const pageJob = pageJobStateFrom(data);
+      if (pageJob) client.setQueryData(pageJobStateKey(pageJob.jobId), pageJob.state);
       run(["jobs"]);
       if (printerId) run(["printers", printerId, "queue"]);
       break;
+    }
+    case "sheet.updated": {
+      run(sheetsListKey);
+      // Sheet counts of the types (sheets_in_use, per version) move with every sheet; the event names no type.
+      run(typesListKey.slice(0, 1));
+      const code = typeof data.code === "string" ? data.code : null;
+      if (!code) break;
+      run(sheetKey(code));
+      // Only previews that name the code: a worst-case preview takes seconds to render.
+      void client.invalidateQueries({
+        queryKey: [SHEET_PREVIEW_KEY],
+        predicate: (query) => previewNamesCode(query.queryKey, code),
+      });
+      break;
+    }
     case "printer.status":
       run(["printers"]);
       if (printerId) run(["printers", printerId]);
@@ -71,6 +101,7 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
     let stopped = false;
     let disposed = false;
     let stopWaiting: (() => void) | null = null;
+    let openedBefore = false;
 
     const close = () => {
       if (source) {
@@ -109,6 +140,14 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
       const es = new EventSource(EVENTS_URL, { withCredentials: true });
       source = es;
       es.onopen = () => {
+        // The snapshot of a fresh stream has no sheet frames, so a `sheet.updated` sent while the
+        // stream was down never arrives: whatever shows sheets is fetched again.
+        if (openedBefore) {
+          void queryClient.invalidateQueries({ queryKey: sheetsListKey.slice(0, 1) });
+          void queryClient.invalidateQueries({ queryKey: typesListKey.slice(0, 1) });
+          void queryClient.invalidateQueries({ queryKey: [SHEET_PREVIEW_KEY] });
+        }
+        openedBefore = true;
         delay = BACKOFF_START_MS;
         setConnected(true);
         setConnecting(false);
@@ -139,7 +178,7 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
             });
             return;
           }
-          invalidate(queryClient, type, printerIdOf(frame as MessageEvent));
+          invalidate(queryClient, type, parseFrame(frame as MessageEvent));
           // The printer set changed: a fresh stream starts from the new set at once.
           if (type === "hub.printers_changed") open();
         });

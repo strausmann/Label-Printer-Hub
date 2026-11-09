@@ -1,5 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { ApiError } from "../../api/client";
+import { ippRejected } from "../../api/errorDetail";
 
 /** The words for a failed save: the server's code first, its own text only as a last resort. */
 export function useErrorText(): (error: unknown, fallback?: string) => string {
@@ -19,6 +20,20 @@ export function useErrorText(): (error: unknown, fallback?: string) => string {
           return t`That slug is already used by another printer.`;
         case "duplicate_name":
           return t`That name is already used by another printer.`;
+        case "ipp_pdf_unsupported":
+          return t`This printer cannot print PDF, which the hub needs for sheets.`;
+        case "ipp_unreachable":
+          return t`The printer cannot be reached at that address.`;
+        case "ipp_rejected": {
+          const status = ippRejected(error)?.ippStatus;
+          return status ? t`The printer refused the request (${status}).` : t`The printer refused the request.`;
+        }
+        case "ipp_bad_response":
+          return t`The address did not answer like an IPP printer.`;
+        case "tray_unknown":
+          return t`A tray is set that the printer does not report. Read the printer again.`;
+        case "invalid_connection":
+          return t`The address or the certificate setting is not valid.`;
         case "scope_too_low":
           return t`You need an admin key for this.`;
       }

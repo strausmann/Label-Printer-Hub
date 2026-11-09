@@ -190,12 +190,18 @@ jobs:
           E2E_PYTHON: python
         run: pnpm e2e
 
+      # Real-browser layout checks of components no route shows yet (44 px tap targets, no sideways page scroll).
+      - name: Component layout checks
+        run: pnpm e2e:harness
+
       - name: Keep the Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
-          path: frontend/playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
           retention-days: 7
 
   docker-build:

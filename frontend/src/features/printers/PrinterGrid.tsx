@@ -17,7 +17,7 @@ export function PrinterGrid() {
   return (
     <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {printers.data.map((printer) => (
-        <li key={printer.id}>
+        <li key={printer.id} className="min-w-0">
           <PrinterCard printer={printer} status={statuses.get(printer.id)} printing={busy.has(printer.id)} />
         </li>
       ))}

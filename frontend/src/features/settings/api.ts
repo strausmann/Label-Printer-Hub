@@ -8,6 +8,8 @@ export type SettingView = components["schemas"]["SettingView"];
 export type AdminPrinter = components["schemas"]["app__api__routes__admin_printers_api__PrinterRead"];
 export type PrinterCreate = components["schemas"]["PrinterCreatePayload"];
 export type PrinterUpdate = components["schemas"]["PrinterUpdatePayload"];
+export type IppProbeSummary = components["schemas"]["ProbeSummary"];
+export type TrayIn = components["schemas"]["TrayIn"];
 export type ApiKey = components["schemas"]["ApiKeyRead"];
 export type ApiKeyCreated = components["schemas"]["ApiKeyCreateResponse"];
 export type IntegrationTestResult = components["schemas"]["IntegrationTestResult"];
@@ -69,6 +71,13 @@ export function usePrinterAdmin() {
     }),
   };
 }
+
+/** "Read printer": asks the printer at the address what it can do. Nothing is saved. */
+export const useProbeIpp = () =>
+  useMutation({
+    mutationFn: (body: { uri: string; tls_verify: boolean }) =>
+      apiFetch<IppProbeSummary>("/api/v1/admin/printers/ipp/probe", { method: "POST", json: body }),
+  });
 
 export const useApiKeys = () =>
   useQuery({ queryKey: apiKeysKey, queryFn: () => apiFetch<ApiKey[]>("/api/admin/api-keys") });
