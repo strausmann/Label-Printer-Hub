@@ -615,8 +615,10 @@ async def test_lifespan_ignores_ipp_rows_for_tape_wiring(hub: Hub) -> None:
             return None
 
     with (
-        patch("app.main._resolve_model_id_from_config", side_effect=fake_resolve),
-        patch("app.main.StatusProbeProducer", FakeProbe),
+        patch(
+            "app.services.printer_runtime._resolve_model_id_from_config", side_effect=fake_resolve
+        ),
+        patch("app.services.printer_runtime.StatusProbeProducer", FakeProbe),
     ):
         resp = await hub.client.get("/healthz")
         assert resp.status_code == 200

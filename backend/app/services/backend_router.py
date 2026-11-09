@@ -100,6 +100,23 @@ class BackendRouter:
     def slugs(self) -> list[str]:
         return list(self._configs.keys())
 
+    def register(self, cfg: PrinterYAMLConfig) -> None:
+        """Add a printer at runtime (#224): build its backend under ``cfg.slug``.
+
+        Raises ``ValueError`` when the slug is already registered (unregister it first).
+        """
+        if cfg.slug in self._configs:
+            raise ValueError(f"Printer slug {cfg.slug!r} is already registered")
+        backend = self._build_one(cfg)
+        self._configs[cfg.slug] = cfg
+        self._backends[cfg.slug] = backend
+
+    def unregister(self, slug: str) -> None:
+        """Drop a printer's config, backend and print service. An unknown slug is a no-op."""
+        self._configs.pop(slug, None)
+        self._backends.pop(slug, None)
+        self._services.pop(slug, None)
+
     def register_service(self, slug: str, service: PrintService) -> None:
         """Registriert einen PrintService für einen Drucker-Slug.
 

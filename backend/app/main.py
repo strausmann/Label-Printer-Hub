@@ -22,11 +22,9 @@ import asyncio
 import logging
 import os
 import sys
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from dataclasses import dataclass
-from typing import Annotated, Any, cast
-from uuid import UUID
+from typing import Annotated, Any
 
 # ---------------------------------------------------------------------------
 # F3 — Early settings validation with a friendly error message.
@@ -117,32 +115,25 @@ from app.db.lifespan import (
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
 from app.observability.log_buffer import install_log_buffer
-from app.printer_backends.exceptions import SnmpDiscoveryError
-from app.printer_backends.ipp.client import IppClient
-from app.printer_backends.snmp_helper import query_model_pjl
 from app.printer_models.registry import ModelRegistry
+from app.repositories import printers as printers_repo
 from app.schemas.readiness import ReadinessResponse
-from app.services.backend_router import BackendRouter, PrinterYAMLConfig
+from app.services.backend_router import PrinterYAMLConfig
 from app.services.cleanup_task import CleanupTask
 from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.layout_engine import LayoutEngine
-from app.services.lookup_service import AppLookupService
 from app.services.page_jobs import (
-    IppPagePrinter,
     register_outcome_handler,
     register_page_renderer,
     unregister_outcome_handler,
 )
 from app.services.print_queue import PrintQueue, load_manual_pauses
-from app.services.print_service import PrintService
-from app.services.producers.ipp_status_producer import IppPrinterState, IppStatusProducer
+from app.services.printer_runtime import PrinterRuntime, tape_config
+from app.services.printer_runtime import shutdown_wait_s as shutdown_wait_s  # re-export
 from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.printer_pause_producer import PrinterPauseProducer
-from app.services.producers.status_probe_producer import StatusProbeProducer
-from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.readiness import build_readiness_response
-from app.services.tape_registry import TapeRegistry
 from app.settings_store import SettingsStore
 from app.sheets.outcome import SheetCellsOutcome, sweep_orphan_reservations
 from app.sheets.sheet_page import render_sheet_page
@@ -163,28 +154,6 @@ HUB_REPO_URL: str = os.environ.get(
 )
 
 _log = logging.getLogger(__name__)
-
-# At most this many IPP printers are probed at the same moment.
-_IPP_PROBE_CONCURRENCY = 4
-_DEFAULT_SHUTDOWN_WAIT_S = 30
-
-
-def shutdown_wait_s(tape_timeouts_s: Sequence[int], page_timeouts_s: Sequence[int]) -> float:
-    """How long ``queue.stop`` waits for the workers: the largest queue timeout of any worker,
-    tape or page, so no printer's worker is cut off before its own request limit.
-    """
-    return float(max([*tape_timeouts_s, *page_timeouts_s], default=_DEFAULT_SHUTDOWN_WAIT_S))
-
-
-@dataclass(frozen=True)
-class _IppSpec:
-    """What the IPP status producer needs of a stored page printer (no ORM object kept)."""
-
-    id: UUID
-    slug: str
-    uri: str
-    tls_verify: bool
-    queue_timeout_s: int
 
 
 class Healthz(BaseModel):
@@ -267,76 +236,12 @@ def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
 def _build_configs_from_db(
     db_printers: list[Any],
 ) -> list[PrinterYAMLConfig]:
-    """Konvertiert DB-Printer-Rows in PrinterYAMLConfig-Laufzeitobjekte.
+    """Runtime configs of the stored tape printers (page printers are skipped).
 
-    Phase 5 (#124): Ersetzt PrinterConfigLoader.load_file() + .all().
-    Die DB ist nun alleinige Source of Truth für Drucker-Konfiguration.
-    Drucker mit fehlendem/leerem connection-JSON werden mit Defaults gebaut.
+    Phase 5 (#124): the DB is the only source of printer configuration. Missing or empty
+    connection JSON gets defaults (``printer_runtime.tape_config``).
     """
-    from app.services.backend_router import CutDefaults, QueueConfig, SNMPConfig
-
-    configs: list[PrinterYAMLConfig] = []
-    for p in db_printers:
-        if p.backend == "ipp":
-            continue  # page printers are not tape-wired (no backend, model, SNMP)
-        conn: dict[str, Any] = p.connection or {}
-        snmp_raw: dict[str, Any] = conn.get("snmp", {})
-        snmp = SNMPConfig(
-            discover=snmp_raw.get("discover", False),
-            community=snmp_raw.get("community", "public"),
-        )
-        queue = QueueConfig(timeout_s=getattr(p, "queue_timeout_s", 30))
-        cut = CutDefaults(
-            half_cut=getattr(p, "cut_defaults_half_cut", False),
-            cut_at_end=True,
-        )
-        cfg = PrinterYAMLConfig.model_construct(
-            slug=p.slug,
-            name=p.name,
-            backend=p.backend,
-            model=p.model,
-            host=conn.get("host", ""),
-            port=int(conn.get("port", 9100)),
-            snmp=snmp,
-            queue=queue,
-            cut_defaults=cut,
-        )
-        configs.append(cfg)
-    return configs
-
-
-async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
-    """SNMP discovery first, fall back to printer_cfg.model on failure.
-
-    Phase 1i CA-1: ersetzt _resolve_model_id(settings, host) — liest SNMP-
-    und Fallback-Parameter aus PrinterYAMLConfig statt aus entfernten
-    Settings-Feldern.
-    """
-    host: str = printer_cfg.host
-    community: str = printer_cfg.snmp.community
-    model_fallback: str = printer_cfg.model
-
-    if not host or not printer_cfg.snmp.discover:
-        if not model_fallback:
-            raise ValueError(
-                "printer_cfg.model ist leer und SNMP-Discovery ist deaktiviert. "
-                "Setze 'model' am Drucker oder aktiviere snmp.discover."
-            )
-        return model_fallback
-
-    try:
-        pjl = await query_model_pjl(host, community=community)
-    except SnmpDiscoveryError as exc:
-        if model_fallback:
-            _log.warning(
-                "SNMP discovery failed (%s); falling back to model=%r",
-                exc,
-                model_fallback,
-            )
-            return model_fallback
-        raise
-    driver_cls = ModelRegistry.find_by_pjl(pjl)
-    return driver_cls.model_id
+    return [tape_config(p) for p in db_printers if p.backend != "ipp"]
 
 
 @asynccontextmanager
@@ -347,20 +252,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ----------------
     1. Load seed templates (idempotent, skipped when directory is absent).
     2. Discover model + backend plugins via entry_points (idempotent).
-    3. Resolve the active model_id: SNMP-first when a host is configured and
-       discovery is enabled; falls back to settings.printer_model on
-       SnmpDiscoveryError (logged as a warning). Raises when neither source
-       can supply a model_id.
-    4. Instantiate the backend (factory.from_settings).
-    5. Resolve driver class via ModelRegistry and bind it to the backend.
-    6. Build the _PrinterLike via driver.make_queue_printer(tape_registry).
-    7. Start the PrintQueue.
-    8. Wire PrintService and helper state into app.state.
+    3. Load the enabled printers in creation order.
+    4. Build the queue (not running), then ``PrinterRuntime.attach(fatal=True)`` each printer:
+       backend, model driver, ``PrintService``, IPP clients and states, producers (not
+       started). An unresolvable tape model aborts startup; a bad IPP URI is degraded.
+    5. Register the sheet outcome handler, start the queue (manual pauses first), sweep
+       orphan sheet reservations, start the cleanup task.
+    6. ``PrinterRuntime.start()``: the status producers, each probing once at start.
 
     Shutdown sequence
     -----------------
-    queue.stop() drains in-flight jobs up to printer_queue_timeout_s, then
-    cancels remaining workers forcibly.
+    ``PrinterRuntime.stop()`` stops the producers, then ``queue.stop()`` once (it drains
+    in-flight jobs up to the longest attached queue timeout, then cancels the rest), then
+    closes the page clients.
     """
     settings = get_settings()
     warn_if_insecure_cookies(settings)
@@ -391,34 +295,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await asyncio.to_thread(ModelRegistry.ensure_discovered)
 
     # 3. DB-bound init — plugin registry is populated.
-    # Phase 5 (#124): Drucker werden aus der DB geladen (keine Konfigurationsdatei).
-    # Beim ersten Start (leere printers-Tabelle) ist _printer_configs leer und der
-    # Hub startet ohne Drucker-Wiring (Operator legt Drucker via Admin-API an).
+    # Phase 5 (#124): printers come from the DB. On a first start (empty printers table)
+    # nothing is wired and the hub starts without printers (the operator adds them through
+    # the admin API).
     async with async_session() as s:
-        from sqlalchemy import select as _select
-        from sqlmodel import col as _col
-
-        from app.models.printer import Printer as _Printer
-
-        _db_printers = list(
-            (await s.execute(_select(_Printer).where(_col(_Printer.enabled).is_(True)))).scalars()
-        )
-        # Page printers (IPP) never reach the tape wiring: no PrinterYAMLConfig, no model
-        # resolution, no SNMP producer, no PrintService. The page-job path wires them.
-        _ipp_specs = [
-            _IppSpec(
-                id=p.id,
-                slug=p.slug,
-                uri=str((p.connection or {}).get("uri", "")),
-                tls_verify=bool((p.connection or {}).get("tls_verify", True)),
-                queue_timeout_s=int(getattr(p, "queue_timeout_s", 30)),
-            )
-            for p in _db_printers
-            if p.backend == "ipp"
-        ]
-        _db_printers = [p for p in _db_printers if p.backend != "ipp"]
-        _printer_configs = _build_configs_from_db(_db_printers)
-        db_printer_ids = [p.id for p in _db_printers]
+        # Enabled printers in creation order: the order the back-compat fields use.
+        _db_printers = await printers_repo.list_all(s)
         await ensure_printer_state(s)
         await s.commit()
         # D4/D5: runtime settings (env-locked values, encrypted secrets).
@@ -446,27 +328,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # sweep still has to read (T5-1).
     app.state.cleanup_task = cleanup_task
 
-    # Phase 1i H — Multi-Printer-Wiring (Task 7b)
-    # Real BackendRouter (from Task 5) — baut Backends aus PrinterYAMLConfig.
-    backend_router = BackendRouter(_printer_configs)
-    app.state.backend_router = backend_router
-
-    tape_registry = TapeRegistry()
-    queue_printers: list[Any] = []
-    slug_to_printer_id: dict[Any, Any] = {}
-
-    for cfg, printer_id in zip(_printer_configs, db_printer_ids, strict=True):
-        # Phase 1i CA-1: Model-Auflösung pro Drucker — SNMP-first mit Fallback.
-        model_id = await _resolve_model_id_from_config(cfg)
-        backend = backend_router.get(cfg.slug)
-        driver_cls: Any = ModelRegistry.find_by_model_id(model_id)
-        driver: Any = driver_cls(backend=backend)
-        # R4-A-C5-Fix: make_queue_printer wird von Task 8 (QLSeriesModel) implementiert.
-        # Lifespan-Tests für QL-Konfigurationen mocken diese Methode via unittest.mock.patch.
-        printer = driver.make_queue_printer(tape_registry, printer_id=printer_id)
-        queue_printers.append(printer)
-        slug_to_printer_id[cfg.slug] = printer.id
-
     # --- SSE EventBus ---
     event_bus = EventBus(queue_size=settings.sse_queue_size)
     app.state.event_bus = event_bus
@@ -476,52 +337,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Used by PrintQueue recovery and PrintService rendering.
     shared_engine = LayoutEngine()
     app.state.engine = shared_engine
-
-    # D18: IPP page printers. Each gets an in-memory state (written by its status producer,
-    # read by the page-job path) and its own client for the page jobs; the producer has
-    # another one, so a long upload never delays a status probe.
-    ipp_states: dict[Any, IppPrinterState] = {}
-    page_printers: list[IppPagePrinter] = []
-    ipp_transport_factory = getattr(app.state, "ipp_transport_factory", None)
-    for spec in _ipp_specs:
-        try:
-            queue_timeout = float(spec.queue_timeout_s)
-            page_client = IppClient(
-                spec.uri,
-                tls_verify=spec.tls_verify,
-                query_timeout_s=min(5.0, queue_timeout),
-                upload_timeout_s=queue_timeout,
-                transport=ipp_transport_factory(spec.uri) if ipp_transport_factory else None,
-            )
-        except Exception as ipp_exc:
-            # A bad stored URI must not stop the hub (degraded start, like the SNMP probes).
-            _log.warning(
-                "Degraded start: IPP printer slug=%s not wired (%s)",
-                spec.slug,
-                type(ipp_exc).__name__,
-            )
-            continue
-        ipp_state = IppPrinterState()
-        ipp_states[spec.id] = ipp_state
-        page_printers.append(IppPagePrinter(id=spec.id, client=page_client, state=ipp_state))
+    app.state.job_store = job_store
 
     pq_producer = PrintQueueProducer(bus=event_bus)
     pause_producer = PrinterPauseProducer(bus=event_bus)
     queue = PrintQueue(
-        printers=queue_printers,
+        printers=[],
         on_state_change=pq_producer.handle_transition,
         store=job_store,
         engine=shared_engine,
         on_pause_change=pause_producer.handle_change,
-        page_printers=page_printers,
     )
-    # Persisted manual pauses must be in place before any worker task exists.
-    async with async_session() as _pause_session:
-        _initially_paused = await load_manual_pauses(_pause_session)
+    app.state.print_queue = queue
+
+    # #224: every printer is wired by the runtime, at startup and on an admin change. The
+    # queue is not running yet, so an attach only registers the printer and builds its
+    # backend, service and producer; nothing probes before ``runtime.start()`` below.
+    # An unresolvable tape model still aborts startup (fatal); a bad IPP URI is degraded.
+    runtime = PrinterRuntime(app, settings, session_factory=async_session)
+    app.state.printer_runtime = runtime
+    for _db_printer in _db_printers:
+        await runtime.attach(_db_printer, fatal=True)
+
     # D15: restart recovery calls the handler's ``on_unknown`` from inside ``start()``, so the
     # handler is registered first (a registry without it would hand the call to a no-op).
     sheet_outcome = SheetCellsOutcome(async_session, event_bus)
     register_outcome_handler("sheet_page", sheet_outcome)
+    # Persisted manual pauses must be in place before any worker task exists.
+    async with async_session() as _pause_session:
+        _initially_paused = await load_manual_pauses(_pause_session)
     await queue.start(initially_paused=_initially_paused)
     try:  # cells of jobs that ended, or vanished, while the hub was down
         await sweep_orphan_reservations(async_session, bus=event_bus)
@@ -530,139 +374,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await cleanup_task.start()
     if _initially_paused:
         _log.info("Restored %d manual printer pause(s) from the database", len(_initially_paused))
-
-    # StatusProbeProducer pro Drucker — R4-MA1-Fix Degraded-Start:
-    # Probe-Fehler werden geloggt, Hub startet trotzdem.
-    status_producers: list[StatusProbeProducer] = []
-    for cfg in _printer_configs:
-        _discovery_host = cfg.host or ""
-        if _discovery_host and cfg.snmp.discover:
-            _printer_id = slug_to_printer_id[cfg.slug]
-            try:
-                # F7: driver beschreibt Tape-Klassen via describe_tape() —
-                # TapeChangeProducer nutzt driver statt tape_registry.lookup_pt().
-                # Im Multi-Printer-Modus übergeben wir model=None als Fallback
-                # da wir keinen direkten Driver-Zugang pro-Drucker im Producer-Kontext haben.
-                # Task 8 kann dies verfeinern wenn QL-Driver describe_tape() implementiert.
-                tape_producer = TapeChangeProducer(
-                    bus=event_bus,
-                    tape_registry=tape_registry,
-                    model=None,
-                )
-                producer = StatusProbeProducer(
-                    bus=event_bus,
-                    printer_id=str(_printer_id),
-                    host=_discovery_host,
-                    interval_s=settings.sse_probe_interval_s,
-                    community=cfg.snmp.community,
-                    tape_change_producer=tape_producer,
-                )
-                await producer.start()
-                status_producers.append(producer)
-            except Exception as probe_exc:
-                _log.warning(
-                    "Degraded-Start: StatusProbeProducer für slug=%s (host=%s) fehlgeschlagen: %s. "
-                    "Hub startet ohne diesen Drucker — SNMP-Status bleibt unreachable.",
-                    cfg.slug,
-                    _discovery_host,
-                    probe_exc,
-                )
-
-    # D18: IPP page printers get the IPP status producer instead of the SNMP one; it lifts a
-    # pause the printer's own error caused (OC-22), so the queue is its pause control.
-    ipp_producers: list[IppStatusProducer] = []
-    ipp_limiter = asyncio.Semaphore(_IPP_PROBE_CONCURRENCY)
-    for spec in _ipp_specs:
-        if spec.id not in ipp_states:
-            continue
-        try:
-            probe_timeout = min(5.0, float(spec.queue_timeout_s))
-            ipp_producer = IppStatusProducer(
-                bus=event_bus,
-                printer_id=spec.id,
-                client=IppClient(
-                    spec.uri,
-                    tls_verify=spec.tls_verify,
-                    query_timeout_s=probe_timeout,
-                    upload_timeout_s=probe_timeout,
-                    transport=ipp_transport_factory(spec.uri) if ipp_transport_factory else None,
-                ),
-                session_factory=async_session,
-                state=ipp_states[spec.id],
-                pause_control=queue,
-                interval_s=settings.sse_probe_interval_s,
-                limiter=ipp_limiter,
-                log_name=spec.slug,
-            )
-            await ipp_producer.start()
-        except Exception as ipp_exc:
-            _log.warning(
-                "Degraded start: IPP status producer for slug=%s not started (%s)",
-                spec.slug,
-                type(ipp_exc).__name__,
-            )
-            continue
-        ipp_producers.append(ipp_producer)
-    app.state.ipp_printer_states = ipp_states
-
-    app.state.print_queue = queue
-    app.state.slug_to_printer_id = slug_to_printer_id
-
-    # R4-A-C2-Fix (Volle Multi-Printer): PrintService-Map — eine Instanz pro Drucker.
-    for cfg, printer_id in zip(_printer_configs, db_printer_ids, strict=True):
-        printer_backend = backend_router.get(cfg.slug)
-        assert printer_backend is not None, (
-            f"BackendRouter missing backend for slug={cfg.slug!r} — "
-            "should have been registered during BackendRouter.__init__"
-        )
-        # cast: PrinterBackend satisfies _BackendProto at runtime (both concrete
-        # backends implement preflight_check). _BackendProto is a private Protocol
-        # in print_service and cannot be imported here for a clean annotation.
-        service = PrintService(
-            engine=shared_engine,
-            queue=queue,
-            lookup_service=AppLookupService(),
-            printer_id=printer_id,
-            backend=cast(Any, printer_backend),
-            store=job_store,
-        )
-        backend_router.register_service(cfg.slug, service)
-
-    # Backward-Compat: app.state.print_service und app.state.printer_id zeigen
-    # auf den ersten konfigurierten Drucker — für Pfade die noch nicht auf
-    # service_for() migriert sind (z.B. POST /api/v1/print Einzel-Druck-Route).
-    # Phase 5 (#124): leere printers-Tabelle (Fresh-Install) → kein Printer-Wiring.
-    # Hub startet sauber; GET /api/v1/printers liefert [] bis Operator Drucker anlegt.
-    if _printer_configs:
-        first_cfg = _printer_configs[0]
-        first_printer_id = slug_to_printer_id[first_cfg.slug]
-        app.state.printer_id = first_printer_id
-        app.state.print_service = backend_router.service_for(first_cfg.slug)
-    else:
-        app.state.printer_id = None
-        app.state.print_service = None
+    # Producers last: each probes once at start (no awaited probe at startup).
+    await runtime.start()
 
     try:
         yield
     finally:
-        for sp in status_producers:
-            await sp.stop()
-        for ipp_sp in ipp_producers:
-            try:
-                await ipp_sp.stop()
-            except Exception as stop_exc:  # one failing stop must not skip the rest
-                _log.warning("IPP status producer stop failed (%s)", type(stop_exc).__name__)
-        await queue.stop(
-            timeout_s=shutdown_wait_s(
-                [c.queue.timeout_s for c in _printer_configs],
-                [spec.queue_timeout_s for spec in _ipp_specs],
-            )
-        )
-        for page_printer in page_printers:
-            try:
-                await page_printer.client.aclose()
-            except Exception as close_exc:  # one failing close must not skip the rest
-                _log.warning("IPP page client close failed (%s)", type(close_exc).__name__)
+        # Producers, then the queue (once, longest attached timeout), then the page clients.
+        await runtime.stop()
         await cleanup_task.stop()
         unregister_outcome_handler("sheet_page", sheet_outcome)
         await engine.dispose()

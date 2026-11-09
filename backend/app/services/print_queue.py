@@ -651,6 +651,21 @@ class PrintQueue:
             logger.info("Recovery: page job %s on %s resumes tracking", row.id, printer_id)
         self._to_resume[printer_id] = resumable
 
+    async def settle_page_jobs_in_flight(self, printer_id: UUID) -> int:
+        """End the PRINTING page jobs of *printer_id* as unknown when it is no page printer.
+
+        A page printer re-wired as a tape printer at runtime (#224) never resumes the tracking
+        of a page job the printer may still hold: ``start()`` settles such a job at the next
+        restart (an orphan of a non-page printer); this does it at once. A no-op while
+        *printer_id* is a page printer. Returns the number of jobs settled.
+        """
+        if printer_id in self._page_printers:
+            return 0
+        rows = await self._store.list_page_jobs_in_flight(printer_id)
+        for row in rows:
+            await self._settle_unknown_page_job(row)
+        return len(rows)
+
     async def _settle_unknown_page_job(self, row: DbJob) -> None:
         """A page job that may or may not have printed: ``failed_restart`` and ``on_unknown``."""
         logger.warning("Recovery: page job %s has an unknown outcome", row.id)
