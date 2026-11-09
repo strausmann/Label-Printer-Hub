@@ -1,5 +1,5 @@
 import { useLingui } from "@lingui/react/macro";
-import { parseTape, useColourNames, type TapeColour } from "./model";
+import { useColourNames, type TapeColour } from "./model";
 
 const SWATCH: Record<TapeColour, string> = {
   white: "bg-tape-white",
@@ -7,36 +7,43 @@ const SWATCH: Record<TapeColour, string> = {
   green: "bg-tape-green",
   blue: "bg-tape-blue",
   red: "bg-tape-red",
+  black: "bg-tape-black",
+  // Clear tape has no colour of its own: an empty, dashed swatch reads as "see-through" in both themes.
+  clear: "bg-tape-clear border-dashed",
 };
 
+/** The material colour as a small square. Never state, so it is hidden from assistive technology and always sits beside the colour's name. */
+export function ColourSwatch({ colour }: { colour: TapeColour }) {
+  return <span aria-hidden="true" className={`size-4 shrink-0 rounded-r1 border border-line-strong ${SWATCH[colour]}`} />;
+}
+
 /**
- * The loaded tape: width and colour. The swatch is material, never state, so it always
- * sits next to the colour's name and is hidden from assistive technology.
+ * The loaded tape: width, and the colour when the operator gave one. The printer reports no colour,
+ * so without one there is no colour line at all (never "not reported": that would read as a fault).
  */
-export function TapeSwatch({ tapeLoaded, probed = true }: { tapeLoaded: string | null | undefined; probed?: boolean }) {
+export function TapeSwatch({
+  widthMm,
+  colour,
+  probed = true,
+}: {
+  widthMm: number | null | undefined;
+  colour: TapeColour | null | undefined;
+  probed?: boolean;
+}) {
   const { t } = useLingui();
   const names = useColourNames();
-  const tape = parseTape(tapeLoaded);
+  const width = widthMm ?? null;
   // Before the first probe "no tape" would be a guess; say that nothing is known yet.
-  if (!tape) return <span className="text-ink-2">{probed ? t`No tape loaded` : t`Tape not known yet`}</span>;
-  const colourText = tape.colour ? names[tape.colour] : tape.colourName ? capitalise(tape.colourName) : null;
+  if (width === null && !colour) return <span className="text-ink-2">{probed ? t`No tape loaded` : t`Tape not known yet`}</span>;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-      {tape.widthMm !== null && <span className="font-bold">{t`${tape.widthMm} mm`}</span>}
-      {tape.colour ? (
-        <span className="inline-flex items-center gap-2">
-          <span aria-hidden="true" className={`size-4 shrink-0 rounded-r1 border border-line-strong ${SWATCH[tape.colour]}`} />
-          <span>{colourText}</span>
+      {width !== null && <span className="font-bold">{t`${width} mm`}</span>}
+      {colour && (
+        <span className="inline-flex min-w-0 items-center gap-2">
+          <ColourSwatch colour={colour} />
+          <span className="[overflow-wrap:anywhere]">{names[colour]}</span>
         </span>
-      ) : colourText ? (
-        <span>{colourText}</span>
-      ) : (
-        <span className="text-ink-2">{t`Colour not reported`}</span>
       )}
     </span>
   );
-}
-
-function capitalise(word: string): string {
-  return word.charAt(0).toUpperCase() + word.slice(1);
 }

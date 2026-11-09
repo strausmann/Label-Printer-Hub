@@ -9,7 +9,7 @@ afterEach(() => vi.unstubAllGlobals());
 const base = (jobs: unknown[] = []) => ({
   "GET /api/v1/printers": [PRINTER_A, PRINTER_B],
   [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
-  [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: null }),
+  [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: null, tape_width_mm: null, tape_colour: null }),
   "GET /api/v1/jobs": jobs,
 });
 
@@ -243,7 +243,7 @@ describe("Overview", () => {
       const heading = await screen.findByRole("heading", { level: 2, name: "Material" });
       return heading.closest("section") as HTMLElement;
     };
-    const stale = { online: null, stale: true, tape_loaded: null, last_probe_age_s: 12349795 };
+    const stale = { online: null, stale: true, tape_loaded: null, tape_width_mm: null, tape_colour: null, last_probe_age_s: 12349795 };
 
     it("a stale tape printer says Status unknown with its age, not No tape loaded", async () => {
       mockApi({ ...base(), [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, stale) });
@@ -258,7 +258,7 @@ describe("Overview", () => {
     it("an unpolled tape printer says Not monitored", async () => {
       mockApi({
         ...base(),
-        [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, { online: null, polled: false, tape_loaded: null }),
+        [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, { online: null, polled: false, tape_loaded: null, tape_width_mm: null, tape_colour: null }),
       });
       await renderApp({ path: "/" });
       const block = await material();

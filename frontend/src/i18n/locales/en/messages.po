@@ -74,8 +74,8 @@ msgstr "{0} has no sheets. Deleting it removes it and all its versions for good.
 
 #. placeholder {0}: tape.widthMm
 #: src/features/printers/TapeSwatch.tsx
-msgid "{0} mm"
-msgstr "{0} mm"
+#~ msgid "{0} mm"
+#~ msgstr "{0} mm"
 
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/sheets/print/PrinterRow.tsx
@@ -288,6 +288,10 @@ msgstr "{what} must not be empty."
 #: src/features/archive/errors.ts
 msgid "{what} must not be negative."
 msgstr "{what} must not be negative."
+
+#: src/features/printers/TapeSwatch.tsx
+msgid "{width} mm"
+msgstr "{width} mm"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "+ = printed too far right"
@@ -593,6 +597,10 @@ msgid "Backend"
 msgstr "Backend"
 
 #: src/features/printers/model.ts
+msgid "Black"
+msgstr "Black"
+
+#: src/features/printers/model.ts
 msgid "Blue"
 msgstr "Blue"
 
@@ -667,6 +675,7 @@ msgstr "Can't be read with the current secret key — enter it again"
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/JobDetail.tsx
 #: src/features/printers/PrinterDetail.tsx
+#: src/features/printers/RollColourPrompt.tsx
 #: src/features/settings/PrinterForm.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/SheetDetail.tsx
@@ -746,6 +755,10 @@ msgstr "Cells in use"
 msgid "Certificate check"
 msgstr "Certificate check"
 
+#: src/features/printers/RollColourPrompt.tsx
+msgid "Change colour"
+msgstr "Change colour"
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Check print with correction"
 msgstr "Check print with correction"
@@ -789,6 +802,10 @@ msgstr "Choose cells"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Choose one tray as the default."
 msgstr "Choose one tray as the default."
+
+#: src/features/printers/model.ts
+msgid "Clear"
+msgstr "Clear"
 
 #: src/features/archive/ArchivePage.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -839,8 +856,8 @@ msgid "Colour modes"
 msgstr "Colour modes"
 
 #: src/features/printers/TapeSwatch.tsx
-msgid "Colour not reported"
-msgstr "Colour not reported"
+#~ msgid "Colour not reported"
+#~ msgstr "Colour not reported"
 
 #: src/features/archive/TypeForm.tsx
 msgid "Columns"
@@ -2545,6 +2562,10 @@ msgstr "Remove {itemName}"
 msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
 msgstr "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
 
+#: src/features/printers/RollColourPrompt.tsx
+msgid "Remove colour"
+msgstr "Remove colour"
+
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "Remove reading {n}"
 msgstr "Remove reading {n}"
@@ -2807,6 +2828,10 @@ msgstr "Set"
 msgid "Set by the container"
 msgstr "Set by the container"
 
+#: src/features/printers/RollColourPrompt.tsx
+msgid "Set colour"
+msgstr "Set colour"
+
 #: src/features/settings/feedback.tsx
 msgid "Set the URL first; a secret belongs to its URL."
 msgstr "Set the URL first; a secret belongs to its URL."
@@ -2992,6 +3017,10 @@ msgstr "Signing in with the new key failed."
 msgid "Single sign-on"
 msgstr "Single sign-on"
 
+#: src/features/printers/RollColourPrompt.tsx
+msgid "Skip"
+msgstr "Skip"
+
 #: src/shell/AppShell.tsx
 msgid "Skip to content"
 msgstr "Skip to content"
@@ -3140,6 +3169,10 @@ msgstr "Tap the labels that are already gone. A fresh sheet needs none."
 #: src/features/jobs/JobDetail.tsx
 msgid "Tape"
 msgstr "Tape"
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "Tape colour"
+msgstr "Tape colour"
 
 #: src/features/printers/PauseReason.tsx
 msgid "Tape is empty"
@@ -3323,6 +3356,10 @@ msgstr "The code prefix is 2 to 10 capital letters or digits and starts with a l
 #: src/features/scan/CameraScanner.tsx
 msgid "The code reader did not start"
 msgstr "The code reader did not start"
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "The colour could not be saved. Try again."
+msgstr "The colour could not be saved. Try again."
 
 #: src/features/archive/errors.ts
 msgid "The corner radius"
@@ -3681,6 +3718,14 @@ msgstr "The queued labels were taken out of the cart."
 #: src/features/sheets/print/PrintResult.tsx
 msgid "The queued labels were taken out of the cart. The rest stays in it."
 msgstr "The queued labels were taken out of the cart. The rest stays in it."
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "The roll changed again while you were choosing. Pick the colour of the new roll."
+msgstr "The roll changed again while you were choosing. Pick the colour of the new roll."
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "The roll was changed"
+msgstr "The roll was changed"
 
 #: src/features/settings/SettingField.tsx
 msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."
@@ -4267,6 +4312,10 @@ msgstr "Yes"
 msgid "Yes, reset"
 msgstr "Yes, reset"
 
+#: src/features/printers/RollColourPrompt.tsx
+msgid "You can set the colour later on this page."
+msgstr "You can set the colour later on this page."
+
 #: src/features/settings/SettingsPage.tsx
 msgid "You need an admin key"
 msgstr "You need an admin key"
@@ -4275,6 +4324,14 @@ msgstr "You need an admin key"
 #: src/features/settings/feedback.tsx
 msgid "You need an admin key for this."
 msgstr "You need an admin key for this."
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "You put in a {width} mm roll. The printer does not report the tape colour. Which colour is it?"
+msgstr "You put in a {width} mm roll. The printer does not report the tape colour. Which colour is it?"
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "You put in a new roll. The printer does not report the tape colour. Which colour is it?"
+msgstr "You put in a new roll. The printer does not report the tape colour. Which colour is it?"
 
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "You signed in with the one-time bootstrap key. It can do one thing: create the first admin key."

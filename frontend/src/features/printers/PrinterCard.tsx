@@ -4,7 +4,7 @@ import { StatusBadge } from "../../shell/StatusBadge";
 import type { Printer, PrinterStatus } from "./api";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
-import { describePrinter, isPagePrinter, statusIsUnknown, useKindLabel } from "./model";
+import { describePrinter, isPagePrinter, statusIsUnknown, tapeWidthOf, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, ReasonLine } from "./PageStatus";
 import { TapeSwatch } from "./TapeSwatch";
 
@@ -46,7 +46,7 @@ export function PrinterCard({
         {unknown ? (
           <span className="text-ink-2">{page ? t`Supplies not known` : t`Tape not known`}</span>
         ) : !page ? (
-          <TapeSwatch tapeLoaded={status?.tape_loaded} probed={status?.captured_at != null} />
+          <TapeSwatch widthMm={tapeWidthOf(status)} colour={status?.tape_colour} probed={status?.captured_at != null} />
         ) : noAnswerYet(status) ? (
           <span className="text-ink-2">{t`No answer yet`}</span>
         ) : (

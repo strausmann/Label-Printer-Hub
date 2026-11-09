@@ -1,7 +1,7 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { useFeature, useSession } from "../../app/session";
@@ -11,9 +11,10 @@ import { useCalibration, type CalibrationRead } from "../calibration/api";
 import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, type Printer, type PrinterStatus, type QueueJob } from "./api";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
-import { describePrinter, isPagePrinter, statusIsUnknown, useJobStateBadge, useKindLabel } from "./model";
+import { describePrinter, isPagePrinter, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, ReasonLine } from "./PageStatus";
 import { PauseResumeButton } from "./PauseResumeButton";
+import { RollColourEdit, RollColourPrompt } from "./RollColourPrompt";
 import { TapeSwatch } from "./TapeSwatch";
 
 const route = getRouteApi("/printers/$printerId");
@@ -54,6 +55,10 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const age = unanswered ? undefined : status.data?.last_probe_age_s;
   const ageWord = typeof age === "number" ? formatAge(age, i18n.locale) : "";
   const ahead = status.data?.jobs_ahead ?? 0;
+  // Only a key that may write is asked; a status nobody refreshes says nothing about the roll.
+  const session = useSession();
+  const canAskColour = (session.scope === "print" || session.scope === "admin") && !page && !unknown;
+  const colourTrigger = useRef<HTMLButtonElement | null>(null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -95,19 +100,27 @@ function PrinterDetail({ printer }: { printer: Printer }) {
               <TraysSection trays={status.data?.trays} unanswered={unanswered} />
             </>
           ) : (
+            <>
+            {canAskColour && <RollColourPrompt printer={printer} status={status.data} onDone={() => queueMicrotask(() => colourTrigger.current?.focus())} />}
             <section aria-labelledby="material-h" className={PANEL}>
               <h2 id="material-h" className={SECTION_HEADING}>{t`Material`}</h2>
               <p className="mt-3">
                 {unknown ? (
                   <span className="text-ink-2">{t`Tape not known`}</span>
                 ) : (
-                  <TapeSwatch tapeLoaded={status.data?.tape_loaded} probed={status.data?.captured_at != null} />
+                  <TapeSwatch widthMm={tapeWidthOf(status.data)} colour={status.data?.tape_colour} probed={status.data?.captured_at != null} />
                 )}
               </p>
+              {canAskColour && tapeWidthOf(status.data) !== null && (
+                <div className="mt-3">
+                  <RollColourEdit printer={printer} status={status.data} triggerRef={colourTrigger} />
+                </div>
+              )}
               {typeof age === "number" && (
                 <p className="mt-2 text-small text-ink-2">{t`Last status ${ageWord}`}</p>
               )}
             </section>
+            </>
           )}
           <QueueSection printer={printer} jobs={queue.data} loading={queue.isPending} failed={queue.isError} />
         </div>

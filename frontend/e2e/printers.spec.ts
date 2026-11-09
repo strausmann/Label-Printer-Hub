@@ -195,3 +195,75 @@ test.describe("page printer status", () => {
     }
   }
 });
+
+// The roll colour (#229): the printer cannot report it, so a new roll raises a question; the
+// answer is shown beside the width. The hub's mock tape printers are unpolled, so status and roll
+// are served by the test.
+test.describe("roll colour", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("roll prompt after a roll change", async ({ signedInPage: page }) => {
+    const printers = (await (await page.request.get("/api/v1/printers")).json()) as { id: string; name: string }[];
+    const id = printers.find((p) => p.name === "Workshop PT-P750W")!.id;
+    const roll = { colour: null as string | null, width_mm: 12, media_raw: "12mm laminated", prompt_pending: true, set_at: null };
+    await page.route(new RegExp(`/api/v1/printers/${id}/status$`), async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      Object.assign(body, {
+        online: true,
+        polled: true,
+        stale: false,
+        tape_loaded: "12mm laminated",
+        tape_width_mm: 12,
+        roll_prompt: roll.prompt_pending,
+        tape_colour: roll.colour,
+        last_probe_age_s: 3,
+        note: null,
+      });
+      await route.fulfill({ response, json: body });
+    });
+    await page.route(new RegExp(`/api/v1/printers/${id}/roll$`), async (route) => {
+      if (route.request().method() === "PUT") {
+        const sent = route.request().postDataJSON() as { colour: string | null };
+        roll.colour = sent.colour;
+        roll.prompt_pending = false;
+      }
+      await route.fulfill({ json: roll });
+    });
+
+    const scenes = [
+      { width: 1280, height: 800, scheme: "light" },
+      { width: 1280, height: 800, scheme: "dark" },
+      { width: 390, height: 844, scheme: "light" },
+      { width: 390, height: 844, scheme: "dark" },
+    ] as const;
+    for (const { width, height, scheme } of scenes) {
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ colorScheme: scheme });
+      Object.assign(roll, { colour: null, prompt_pending: true });
+      await page.goto(`/printers/${id}`);
+      const group = page.getByRole("group", { name: "Tape colour" });
+      await expect(group).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await shot(page, `task-11-prompt-${width}-${scheme}.png`);
+
+      // Keyboard only: Tab reaches a colour, Enter answers.
+      await group.getByRole("button", { name: "Blue" }).focus();
+      await page.keyboard.press("Enter");
+      await expect(group).toHaveCount(0);
+      await expect(page.getByText("Blue", { exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Change colour");
+      await shot(page, `task-11-colour-${width}-${scheme}.png`);
+
+      // Skip: no colour line at all, never "not reported".
+      Object.assign(roll, { colour: null, prompt_pending: true });
+      await page.reload();
+      await page.getByRole("button", { name: "Skip" }).click();
+      await expect(page.getByRole("group", { name: "Tape colour" })).toHaveCount(0);
+      await expect(page.getByText("12 mm")).toBeVisible();
+      await expect(page.getByText(/colour not reported/i)).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Set colour" })).toBeVisible();
+      await shot(page, `task-11-nocolour-${width}-${scheme}.png`);
+    }
+  });
+});

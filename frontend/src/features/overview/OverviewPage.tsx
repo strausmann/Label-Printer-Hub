@@ -8,7 +8,7 @@ import { PANEL, SECTION_HEADING } from "../ui";
 import { SheetTiles } from "./SheetTiles";
 import { usePrinters, usePrinterStatuses, useRecentJobs, type Job, type Printer, type PrinterStatus } from "../printers/api";
 import { formatAge } from "../printers/age";
-import { describePrinter, unknownKind, isFailed, isPagePrinter, useJobStateBadge, useKindLabel } from "../printers/model";
+import { describePrinter, unknownKind, isFailed, isPagePrinter, tapeWidthOf, useJobStateBadge, useKindLabel } from "../printers/model";
 import { MarkerList, noAnswerYet, ReasonLine, runningOut } from "../printers/PageStatus";
 import { PauseReason } from "../printers/PauseReason";
 import { PauseResumeButton } from "../printers/PauseResumeButton";
@@ -193,7 +193,7 @@ function MaterialRow({ printer, status }: { printer: Printer; status: PrinterSta
           <span className="text-ink-2">{page ? t`Supplies not known` : t`Tape not known`}</span>
         </>
       ) : !page ? (
-        <TapeSwatch tapeLoaded={status?.tape_loaded} probed={status?.captured_at != null} />
+        <TapeSwatch widthMm={tapeWidthOf(status)} colour={status?.tape_colour} probed={status?.captured_at != null} />
       ) : noAnswerYet(status) ? (
         <span className="text-ink-2">{t`No answer yet`}</span>
       ) : (

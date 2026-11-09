@@ -13,6 +13,7 @@ const EVENT_TYPES = [
   "job.state_changed",
   "printer.status",
   "printer.tape_changed",
+  "printer.roll_changed",
   "hub.printers_changed",
   "auth.expired",
   // The `sheets` channel (no printer restriction); the client filters by event type, not channel.
@@ -73,6 +74,13 @@ function invalidate(client: QueryClient, type: EventType, { printerId, data }: F
       break;
     case "printer.tape_changed":
       if (printerId) run(["printers", printerId]);
+      break;
+    case "printer.roll_changed":
+      // The roll (and with it the prompt and the colour) is part of the status; both queries are refetched.
+      if (printerId) {
+        run(["printers", printerId, "status"]);
+        run(["printers", printerId, "roll"]);
+      }
       break;
     case "hub.printers_changed":
       run(["printers"]);

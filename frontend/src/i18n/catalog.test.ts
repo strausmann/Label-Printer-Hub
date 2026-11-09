@@ -62,6 +62,11 @@ describe("message catalogues", () => {
     expect(de.get("Not set up")).toBe("Nicht eingerichtet");
   });
 
+  it("the tape colour is never reported as missing (#229)", () => {
+    expect(readPo("en").has("Colour not reported")).toBe(false);
+    expect(readPo("de").has("Colour not reported")).toBe(false);
+  });
+
   it("the ambiguous 'Set up' is not a live message id", () => {
     expect(readPo("en").has("Set up")).toBe(false);
   });

@@ -33,8 +33,11 @@ export const status = (printerId: string, over: Record<string, unknown> = {}) =>
   last_probe_age_s: 4,
   stale: false,
   polled: true,
+  roll_prompt: false,
   note: null,
-  tape_loaded: "12mm laminated blue/white",
+  tape_loaded: "12mm laminated",
+  tape_width_mm: 12,
+  tape_colour: "blue" as const,
   ...over,
 });
 
@@ -202,6 +205,7 @@ export const pageStatus = (printerId: string, over: Partial<Schemas["PrinterStat
   last_probe_age_s: 3,
   stale: false,
   polled: true,
+  roll_prompt: false,
   note: null,
   tape_loaded: null,
   ...over,

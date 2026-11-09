@@ -90,6 +90,15 @@ describe("useHubEvents", () => {
     expect(keys(invalidate)).toEqual([["printers", "p1"]]);
   });
 
+  it("printer.roll_changed invalidates the status and the roll of the printer", () => {
+    const { invalidate } = setup();
+    act(() => last().emit("printer.roll_changed", "p1"));
+    expect(keys(invalidate)).toEqual([
+      ["printers", "p1", "status"],
+      ["printers", "p1", "roll"],
+    ]);
+  });
+
   it("an event without a printer id only invalidates the lists", () => {
     const { invalidate } = setup();
     act(() => last().emit("job.state_changed", null));

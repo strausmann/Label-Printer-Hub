@@ -1,20 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { PRINTER_A, status } from "../test-api";
-import { describePrinter, parseTape } from "./model";
+import { describePrinter, tapeWidthOf } from "./model";
 
-describe("parseTape", () => {
-  it("reads the width alone", () => {
-    expect(parseTape("12mm")).toEqual({ widthMm: 12, colourName: null, colour: null });
-  });
-  it("reads the tape colour before the slash, not the text colour", () => {
-    expect(parseTape("12mm laminated blue/white")).toMatchObject({ widthMm: 12, colour: "blue", colourName: "blue" });
-  });
-  it("keeps an unknown colour name without a swatch", () => {
-    expect(parseTape("9mm laminated clear/black")).toMatchObject({ colour: null, colourName: "clear" });
-  });
-  it("returns null for no tape", () => {
-    expect(parseTape(null)).toBeNull();
-    expect(parseTape("  ")).toBeNull();
+describe("tapeWidthOf", () => {
+  it("prefers the reported width, then reads the text", () => {
+    expect(tapeWidthOf({ tape_width_mm: 24, tape_loaded: "12mm" })).toBe(24);
+    expect(tapeWidthOf({ tape_loaded: "12mm laminated" })).toBe(12);
+    expect(tapeWidthOf({ tape_loaded: "  " })).toBeNull();
+    expect(tapeWidthOf(undefined)).toBeNull();
   });
 });
 

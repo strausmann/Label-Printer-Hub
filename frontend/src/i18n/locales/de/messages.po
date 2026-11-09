@@ -74,8 +74,8 @@ msgstr "{0} hat keine Bögen. Beim Löschen verschwinden der Typ und alle seine 
 
 #. placeholder {0}: tape.widthMm
 #: src/features/printers/TapeSwatch.tsx
-msgid "{0} mm"
-msgstr "{0} mm"
+#~ msgid "{0} mm"
+#~ msgstr "{0} mm"
 
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/sheets/print/PrinterRow.tsx
@@ -288,6 +288,10 @@ msgstr "{what} darf nicht leer sein."
 #: src/features/archive/errors.ts
 msgid "{what} must not be negative."
 msgstr "{what} darf nicht negativ sein."
+
+#: src/features/printers/TapeSwatch.tsx
+msgid "{width} mm"
+msgstr "{width} mm"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "+ = printed too far right"
@@ -593,6 +597,10 @@ msgid "Backend"
 msgstr "Backend"
 
 #: src/features/printers/model.ts
+msgid "Black"
+msgstr "Schwarz"
+
+#: src/features/printers/model.ts
 msgid "Blue"
 msgstr "Blau"
 
@@ -667,6 +675,7 @@ msgstr "Lässt sich mit dem aktuellen Geheimschlüssel nicht lesen — bitte ern
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/JobDetail.tsx
 #: src/features/printers/PrinterDetail.tsx
+#: src/features/printers/RollColourPrompt.tsx
 #: src/features/settings/PrinterForm.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/SheetDetail.tsx
@@ -746,6 +755,10 @@ msgstr "Belegte Zellen"
 msgid "Certificate check"
 msgstr "Zertifikatsprüfung"
 
+#: src/features/printers/RollColourPrompt.tsx
+msgid "Change colour"
+msgstr "Farbe ändern"
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Check print with correction"
 msgstr "Kontrolldruck mit Korrektur"
@@ -789,6 +802,10 @@ msgstr "Zellen wählen"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Choose one tray as the default."
 msgstr "Wähle ein Fach als Standard."
+
+#: src/features/printers/model.ts
+msgid "Clear"
+msgstr "Transparent"
 
 #: src/features/archive/ArchivePage.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -839,8 +856,8 @@ msgid "Colour modes"
 msgstr "Farbmodi"
 
 #: src/features/printers/TapeSwatch.tsx
-msgid "Colour not reported"
-msgstr "Farbe nicht gemeldet"
+#~ msgid "Colour not reported"
+#~ msgstr "Farbe nicht gemeldet"
 
 #: src/features/archive/TypeForm.tsx
 msgid "Columns"
@@ -2545,6 +2562,10 @@ msgstr "{itemName} entfernen"
 msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
 msgstr "Entferne <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> aus dem Container; die Variable funktioniert nicht mehr, sobald dieser Schlüssel existiert."
 
+#: src/features/printers/RollColourPrompt.tsx
+msgid "Remove colour"
+msgstr "Farbe entfernen"
+
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "Remove reading {n}"
 msgstr "Messwert {n} entfernen"
@@ -2807,6 +2828,10 @@ msgstr "Gesetzt"
 msgid "Set by the container"
 msgstr "Vom Container gesetzt"
 
+#: src/features/printers/RollColourPrompt.tsx
+msgid "Set colour"
+msgstr "Farbe festlegen"
+
 #: src/features/settings/feedback.tsx
 msgid "Set the URL first; a secret belongs to its URL."
 msgstr "Setze zuerst die URL; ein Geheimnis gehört zu seiner URL."
@@ -2992,6 +3017,10 @@ msgstr "Die Anmeldung mit dem neuen Schlüssel ist fehlgeschlagen."
 msgid "Single sign-on"
 msgstr "Einmalanmeldung"
 
+#: src/features/printers/RollColourPrompt.tsx
+msgid "Skip"
+msgstr "Überspringen"
+
 #: src/shell/AppShell.tsx
 msgid "Skip to content"
 msgstr "Zum Inhalt springen"
@@ -3140,6 +3169,10 @@ msgstr "Tippe auf die Etiketten, die schon weg sind. Ein frischer Bogen braucht 
 #: src/features/jobs/JobDetail.tsx
 msgid "Tape"
 msgstr "Band"
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "Tape colour"
+msgstr "Bandfarbe"
 
 #: src/features/printers/PauseReason.tsx
 msgid "Tape is empty"
@@ -3323,6 +3356,10 @@ msgstr "Das Code-Präfix besteht aus 2 bis 10 Großbuchstaben oder Ziffern und b
 #: src/features/scan/CameraScanner.tsx
 msgid "The code reader did not start"
 msgstr "Der Code-Leser ist nicht gestartet"
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "The colour could not be saved. Try again."
+msgstr "Die Farbe konnte nicht gespeichert werden. Versuch es noch einmal."
 
 #: src/features/archive/errors.ts
 msgid "The corner radius"
@@ -3681,6 +3718,14 @@ msgstr "Die eingereihten Etiketten wurden aus dem Warenkorb genommen."
 #: src/features/sheets/print/PrintResult.tsx
 msgid "The queued labels were taken out of the cart. The rest stays in it."
 msgstr "Die eingereihten Etiketten wurden aus dem Warenkorb genommen. Der Rest bleibt darin."
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "The roll changed again while you were choosing. Pick the colour of the new roll."
+msgstr "Die Rolle wurde noch einmal gewechselt, während du ausgewählt hast. Wähle die Farbe der neuen Rolle."
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "The roll was changed"
+msgstr "Die Rolle wurde gewechselt"
 
 #: src/features/settings/SettingField.tsx
 msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."
@@ -4267,6 +4312,10 @@ msgstr "Ja"
 msgid "Yes, reset"
 msgstr "Ja, zurücksetzen"
 
+#: src/features/printers/RollColourPrompt.tsx
+msgid "You can set the colour later on this page."
+msgstr "Du kannst die Farbe später auf dieser Seite festlegen."
+
 #: src/features/settings/SettingsPage.tsx
 msgid "You need an admin key"
 msgstr "Du brauchst einen Admin-Schlüssel"
@@ -4275,6 +4324,14 @@ msgstr "Du brauchst einen Admin-Schlüssel"
 #: src/features/settings/feedback.tsx
 msgid "You need an admin key for this."
 msgstr "Dafür brauchst du einen Admin-Schlüssel."
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "You put in a {width} mm roll. The printer does not report the tape colour. Which colour is it?"
+msgstr "Du hast eine Rolle mit {width} mm Breite eingelegt. Der Drucker meldet die Bandfarbe nicht. Welche Farbe hat sie?"
+
+#: src/features/printers/RollColourPrompt.tsx
+msgid "You put in a new roll. The printer does not report the tape colour. Which colour is it?"
+msgstr "Du hast eine neue Rolle eingelegt. Der Drucker meldet die Bandfarbe nicht. Welche Farbe hat sie?"
 
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "You signed in with the one-time bootstrap key. It can do one thing: create the first admin key."
