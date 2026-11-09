@@ -240,7 +240,6 @@ class StatusProbeProducer:
             # Write to cache first (always)
             await self._upsert_cache(status)
             await self._observe_roll(status)
-            await self._observe_identity()
 
             # Notify tape producer BEFORE updating _last so it receives
             # the correct 'previous' tape state (old=self._last, new=status).
@@ -273,6 +272,11 @@ class StatusProbeProducer:
                         },
                     ),
                 )
+
+            # Last: the identity query is a second SNMP round trip plus database writes. A slow
+            # agent or database must not delay the tape and status events above. It cannot
+            # raise (it guards itself), so it never turns a good probe into an offline one.
+            await self._observe_identity()
         except asyncio.CancelledError:
             raise
         except Exception as exc:

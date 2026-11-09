@@ -46,6 +46,9 @@ _ensure_data_dir(DATABASE_URL)
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
+    # Bound values (a hardware identity among them) stay out of SQLAlchemy's error texts and
+    # out of the driver's DEBUG log.
+    hide_parameters=True,
     isolation_level="SERIALIZABLE",
     connect_args={"check_same_thread": False},
 )

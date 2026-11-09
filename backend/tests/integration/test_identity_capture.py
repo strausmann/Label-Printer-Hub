@@ -9,7 +9,7 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import app.db.engine as _eng
@@ -189,6 +189,89 @@ async def test_identity_query_failure_never_fails_probe(
     assert (await _cache(printer_id)).parsed["online"] is True
     assert sink.outcomes == ["none"]  # the observed identity was empty
     assert await _identity(printer_id) is None
+
+
+async def test_identity_error_status_never_fails_probe(
+    printer_id: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sink = Sink()
+
+    async def refused(*_a: object, **_k: object) -> object:
+        return (None, 2, 1, [])  # error_status set, no varbinds
+
+    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", refused)
+    with patch(
+        "app.services.producers.status_probe_producer.query_preflight",
+        AsyncMock(return_value=OK),
+    ):
+        await _snmp_producer(printer_id, sink)._probe_once()
+    assert (await _cache(printer_id)).parsed["online"] is True
+    assert sink.outcomes == ["none"]
+    assert await _identity(printer_id) is None
+
+
+async def test_a_stalling_identity_query_does_not_delay_the_status_publish(
+    printer_id: UUID,
+) -> None:
+    release = asyncio.Event()
+    asked = asyncio.Event()
+
+    async def stalled(*_a: object, **_k: object) -> ObservedIdentity:
+        asked.set()
+        await release.wait()
+        return ObservedIdentity(SERIAL, None, None)
+
+    bus = MagicMock(spec=EventBus)
+    bus.next_event_id.return_value = 1
+    tape = MagicMock()
+    producer = StatusProbeProducer(
+        bus=bus,
+        printer_id=str(printer_id),
+        host="192.0.2.10",
+        tape_change_producer=tape,
+        identity_sink=Sink(),
+    )
+    with (
+        patch(
+            "app.services.producers.status_probe_producer.query_preflight",
+            AsyncMock(return_value=OK),
+        ),
+        patch("app.services.producers.status_probe_producer.query_identity", stalled),
+    ):
+        task = asyncio.create_task(producer._probe_once())
+        try:
+            await asyncio.wait_for(asked.wait(), timeout=5)
+            # The identity query is in flight and stuck; the status was already handed out.
+            assert bus.publish.call_count == 1
+            tape.on_probe_result.assert_called_once()
+            assert not task.done()
+        finally:
+            release.set()
+            await asyncio.wait_for(task, timeout=5)
+
+
+async def test_producer_log_paths_never_carry_an_identity(
+    printer_id: UUID, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    caplog.set_level(logging.DEBUG, logger="app")
+
+    async def broken(_pid: UUID, obs: ObservedIdentity) -> str:
+        # An error text that quotes the identity, as a driver error with parameters would.
+        raise RuntimeError(f"insert failed: {obs.serial} {obs.ipp_uuid}")
+
+    pre, ident = _snmp_patches(ObservedIdentity(SERIAL, None, None))
+    with pre, ident:
+        await _snmp_producer(printer_id, broken)._probe_once()
+    producer = _ipp_producer(printer_id, FakeIppPrinter(printer_uuid=PRINTER_UUID), broken)
+    await producer.probe_once()
+    await producer.stop()
+    ours = [r for r in caplog.records if r.name.startswith("app")]
+    assert any("Identity capture" in r.getMessage() for r in ours)
+    text = "\n".join(r.getMessage() for r in ours).lower()
+    assert SERIAL.lower() not in text and BARE_UUID not in text
+    assert all(r.exc_info is None for r in ours if "Identity capture" in r.getMessage())
 
 
 async def test_a_failing_sink_never_fails_probe(printer_id: UUID) -> None:

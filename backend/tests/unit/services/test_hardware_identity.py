@@ -59,6 +59,9 @@ async def test_normalise() -> None:
     out = normalise(_obs("  " + SERIAL + "\n", UUID_URN, "00-80-77-12-34-56"))
     assert out == _obs(SERIAL, UUID_BARE, MAC_X)
     assert normalise(_obs("   ", "", "")) == _obs()
+    # Some agents pad the OCTET STRING with NULs; they are not part of the serial.
+    assert normalise(_obs(SERIAL + "\x00\x00\x00")) == _obs(SERIAL)
+    assert normalise(_obs("\x00\x00")) == _obs()
     assert normalise(_obs(mac="00:00:00:00:00:00")) == _obs()
     assert normalise(_obs(mac="not a mac")) == _obs()
     assert format_mac(b"\x00\x80\x77\x12\x34\x56") == "00:80:77:12:34:56"

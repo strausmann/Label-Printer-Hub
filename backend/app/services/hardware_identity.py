@@ -22,8 +22,10 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.printer_backends.snmp_helper import ObservedIdentity
 from app.repositories import printer_identity as repo
@@ -42,6 +44,7 @@ _PICK_ORDER: tuple[IdentityKind, ...] = ("serial", "ipp_uuid", "mac")
 SEEN_THROTTLE_S = 600
 _MAX_ATTEMPTS = 3
 _SERIAL_MAX = 128
+_SERIAL_STRIP = " \t\r\n\x00"
 _UUID_PREFIX = "urn:uuid:"
 _HEX12 = re.compile(r"^[0-9a-f]{12}$")
 
@@ -55,7 +58,8 @@ class HardwareIdentity:
 
 
 def _serial(value: str | None) -> str | None:
-    text = (value or "").strip()[:_SERIAL_MAX].strip()
+    # Some agents pad the OCTET STRING with NULs.
+    text = (value or "").strip(_SERIAL_STRIP)[:_SERIAL_MAX].strip(_SERIAL_STRIP)
     return text or None
 
 
@@ -88,7 +92,11 @@ def _value_of(observed: ObservedIdentity, kind: str) -> str | None:
 
 def pick_identity(observed: ObservedIdentity) -> HardwareIdentity | None:
     """The best candidate: serial, then IPP uuid, then MAC; ``None`` when there is none."""
-    clean = normalise(observed)
+    return _pick(normalise(observed))
+
+
+def _pick(clean: ObservedIdentity) -> HardwareIdentity | None:
+    """``pick_identity`` for a candidate set that is already normalised."""
     for kind in _PICK_ORDER:
         value = _value_of(clean, kind)
         if value is not None:
@@ -100,7 +108,7 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
-def _session(session_factory: Callable[[], Any] | None) -> Any:
+def _session(session_factory: async_sessionmaker[AsyncSession] | None) -> AsyncSession:
     if session_factory is not None:
         return session_factory()
     from app.db.engine import async_session
@@ -113,7 +121,7 @@ async def record_identity(
     observed: ObservedIdentity,
     now: datetime,
     *,
-    session_factory: Callable[[], Any] | None = None,
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> IdentityOutcome:
     """Store or compare the identity one successful probe saw; say what happened.
 
@@ -125,7 +133,7 @@ async def record_identity(
     - ``different``: the observed value of the stored kind differs (acted on by swap detection).
     """
     clean = normalise(observed)
-    picked = pick_identity(clean)
+    picked = _pick(clean)
     if picked is None:
         return _done("none", None)
     for _attempt in range(_MAX_ATTEMPTS):
