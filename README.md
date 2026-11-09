@@ -119,7 +119,7 @@ Since 1.5.0 every API route lives under `/api/v1/`. There are no aliases and no 
 | `GET /jobs/{job_id}` | removed: it duplicated `GET /api/v1/jobs/{job_id}`, which reads the stored job and applies the per-key printer ACL |
 | `POST /jobs/{job_id}/resume` | removed: nothing produces a paused job any more (the tape-mismatch pause was removed with the layout engine) |
 
-Unchanged: `/healthz`, `/readiness`, `/openapi.json`, `/docs`, the label links `/loc/…`, `/asset/…`, `/spool/…`, `/product/…`, and `/jobs/{id}`, which now opens the web UI.
+Unchanged: `/healthz`, `/readiness`, `/openapi.json`, `/docs`, the label links `/loc/…`, `/asset/…`, `/spool/…`, `/product/…`, and `/jobs/{id}`: that path is no longer an API route; where the web app is mounted a browser `GET` returns the web app, and in API-only mode it is a plain 404.
 
 **Installed web app:** the service worker updates the app in the background and asks before switching. A client that has not accepted the update prompt yet keeps calling the old paths until the user accepts, so expect old-path 404s from such clients after the upgrade.
 
@@ -142,35 +142,35 @@ See `docs/superpowers/specs/2026-05-17-phase-7b-foundation-design.md` for the fu
 
 ```jsonc
 {
-  "template_id": "qr-only-12mm",         // id from app/seed/templates/<id>.yaml
-  // Exactly one of `lookup` or `data` is required.
-  "lookup":  { "app": "snipeit", "identifier": "123" },
+  // One of the ContentType values (app/schemas/content_type.py), e.g. "qr_two_lines".
+  "content_type": "qr_two_lines",
+  // Exactly one of `data` or `lookup` is required.
   "data":    { "title": "Asset 123",
                "primary_id": "ASSET-123",
                "qr_payload": "https://snipe.example/assets/123",
                "secondary": ["optional", "extra lines"] },
+  // "lookup": { "app": "snipeit", "identifier": "123" },
   "options": { "copies": 1,              // 1..10, default 1
                "auto_cut": true,
-               "high_resolution": false },
-  // Default "fail" → synchronous 409 + error_detail{expected_mm, loaded_mm}.
-  // "queue"        → 202 + job_id; job lands in PAUSED until the user POSTs
-  //                  /api/v1/jobs/{id}/resume after physically swapping the tape.
-  "on_tape_mismatch": "fail"
+               "high_resolution": false }
 }
 ```
+
+Unknown fields are rejected (`extra="forbid"`). The label is laid out for the loaded tape width.
 
 ### Synchronous error codes (`POST /api/v1/print`)
 
 | HTTP | `error_code` | When |
 |---|---|---|
-| 404 | `template_not_found` | unknown `template_id` |
-| 409 | `tape_mismatch` | loaded tape ≠ template tape, `on_tape_mismatch="fail"` |
 | 409 | `tape_empty` | preflight detects no media |
+| 409 | `no_tape_loaded` | no tape cassette is loaded |
 | 409 | `printer_cover_open` | preflight detects cover open |
+| 409 | `printer_disabled` | the printer is disabled |
+| 409 | `unsupported_tape` | the loaded tape width is not supported by the layout engine |
+| 422 | `content_type_data_mismatch` | `data` lacks fields the `content_type` needs (`error_detail.missing_fields`) |
+| 422 | `integration_unknown_app` | `lookup.app` is not a configured integration |
 | 502 | `integration_lookup_failed` | integration plugin raised |
 | 503 | `printer_offline` | SNMP preflight could not reach the printer |
-
-`tape_mismatch` responses include `error_detail: {expected_mm, loaded_mm}` so the client can build a "swap the tape" dialog.
 
 ## Environment variables
 

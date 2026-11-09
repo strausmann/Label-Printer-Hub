@@ -34,8 +34,8 @@ curl -H "X-Label-Hub-Key: lh_abc..." https://your-hub/api/v1/printers
 curl -X POST \
   -H "X-Label-Hub-Key: lh_abc..." \
   -H "Content-Type: application/json" \
-  -d '{"template_id": "snipeit-12mm", "data": {...}}' \
-  https://your-hub/print
+  -d '{"content_type": "qr_two_lines", "data": {"primary_id": "ASSET-123", "title": "Asset 123", "qr_payload": "https://snipe.example/assets/123"}}' \
+  https://your-hub/api/v1/print
 ```
 
 ## Rate Limits
