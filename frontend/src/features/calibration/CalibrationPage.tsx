@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "react-aria-components";
+import { ApiError } from "../../api/client";
 import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { useSheetTypes, type SheetTypeRead } from "../archive/api";
@@ -111,7 +112,11 @@ export function CalibrationPage() {
           {calibration.isPending ? (
             <p role="status" className="text-ink-2">{t`Loading…`}</p>
           ) : calibration.isError ? (
-            <p role="alert" className="text-bad">{t`The calibration could not be loaded.`}</p>
+            <p role="alert" className="text-bad">
+              {calibration.error instanceof ApiError && calibration.error.code === "printer_not_allowed"
+                ? t`This key may not use this printer.`
+                : t`The calibration could not be loaded.`}
+            </p>
           ) : tray ? (
             <Workbench
               key={`${printer.id}/${tray}`}

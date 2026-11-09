@@ -215,6 +215,13 @@ describe("step 1: the calibration page", () => {
     expect(new URLSearchParams(query).get("corrected")).toBe("false");
   });
 
+  it("a key that may not use the printer is told so in words, and there is no PDF link to a JSON error", async () => {
+    mockApi(routes({ [`GET ${BASE}`]: respond(403, apiErrorBody("printer_not_allowed", "no")) }));
+    await renderApp({ path: `/calibration?printer=${P}&tray=main`, session: SIGNED_IN });
+    expect(await screen.findByText("This key may not use this printer.")).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Download PDF" })).toBeNull();
+  });
+
   it("prints the calibration page without correction and links to the job", async () => {
     const { calls } = await open({ [`POST ${BASE}/main/page`]: respond(202, { job_id: JOB }) });
     await userEvent.click(await button("Print calibration page"));
