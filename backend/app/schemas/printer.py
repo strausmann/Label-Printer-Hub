@@ -138,6 +138,10 @@ class RollColourUpdate(BaseModel):
             "roll, the call answers 409 roll-changed instead of colouring the new roll."
         ),
     )
+    media_raw: str | None = Field(
+        default=None,
+        description="The roll media_raw the operator saw; checked like width_mm when given",
+    )
 
 
 class PrinterStatus(BaseModel):

@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.printer_roll import PrinterRoll
@@ -67,6 +69,66 @@ def publish_roll_event(
     )
 
 
+_MAX_ATTEMPTS = 3
+MEDIA_RAW_MAX = 64
+
+
+def _is(column: Any, value: Any) -> Any:
+    return column.is_(None) if value is None else column == value
+
+
+async def _swap(
+    s: AsyncSession,
+    printer_id: UUID,
+    old: tuple[int | None, str | None] | None,
+    width_mm: int | None,
+    media_raw: str | None,
+    prompt: bool,
+) -> bool:
+    """Compare-and-swap the roll identity: write only if the row still holds ``old``.
+
+    Every column is set explicitly, so a value equal to what a concurrent writer left is still
+    written (an ORM flush would omit it). ``old`` None means no row existed.
+    """
+    now = datetime.now(UTC)
+    if old is None:
+        s.add(
+            PrinterRoll(
+                printer_id=printer_id,
+                width_mm=width_mm,
+                media_raw=media_raw,
+                colour=None,
+                set_at=None,
+                prompt_pending=prompt,
+                changed_at=now,
+            )
+        )
+        try:
+            await s.commit()
+        except IntegrityError:
+            await s.rollback()
+            return False
+        return True
+    result = await s.execute(
+        update(PrinterRoll)
+        .where(
+            PrinterRoll.printer_id == printer_id,  # type: ignore[arg-type]
+            _is(PrinterRoll.width_mm, old[0]),
+            _is(PrinterRoll.media_raw, old[1]),
+        )
+        .values(
+            width_mm=width_mm,
+            media_raw=media_raw,
+            colour=None,
+            set_at=None,
+            prompt_pending=prompt,
+            changed_at=now,
+        )
+    )
+    await s.commit()
+    return bool(result.rowcount)  # type: ignore[attr-defined]
+
+
 class RollTracker:
     """Compares each successful probe's roll identity with the stored one."""
 
@@ -74,6 +136,8 @@ class RollTracker:
         self._bus = bus
         self._session_factory = session_factory
         self._locks: dict[UUID, asyncio.Lock] = {}
+        # Test seam: runs between the read and the write of ``observe``.
+        self._after_read: Callable[[], Awaitable[None]] | None = None
 
     def _session(self) -> AsyncSession:
         if self._session_factory is not None:
@@ -86,36 +150,26 @@ class RollTracker:
         self, printer_id: UUID, width_mm: int | None, media_raw: str | None
     ) -> RollChange | None:
         """Store the identity if it differs from the stored one; return the change or None."""
-        media_raw = (media_raw or "").strip() or None
+        media_raw = (media_raw or "").strip()[:MEDIA_RAW_MAX].strip() or None
         if width_mm is not None and width_mm <= 0:
             width_mm = None
         lock = self._locks.setdefault(printer_id, asyncio.Lock())
-        async with lock, self._session() as s:
-            row = await s.get(PrinterRoll, printer_id)
-            if row is not None and (row.width_mm, row.media_raw) == (width_mm, media_raw):
-                return None
-            now = datetime.now(UTC)
-            prompt = width_mm is not None
-            if row is None:
-                s.add(
-                    PrinterRoll(
-                        printer_id=printer_id,
-                        width_mm=width_mm,
-                        media_raw=media_raw,
-                        colour=None,
-                        set_at=None,
-                        prompt_pending=prompt,
-                        changed_at=now,
-                    )
-                )
+        prompt = width_mm is not None
+        async with lock:
+            for _attempt in range(_MAX_ATTEMPTS):
+                async with self._session() as s:
+                    row = await s.get(PrinterRoll, printer_id)
+                    if row is not None and (row.width_mm, row.media_raw) == (width_mm, media_raw):
+                        return None
+                    old = None if row is None else (row.width_mm, row.media_raw)
+                    if self._after_read is not None:
+                        await self._after_read()
+                    if await _swap(s, printer_id, old, width_mm, media_raw, prompt):
+                        break
             else:
-                row.width_mm = width_mm
-                row.media_raw = media_raw
-                row.colour = None
-                row.set_at = None
-                row.prompt_pending = prompt
-                row.changed_at = now
-            await s.commit()
+                # Lost the race every time; the next probe compares again.
+                _log.warning("RollTracker: roll of printer=%s kept changing under us", printer_id)
+                return None
         publish_roll_event(
             self._bus, printer_id, width_mm=width_mm, media_raw=media_raw, prompt_pending=prompt
         )

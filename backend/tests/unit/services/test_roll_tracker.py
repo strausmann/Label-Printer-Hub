@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -114,3 +115,46 @@ async def test_zero_width_and_blank_media_are_no_tape(async_session_factory) -> 
     change = await RollTracker(EventBus(), async_session_factory).observe(pid, 0, "  ")
     assert change is not None and (change.width_mm, change.media_raw) == (None, None)
     assert change.prompt_pending is False
+
+
+async def test_put_between_tracker_read_and_write_is_not_lost(async_session_factory) -> None:
+    """A colour PUT commits after the tracker read the row: the new roll must not inherit it."""
+    from app.repositories import printer_roll as roll_repo
+
+    pid = uuid4()
+    async with async_session_factory() as s:
+        s.add(
+            PrinterRoll(
+                printer_id=pid, width_mm=62, media_raw="62mm", colour=None, prompt_pending=True
+            )
+        )
+        await s.commit()
+    tracker = RollTracker(EventBus(), async_session_factory)
+    fired = []
+
+    async def put_now() -> None:
+        if fired:
+            return
+        fired.append(1)
+        async with async_session_factory() as s:
+            assert await roll_repo.set_colour(
+                s,
+                pid,
+                colour="red",
+                width_mm=62,
+                media_raw=None,
+                now=datetime.now(UTC),
+            )
+
+    tracker._after_read = put_now  # deterministic hook: runs between the read and the write
+    change = await tracker.observe(pid, 12, "12mm")
+    row = await _row(async_session_factory, pid)
+    assert change is not None
+    assert (row.width_mm, row.media_raw, row.colour, row.prompt_pending) == (12, "12mm", None, True)
+
+
+async def test_media_raw_is_trimmed_and_capped(async_session_factory) -> None:
+    pid = uuid4()
+    change = await RollTracker(EventBus(), async_session_factory).observe(pid, 12, " " + "x" * 200)
+    assert change is not None and change.media_raw == "x" * 64
+    assert (await _row(async_session_factory, pid)).media_raw == "x" * 64

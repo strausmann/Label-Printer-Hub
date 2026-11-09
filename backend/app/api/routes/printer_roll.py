@@ -104,11 +104,18 @@ async def put_roll(
     expected = roll.width_mm
     if body.width_mm is not None and body.width_mm != expected:
         raise _changed(printer_id, body.width_mm, expected)
+    if body.media_raw is not None and body.media_raw != roll.media_raw:
+        raise _conflict(
+            "roll-changed",
+            "The roll changed",
+            f"Printer {printer_id} now holds a different roll of {expected} mm",
+        )
     stored = await roll_repo.set_colour(
         session,
         printer_id,
         colour=body.colour,
         width_mm=expected,
+        media_raw=body.media_raw,
         now=datetime.now(UTC),
     )
     session.expire_all()

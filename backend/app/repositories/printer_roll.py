@@ -22,17 +22,22 @@ async def set_colour(
     *,
     colour: str | None,
     width_mm: int,
+    media_raw: str | None = None,
     now: datetime,
 ) -> bool:
     """Record the operator's colour for the roll of width ``width_mm``; commits.
 
-    One conditional UPDATE: it matches only while the stored roll still has that width, so a
+    One conditional UPDATE: it matches only while the stored roll still has that width
+    (and media text, when given), so a
     roll change detected between the caller's read and this write is not overwritten. Returns
     False when nothing matched.
     """
+    conditions = [PrinterRoll.printer_id == printer_id, PrinterRoll.width_mm == width_mm]
+    if media_raw is not None:
+        conditions.append(PrinterRoll.media_raw == media_raw)
     result = await session.execute(
         update(PrinterRoll)
-        .where(PrinterRoll.printer_id == printer_id, PrinterRoll.width_mm == width_mm)  # type: ignore[arg-type]
+        .where(*conditions)  # type: ignore[arg-type]
         .values(
             colour=colour,
             set_at=now if colour is not None else None,

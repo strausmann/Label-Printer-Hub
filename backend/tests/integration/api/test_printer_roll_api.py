@@ -354,3 +354,23 @@ async def test_restricted_key_cannot_read_other_roll(api_client_with_seed) -> No
     assert (
         await api_client_with_seed.get(f"/api/v1/printers/{own}/roll", headers=_h(key))
     ).status_code == 200
+
+
+async def test_put_with_stale_media_text_is_409_and_with_current_text_is_200(api) -> None:
+    client, _, factory = api
+    pid = await _printer(factory)
+    await _roll(factory, pid, width_mm=62, media_raw="62mm / 2.4", prompt_pending=True)
+    url = f"/api/v1/printers/{pid}/roll"
+    r = await client.put(url, json={"colour": "red", "width_mm": 62, "media_raw": "62mm"})
+    assert (r.status_code, r.json()["detail"]["type"]) == (409, "roll-changed")
+    r = await client.put(url, json={"colour": "red", "width_mm": 62, "media_raw": "62mm / 2.4"})
+    assert r.status_code == 200
+
+
+async def test_roll_prompt_is_off_while_the_stored_roll_is_not_the_loaded_one(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _roll(factory, pid, width_mm=62, media_raw="62mm", prompt_pending=True)
+    await _cache(factory, pid, 12)  # swapped, the next probe has not run yet
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    assert (await client.get(f"/api/v1/printers/{pid}/status")).json()["roll_prompt"] is False

@@ -441,7 +441,12 @@ async def get_printer_status(
         tape_loaded=tape_loaded,
         tape_width_mm=loaded_tape_mm,
         tape_colour=roll_colour(roll, loaded_tape_mm),  # type: ignore[arg-type]
-        roll_prompt=bool(roll is not None and roll.prompt_pending and loaded_tape_mm),
+        roll_prompt=bool(
+            roll is not None
+            and roll.prompt_pending
+            and loaded_tape_mm
+            and roll.width_mm == loaded_tape_mm
+        ),
         error_state=error_state,
         captured_at=row.captured_at,
         last_probe_age_s=age_s,

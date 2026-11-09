@@ -2820,6 +2820,11 @@ export interface components {
              */
             colour: ("white" | "yellow" | "green" | "blue" | "red" | "black" | "clear") | null;
             /**
+             * Media Raw
+             * @description The roll media_raw the operator saw; checked like width_mm when given
+             */
+            media_raw?: string | null;
+            /**
              * Width Mm
              * @description Width of the roll the operator saw. When given and different from the stored roll, the call answers 409 roll-changed instead of colouring the new roll.
              */
