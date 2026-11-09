@@ -34,10 +34,44 @@ export async function setPagePrinter(page: Page, state: PagePrinterState): Promi
   expect(response.ok(), await response.text()).toBe(true);
 }
 
-/** Puts the fake page printer back to idle and ready. Every spec that switches it calls this in `afterEach`. */
+/**
+ * Puts the fake page printer back to idle and ready. Every spec that switches it calls this in `afterEach`.
+ * It then waits until the hub's queue for that printer is empty again (see `waitForQuietQueue`).
+ */
 export async function resetPagePrinter(page: Page): Promise<void> {
   const response = await page.request.post(`${MAIN.url}/__e2e/page-printer/reset`);
   expect(response.ok(), await response.text()).toBe(true);
+  await waitForQuietQueue(page);
+}
+
+/**
+ * Waits until no job is queued or printing for the page printer and the hub has not paused it.
+ *
+ * The fake printer is not the only shared state: the hub's print queue is too. A job that is still
+ * queued behind a running one is dispatched when that one ends, and if the printer is stopped by
+ * then, the queue defers the job and PAUSES the printer until the stop is cleared. A spec that sets a
+ * stopped state at that moment (printers.spec does) sees "Paused" where it expects "Stopped".
+ * Specs that start jobs and end without waiting for them hand such a queue to the next spec.
+ */
+export async function waitForQuietQueue(page: Page): Promise<void> {
+  const named = async () => {
+    const list = await page.request.get(`${MAIN.url}/api/printers`);
+    if (!list.ok()) return null; // not signed in: there is no queue to ask about
+    const printers = (await list.json()) as { id: string; name: string; paused?: boolean }[];
+    return printers.find((p) => p.name === "Office page printer") ?? null;
+  };
+  const printer = await named();
+  if (!printer) return;
+  await expect
+    .poll(
+      async () => {
+        const queue = await page.request.get(`${MAIN.url}/api/printers/${printer.id}/queue`);
+        const jobs = queue.ok() ? ((await queue.json()) as unknown[]).length : -1;
+        return { jobs, paused: (await named())?.paused ?? null };
+      },
+      { message: "the hub still has page jobs in flight or the page printer paused", timeout: 60_000, intervals: [250, 500, 1000] },
+    )
+    .toEqual({ jobs: 0, paused: false });
 }
 
 /** The fake's `ipp://` address and its current state. */

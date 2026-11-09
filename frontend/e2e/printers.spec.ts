@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
-import { expect, resetPagePrinter, setPagePrinter, test } from "./fixtures";
+import { expect, resetPagePrinter, setPagePrinter, test, waitForQuietQueue } from "./fixtures";
 
 const SHOTS = process.env.E2E_SHOTS_DIR;
 const shot = async (page: Page, name: string) => {
@@ -62,6 +62,11 @@ const BLACK = { name: "black", color: "#000000", level: 0, low_level: 10, type: 
 
 test.describe("page printer status", () => {
   // The fake printer is shared by every spec (N10): put it back, and assert nothing absolute about it.
+  // So is the hub's queue for it: a job another spec left in flight is dispatched while this spec has the
+  // printer stopped, and the hub then pauses the printer ("Paused" instead of "Stopped"). Start from an empty queue.
+  test.beforeEach(async ({ signedInPage: page }) => {
+    await waitForQuietQueue(page);
+  });
   test.afterEach(async ({ signedInPage: page }) => {
     await resetPagePrinter(page);
   });
