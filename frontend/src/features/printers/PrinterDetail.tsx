@@ -45,6 +45,8 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const printing = (queue.data ?? []).some((j) => j.state === "printing");
   const view = describePrinter(printer, status.data, printing);
   const page = isPagePrinter(printer, status.data);
+  // The union is wider than what the server sends: an IPP printer's address is left out for keys below admin.
+  const connection: Record<string, unknown> = printer.connection;
   const unanswered = page && noAnswerYet(status.data);
   // A page printer that never answered has no reading to be "last updated".
   const age = unanswered ? undefined : status.data?.last_probe_age_s;
@@ -103,8 +105,20 @@ function PrinterDetail({ printer }: { printer: Printer }) {
             <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
               <Row label={t`Model`} value={printer.model} />
               <Row label={t`Backend`} value={printer.backend} mono />
-              <Row label={t`Host`} value={textOf(printer.connection.host)} mono />
-              <Row label={t`Port`} value={textOf(printer.connection.port)} mono />
+              {printer.backend === "ipp" ? (
+                <>
+                  {/* Only an admin gets the address; every other key gets the certificate setting alone. */}
+                  {typeof connection.uri === "string" && <Row label={t`Address`} value={connection.uri} mono />}
+                  {typeof connection.tls_verify === "boolean" && (
+                    <Row label={t`Certificate check`} value={connection.tls_verify ? t`on` : t`off`} />
+                  )}
+                </>
+              ) : (
+                <>
+                  <Row label={t`Host`} value={textOf(connection.host)} mono />
+                  <Row label={t`Port`} value={textOf(connection.port)} mono />
+                </>
+              )}
             </dl>
           </section>
           {calibration && (

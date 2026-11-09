@@ -10,8 +10,15 @@ export interface PageJobState {
   /** `waiting` / `printing` / `stopped`, or null when the value is not one the UI knows. */
   atPrinter: "waiting" | "printing" | "stopped" | null;
   reasons: string[];
-  summary: string | null;
+  /** What the page holds, as the server sends it (`{sheet_code, cell_count}`); null when absent or not that shape. */
+  summary: { sheetCode: string; cellCount: number } | null;
 }
+
+const summaryFrom = (value: unknown): PageJobState["summary"] => {
+  if (typeof value !== "object" || value === null) return null;
+  const { sheet_code: code, cell_count: count } = value as Record<string, unknown>;
+  return typeof code === "string" && typeof count === "number" ? { sheetCode: code, cellCount: count } : null;
+};
 
 export const pageJobStateKey = (jobId: string) => ["jobs", jobId, "at_printer"] as const;
 
@@ -27,7 +34,7 @@ export function pageJobStateFrom(data: Record<string, unknown>): { jobId: string
       kind: data.kind,
       atPrinter: typeof data.at_printer === "string" && AT_PRINTER.has(data.at_printer) ? (data.at_printer as PageJobState["atPrinter"]) : null,
       reasons: reasons ? (data.at_printer_reasons as string[]) : [],
-      summary: typeof data.summary === "string" ? data.summary : null,
+      summary: summaryFrom(data.summary),
     },
   };
 }

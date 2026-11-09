@@ -7,8 +7,8 @@ import { pageJobStateFrom, pageJobStateKey, usePageJobState } from "./pageJobSta
 describe("pageJobStateFrom", () => {
   it("reads a page job event", () => {
     expect(
-      pageJobStateFrom({ job_id: "j1", kind: "sheet_page", at_printer: "stopped", at_printer_reasons: ["media-empty"], summary: "page 2 of 3" }),
-    ).toEqual({ jobId: "j1", state: { kind: "sheet_page", atPrinter: "stopped", reasons: ["media-empty"], summary: "page 2 of 3" } });
+      pageJobStateFrom({ job_id: "j1", kind: "sheet_page", at_printer: "stopped", at_printer_reasons: ["media-empty"], summary: { sheet_code: "L4736-0001", cell_count: 9 } }),
+    ).toEqual({ jobId: "j1", state: { kind: "sheet_page", atPrinter: "stopped", reasons: ["media-empty"], summary: { sheetCode: "L4736-0001", cellCount: 9 } } });
   });
 
   it.each([
@@ -17,6 +17,12 @@ describe("pageJobStateFrom", () => {
     ["a job id that is not text", { job_id: 7, kind: "sheet_page" }],
   ])("is null for %s", (_name, data) => {
     expect(pageJobStateFrom(data)).toBeNull();
+  });
+
+  it("a summary that is not the server's {sheet_code, cell_count} is dropped, not guessed", () => {
+    for (const summary of ["page 2 of 3", { sheet_code: "L4736-0001" }, { sheet_code: 4, cell_count: 1 }, null]) {
+      expect(pageJobStateFrom({ job_id: "j1", kind: "k", summary })?.state.summary).toBeNull();
+    }
   });
 
   it("an unknown place at the printer becomes null instead of a guess", () => {

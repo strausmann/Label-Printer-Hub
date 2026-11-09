@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
-import { job, mockApi, PRINTER_A, PRINTER_B, status } from "../test-api";
+import { job, mockApi, PAGE_PRINTER, PRINTER_A, PRINTER_B, status } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -71,6 +71,25 @@ describe("PrinterDetail", () => {
     expect(within(connection).getByText("Printer-B.Example.invalid")).toBeVisible();
     expect(within(connection).getByText("QL-820NWB")).toBeVisible();
     expect(within(connection).getByText("brother_ql")).toBeVisible();
+  });
+
+  it("an IPP printer shows no tape host and port; a key below admin gets no address, an admin gets it", async () => {
+    mockApi(routes({ ...PAGE_PRINTER, connection: { tls_verify: false } }));
+    const first = await renderApp({ path: `/printers/${PAGE_PRINTER.id}` });
+    const connection = await screen.findByRole("region", { name: "Connection" });
+    expect(within(connection).queryByText("Host")).toBeNull();
+    expect(within(connection).queryByText("Port")).toBeNull();
+    expect(within(connection).queryByText("Address")).toBeNull();
+    expect(within(connection).queryByText("—")).toBeNull();
+    expect(within(connection).getByText("Certificate check")).toBeVisible();
+    expect(within(connection).getByText("off")).toBeVisible();
+    first.unmount();
+
+    mockApi(routes(PAGE_PRINTER));
+    await renderApp({ path: `/printers/${PAGE_PRINTER.id}` });
+    const admin = await screen.findByRole("region", { name: "Connection" });
+    expect(within(admin).getByText("ipp://printer.example.invalid/ipp/print")).toBeVisible();
+    expect(within(admin).queryByText("Host")).toBeNull();
   });
 
   it("shows the calibration placeholder only when the feature is on", async () => {
