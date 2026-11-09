@@ -73,6 +73,16 @@ describe("cart", () => {
     vi.restoreAllMocks();
   });
 
+  it("removeItems drops the entries by key and leaves the others, whatever their copies", () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    act(() => result.current.add(asset));
+    act(() => result.current.add(spool));
+    act(() => result.current.add({ ...spool, app: "snipeit" }));
+    act(() => result.current.removeItems([{ app: "spoolman", id: spool.id }]));
+    expect(result.current.items.map((i) => `${i.app}:${i.id}`)).toEqual(["snipeit:42", `snipeit:${spool.id}`]);
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(2);
+  });
+
   it("print sends one batch with all items and clears on success", async () => {
     const { calls } = mockApi(batchRoutes());
     const { result } = renderHook(() => useCart(), { wrapper });

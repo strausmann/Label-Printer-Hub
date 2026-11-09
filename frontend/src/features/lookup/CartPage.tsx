@@ -136,8 +136,8 @@ export function CartPage() {
               items={cart.items}
               printer={selected}
               preselectedSheet={linkedSheet}
-              onAccepted={() => {
-                cart.clear();
+              onAccepted={(submitted) => {
+                cart.removeItems(submitted);
                 setSheetPrinted(true);
               }}
             />

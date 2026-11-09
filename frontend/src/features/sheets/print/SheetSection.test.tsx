@@ -774,6 +774,29 @@ describe("after printing", () => {
     expect(localStorage.getItem(CART_KEY)).toBe("[]");
   });
 
+  it("printing what is left after a partial print removes the lines of that effort, not one added while it was pending", async () => {
+    let printN = 0;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    const accepted = { batch_id: BATCH, pages: [{ job_id: JOB, sheet_code: "L4736-0001", cells: [18, 19, 20, 21], id_cell: null, margin_id: false, margin_band: null, id_not_printed: false, feed_mark: false }] };
+    await cartView(
+      "/cart",
+      [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")],
+      routes({ preview: twoPages, print: async () => (++printN === 1 ? interrupted() : (await gate, accepted)) }),
+    );
+    await pressPrint();
+    await screen.findByRole("alert");
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(2);
+    await pressPrint();
+    act(() => {
+      localStorage.setItem(CART_KEY, JSON.stringify([LINE("7", 5, "Flour"), LINE("9", 4, "Sugar"), LINE("11", 1)]));
+      reloadCart();
+    });
+    release();
+    expect(await screen.findByRole("status", { name: "Sent to the print queue" })).toBeVisible();
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("11", 1)]);
+  });
+
   it("the cart is cleared even when the page is left while the hub answers", async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((r) => (release = r));
@@ -862,6 +885,36 @@ describe("the cart", () => {
     await pressPrint();
     expect(await screen.findByRole("status", { name: "Sent to the print queue" })).toBeVisible();
     expect(localStorage.getItem(CART_KEY)).toBe("[]");
+  });
+
+  const accepted = { batch_id: BATCH, pages: [{ job_id: JOB, sheet_code: "L4736-0001", cells: [18], id_cell: null, margin_id: false, margin_band: null, id_not_printed: false, feed_mark: false }] };
+  /** Another tab changes the cart: storage is written and the page told, as the storage event would. */
+  const otherTab = (list: Array<Record<string, unknown>>) =>
+    act(() => {
+      localStorage.setItem(CART_KEY, JSON.stringify(list));
+      reloadCart();
+    });
+
+  it("keeps an item another tab added while the print was pending, and removes the submitted ones", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    await cartView("/cart", [LINE("7", 1)], routes({ extra: { [`POST ${PRINT}`]: async () => (await gate, accepted) } }));
+    await pressPrint();
+    otherTab([LINE("7", 1), LINE("9", 2)]);
+    release();
+    expect(await screen.findByRole("status", { name: "Sent to the print queue" })).toBeVisible();
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("9", 2)]);
+  });
+
+  it("matches by key: a submitted item whose copies changed in another tab is removed, the rest stays", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((r) => (release = r));
+    await cartView("/cart", [LINE("7", 1), LINE("8", 1)], routes({ extra: { [`POST ${PRINT}`]: async () => (await gate, accepted) } }));
+    await pressPrint();
+    otherTab([LINE("7", 3), LINE("8", 1), LINE("9", 1)]);
+    release();
+    expect(await screen.findByRole("status", { name: "Sent to the print queue" })).toBeVisible();
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("9", 1)]);
   });
 
   it("keeps the cart when the print is refused", async () => {

@@ -43,8 +43,11 @@ export interface SheetSectionProps {
   printer: Printer;
   /** A sheet code from `/cart?sheet=<code>`. */
   preselectedSheet?: string | undefined;
-  /** Called once the hub accepted the print (202): the cart empties then, not before. */
-  onAccepted?: () => void;
+  /**
+   * Called once the hub accepted the print (202), with the lines this print took (a snapshot from the press,
+   * including lines whose pages an earlier partial print already queued). The caller removes exactly those.
+   */
+  onAccepted?: (submitted: CartItem[]) => void;
 }
 
 /** A worst-case preview takes seconds to render on the server, so it is asked for only once the choices have settled. */
@@ -234,6 +237,8 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
     if (!settled.value || !previewData) return;
     const sent = settled.value;
     const planned = previewData;
+    // The lines of this press: items another tab adds while the request runs are not among them.
+    const submitted = [...items];
     setResult(null);
     setPartial(null);
     print.mutateAsync({ ...sent, expected_cells: planned.expected_cells }).then(
@@ -241,7 +246,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted }: S
         // Not a per-call callback: those are dropped when the page is left while the request runs.
         setChanged(null);
         setResult(response.pages);
-        onAccepted?.();
+        onAccepted?.(submitted);
       },
       (error: unknown) => {
         // Pages are queued in plan order: the first k pages are the ones that will print.

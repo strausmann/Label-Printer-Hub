@@ -91,6 +91,8 @@ function add(item: CartItem): void {
 }
 
 const remove = (key: CartKey): void => commit(items.filter((i) => !sameItem(i, key)));
+/** Drops the entries the given ones name. Entries added or changed elsewhere meanwhile stay; the copies of a match do not matter, the key does. */
+const removeItems = (list: readonly CartKey[]): void => commit(items.filter((i) => !list.some((s) => sameItem(s, i))));
 const clear = (): void => commit([]);
 const setCopies = (key: CartKey, copies: number): void =>
   commit(items.map((i) => (sameItem(i, key) ? { ...i, copies: clampCopies(copies) } : i)));
@@ -123,6 +125,8 @@ export interface Cart {
   items: CartItem[];
   add(item: CartItem): void;
   remove(key: CartKey): void;
+  /** Removes the entries with these keys (what a print took); anything else in the cart stays. */
+  removeItems(list: readonly CartKey[]): void;
   setCopies(key: CartKey, copies: number): void;
   clear(): void;
   /** Sends every item as ONE batch to the printer. The cart empties only once the server accepted it. */
@@ -138,7 +142,7 @@ export function useCart(): Cart {
       if (sending.length === 0) throw new Error("The cart is empty.");
       const accepted = await submitBatch(printerKey, sending);
       // Only now: a rejected batch leaves the cart as it was. Items added meanwhile stay.
-      commit(items.filter((i) => !sending.some((s) => sameItem(s, i))));
+      removeItems(sending);
       void client.invalidateQueries({ queryKey: ["jobs"] });
       try {
         return await apiFetch<BatchRead>(`/api/batches/${accepted.batch_id}`);
@@ -148,5 +152,5 @@ export function useCart(): Cart {
     },
     [client],
   );
-  return { items: current, add, remove, setCopies, clear, print };
+  return { items: current, add, remove, removeItems, setCopies, clear, print };
 }
