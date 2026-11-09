@@ -281,6 +281,9 @@ class PrintQueue:
         # A removal in progress, per printer: set when it is done (a second remove or an add
         # of the same id waits for it).
         self._removals: dict[UUID, asyncio.Event] = {}
+        # An add (or start()'s recovery) in progress, per printer: a remove of the same id
+        # waits for it, so it never purges a printer whose recovery or worker is still coming.
+        self._adds: dict[UUID, asyncio.Event] = {}
 
     # --- lifecycle ----------------------------------------------------------
 
@@ -296,6 +299,10 @@ class PrintQueue:
         # gleichzeitiger start()-Aufruf am Guard oben scheitert.
         self._running = True
         ids = list(self._queues)
+        # Each printer of the snapshot counts as "being added" until its worker exists: a
+        # remove that lands during the recovery below waits instead of purging under it.
+        starting = {pid: asyncio.Event() for pid in ids if pid not in self._adds}
+        self._adds.update(starting)
         try:
             for paused_id, since in (initially_paused or {}).items():
                 if paused_id in self._worker_states:
@@ -325,6 +332,8 @@ class PrintQueue:
             # start()-Aufruf nicht am Guard scheitert.
             self._running = False
             raise
+        finally:
+            self._end_adds(starting)
 
     # --- membership (#224) --------------------------------------------------
 
@@ -349,9 +358,9 @@ class PrintQueue:
         self, printer: _PrinterLike | PagePrinter, *, page: bool, paused_since: datetime | None
     ) -> None:
         printer_id = printer.id
-        pending = self._removals.get(printer_id)
-        if pending is not None:
-            await pending.wait()
+        await self._await_membership(printer_id)
+        # No await from here to the registration of ``_adds``: the checks below and the
+        # claim are atomic against another add or a remove of the same id.
         known: _PrinterLike | PagePrinter | None = self._printers.get(
             printer_id
         ) or self._page_printers.get(printer_id)
@@ -359,6 +368,21 @@ class PrintQueue:
             if known is printer and (printer_id in self._page_printers) == page:
                 return
             raise ValueError(f"Another printer is registered under {printer_id}")
+        adding = asyncio.Event()
+        self._adds[printer_id] = adding
+        try:
+            await self._add_claimed(printer, printer_id, page=page, paused_since=paused_since)
+        finally:
+            self._end_adds({printer_id: adding})
+
+    async def _add_claimed(
+        self,
+        printer: _PrinterLike | PagePrinter,
+        printer_id: UUID,
+        *,
+        page: bool,
+        paused_since: datetime | None,
+    ) -> None:
         # Registered before the first await: a submit from here on is accepted; it waits in
         # the queue until the worker starts after the recovery.
         if page:
@@ -399,10 +423,15 @@ class PrintQueue:
         it are not printed: their rows stay ``queued`` and a later add recovers them. Removing
         an unknown printer is a no-op.
         """
-        pending = self._removals.get(printer_id)
-        if pending is not None:
-            await pending.wait()
-            return
+        while True:
+            pending = self._removals.get(printer_id)
+            if pending is not None:
+                await pending.wait()  # a removal of this id is running: it does the work
+                return
+            adding = self._adds.get(printer_id)
+            if adding is None:
+                break
+            await adding.wait()  # let the add finish (recovery, worker), then remove it
         if printer_id not in self._queues:
             return
         done = asyncio.Event()
@@ -465,6 +494,20 @@ class PrintQueue:
         self._to_resume.pop(printer_id, None)
         self._printers.pop(printer_id, None)
         self._page_printers.pop(printer_id, None)
+
+    async def _await_membership(self, printer_id: UUID) -> None:
+        """Wait until no add or remove of *printer_id* is in progress."""
+        while True:
+            busy = self._adds.get(printer_id) or self._removals.get(printer_id)
+            if busy is None:
+                return
+            await busy.wait()
+
+    def _end_adds(self, events: Mapping[UUID, asyncio.Event]) -> None:
+        for printer_id, event in events.items():
+            if self._adds.get(printer_id) is event:
+                del self._adds[printer_id]
+            event.set()
 
     def _removing(self, printer_id: UUID) -> bool:
         return printer_id in self._stopping_printers
@@ -757,6 +800,12 @@ class PrintQueue:
         Gibt die job_id unverändert zurück.
         """
         self._require_tape(printer_id)
+        if str(job_id) in self._jobs:
+            # The caller saved the row before this call; an add's recovery (or start()) read
+            # it in between and already queued it from its payload. Queuing it again would
+            # replace the in-memory job: the label prints once, but the caller's job would
+            # end ``cancelled_before_print`` (the row's pick-up refuses the second copy).
+            return job_id
         # Register BEFORE the first await: the caller has already persisted the row as
         # QUEUED, so from now on a cancel/clear can arrive.  If the queue did not track
         # the job yet it would only touch the DB row, answer success, and the job would
@@ -820,8 +869,12 @@ class PrintQueue:
         # Registered BEFORE the first await (audit R3-1): the rows are already QUEUED
         # in the DB, so a cancel/clear during the serialisation below must reach the
         # in-memory jobs instead of only the DB.  The images are attached afterwards.
-        registered: list[Job] = []
+        registered: list[Job] = []  # jobs this call creates; claimed ones are not ours
         for jid in job_ids:
+            if str(jid) in self._jobs:
+                # Recovery already queued this row (see submit_with_id): the batch shares
+                # the in-memory job, whichever entry reaches the worker first prints it.
+                continue
             job = Job(
                 id=str(jid),
                 printer_id=printer_id,
@@ -840,8 +893,10 @@ class PrintQueue:
             for job in registered:
                 self._drop_unqueued(job)
             raise
-        for job, payload in zip(registered, payloads, strict=True):
-            job.image_payload = payload
+        by_id = {own.id: own for own in registered}
+        for jid, payload in zip(job_ids, payloads, strict=True):
+            if (own := by_id.get(str(jid))) is not None:
+                own.image_payload = payload
 
         batch_id = uuid4()
         batch = BatchJob(

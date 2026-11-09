@@ -455,3 +455,154 @@ async def test_remove_past_timeout_interrupts_the_printing_tape_job() -> None:
         assert await _state(store, jid) == DbJobState.FAILED_RESTART.value
     finally:
         await queue.stop(timeout_s=2)
+
+
+# ---------------------------------------------------------------------------- add/remove races
+
+
+class _GatedPendingStore(MemoryJobStore):
+    """``list_pending`` waits for ``gate``: a membership call lands during recovery."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reached = asyncio.Event()
+        self.gate = asyncio.Event()
+
+    async def list_pending(self, printer_id: UUID) -> list[DbJob]:
+        self.reached.set()
+        await self.gate.wait()
+        return await super().list_pending(printer_id)
+
+
+async def _save_renderable(store: JobStore, tag: str) -> UUID:
+    job_id = uuid4()
+    await store.save_queued(
+        DbJob(id=job_id, printer_id=_TAPE_ID, payload={**_RENDERABLE, "options": {"tag": tag}})
+    )
+    return job_id
+
+
+def _assert_gone(queue: PrintQueue) -> None:
+    assert _TAPE_ID not in queue._queues
+    assert _TAPE_ID not in queue._printers
+    assert _TAPE_ID not in queue._workers
+    assert queue._to_resume == {}
+
+
+async def _remove_during_add(
+    queue: PrintQueue, store: _GatedPendingStore, fake: _TapePrinter
+) -> None:
+    adding = asyncio.create_task(
+        queue.add_printer(fake, paused_since=datetime(2026, 11, 1, tzinfo=UTC))
+    )
+    await asyncio.wait_for(store.reached.wait(), TEST_TIMEOUT_S)
+    removal = asyncio.create_task(queue.remove_printer(_TAPE_ID, timeout_s=TEST_TIMEOUT_S))
+    await _settle()
+    store.gate.set()
+    # Both calls finish; neither raises.
+    await asyncio.wait_for(asyncio.gather(adding, removal), TEST_TIMEOUT_S)
+
+
+async def test_remove_during_add_recovery_leaves_no_dead_worker() -> None:
+    store = _GatedPendingStore()
+    queue = PrintQueue([], store=store)
+    await queue.start()
+    try:
+        await _remove_during_add(queue, store, _TapePrinter())
+        _assert_gone(queue)
+    finally:
+        await queue.stop(timeout_s=2)
+
+
+async def test_remove_during_add_recovery_with_pending_jobs() -> None:
+    store = _GatedPendingStore()
+    queue = PrintQueue([], store=store)
+    await queue.start()
+    try:
+        j1 = await _save_renderable(store, "j1")
+        j2 = await _save_renderable(store, "j2")
+        fake = _TapePrinter()
+        await _remove_during_add(queue, store, fake)
+        _assert_gone(queue)
+        assert fake.printed == []  # added paused, then removed
+        assert await _state(store, j1) == DbJobState.QUEUED.value
+        assert await _state(store, j2) == DbJobState.QUEUED.value
+        assert queue.has_job(j1) is False
+    finally:
+        await queue.stop(timeout_s=2)
+
+
+async def test_remove_during_start_recovery() -> None:
+    store = _GatedPendingStore()
+    fake = _TapePrinter()
+    queue = PrintQueue([fake], store=store)
+    jid = await _save_renderable(store, "j1")
+    starting = asyncio.create_task(
+        queue.start(initially_paused={_TAPE_ID: datetime(2026, 11, 1, tzinfo=UTC)})
+    )
+    await asyncio.wait_for(store.reached.wait(), TEST_TIMEOUT_S)
+    removal = asyncio.create_task(queue.remove_printer(_TAPE_ID, timeout_s=TEST_TIMEOUT_S))
+    await _settle()
+    store.gate.set()
+    try:
+        await asyncio.wait_for(asyncio.gather(starting, removal), TEST_TIMEOUT_S)
+        _assert_gone(queue)
+        assert fake.printed == []
+        assert await _state(store, jid) == DbJobState.QUEUED.value
+    finally:
+        await queue.stop(timeout_s=2)
+
+
+async def test_submit_of_a_row_recovery_claimed_prints_once_and_completes() -> None:
+    """PrintService saves the row, then calls submit_with_id: an add's recovery can claim the
+    row in between. The label prints once, and the caller's job ends completed."""
+    store = _GatedPendingStore()
+    queue = PrintQueue([], store=store)
+    await queue.start()
+    try:
+        fake = _TapePrinter()
+        adding = asyncio.create_task(queue.add_printer(fake))
+        await asyncio.wait_for(store.reached.wait(), TEST_TIMEOUT_S)
+        jid = await _save_renderable(store, "j1")  # PrintService: row saved ...
+        store.gate.set()
+        await asyncio.wait_for(adding, TEST_TIMEOUT_S)
+        assert queue.has_job(jid)  # ... recovery claimed it ...
+        await queue.submit_with_id(  # ... then the submit arrives
+            jid, _TAPE_ID, Image.new("1", (300, 76)), tape_mm=24, tag="j1"
+        )
+        job = await queue.wait_for_job(str(jid), timeout_s=TEST_TIMEOUT_S)
+        await _settle()
+        assert fake.printed == ["j1"]
+        assert job.state == JobState.COMPLETED
+        assert await _state(store, jid) == DbJobState.DONE.value
+    finally:
+        await queue.stop(timeout_s=2)
+
+
+async def test_batch_of_rows_recovery_claimed_prints_once_and_completes() -> None:
+    store = _GatedPendingStore()
+    queue = PrintQueue([], store=store)
+    await queue.start()
+    try:
+        fake = _TapePrinter()
+        adding = asyncio.create_task(queue.add_printer(fake, paused_since=datetime.now(UTC)))
+        await asyncio.wait_for(store.reached.wait(), TEST_TIMEOUT_S)
+        ids = [await _save_renderable(store, f"b{i}") for i in range(2)]
+        store.gate.set()
+        await asyncio.wait_for(adding, TEST_TIMEOUT_S)
+        await queue.enqueue_batch(
+            printer_id=_TAPE_ID,
+            images=[Image.new("1", (300, 76)) for _ in ids],
+            job_ids=ids,
+            tape_mm=24,
+            options={},
+        )
+        await queue.resume_printer(_TAPE_ID)
+        for jid in ids:
+            job = await queue.wait_for_job(str(jid), timeout_s=TEST_TIMEOUT_S)
+            assert job.state == JobState.COMPLETED
+            assert await _state(store, jid) == DbJobState.DONE.value
+        await _settle()
+        assert len(fake.printed) + sum(fake.batches) == 2  # each label exactly once
+    finally:
+        await queue.stop(timeout_s=2)
