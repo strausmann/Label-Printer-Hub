@@ -481,4 +481,20 @@ def build_e2e_app() -> ASGIApp:
     return E2EApp(main_module.create_app())
 
 
-app = build_e2e_app()
+_APP: ASGIApp | None = None
+
+
+def __getattr__(name: str) -> ASGIApp:
+    """``tests.e2e_app:app`` is built on first access, not at import.
+
+    Building the app writes ``os.environ``, clears the settings cache and patches
+    ``app.main`` and the backend router. A unit test that only imports the helpers above
+    (``test_e2e_page_state``) must not change the process, so only the server entry point
+    (``uvicorn tests.e2e_app:app``), which reads the attribute, pays for it.
+    """
+    global _APP
+    if name != "app":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if _APP is None:
+        _APP = build_e2e_app()
+    return _APP
