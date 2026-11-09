@@ -70,7 +70,7 @@ class Transitions:
     def __init__(self) -> None:
         self.calls: list[tuple[UUID, datetime | None]] = []
 
-    def __call__(self, printer_id: UUID, since: datetime | None) -> None:
+    async def __call__(self, printer_id: UUID, since: datetime | None) -> None:
         self.calls.append((printer_id, since))
 
 
@@ -115,6 +115,30 @@ async def test_a_second_different_reading_keeps_the_start_and_calls_back_once(
     assert row.observed_id == SERIAL_C  # the latest device that answered
     assert row.hardware_id == SERIAL_A
     assert len(hook.calls) == 1  # the transition, not every probe
+
+
+async def test_an_unchanged_different_reading_writes_nothing(
+    printer_id: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await _record(printer_id, _serial(SERIAL_A), T0)
+    await _record(printer_id, _serial(SERIAL_B), T0 + timedelta(seconds=30))
+    real = identity_repo.mark_mismatch
+    writes = {"n": 0}
+
+    async def counting(*args: Any, **kwargs: Any) -> Any:
+        writes["n"] += 1
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(identity_repo, "mark_mismatch", counting)
+
+    for i in range(1, 4):  # the same other device, probe after probe
+        outcome = await _record(printer_id, _serial(SERIAL_B), T0 + timedelta(seconds=30 + 30 * i))
+        assert outcome == "different"
+    assert writes["n"] == 0
+
+    await _record(printer_id, _serial(SERIAL_C), T0 + timedelta(seconds=300))  # a third device
+    assert writes["n"] == 1
+    assert (await _row(printer_id)).observed_id == SERIAL_C
 
 
 async def test_missing_identity_never_mismatches(printer_id: UUID) -> None:
@@ -313,6 +337,25 @@ async def test_stored_identity_back_clears_mismatch_in_the_app() -> None:
         assert not rig.app.state.print_queue.is_identity_held(rig.printer_id)
         [event] = _drain(events, "printer.identity_mismatch")
         assert event.data == {"mismatch": False}
+
+
+async def test_the_hook_sets_the_hold_from_the_database() -> None:
+    """Interleaved hooks cannot leave the hold and the database disagreeing."""
+    async with running() as rig:
+        runtime = rig.app.state.printer_runtime
+        queue = rig.app.state.print_queue
+        sink = runtime._identity_sink
+        await sink(rig.printer_id, _serial(SERIAL_A))
+        await sink(rig.printer_id, _serial(SERIAL_B))
+        assert queue.is_identity_held(rig.printer_id)
+
+        await runtime._mismatch_changed(rig.printer_id, None)  # a stale "cleared" arrives late
+        assert queue.is_identity_held(rig.printer_id)  # the database still says mismatch
+
+        await sink(rig.printer_id, _serial(SERIAL_A))
+        assert not queue.is_identity_held(rig.printer_id)
+        await runtime._mismatch_changed(rig.printer_id, T0)  # a stale "started" arrives late
+        assert not queue.is_identity_held(rig.printer_id)
 
 
 async def _seed_mismatch() -> None:

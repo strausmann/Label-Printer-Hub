@@ -378,6 +378,7 @@ class PrinterRuntime:
         if not printer.enabled:
             return
         paused_since = await self._paused_since(printer.id)
+        await self._load_identity_hold(printer.id)  # #231: before any worker for it can run
         if printer.backend == "ipp":
             wiring = await self._attach_page(printer, paused_since)
         else:
@@ -386,7 +387,6 @@ class PrinterRuntime:
             return
         self._wired[printer.id] = wiring
         self._refresh_backcompat()
-        await self._load_identity_hold(printer.id)  # #231: before the producer can probe
         if self._started:
             await self._start_producer(wiring)
 
@@ -597,17 +597,22 @@ class PrinterRuntime:
             on_mismatch=self._mismatch_changed,
         )
 
-    def _mismatch_changed(self, printer_id: UUID, since: datetime | None) -> None:
-        """A mismatch started (``since``) or ended (``None``): hold or release, and tell the SSE
-        readers. The event carries the flag and its start, never an identity value."""
-        self._queue().set_identity_hold(printer_id, since is not None)
+    async def _mismatch_changed(self, printer_id: UUID, since: datetime | None) -> None:
+        """A mismatch started or ended: hold or release, and tell the SSE readers.
+
+        The state is re-read from the database, not taken from the direction of the call, so
+        two hooks that interleave cannot leave the hold and the database disagreeing. The event
+        carries the flag and its start, never an identity value."""
+        del since
+        current = await self._read_mismatch_since(printer_id)
+        self._queue().set_identity_hold(printer_id, current is not None)
         bus = getattr(self._app.state, "event_bus", None)
         if bus is None:
             return
         channel = f"printer:{printer_id}:state"
-        data: dict[str, Any] = {"mismatch": since is not None}
-        if since is not None:
-            data["since"] = _aware(since).isoformat()
+        data: dict[str, Any] = {"mismatch": current is not None}
+        if current is not None:
+            data["since"] = _aware(current).isoformat()
         bus.publish(
             channel,
             BusEvent(
@@ -619,13 +624,18 @@ class PrinterRuntime:
             ),
         )
 
-    async def _load_identity_hold(self, printer_id: UUID) -> None:
-        """A mismatch that began before the hub stopped is held again when the printer attaches."""
+    async def _read_mismatch_since(self, printer_id: UUID) -> datetime | None:
         async with self._sessions()() as session:
             row = await identity_repo.get(session, printer_id)
-        self._queue().set_identity_hold(
-            printer_id, row is not None and row.mismatch_since is not None
-        )
+        return None if row is None else row.mismatch_since
+
+    async def _load_identity_hold(self, printer_id: UUID) -> None:
+        """A mismatch that began before the hub stopped is held again when the printer attaches.
+
+        Called before the printer joins the queue: a running queue starts the worker (and
+        recovers waiting jobs) inside the add, and a re-wire purged the hold on the way."""
+        since = await self._read_mismatch_since(printer_id)
+        self._queue().set_identity_hold(printer_id, since is not None)
 
     def _queue(self) -> PrintQueue:
         return cast("PrintQueue", self._app.state.print_queue)

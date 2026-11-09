@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request, status
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.identity_hold import ensure_not_held
+from app.api.identity_hold import ensure_sheet_not_held
 from app.api.routes.sheet_common import actor, mapped
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print, require_read
@@ -290,7 +290,7 @@ async def _create_with_id_cell(
         )
     with mapped():
         printer = await _usable_printer(session, auth, body.printer)
-        ensure_not_held(getattr(request.app.state, "print_queue", None), printer.id)  # #231
+        ensure_sheet_not_held(getattr(request.app.state, "print_queue", None), printer.id)  # #231
         # Give the connection back: the service opens its own sessions, and a request holding
         # one while it waits for another can use up the pool (the R10-1 class). The printer row
         # stays usable (expire_on_commit=False); the session starts again for the read below.

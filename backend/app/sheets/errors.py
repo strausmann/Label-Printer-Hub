@@ -8,6 +8,7 @@ Messages are fixed English text; raw input is never echoed beyond identifiers.
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from fastapi import HTTPException
 
@@ -366,6 +367,19 @@ class SheetPrinterDisabledError(SheetApiError):
     status = 409
     error_code = "printer_disabled"
     message = "This printer is disabled."
+
+
+class PrinterIdentityMismatchError(SheetApiError):
+    """The device behind the printer changed; sheet jobs are held (#231).
+
+    The detail names the printer id only, never an identity value."""
+
+    status = 409
+    error_code = "printer-identity-mismatch"
+    message = "The device behind this printer changed; sheet and calibration jobs are held."
+
+    def __init__(self, printer_id: UUID) -> None:
+        super().__init__(detail={"printer_id": str(printer_id)})
 
 
 class ItemLookupFailedError(SheetApiError):

@@ -36,7 +36,7 @@ _log = logging.getLogger(__name__)
 IdentityKind = Literal["serial", "ipp_uuid", "mac"]
 IdentityOutcome = Literal["none", "stored", "seen", "kind_upgraded", "kept", "different"]
 IdentitySink = Callable[[UUID, ObservedIdentity], Awaitable[IdentityOutcome]]
-MismatchHook = Callable[[UUID, datetime | None], None]
+MismatchHook = Callable[[UUID, datetime | None], Awaitable[None]]
 """Called after a write that starts (``since``) or ends (``None``) a mismatch."""
 
 # Lowest rank first: an identity is only ever replaced by a higher-ranked kind.
@@ -177,6 +177,12 @@ async def record_identity(
                 return _done("kept", stored_kind)
             was_mismatched = row.mismatch_since is not None
             if observed_value != stored_value:
+                if (
+                    was_mismatched
+                    and row.observed_id == observed_value
+                    and row.observed_kind == stored_kind
+                ):
+                    return _done("different", stored_kind)  # nothing new to record
                 if await repo.mark_mismatch(
                     session,
                     printer_id,
@@ -187,7 +193,7 @@ async def record_identity(
                     now=now,
                 ):
                     if not was_mismatched:
-                        _announce(on_mismatch, printer_id, now)
+                        await _announce(on_mismatch, printer_id, now)
                     return _done("different", stored_kind)
                 lost_different = True  # the stored identity moved under us: compare again
                 continue
@@ -202,7 +208,7 @@ async def record_identity(
                     now=now,
                 ):
                     if was_mismatched:
-                        _announce(on_mismatch, printer_id, None)
+                        await _announce(on_mismatch, printer_id, None)
                     return _done("kind_upgraded", picked.kind)
                 continue
             seen_at = row.hardware_id_seen_at
@@ -217,7 +223,7 @@ async def record_identity(
                     clear_mismatch=was_mismatched,
                 )
                 if was_mismatched and won:
-                    _announce(on_mismatch, printer_id, None)
+                    await _announce(on_mismatch, printer_id, None)
                 elif was_mismatched:
                     continue  # the row changed under us: compare again
             return _done("seen", stored_kind)
@@ -226,12 +232,12 @@ async def record_identity(
     return _done("different" if lost_different else "kept", picked.kind)
 
 
-def _announce(hook: MismatchHook | None, printer_id: UUID, since: datetime | None) -> None:
+async def _announce(hook: MismatchHook | None, printer_id: UUID, since: datetime | None) -> None:
     """Tell the caller a mismatch started (``since``) or ended (``None``); never raises."""
     if hook is None:
         return
     try:
-        hook(printer_id, since)
+        await hook(printer_id, since)
     except Exception as exc:
         _log.warning("identity mismatch hook failed (%s)", type(exc).__name__)
 

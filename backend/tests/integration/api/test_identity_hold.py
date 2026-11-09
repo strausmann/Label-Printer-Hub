@@ -21,6 +21,7 @@ import httpx
 import pytest
 from app.models.job import Job
 from app.models.print_batch import PrintBatch
+from app.models.printer import Printer
 from app.printer_backends.snmp_helper import ObservedIdentity
 from app.services.print_queue import PrintQueue
 from PIL import Image
@@ -35,6 +36,7 @@ from tests.integration.api.test_sheet_print_api import (
     _sheet,
     running,
 )
+from tests.integration.api.test_sheet_types_api import _factory
 from tests.integration.api.test_test_print_api import (  # noqa: F401  (fixtures + helpers)
     Env,
     _public_url,
@@ -58,6 +60,16 @@ def _problem(resp: httpx.Response, pid: UUID) -> dict[str, Any]:
     detail: dict[str, Any] = resp.json()["detail"]
     assert detail["type"] == CODE and detail["status"] == 409, detail
     assert str(pid) in detail["detail"]
+    return detail
+
+
+def _envelope(resp: httpx.Response, pid: UUID) -> dict[str, Any]:
+    """The sheet routes keep their documented envelope; the detail names the printer id only."""
+    assert resp.status_code == 409, resp.text
+    detail: dict[str, Any] = resp.json()["detail"]
+    assert set(detail) == {"error_code", "error_message", "error_detail"}, detail
+    assert detail["error_code"] == CODE
+    assert detail["error_detail"] == {"printer_id": str(pid)}
     return detail
 
 
@@ -91,7 +103,7 @@ async def test_sheet_print_refused_on_mismatch() -> None:
 
         resp = await rig.print(_body(code, 3))
 
-        _problem(resp, rig.printer_id)
+        _envelope(resp, rig.printer_id)
         assert await _jobs() == 0 and await _count(PrintBatch) == 0
         assert await _cells() == []  # nothing reserved
         assert _prints(rig) == 0
@@ -121,7 +133,7 @@ async def test_sheet_with_id_cell_refused_on_mismatch() -> None:
             headers=rig.key,
         )
 
-        _problem(resp, rig.printer_id)
+        _envelope(resp, rig.printer_id)
         assert await _jobs() == 0 and await _cells() == []
 
 
@@ -132,12 +144,42 @@ async def test_mismatch_detail_has_no_identity() -> None:
         assert await sink(rig.printer_id, ObservedIdentity(SERIAL_B, None, None)) == "different"
         code = await _sheet()
 
-        for resp in (await rig.print(_body(code, 1)), await _calibration(rig)):
-            _problem(resp, rig.printer_id)
+        sheet = await rig.print(_body(code, 1))
+        _envelope(sheet, rig.printer_id)
+        calibration = await _calibration(rig)
+        _problem(calibration, rig.printer_id)
+        for resp in (sheet, calibration):
             assert SERIAL_A not in resp.text and SERIAL_B not in resp.text
-            problem = resp.json()["detail"]
-            assert set(problem) <= {"type", "title", "status", "detail", "extensions"}
-            assert problem.get("extensions", {}) == {}
+        problem = calibration.json()["detail"]
+        assert set(problem) <= {"type", "title", "status", "detail", "extensions"}
+        assert problem.get("extensions", {}) == {}
+
+
+async def test_reattach_never_drops_the_hold_under_a_queued_job() -> None:
+    """An admin edit re-wires a flagged printer while a sheet job waits: it must not print."""
+    async with running() as rig:
+        queue: PrintQueue = rig.app.state.print_queue
+        runtime = rig.app.state.printer_runtime
+        code = await _sheet()
+        await queue.pause_printer(rig.printer_id, reason="test", source="user")
+        resp = await rig.print(_body(code, 3))
+        assert resp.status_code == 202, resp.text
+        job_id = resp.json()["pages"][0]["job_id"]
+        sink = runtime._identity_sink
+        await sink(rig.printer_id, ObservedIdentity(SERIAL_A, None, None))
+        assert await sink(rig.printer_id, ObservedIdentity(SERIAL_B, None, None)) == "different"
+        async with _factory()() as s:  # a wiring change: the IPP queue timeout is in the key
+            printer = await s.get(Printer, rig.printer_id)
+            assert printer is not None
+            printer.queue_timeout_s = int(printer.queue_timeout_s) + 7
+            await s.commit()
+
+        await runtime.reconcile(rig.printer_id)
+
+        assert queue.is_identity_held(rig.printer_id)
+        row = await _until_job(job_id, "failed")
+        assert (row.error or "").startswith(f"{CODE}:")
+        assert _prints(rig) == 0
 
 
 # ---------------------------------------------------------------------------- retry
