@@ -89,6 +89,7 @@ All references are to `main`.
 14. **Limits:** 500 labels (copies included) and 30-day expiry; a notification 3 days before expiry, never silent removal. → sections 10, 12.2.
 15. **Read-only access may add to and select in the inbox, but not print.** → sections 6.3, 12.1, 13.
 16. **Webhook default = park in inbox**, switchable per integration and event (through the rules of 11). → section 7.
+17. **Webhook call log in the hub** (maintainer, 2026-11-09): every call to a hub webhook is recorded and viewable in the hub: when, from where, the payload, what happened to it, and the final status of the job or inbox line it produced. → section 8.4.
 
 ## 5. Data model
 
@@ -457,6 +458,53 @@ Design:
 - Which events do what is the user's event rule per Kept event type (decision 11, section 7). An event whose rule is `none`, or an unknown event type, answers `202 { "outcome": "ignored" }`; `ping` answers `200`.
 - The receiver looks the thing up through the Kept plugin of #173 and applies the event rules for `kept` (section 7; preset: `thing.created` and `thing.moved` park, `thing.updated` none). **Until #173 ships, the route does not exist.** Alternatively Kept (or a script around it) can call `POST /api/v1/inbox/items` with an `inbox` key and `data` it already has — that works from day one.
 - Kept's docs mark thing names as user-written data; the hub treats them as untrusted text (section 12.4).
+
+### 8.4 Webhook call log (decision 17)
+
+Every request to a hub webhook route (`/api/v1/webhook/grocy/label`, `/spoolman`, `/kept`, and calls to `POST /api/v1/inbox/items` made with an API key) gets **one log record**. That includes rejected requests (401, 403, 413, 422). It answers: when, from where, with what, what the hub did, and how it ended.
+
+**Record (`webhook_calls` table):**
+
+| Field | Content |
+|---|---|
+| `received_at` | server time, ms precision |
+| `route`, `integration`, `event_type` | for example `grocy/label`, `grocy`, `grocy.stock_entry` |
+| `source_ip` | the client address after the trusted-proxy resolution the hub already uses (`FORWARDED_ALLOW_IPS`), plus `user_agent` (cut to 200 chars) |
+| `key_id`, `key_name` | which key authenticated (never the key or the token itself); `null` for rejected calls |
+| `content_type`, `body_bytes` | the request format and size |
+| `payload` | the parsed body as JSON, **redacted** (see below), capped at 32 KiB, with `payload_truncated: true` when cut |
+| `http_status`, `outcome`, `reason` | what the hub answered: `parked`, `printed`, `duplicate`, `ignored`, `rejected`, plus the error code |
+| `duration_ms` | time to answer. Useful against Grocy's 2-second budget |
+| `inbox_item_id`, `job_id` | what the call produced; links to the inbox line or the job |
+
+The **final status** is not copied. The log view joins it live from the inbox line or the job: still parked, printed on sheet X, failed with reason Y, expired, or removed. So the record never goes stale.
+
+**Redaction.** The redaction is built in, not a filter applied afterwards:
+- `token`, `key`, `secret`, `signature`, `password` and every field whose name ends in one of those are replaced with `"[redacted]"` before the record is written.
+- The query string is stored without `token`.
+- Kept's signature header is stored as "valid/invalid" only.
+
+The rest of the payload is kept, because the operator explicitly wants to see it. It is product or item data from the operator's own systems.
+
+**Retention.** 14 days or 2,000 records, whichever is reached first (builder's call). It is pruned by the existing retention job. Payloads of rejected calls from unknown sources keep only the first 2 KiB, so an unauthenticated flood cannot fill the table.
+
+**Access.** Admin only: payloads can contain item data and source addresses. Read-only and inbox keys do not see the log.
+
+**UI.**
+- An **"Webhook log"** page under Settings, and a filtered view on each integration page. The Grocy panel's "Last call received" (section 8.1.4a) is the newest record of this log, not a separate field.
+- The table lists time, integration, event, source, outcome, final status and duration. Rejected calls are highlighted.
+- A detail view shows the formatted payload (rendered as text, never as HTML), the response sent, and links to the produced inbox line or job.
+- Filters: integration, outcome, time range.
+- A **"Replay"** action for a record whose outcome was `rejected` because of the hub's own configuration (for example, no target printer): it re-runs the stored payload through the current rules, and the new record is linked to the old one. No replay for authentication failures (builder's call).
+
+**API.** `GET /api/v1/admin/webhook-calls` (filter, paginate) and `GET /api/v1/admin/webhook-calls/{id}`, `POST …/{id}/replay`. All admin-scoped.
+
+**Tests.**
+- A token in the query string or the body never appears in the stored record. Counter-test: with redaction removed, the test turns red.
+- A rejected call (401) is logged without a key id.
+- The final status follows a parked line through to "printed".
+- Pruning respects both limits.
+- An unauthenticated call stores no more than 2 KiB of payload.
 
 ## 9. Data freshness
 
