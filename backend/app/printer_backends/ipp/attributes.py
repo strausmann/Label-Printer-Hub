@@ -39,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 PRINTER_ATTRS: tuple[str, ...] = (
     "printer-make-and-model",
+    "printer-uuid",  # hardware identity (#231); read by the status producer, not mapped
     "ipp-versions-supported",
     "document-format-supported",
     "document-format-version-supported",

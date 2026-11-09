@@ -45,7 +45,7 @@ from app.models.printer_state import PrinterState
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.ipp.client import IppClient
-from app.printer_backends.snmp_helper import query_model_pjl
+from app.printer_backends.snmp_helper import ObservedIdentity, query_model_pjl
 from app.printer_models.registry import ModelRegistry
 from app.services.backend_router import (
     BackendRouter,
@@ -54,6 +54,7 @@ from app.services.backend_router import (
     QueueConfig,
     SNMPConfig,
 )
+from app.services.hardware_identity import IdentityOutcome, record_identity
 from app.services.lookup_service import AppLookupService
 from app.services.page_jobs import IppPagePrinter
 from app.services.print_service import PrintService
@@ -463,6 +464,7 @@ class PrinterRuntime:
                 community=cfg.snmp.community,
                 tape_change_producer=tape_producer,
                 roll_tracker=RollTracker(self._app.state.event_bus),
+                identity_sink=self._identity_sink,
             )
         except Exception as exc:
             _log.warning(
@@ -512,6 +514,7 @@ class PrinterRuntime:
                 interval_s=self._settings.sse_probe_interval_s,
                 limiter=self._ipp_limiter,
                 log_name=printer.slug,
+                identity_sink=self._identity_sink,
             )
         except Exception as exc:
             _log.warning(
@@ -580,6 +583,12 @@ class PrinterRuntime:
         if lock is None:
             lock = self._locks[printer_id] = asyncio.Lock()
         return lock
+
+    async def _identity_sink(self, printer_id: UUID, observed: ObservedIdentity) -> IdentityOutcome:
+        """The sink both status producers call after a successful probe (#231)."""
+        return await record_identity(
+            printer_id, observed, datetime.now(UTC), session_factory=self._sessions()
+        )
 
     def _queue(self) -> PrintQueue:
         return cast("PrintQueue", self._app.state.print_queue)

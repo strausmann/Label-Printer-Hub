@@ -37,7 +37,9 @@ from app.printer_backends.ipp.attributes import (
     map_status,
 )
 from app.printer_backends.ipp.client import IppClient
+from app.printer_backends.snmp_helper import ObservedIdentity
 from app.services.event_bus import BusEvent, EventBus
+from app.services.hardware_identity import IdentitySink
 from app.services.print_queue import PauseInfo
 
 _log = logging.getLogger(__name__)
@@ -66,6 +68,13 @@ class IppPrinterState:
     summary: ProbeSummary | None = None
     status: IppStatusRecord | None = None
     own_job_ids: set[int] = field(default_factory=set)
+
+
+def _printer_uuid(attrs: Mapping[str, list[Any]]) -> str | None:
+    """The first ``printer-uuid`` value as text, or ``None`` (absent, out-of-band, wrong type)."""
+    values = attrs.get("printer-uuid") or []
+    first = values[0] if values else None
+    return first if isinstance(first, str) and first else None
 
 
 def _empty_summary() -> ProbeSummary:
@@ -136,9 +145,11 @@ class IppStatusProducer:
         interval_s: float,
         limiter: asyncio.Semaphore | None = None,
         log_name: str | None = None,
+        identity_sink: IdentitySink | None = None,
     ) -> None:
         self._bus = bus
         self._printer_id = printer_id
+        self._identity_sink = identity_sink
         self._client = client
         self._session_factory = session_factory
         self._state = state
@@ -190,7 +201,7 @@ class IppStatusProducer:
 
     async def _probe(self) -> IppStatusRecord | None:
         try:
-            record = await asyncio.wait_for(self._query(), timeout=PROBE_GUARD_S)
+            record, printer_uuid = await asyncio.wait_for(self._query(), timeout=PROBE_GUARD_S)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -204,15 +215,32 @@ class IppStatusProducer:
         await self._write_cache(record, last_error=None)
         self._publish_if_changed(record)
         await self._maybe_resume(record)
+        await self._observe_identity(printer_uuid)
         return record
 
-    async def _query(self) -> IppStatusRecord:
+    async def _query(self) -> tuple[IppStatusRecord, str | None]:
+        """The mapped record and the printer's ``printer-uuid`` (kept apart from the record, so
+        it never reaches the status cache or the API)."""
         attrs = await self._client.get_printer_attributes(PRINTER_ATTRS)
         record = map_status(attrs)
         ahead = await self._jobs_ahead()
         if ahead is not None:
             record = record.model_copy(update={"jobs_ahead": ahead})
-        return record
+        return record, _printer_uuid(attrs)
+
+    async def _observe_identity(self, printer_uuid: str | None) -> None:
+        """Hand the identity of a successful probe to the sink; it can never fail the probe.
+
+        Identity values are never logged.
+        """
+        if self._identity_sink is None:
+            return
+        try:
+            await self._identity_sink(self._printer_id, ObservedIdentity(ipp_uuid=printer_uuid))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _log.warning("Identity capture for %s failed (%s)", self._log_name, type(exc).__name__)
 
     async def _jobs_ahead(self) -> int | None:
         """Not-completed jobs on the printer without the ones the hub tracks itself."""

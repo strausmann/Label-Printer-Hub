@@ -51,8 +51,9 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from app.printer_backends.snmp_helper import PreflightStatus, query_preflight
+from app.printer_backends.snmp_helper import PreflightStatus, query_identity, query_preflight
 from app.services.event_bus import BusEvent, EventBus
+from app.services.hardware_identity import IdentitySink
 from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.roll_tracker import RollTracker
 from app.services.tape_status import TapeStatusParsed
@@ -73,6 +74,7 @@ class StatusProbeProducer:
         community: str = "public",
         tape_change_producer: TapeChangeProducer | None = None,
         roll_tracker: RollTracker | None = None,
+        identity_sink: IdentitySink | None = None,
     ) -> None:
         self._bus = bus
         self._printer_id = printer_id
@@ -81,6 +83,7 @@ class StatusProbeProducer:
         self._community = community
         self._tape_producer = tape_change_producer
         self._roll_tracker = roll_tracker
+        self._identity_sink = identity_sink
         self._last: PreflightStatus | None = None
         # Track online state separately so that online→offline transitions
         # are detected even when hr_printer_status is unchanged (Finding #5).
@@ -165,6 +168,28 @@ class StatusProbeProducer:
         except Exception:
             _log.exception("RollTracker failed for printer=%s", self._printer_id)
 
+    async def _observe_identity(self) -> None:
+        """Read the hardware identity and hand it to the sink; neither step can fail a probe.
+
+        Called only after a successful preflight. ``query_identity`` never raises; the sink is
+        guarded here. Identity values are never logged.
+        """
+        if self._identity_sink is None:
+            return
+        try:
+            printer_uuid = UUID(self._printer_id)
+        except (ValueError, AttributeError):
+            return
+        try:
+            observed = await query_identity(self._host, community=self._community)
+            await self._identity_sink(printer_uuid, observed)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _log.warning(
+                "Identity capture failed for printer=%s (%s)", self._printer_id, type(exc).__name__
+            )
+
     async def _mark_offline(self, exc: Exception) -> None:
         """Persist a failed probe; preserves any previous parsed snapshot."""
         from app.db.engine import async_session
@@ -215,6 +240,7 @@ class StatusProbeProducer:
             # Write to cache first (always)
             await self._upsert_cache(status)
             await self._observe_roll(status)
+            await self._observe_identity()
 
             # Notify tape producer BEFORE updating _last so it receives
             # the correct 'previous' tape state (old=self._last, new=status).

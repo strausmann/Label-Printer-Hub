@@ -73,9 +73,10 @@ def test_printer_attrs_cover_the_brief() -> None:
         "queued-job-count",
         "media-right-margin-supported",
         "media-default",
+        "printer-uuid",
     ):
         assert name in PRINTER_ATTRS
-    assert len(PRINTER_ATTRS) == 30
+    assert len(PRINTER_ATTRS) == 31
     assert "document-format-version-supported" in PRINTER_ATTRS
 
 

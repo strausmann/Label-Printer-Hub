@@ -110,6 +110,8 @@ class FakeIppPrinter:
     accepting_jobs: bool = True
     scaling_supported: bool = True
     margins_hmm: int = 423
+    printer_uuid: str | None = None
+    """``printer-uuid`` (a ``urn:uuid:`` URI); ``None``: not reported."""
     media_default: str | None = None
     """``media-default`` (a media keyword such as ``iso_a4_210x297mm``); ``None``: not reported."""
     resolutions: list[int] = field(default_factory=lambda: [600])
@@ -224,6 +226,7 @@ class FakeIppPrinter:
         attrs = [
             Attr("printer-uri-supported", Tag.URI, [FAKE_URI]),
             Attr("printer-make-and-model", Tag.TEXT, ["Fake IPP Printer"]),
+            Attr("printer-uuid", Tag.URI, [self.printer_uuid] if self.printer_uuid else []),
             Attr("ipp-versions-supported", Tag.KEYWORD, ["1.1", "2.0"]),
             Attr("printer-state", Tag.ENUM, [self.printer_state]),
             Attr("printer-state-reasons", Tag.KEYWORD, list(self.reasons) or ["none"]),
