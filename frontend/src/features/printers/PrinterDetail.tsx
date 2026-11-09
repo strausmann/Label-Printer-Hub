@@ -9,12 +9,12 @@ import { StatusBadge } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { TEST_LABEL_KEY } from "../jobs/model";
 import { useCalibration, type CalibrationRead } from "../calibration/api";
-import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, type Printer, type PrinterStatus, type QueueJob } from "./api";
+import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, useTestPrint, type Printer, type PrinterStatus, type QueueJob } from "./api";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
 import { describePrinter, isPagePrinter, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, ReasonLine } from "./PageStatus";
-import { TestPrintButton } from "./TestPrintButton";
+import { TestPrintButton, TestPrintFeedback } from "./TestPrintButton";
 import { PauseResumeButton } from "./PauseResumeButton";
 import { RollColourEdit, RollColourPrompt } from "./RollColourPrompt";
 import { TapeSwatch } from "./TapeSwatch";
@@ -60,6 +60,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   // Only a key that may write is asked; a status nobody refreshes says nothing about the roll.
   const session = useSession();
   const canAskColour = (session.scope === "print" || session.scope === "admin") && !page && !unknown;
+  const testPrint = useTestPrint(printer.id);
   const colourTrigger = useRef<HTMLButtonElement | null>(null);
 
   return (
@@ -78,10 +79,11 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           )}
         </div>
         <div className="flex min-w-0 max-w-full flex-wrap items-start gap-2">
-          <TestPrintButton printer={printer} status={status.data} />
+          <TestPrintButton printer={printer} status={status.data} mutation={testPrint} />
           <PauseResumeButton printer={printer} />
         </div>
       </header>
+      <TestPrintFeedback mutation={testPrint} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-4">

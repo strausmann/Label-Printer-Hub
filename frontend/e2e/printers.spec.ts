@@ -10,6 +10,8 @@ const shot = async (page: Page, name: string) => {
   await page.screenshot({ path: resolve(SHOTS, name), fullPage: true });
 };
 
+const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+
 // Assembled from parts on purpose: the source guard (src/api/paths.test.ts) rejects the literal.
 const OLD_PRINTERS_PATH = ["", "api", "printers"].join("/");
 
@@ -264,6 +266,65 @@ test.describe("roll colour", () => {
       await expect(page.getByText(/colour not reported/i)).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Set colour" })).toBeVisible();
       await shot(page, `task-11-nocolour-${width}-${scheme}.png`);
+    }
+  });
+
+  test("test print reaches done on a tape printer", async ({ signedInPage: page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Printers" }).click();
+    await page.getByRole("link", { name: /Workshop PT-P750W/ }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Workshop PT-P750W" })).toBeVisible();
+    await page.getByRole("button", { name: "Test print" }).click();
+    const link = page.getByRole("link", { name: "Open the job" });
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page.getByRole("heading", { level: 1, name: "Test label" })).toBeVisible();
+    await expect(page.getByText("Done", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("test print screenshots: idle, sent, error, and the jobs list", async ({ signedInPage: page }) => {
+    test.skip(!SHOTS, "screenshots are an artifact, taken only with E2E_SHOTS_DIR");
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const [width, height] of [
+        [1280, 800],
+        [390, 844],
+      ] as const) {
+        await page.setViewportSize({ width, height });
+        const name = (what: string) => `task-13-${what}-${width}-${scheme}.png`;
+        await page.goto("/printers");
+        await page.getByRole("link", { name: /Workshop PT-P750W/ }).click();
+        await expect(page.getByRole("button", { name: "Test print" })).toBeVisible();
+        await shot(page, name("idle"));
+        expect(await noSideScroll(page)).toBe(true);
+        await page.getByRole("button", { name: "Test print" }).click();
+        await expect(page.getByText("Test print sent.")).toBeVisible();
+        await shot(page, name("sent"));
+        // The hub answers a refusal in words; a long one must wrap inside the column.
+        await page.route("**/test-print", (route) =>
+          route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              detail: {
+                type: "printer-offline",
+                title: "Printer offline",
+                status: 409,
+                detail:
+                  "The printer did not answer. Check that it is switched on and connected to the network, then try again. If it still fails, restart the printer and wait for its light to stop blinking.",
+              },
+            }),
+          }),
+        );
+        await page.getByRole("button", { name: "Test print" }).click();
+        await expect(page.getByRole("alert").filter({ hasText: "did not answer" })).toBeVisible();
+        await shot(page, name("error"));
+        expect(await noSideScroll(page)).toBe(true);
+        await page.unroute("**/test-print");
+        await page.getByRole("navigation", { name: width > 800 ? "Main" : "Tabs" }).getByRole("link", { name: "Jobs" }).click();
+        await expect(page.getByRole("list", { name: "Jobs" }).getByText("Test label").first()).toBeVisible();
+        await shot(page, name("jobs"));
+      }
     }
   });
 });

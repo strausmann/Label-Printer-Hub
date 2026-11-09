@@ -1,5 +1,7 @@
 import { expect, pagePrinterControl, resetPagePrinter, setPagePrinter, test } from "./fixtures";
 
+const SHOTS = process.env.E2E_SHOTS_DIR;
+
 // The seed data the later sheet specs rely on (creation order is fixed, see `backend/tests/e2e_app.py`).
 const SEEDED_CODES = {
   partlyUsed: "L4736-0001",
@@ -64,5 +66,24 @@ test.describe("page printer test hub", () => {
     expect(state).toMatchObject({ margins_hmm: 600, cancel_steps: 2 });
     await resetPagePrinter(page);
     expect((await pagePrinterControl(page)).state).toMatchObject({ margins_hmm: 423, cancel_steps: 0 });
+  });
+
+  // The fake reports no paper size for its tray (`media-col-default`/`media-default` are missing), so the
+  // hub rightly refuses a test page with 409 `media-unknown`. This spec proves what the UI does with the
+  // real answer: the tray goes out in the request and the hub's own words come back next to the button.
+  test("test print on a page printer sends the tray and shows the hub's refusal", async ({ signedInPage: page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/printers");
+    await page.getByRole("link", { name: /Office page printer/ }).click();
+    await page.getByRole("button", { name: "Test print" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("button", { name: /Tray/ })).toBeVisible();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/task-13-popover-1280-light.png`, fullPage: true });
+    const request = page.waitForRequest((r) => r.url().endsWith("/test-print") && r.method() === "POST");
+    await dialog.getByRole("button", { name: "Print test page" }).click();
+    expect((await request).postDataJSON()).toEqual({ tray: "main-tray" });
+    await expect(page.getByRole("alert").filter({ hasText: "neither the media" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open the job" })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 });

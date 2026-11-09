@@ -30,17 +30,17 @@ function useErrorText(error: unknown): string {
   return t`The test print could not be started.`;
 }
 
+export type TestPrintMutation = ReturnType<typeof useTestPrint>;
+
 /**
  * Test print: one press on a tape printer, a tray choice in a small popover on a page printer.
- * Print scope and up; a read-only key does not see it. The answer stays next to the button
- * (a link to the job, or the API's reason) until the next press.
+ * Print scope and up; a read-only key does not see it. The answer (`TestPrintFeedback`) stays
+ * under the header until the next press.
  */
-export function TestPrintButton({ printer, status }: { printer: Printer; status: PrinterStatus | undefined }) {
+export function TestPrintButton({ printer, status, mutation }: { printer: Printer; status: PrinterStatus | undefined; mutation: TestPrintMutation }) {
   const { t } = useLingui();
   const scope = useSession().scope;
-  const mutation = useTestPrint(printer.id);
   const reason = useBlockedReason(printer, status);
-  const errorText = useErrorText(mutation.error);
   const [open, setOpen] = useState(false);
   const page = isPagePrinter(printer, status);
   if (scope !== "print" && scope !== "admin") return null;
@@ -70,18 +70,28 @@ export function TestPrintButton({ printer, status }: { printer: Printer; status:
           {reason}
         </p>
       )}
-      <div aria-live="polite" className="max-w-xs text-small [overflow-wrap:anywhere]">
-        {mutation.isSuccess && (
-          <p role="status">
-            {t`Test print sent.`}{" "}
-            <Link to="/jobs/$jobId" params={{ jobId: mutation.data.job_id }} className="font-bold text-link underline underline-offset-2">
-              {t`Open the job`}
-            </Link>
-          </p>
-        )}
-      </div>
+    </div>
+  );
+}
+
+/** The answer to the last press, in its own row under the header: a link to the job, or the hub's own words (wrapped, never cut). */
+export function TestPrintFeedback({ mutation }: { mutation: TestPrintMutation }) {
+  const { t } = useLingui();
+  const errorText = useErrorText(mutation.error);
+  // Nothing at rest: an empty row would still take a gap in the page's column.
+  if (!mutation.isSuccess && !mutation.isError) return null;
+  return (
+    <div className="text-small [overflow-wrap:anywhere]">
+      {mutation.isSuccess && (
+        <p role="status">
+          {t`Test print sent.`}{" "}
+          <Link to="/jobs/$jobId" params={{ jobId: mutation.data.job_id }} className="font-bold text-link underline underline-offset-2">
+            {t`Open the job`}
+          </Link>
+        </p>
+      )}
       {mutation.isError && (
-        <p role="alert" className="max-w-xs text-small text-bad [overflow-wrap:anywhere]">
+        <p role="alert" className="max-w-prose text-bad">
           {errorText}
         </p>
       )}
