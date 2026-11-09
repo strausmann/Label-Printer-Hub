@@ -28,7 +28,8 @@ export function CartPage() {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   // `/cart?sheet=<code>` (the link from a sheet's page) preselects that sheet in the sheet section.
   const { sheet: linkedSheet } = cartApi.useSearch();
-  // The cart empties when the hub accepts a sheet print; the section stays to show where the labels went.
+  // The cart empties when the hub accepts a sheet print, or queues all of it before a partial failure; the section
+  // stays to show where the labels went (the result, or the partial-result note with the links to the queued jobs).
   const [sheetPrinted, setSheetPrinted] = useState(false);
   const pagePrinter = selected?.backend === "ipp";
   const labels = cart.items.reduce((sum, i) => sum + i.copies, 0);
@@ -136,7 +137,10 @@ export function CartPage() {
               items={cart.items}
               printer={selected}
               preselectedSheet={linkedSheet}
-              onQueued={(queued) => cart.removeItems(queued)}
+              onQueued={(queued) => {
+                cart.removeItems(queued);
+                setSheetPrinted(true);
+              }}
               onAccepted={(submitted) => {
                 cart.removeItems(submitted);
                 setSheetPrinted(true);

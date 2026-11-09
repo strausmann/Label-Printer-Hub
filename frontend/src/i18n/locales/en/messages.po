@@ -3656,6 +3656,10 @@ msgid "The queue timeout must be between 1 and 600 seconds."
 msgstr "The queue timeout must be between 1 and 600 seconds."
 
 #: src/features/sheets/print/PrintResult.tsx
+msgid "The queued labels were taken out of the cart."
+msgstr "The queued labels were taken out of the cart."
+
+#: src/features/sheets/print/PrintResult.tsx
 msgid "The queued labels were taken out of the cart. The rest stays in it."
 msgstr "The queued labels were taken out of the cart. The rest stays in it."
 

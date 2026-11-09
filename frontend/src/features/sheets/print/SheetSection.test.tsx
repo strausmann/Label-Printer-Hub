@@ -750,6 +750,21 @@ describe("after printing", () => {
     expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("9", 4, "Sugar")]);
   });
 
+  it("a partial print that queued every label empties the cart but keeps the note and the job links", async () => {
+    const JOB2 = "66666666-6666-4666-8666-666666666666";
+    const allQueued = () => conflict(502, "print_interrupted", "Interrupted.", { batch_id: BATCH, job_ids: [JOB, JOB2] });
+    await cartView("/cart", [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")], routes({ preview: twoPages, print: allQueued }));
+    await pressPrint();
+    const note = await screen.findByRole("alert");
+    expect(note).toHaveTextContent("9 labels were queued and will print.");
+    expect(note).toHaveTextContent("Nothing is left to print.");
+    expect(note).toHaveTextContent("The queued labels were taken out of the cart.");
+    expect(note).not.toHaveTextContent("The rest stays in it.");
+    expect(within(note).getAllByRole("link", { name: /View job/ }).map((l) => l.getAttribute("href"))).toEqual([`/jobs/${JOB}`, `/jobs/${JOB2}`]);
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([]);
+    expect(screen.queryByText("The cart is empty.")).toBeNull();
+  }, 15000);
+
   it("a partial print takes exactly the queued copies out of the cart lines", async () => {
     // Two pages again, but the first page holds only 3 of the 5 flour labels: the line keeps 2.
     const threeThenRest = (init: RequestInit) => {

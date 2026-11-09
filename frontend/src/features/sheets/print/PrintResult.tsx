@@ -69,7 +69,7 @@ export function PartialResult({ jobIds, queued, left, inCart, words }: { jobIds:
           : plural(left, { one: "# label was not queued. The preview below shows it.", other: "# labels were not queued. The preview below shows them." })}
       </p>
       {words && <p className="[overflow-wrap:anywhere]">{words}</p>}
-      {inCart && <p>{t`The queued labels were taken out of the cart. The rest stays in it.`}</p>}
+      {inCart && <p>{left === 0 ? t`The queued labels were taken out of the cart.` : t`The queued labels were taken out of the cart. The rest stays in it.`}</p>}
       <ol className="m-0 flex list-none flex-wrap gap-x-4 p-0">
         {jobIds.map((id, i) => {
           const number = i + 1;
