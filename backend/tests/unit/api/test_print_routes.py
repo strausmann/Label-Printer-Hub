@@ -72,7 +72,7 @@ def _client(app):
 async def test_post_print_data_path_returns_202(fake_service, fake_queue) -> None:
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
@@ -86,7 +86,7 @@ async def test_post_print_data_path_returns_202(fake_service, fake_queue) -> Non
 async def test_post_print_lookup_path_returns_202(fake_service, fake_queue) -> None:
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "lookup": {"app": "snipeit", "identifier": "42"},
@@ -97,7 +97,7 @@ async def test_post_print_lookup_path_returns_202(fake_service, fake_queue) -> N
 
 async def test_post_print_neither_source_is_422(fake_service, fake_queue) -> None:
     async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/print", json={"content_type": "qr_two_lines"})
+        r = await c.post("/api/v1/print", json={"content_type": "qr_two_lines"})
     assert r.status_code == 422
 
 
@@ -105,7 +105,7 @@ async def test_post_print_lookup_failed_is_502(fake_service, fake_queue) -> None
     fake_service.submit_print_job.side_effect = LookupFailedError("upstream down")
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "lookup": {"app": "snipeit", "identifier": "x"},
@@ -123,7 +123,7 @@ async def test_post_print_unknown_app_is_422_not_a_crash(fake_service, fake_queu
         "Unknown integration. Registered: [a, b]"
     )
     async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/print", json=_LOOKUP_BODY)
+        r = await c.post("/api/v1/print", json=_LOOKUP_BODY)
     assert r.status_code == 422
     assert r.json()["error_code"] == "integration_unknown_app"
     assert "Registered" not in r.text
@@ -134,7 +134,7 @@ async def test_post_print_lookup_failure_text_stays_server_side(fake_service, fa
         "GET https://up.example.invalid/?token=s3cret"
     )
     async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/print", json=_LOOKUP_BODY)
+        r = await c.post("/api/v1/print", json=_LOOKUP_BODY)
     assert r.status_code == 502
     assert "s3cret" not in r.text and "example.invalid" not in r.text
 
@@ -147,7 +147,7 @@ async def test_post_print_subclass_of_a_mapped_error_uses_its_parents_mapping(
 
     fake_service.submit_print_job.side_effect = _DownError("offline")
     async with _client(_app(fake_service, fake_queue)) as c:
-        r = await c.post("/print", json=_LOOKUP_BODY)
+        r = await c.post("/api/v1/print", json=_LOOKUP_BODY)
     assert r.status_code == 503
     assert r.json()["error_code"] == "printer_offline"
 
@@ -228,7 +228,7 @@ async def test_post_print_tape_mismatch_fail_is_409_with_detail(fake_service, fa
     fake_service.submit_print_job.side_effect = TapeMismatchError(expected_mm=24, loaded_mm=12)
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
@@ -246,7 +246,7 @@ async def test_post_print_tape_mismatch_no_tape_loaded(fake_service, fake_queue)
     fake_service.submit_print_job.side_effect = TapeMismatchError(expected_mm=24, loaded_mm=None)
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
@@ -264,7 +264,7 @@ async def test_post_print_printer_offline_is_503(fake_service, fake_queue) -> No
     fake_service.submit_print_job.side_effect = PrinterOfflineError("host unreachable")
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
@@ -280,7 +280,7 @@ async def test_post_print_tape_empty_is_409(fake_service, fake_queue) -> None:
     fake_service.submit_print_job.side_effect = TapeEmptyError()
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
@@ -304,7 +304,7 @@ async def test_post_print_printer_disabled_is_409(fake_service, fake_queue) -> N
     )
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
@@ -322,7 +322,7 @@ async def test_post_print_cover_open_is_409(fake_service, fake_queue) -> None:
     fake_service.submit_print_job.side_effect = PrinterCoverOpenError()
     async with _client(_app(fake_service, fake_queue)) as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
@@ -342,7 +342,7 @@ async def test_resume_printer_endpoint(fake_service, fake_queue) -> None:
     app = _app(fake_service, fake_queue)
     app.state.printer_id = _PRINTER_ID
     async with _client(app) as c:
-        r = await c.post("/printer/resume")
+        r = await c.post("/api/v1/printer/resume")
     assert r.status_code == 200
     body = r.json()
     assert body == {"printer_id": _PRINTER_ID_STR, "state": "active"}
@@ -353,7 +353,7 @@ async def test_resume_printer_404_when_no_printer_configured(fake_service, fake_
     app = _app(fake_service, fake_queue)
     # NOT setting app.state.printer_id
     async with _client(app) as c:
-        r = await c.post("/printer/resume")
+        r = await c.post("/api/v1/printer/resume")
     assert r.status_code == 404
 
 
@@ -438,7 +438,7 @@ async def test_resume_printer_already_active_returns_409(fake_service, fake_queu
     app = _app(fake_service, fake_queue)
     app.state.printer_id = _PRINTER_ID
     async with _client(app) as c:
-        r = await c.post("/printer/resume")
+        r = await c.post("/api/v1/printer/resume")
     assert r.status_code == 409
     body = r.json()
     assert body.get("error_code") == "already_active"
@@ -450,7 +450,7 @@ async def test_resume_printer_paused_returns_200(fake_service, fake_queue) -> No
     app = _app(fake_service, fake_queue)
     app.state.printer_id = _PRINTER_ID
     async with _client(app) as c:
-        r = await c.post("/printer/resume")
+        r = await c.post("/api/v1/printer/resume")
     assert r.status_code == 200
     assert r.json() == {"printer_id": _PRINTER_ID_STR, "state": "active"}
 

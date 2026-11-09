@@ -1,4 +1,4 @@
-"""HTTP tests of POST /api/print/{printer}/sheet/preview: scopes, errors, no echo, no writes."""
+"""HTTP tests of POST /api/v1/print/{printer}/sheet/preview: scopes, errors, no echo, no writes."""
 
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ def _body(code: str, n: int = 3, **kw: Any) -> dict[str, Any]:
 
 
 def _url(printer: str) -> str:
-    return f"/api/print/{printer}/sheet/preview"
+    return f"/api/v1/print/{printer}/sheet/preview"
 
 
 def _err(resp: httpx.Response) -> dict[str, Any]:
@@ -380,7 +380,7 @@ async def test_openapi_documents_the_route_and_its_error_envelope(
 ) -> None:
     schema = (await api_client_with_seed.get("/openapi.json")).json()
 
-    op = schema["paths"]["/api/print/{printer_key}/sheet/preview"]["post"]
+    op = schema["paths"]["/api/v1/print/{printer_key}/sheet/preview"]["post"]
     assert op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/SheetPreview"
     )
@@ -389,7 +389,7 @@ async def test_openapi_documents_the_route_and_its_error_envelope(
     )
     assert op["summary"] and op["description"]
     # the tape batch route keeps FastAPI's own validation error
-    batch = schema["paths"]["/api/print/{printer_key}/batch"]["post"]
+    batch = schema["paths"]["/api/v1/print/{printer_key}/batch"]["post"]
     assert not batch["responses"]["422"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/SheetApiErrorResponse"
     )
@@ -463,7 +463,7 @@ async def test_no_db_connection_is_held_while_the_lookups_run(
         ],
         "placements": [{"sheet": code}],
     }
-    url = _url(pid) if route == "preview" else f"/api/print/{pid}/sheet"
+    url = _url(pid) if route == "preview" else f"/api/v1/print/{pid}/sheet"
     pool = engine_module.engine.pool
 
     try:

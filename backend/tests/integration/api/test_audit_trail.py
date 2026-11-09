@@ -1,6 +1,6 @@
 """Integration tests for API key audit trail on jobs — Phase 7c Step 7.
 
-Tests that POST /api/print with a key sets api_key_id and source_ip on the Job row.
+Tests that POST /api/v1/print with a key sets api_key_id and source_ip on the Job row.
 
 Phase 1k.1a (Task 25): Updated to use content_type-based API (template_id removed).
 """
@@ -40,7 +40,7 @@ async def _insert_print_key(factory):
 async def test_post_print_without_auth_still_returns_401(api_client_with_seed):
     """POST /print without auth → 401 (auth wired correctly)."""
     resp = await api_client_with_seed.post(
-        "/print",
+        "/api/v1/print",
         json={
             "content_type": "qr_two_lines",
             "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
@@ -52,7 +52,7 @@ async def test_post_print_without_auth_still_returns_401(api_client_with_seed):
 @pytest.mark.asyncio
 async def test_legacy_print_endpoint_requires_auth(api_client_with_seed):
     """Legacy POST /print endpoint also requires print scope."""
-    for endpoint in ["/print"]:
+    for endpoint in ["/api/v1/print"]:
         resp = await api_client_with_seed.post(
             endpoint,
             json={

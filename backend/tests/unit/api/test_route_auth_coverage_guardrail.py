@@ -6,14 +6,14 @@ Why this exists (2026-08-14 security audit)
 Two REST endpoints shipped with NO auth dependency at all, while every
 sibling endpoint in the same router file required one:
 
-- ``GET /api/printers/{printer_id}`` (``printers.py::get_printer``) —
+- ``GET /api/v1/printers/{printer_id}`` (``printers.py::get_printer``) —
   ``list_printers``, ``get_printer_status``, ``get_printer_tape``,
   ``get_printer_queue``, ``pause_printer``, ``resume_printer`` and
   ``clear_printer_queue`` all required ``ReadAuthDep``/``PrintAuthDep``; the
   single-printer detail GET did not. It leaked full printer metadata
   (including the raw ``connection`` dict — host/port/SNMP config) to any
   caller that could reach the backend, with zero credentials.
-- ``POST /api/jobs/{job_id}/retry`` (``jobs.py::retry_job``) — clones a
+- ``POST /api/v1/jobs/{job_id}/retry`` (``jobs.py::retry_job``) — clones a
   terminal job into a fresh ``QUEUED`` job that the worker actually
   dispatches to the physical printer. ``list_jobs``, ``get_job`` and
   ``cancel_job`` in the same file all required ``read``/``print`` scope;
@@ -70,7 +70,7 @@ _PUBLIC_BY_DESIGN: dict[tuple[str, str], str] = {
     ("GET", "/product/{entity_id}"): "QR landing page — see qr.py module docstring",
     ("POST", "/api/v1/auth/session"): "the sign-in itself: exchanges an API key or the "
     "bootstrap key for a session (auth_session.py); rate limited per client IP",
-    ("GET", "/api/info"): "the web shell and sign-in screen need version, language and "
+    ("GET", "/api/v1/info"): "the web shell and sign-in screen need version, language and "
     "auth hints before sign-in (info.py); returns no secrets, only booleans and build info",
     ("GET", "/api/v1/auth/session"): "reports whether the caller is signed in and mints a "
     "session from trusted SSO headers (auth_session.py); returns no data without a session",
@@ -112,8 +112,8 @@ def test_every_route_has_recognised_auth_or_is_explicitly_allowlisted() -> None:
     """Fail the build the moment a route ships with no recognised auth dependency.
 
     This is the guardrail: it re-discovers the exact class of bug this file's
-    module docstring describes (GET /api/printers/{id}, POST
-    /api/jobs/{id}/retry) and keeps rediscovering it for every future route.
+    module docstring describes (GET /api/v1/printers/{id}, POST
+    /api/v1/jobs/{id}/retry) and keeps rediscovering it for every future route.
     """
     app = _build_real_app()
     routes = iter_api_routes(app.routes)

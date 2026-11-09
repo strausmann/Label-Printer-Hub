@@ -37,7 +37,7 @@ from app.schemas.tape_geometry import TAPE_GEOMETRY
 from app.sheets.errors import PrinterNotFoundError
 from app.sheets.printer_facts import facts_of, read_status
 
-router = APIRouter(prefix="/api/printers", tags=["printers"])
+router = APIRouter(prefix="/api/v1/printers", tags=["printers"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]

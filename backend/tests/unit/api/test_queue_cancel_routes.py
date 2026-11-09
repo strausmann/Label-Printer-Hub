@@ -174,7 +174,7 @@ async def test_cancel_route_stops_waiting_job_from_printing(env: _Env) -> None:
     await _settle()
 
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{job_id}/cancel")
+        r = await c.post(f"/api/v1/jobs/{job_id}/cancel")
     assert r.status_code == 200
     assert r.json()["state"] == JobState.CANCELLED.value
 
@@ -189,7 +189,7 @@ async def test_cancel_route_unknown_to_queue_falls_back_to_db(env: _Env) -> None
     """A row the queue never saw (e.g. webhook-created) is still cancelled in the DB."""
     job_id = await env.seed_job(enqueue=False)
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{job_id}/cancel")
+        r = await c.post(f"/api/v1/jobs/{job_id}/cancel")
     assert r.status_code == 200
     assert await env.db_state(job_id) == JobState.CANCELLED.value
 
@@ -209,7 +209,7 @@ async def test_cancel_route_printing_job_returns_409(env: _Env) -> None:
     await asyncio.wait_for(entered.wait(), timeout=5)
 
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{job_id}/cancel")
+        r = await c.post(f"/api/v1/jobs/{job_id}/cancel")
     assert r.status_code == 409
 
     gate.set()
@@ -224,7 +224,7 @@ async def test_clear_route_stops_all_waiting_jobs_from_printing(env: _Env) -> No
     await _settle()
 
     async with env.client() as c:
-        r = await c.post(f"/api/printers/{env.printer.id}/queue/clear")
+        r = await c.post(f"/api/v1/printers/{env.printer.id}/queue/clear")
     assert r.status_code == 204
 
     await env.queue.resume_printer(env.printer.id)
@@ -242,7 +242,7 @@ async def test_retry_route_prints_new_job_without_restart(env: _Env) -> None:
         await s.commit()
 
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{failed.id}/retry")
+        r = await c.post(f"/api/v1/jobs/{failed.id}/retry")
     assert r.status_code == 201
     new_id = r.json()["id"]
     assert new_id != str(failed.id)
@@ -268,7 +268,7 @@ async def test_retry_route_unrenderable_payload_is_rejected_and_not_left_queued(
         await s.commit()
 
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{webhook_job.id}/retry")
+        r = await c.post(f"/api/v1/jobs/{webhook_job.id}/retry")
     assert r.status_code == 422
 
     await _drain_with_canary(env)
@@ -298,7 +298,7 @@ async def test_cancel_route_respects_printer_acl(env: _Env) -> None:
         env.app.dependency_overrides[dep] = lambda _c=restricted: _c
 
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{job_id}/cancel")
+        r = await c.post(f"/api/v1/jobs/{job_id}/cancel")
     assert r.status_code == 404
     assert (await env.queue.get(job_id)).state.value == "queued"
 
@@ -320,7 +320,7 @@ async def test_clear_route_respects_printer_acl(env: _Env) -> None:
         env.app.dependency_overrides[dep] = lambda _c=restricted: _c
 
     async with env.client() as c:
-        r = await c.post(f"/api/printers/{env.printer.id}/queue/clear")
+        r = await c.post(f"/api/v1/printers/{env.printer.id}/queue/clear")
     assert r.status_code == 403
     assert (await env.queue.get(job_id)).state.value == "queued"
 
@@ -349,7 +349,7 @@ async def test_retry_route_printer_unknown_to_queue_is_rejected_and_not_left_que
         await s.commit()
 
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{failed.id}/retry")
+        r = await c.post(f"/api/v1/jobs/{failed.id}/retry")
     assert r.status_code == 409
 
     async with env.factory() as s:
@@ -365,7 +365,7 @@ async def test_clear_route_cancels_untracked_queued_rows_in_db(env: _Env) -> Non
     """Rows the queue never saw (webhook jobs) are still cleared via the DB."""
     untracked = await env.seed_job(enqueue=False)
     async with env.client() as c:
-        r = await c.post(f"/api/printers/{env.printer.id}/queue/clear")
+        r = await c.post(f"/api/v1/printers/{env.printer.id}/queue/clear")
     assert r.status_code == 204
     assert await env.db_state(untracked) == JobState.CANCELLED.value
 
@@ -416,7 +416,7 @@ async def test_cancel_route_during_submit_serialisation_is_never_printed(
     try:
         job_id, submit = await _start_submit_and_hold(env, gate)
         async with env.client() as c:
-            r = await c.post(f"/api/jobs/{job_id}/cancel")
+            r = await c.post(f"/api/v1/jobs/{job_id}/cancel")
         assert r.status_code == 200
         assert r.json()["state"] == JobState.CANCELLED.value
 
@@ -437,7 +437,7 @@ async def test_clear_route_during_submit_serialisation_is_never_printed(
     try:
         job_id, submit = await _start_submit_and_hold(env, gate)
         async with env.client() as c:
-            r = await c.post(f"/api/printers/{env.printer.id}/queue/clear")
+            r = await c.post(f"/api/v1/printers/{env.printer.id}/queue/clear")
         assert r.status_code == 204
 
         gate.release.set()

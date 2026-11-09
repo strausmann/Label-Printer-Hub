@@ -632,7 +632,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # auf den ersten konfigurierten Drucker — für Pfade die noch nicht auf
     # service_for() migriert sind (z.B. POST /print Einzel-Druck-Route).
     # Phase 5 (#124): leere printers-Tabelle (Fresh-Install) → kein Printer-Wiring.
-    # Hub startet sauber; GET /api/printers liefert [] bis Operator Drucker anlegt.
+    # Hub startet sauber; GET /api/v1/printers liefert [] bis Operator Drucker anlegt.
     if _printer_configs:
         first_cfg = _printer_configs[0]
         first_printer_id = slug_to_printer_id[first_cfg.slug]

@@ -1,4 +1,4 @@
-"""POST /api/print/{printer}/batch with ``lookup`` items: real route, real PrintService and
+"""POST /api/v1/print/{printer}/batch with ``lookup`` items: real route, real PrintService and
 AppLookupService, fake integration plugins.
 
 Covers what the e2e cannot: the integration failing. Each outcome must answer with its own
@@ -122,7 +122,7 @@ def _body(app_name: str = "snipeit", identifier: str = "42") -> dict[str, Any]:
 
 
 async def _post(client: AsyncClient, app_name: str = "snipeit") -> Any:
-    return await client.post("/api/print/p/batch", json=_body(app_name))
+    return await client.post("/api/v1/print/p/batch", json=_body(app_name))
 
 
 @pytest.mark.asyncio

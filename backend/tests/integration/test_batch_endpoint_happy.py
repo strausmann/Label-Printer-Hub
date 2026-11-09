@@ -91,7 +91,7 @@ async def test_batch_happy_path(batch_client, batch_db_session, batch_auth_heade
         ]
     }
     resp = await client.post(
-        f"/api/print/{printer_slug}/batch", json=body, headers=batch_auth_headers
+        f"/api/v1/print/{printer_slug}/batch", json=body, headers=batch_auth_headers
     )
     assert resp.status_code == 202, resp.text
     data = resp.json()

@@ -174,7 +174,7 @@ async def test_invalid_key_sign_in_401(api_client_with_seed):
 async def test_session_cookie_authenticates_get(api_client_with_seed):
     key, _ = await _insert_key(["print"])
     assert (await _sign_in(api_client_with_seed, key)).status_code == 204
-    resp = await api_client_with_seed.get("/api/printers")
+    resp = await api_client_with_seed.get("/api/v1/printers")
     assert resp.status_code == 200, resp.text
 
 
@@ -205,7 +205,7 @@ async def test_post_without_csrf_header_403(api_client_with_seed):
     printer_id = await _insert_printer("csrf-printer-a")
     key, _ = await _insert_key(["print"])
     await _sign_in(api_client_with_seed, key)
-    resp = await api_client_with_seed.post(f"/api/printers/{printer_id}/pause")
+    resp = await api_client_with_seed.post(f"/api/v1/printers/{printer_id}/pause")
     assert resp.status_code == 403
     assert resp.json()["detail"]["error_code"] == "csrf_failed"
 
@@ -216,7 +216,7 @@ async def test_post_with_wrong_csrf_header_403(api_client_with_seed):
     key, _ = await _insert_key(["print"])
     await _sign_in(api_client_with_seed, key)
     resp = await api_client_with_seed.post(
-        f"/api/printers/{printer_id}/pause", headers={"X-CSRF-Token": "not-the-token"}
+        f"/api/v1/printers/{printer_id}/pause", headers={"X-CSRF-Token": "not-the-token"}
     )
     assert resp.status_code == 403
     assert resp.json()["detail"]["error_code"] == "csrf_failed"
@@ -229,7 +229,7 @@ async def test_post_with_csrf_header_ok(api_client_with_seed):
     await _sign_in(api_client_with_seed, key)
     csrf = api_client_with_seed.cookies.get("lph_csrf")
     resp = await api_client_with_seed.post(
-        f"/api/printers/{printer_id}/pause", headers={"X-CSRF-Token": csrf}
+        f"/api/v1/printers/{printer_id}/pause", headers={"X-CSRF-Token": csrf}
     )
     assert resp.status_code == 204, resp.text
 
@@ -239,7 +239,7 @@ async def test_api_key_header_post_needs_no_csrf(api_client_with_seed):
     printer_id = await _insert_printer("csrf-printer-d")
     key, _ = await _insert_key(["print"])
     resp = await api_client_with_seed.post(
-        f"/api/printers/{printer_id}/pause", headers={"X-Label-Hub-Key": key}
+        f"/api/v1/printers/{printer_id}/pause", headers={"X-Label-Hub-Key": key}
     )
     assert resp.status_code == 204, resp.text
 
@@ -254,10 +254,10 @@ async def test_revoking_key_revokes_its_sessions(api_client_with_seed):
     key, key_id = await _insert_key(["print"])
     admin_key, _ = await _insert_key(["admin"])
     await _sign_in(api_client_with_seed, key)
-    assert (await api_client_with_seed.get("/api/printers")).status_code == 200
+    assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 200
 
     resp = await api_client_with_seed.delete(
-        f"/api/admin/api-keys/{key_id}", headers={"X-Label-Hub-Key": admin_key}
+        f"/api/v1/admin/api-keys/{key_id}", headers={"X-Label-Hub-Key": admin_key}
     )
     assert resp.status_code == 204, resp.text
 
@@ -266,7 +266,7 @@ async def test_revoking_key_revokes_its_sessions(api_client_with_seed):
             (await s.execute(select(UiSession).where(UiSession.api_key_id == key_id))).scalars()
         )
     assert rows and all(r.revoked_at is not None for r in rows)
-    assert (await api_client_with_seed.get("/api/printers")).status_code == 401
+    assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 401
 
 
 @pytest.mark.asyncio
@@ -277,7 +277,7 @@ async def test_expired_session_401(api_client_with_seed, monkeypatch):
     await _sign_in(api_client_with_seed, key)
     later = datetime.now(UTC) + timedelta(hours=12, seconds=1)
     monkeypatch.setattr(sessions_module, "_now", lambda: later)
-    assert (await api_client_with_seed.get("/api/printers")).status_code == 401
+    assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 401
 
 
 @pytest.mark.asyncio
@@ -288,7 +288,7 @@ async def test_session_still_valid_before_expiry(api_client_with_seed, monkeypat
     await _sign_in(api_client_with_seed, key)
     later = datetime.now(UTC) + timedelta(hours=11, minutes=59)
     monkeypatch.setattr(sessions_module, "_now", lambda: later)
-    assert (await api_client_with_seed.get("/api/printers")).status_code == 200
+    assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -303,7 +303,7 @@ async def test_sign_out_revokes_session(api_client_with_seed):
     assert "max-age=0" in cleared.lower() or "expires=" in cleared.lower()
     # Replaying the old cookie must not work after sign-out.
     api_client_with_seed.cookies.set("lph_session", session_cookie)
-    assert (await api_client_with_seed.get("/api/printers")).status_code == 401
+    assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 401
 
 
 @pytest.mark.asyncio
@@ -312,26 +312,26 @@ async def test_disabled_key_kills_session(api_client_with_seed):
     admin_key, _ = await _insert_key(["admin"])
     await _sign_in(api_client_with_seed, key)
     resp = await api_client_with_seed.patch(
-        f"/api/admin/api-keys/{key_id}",
+        f"/api/v1/admin/api-keys/{key_id}",
         json={"enabled": False},
         headers={"X-Label-Hub-Key": admin_key},
     )
     assert resp.status_code == 200, resp.text
-    assert (await api_client_with_seed.get("/api/printers")).status_code == 401
+    assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_expired_key_kills_session(api_client_with_seed):
     key, key_id = await _insert_key(["print"], expires_at=datetime.now(UTC) + timedelta(hours=1))
     await _sign_in(api_client_with_seed, key)
-    assert (await api_client_with_seed.get("/api/printers")).status_code == 200
+    assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 200
     async with _factory()() as s:
         row = await s.get(ApiKey, key_id)
         assert row is not None
         row.expires_at = datetime.now(UTC) - timedelta(seconds=1)
         s.add(row)
         await s.commit()
-    assert (await api_client_with_seed.get("/api/printers")).status_code == 401
+    assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 401
 
 
 @pytest.mark.asyncio
@@ -341,10 +341,10 @@ async def test_session_keeps_printer_restriction(api_client_with_seed):
     key, _ = await _insert_key(["print"], allowed_printer_ids=[str(printer_a)])
     await _sign_in(api_client_with_seed, key)
     csrf = {"X-CSRF-Token": api_client_with_seed.cookies.get("lph_csrf")}
-    resp_b = await api_client_with_seed.post(f"/api/printers/{printer_b}/pause", headers=csrf)
+    resp_b = await api_client_with_seed.post(f"/api/v1/printers/{printer_b}/pause", headers=csrf)
     assert resp_b.status_code == 403, resp_b.text
     assert resp_b.json()["detail"]["error_code"] == "printer_not_allowed"
-    resp_a = await api_client_with_seed.post(f"/api/printers/{printer_a}/pause", headers=csrf)
+    resp_a = await api_client_with_seed.post(f"/api/v1/printers/{printer_a}/pause", headers=csrf)
     assert resp_a.status_code == 204, resp_a.text
 
 
@@ -365,13 +365,13 @@ async def test_bootstrap_only_until_admin_key_exists(api_client_with_seed, monke
     assert body["bootstrap"] is True
     assert body["scope"] == "admin"
 
-    resp = await client.get("/api/printers")
+    resp = await client.get("/api/v1/printers")
     assert resp.status_code == 403
     assert resp.json()["detail"]["error_code"] == "bootstrap_only"
 
     csrf = client.cookies.get("lph_csrf")
     resp = await client.post(
-        "/api/admin/api-keys",
+        "/api/v1/admin/api-keys",
         json={"name": "first-admin", "scopes": ["admin"]},
         headers={"X-CSRF-Token": csrf},
     )
@@ -395,7 +395,7 @@ async def test_bootstrap_session_dies_when_admin_key_exists(api_client_with_seed
     assert (await _sign_in(client, FAKE_BOOTSTRAP_KEY)).status_code == 204
     await _insert_key(["admin"])
     resp = await client.post(
-        "/api/admin/api-keys",
+        "/api/v1/admin/api-keys",
         json={"name": "late", "scopes": ["admin"]},
         headers={"X-CSRF-Token": client.cookies.get("lph_csrf")},
     )
@@ -424,7 +424,7 @@ async def test_sso_get_session_creates_cookie(api_client_with_seed, monkeypatch)
     assert body["csrf_token"]
     _cookie_header(resp, "lph_session")
     # The cookie alone now authenticates.
-    assert (await client.get("/api/printers")).status_code == 200
+    assert (await client.get("/api/v1/printers")).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -438,7 +438,7 @@ async def test_sso_wrong_trust_token_no_session(api_client_with_seed, monkeypatc
     assert resp.json()["signed_in"] is False
     assert not _set_cookie_headers(resp)
     resp = await api_client_with_seed.get(
-        "/api/printers", headers={"Remote-User": "alice", "X-Pangolin-Token": "wrong-token"}
+        "/api/v1/printers", headers={"Remote-User": "alice", "X-Pangolin-Token": "wrong-token"}
     )
     assert resp.status_code == 401
 
@@ -454,14 +454,16 @@ async def test_sso_without_configured_token_no_session(api_client_with_seed):
 
 @pytest.mark.asyncio
 async def test_legacy_pangolin_user_header_rejected_by_default(api_client_with_seed):
-    resp = await api_client_with_seed.get("/api/printers", headers={"X-Pangolin-User": "mallory"})
+    resp = await api_client_with_seed.get(
+        "/api/v1/printers", headers={"X-Pangolin-User": "mallory"}
+    )
     assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_legacy_pangolin_user_header_accepted_with_opt_in(api_client_with_seed, monkeypatch):
     _set_env(monkeypatch, trust_legacy_pangolin_user="true")
-    resp = await api_client_with_seed.get("/api/printers", headers={"X-Pangolin-User": "alice"})
+    resp = await api_client_with_seed.get("/api/v1/printers", headers={"X-Pangolin-User": "alice"})
     assert resp.status_code == 200, resp.text
 
 
@@ -478,7 +480,7 @@ async def test_legacy_header_never_mints_session(api_client_with_seed, monkeypat
 @pytest.mark.asyncio
 async def test_basic_bypass_rejected_by_default(api_client_with_seed):
     resp = await api_client_with_seed.get(
-        "/api/printers", headers={"Authorization": _basic("claude-automation")}
+        "/api/v1/printers", headers={"Authorization": _basic("claude-automation")}
     )
     assert resp.status_code == 401
 
@@ -487,7 +489,7 @@ async def test_basic_bypass_rejected_by_default(api_client_with_seed):
 async def test_basic_bypass_accepted_with_opt_in(api_client_with_seed, monkeypatch):
     _set_env(monkeypatch, trust_pangolin_basic_bypass="true")
     resp = await api_client_with_seed.get(
-        "/api/admin/api-keys", headers={"Authorization": _basic("claude-automation")}
+        "/api/v1/admin/api-keys", headers={"Authorization": _basic("claude-automation")}
     )
     assert resp.status_code == 200, resp.text
 
@@ -498,8 +500,8 @@ async def test_bypass_downgraded_to_read_when_flag_set(api_client_with_seed, mon
         monkeypatch, trust_pangolin_basic_bypass="true", pangolin_bypass_scope_downgrade="true"
     )
     headers = {"Authorization": _basic("claude-automation")}
-    assert (await api_client_with_seed.get("/api/printers", headers=headers)).status_code == 200
-    resp = await api_client_with_seed.get("/api/admin/api-keys", headers=headers)
+    assert (await api_client_with_seed.get("/api/v1/printers", headers=headers)).status_code == 200
+    resp = await api_client_with_seed.get("/api/v1/admin/api-keys", headers=headers)
     assert resp.status_code == 403
     assert resp.json()["detail"]["error_code"] == "insufficient_scope"
 
@@ -509,16 +511,16 @@ async def test_sso_header_post_without_origin_403(api_client_with_seed, monkeypa
     _set_env(monkeypatch, sso_trust_token=FAKE_TRUST_TOKEN)
     printer_id = await _insert_printer("origin-printer")
     sso = {"Remote-User": "alice", "X-Pangolin-Token": FAKE_TRUST_TOKEN}
-    resp = await api_client_with_seed.post(f"/api/printers/{printer_id}/pause", headers=sso)
+    resp = await api_client_with_seed.post(f"/api/v1/printers/{printer_id}/pause", headers=sso)
     assert resp.status_code == 403
     assert resp.json()["detail"]["error_code"] == "origin_mismatch"
     resp = await api_client_with_seed.post(
-        f"/api/printers/{printer_id}/pause",
+        f"/api/v1/printers/{printer_id}/pause",
         headers={**sso, "Origin": "https://evil.example.invalid"},
     )
     assert resp.status_code == 403
     resp = await api_client_with_seed.post(
-        f"/api/printers/{printer_id}/pause", headers={**sso, "Origin": LOCAL_ORIGIN}
+        f"/api/v1/printers/{printer_id}/pause", headers={**sso, "Origin": LOCAL_ORIGIN}
     )
     assert resp.status_code == 204, resp.text
 
@@ -563,8 +565,8 @@ async def test_session_respects_key_rate_limit(api_client_with_seed):
     key, _ = await _insert_key(["print"], rate_limit_per_minute=3)
     assert (await _sign_in(api_client_with_seed, key)).status_code == 204
     for _ in range(2):
-        assert (await api_client_with_seed.get("/api/printers")).status_code == 200
-    resp = await api_client_with_seed.get("/api/printers")
+        assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 200
+    resp = await api_client_with_seed.get("/api/v1/printers")
     assert resp.status_code == 429, resp.text
     assert resp.json()["detail"]["error_code"] == "rate_limit_exceeded"
     assert int(resp.headers["Retry-After"]) >= 1
@@ -576,7 +578,7 @@ async def _mint_sso_session(client) -> None:
         headers={"Remote-User": "alice", "X-Pangolin-Token": FAKE_TRUST_TOKEN},
     )
     assert resp.json()["signed_in"] is True
-    assert (await client.get("/api/printers")).status_code == 200
+    assert (await client.get("/api/v1/printers")).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -584,7 +586,7 @@ async def test_sso_session_dies_when_trust_token_rotated(api_client_with_seed, m
     _set_env(monkeypatch, sso_trust_token=FAKE_TRUST_TOKEN)
     await _mint_sso_session(api_client_with_seed)
     _set_env(monkeypatch, sso_trust_token="fake-rotated-trust-token-0123456789")
-    assert (await api_client_with_seed.get("/api/printers")).status_code == 401
+    assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 401
 
 
 @pytest.mark.asyncio
@@ -592,7 +594,7 @@ async def test_sso_session_dies_when_trust_token_cleared(api_client_with_seed, m
     _set_env(monkeypatch, sso_trust_token=FAKE_TRUST_TOKEN)
     await _mint_sso_session(api_client_with_seed)
     _set_env(monkeypatch, sso_trust_token="")
-    assert (await api_client_with_seed.get("/api/printers")).status_code == 401
+    assert (await api_client_with_seed.get("/api/v1/printers")).status_code == 401
 
 
 @pytest.mark.asyncio
@@ -612,16 +614,16 @@ async def test_basic_bypass_post_needs_origin(api_client_with_seed, monkeypatch)
     _set_env(monkeypatch, trust_pangolin_basic_bypass="true")
     printer_id = await _insert_printer("bypass-origin-printer")
     basic = {"Authorization": _basic("claude-automation")}
-    resp = await api_client_with_seed.post(f"/api/printers/{printer_id}/pause", headers=basic)
+    resp = await api_client_with_seed.post(f"/api/v1/printers/{printer_id}/pause", headers=basic)
     assert resp.status_code == 403
     assert resp.json()["detail"]["error_code"] == "origin_mismatch"
     resp = await api_client_with_seed.post(
-        f"/api/printers/{printer_id}/pause",
+        f"/api/v1/printers/{printer_id}/pause",
         headers={**basic, "Origin": "https://evil.example.invalid"},
     )
     assert resp.status_code == 403
     resp = await api_client_with_seed.post(
-        f"/api/printers/{printer_id}/pause", headers={**basic, "Origin": LOCAL_ORIGIN}
+        f"/api/v1/printers/{printer_id}/pause", headers={**basic, "Origin": LOCAL_ORIGIN}
     )
     assert resp.status_code == 204, resp.text
 
@@ -644,7 +646,7 @@ async def test_bootstrap_session_can_only_create_an_unrestricted_admin_key(
     client = api_client_with_seed
     assert (await _sign_in(client, FAKE_BOOTSTRAP_KEY)).status_code == 204
     resp = await client.post(
-        "/api/admin/api-keys",
+        "/api/v1/admin/api-keys",
         json=payload,
         headers={"X-CSRF-Token": client.cookies.get("lph_csrf")},
     )
@@ -666,10 +668,10 @@ async def test_bootstrap_admin_key_with_future_expiry_is_allowed_and_closes_boot
     assert (await _sign_in(client, FAKE_BOOTSTRAP_KEY)).status_code == 204
     future = (datetime.now(UTC) + timedelta(days=30)).isoformat()
     resp = await client.post(
-        "/api/admin/api-keys",
+        "/api/v1/admin/api-keys",
         json={"name": "first-admin", "scopes": ["admin"], "expires_at": future},
         headers={"X-CSRF-Token": client.cookies.get("lph_csrf")},
     )
     assert resp.status_code == 201, resp.text
     assert (await client.get("/api/v1/auth/session")).json()["source"] is None
-    assert (await client.get("/api/printers")).status_code == 401
+    assert (await client.get("/api/v1/printers")).status_code == 401

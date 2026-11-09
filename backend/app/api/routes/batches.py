@@ -1,4 +1,4 @@
-"""Phase 2: GET /api/batches/{id} — Snapshot für Hangar Result-Page Initial-Render."""
+"""Phase 2: GET /api/v1/batches/{id} — Snapshot für Hangar Result-Page Initial-Render."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from app.repositories import print_batches as batches_repo
 from app.schemas.batch_read import BatchRead, BatchSummary
 from app.schemas.job import JobRead
 
-router = APIRouter(prefix="/api/batches", tags=["batches"])
+router = APIRouter(prefix="/api/v1/batches", tags=["batches"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadAuthDep = Annotated[AuthContext, Depends(require_read)]

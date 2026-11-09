@@ -63,7 +63,7 @@ Scope = Literal["read", "print", "admin"]
 # D7: the only routes a bootstrap session may use.
 _BOOTSTRAP_ALLOWED: frozenset[tuple[str, str]] = frozenset(
     {
-        ("POST", "/api/admin/api-keys"),
+        ("POST", "/api/v1/admin/api-keys"),
         ("GET", "/api/v1/auth/session"),
         ("DELETE", "/api/v1/auth/session"),
     }

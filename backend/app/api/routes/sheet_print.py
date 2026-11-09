@@ -1,9 +1,9 @@
 """Print onto sheets (spec 12.6, 15): the read-only preview and the print.
 
-``POST /api/print/{printer_key}/sheet/preview`` needs ``read`` scope and access to the printer.
+``POST /api/v1/print/{printer_key}/sheet/preview`` needs ``read`` scope and access to the printer.
 It plans and draws; it writes nothing and takes no lock.
 
-``POST /api/print/{printer_key}/sheet`` needs ``print`` scope and access to the printer. It
+``POST /api/v1/print/{printer_key}/sheet`` needs ``print`` scope and access to the printer. It
 reserves the cells and queues one page job per planned page (202). Domain errors answer in the
 sheet API's error envelope, and validation errors name field paths only (pre-flight C19).
 """
@@ -27,7 +27,7 @@ from app.sheets import print_service
 from app.sheets.cell_render import DEFAULT_CELL_RENDERER
 from app.sheets.errors import PrinterNotFoundError, SheetPrinterDisabledError
 
-router = APIRouter(prefix="/api", tags=["sheets"])
+router = APIRouter(prefix="/api/v1", tags=["sheets"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]

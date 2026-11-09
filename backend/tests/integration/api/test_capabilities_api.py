@@ -1,4 +1,4 @@
-"""GET /api/printers/{id}/capabilities: tape and page printers, cache only, no connection detail."""
+"""GET /api/v1/printers/{id}/capabilities: tape and page printers, cache only, no connection."""
 
 from __future__ import annotations
 
@@ -166,7 +166,7 @@ async def _ipp_printer(
 async def test_pt_printer_reports_tape_capabilities(api_client_with_seed):
     c, reader = api_client_with_seed, await _key(["read"])
     pid = await _tape_printer("PT-P750W", 12)
-    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
     assert body["kind"] == "tape"
     assert body["resolution_dpi"] == {"x": 180, "y": 180}
     px = TAPE_GEOMETRY[12].printable_px
@@ -181,14 +181,14 @@ async def test_ql_printer_resolution(api_client_with_seed):
     c, reader = api_client_with_seed, await _key(["read"])
     await c.get("/healthz")  # start the app first: its startup builds a queue for stored printers
     pid = await _tape_printer("QL-820NWB", 62)
-    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
     assert body["resolution_dpi"] == {"x": 300, "y": 300}
 
 
 async def test_tape_printer_without_tape_or_cache(api_client_with_seed):
     c, reader = api_client_with_seed, await _key(["read"])
     never = await _tape_printer("PT-P750W", None)
-    body = (await c.get(f"/api/printers/{never}/capabilities", headers=reader)).json()
+    body = (await c.get(f"/api/v1/printers/{never}/capabilities", headers=reader)).json()
     assert body["media"] is None and body["captured_at"] is None
     assert body["resolution_dpi"] == {"x": 180, "y": 180}
 
@@ -196,7 +196,7 @@ async def test_tape_printer_without_tape_or_cache(api_client_with_seed):
 async def test_ipp_printer_reports_page_capabilities(api_client_with_seed):
     c, reader = api_client_with_seed, await _key(["read"])
     pid = await _ipp_printer()
-    resp = await c.get(f"/api/printers/{pid}/capabilities", headers=reader)
+    resp = await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["kind"] == "page"
@@ -242,7 +242,7 @@ async def test_restart_with_the_printer_down_keeps_the_last_real_capabilities(
                 if row is not None and (row.parsed or {}).get("last_error"):
                     break
             await asyncio.sleep(0.05)
-    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
     assert body["resolution_dpi"] == {"max": 600, "supported": [300, 600]}
     assert body["document_formats"] == ["application/pdf"]
     assert body["media"] is not None
@@ -251,7 +251,7 @@ async def test_restart_with_the_printer_down_keeps_the_last_real_capabilities(
 async def test_ipp_response_leaks_no_connection_detail(api_client_with_seed):
     c, reader = api_client_with_seed, await _key(["read"])
     pid = await _ipp_printer()
-    raw = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).text
+    raw = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).text
     assert "printer-secret" not in raw and SECRET_URI not in raw
     assert "ipps://" not in raw and "connection" not in raw
 
@@ -259,7 +259,7 @@ async def test_ipp_response_leaks_no_connection_detail(api_client_with_seed):
 async def test_ipp_printer_without_cache_answers_200(api_client_with_seed):
     c, reader = api_client_with_seed, await _key(["read"])
     pid = await _ipp_printer(cached=False, calibrate=False)
-    resp = await c.get(f"/api/printers/{pid}/capabilities", headers=reader)
+    resp = await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["media"] is None and body["captured_at"] is None
@@ -272,18 +272,18 @@ async def test_access_control(api_client_with_seed):
     c = api_client_with_seed
     mine, other = await _ipp_printer(), await _ipp_printer()
     restricted = await _key(["read"], [str(mine)])
-    resp = await c.get(f"/api/printers/{other}/capabilities", headers=restricted)
+    resp = await c.get(f"/api/v1/printers/{other}/capabilities", headers=restricted)
     assert resp.status_code == 403
     assert resp.json()["detail"]["error_code"] == "printer_not_allowed"
     assert (
-        await c.get(f"/api/printers/{mine}/capabilities", headers=restricted)
+        await c.get(f"/api/v1/printers/{mine}/capabilities", headers=restricted)
     ).status_code == 200
-    assert (await c.get(f"/api/printers/{mine}/capabilities")).status_code == 401
+    assert (await c.get(f"/api/v1/printers/{mine}/capabilities")).status_code == 401
     # The restriction is checked before any lookup: an unknown id is 403 for a restricted key.
-    unknown = await c.get(f"/api/printers/{uuid4()}/capabilities", headers=restricted)
+    unknown = await c.get(f"/api/v1/printers/{uuid4()}/capabilities", headers=restricted)
     assert unknown.status_code == 403
     free = await _key(["read"])
-    missing = await c.get(f"/api/printers/{uuid4()}/capabilities", headers=free)
+    missing = await c.get(f"/api/v1/printers/{uuid4()}/capabilities", headers=free)
     assert missing.status_code == 404
     assert missing.json()["detail"]["error_code"] == "printer_not_found"
 
@@ -303,7 +303,7 @@ async def test_printer_that_never_answered_has_unknown_capabilities(api_client_w
         summary=_empty_summary(),
     )
     pid = await _ipp_printer(record=placeholder)
-    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
     assert body["media"] is None
     assert body["document_formats"] is None
     assert body["captured_at"] is None
@@ -317,7 +317,7 @@ async def test_answered_printer_without_pdf_lists_no_formats(api_client_with_see
     record = _record()
     record.summary.pdf_supported = False
     pid = await _ipp_printer(record=record)
-    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
     assert body["document_formats"] == []
     assert body["media"] is not None and body["captured_at"] is not None
 
@@ -326,7 +326,7 @@ async def test_unknown_printer_model_is_409_without_echo(api_client_with_seed):
     c, reader = api_client_with_seed, await _key(["read"])
     await c.get("/healthz")  # start the app first: startup refuses stored printers of unknown model
     pid = await _tape_printer("ZZ-NOSUCH-9000", 12)
-    resp = await c.get(f"/api/printers/{pid}/capabilities", headers=reader)
+    resp = await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)
     assert resp.status_code == 409
     assert resp.json()["detail"]["error_code"] == "printer_model_unknown"
     assert "NOSUCH" not in resp.text
@@ -336,13 +336,13 @@ async def test_tape_width_without_geometry_has_no_media(api_client_with_seed):
     c, reader = api_client_with_seed, await _key(["read"])
     assert 3 not in TAPE_GEOMETRY
     pid = await _tape_printer("PT-P750W", 3)
-    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
     assert body["media"] is None and body["captured_at"] is not None
 
 
 async def test_disabled_tray_lists_without_calibration(api_client_with_seed):
     c, reader = api_client_with_seed, await _key(["read"])
     pid = await _ipp_printer(calibrate=False, disabled_calibrated=True)
-    body = (await c.get(f"/api/printers/{pid}/capabilities", headers=reader)).json()
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
     off = next(t for t in body["trays"] if t["key"] == "off")
     assert off["enabled"] is False and off["calibration"] is None

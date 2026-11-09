@@ -9,7 +9,7 @@ Usage in routes::
     from app.auth.scope_deps import require_read, require_print, require_admin
     from app.auth.dependencies import AuthContext
 
-    @router.get("/api/printers")
+    @router.get("/api/v1/printers")
     async def list_printers(
         session: SessionDep,
         _auth: Annotated[AuthContext, Depends(require_read)],

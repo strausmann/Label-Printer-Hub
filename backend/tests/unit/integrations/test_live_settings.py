@@ -122,7 +122,7 @@ def test_unconfigured_lookup_returns_503_problem(store) -> None:
         app.include_router(lookup_router)
         app.dependency_overrides[require_read] = lambda: None
         register_error_handlers(app)
-        r = TestClient(app, raise_server_exceptions=False).get("/api/lookup/grocy/1")
+        r = TestClient(app, raise_server_exceptions=False).get("/api/v1/lookup/grocy/1")
     finally:
         IntegrationRegistry.clear()
     assert r.status_code == 503

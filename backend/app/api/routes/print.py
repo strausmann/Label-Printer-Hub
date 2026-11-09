@@ -1,4 +1,4 @@
-"""POST /print + GET /jobs/{job_id} + POST /jobs/{job_id}/resume + POST /api/render/preview."""
+"""POST /print + GET /jobs/{job_id} + POST /jobs/{job_id}/resume + POST /api/v1/render/preview."""
 
 from __future__ import annotations
 
@@ -42,10 +42,10 @@ _log = logging.getLogger(__name__)
 
 router = APIRouter()
 # Separate router with /api prefix for the render/preview endpoint so that
-# the effective URL matches the approved spec: POST /api/render/preview.
+# the effective URL matches the approved spec: POST /api/v1/render/preview.
 # The legacy /print, /jobs, /printer routes on `router` have no /api prefix
 # for backwards-compatibility with existing clients; render/preview is new.
-render_router = APIRouter(prefix="/api")
+render_router = APIRouter(prefix="/api/v1")
 
 
 class _PrinterResumeResponse(BaseModel):
@@ -85,7 +85,7 @@ def _mapping_for(exc: Exception) -> tuple[int, str]:
 
 
 @router.post(
-    "/print",
+    "/api/v1/print",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=PrintJobResponse,
     tags=["print"],
@@ -188,7 +188,7 @@ async def get_job_status(
 
 
 @router.post(
-    "/printer/resume",
+    "/api/v1/printer/resume",
     status_code=status.HTTP_200_OK,
     response_model=_PrinterResumeResponse,
     tags=["print"],
@@ -221,7 +221,7 @@ async def resume_printer(
     printer_id = getattr(http.app.state, "printer_id", None)
     if printer_id is None:
         raise HTTPException(status_code=404, detail="no printer configured")
-    # Same effect as POST /api/printers/{id}/resume: clear the persisted flag too.
+    # Same effect as POST /api/v1/printers/{id}/resume: clear the persisted flag too.
     await printer_state_repo.set_paused(session, printer_id, False)
     try:
         await queue.resume_printer(printer_id)

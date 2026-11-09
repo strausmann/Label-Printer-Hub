@@ -1,4 +1,4 @@
-"""POST /api/print/{printer_key}/batch — best-effort batch print."""
+"""POST /api/v1/print/{printer_key}/batch — best-effort batch print."""
 
 from __future__ import annotations
 
@@ -31,9 +31,9 @@ from app.sheets.errors import MediaKindMismatchError
 # SessionDep locally — Hub has no central app/api/deps.py module.
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
-# prefix=/api → POST /api/print/{...}/batch. print.py has no prefix
+# prefix=/api → POST /api/v1/print/{...}/batch. print.py has no prefix
 # (POST /print), so this is a clean separation.
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api/v1")
 
 _SYNC_ERROR_MAP: dict[type[Exception], str] = {
     PrinterOfflineError: "printer_offline",

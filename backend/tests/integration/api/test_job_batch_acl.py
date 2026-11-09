@@ -83,11 +83,11 @@ async def test_job_list_filtered_to_allowed_printers(api_client_with_seed, world
     (pa, ja, _), (pb, jb, _) = world
     key = await _insert_key(["read"], [str(pa)])
     h = {"X-Label-Hub-Key": key}
-    resp = await api_client_with_seed.get("/api/jobs?limit=200", headers=h)
+    resp = await api_client_with_seed.get("/api/v1/jobs?limit=200", headers=h)
     assert resp.status_code == 200, resp.text
     ids = _job_ids(resp)
     assert str(ja) in ids and str(jb) not in ids
-    foreign = await api_client_with_seed.get(f"/api/jobs?printer_id={pb}", headers=h)
+    foreign = await api_client_with_seed.get(f"/api/v1/jobs?printer_id={pb}", headers=h)
     assert foreign.status_code == 200 and foreign.json() == []
 
 
@@ -95,7 +95,9 @@ async def test_job_list_filtered_to_allowed_printers(api_client_with_seed, world
 async def test_job_list_unrestricted_sees_all(api_client_with_seed, world):
     (_, ja, _), (_, jb, _) = world
     key = await _insert_key(["read"], [])
-    resp = await api_client_with_seed.get("/api/jobs?limit=200", headers={"X-Label-Hub-Key": key})
+    resp = await api_client_with_seed.get(
+        "/api/v1/jobs?limit=200", headers={"X-Label-Hub-Key": key}
+    )
     assert {str(ja), str(jb)} <= _job_ids(resp)
 
 
@@ -104,13 +106,13 @@ async def test_job_detail_and_mutations_of_foreign_job_404(api_client_with_seed,
     (pa, ja, _), (_, jb, _) = world
     key = await _insert_key(["read", "print"], [str(pa)])
     h = {"X-Label-Hub-Key": key}
-    own = await api_client_with_seed.get(f"/api/jobs/{ja}", headers=h)
+    own = await api_client_with_seed.get(f"/api/v1/jobs/{ja}", headers=h)
     assert own.status_code == 200, own.text
-    missing = await api_client_with_seed.get(f"/api/jobs/{uuid4()}", headers=h)
-    resp = await api_client_with_seed.get(f"/api/jobs/{jb}", headers=h)
+    missing = await api_client_with_seed.get(f"/api/v1/jobs/{uuid4()}", headers=h)
+    resp = await api_client_with_seed.get(f"/api/v1/jobs/{jb}", headers=h)
     assert resp.status_code == 404, resp.text
     for action in ("cancel", "pause", "resume", "retry"):
-        r = await api_client_with_seed.post(f"/api/jobs/{jb}/{action}", headers=h)
+        r = await api_client_with_seed.post(f"/api/v1/jobs/{jb}/{action}", headers=h)
         assert r.status_code == 404, f"{action}: {r.status_code} {r.text}"
     # the foreign job must be untouched by retry (no clone created)
     async with _factory()() as s:
@@ -132,11 +134,11 @@ async def test_batch_of_foreign_printer_404(api_client_with_seed, world):
     (pa, _, ba), (_, _, bb) = world
     key = await _insert_key(["read"], [str(pa)])
     h = {"X-Label-Hub-Key": key}
-    assert (await api_client_with_seed.get(f"/api/batches/{ba}", headers=h)).status_code == 200
-    assert (await api_client_with_seed.get(f"/api/batches/{bb}", headers=h)).status_code == 404
+    assert (await api_client_with_seed.get(f"/api/v1/batches/{ba}", headers=h)).status_code == 200
+    assert (await api_client_with_seed.get(f"/api/v1/batches/{bb}", headers=h)).status_code == 404
     unrestricted = await _insert_key(["read"], [])
     r = await api_client_with_seed.get(
-        f"/api/batches/{bb}", headers={"X-Label-Hub-Key": unrestricted}
+        f"/api/v1/batches/{bb}", headers={"X-Label-Hub-Key": unrestricted}
     )
     assert r.status_code == 200
 
@@ -147,12 +149,12 @@ async def test_session_job_and_batch_acl(api_client_with_seed, world):
     key = await _insert_key(["print"], [str(pa)])
     signed = await api_client_with_seed.post("/api/v1/auth/session", json={"key": key})
     assert signed.status_code in (200, 201, 204), signed.text
-    jobs = await api_client_with_seed.get("/api/jobs?limit=200")
+    jobs = await api_client_with_seed.get("/api/v1/jobs?limit=200")
     assert str(ja) in _job_ids(jobs) and str(jb) not in _job_ids(jobs)
-    assert (await api_client_with_seed.get(f"/api/jobs/{jb}")).status_code == 404
-    assert (await api_client_with_seed.get(f"/api/jobs/{ja}")).status_code == 200
-    assert (await api_client_with_seed.get(f"/api/batches/{bb}")).status_code == 404
-    assert (await api_client_with_seed.get(f"/api/batches/{ba}")).status_code == 200
+    assert (await api_client_with_seed.get(f"/api/v1/jobs/{jb}")).status_code == 404
+    assert (await api_client_with_seed.get(f"/api/v1/jobs/{ja}")).status_code == 200
+    assert (await api_client_with_seed.get(f"/api/v1/batches/{bb}")).status_code == 404
+    assert (await api_client_with_seed.get(f"/api/v1/batches/{ba}")).status_code == 200
     csrf = {"X-CSRF-Token": api_client_with_seed.cookies.get("lph_csrf")}
-    r = await api_client_with_seed.post(f"/api/jobs/{jb}/retry", headers=csrf)
+    r = await api_client_with_seed.post(f"/api/v1/jobs/{jb}/retry", headers=csrf)
     assert r.status_code == 404

@@ -118,7 +118,8 @@ async def test_download_returns_a_pdf_attachment(api_client_with_seed: httpx.Asy
     await _type(_factory(), "cal-pg")
     pid = await _printer(_factory())
     r = await c.get(
-        f"/api/printers/{pid}/calibration/auto/page/pdf?type=cal-pg", headers=await _key(["read"])
+        f"/api/v1/printers/{pid}/calibration/auto/page/pdf?type=cal-pg",
+        headers=await _key(["read"]),
     )
     assert r.status_code == 200, r.text
     assert r.content.startswith(b"%PDF")
@@ -130,7 +131,7 @@ async def test_scopes_and_printer_restriction(api_client_with_seed: httpx.AsyncC
     c = api_client_with_seed
     await _type(_factory(), "cal-sc")
     pid, other = await _printer(_factory()), await _printer(_factory())
-    url = f"/api/printers/{pid}/calibration/auto/page"
+    url = f"/api/v1/printers/{pid}/calibration/auto/page"
     body = {"type": "cal-sc"}
 
     def refused(r: Any, status: int, code: str) -> None:
@@ -216,13 +217,13 @@ async def _printed(env: _Env, job_id: str) -> None:
 async def test_post_queues_a_page_job_the_printer_receives(env: _Env) -> None:
     async with env.client() as c:
         r = await c.post(
-            f"/api/printers/{env.printer_id}/calibration/auto/page", json={"type": "cal-job"}
+            f"/api/v1/printers/{env.printer_id}/calibration/auto/page", json={"type": "cal-job"}
         )
         assert r.status_code == 202, r.text
         job_id = r.json()["job_id"]
         await _printed(env, job_id)
         pdf_resp = await c.get(
-            f"/api/printers/{env.printer_id}/calibration/auto/page/pdf?type=cal-job"
+            f"/api/v1/printers/{env.printer_id}/calibration/auto/page/pdf?type=cal-job"
         )
     [sent] = env.documents()
     assert sent.document.startswith(b"%PDF")
@@ -258,7 +259,7 @@ async def test_no_sheet_record_is_created(env: _Env) -> None:
     before = await count()
     async with env.client() as c:
         r = await c.post(
-            f"/api/printers/{env.printer_id}/calibration/auto/page", json={"type": "cal-job"}
+            f"/api/v1/printers/{env.printer_id}/calibration/auto/page", json={"type": "cal-job"}
         )
         await _printed(env, r.json()["job_id"])
     assert await count() == before
@@ -283,13 +284,13 @@ async def test_corrected_page_uses_the_stored_calibration_and_matches_the_downlo
         await s.commit()
     body = {"type": "cal-job", "corrected": True}
     async with env.client() as c:
-        r = await c.post(f"/api/printers/{env.printer_id}/calibration/auto/page", json=body)
+        r = await c.post(f"/api/v1/printers/{env.printer_id}/calibration/auto/page", json=body)
         await _printed(env, r.json()["job_id"])
         dl = await c.get(
-            f"/api/printers/{env.printer_id}/calibration/auto/page/pdf?type=cal-job&corrected=true"
+            f"/api/v1/printers/{env.printer_id}/calibration/auto/page/pdf?type=cal-job&corrected=true"
         )
         plain = await c.get(
-            f"/api/printers/{env.printer_id}/calibration/auto/page/pdf?type=cal-job"
+            f"/api/v1/printers/{env.printer_id}/calibration/auto/page/pdf?type=cal-job"
         )
     [sent] = env.documents()
     assert dl.content == sent.document != plain.content
@@ -298,7 +299,7 @@ async def test_corrected_page_uses_the_stored_calibration_and_matches_the_downlo
 async def test_corrected_page_of_an_uncalibrated_tray_does_not_crash(env: _Env) -> None:
     async with env.client() as c:
         r = await c.get(
-            f"/api/printers/{env.printer_id}/calibration/auto/page/pdf?type=cal-job&corrected=true"
+            f"/api/v1/printers/{env.printer_id}/calibration/auto/page/pdf?type=cal-job&corrected=true"
         )
     assert r.status_code == 200 and r.content.startswith(b"%PDF")
 
@@ -310,14 +311,14 @@ async def test_errors(env: _Env) -> None:
 
     async def post(printer: Any, tray: str, **body: Any) -> Any:
         async with env.client() as c:
-            return await c.post(f"/api/printers/{printer}/calibration/{tray}/page", json=body)
+            return await c.post(f"/api/v1/printers/{printer}/calibration/{tray}/page", json=body)
 
     pid = env.printer_id
     unsuitable = await post(pid, "auto", type="cal-one")
     assert unsuitable.status_code == 422
     assert _err(unsuitable)["error_code"] == "calibration_type_unsuitable"
     async with env.client() as c:
-        as_download = await c.get(f"/api/printers/{pid}/calibration/auto/page/pdf?type=cal-one")
+        as_download = await c.get(f"/api/v1/printers/{pid}/calibration/auto/page/pdf?type=cal-one")
     assert as_download.status_code == 422
     assert _err(as_download)["error_code"] == "calibration_type_unsuitable"
     cases = [
@@ -338,7 +339,9 @@ async def test_errors(env: _Env) -> None:
 async def test_a_printer_the_queue_does_not_know_is_a_409(env: _Env) -> None:
     unknown = await _printer(env.factory)  # in the database, never registered with the queue
     async with env.client() as c:
-        r = await c.post(f"/api/printers/{unknown}/calibration/auto/page", json={"type": "cal-job"})
+        r = await c.post(
+            f"/api/v1/printers/{unknown}/calibration/auto/page", json={"type": "cal-job"}
+        )
     assert r.status_code == 409, r.text
     assert _err(r)["type"] == "printer-unavailable"
     assert env.documents() == []
@@ -346,5 +349,5 @@ async def test_a_printer_the_queue_does_not_know_is_a_409(env: _Env) -> None:
 
 async def test_the_409_is_part_of_the_documented_contract(env: _Env) -> None:
     spec = env.app.openapi()
-    post = spec["paths"]["/api/printers/{printer_id}/calibration/{tray}/page"]["post"]
+    post = spec["paths"]["/api/v1/printers/{printer_id}/calibration/{tray}/page"]["post"]
     assert "409" in post["responses"] and "202" in post["responses"]

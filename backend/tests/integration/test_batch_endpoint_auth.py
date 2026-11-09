@@ -87,5 +87,5 @@ async def test_batch_print_scope_allowed(
     # Phase 1i H (Task 7b): Lifespan-Drucker verwenden statt manuell erstellten.
     printer_slug = inner_app.state.backend_router.slugs()[0]
 
-    resp = await client.post(f"/api/print/{printer_slug}/batch", json=_BODY)
+    resp = await client.post(f"/api/v1/print/{printer_slug}/batch", json=_BODY)
     assert resp.status_code == 202, resp.text

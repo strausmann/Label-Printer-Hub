@@ -34,7 +34,7 @@ from app.sheets.errors import ImportTooLargeError, SheetTypeVersionNotFoundError
 from app.sheets.geometry import normalise, validate_geometry
 from app.sheets.naming import KEY_PATTERN
 
-router = APIRouter(prefix="/api/sheet-types", tags=["sheet-types"])
+router = APIRouter(prefix="/api/v1/sheet-types", tags=["sheet-types"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]

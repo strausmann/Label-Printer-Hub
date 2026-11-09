@@ -72,7 +72,7 @@ async def test_ipp_printer_gets_a_producer_and_print_answers_503(enabled: bool) 
         # IPP-only install: no tape print service, so /print answers a clear 503.
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
             r = await c.post(
-                "/print",
+                "/api/v1/print",
                 json={
                     "content_type": "qr_two_lines",
                     "data": {"title": "T", "primary_id": "P-1", "qr_payload": "https://e.x"},

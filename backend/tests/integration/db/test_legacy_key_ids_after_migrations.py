@@ -76,7 +76,7 @@ async def test_legacy_hyphenated_key_id_signs_in_after_upgrade(tmp_path, monkeyp
         assert body["source"] == "api-key"
         assert body["scope"] == "admin"
         # The session keeps working: it resolves the key row on every request.
-        assert (await client.get("/api/admin/api-keys")).status_code == 200
+        assert (await client.get("/api/v1/admin/api-keys")).status_code == 200
         async with eng.connect() as conn:
             stored = (await conn.execute(text("SELECT api_key_id FROM ui_sessions"))).scalar()
     assert stored is not None

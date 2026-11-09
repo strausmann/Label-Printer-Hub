@@ -7,13 +7,13 @@ FastAPI event loop).
 
 Routes
 ------
-GET  /api/printers                — list all printers + paused flag
-GET  /api/printers/{id}/status    — force fresh ESC i S probe; upserts cache
-GET  /api/printers/{id}/tape      — current tape spec via TapeRegistry
-GET  /api/printers/{id}/queue     — jobs in QUEUED or PRINTING state
-POST /api/printers/{id}/pause     — set paused=True  (204 No Content)
-POST /api/printers/{id}/resume    — set paused=False (204 No Content)
-POST /api/printers/{id}/queue/clear — bulk-cancel QUEUED jobs (204 No Content)
+GET  /api/v1/printers                — list all printers + paused flag
+GET  /api/v1/printers/{id}/status    — force fresh ESC i S probe; upserts cache
+GET  /api/v1/printers/{id}/tape      — current tape spec via TapeRegistry
+GET  /api/v1/printers/{id}/queue     — jobs in QUEUED or PRINTING state
+POST /api/v1/printers/{id}/pause     — set paused=True  (204 No Content)
+POST /api/v1/printers/{id}/resume    — set paused=False (204 No Content)
+POST /api/v1/printers/{id}/queue/clear — bulk-cancel QUEUED jobs (204 No Content)
 
 References:
     docs/superpowers/specs/2026-05-16-phase6a-rest-api-design.md — Printers section
@@ -54,7 +54,7 @@ from app.services.tape_registry import TapeRegistry, UnknownTapeError
 
 _log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/printers", tags=["printers"])
+router = APIRouter(prefix="/api/v1/printers", tags=["printers"])
 
 
 def _pause_view(
@@ -108,7 +108,7 @@ async def _get_printer_or_404(session: AsyncSession, printer_id: UUID) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# GET /api/printers
+# GET /api/v1/printers
 # ---------------------------------------------------------------------------
 
 
@@ -180,7 +180,7 @@ async def list_printers(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/printers/{id}
+# GET /api/v1/printers/{id}
 # ---------------------------------------------------------------------------
 
 
@@ -221,7 +221,7 @@ async def get_printer(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/printers/{id}/status
+# GET /api/v1/printers/{id}/status
 # ---------------------------------------------------------------------------
 
 
@@ -406,7 +406,7 @@ async def get_printer_status(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/printers/{id}/tape
+# GET /api/v1/printers/{id}/tape
 # ---------------------------------------------------------------------------
 
 
@@ -462,7 +462,7 @@ async def get_printer_tape(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/printers/{id}/queue
+# GET /api/v1/printers/{id}/queue
 # ---------------------------------------------------------------------------
 
 
@@ -501,7 +501,7 @@ async def get_printer_queue(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/printers/{id}/pause
+# POST /api/v1/printers/{id}/pause
 # ---------------------------------------------------------------------------
 
 
@@ -536,7 +536,7 @@ async def pause_printer(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/printers/{id}/resume
+# POST /api/v1/printers/{id}/resume
 # ---------------------------------------------------------------------------
 
 
@@ -570,7 +570,7 @@ async def resume_printer(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/printers/{id}/queue/clear
+# POST /api/v1/printers/{id}/queue/clear
 # ---------------------------------------------------------------------------
 
 
@@ -585,7 +585,7 @@ async def resume_printer(
         "Jobs in ``printing`` state are intentionally **not** cancelled — "
         "a mid-print abort is unsafe over TCP/9100 because the raster data is "
         "already on the wire; a page job the IPP printer already holds is left to "
-        "finish as well (cancel it with ``POST /api/jobs/{id}/cancel``).  "
+        "finish as well (cancel it with ``POST /api/v1/jobs/{id}/cancel``).  "
         "Returns 204 even when there are no queued jobs."
     ),
 )

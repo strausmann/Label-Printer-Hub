@@ -1,4 +1,4 @@
-"""HTTP tests of ``POST /api/jobs/{id}/retry`` for a sheet page (Task 9, spec 11.4, OC-42).
+"""HTTP tests of ``POST /api/v1/jobs/{id}/retry`` for a sheet page (Task 9, spec 11.4, OC-42).
 
 The full app with its lifespan, like ``test_sheet_print_api``: the real print queue and
 ``SheetCellsOutcome``, the fake IPP printer, SQLite. A job is failed on purpose and the retry is
@@ -80,7 +80,7 @@ async def _fail_cleanly(rig: Rig, body: dict[str, Any]) -> tuple[str, str]:
 
 
 async def _retry(rig: Rig, job_id: str, **kw: Any) -> httpx.Response:
-    return await rig.client.post(f"/api/jobs/{job_id}/retry", headers=kw.pop("headers", rig.key))
+    return await rig.client.post(f"/api/v1/jobs/{job_id}/retry", headers=kw.pop("headers", rig.key))
 
 
 async def _retried_detail(rig: Rig, resp: httpx.Response) -> dict[str, Any]:
@@ -258,7 +258,7 @@ async def test_retry_cells_taken_names_the_cells_and_writes_nothing() -> None:
         code = await _sheet()
         first_id, _ = await _fail_cleanly(rig, _body(code, 3))
         marked = await rig.client.post(
-            f"/api/sheets/{code}/cells/mark",
+            f"/api/v1/sheets/{code}/cells/mark",
             json={"cells": [{"cell": 2}, {"cell": 3}]},
             headers=rig.key,
         )
@@ -293,7 +293,7 @@ async def test_retry_refused_while_cells_are_unconfirmed() -> None:
         assert err["error_detail"] == {"cells": [1, 2]}
         assert await _job_count() == jobs
         resolved = await rig.client.post(
-            f"/api/sheets/{code}/cells/resolve",
+            f"/api/v1/sheets/{code}/cells/resolve",
             json={"cells": [1, 2], "outcome": "not_printed"},
             headers=rig.key,
         )
@@ -383,7 +383,7 @@ async def test_retry_of_a_discarded_sheet_is_refused() -> None:
     async with running() as rig:
         code = await _sheet()
         first_id, _ = await _fail_cleanly(rig, _body(code, 2))
-        gone = await rig.client.post(f"/api/sheets/{code}/discard", headers=rig.key)
+        gone = await rig.client.post(f"/api/v1/sheets/{code}/discard", headers=rig.key)
         assert gone.status_code == 200, gone.text
 
         refused = await _retry(rig, first_id)
@@ -467,7 +467,7 @@ async def _id_cell_sheet_failed(rig: Rig) -> tuple[str, str]:
     """A ``cell`` sheet whose ID-only job failed cleanly: the ID is not printed, cell 1 is free."""
     rig.fake.print_status = REJECTED
     resp = await rig.client.post(
-        "/api/sheets",
+        "/api/v1/sheets",
         json={"type": "acme-t1", "id_placement": "cell", "printer": "page-1"},
         headers=rig.key,
     )
@@ -641,7 +641,7 @@ async def test_no_connection_is_held_while_the_retry_is_submitted(
         tasks = [asyncio.create_task(_retry(rig, job_id)) for job_id in failed]
         async with asyncio.timeout(15):
             await probe.everyone_in.wait()
-            other = await rig.client.get("/api/sheets", headers=rig.reader)
+            other = await rig.client.get("/api/v1/sheets", headers=rig.reader)
         responses = await asyncio.gather(*tasks)
 
     assert probe.checked_out == 0

@@ -64,12 +64,12 @@ def _create_body(type_key: str, **kw: Any) -> dict[str, Any]:
 
 
 async def _create(rig: Rig, body: dict[str, Any], **kw: Any) -> httpx.Response:
-    return await rig.client.post("/api/sheets", json=body, headers=kw.pop("headers", rig.key))
+    return await rig.client.post("/api/v1/sheets", json=body, headers=kw.pop("headers", rig.key))
 
 
 async def _margin_check(rig: Rig, type_key: str, **kw: Any) -> httpx.Response:
     params = {"type": type_key, "printer": kw.pop("printer", "page-1"), **kw}
-    return await rig.client.get("/api/sheets/margin-check", params=params, headers=rig.reader)
+    return await rig.client.get("/api/v1/sheets/margin-check", params=params, headers=rig.reader)
 
 
 async def _cancel_pending(rig: Rig, job_id: str) -> None:
@@ -216,7 +216,7 @@ async def test_margin_id_is_drawn_again_when_the_first_job_failed_cleanly() -> N
 async def test_create_without_placement_is_margin_and_queues_nothing() -> None:
     async with running() as rig:
         resp = await rig.client.post(
-            "/api/sheets", json={"type": QR_KEY, "printer": "page-1"}, headers=rig.key
+            "/api/v1/sheets", json={"type": QR_KEY, "printer": "page-1"}, headers=rig.key
         )
 
         assert resp.status_code == 201, resp.text
@@ -226,7 +226,7 @@ async def test_create_without_placement_is_margin_and_queues_nothing() -> None:
         assert await _count(PrintBatch) == 0
         assert all(r.operation != "Print-Job" for r in rig.fake.received)
         unknown = await rig.client.post(
-            "/api/sheets", json={"type": QR_KEY, "id_placement": "manual"}, headers=rig.key
+            "/api/v1/sheets", json={"type": QR_KEY, "id_placement": "manual"}, headers=rig.key
         )
         assert unknown.status_code == 201 and unknown.json()["job_id"] is None
 
@@ -368,7 +368,7 @@ async def test_margin_check_uses_probable_code_payload(monkeypatch: pytest.Monke
 async def test_margin_never_refused() -> None:
     async with running(margins=Margins(top=1000, left=1000, bottom=1000, right=1000)) as rig:
         created = await rig.client.post(
-            "/api/sheets",
+            "/api/v1/sheets",
             json={"type": TEXT_KEY, "id_placement": "margin", "printer": "page-1"},
             headers=rig.key,
         )
@@ -398,7 +398,7 @@ async def test_margin_check_scopes_and_unknowns() -> None:
     async with running() as rig:
         other = await _printer("page-2")
         restricted = {"X-Label-Hub-Key": await _insert_key(["read"], [str(other)])}
-        url = "/api/sheets/margin-check"
+        url = "/api/v1/sheets/margin-check"
 
         denied = await rig.client.get(
             url, params={"type": QR_KEY, "printer": "page-1"}, headers=restricted
@@ -427,13 +427,13 @@ async def test_openapi_documents_margin_check_and_the_created_sheet() -> None:
     async with running() as rig:
         schema = (await rig.client.get("/openapi.json")).json()
         paths = schema["paths"]
-        assert "/api/sheets/margin-check" in paths
-        created = paths["/api/sheets"]["post"]["responses"]["201"]
+        assert "/api/v1/sheets/margin-check" in paths
+        created = paths["/api/v1/sheets"]["post"]["responses"]["201"]
         ref = created["content"]["application/json"]["schema"]["$ref"]
         assert ref.endswith("/SheetCreated")
         assert "job_id" in schema["components"]["schemas"]["SheetCreated"]["properties"]
         assert "job_id" not in schema["components"]["schemas"]["SheetRead"]["properties"]
-        params = {p["name"] for p in paths["/api/sheets/margin-check"]["get"]["parameters"]}
+        params = {p["name"] for p in paths["/api/v1/sheets/margin-check"]["get"]["parameters"]}
         assert params == {"type", "printer", "tray"}
 
 
@@ -536,7 +536,7 @@ async def test_no_connection_is_held_while_the_id_job_is_submitted(
         tasks = [asyncio.create_task(_create(rig, _create_body(QR_KEY))) for _ in range(n)]
         async with asyncio.timeout(15):
             await probe.everyone_in.wait()
-            other = await rig.client.get("/api/sheets", headers=rig.reader)
+            other = await rig.client.get("/api/v1/sheets", headers=rig.reader)
         await asyncio.gather(*tasks)
 
     assert probe.checked_out == 0

@@ -256,7 +256,7 @@ class SheetRead(SheetSummary):
 
 
 class SheetCreated(SheetRead):
-    """The response of ``POST /api/sheets``: the sheet, and the ID-only job of a ``cell`` sheet."""
+    """The response of ``POST /api/v1/sheets``: the sheet and the ID-only job of a cell sheet."""
 
     job_id: UUID | None = Field(
         description="The queued ID-only job (`id_placement` `cell`); otherwise `null`."

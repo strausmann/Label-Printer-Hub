@@ -2,12 +2,12 @@
 
 Routes
 ------
-GET  /api/jobs                   — list jobs with optional filters + pagination
-GET  /api/jobs/{id}              — single job by ID
-POST /api/jobs/{id}/cancel       — cancel a QUEUED job (409 for any other state)
-POST /api/jobs/{id}/pause        — 501 placeholder (safe mid-print pause not yet implemented)
-POST /api/jobs/{id}/resume       — 501 placeholder
-POST /api/jobs/{id}/retry        — clone a FAILED job into a fresh QUEUED job
+GET  /api/v1/jobs                   — list jobs with optional filters + pagination
+GET  /api/v1/jobs/{id}              — single job by ID
+POST /api/v1/jobs/{id}/cancel       — cancel a QUEUED job (409 for any other state)
+POST /api/v1/jobs/{id}/pause        — 501 placeholder (safe mid-print pause not yet implemented)
+POST /api/v1/jobs/{id}/resume       — 501 placeholder
+POST /api/v1/jobs/{id}/retry        — clone a FAILED job into a fresh QUEUED job
 
 Design notes
 ------------
@@ -66,7 +66,7 @@ from app.sheets.errors import (
     SheetPrinterDisabledError,
 )
 
-router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -123,7 +123,7 @@ async def _get_job_or_404(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/jobs
+# GET /api/v1/jobs
 # ---------------------------------------------------------------------------
 
 
@@ -164,7 +164,7 @@ async def list_jobs(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/jobs/{id}
+# GET /api/v1/jobs/{id}
 # ---------------------------------------------------------------------------
 
 
@@ -185,7 +185,7 @@ async def get_job(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/jobs/{id}/cancel
+# POST /api/v1/jobs/{id}/cancel
 # ---------------------------------------------------------------------------
 
 
@@ -261,7 +261,7 @@ def _cancel_conflict(job_state: str) -> HTTPException:
 
 
 # ---------------------------------------------------------------------------
-# POST /api/jobs/{id}/pause
+# POST /api/v1/jobs/{id}/pause
 # ---------------------------------------------------------------------------
 
 
@@ -297,7 +297,7 @@ async def pause_job(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/jobs/{id}/resume
+# POST /api/v1/jobs/{id}/resume
 # ---------------------------------------------------------------------------
 
 
@@ -332,7 +332,7 @@ async def resume_job(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/jobs/{id}/retry
+# POST /api/v1/jobs/{id}/retry
 # ---------------------------------------------------------------------------
 
 

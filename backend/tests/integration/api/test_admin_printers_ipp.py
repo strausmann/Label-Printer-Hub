@@ -535,19 +535,19 @@ async def test_ipp_uri_hidden_from_read_keys(hub: Hub) -> None:
     row = await _db_printer("office-laser")
     assert row is not None
     for headers in (await _key(["read"]), await _key(["print"])):
-        listed = await hub.client.get("/api/printers", headers=headers)
+        listed = await hub.client.get("/api/v1/printers", headers=headers)
         assert listed.status_code == 200, listed.text
         by_slug = {p["slug"]: p for p in listed.json()}
         assert by_slug["office-laser"]["connection"] == {"tls_verify": True}
         assert by_slug["workshop"]["connection"]["host"] == "192.0.2.10"  # unchanged
-        one = await hub.client.get(f"/api/printers/{row.id}", headers=headers)
+        one = await hub.client.get(f"/api/v1/printers/{row.id}", headers=headers)
         assert one.status_code == 200, one.text
         assert one.json()["connection"] == {"tls_verify": True}
         assert HOST not in listed.text + one.text
-    listed = await hub.client.get("/api/printers", headers=admin)
+    listed = await hub.client.get("/api/v1/printers", headers=admin)
     by_slug = {p["slug"]: p for p in listed.json()}
     assert by_slug["office-laser"]["connection"]["uri"] == URI
-    one = await hub.client.get(f"/api/printers/{row.id}", headers=admin)
+    one = await hub.client.get(f"/api/v1/printers/{row.id}", headers=admin)
     assert one.json()["connection"]["uri"] == URI
 
 
@@ -566,7 +566,7 @@ async def test_tape_routes_refuse_page_printer(hub: Hub) -> None:
         ]
     }
     resp = await hub.client.post(
-        "/api/print/office-laser/batch", json=body, headers=await _key(["print"])
+        "/api/v1/print/office-laser/batch", json=body, headers=await _key(["print"])
     )
     assert resp.status_code == 409, resp.text
     assert _error(resp)["error_code"] == "media_kind_mismatch"
@@ -668,7 +668,7 @@ async def _db_calibration_keys(printer_id: UUID) -> list[str]:
 
 async def _calibrate(hub: Hub, headers: dict[str, str], tray: str) -> httpx.Response:
     return await hub.client.put(
-        f"/api/printers/{await _printer_id()}/calibration/{tray}", json=CAL_BODY, headers=headers
+        f"/api/v1/printers/{await _printer_id()}/calibration/{tray}", json=CAL_BODY, headers=headers
     )
 
 
@@ -693,7 +693,7 @@ async def test_removed_tray_loses_its_calibration_and_a_re_added_one_starts_clea
         f"{ADMIN}/office-laser", json={"trays": _trays("tray-2")}, headers=headers
     )
     assert resp.status_code == 200, resp.text
-    got = await hub.client.get(f"/api/printers/{pid}/calibration", headers=headers)
+    got = await hub.client.get(f"/api/v1/printers/{pid}/calibration", headers=headers)
     by_tray = {r["tray"]: r for r in got.json()}
     assert by_tray["tray-2"]["method"] is None  # not the deviation of the old setup
     assert by_tray["auto"]["method"] == "manual"
@@ -714,7 +714,7 @@ async def test_disabled_tray_keeps_its_calibration(hub: Hub) -> None:
     enabled = [{**disabled[0]}, {**disabled[1], "enabled": True}]
     resp = await hub.client.put(f"{ADMIN}/office-laser", json={"trays": enabled}, headers=headers)
     assert resp.status_code == 200, resp.text
-    got = await hub.client.get(f"/api/printers/{pid}/calibration", headers=headers)
+    got = await hub.client.get(f"/api/v1/printers/{pid}/calibration", headers=headers)
     assert {r["tray"]: r["method"] for r in got.json()}["tray-2"] == "manual"
 
 

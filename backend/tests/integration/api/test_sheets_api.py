@@ -39,13 +39,13 @@ def _err(resp) -> dict[str, Any]:
 
 
 async def _type(client, admin, key: str = "acme-t1", prefix: str = "AT1", **extra: Any) -> None:
-    resp = await client.post("/api/sheet-types", json=_body(key, prefix, **extra), headers=admin)
+    resp = await client.post("/api/v1/sheet-types", json=_body(key, prefix, **extra), headers=admin)
     assert resp.status_code == 201, resp.text
 
 
 async def _sheet(client, headers, type_key: str = "acme-t1", **extra: Any) -> dict[str, Any]:
     body = {"type": type_key, "id_placement": "manual", **extra}
-    resp = await client.post("/api/sheets", json=body, headers=headers)
+    resp = await client.post("/api/v1/sheets", json=body, headers=headers)
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -100,14 +100,14 @@ async def test_create_and_get_sheet(ready, printer, reader):
     assert created["cells"][0]["purpose"] == "marked by hand"
     assert cell5["job_id"] is None and cell5["ref"] is None
 
-    got = await ready.get("/api/sheets/AT1-0001", headers=reader)
+    got = await ready.get("/api/v1/sheets/AT1-0001", headers=reader)
     assert got.status_code == 200
     assert created["job_id"] is None  # only a `cell` sheet queues an ID-only job
     assert got.json() == {k: v for k, v in created.items() if k != "job_id"}
 
 
 async def test_create_sheet_defaults_to_margin(ready, printer):
-    resp = await ready.post("/api/sheets", json={"type": "acme-t1"}, headers=printer)
+    resp = await ready.post("/api/v1/sheets", json={"type": "acme-t1"}, headers=printer)
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert body["id_placement"] == "margin"
@@ -117,7 +117,7 @@ async def test_create_sheet_defaults_to_margin(ready, printer):
 async def test_create_pins_the_version_and_validates_cells(ready, printer, admin):
     new_geometry = _body()["geometry"] | {"cols": 3}
     resp = await ready.post(
-        "/api/sheet-types/acme-t1/versions",
+        "/api/v1/sheet-types/acme-t1/versions",
         json={"geometry": new_geometry, "change_note": "three columns"},
         headers=admin,
     )
@@ -127,7 +127,7 @@ async def test_create_pins_the_version_and_validates_cells(ready, printer, admin
     current = await _sheet(ready, printer)
     assert (current["version"], current["total"]) == (2, 36)
     out = await ready.post(
-        "/api/sheets",
+        "/api/v1/sheets",
         json={"type": "acme-t1", "id_placement": "manual", "used_cells": [{"cell": 37}]},
         headers=printer,
     )
@@ -135,7 +135,7 @@ async def test_create_pins_the_version_and_validates_cells(ready, printer, admin
     assert _err(out)["error_code"] == "cell_out_of_range"
     assert _err(out)["error_detail"] == {"cells": [37], "max": 36}
     missing = await ready.post(
-        "/api/sheets",
+        "/api/v1/sheets",
         json={"type": "acme-t1", "version": 9, "id_placement": "manual"},
         headers=printer,
     )
@@ -150,10 +150,10 @@ async def test_list_sheets_filters_and_order(ready, printer, reader, admin):
     third = await _sheet(ready, printer, used_cells=[{"cell": n} for n in range(1, 49)])
     other = await _sheet(ready, printer, "zeta-z9")
     assert (
-        await ready.post(f"/api/sheets/{other['code']}/discard", headers=printer)
+        await ready.post(f"/api/v1/sheets/{other['code']}/discard", headers=printer)
     ).status_code == 200
 
-    listing = await ready.get("/api/sheets", headers=reader)
+    listing = await ready.get("/api/v1/sheets", headers=reader)
     assert listing.status_code == 200
     rows = listing.json()
     assert [r["code"] for r in rows] == [second["code"], first["code"], third["code"]]
@@ -167,46 +167,50 @@ async def test_list_sheets_filters_and_order(ready, printer, reader, admin):
         assert resp.status_code == 200, resp.text
         return [r["code"] for r in resp.json()]
 
-    assert codes(await ready.get("/api/sheets", params={"state": "full"}, headers=reader)) == [
+    assert codes(await ready.get("/api/v1/sheets", params={"state": "full"}, headers=reader)) == [
         third["code"]
     ]
-    assert codes(await ready.get("/api/sheets", params={"state": "discarded"}, headers=reader)) == [
-        other["code"]
-    ]
-    assert len(codes(await ready.get("/api/sheets", params={"state": "all"}, headers=reader))) == 4
+    assert codes(
+        await ready.get("/api/v1/sheets", params={"state": "discarded"}, headers=reader)
+    ) == [other["code"]]
+    assert (
+        len(codes(await ready.get("/api/v1/sheets", params={"state": "all"}, headers=reader))) == 4
+    )
     # 'fits first' (OC-34): sheets with enough room come before the others, most free first
-    fit = codes(await ready.get("/api/sheets", params={"free_at_least": 10}, headers=reader))
+    fit = codes(await ready.get("/api/v1/sheets", params={"free_at_least": 10}, headers=reader))
     assert fit == [second["code"], first["code"], third["code"]]
-    fit = codes(await ready.get("/api/sheets", params={"free_at_least": 9}, headers=reader))
+    fit = codes(await ready.get("/api/v1/sheets", params={"free_at_least": 9}, headers=reader))
     assert fit[0] == second["code"]
     assert codes(
-        await ready.get("/api/sheets", params={"type": "acme-t1", "q": "0002"}, headers=reader)
+        await ready.get("/api/v1/sheets", params={"type": "acme-t1", "q": "0002"}, headers=reader)
     ) == [second["code"]]
-    unknown = await ready.get("/api/sheets", params={"type": "nope-nope"}, headers=reader)
+    unknown = await ready.get("/api/v1/sheets", params={"type": "nope-nope"}, headers=reader)
     assert unknown.status_code == 404
     assert _err(unknown)["error_code"] == "sheet_type_not_found"
-    bad = await ready.get("/api/sheets", params={"state": "bogus"}, headers=reader)
+    bad = await ready.get("/api/v1/sheets", params={"state": "bogus"}, headers=reader)
     assert bad.status_code == 422 and _err(bad)["error_code"] == "invalid_request"
 
 
 async def test_next_code_is_a_hint_and_not_a_code_lookup(ready, printer, reader):
-    resp = await ready.get("/api/sheets/next-code", params={"type": "acme-t1"}, headers=reader)
+    resp = await ready.get("/api/v1/sheets/next-code", params={"type": "acme-t1"}, headers=reader)
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"code": "AT1-0001", "hint": "probable"}
     await _sheet(ready, printer)
-    again = await ready.get("/api/sheets/next-code", params={"type": "acme-t1"}, headers=reader)
+    again = await ready.get("/api/v1/sheets/next-code", params={"type": "acme-t1"}, headers=reader)
     assert again.json()["code"] == "AT1-0002"
-    unknown = await ready.get("/api/sheets/next-code", params={"type": "nope-nope"}, headers=reader)
+    unknown = await ready.get(
+        "/api/v1/sheets/next-code", params={"type": "nope-nope"}, headers=reader
+    )
     assert unknown.status_code == 404
     assert _err(unknown)["error_code"] == "sheet_type_not_found"
-    assert (await ready.get("/api/sheets/next-code", headers=reader)).status_code == 422
+    assert (await ready.get("/api/v1/sheets/next-code", headers=reader)).status_code == 422
 
 
 async def test_mark_unmark_resolve_discard_flow(ready, printer):
     sheet = await _sheet(ready, printer)
     code = sheet["code"]
     marked = await ready.post(
-        f"/api/sheets/{code}/cells/mark",
+        f"/api/v1/sheets/{code}/cells/mark",
         json={"cells": [{"cell": 3, "purpose": PURPOSE}, {"cell": 4}]},
         headers=printer,
     )
@@ -215,7 +219,7 @@ async def test_mark_unmark_resolve_discard_flow(ready, printer):
     assert [c["cell"] for c in marked.json()["cells"]] == [3, 4]
 
     unmarked = await ready.post(
-        f"/api/sheets/{code}/cells/unmark", json={"cells": [4]}, headers=printer
+        f"/api/v1/sheets/{code}/cells/unmark", json={"cells": [4]}, headers=printer
     )
     assert unmarked.status_code == 200, unmarked.text
     assert [c["cell"] for c in unmarked.json()["cells"]] == [3]
@@ -223,7 +227,7 @@ async def test_mark_unmark_resolve_discard_flow(ready, printer):
     await _insert_cell(code, 7, "unconfirmed", job_id=uuid4(), purpose="x", ref="1")
     await _insert_cell(code, 8, "unconfirmed", job_id=uuid4())
     resolved = await ready.post(
-        f"/api/sheets/{code}/cells/resolve",
+        f"/api/v1/sheets/{code}/cells/resolve",
         json={"cells": [7], "outcome": "printed"},
         headers=printer,
     )
@@ -232,17 +236,17 @@ async def test_mark_unmark_resolve_discard_flow(ready, printer):
     assert by_cell[7]["state"] == "used" and by_cell[8]["state"] == "unconfirmed"
     assert resolved.json()["unconfirmed"] == 1
     freed = await ready.post(
-        f"/api/sheets/{code}/cells/resolve",
+        f"/api/v1/sheets/{code}/cells/resolve",
         json={"cells": [8], "outcome": "not_printed"},
         headers=printer,
     )
     assert 8 not in {c["cell"] for c in freed.json()["cells"]}
 
-    discarded = await ready.post(f"/api/sheets/{code}/discard", headers=printer)
+    discarded = await ready.post(f"/api/v1/sheets/{code}/discard", headers=printer)
     assert discarded.status_code == 200, discarded.text
     assert discarded.json()["state"] == "discarded"
     assert discarded.json()["discarded_at"] is not None
-    again = await ready.post(f"/api/sheets/{code}/discard", headers=printer)
+    again = await ready.post(f"/api/v1/sheets/{code}/discard", headers=printer)
     assert again.status_code == 200
     assert again.json()["discarded_at"] == discarded.json()["discarded_at"]  # idempotent
 
@@ -254,14 +258,14 @@ async def test_sheet_cells_reprint_lookup(ready, printer, reader):
     await _insert_cell(second["code"], 9, "used", source="grocy", ref="42")
     await _insert_cell(second["code"], 10, "used", source="grocy", ref="43")
     resp = await ready.get(
-        "/api/sheet-cells", params={"source": "grocy", "ref": "42"}, headers=reader
+        "/api/v1/sheet-cells", params={"source": "grocy", "ref": "42"}, headers=reader
     )
     assert resp.status_code == 200, resp.text
     hits = resp.json()
     assert {(h["code"], h["cell"]) for h in hits} == {(first["code"], 5), (second["code"], 9)}
     assert set(hits[0]) == {"code", "cell", "state", "purpose", "updated_at"}
     none = await ready.get(
-        "/api/sheet-cells", params={"source": "grocy", "ref": "0"}, headers=reader
+        "/api/v1/sheet-cells", params={"source": "grocy", "ref": "0"}, headers=reader
     )
     assert none.json() == []
     for params in (
@@ -270,7 +274,7 @@ async def test_sheet_cells_reprint_lookup(ready, printer, reader):
         {"ref": "42"},
         {"source": "grocy", "ref": ""},
     ):
-        resp = await ready.get("/api/sheet-cells", params=params, headers=reader)
+        resp = await ready.get("/api/v1/sheet-cells", params=params, headers=reader)
         assert resp.status_code == 422 and _err(resp)["error_code"] == "invalid_request", params
 
 
@@ -285,48 +289,48 @@ async def test_other_client_sees_same_cells(ready, admin):
     key_b = {"X-Label-Hub-Key": await _insert_key(["read"])}
     sheet = await _sheet(ready, key_a)
     marked = await ready.post(
-        f"/api/sheets/{sheet['code']}/cells/mark",
+        f"/api/v1/sheets/{sheet['code']}/cells/mark",
         json={"cells": [{"cell": 5, "purpose": PURPOSE}]},
         headers=key_a,
     )
     assert marked.status_code == 200
-    seen = (await ready.get(f"/api/sheets/{sheet['code']}", headers=key_b)).json()
+    seen = (await ready.get(f"/api/v1/sheets/{sheet['code']}", headers=key_b)).json()
     assert [(c["cell"], c["purpose"], c["state"]) for c in seen["cells"]] == [(5, PURPOSE, "used")]
     assert seen["free"] == 47
 
 
 async def test_discarded_lookup_200_unknown_404(ready, printer, reader):
     sheet = await _sheet(ready, printer, used_cells=[{"cell": 1}])
-    await ready.post(f"/api/sheets/{sheet['code']}/discard", headers=printer)
-    found = await ready.get(f"/api/sheets/{sheet['code']}", headers=reader)
+    await ready.post(f"/api/v1/sheets/{sheet['code']}/discard", headers=printer)
+    found = await ready.get(f"/api/v1/sheets/{sheet['code']}", headers=reader)
     assert found.status_code == 200
     assert found.json()["state"] == "discarded" and len(found.json()["cells"]) == 1
-    unknown = await ready.get("/api/sheets/AT1-0099", headers=reader)
+    unknown = await ready.get("/api/v1/sheets/AT1-0099", headers=reader)
     assert unknown.status_code == 404
     assert _err(unknown)["error_code"] == "sheet_not_found"
     # a discarded sheet takes no more marks
     resp = await ready.post(
-        f"/api/sheets/{sheet['code']}/cells/mark", json={"cells": [{"cell": 2}]}, headers=printer
+        f"/api/v1/sheets/{sheet['code']}/cells/mark", json={"cells": [{"cell": 2}]}, headers=printer
     )
     assert resp.status_code == 409 and _err(resp)["error_code"] == "sheet_discarded"
 
 
 @pytest.mark.parametrize("code", ["at1-0001", "AT1-01", "AT1-1", "A-0001", "1AT-0001", "AT1_0001"])
 async def test_code_pattern_rejects_malformed_codes(ready, reader, code):
-    resp = await ready.get(f"/api/sheets/{code}", headers=reader)
+    resp = await ready.get(f"/api/v1/sheets/{code}", headers=reader)
     assert resp.status_code == 422, code
     assert _err(resp)["error_code"] == "invalid_request"
     assert _err(resp)["error_detail"] == {"errors": ["path.code"]}
 
 
 async def test_five_digit_codes_match_the_pattern(ready, reader):
-    resp = await ready.get("/api/sheets/AT1-10000", headers=reader)
+    resp = await ready.get("/api/v1/sheets/AT1-10000", headers=reader)
     assert resp.status_code == 404  # well-formed, just unknown
 
 
 async def test_purpose_limit_and_plain_text(ready, printer):
     sheet = await _sheet(ready, printer)
-    url = f"/api/sheets/{sheet['code']}/cells/mark"
+    url = f"/api/v1/sheets/{sheet['code']}/cells/mark"
     over = await ready.post(
         url, json={"cells": [{"cell": 1, "purpose": "x" * 121}]}, headers=printer
     )
@@ -351,7 +355,7 @@ async def test_note_that_cleans_to_nothing_is_null(ready, printer):
 
 async def test_request_bodies_are_checked(ready, printer):
     sheet = await _sheet(ready, printer)
-    base = f"/api/sheets/{sheet['code']}/cells"
+    base = f"/api/v1/sheets/{sheet['code']}/cells"
     secret = "SECRETFIELDNAME"
     cases = [
         (f"{base}/mark", {"cells": []}),
@@ -362,14 +366,14 @@ async def test_request_bodies_are_checked(ready, printer):
         (f"{base}/unmark", {"cells": ["a"]}),
         (f"{base}/resolve", {"cells": [1], "outcome": "maybe"}),
         (f"{base}/resolve", {"cells": []}),
-        ("/api/sheets", {"type": "acme-t1", "id_placement": "cell"}),
-        ("/api/sheets", {"type": "ACME", "id_placement": "manual"}),
-        ("/api/sheets", {"type": "acme-t1", "id_placement": "manual", "note": "n" * 501}),
+        ("/api/v1/sheets", {"type": "acme-t1", "id_placement": "cell"}),
+        ("/api/v1/sheets", {"type": "ACME", "id_placement": "manual"}),
+        ("/api/v1/sheets", {"type": "acme-t1", "id_placement": "manual", "note": "n" * 501}),
         (
-            "/api/sheets",
+            "/api/v1/sheets",
             {"type": "acme-t1", "id_placement": "manual", "used_cells": [{"cell": 1}] * 401},
         ),
-        ("/api/sheets", {"type": "acme-t1", "id_placement": "manual", secret: 1}),
+        ("/api/v1/sheets", {"type": "acme-t1", "id_placement": "manual", secret: 1}),
     ]
     for url, body in cases:
         resp = await ready.post(url, json=body, headers=printer)
@@ -382,53 +386,53 @@ async def test_conflicts_name_the_cells(ready, printer):
     sheet = await _sheet(ready, printer, used_cells=[{"cell": 5}])
     code = sheet["code"]
     taken = await ready.post(
-        f"/api/sheets/{code}/cells/mark",
+        f"/api/v1/sheets/{code}/cells/mark",
         json={"cells": [{"cell": 5}, {"cell": 6}]},
         headers=printer,
     )
     assert taken.status_code == 409
     assert _err(taken)["error_code"] == "cells_taken"
     assert _err(taken)["error_detail"] == {"cells": [5]}
-    after = (await ready.get(f"/api/sheets/{code}", headers=printer)).json()
+    after = (await ready.get(f"/api/v1/sheets/{code}", headers=printer)).json()
     assert [c["cell"] for c in after["cells"]] == [5]  # nothing half-written
     out = await ready.post(
-        f"/api/sheets/{code}/cells/mark", json={"cells": [{"cell": 49}]}, headers=printer
+        f"/api/v1/sheets/{code}/cells/mark", json={"cells": [{"cell": 49}]}, headers=printer
     )
     assert out.status_code == 422 and _err(out)["error_code"] == "cell_out_of_range"
     assert _err(out)["error_detail"] == {"cells": [49], "max": 48}
     await _insert_cell(code, 9, "used", source="grocy", ref="1")
     hand = await ready.post(
-        f"/api/sheets/{code}/cells/unmark", json={"cells": [9]}, headers=printer
+        f"/api/v1/sheets/{code}/cells/unmark", json={"cells": [9]}, headers=printer
     )
     assert hand.status_code == 409 and _err(hand)["error_code"] == "cells_not_marked_by_hand"
     assert _err(hand)["error_detail"] == {"cells": [9]}
     unconf = await ready.post(
-        f"/api/sheets/{code}/cells/resolve",
+        f"/api/v1/sheets/{code}/cells/resolve",
         json={"cells": [5], "outcome": "printed"},
         headers=printer,
     )
     assert unconf.status_code == 409 and _err(unconf)["error_code"] == "cells_not_unconfirmed"
     await _insert_cell(code, 11, "reserved", job_id=uuid4())
-    busy = await ready.post(f"/api/sheets/{code}/discard", headers=printer)
+    busy = await ready.post(f"/api/v1/sheets/{code}/discard", headers=printer)
     assert busy.status_code == 409 and _err(busy)["error_code"] == "sheet_busy"
-    unknown = await ready.post("/api/sheets/AT1-0099/discard", headers=printer)
+    unknown = await ready.post("/api/v1/sheets/AT1-0099/discard", headers=printer)
     assert unknown.status_code == 404 and _err(unknown)["error_code"] == "sheet_not_found"
 
 
 async def test_create_refuses_unknown_and_archived_types(ready, printer, admin):
     unknown = await ready.post(
-        "/api/sheets", json={"type": "nope-nope", "id_placement": "manual"}, headers=printer
+        "/api/v1/sheets", json={"type": "nope-nope", "id_placement": "manual"}, headers=printer
     )
     assert unknown.status_code == 404 and _err(unknown)["error_code"] == "sheet_type_not_found"
-    await ready.post("/api/sheet-types/acme-t1/archive", headers=admin)
+    await ready.post("/api/v1/sheet-types/acme-t1/archive", headers=admin)
     archived = await ready.post(
-        "/api/sheets", json={"type": "acme-t1", "id_placement": "manual"}, headers=printer
+        "/api/v1/sheets", json={"type": "acme-t1", "id_placement": "manual"}, headers=printer
     )
     assert archived.status_code == 409 and _err(archived)["error_code"] == "sheet_type_archived"
 
 
 async def test_validation_errors_of_other_routes_keep_the_default_shape(ready, reader):
-    resp = await ready.get("/api/printers/not-a-uuid", headers=reader)
+    resp = await ready.get("/api/v1/printers/not-a-uuid", headers=reader)
     assert resp.status_code == 422 and isinstance(resp.json()["detail"], list)
 
 
@@ -437,17 +441,17 @@ async def test_validation_errors_of_other_routes_keep_the_default_shape(ready, r
 # ---------------------------------------------------------------------------
 
 _READS = [
-    ("get", "/api/sheets"),
-    ("get", "/api/sheets/next-code?type=acme-t1"),
-    ("get", "/api/sheets/AT1-0001"),
-    ("get", "/api/sheet-cells?source=grocy&ref=1"),
+    ("get", "/api/v1/sheets"),
+    ("get", "/api/v1/sheets/next-code?type=acme-t1"),
+    ("get", "/api/v1/sheets/AT1-0001"),
+    ("get", "/api/v1/sheet-cells?source=grocy&ref=1"),
 ]
 _WRITES: list[tuple[str, str, Any]] = [
-    ("post", "/api/sheets", {"type": "acme-t1", "id_placement": "manual"}),
-    ("post", "/api/sheets/AT1-0001/discard", None),
-    ("post", "/api/sheets/AT1-0001/cells/mark", {"cells": [{"cell": 1}]}),
-    ("post", "/api/sheets/AT1-0001/cells/unmark", {"cells": [1]}),
-    ("post", "/api/sheets/AT1-0001/cells/resolve", {"cells": [1], "outcome": "printed"}),
+    ("post", "/api/v1/sheets", {"type": "acme-t1", "id_placement": "manual"}),
+    ("post", "/api/v1/sheets/AT1-0001/discard", None),
+    ("post", "/api/v1/sheets/AT1-0001/cells/mark", {"cells": [{"cell": 1}]}),
+    ("post", "/api/v1/sheets/AT1-0001/cells/unmark", {"cells": [1]}),
+    ("post", "/api/v1/sheets/AT1-0001/cells/resolve", {"cells": [1], "outcome": "printed"}),
 ]
 
 
@@ -467,15 +471,15 @@ async def test_scope_matrix(ready, printer, reader, admin):
     for method, path, payload in _WRITES:
         resp = await ready.request(method, path, json=payload, headers=reader)
         assert resp.status_code == 403, (path, resp.text)
-    created = await ready.post("/api/sheets", json=_WRITES[0][2], headers=printer)
+    created = await ready.post("/api/v1/sheets", json=_WRITES[0][2], headers=printer)
     assert created.status_code == 201
     for method, path, payload in _WRITES[2:]:
         resp = await ready.request(method, path, json=payload, headers=printer)
         assert 200 <= resp.status_code < 300 or resp.status_code == 409, (path, resp.text)
     assert (
-        await ready.request("post", "/api/sheets", json=_WRITES[0][2], headers=admin)
+        await ready.request("post", "/api/v1/sheets", json=_WRITES[0][2], headers=admin)
     ).status_code == 201
-    assert (await ready.post("/api/sheets/AT1-0001/discard", headers=printer)).status_code == 200
+    assert (await ready.post("/api/v1/sheets/AT1-0001/discard", headers=printer)).status_code == 200
 
 
 async def test_reads_ignore_printer_restriction(ready, printer):
@@ -483,9 +487,13 @@ async def test_reads_ignore_printer_restriction(ready, printer):
     restricted = {
         "X-Label-Hub-Key": await _insert_key(["print"], allowed_printer_ids=[str(uuid4())])
     }
-    assert (await ready.get(f"/api/sheets/{sheet['code']}", headers=restricted)).status_code == 200
+    assert (
+        await ready.get(f"/api/v1/sheets/{sheet['code']}", headers=restricted)
+    ).status_code == 200
     marked = await ready.post(
-        f"/api/sheets/{sheet['code']}/cells/mark", json={"cells": [{"cell": 1}]}, headers=restricted
+        f"/api/v1/sheets/{sheet['code']}/cells/mark",
+        json={"cells": [{"cell": 1}]},
+        headers=restricted,
     )
     assert marked.status_code == 200
 
@@ -494,17 +502,17 @@ async def test_openapi_lists_the_sheet_routes(ready):
     schema = (await ready.get("/openapi.json")).json()
     paths = schema["paths"]
     for path, methods in {
-        "/api/sheets": {"get", "post"},
-        "/api/sheets/next-code": {"get"},
-        "/api/sheets/{code}": {"get"},
-        "/api/sheets/{code}/discard": {"post"},
-        "/api/sheets/{code}/cells/mark": {"post"},
-        "/api/sheets/{code}/cells/unmark": {"post"},
-        "/api/sheets/{code}/cells/resolve": {"post"},
-        "/api/sheet-cells": {"get"},
+        "/api/v1/sheets": {"get", "post"},
+        "/api/v1/sheets/next-code": {"get"},
+        "/api/v1/sheets/{code}": {"get"},
+        "/api/v1/sheets/{code}/discard": {"post"},
+        "/api/v1/sheets/{code}/cells/mark": {"post"},
+        "/api/v1/sheets/{code}/cells/unmark": {"post"},
+        "/api/v1/sheets/{code}/cells/resolve": {"post"},
+        "/api/v1/sheet-cells": {"get"},
     }.items():
         assert methods <= set(paths[path]), path
     code_param = next(
-        p for p in paths["/api/sheets/{code}"]["get"]["parameters"] if p["name"] == "code"
+        p for p in paths["/api/v1/sheets/{code}"]["get"]["parameters"] if p["name"] == "code"
     )
     assert code_param["schema"]["pattern"] == r"^[A-Z][A-Z0-9]{1,9}-[0-9]{4,}$"

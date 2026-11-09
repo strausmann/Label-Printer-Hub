@@ -1,7 +1,7 @@
 """Project licence and the public source link of the running build (D20).
 
 AGPL-3.0-or-later section 13 obliges a network service to offer the users the
-source of the version they are talking to. ``/api/info`` is public, so
+source of the version they are talking to. ``/api/v1/info`` is public, so
 everything here is derived from build values only and never carries a secret.
 """
 

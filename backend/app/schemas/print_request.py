@@ -1,4 +1,4 @@
-"""Request schemas for POST /api/print + supporting models.
+"""Request schemas for POST /api/v1/print + supporting models.
 
 Phase 1k.1a: template_id and on_tape_mismatch removed; content_type added.
 RawLabelData mirrors LabelData (minus source_app which is set server-side
@@ -51,7 +51,7 @@ class RawLabelData(BaseModel):
 
 
 class PrintRequest(BaseModel):
-    """POST /api/print body.
+    """POST /api/v1/print body.
 
     Either `data` (RawLabelData) or `lookup` (PrintLookupRequest) is provided.
     Exactly one of the two must be present.

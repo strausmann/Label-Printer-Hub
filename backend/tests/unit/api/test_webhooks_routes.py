@@ -1,16 +1,16 @@
 """Unit tests for app.api.routes.webhooks — 2 endpoints, 4 scenarios each (Phase 6a Task 5).
 
 Test mapping (Spoolman):
-    1. POST /api/webhook/spoolman — missing X-API-Key header         → 422
-    2. POST /api/webhook/spoolman — wrong key                         → 401
-    3. POST /api/webhook/spoolman — valid key + valid payload          → 202 + job_id
-    4. POST /api/webhook/spoolman — valid key + malformed payload      → 422
+    1. POST /api/v1/webhook/spoolman — missing X-API-Key header         → 422
+    2. POST /api/v1/webhook/spoolman — wrong key                         → 401
+    3. POST /api/v1/webhook/spoolman — valid key + valid payload          → 202 + job_id
+    4. POST /api/v1/webhook/spoolman — valid key + malformed payload      → 422
 
 Test mapping (Grocy):
-    5. POST /api/webhook/grocy — missing X-API-Key header             → 422
-    6. POST /api/webhook/grocy — wrong key                             → 401
-    7. POST /api/webhook/grocy — valid key + valid payload              → 202 + job_id
-    8. POST /api/webhook/grocy — valid key + malformed payload          → 422
+    5. POST /api/v1/webhook/grocy — missing X-API-Key header             → 422
+    6. POST /api/v1/webhook/grocy — wrong key                             → 401
+    7. POST /api/v1/webhook/grocy — valid key + valid payload              → 202 + job_id
+    8. POST /api/v1/webhook/grocy — valid key + malformed payload          → 422
 """
 
 from __future__ import annotations
@@ -135,10 +135,10 @@ _GROCY_LABEL = LabelData(
 
 @pytest.mark.asyncio
 async def test_spoolman_webhook_missing_api_key_header_returns_422(session) -> None:
-    """POST /api/webhook/spoolman without X-API-Key returns 422 (missing required header)."""
+    """POST /api/v1/webhook/spoolman without X-API-Key returns 422 (missing required header)."""
     client = TestClient(_build_app(session), raise_server_exceptions=False)
     r = client.post(
-        "/api/webhook/spoolman",
+        "/api/v1/webhook/spoolman",
         json={"spool_id": "42", "type": "updated"},
         # No X-API-Key header
     )
@@ -147,10 +147,10 @@ async def test_spoolman_webhook_missing_api_key_header_returns_422(session) -> N
 
 @pytest.mark.asyncio
 async def test_spoolman_webhook_wrong_key_returns_401(session) -> None:
-    """POST /api/webhook/spoolman with wrong X-API-Key returns 401."""
+    """POST /api/v1/webhook/spoolman with wrong X-API-Key returns 401."""
     client = TestClient(_build_app(session), raise_server_exceptions=False)
     r = client.post(
-        "/api/webhook/spoolman",
+        "/api/v1/webhook/spoolman",
         json={"spool_id": "42", "type": "updated"},
         headers={"X-API-Key": _WRONG_KEY},
     )
@@ -159,7 +159,7 @@ async def test_spoolman_webhook_wrong_key_returns_401(session) -> None:
 
 @pytest.mark.asyncio
 async def test_spoolman_webhook_valid_payload_returns_202_with_job_id(session) -> None:
-    """POST /api/webhook/spoolman with valid key + payload returns 202 WebhookAcceptedResponse."""
+    """POST /api/v1/webhook/spoolman with a valid key and payload returns 202 with the job id."""
     await _seed_printer(session)
 
     with patch(
@@ -168,7 +168,7 @@ async def test_spoolman_webhook_valid_payload_returns_202_with_job_id(session) -
     ):
         client = TestClient(_build_app(session), raise_server_exceptions=True)
         r = client.post(
-            "/api/webhook/spoolman",
+            "/api/v1/webhook/spoolman",
             json={"spool_id": "42", "type": "updated", "quantity": 850.0},
             headers={"X-API-Key": _VALID_KEY},
         )
@@ -184,10 +184,10 @@ async def test_spoolman_webhook_valid_payload_returns_202_with_job_id(session) -
 
 @pytest.mark.asyncio
 async def test_spoolman_webhook_malformed_payload_returns_422(session) -> None:
-    """POST /api/webhook/spoolman without required spool_id returns 422."""
+    """POST /api/v1/webhook/spoolman without required spool_id returns 422."""
     client = TestClient(_build_app(session), raise_server_exceptions=False)
     r = client.post(
-        "/api/webhook/spoolman",
+        "/api/v1/webhook/spoolman",
         json={"type": "updated"},  # missing spool_id
         headers={"X-API-Key": _VALID_KEY},
     )
@@ -201,10 +201,10 @@ async def test_spoolman_webhook_malformed_payload_returns_422(session) -> None:
 
 @pytest.mark.asyncio
 async def test_grocy_webhook_missing_api_key_header_returns_422(session) -> None:
-    """POST /api/webhook/grocy without X-API-Key returns 422 (missing required header)."""
+    """POST /api/v1/webhook/grocy without X-API-Key returns 422 (missing required header)."""
     client = TestClient(_build_app(session), raise_server_exceptions=False)
     r = client.post(
-        "/api/webhook/grocy",
+        "/api/v1/webhook/grocy",
         json={"product_id": "17", "type": "stock_added"},
         # No X-API-Key header
     )
@@ -213,10 +213,10 @@ async def test_grocy_webhook_missing_api_key_header_returns_422(session) -> None
 
 @pytest.mark.asyncio
 async def test_grocy_webhook_wrong_key_returns_401(session) -> None:
-    """POST /api/webhook/grocy with wrong X-API-Key returns 401."""
+    """POST /api/v1/webhook/grocy with wrong X-API-Key returns 401."""
     client = TestClient(_build_app(session), raise_server_exceptions=False)
     r = client.post(
-        "/api/webhook/grocy",
+        "/api/v1/webhook/grocy",
         json={"product_id": "17", "type": "stock_added"},
         headers={"X-API-Key": _WRONG_KEY},
     )
@@ -225,7 +225,7 @@ async def test_grocy_webhook_wrong_key_returns_401(session) -> None:
 
 @pytest.mark.asyncio
 async def test_grocy_webhook_valid_payload_returns_202_with_job_id(session) -> None:
-    """POST /api/webhook/grocy with valid key + payload returns 202 WebhookAcceptedResponse."""
+    """POST /api/v1/webhook/grocy with valid key + payload returns 202 WebhookAcceptedResponse."""
     await _seed_printer(session)
 
     with patch(
@@ -234,7 +234,7 @@ async def test_grocy_webhook_valid_payload_returns_202_with_job_id(session) -> N
     ):
         client = TestClient(_build_app(session), raise_server_exceptions=True)
         r = client.post(
-            "/api/webhook/grocy",
+            "/api/v1/webhook/grocy",
             json={"product_id": "17", "type": "stock_added", "quantity": 3.0},
             headers={"X-API-Key": _VALID_KEY},
         )
@@ -249,10 +249,10 @@ async def test_grocy_webhook_valid_payload_returns_202_with_job_id(session) -> N
 
 @pytest.mark.asyncio
 async def test_grocy_webhook_malformed_payload_returns_422(session) -> None:
-    """POST /api/webhook/grocy without required product_id returns 422."""
+    """POST /api/v1/webhook/grocy without required product_id returns 422."""
     client = TestClient(_build_app(session), raise_server_exceptions=False)
     r = client.post(
-        "/api/webhook/grocy",
+        "/api/v1/webhook/grocy",
         json={"type": "stock_added"},  # missing product_id
         headers={"X-API-Key": _VALID_KEY},
     )
@@ -266,7 +266,7 @@ async def test_grocy_webhook_malformed_payload_returns_422(session) -> None:
 
 @pytest.mark.asyncio
 async def test_spoolman_webhook_no_enabled_printers_returns_503(session) -> None:
-    """POST /api/webhook/spoolman with no enabled printers returns 503.
+    """POST /api/v1/webhook/spoolman with no enabled printers returns 503.
 
     _resolve_default_printer_id raises 503 when the printers table has no
     enabled rows (lines 77-83 of webhooks.py).
@@ -278,7 +278,7 @@ async def test_spoolman_webhook_no_enabled_printers_returns_503(session) -> None
     ):
         client = TestClient(_build_app(session), raise_server_exceptions=False)
         r = client.post(
-            "/api/webhook/spoolman",
+            "/api/v1/webhook/spoolman",
             json={"spool_id": "42", "type": "updated"},
             headers={"X-API-Key": _VALID_KEY},
         )
@@ -288,7 +288,7 @@ async def test_spoolman_webhook_no_enabled_printers_returns_503(session) -> None
 
 @pytest.mark.asyncio
 async def test_grocy_webhook_no_enabled_printers_returns_503(session) -> None:
-    """POST /api/webhook/grocy with no enabled printers returns 503.
+    """POST /api/v1/webhook/grocy with no enabled printers returns 503.
 
     Exercises _resolve_default_printer_id (lines 77-83) via the grocy handler.
     """
@@ -299,7 +299,7 @@ async def test_grocy_webhook_no_enabled_printers_returns_503(session) -> None:
     ):
         client = TestClient(_build_app(session), raise_server_exceptions=False)
         r = client.post(
-            "/api/webhook/grocy",
+            "/api/v1/webhook/grocy",
             json={"product_id": "7", "type": "consumed"},
             headers={"X-API-Key": _VALID_KEY},
         )
@@ -309,7 +309,7 @@ async def test_grocy_webhook_no_enabled_printers_returns_503(session) -> None:
 
 @pytest.mark.asyncio
 async def test_spoolman_webhook_disabled_printer_returns_503(session) -> None:
-    """POST /api/webhook/spoolman when only printer is disabled returns 503.
+    """POST /api/v1/webhook/spoolman when only printer is disabled returns 503.
 
     _resolve_default_printer_id filters out disabled printers; with only a
     disabled printer present the enabled list is empty → 503.
@@ -330,7 +330,7 @@ async def test_spoolman_webhook_disabled_printer_returns_503(session) -> None:
     ):
         client = TestClient(_build_app(session), raise_server_exceptions=False)
         r = client.post(
-            "/api/webhook/spoolman",
+            "/api/v1/webhook/spoolman",
             json={"spool_id": "99", "type": "updated"},
             headers={"X-API-Key": _VALID_KEY},
         )
@@ -344,7 +344,7 @@ async def test_spoolman_webhook_disabled_printer_returns_503(session) -> None:
 
 @pytest.mark.asyncio
 async def test_spoolman_webhook_without_quantity_returns_202(session) -> None:
-    """POST /api/webhook/spoolman without optional 'quantity' returns 202.
+    """POST /api/v1/webhook/spoolman without optional 'quantity' returns 202.
 
     Exercises the ``if payload.quantity is not None`` False branch in the
     spoolman handler (lines 107-116 without the quantity write).
@@ -357,7 +357,7 @@ async def test_spoolman_webhook_without_quantity_returns_202(session) -> None:
     ):
         client = TestClient(_build_app(session), raise_server_exceptions=True)
         r = client.post(
-            "/api/webhook/spoolman",
+            "/api/v1/webhook/spoolman",
             json={"spool_id": "42", "type": "updated"},  # no quantity field
             headers={"X-API-Key": _VALID_KEY},
         )
@@ -369,7 +369,7 @@ async def test_spoolman_webhook_without_quantity_returns_202(session) -> None:
 
 @pytest.mark.asyncio
 async def test_grocy_webhook_without_quantity_returns_202(session) -> None:
-    """POST /api/webhook/grocy without optional 'quantity' returns 202.
+    """POST /api/v1/webhook/grocy without optional 'quantity' returns 202.
 
     Exercises the ``if payload.quantity is not None`` False branch in the
     grocy handler (lines 147-156 without the quantity write).
@@ -382,7 +382,7 @@ async def test_grocy_webhook_without_quantity_returns_202(session) -> None:
     ):
         client = TestClient(_build_app(session), raise_server_exceptions=True)
         r = client.post(
-            "/api/webhook/grocy",
+            "/api/v1/webhook/grocy",
             json={"product_id": "17", "type": "stock_added"},  # no quantity field
             headers={"X-API-Key": _VALID_KEY},
         )
@@ -639,7 +639,7 @@ async def test_a_non_finite_quantity_is_a_422_that_does_not_echo_it(
     client = TestClient(test_app, raise_server_exceptions=False)
 
     r = client.post(
-        f"/api/webhook/{route}",
+        f"/api/v1/webhook/{route}",
         content=f'{{"{id_field}": "ZQX-1", "type": "updated", "quantity": {bad}}}',
         headers={"X-API-Key": _VALID_KEY, "Content-Type": "application/json"},
     )

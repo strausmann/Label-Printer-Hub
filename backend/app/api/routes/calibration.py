@@ -30,7 +30,7 @@ from app.db.session import get_session
 from app.schemas.problem import ProblemDetail
 from app.sheets import type_service as ts
 
-router = APIRouter(prefix="/api/printers", tags=["calibration"])
+router = APIRouter(prefix="/api/v1/printers", tags=["calibration"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]

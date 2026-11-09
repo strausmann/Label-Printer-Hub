@@ -6,13 +6,13 @@ probe) a monkeypatched ``_probe_status_sync`` so no real TCP connection is
 attempted.
 
 Test mapping (one test per endpoint):
-    1. GET  /api/printers            → list_printers
-    2. GET  /api/printers/{id}/status → get_printer_status
-    3. GET  /api/printers/{id}/tape   → get_printer_tape
-    4. GET  /api/printers/{id}/queue  → get_printer_queue
-    5. POST /api/printers/{id}/pause  → pause_printer
-    6. POST /api/printers/{id}/resume → resume_printer
-    7. POST /api/printers/{id}/queue/clear → clear_printer_queue
+    1. GET  /api/v1/printers            → list_printers
+    2. GET  /api/v1/printers/{id}/status → get_printer_status
+    3. GET  /api/v1/printers/{id}/tape   → get_printer_tape
+    4. GET  /api/v1/printers/{id}/queue  → get_printer_queue
+    5. POST /api/v1/printers/{id}/pause  → pause_printer
+    6. POST /api/v1/printers/{id}/resume → resume_printer
+    7. POST /api/v1/printers/{id}/queue/clear → clear_printer_queue
 """
 
 from __future__ import annotations
@@ -141,7 +141,7 @@ async def _make_job(
 
 
 # ---------------------------------------------------------------------------
-# Test 1: GET /api/printers — list_printers
+# Test 1: GET /api/v1/printers — list_printers
 # ---------------------------------------------------------------------------
 
 
@@ -153,7 +153,7 @@ async def test_list_printers_returns_printers_with_paused_flag(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get("/api/printers")
+    r = client.get("/api/v1/printers")
 
     assert r.status_code == 200
     body = r.json()
@@ -168,7 +168,7 @@ async def test_list_printers_returns_printers_with_paused_flag(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 2: GET /api/printers/{id}/status — get_printer_status
+# Test 2: GET /api/v1/printers/{id}/status — get_printer_status
 # ---------------------------------------------------------------------------
 
 
@@ -196,7 +196,7 @@ async def test_get_printer_status_reads_cache_and_returns_online(session) -> Non
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{printer.id}/status")
+    r = client.get(f"/api/v1/printers/{printer.id}/status")
 
     assert r.status_code == 200
     body = r.json()
@@ -207,7 +207,7 @@ async def test_get_printer_status_reads_cache_and_returns_online(session) -> Non
 
 
 # ---------------------------------------------------------------------------
-# Test 3: GET /api/printers/{id}/tape — get_printer_tape
+# Test 3: GET /api/v1/printers/{id}/tape — get_printer_tape
 # ---------------------------------------------------------------------------
 
 
@@ -236,7 +236,7 @@ async def test_get_printer_tape_returns_tape_spec_from_cache(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{printer.id}/tape")
+    r = client.get(f"/api/v1/printers/{printer.id}/tape")
 
     assert r.status_code == 200
     body = r.json()
@@ -244,7 +244,7 @@ async def test_get_printer_tape_returns_tape_spec_from_cache(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 4: GET /api/printers/{id}/queue — get_printer_queue
+# Test 4: GET /api/v1/printers/{id}/queue — get_printer_queue
 # ---------------------------------------------------------------------------
 
 
@@ -259,7 +259,7 @@ async def test_get_printer_queue_returns_queued_and_printing_jobs(session) -> No
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{printer.id}/queue")
+    r = client.get(f"/api/v1/printers/{printer.id}/queue")
 
     assert r.status_code == 200
     body = r.json()
@@ -271,7 +271,7 @@ async def test_get_printer_queue_returns_queued_and_printing_jobs(session) -> No
 
 
 # ---------------------------------------------------------------------------
-# Test 5: POST /api/printers/{id}/pause — pause_printer
+# Test 5: POST /api/v1/printers/{id}/pause — pause_printer
 # ---------------------------------------------------------------------------
 
 
@@ -285,7 +285,7 @@ async def test_pause_printer_returns_204_and_sets_paused_true(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/printers/{printer.id}/pause")
+    r = client.post(f"/api/v1/printers/{printer.id}/pause")
 
     assert r.status_code == 204
 
@@ -295,7 +295,7 @@ async def test_pause_printer_returns_204_and_sets_paused_true(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 6: POST /api/printers/{id}/resume — resume_printer
+# Test 6: POST /api/v1/printers/{id}/resume — resume_printer
 # ---------------------------------------------------------------------------
 
 
@@ -309,7 +309,7 @@ async def test_resume_printer_returns_204_and_sets_paused_false(session) -> None
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/printers/{printer.id}/resume")
+    r = client.post(f"/api/v1/printers/{printer.id}/resume")
 
     assert r.status_code == 204
 
@@ -319,7 +319,7 @@ async def test_resume_printer_returns_204_and_sets_paused_false(session) -> None
 
 
 # ---------------------------------------------------------------------------
-# Test 7: POST /api/printers/{id}/queue/clear — clear_printer_queue
+# Test 7: POST /api/v1/printers/{id}/queue/clear — clear_printer_queue
 # ---------------------------------------------------------------------------
 
 
@@ -332,7 +332,7 @@ async def test_clear_printer_queue_cancels_only_queued_jobs(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/printers/{printer.id}/queue/clear")
+    r = client.post(f"/api/v1/printers/{printer.id}/queue/clear")
 
     assert r.status_code == 204
 
@@ -348,13 +348,13 @@ async def test_clear_printer_queue_cancels_only_queued_jobs(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 8: GET /api/printers/{id}/status — unknown UUID returns 404
+# Test 8: GET /api/v1/printers/{id}/status — unknown UUID returns 404
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_get_printer_status_unknown_id_returns_404(session) -> None:
-    """GET /api/printers/{id}/status with an unknown UUID returns 404.
+    """GET /api/v1/printers/{id}/status with an unknown UUID returns 404.
 
     Exercises _get_printer_or_404 (lines 62-66 of printers.py) via the
     status endpoint path.
@@ -363,20 +363,20 @@ async def test_get_printer_status_unknown_id_returns_404(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{uuid4()}/status")
+    r = client.get(f"/api/v1/printers/{uuid4()}/status")
 
     assert r.status_code == 404
     assert "not found" in r.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
-# Test 9: GET /api/printers/{id}/status — no cache row → 200 + pending
+# Test 9: GET /api/v1/printers/{id}/status — no cache row → 200 + pending
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_get_printer_status_no_cache_returns_pending(session) -> None:
-    """GET /api/printers/{id}/status returns online=None when no cache row exists.
+    """GET /api/v1/printers/{id}/status returns online=None when no cache row exists.
 
     Phase 7b: the endpoint reads printer_status_cache instead of probing
     inline.  A missing cache row means the probe worker has not run yet;
@@ -387,7 +387,7 @@ async def test_get_printer_status_no_cache_returns_pending(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{printer.id}/status")
+    r = client.get(f"/api/v1/printers/{printer.id}/status")
 
     assert r.status_code == 200
     body = r.json()
@@ -397,13 +397,13 @@ async def test_get_printer_status_no_cache_returns_pending(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 10: GET /api/printers/{id}/tape — unknown UUID returns 404
+# Test 10: GET /api/v1/printers/{id}/tape — unknown UUID returns 404
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_get_printer_tape_unknown_id_returns_404(session) -> None:
-    """GET /api/printers/{id}/tape with an unknown UUID returns 404.
+    """GET /api/v1/printers/{id}/tape with an unknown UUID returns 404.
 
     Exercises _get_printer_or_404 via the tape endpoint path (lines 250-257).
     """
@@ -411,20 +411,20 @@ async def test_get_printer_tape_unknown_id_returns_404(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{uuid4()}/tape")
+    r = client.get(f"/api/v1/printers/{uuid4()}/tape")
 
     assert r.status_code == 404
     assert "not found" in r.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
-# Test 11: GET /api/printers/{id}/tape — no cache row returns 404
+# Test 11: GET /api/v1/printers/{id}/tape — no cache row returns 404
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_get_printer_tape_no_cache_returns_404(session) -> None:
-    """GET /api/printers/{id}/tape returns 404 when no cached status exists.
+    """GET /api/v1/printers/{id}/tape returns 404 when no cached status exists.
 
     Exercises lines 252-257 (cache is None branch) of printers.py.
     """
@@ -433,20 +433,20 @@ async def test_get_printer_tape_no_cache_returns_404(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{printer.id}/tape")
+    r = client.get(f"/api/v1/printers/{printer.id}/tape")
 
     assert r.status_code == 404
     assert "no cached status" in r.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
-# Test 12: GET /api/printers/{id}/tape — cache with width_mm=0 returns 404
+# Test 12: GET /api/v1/printers/{id}/tape — cache with width_mm=0 returns 404
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_get_printer_tape_zero_width_returns_404(session) -> None:
-    """GET /api/printers/{id}/tape returns 404 when media_width_mm is 0.
+    """GET /api/v1/printers/{id}/tape returns 404 when media_width_mm is 0.
 
     Exercises lines 260-265 (no tape loaded branch) of printers.py.
     """
@@ -473,20 +473,20 @@ async def test_get_printer_tape_zero_width_returns_404(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{printer.id}/tape")
+    r = client.get(f"/api/v1/printers/{printer.id}/tape")
 
     assert r.status_code == 404
     assert "no tape loaded" in r.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
-# Test 13: GET /api/printers/{id}/status — no connection config → still works
+# Test 13: GET /api/v1/printers/{id}/status — no connection config → still works
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_get_printer_status_no_host_returns_pending(session) -> None:
-    """GET /api/printers/{id}/status returns 200+pending for printer without host.
+    """GET /api/v1/printers/{id}/status returns 200+pending for printer without host.
 
     Phase 7b: the endpoint reads the cache; it no longer inspects
     ``connection.host``.  A printer with no connection config and no cache
@@ -496,7 +496,7 @@ async def test_get_printer_status_no_host_returns_pending(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{printer.id}/status")
+    r = client.get(f"/api/v1/printers/{printer.id}/status")
 
     assert r.status_code == 200
     body = r.json()
@@ -504,35 +504,35 @@ async def test_get_printer_status_no_host_returns_pending(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 14: POST /api/printers/{id}/pause — unknown UUID returns 404
+# Test 14: POST /api/v1/printers/{id}/pause — unknown UUID returns 404
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_pause_printer_unknown_id_returns_404(session) -> None:
-    """POST /api/printers/{id}/pause with unknown UUID returns 404."""
+    """POST /api/v1/printers/{id}/pause with unknown UUID returns 404."""
     from uuid import uuid4
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/printers/{uuid4()}/pause")
+    r = client.post(f"/api/v1/printers/{uuid4()}/pause")
 
     assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
-# Test 15: POST /api/printers/{id}/queue/clear — unknown UUID returns 404
+# Test 15: POST /api/v1/printers/{id}/queue/clear — unknown UUID returns 404
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_clear_printer_queue_unknown_id_returns_404(session) -> None:
-    """POST /api/printers/{id}/queue/clear with unknown UUID returns 404."""
+    """POST /api/v1/printers/{id}/queue/clear with unknown UUID returns 404."""
     from uuid import uuid4
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/printers/{uuid4()}/queue/clear")
+    r = client.post(f"/api/v1/printers/{uuid4()}/queue/clear")
 
     assert r.status_code == 404
 
@@ -907,7 +907,7 @@ async def test_get_printer_tape_direct_unknown_tape_size_raises_404(session) -> 
 
 @pytest.mark.asyncio
 async def test_get_printer_detail_returns_full_metadata(session) -> None:
-    """GET /api/printers/{id} returns full printer metadata including paused flag.
+    """GET /api/v1/printers/{id} returns full printer metadata including paused flag.
 
     Regression for Bug 2 — the backend had no single-printer GET endpoint.
     The frontend detail page showed only Status + Tape + Error, no metadata.
@@ -917,7 +917,7 @@ async def test_get_printer_detail_returns_full_metadata(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{printer.id}")
+    r = client.get(f"/api/v1/printers/{printer.id}")
 
     assert r.status_code == 200
     body = r.json()
@@ -941,12 +941,12 @@ async def test_get_printer_detail_returns_full_metadata(session) -> None:
 
 @pytest.mark.asyncio
 async def test_get_printer_detail_unknown_id_returns_404(session) -> None:
-    """GET /api/printers/{id} returns 404 for an unknown UUID."""
+    """GET /api/v1/printers/{id} returns 404 for an unknown UUID."""
     from uuid import uuid4
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/printers/{uuid4()}")
+    r = client.get(f"/api/v1/printers/{uuid4()}")
 
     assert r.status_code == 404
     assert "not found" in r.json()["detail"]
@@ -976,13 +976,13 @@ async def test_get_printer_queue_direct_returns_active_jobs(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Task 2.7 — GET /api/printers filtert deaktivierte Drucker heraus
+# Task 2.7 — GET /api/v1/printers filtert deaktivierte Drucker heraus
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_list_printers_excludes_disabled_by_default(session) -> None:
-    """GET /api/printers gibt nur aktivierte Drucker zurück (enabled=True Default-Filter).
+    """GET /api/v1/printers gibt nur aktivierte Drucker zurück (enabled=True Default-Filter).
 
     Setup: 1 aktivierter + 1 deaktivierter Drucker in der DB.
     Erwartet: Response enthält nur den aktivierten Drucker.
@@ -994,7 +994,7 @@ async def test_list_printers_excludes_disabled_by_default(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get("/api/printers")
+    r = client.get("/api/v1/printers")
 
     assert r.status_code == 200
     body = r.json()
@@ -1006,7 +1006,7 @@ async def test_list_printers_excludes_disabled_by_default(session) -> None:
 
 @pytest.mark.asyncio
 async def test_list_printers_include_disabled_query_param_ignored(session) -> None:
-    """GET /api/printers?include_disabled=true wird ignoriert — Public-API filtert immer.
+    """GET /api/v1/printers?include_disabled=true wird ignoriert — Public-API filtert immer.
 
     Die Route hat keinen include_disabled Query-Param. FastAPI ignoriert unbekannte
     Query-Parameter. Der Filter bleibt aktiv unabhängig vom URL-Parameter.
@@ -1018,7 +1018,7 @@ async def test_list_printers_include_disabled_query_param_ignored(session) -> No
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get("/api/printers?include_disabled=true")
+    r = client.get("/api/v1/printers?include_disabled=true")
 
     assert r.status_code == 200
     body = r.json()

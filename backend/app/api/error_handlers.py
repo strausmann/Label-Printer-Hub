@@ -62,10 +62,10 @@ def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, _validation_handler)
 
 
-SHEET_PREFIXES = ("/api/sheet-types", "/api/sheets", "/api/sheet-cells")
-_SHEET_PRINT_PATH = re.compile(r"^/api/print/[^/]+/sheet(/preview)?$")
+SHEET_PREFIXES = ("/api/v1/sheet-types", "/api/v1/sheets", "/api/v1/sheet-cells")
+_SHEET_PRINT_PATH = re.compile(r"^/api/v1/print/[^/]+/sheet(/preview)?$")
 """Sheet print and its preview (pre-flight C19). Their bodies carry label text and purposes, so
-a validation error must not repeat them. The tape routes under ``/api/print`` are not matched."""
+a validation error must not repeat them. The tape routes under ``/api/v1/print`` are not matched."""
 
 
 def is_sheet_path(path: str) -> bool:
@@ -73,7 +73,7 @@ def is_sheet_path(path: str) -> bool:
     return path.startswith(SHEET_PREFIXES) or _SHEET_PRINT_PATH.match(path) is not None
 
 
-WEBHOOK_PREFIX = "/api/webhook/"
+WEBHOOK_PREFIX = "/api/v1/webhook/"
 """Webhook bodies are the integrations' own: a rejected value is not repeated (run-12 R12-1)."""
 
 

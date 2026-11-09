@@ -1,4 +1,4 @@
-"""Pydantic-Schemas für POST /api/print/{slug_or_uuid}/batch."""
+"""Pydantic-Schemas für POST /api/v1/print/{slug_or_uuid}/batch."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from app.schemas.print_request import PrintRequest
 
 
 class BatchRequest(BaseModel):
-    """Top-level POST /api/print/{slug_or_uuid}/batch body."""
+    """Top-level POST /api/v1/print/{slug_or_uuid}/batch body."""
 
     model_config = ConfigDict(extra="forbid")
     items: Annotated[list[PrintRequest], Field(min_length=1, max_length=500)]

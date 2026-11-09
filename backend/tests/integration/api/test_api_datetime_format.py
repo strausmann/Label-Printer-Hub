@@ -33,13 +33,13 @@ def _has_tz_suffix(s: str) -> bool:
 
 
 async def test_printer_read_has_tz_suffix(api_client_with_seed):
-    """GET /api/printers returns datetimes with TZ info.
+    """GET /api/v1/printers returns datetimes with TZ info.
 
     TODO: Task C2 (upsert_runtime_printer) will auto-seed a printer at startup,
     making this test always exercise the assertion block. Until then, the test
     skips gracefully when no printers exist in the test DB.
     """
-    resp = await api_client_with_seed.get("/api/printers", headers={"X-Pangolin-User": "test"})
+    resp = await api_client_with_seed.get("/api/v1/printers", headers={"X-Pangolin-User": "test"})
     assert resp.status_code == 200
     body = resp.json()
     if not body:
@@ -53,13 +53,13 @@ async def test_printer_read_has_tz_suffix(api_client_with_seed):
 
 
 async def test_job_read_has_tz_suffix(api_client_with_seed):
-    """GET /api/jobs returns datetimes with TZ info on all datetime fields.
+    """GET /api/v1/jobs returns datetimes with TZ info on all datetime fields.
 
     TODO: Task C2 (upsert_runtime_printer) will auto-seed a printer; an explicit
     print invocation will create jobs. Until then, the test skips gracefully when
     no jobs exist in the test DB.
     """
-    resp = await api_client_with_seed.get("/api/jobs", headers={"X-Pangolin-User": "test"})
+    resp = await api_client_with_seed.get("/api/v1/jobs", headers={"X-Pangolin-User": "test"})
     assert resp.status_code == 200
     body = resp.json()
     if not body:

@@ -124,7 +124,7 @@ def _read_fields(detail: ss.SheetDetail) -> dict[str, Any]:
     )
 
 
-@router.get("/api/sheets", response_model=list[SheetSummary], summary="List sheets")
+@router.get("/api/v1/sheets", response_model=list[SheetSummary], summary="List sheets")
 async def list_sheets(
     session: SessionDep,
     _auth: ReadDep,
@@ -143,7 +143,7 @@ async def list_sheets(
 
 
 @router.get(
-    "/api/sheets/next-code",
+    "/api/v1/sheets/next-code",
     response_model=NextCode,
     summary="The code a new sheet of a type would probably get",
     responses={404: {"description": "Sheet type not found."}},
@@ -175,7 +175,7 @@ def _language(request: Request) -> str | None:
 
 
 @router.get(
-    "/api/sheets/margin-check",
+    "/api/v1/sheets/margin-check",
     response_model=MarginCheckRead,
     summary="Where the margin ID and the feed mark of a new sheet would go on a printer",
     description=(
@@ -218,7 +218,7 @@ async def margin_check(
 
 
 @router.get(
-    "/api/sheets/{code}",
+    "/api/v1/sheets/{code}",
     response_model=SheetRead,
     summary="One sheet with all cells that are not free (discarded sheets too)",
     responses=_NOT_FOUND,
@@ -229,7 +229,7 @@ async def get_sheet(code: CodePath, session: SessionDep, _auth: ReadDep) -> Shee
 
 
 @router.post(
-    "/api/sheets",
+    "/api/v1/sheets",
     response_model=SheetCreated,
     status_code=status.HTTP_201_CREATED,
     summary="Create a sheet, with the cells already used marked by hand",
@@ -315,7 +315,7 @@ async def _create_with_id_cell(
 
 
 @router.post(
-    "/api/sheets/{code}/discard",
+    "/api/v1/sheets/{code}/discard",
     response_model=SheetRead,
     summary="Discard a sheet; its code is never issued again",
     responses={**_NOT_FOUND, 409: {"description": "A running job holds cells of the sheet."}},
@@ -329,7 +329,7 @@ async def discard_sheet(
 
 
 @router.post(
-    "/api/sheets/{code}/cells/mark",
+    "/api/v1/sheets/{code}/cells/mark",
     response_model=SheetRead,
     summary="Mark free cells as used by hand",
     responses=_WRITE_ERRORS,
@@ -349,7 +349,7 @@ async def mark_cells(
 
 
 @router.post(
-    "/api/sheets/{code}/cells/unmark",
+    "/api/v1/sheets/{code}/cells/unmark",
     response_model=SheetRead,
     summary="Free cells that were marked by hand",
     responses=_WRITE_ERRORS,
@@ -365,7 +365,7 @@ async def unmark_cells(
 
 
 @router.post(
-    "/api/sheets/{code}/cells/resolve",
+    "/api/v1/sheets/{code}/cells/resolve",
     response_model=SheetRead,
     summary="Settle cells waiting for confirmation as printed or not printed",
     responses=_WRITE_ERRORS,
@@ -381,7 +381,7 @@ async def resolve_cells(
 
 
 @router.get(
-    "/api/sheet-cells",
+    "/api/v1/sheet-cells",
     response_model=list[CellHitRead],
     summary="Where an integration item was printed before, newest first",
 )

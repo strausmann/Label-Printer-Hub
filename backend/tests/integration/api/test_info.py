@@ -1,4 +1,4 @@
-"""GET /api/info (public) and GET /api/v1/system/logs (admin)."""
+"""GET /api/v1/info (public) and GET /api/v1/system/logs (admin)."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ async def _insert_admin_key(*, enabled: bool = True, expires_in: timedelta | Non
 
 
 async def test_info_shape(api_client_with_seed) -> None:
-    resp = await api_client_with_seed.get("/api/info")
+    resp = await api_client_with_seed.get("/api/v1/info")
     assert resp.status_code == 200
     body = resp.json()
     assert set(body) == {
@@ -79,7 +79,7 @@ async def test_info_sso_configured_follows_trust_token(
 ) -> None:
     monkeypatch.setenv("PRINTER_HUB_SSO_TRUST_TOKEN", FAKE_TRUST)
     get_settings.cache_clear()
-    body = (await api_client_with_seed.get("/api/info")).json()
+    body = (await api_client_with_seed.get("/api/v1/info")).json()
     assert body["auth"]["sso_configured"] is True
 
 
@@ -87,7 +87,7 @@ async def test_bootstrap_open_reflects_admin_keys(
     api_client_with_seed, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def bootstrap_open() -> bool:
-        resp = await api_client_with_seed.get("/api/info")
+        resp = await api_client_with_seed.get("/api/v1/info")
         return resp.json()["auth"]["bootstrap_open"]
 
     # No bootstrap key configured -> closed.
@@ -118,7 +118,7 @@ async def test_info_never_contains_secrets(
     }.items():
         monkeypatch.setenv(f"PRINTER_HUB_{name}", value)
     get_settings.cache_clear()
-    resp = await api_client_with_seed.get("/api/info")
+    resp = await api_client_with_seed.get("/api/v1/info")
     assert resp.status_code == 200
     for value in (FAKE_BOOTSTRAP, FAKE_TRUST, FAKE_SECRET_KEY, FAKE_WEBHOOK, FAKE_PAPERLESS):
         assert value not in resp.text
@@ -158,7 +158,7 @@ async def test_info_integrations_follow_is_configured(
     from app.integrations.registry import IntegrationRegistry
 
     # Nothing is bound in this app (no lifespan), so every integration reads as not set up.
-    body = (await api_client_with_seed.get("/api/info")).json()
+    body = (await api_client_with_seed.get("/api/v1/info")).json()
     assert body["integrations"] == [
         {"name": "snipeit", "configured": False},
         {"name": "grocy", "configured": False},
@@ -166,7 +166,7 @@ async def test_info_integrations_follow_is_configured(
     ]
 
     monkeypatch.setattr(IntegrationRegistry.get("grocy"), "is_configured", lambda: True)
-    body = (await api_client_with_seed.get("/api/info")).json()
+    body = (await api_client_with_seed.get("/api/v1/info")).json()
     assert {i["name"]: i["configured"] for i in body["integrations"]} == {
         "snipeit": False,
         "grocy": True,
@@ -184,7 +184,7 @@ async def test_info_integrations_leak_no_url_or_key(
     monkeypatch.setattr(plugin, "is_configured", lambda: True)
     monkeypatch.setattr(plugin, "_base_url", url, raising=False)
     monkeypatch.setattr(plugin, "_api_key", key, raising=False)
-    resp = await api_client_with_seed.get("/api/info")
+    resp = await api_client_with_seed.get("/api/v1/info")
     assert {i["name"]: i["configured"] for i in resp.json()["integrations"]}["snipeit"] is True
     assert url not in resp.text and "snipe-it.example" not in resp.text and key not in resp.text
     assert all(set(i) == {"name", "configured"} for i in resp.json()["integrations"])
@@ -200,7 +200,7 @@ async def test_info_license_and_source(
     monkeypatch.setattr(main_module, "HUB_VERSION", "1.1.0")
     monkeypatch.setattr(main_module, "HUB_REVISION", "0123456789abcdef0123456789abcdef01234567")
     monkeypatch.setattr(main_module, "HUB_REPO_URL", repo)
-    resp = await api_client_with_seed.get("/api/info")
+    resp = await api_client_with_seed.get("/api/v1/info")
     assert resp.status_code == 200
     body = resp.json()
     assert body["license"] == "AGPL-3.0-or-later"

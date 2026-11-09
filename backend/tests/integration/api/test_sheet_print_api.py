@@ -1,4 +1,4 @@
-"""HTTP tests of POST /api/print/{printer}/sheet: the print through the real queue (Task 7).
+"""HTTP tests of POST /api/v1/print/{printer}/sheet: the print through the real queue (Task 7).
 
 The full app with its lifespan: the real print queue and ``SheetCellsOutcome``, the fake IPP
 printer behind the page printer, SQLite. The runner ends a job in memory before the outcome
@@ -86,7 +86,7 @@ class Rig:
     sent: list[dict[str, Any]] = field(default_factory=list)
 
     def url(self, printer: str | None = None) -> str:
-        return f"/api/print/{printer or self.printer}/sheet"
+        return f"/api/v1/print/{printer or self.printer}/sheet"
 
     async def print(self, body: dict[str, Any], **kw: Any) -> httpx.Response:
         return await self.client.post(
@@ -94,7 +94,7 @@ class Rig:
         )
 
     async def sheet(self, code: str) -> dict[str, Any]:
-        resp = await self.client.get(f"/api/sheets/{code}", headers=self.reader)
+        resp = await self.client.get(f"/api/v1/sheets/{code}", headers=self.reader)
         assert resp.status_code == 200, resp.text
         out: dict[str, Any] = resp.json()
         return out
@@ -334,7 +334,7 @@ async def test_expected_cells_mismatch() -> None:
     async with running() as rig:
         code = await _sheet(used=17)
         preview = await rig.client.post(
-            f"/api/print/{rig.printer}/sheet/preview", json=_body(code, 3), headers=rig.reader
+            f"/api/v1/print/{rig.printer}/sheet/preview", json=_body(code, 3), headers=rig.reader
         )
         expected = preview.json()["expected_cells"]
         async with _factory()() as s:  # someone marks cell 18 by hand in between
@@ -476,7 +476,7 @@ async def test_other_client_reads_same_sheet() -> None:
         resp = await rig.print({"items": items, "placements": [{"sheet": code}]})
 
         assert resp.status_code == 202, resp.text
-        seen = await rig.client.get(f"/api/sheets/{code}", headers=other)  # key B, acceptance 11
+        seen = await rig.client.get(f"/api/v1/sheets/{code}", headers=other)  # key B, acceptance 11
         cells = {c["cell"]: c for c in seen.json()["cells"] if c["cell"] > 17}
         assert sorted(cells) == [18, 19, 20]
         assert [cells[n]["purpose"] for n in (18, 19, 20)] == ["Jam 0", "Jam 1", "Jam 2"]
@@ -621,7 +621,7 @@ async def test_preview_then_print_store_the_same_margin_and_mark() -> None:
         code = await _sheet(placement="margin")
         body = _body(code, 3)
         preview = await rig.client.post(
-            f"/api/print/{rig.printer}/sheet/preview", json=body, headers=rig.reader
+            f"/api/v1/print/{rig.printer}/sheet/preview", json=body, headers=rig.reader
         )
         assert preview.status_code == 200, preview.text
         (shown,) = preview.json()["pages"]
@@ -640,7 +640,7 @@ async def test_preview_then_print_store_the_same_margin_and_mark() -> None:
 async def test_openapi_documents_the_print_route() -> None:
     async with running() as rig:
         schema = (await rig.client.get("/openapi.json")).json()
-        op = schema["paths"]["/api/print/{printer_key}/sheet"]["post"]
+        op = schema["paths"]["/api/v1/print/{printer_key}/sheet"]["post"]
         assert "202" in op["responses"]
         assert {"403", "404", "409", "422", "502", "503"} <= set(op["responses"])
         assert "SheetPrintResponse" in schema["components"]["schemas"]
@@ -652,7 +652,7 @@ async def test_every_documented_error_of_the_sheet_print_routes_has_the_envelope
 ) -> None:
     async with running() as rig:
         schema = (await rig.client.get("/openapi.json")).json()
-        op = schema["paths"][f"/api/print/{{printer_key}}/sheet{suffix}"]["post"]
+        op = schema["paths"][f"/api/v1/print/{{printer_key}}/sheet{suffix}"]["post"]
         errors = {code: r for code, r in op["responses"].items() if code[0] in "45"}
         assert {"403", "404", "409", "422", "502", "503"} <= set(errors)
         for code, response in errors.items():
@@ -715,7 +715,7 @@ async def test_no_connection_is_held_while_page_jobs_are_submitted(
         tasks = [asyncio.create_task(rig.print(_body(code, 1))) for code in codes]
         async with asyncio.timeout(15):
             await probe.everyone_in.wait()
-            other = await rig.client.get(f"/api/sheets/{codes[0]}", headers=rig.reader)
+            other = await rig.client.get(f"/api/v1/sheets/{codes[0]}", headers=rig.reader)
         responses = await asyncio.gather(*tasks)
 
     assert probe.checked_out == 0

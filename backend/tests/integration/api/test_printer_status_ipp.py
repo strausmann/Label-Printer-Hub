@@ -1,4 +1,4 @@
-"""GET /api/printers/{id}/status for IPP page printers (cache written by IppStatusProducer)
+"""GET /api/v1/printers/{id}/status for IPP page printers (cache written by IppStatusProducer)
 and the regression for tape printers (new fields stay null)."""
 
 from __future__ import annotations
@@ -111,7 +111,7 @@ async def test_ipp_status_has_reasons_markers_and_trays(api) -> None:
     await producer.probe_once()
     await producer.stop()
 
-    body = (await client.get(f"/api/printers/{pid}/status")).json()
+    body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
     assert body["kind"] == "page"
     assert body["online"] is True
     assert body["tape_loaded"] is None
@@ -131,7 +131,7 @@ async def test_ipp_status_has_reasons_markers_and_trays(api) -> None:
 
     fake.reasons = ["media-empty-error"]
     await _reprobe(factory, pid, fake)
-    body = (await client.get(f"/api/printers/{pid}/status")).json()
+    body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
     assert body["error_state"] == "media-empty"
 
 
@@ -161,7 +161,7 @@ async def test_ipp_offline_status(api) -> None:
             )
         )
         await s.commit()
-    body = (await client.get(f"/api/printers/{pid}/status")).json()
+    body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
     # An incomplete cache row degrades to the basic page answer, never a 500.
     assert body["kind"] == "page" and body["online"] is False
     assert body["last_error"] == "IppUnreachableError"
@@ -185,7 +185,7 @@ async def test_tape_status_unchanged(api) -> None:
             )
         )
         await s.commit()
-    body = (await client.get(f"/api/printers/{pid}/status")).json()
+    body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
     assert body["online"] is True
     assert body["tape_loaded"] == "12mm"
     assert body["error_state"] is None
@@ -197,7 +197,7 @@ async def test_tape_status_unchanged(api) -> None:
 async def test_no_probe_yet_note(api, backend: str) -> None:
     client, factory = api
     pid = await _printer(factory, backend)
-    body = (await client.get(f"/api/printers/{pid}/status")).json()
+    body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
     assert body["online"] is None and "No probe yet" in body["note"]
 
 
@@ -236,6 +236,6 @@ async def test_loaded_media_is_merged_into_configured_trays(api) -> None:
             ]
         )
         await s.commit()
-    body = (await client.get(f"/api/printers/{pid}/status")).json()
+    body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
     # Only configured trays are listed; the reported media comes from the matching key.
     assert [(t["key"], t["media"]) for t in body["trays"]] == [("main-tray", "A4 labels")]

@@ -67,7 +67,7 @@ async def test_happy_path_raw_data() -> None:
         _inner.dependency_overrides[_dep] = lambda _c=_FAKE_AUTH: _c
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "Smoke", "primary_id": "S-1", "qr_payload": "https://e.x"},
@@ -124,7 +124,7 @@ async def test_offline_synchronous_503(offline_mock_backend) -> None:
         _inner.dependency_overrides[_dep] = lambda _c=_FAKE_AUTH: _c
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},

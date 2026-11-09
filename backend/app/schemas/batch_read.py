@@ -1,4 +1,4 @@
-"""Phase 2: BatchRead Schema für GET /api/batches/{id}."""
+"""Phase 2: BatchRead Schema für GET /api/v1/batches/{id}."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Batch-Dispatcher: orchestriert POST /api/print/{slug}/batch.
+"""Batch-Dispatcher: orchestriert POST /api/v1/print/{slug}/batch.
 
 Phase 1k.1a Task 17: tape-consistency-Check entfernt, weil tape-unabhängige
 ContentTypes gemischte ContentTypes pro Batch erlauben — alle Items rendern

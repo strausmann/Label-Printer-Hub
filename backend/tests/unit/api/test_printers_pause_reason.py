@@ -1,4 +1,4 @@
-"""E-11: automatic and manual pauses are visible on /api/printers with a reason.
+"""E-11: automatic and manual pauses are visible on /api/v1/printers with a reason.
 
 Decision 1 (sync): the manual API pause must also pause the queue worker and the
 API resume must release an auto-paused worker, otherwise the two notions drift.
@@ -120,7 +120,7 @@ async def test_auto_pause_is_visible_with_reason_and_event(session) -> None:
         await _fail_one_job(queue, printer.id)
         client = TestClient(_app(session, queue))
 
-        for url in ("/api/printers", f"/api/printers/{printer.id}"):
+        for url in ("/api/v1/printers", f"/api/v1/printers/{printer.id}"):
             body = client.get(url).json()
             row = body[0] if isinstance(body, list) else body
             assert row["paused"] is True
@@ -145,9 +145,9 @@ async def test_api_resume_releases_auto_paused_worker_and_next_job_prints(sessio
         client = TestClient(_app(session, queue))
 
         backend.fail = False
-        assert client.post(f"/api/printers/{printer.id}/resume").status_code == 204
+        assert client.post(f"/api/v1/printers/{printer.id}/resume").status_code == 204
 
-        row = client.get(f"/api/printers/{printer.id}").json()
+        row = client.get(f"/api/v1/printers/{printer.id}").json()
         assert row["paused"] is False
         assert row["pause"] is None
         assert queue.is_paused(printer.id) is False
@@ -170,10 +170,10 @@ async def test_manual_pause_pauses_worker_with_user_source(session) -> None:
     printer, _backend, queue, sub = await _setup(session, TapeEmptyError())
     try:
         client = TestClient(_app(session, queue))
-        assert client.post(f"/api/printers/{printer.id}/pause").status_code == 204
+        assert client.post(f"/api/v1/printers/{printer.id}/pause").status_code == 204
 
         assert queue.is_paused(printer.id) is True
-        row = client.get(f"/api/printers/{printer.id}").json()
+        row = client.get(f"/api/v1/printers/{printer.id}").json()
         assert row["paused"] is True
         assert row["pause"]["source"] == "user"
         assert row["pause"]["reason_code"] == "user"
@@ -189,11 +189,11 @@ async def test_worker_state_not_paused_means_not_paused(session) -> None:
     try:
         await _fail_one_job(queue, printer.id)
         client = TestClient(_app(session, queue))
-        assert client.get(f"/api/printers/{printer.id}").json()["paused"] is True
+        assert client.get(f"/api/v1/printers/{printer.id}").json()["paused"] is True
 
         queue.is_paused = lambda _id: False  # type: ignore[method-assign]
         queue.pause_info = lambda _id: None  # type: ignore[method-assign]
-        row = client.get(f"/api/printers/{printer.id}").json()
+        row = client.get(f"/api/v1/printers/{printer.id}").json()
         assert row["paused"] is False
         assert row["pause"] is None
     finally:
@@ -204,8 +204,8 @@ async def test_worker_state_not_paused_means_not_paused(session) -> None:
 async def test_without_queue_falls_back_to_db_flag(session) -> None:
     printer = await _printer(session)
     client = TestClient(_app(session, None))
-    assert client.post(f"/api/printers/{printer.id}/pause").status_code == 204
-    row = client.get(f"/api/printers/{printer.id}").json()
+    assert client.post(f"/api/v1/printers/{printer.id}/pause").status_code == 204
+    row = client.get(f"/api/v1/printers/{printer.id}").json()
     assert row["paused"] is True
     assert row["pause"] is None
 
@@ -225,10 +225,10 @@ async def test_legacy_resume_clears_db_flag_and_worker_dispatches(session) -> No
     backend.fail = False
     try:
         client = TestClient(_legacy_app(session, queue, printer.id))
-        assert client.post(f"/api/printers/{printer.id}/pause").status_code == 204
-        assert client.post("/printer/resume").status_code == 200
+        assert client.post(f"/api/v1/printers/{printer.id}/pause").status_code == 204
+        assert client.post("/api/v1/printer/resume").status_code == 200
 
-        row = client.get(f"/api/printers/{printer.id}").json()
+        row = client.get(f"/api/v1/printers/{printer.id}").json()
         assert row["paused"] is False
         assert row["pause"] is None
         job_id = await queue.submit(printer.id, Image.new("1", (200, 128)), tape_mm=12)
@@ -279,7 +279,7 @@ async def test_restart_keeps_recovered_job_queued_for_db_paused_printer(session)
     printer, backend, queue, _sub = await _setup(session, TapeEmptyError())
     backend.fail = False
     assert (
-        TestClient(_app(session, queue)).post(f"/api/printers/{printer.id}/pause").status_code
+        TestClient(_app(session, queue)).post(f"/api/v1/printers/{printer.id}/pause").status_code
         == 204
     )
     await queue.stop(timeout_s=2.0)
@@ -299,11 +299,11 @@ async def test_restart_keeps_recovered_job_queued_for_db_paused_printer(session)
         assert (await queue2.get(str(db_job.id))).state.value == "queued"
 
         client = TestClient(_app(session, queue2))
-        row = client.get(f"/api/printers/{printer.id}").json()
+        row = client.get(f"/api/v1/printers/{printer.id}").json()
         assert row["paused"] is True
         assert row["pause"]["source"] == "user"
 
-        assert client.post(f"/api/printers/{printer.id}/resume").status_code == 204
+        assert client.post(f"/api/v1/printers/{printer.id}/resume").status_code == 204
         job = await queue2.wait_for_job(str(db_job.id), timeout_s=2.0)
         assert job.state.value == "completed"
         assert backend.printed == 1
