@@ -22,7 +22,7 @@ These were printed on a real QL-820NWB with 62 mm DK endless tape on 2026-11-09.
 
 ## Open points for the implementation
 
-- Whether the QL honours a feed margin below the brother_ql default. Compare the total printed length of compact (0 dots) with small QR (12 dots).
+- **Resolved (2026-11-09, four prints in a row):** the QL-820NWB keeps about **3 mm of feed at each end** whatever feed margin is sent (35, 12 or 0 dots). The labels only got shorter by the layout margin removed in the image. Implementation: keep the brother_ql default feed margin, since sending less has no effect. Minimise only the layout margin and the quiet zone along the feed. Minimum label length = content + about 2 × 3 mm.
 - Scan reliability of the 2-module quiet zone. ISO/IEC 18004 asks for 4 modules, while most phone scanners accept 2.
 - Make the orientation explicit (`across` or `along`) instead of the 1.4.1 size heuristic. See the #258 comments.
 
