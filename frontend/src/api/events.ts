@@ -1,4 +1,4 @@
-import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient, type QueryFilters } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { pageJobStateFrom, pageJobStateKey } from "../features/jobs/pageJobState";
 import { recordJobEvent, resyncWatchedJobs } from "../features/jobs/printWatch";
@@ -51,29 +51,39 @@ function parseFrame(frame: MessageEvent): Frame {
  * joined, not restarted (TanStack Query). Its answer can predate the event, and producers send a
  * change once (the page printer's status: only when it differs), so the card would keep the old
  * state for good. Seen as a flaky e2e: a printer set to "stopped" stayed "Ready" on a fresh page.
+ *
+ * The set is collected BEFORE invalidating: the invalidation itself starts a fetch for an active
+ * query without data (one in error), and that fetch needs no follow-up.
  */
 const scheduledFirstLoads = new WeakSet<Promise<unknown>>();
 
-function refetchFirstLoads(client: QueryClient, queryKey: readonly unknown[]): void {
-  for (const query of client.getQueryCache().findAll({ queryKey, fetchStatus: "fetching" })) {
-    const pending = query.promise;
+function invalidateAndRefetchFirstLoads(client: QueryClient, filters: QueryFilters): void {
+  const firstLoads: { promise: Promise<unknown>; queryKey: readonly unknown[] }[] = [];
+  for (const query of client.getQueryCache().findAll({ ...filters, fetchStatus: "fetching" })) {
+    // `query.promise` is the retryer's promise, so it settles after the result is stored
+    // (query-core 5.105.3, query.js: the fetch's `promise` and its `onSuccess`/`onError`); the
+    // follow-up below relies on that order. Re-check this when query-core is upgraded.
+    const promise = query.promise;
     // One follow-up per first load, however many events (or keys of one event) name it.
-    if (query.state.data !== undefined || !pending || scheduledFirstLoads.has(pending)) continue;
-    scheduledFirstLoads.add(pending);
-    const exact = query.queryKey;
-    void pending.then(
-      () => client.invalidateQueries({ queryKey: exact, exact: true }),
-      () => client.invalidateQueries({ queryKey: exact, exact: true }),
-    );
+    if (query.state.data !== undefined || !promise || scheduledFirstLoads.has(promise)) continue;
+    scheduledFirstLoads.add(promise);
+    firstLoads.push({ promise, queryKey: query.queryKey });
+  }
+  void client.invalidateQueries(filters);
+  // A fetch the invalidation started is current as of now: a second key of the same event, which
+  // runs next, must not mistake it for a first load that predates the event.
+  for (const query of client.getQueryCache().findAll({ ...filters, fetchStatus: "fetching" })) {
+    if (query.promise) scheduledFirstLoads.add(query.promise);
+  }
+  for (const { promise, queryKey } of firstLoads) {
+    const again = () => client.invalidateQueries({ queryKey, exact: true });
+    void promise.then(again, again);
   }
 }
 
 /** Which cached queries an event makes stale. Task 11 relies on these keys. */
 function invalidate(client: QueryClient, type: EventType, { printerId, data }: Frame): void {
-  const run = (queryKey: readonly unknown[]) => {
-    void client.invalidateQueries({ queryKey });
-    refetchFirstLoads(client, queryKey);
-  };
+  const run = (queryKey: readonly unknown[]) => invalidateAndRefetchFirstLoads(client, { queryKey });
   switch (type) {
     case "job.state_changed": {
       // A page job's place at the printer changes with from_state == to_state, so a refetch of the
@@ -94,7 +104,7 @@ function invalidate(client: QueryClient, type: EventType, { printerId, data }: F
       if (!code) break;
       run(sheetKey(code));
       // Only previews that name the code: a worst-case preview takes seconds to render.
-      void client.invalidateQueries({
+      invalidateAndRefetchFirstLoads(client, {
         queryKey: [SHEET_PREVIEW_KEY],
         predicate: (query) => previewNamesCode(query.queryKey, code),
       });
@@ -188,9 +198,9 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
         // The snapshot of a fresh stream has no sheet frames, so a `sheet.updated` sent while the
         // stream was down never arrives: whatever shows sheets is fetched again.
         if (openedBefore) {
-          void queryClient.invalidateQueries({ queryKey: sheetsListKey.slice(0, 1) });
-          void queryClient.invalidateQueries({ queryKey: typesListKey.slice(0, 1) });
-          void queryClient.invalidateQueries({ queryKey: [SHEET_PREVIEW_KEY] });
+          invalidateAndRefetchFirstLoads(queryClient, { queryKey: sheetsListKey.slice(0, 1) });
+          invalidateAndRefetchFirstLoads(queryClient, { queryKey: typesListKey.slice(0, 1) });
+          invalidateAndRefetchFirstLoads(queryClient, { queryKey: [SHEET_PREVIEW_KEY] });
           // A job that ended while the stream was down sent a frame nobody saw.
           void resyncWatchedJobs((jobId) => apiFetch<{ state: string; error: string | null }>(`/api/v1/jobs/${encodeURIComponent(jobId)}`));
         }
@@ -240,6 +250,8 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
       setConnecting(true);
       open();
       // The stream may stay down; the visible data still refreshes (not while the session is unverified).
+      // Not routed through the first-load helper on purpose: this is the user's own refresh, not an
+      // event that can be lost, and the user can press it again.
       if (!isSessionUnknown()) void queryClient.invalidateQueries();
     };
 

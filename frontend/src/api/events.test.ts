@@ -257,6 +257,106 @@ describe("useHubEvents", () => {
     }
   });
 
+  describe("first loads that an event lands on, beyond the plain key paths", () => {
+    const code = "L4736-0001";
+    const previewKey = ["sheet-preview", "p1", { items: [], placements: [{ sheet: code, cells: "first_free" }] }];
+    const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const flush = () => act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+
+    function pendingQuery(c: QueryClient, queryKey: readonly unknown[]) {
+      const answers: ((v: string) => void)[] = [];
+      const rejections: ((e: Error) => void)[] = [];
+      const queryFn = vi.fn(
+        () =>
+          new Promise<string>((resolve, reject) => {
+            answers.push(resolve);
+            rejections.push(reject);
+          }),
+      );
+      const unsubscribe = new QueryObserver(c, { queryKey, queryFn }).subscribe(() => {});
+      return { answers, rejections, queryFn, unsubscribe };
+    }
+
+    it("sheet.updated: a preview naming the code, still on its first render, is rendered again after it lands", async () => {
+      const c = client();
+      setup(c);
+      const q = pendingQuery(c, previewKey);
+      try {
+        expect(q.queryFn).toHaveBeenCalledTimes(1);
+        act(() => last().emit("sheet.updated", null, { code }));
+        await act(async () => q.answers[0]!("render from before the update"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+
+    it("sheet.updated: a preview that does not name the code is left alone", async () => {
+      const c = client();
+      setup(c);
+      const q = pendingQuery(c, ["sheet-preview", "p1", { items: [], placements: [{ sheet: "L4736-0002", cells: "first_free" }] }]);
+      try {
+        act(() => last().emit("sheet.updated", null, { code }));
+        await act(async () => q.answers[0]!("render"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(1);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+
+    it("the resync after an automatic reconnect reads a preview again that is still on its first render", async () => {
+      const c = client();
+      setup(c);
+      act(() => last().open());
+      act(() => last().fail());
+      act(() => void vi.advanceTimersByTime(1000));
+      const q = pendingQuery(c, previewKey);
+      try {
+        act(() => last().open());
+        await act(async () => q.answers[0]!("render from before the resync"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+
+    it("a query in error, without data, is fetched once by the invalidation and not again after it lands", async () => {
+      const c = client();
+      setup(c);
+      const q = pendingQuery(c, ["printers", "p1", "status"]);
+      try {
+        await act(async () => q.rejections[0]!(new Error("first fetch failed")));
+        await flush();
+        expect(c.getQueryState(["printers", "p1", "status"])?.status).toBe("error");
+        act(() => last().emit("printer.status", "p1"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+        await act(async () => q.answers[1]!("ready"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+
+    it("a first fetch that fails is read again after the event too", async () => {
+      const c = client();
+      setup(c);
+      const q = pendingQuery(c, ["printers", "p1", "status"]);
+      try {
+        act(() => last().emit("printer.status", "p1"));
+        await act(async () => q.rejections[0]!(new Error("network down")));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+  });
+
   it("printers_changed invalidates printers and reopens the stream", () => {
     const { invalidate } = setup();
     const first = last();
