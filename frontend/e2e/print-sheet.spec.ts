@@ -103,6 +103,9 @@ test.describe.serial("print onto a sheet", () => {
     const sheet = (await (await page.request.get(`/api/v1/sheets/${EDGE}`)).json()) as { total: number; used: number; reserved: number; unconfirmed: number };
     const free = sheet.total - sheet.used - sheet.reserved - sheet.unconfirmed;
     const needed = free + 11;
+    // The page of the test before may still be a cart that previews: leave it first, or its
+    // preview answer is the one taken below and its body is gone with the navigation.
+    await page.goto("/");
     // The preview asks the server for real: one sheet per run, the first `free` items placed.
     const answer = page.waitForResponse((r) => r.url().includes("/preview") && r.status() === 200);
     await openCart(page, `/cart?sheet=${EDGE}`, needed);
