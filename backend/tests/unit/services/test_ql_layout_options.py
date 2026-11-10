@@ -98,37 +98,79 @@ def test_along_62mm_uses_the_full_width_qr_and_grows_with_the_text() -> None:
     # along: the band across the tape is the printable width, the length grows with the text
     assert short.height == long.height == 696
     assert long.width > short.width
-    short_box = _qr_box(short, x_max=37 * 18)  # QR + quiet zone; the text starts after it
-    long_box = _qr_box(long, x_max=37 * 18)
-    # full printable width minus a 4-module quiet zone on each side: 696 // 37 = 18 px modules
-    assert short_box[2] - short_box[0] == long_box[2] - long_box[0] == 29 * 18
-    assert short_box[:2] == long_box[:2] == (4 * 18, (696 - 37 * 18) // 2 + 4 * 18)
+    box = 37 * 18  # the fixed QR box along: printable width minus the tape remainder
+    short_box = _qr_box(short, x_max=box)  # the text starts after the box
+    long_box = _qr_box(long, x_max=box)
+    # the reference-length payload is version 3 at 18 px modules, 4-module quiet zone
+    assert long_box[2] - long_box[0] == 29 * 18
+    assert long_box[:2] == (4 * 18, (696 - box) // 2 + 4 * 18)
+    # a shorter payload (version 2) sits centred in the identical fixed box
+    assert _centre(short_box) == _centre(long_box) == (box / 2, 696 / 2)
 
 
-def test_payload_beyond_the_fixed_qr_capacity_is_refused_not_shrunk() -> None:
+def _centre(box: tuple[int, int, int, int]) -> tuple[float, float]:
+    return ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+
+
+def test_payload_too_long_for_4px_modules_is_refused() -> None:
+    """Compact's fixed box (222 px) holds at most version 7 at 4 px modules: 122 bytes at M."""
     data = LabelData(
         source_app="manual",
         primary_id="X",
         title="Y",
-        qr_payload="https://example.invalid/" + "a" * 60,
+        qr_payload="https://example.invalid/" + "a" * 120,
     )
     with pytest.raises(QrPayloadTooLongError) as excinfo:
         LayoutEngine().render(62, ContentType.QR_TWO_LINES, data)
-    assert excinfo.value.max_bytes == 53
+    assert excinfo.value.max_bytes == 122
     assert excinfo.value.length == len(data.qr_payload or "")
 
 
-def test_payload_above_ecc_m_capacity_keeps_the_same_qr_size() -> None:
-    """45 bytes exceed version 3-M (42) but fit 3-L (53): same module count, same pixels."""
-    base = LabelData(
-        source_app="manual", primary_id="X", title="Y", qr_payload="https://e.invalid/1"
+@pytest.mark.parametrize("payload_len", [19, 35, 73, 122])
+@pytest.mark.parametrize("preset", list(QlLayoutPreset))
+def test_any_fitting_payload_keeps_the_fixed_qr_box(
+    payload_len: int, preset: QlLayoutPreset
+) -> None:
+    """The QR box (code + quiet zone) is fixed per preset; the code is centred in it, whole
+    pixels per module (at least 4), quiet zone at least 4 modules across the width."""
+    payload = ("https://example.invalid/" + "x" * 200)[:payload_len]
+    ref = LayoutEngine().render(
+        62, ContentType.QR_ONLY, REFERENCE, orientation=LabelOrientation.ACROSS, preset=preset
     )
-    longer = base.model_copy(update={"qr_payload": "https://example.invalid/hardware/1234567890"})
-    assert 42 < len(longer.qr_payload or "") <= 53
-    a = LayoutEngine().render(62, ContentType.QR_TWO_LINES, base)
-    b = LayoutEngine().render(62, ContentType.QR_TWO_LINES, longer)
-    box_a, box_b = _qr_box(a, 230), _qr_box(b, 230)
-    assert box_a == box_b
+    image = LayoutEngine().render(
+        62,
+        ContentType.QR_ONLY,
+        REFERENCE.model_copy(update={"qr_payload": payload}),
+        orientation=LabelOrientation.ACROSS,
+        preset=preset,
+    )
+    assert image.size == ref.size  # same label: the box decides its length, not the payload
+    ref_box = _qr_box(ref, ref.width)
+    box = _qr_box(image, image.width)
+    assert abs(_centre(box)[0] - _centre(ref_box)[0]) <= 0.5
+    assert abs(_centre(box)[1] - _centre(ref_box)[1]) <= 0.5
+    side = box[2] - box[0]
+    module = next(m for m in range(12, 3, -1) if side % m == 0 and (side // m - 17) % 4 == 0)
+    assert module >= 4
+    assert box[0] >= 4 * module
+
+
+def test_hub_test_label_payload_prints_on_62mm_across_and_along() -> None:
+    """The hub's own test label QR (``{public_url}/printers/{uuid}``) is >= 67 bytes."""
+    data = LabelData(
+        source_app="manual",
+        primary_id="QL-820NWB office",
+        title="62 mm · 2026-11-10 12:00",
+        secondary=("Printer Hub 1.5.0",),
+        qr_payload="https://printhub.example.com/printers/0f8fad5b-d9cb-469f-a165-70867728950e",
+    )
+    assert len(data.qr_payload or "") >= 67
+    across = LayoutEngine().render(62, ContentType.QR_THREE_LINES, data)
+    along = LayoutEngine().render(
+        62, ContentType.QR_THREE_LINES, data, orientation=LabelOrientation.ALONG
+    )
+    assert across.width == 696
+    assert along.height == 696
 
 
 @pytest.mark.parametrize("tape_mm", [12, 24])

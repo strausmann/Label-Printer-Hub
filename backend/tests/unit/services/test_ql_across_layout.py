@@ -128,19 +128,25 @@ def test_qr_has_the_same_size_and_position_for_any_payload_and_text() -> None:
             qr_payload="https://example.invalid/hardware/19",
         )
     )
-    small_box = _black_box(small, x_max=230)
-    medium_box = _black_box(medium, x_max=230)
-    large_box = _black_box(large, x_max=230)
-    # the black bounding box varies with the data modules; the finder patterns pin the
-    # corners, so its size and position is the QR's own size and position
-    assert small_box == medium_box, "same label length: QR must sit at the identical pixels"
-    assert small_box[2] - small_box[0] == large_box[2] - large_box[0]
-    assert small_box[0] == large_box[0]
-    # the longer label keeps the QR vertically centred (integer centring: +-1 px)
+    small_box = _black_box(small, x_max=222)
+    medium_box = _black_box(medium, x_max=222)
+    large_box = _black_box(large, x_max=222)
+    # The finder patterns pin the code's corners, so the black bounding box is the code.
+    # Controller ruling: the fixed thing is the QR *box* (code + quiet zone, 222 px across
+    # for compact); the version follows the payload and the code is centred in the box.
+    # Same version (both 35-40 bytes, version 3): identical pixels.
+    assert (medium_box[0], medium_box[2]) == (large_box[0], large_box[2])
+    assert medium_box[2] - medium_box[0] == large_box[2] - large_box[0] == 29 * 6
+    # Any version: the code is centred in the fixed box across the width (x centre 111) ...
+    for box in (small_box, medium_box, large_box):
+        assert (box[0] + box[2]) / 2 == 111
+    # ... and vertically centred on the label (integer centring: +-1 px)
+    assert small.height == medium.height  # the box, not the code, sets the minimum length
     small_offset = small_box[1] + small_box[3] - small.height
+    medium_offset = medium_box[1] + medium_box[3] - medium.height
     large_offset = large_box[1] + large_box[3] - large.height
     assert large.height > small.height
-    assert abs(small_offset - large_offset) <= 1
+    assert abs(small_offset) <= 1 and abs(medium_offset) <= 1 and abs(large_offset) <= 1
 
 
 @pytest.mark.parametrize("content_type", [ContentType.QR_ONLY, ContentType.QR_ONE_LINE])

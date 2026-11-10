@@ -12,10 +12,15 @@ Two orientations exist on 62 mm DK endless tape:
   height is the 696 px band across the tape, its width the label length. The QR takes the
   full printable width minus its quiet zone. The backend rotates it on the ``along`` flag.
 
-Within an orientation the QR code never changes with the content: version 3 with whole-pixel
-modules. A payload that exceeds version 3 is refused (``QrPayloadTooLongError``), never
-shrunk. Error correction is M; a payload that only fits with L uses L, which keeps the module
-count and therefore the exact pixel size and position of the code.
+Within an orientation the QR **box** never changes with the content (controller ruling on the
+maintainer's "identical pixel size and position"): each preset, and the along layout, has a
+fixed box for the code plus its quiet zone, defined by the approved reference (version 3 at
+the preset's module size). The QR version follows the payload: the smallest version that
+holds it at error correction M, drawn with the largest whole-pixel module size that keeps the
+quiet zone (4 modules across the width, the preset's count along the feed) inside the box,
+and centred in the box. The reference payload is version 3 at the preset's module size, so
+the golden images are unchanged. Modules never go below ``QR_MIN_MODULE_PX``; a payload that
+needs smaller modules is refused (``QrPayloadTooLongError``).
 
 Feed margin: every preset keeps the brother_ql default feed margin. Four prints in a row
 showed that the QL-820NWB keeps about 3 mm of feed at each end whatever feed margin is sent
@@ -35,6 +40,7 @@ from typing import Final
 import qrcode
 import qrcode.constants
 import qrcode.exceptions
+import qrcode.util
 from PIL import Image, ImageDraw, ImageFont
 
 from app.printer_backends.exceptions import QrPayloadTooLongError, UnsupportedTapeError
@@ -49,11 +55,11 @@ QL62_PRINTABLE_PX: Final = 696
 ACROSS_TAPES_MM: Final[frozenset[int]] = frozenset({62})
 """Tape widths with an across-width layout. Other DK endless widths follow later (#258)."""
 
-QR_VERSION: Final = 3
-QR_MODULES: Final = 17 + 4 * QR_VERSION  # 29
+QR_REFERENCE_VERSION: Final = 3
+QR_MODULES: Final = 17 + 4 * QR_REFERENCE_VERSION  # 29: the version the boxes are sized for
 QR_QUIET_ACROSS_MODULES: Final = 4
-QR_MAX_BYTES: Final = 53
-"""Byte-mode capacity of a version-3 code with error correction L."""
+QR_MIN_MODULE_PX: Final = 4
+"""Smallest module size drawn (0.34 mm at 300 dpi); below it a payload is refused."""
 
 TEXT_GAP_PX: Final = round(1.5 * DOTS_PER_MM)  # QR quiet zone -> text block
 TEXT_RIGHT_PX: Final = round(1.0 * DOTS_PER_MM)  # text block -> tape edge
@@ -115,6 +121,16 @@ class _AcrossPreset:
     def margin_px(self) -> int:
         return round(self.layout_margin_mm * DOTS_PER_MM)
 
+    @property
+    def qr_box(self) -> QrBox:
+        """The fixed QR box: version 3 at ``module_px`` plus the preset's quiet zones."""
+        return QrBox(
+            across=(QR_MODULES + 2 * QR_QUIET_ACROSS_MODULES) * self.module_px,
+            along=(QR_MODULES + 2 * self.quiet_along_modules) * self.module_px,
+            quiet_across=QR_QUIET_ACROSS_MODULES,
+            quiet_along=self.quiet_along_modules,
+        )
+
 
 # Exact values of the README table; standard's fonts scale with its larger code.
 ACROSS_PRESETS: Final[dict[QlLayoutPreset, _AcrossPreset]] = {
@@ -126,6 +142,7 @@ ACROSS_PRESETS: Final[dict[QlLayoutPreset, _AcrossPreset]] = {
 # Along (62 mm): the band is the full printable width.
 ALONG_MODULE_PX: Final = QL62_PRINTABLE_PX // (QR_MODULES + 2 * QR_QUIET_ACROSS_MODULES)  # 18
 ALONG_FONT_PX: Final = (120, 96, 72, 72)
+ALONG_BOX_PX: Final = (QR_MODULES + 2 * QR_QUIET_ACROSS_MODULES) * ALONG_MODULE_PX  # 666
 
 
 # ---------------------------------------------------------------------------------------
@@ -166,22 +183,68 @@ def resolve_layout(
 # ---------------------------------------------------------------------------------------
 
 
-def build_fixed_qr(payload: str, module_px: int) -> Image.Image:
-    """A version-3 QR code without quiet zone, ``module_px`` device pixels per module.
+@dataclass(frozen=True)
+class QrBox:
+    """The fixed area of a QR code plus its quiet zone, in device pixels.
 
-    Error correction M, falling back to L for a longer payload (same module count, same
-    size). Raises ``QrPayloadTooLongError`` when the payload does not fit version 3-L.
+    ``across`` runs across the tape width, ``along`` along the feed; ``quiet_*`` are the
+    minimum quiet zones in modules on each side.
     """
-    for ecc in (qrcode.constants.ERROR_CORRECT_M, qrcode.constants.ERROR_CORRECT_L):
-        qr = qrcode.QRCode(version=QR_VERSION, error_correction=ecc, box_size=module_px, border=0)
-        qr.add_data(payload)
-        try:
-            qr.make(fit=False)
-        except qrcode.exceptions.DataOverflowError:
-            continue
-        image: Image.Image = qr.make_image(fill_color="black", back_color="white").get_image()
-        return image.convert("L")
-    raise QrPayloadTooLongError(length=len(payload.encode("utf-8")), max_bytes=QR_MAX_BYTES)
+
+    across: int
+    along: int
+    quiet_across: int
+    quiet_along: int
+
+    def module_px(self, modules: int) -> int:
+        """Largest whole-pixel module size that fits ``modules`` plus the quiet zones."""
+        return min(
+            self.across // (modules + 2 * self.quiet_across),
+            self.along // (modules + 2 * self.quiet_along),
+        )
+
+    @property
+    def max_version(self) -> int:
+        """Highest QR version that still fits at ``QR_MIN_MODULE_PX`` (0: none fits)."""
+        version = 0
+        while version < 40 and self.module_px(17 + 4 * (version + 1)) >= QR_MIN_MODULE_PX:
+            version += 1
+        return version
+
+
+def _byte_capacity_m(version: int) -> int:
+    """Byte-mode capacity of ``version`` at error correction M (14 for 1, ..., 122 for 7)."""
+    bits = qrcode.util.BIT_LIMIT_TABLE[qrcode.constants.ERROR_CORRECT_M][version]
+    count_bits = qrcode.util.length_in_bits(qrcode.util.MODE_8BIT_BYTE, version)
+    return int((bits - 4 - count_bits) // 8)
+
+
+def build_box_qr(payload: str, box: QrBox) -> tuple[Image.Image, int]:
+    """The QR code for ``payload`` drawn to fit ``box``; returns (image, module size).
+
+    The smallest version that holds the payload at error correction M, at the largest
+    whole-pixel module size that keeps the quiet zones inside the box. The image is the code
+    without quiet zone (``modules * module`` px square); the caller centres it in the box.
+    Raises ``QrPayloadTooLongError`` when the payload needs modules below
+    ``QR_MIN_MODULE_PX`` (``max_bytes``: the byte capacity of the largest version that fits).
+    """
+    max_version = box.max_version
+    length = len(payload.encode("utf-8"))
+    refused = QrPayloadTooLongError(length=length, max_bytes=_byte_capacity_m(max_version))
+    if length > 4 * _byte_capacity_m(max_version):  # cheap reject before any encoding work
+        raise refused
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, border=0)
+    qr.add_data(payload)
+    try:
+        qr.make(fit=True)
+    except qrcode.exceptions.DataOverflowError:
+        raise refused from None
+    if qr.version > max_version:
+        raise refused
+    module = box.module_px(qr.modules_count)
+    qr.box_size = module
+    image: Image.Image = qr.make_image(fill_color="black", back_color="white").get_image()
+    return image.convert("L"), module
 
 
 @lru_cache(maxsize=64)
@@ -337,14 +400,15 @@ def render_across(
     """Render a 62 mm label across the tape width: 696 px wide, length from the content."""
     spec = ACROSS_PRESETS[preset]
     width = QL62_PRINTABLE_PX
-    module = spec.module_px
     margin = spec.margin_px
     has_qr = _has_qr(content_type)
+    box = spec.qr_box
 
+    qr: Image.Image | None = None
     if has_qr:
-        qr_side = (QR_MODULES + 2 * QR_QUIET_ACROSS_MODULES) * module
-        qr_length = (QR_MODULES + 2 * spec.quiet_along_modules) * module
-        text_x = qr_side + TEXT_GAP_PX
+        qr, _ = build_box_qr(data.qr_payload or "", box)  # refuses before any text work
+        qr_length = box.along
+        text_x = box.across + TEXT_GAP_PX
     else:
         qr_length = 0
         text_x = TEXT_RIGHT_PX
@@ -361,9 +425,9 @@ def render_across(
     text_height = sum(line.height for line in lines)
     height = max(qr_length, text_height) + 2 * margin
     canvas = Image.new("L", (width, height), 255)
-    if has_qr:
-        qr = build_fixed_qr(data.qr_payload or "", module)
-        canvas.paste(qr, (QR_QUIET_ACROSS_MODULES * module, (height - QR_MODULES * module) // 2))
+    if qr is not None:
+        # centred in the fixed box (box at x=0, vertically centred on the label)
+        canvas.paste(qr, ((box.across - qr.width) // 2, (height - qr.height) // 2))
     draw = ImageDraw.Draw(canvas)
     y = margin + (height - 2 * margin - text_height) // 2
     for line in lines:
@@ -429,13 +493,17 @@ def render_along_62(content_type: ContentType, data: LabelData) -> Image.Image:
     """Render a 62 mm label along the tape: a 696 px band, length grows with the text.
 
     The image is landscape (height = band across the tape); the QL backend rotates it on the
-    ``along`` flag. The QR side is the printable width minus its 4-module quiet zone.
+    ``along`` flag. The QR box is fixed (``ALONG_BOX_PX`` square, the printable width minus
+    the remainder of a whole-pixel version-3 code); the code is centred in it.
     """
     band = QL62_PRINTABLE_PX
-    module = ALONG_MODULE_PX
     has_qr = _has_qr(content_type)
-    qr_side = (QR_MODULES + 2 * QR_QUIET_ACROSS_MODULES) * module if has_qr else 0
+    qr_side = ALONG_BOX_PX if has_qr else 0
     text_x = qr_side + TEXT_GAP_PX if has_qr else TEXT_RIGHT_PX
+    qr: Image.Image | None = None
+    if has_qr:
+        box = QrBox(ALONG_BOX_PX, ALONG_BOX_PX, QR_QUIET_ACROSS_MODULES, QR_QUIET_ACROSS_MODULES)
+        qr, _ = build_box_qr(data.qr_payload or "", box)
 
     fields, hidden = _fields(content_type, data)
     max_text_width = ALONG_MAX_LENGTH_PX - text_x - TEXT_RIGHT_PX
@@ -451,10 +519,9 @@ def render_along_62(content_type: ContentType, data: LabelData) -> Image.Image:
     length = text_x + text_width + TEXT_RIGHT_PX if lines else max(qr_side, 1)
     length = min(length, ALONG_MAX_LENGTH_PX)  # never allocate beyond the documented cap
     canvas = Image.new("L", (length, band), 255)
-    if has_qr:
-        qr = build_fixed_qr(data.qr_payload or "", module)
-        quiet = QR_QUIET_ACROSS_MODULES * module
-        canvas.paste(qr, (quiet, (band - qr_side) // 2 + quiet))
+    if qr is not None:
+        offset = (qr_side - qr.width) // 2  # centred in the fixed box
+        canvas.paste(qr, (offset, (band - qr_side) // 2 + offset))
     draw = ImageDraw.Draw(canvas)
     text_height = sum(ln.height for ln in lines)
     y = max(0, (band - text_height) // 2)

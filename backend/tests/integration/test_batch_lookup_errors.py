@@ -179,13 +179,13 @@ async def test_qr_payload_too_long_for_the_62mm_qr_is_422(batch_env) -> None:
     )
     item = {
         "content_type": "qr_only",
-        "data": {"qr_payload": "https://example.invalid/" + "a" * 60},
+        "data": {"qr_payload": "https://example.invalid/" + "a" * 200},
     }
     response = await client.post("/api/v1/print/p/batch", json={"items": [item]})
     assert response.status_code == 422, response.text
     detail = response.json()["detail"]
     assert detail["error_code"] == "qr_payload_too_long"
-    assert detail["error_detail"]["max_bytes"] == 53
+    assert detail["error_detail"]["max_bytes"] == 122  # version 7-M at 4 px modules
     queue.enqueue_batch.assert_not_awaited()
 
 

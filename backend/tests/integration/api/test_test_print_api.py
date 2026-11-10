@@ -362,8 +362,29 @@ async def test_tape_without_tape_is_409(env: Env) -> None:
     assert await env.job_rows() == []
 
 
-async def test_tape_test_label_too_long_for_the_fixed_qr_is_422(env: Env) -> None:
-    """#258: 62 mm has a fixed version-3 QR; a longer printer URL is refused, never a 500."""
+async def test_tape_test_label_prints_on_62mm_with_its_long_printer_url(env: Env) -> None:
+    """#258: the fixed QR box takes the version the payload needs; the >= 67-byte printer URL
+    of the test label prints on 62 mm across (it did not fit a fixed version 3)."""
+    env.backend.preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=62, error_flags=[]
+    )
+    r = await env.post(env.tape_id)
+    assert r.status_code == 202, r.text
+    await env.done(r.json()["job_id"])
+    [row] = await env.job_rows()
+    assert len(row.payload["label_data"]["qr_payload"]) >= 67
+    assert row.payload["options"]["orientation"] == "across"
+    [(image, tape_mm)] = env.tape.printed
+    assert (tape_mm, image.width) == (62, 696)
+
+
+async def test_tape_test_label_too_long_for_the_qr_box_is_422(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A printer link beyond 4 px modules is refused with its own problem type, never a 500."""
+    monkeypatch.setattr(
+        "app.api.routes.test_print.printer_url", lambda *_a: "https://h.invalid/" + "p" * 200
+    )
     env.backend.preflight_check.return_value = PreflightStatus(
         hr_printer_status="idle", loaded_tape_mm=62, error_flags=[]
     )

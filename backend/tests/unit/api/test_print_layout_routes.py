@@ -124,6 +124,6 @@ async def test_preview_refuses_across_on_12mm_and_too_long_payloads() -> None:
         {"content_type": "qr_only", "data": _DATA, "tape_mm": 12, "orientation": "across"}
     )
     assert (status, body["error_code"]) == (409, "unsupported_tape")
-    long_data = {**_DATA, "qr_payload": "https://example.invalid/" + "a" * 60}
+    long_data = {**_DATA, "qr_payload": "https://example.invalid/" + "a" * 200}
     status, _, body = await _preview({"content_type": "qr_only", "data": long_data, "tape_mm": 62})
     assert (status, body["error_code"]) == (422, "qr_payload_too_long")
