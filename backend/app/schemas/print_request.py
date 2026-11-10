@@ -7,7 +7,7 @@ to 'manual' for raw requests).
 
 from __future__ import annotations
 
-from typing import Self
+from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -43,20 +43,39 @@ class PrintOptions(BaseModel):
     Ignored for ``along``."""
 
 
+QR_PAYLOAD_MAX = 512  # keeps a render's cost bounded; a scan URL is far shorter
+RAW_TEXT_MAX = 512  # one raw text field (title, id, a secondary line, a listing row)
+RAW_SECONDARY_MAX = 10  # secondary lines per label
+RAW_LISTING_MAX = 100  # listing rows per label
+
+_RawText = Annotated[str, Field(max_length=RAW_TEXT_MAX)]
+
+
+class RawListingItem(LabelDataItem):
+    """One listing row of raw label data, with bounded text."""
+
+    item: _RawText
+    qr_payload: str | None = Field(default=None, max_length=QR_PAYLOAD_MAX)
+
+
 class RawLabelData(BaseModel):
     """Raw label payload accepted when the client supplies data directly.
 
     Mirrors LabelData minus `source_app` (set server-side to 'manual').
     All content fields are optional — ContentType-specific validation
     happens in LayoutEngine._validate_data.
+
+    Every free text is bounded at the request (the same caps as sheet items): 512 characters
+    per text and QR payload, at most 10 ``secondary`` lines and 100 ``items``. A label shows
+    far less; the renderer shortens what does not fit (#258 security review).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    title: str | None = None
-    primary_id: str | None = None
-    qr_payload: str | None = None
-    secondary: tuple[str, ...] = ()
-    items: tuple[LabelDataItem, ...] = ()
+    title: _RawText | None = None
+    primary_id: _RawText | None = None
+    qr_payload: str | None = Field(default=None, max_length=QR_PAYLOAD_MAX)
+    secondary: tuple[_RawText, ...] = Field(default=(), max_length=RAW_SECONDARY_MAX)
+    items: tuple[RawListingItem, ...] = Field(default=(), max_length=RAW_LISTING_MAX)
 
 
 class PrintRequest(BaseModel):

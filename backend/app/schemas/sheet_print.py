@@ -15,8 +15,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 
 from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.content_type import ContentType
-from app.schemas.label_data_item import LabelDataItem
-from app.schemas.print_request import PrintLookupRequest, RawLabelData
+from app.schemas.print_request import (
+    QR_PAYLOAD_MAX,
+    RAW_LISTING_MAX,
+    RAW_SECONDARY_MAX,
+    RAW_TEXT_MAX,
+    PrintLookupRequest,
+    RawLabelData,
+    RawListingItem,
+)
 from app.sheets.exchange import GeometryMm
 from app.sheets.naming import KEY_PATTERN
 
@@ -45,10 +52,6 @@ MAX_CELLS = 400
 MAX_TYPE_VERSION = 1_000_000  # far above any real count; keeps the value inside SQLite's integer
 TEXT_MAX = 120
 
-QR_PAYLOAD_MAX = 512  # keeps a preview's cost bounded; a scan URL is far shorter
-RAW_TEXT_MAX = 512  # one raw text field (title, id, a secondary line, a listing row)
-RAW_SECONDARY_MAX = 10  # secondary lines per label
-RAW_LISTING_MAX = 100  # listing rows per label
 
 _Cell = Annotated[int, Field(ge=1, le=MAX_CELLS)]
 _SOURCE_PATTERN = r"^[a-z][a-z0-9_-]{0,31}$"
@@ -59,14 +62,8 @@ class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-_RawText = Annotated[str, Field(max_length=RAW_TEXT_MAX)]
-
-
-class SheetRawListingItem(LabelDataItem):
-    """One listing row of a raw item, with bounded text."""
-
-    item: _RawText
-    qr_payload: str | None = Field(default=None, max_length=QR_PAYLOAD_MAX)
+SheetRawListingItem = RawListingItem
+"""One listing row of a raw item, with bounded text (the tape request's row, #258)."""
 
 
 class SheetRawLabelData(RawLabelData):
@@ -75,14 +72,9 @@ class SheetRawLabelData(RawLabelData):
     A page job stores its labels in the job row, and a preview renders them, so the sizes are
     capped at the request: ``qr_payload`` at 512 characters, every other text at 512, at most
     10 ``secondary`` lines and 100 ``items`` (listing rows). A cell shows far less than that;
-    the renderer shortens what does not fit.
+    the renderer shortens what does not fit. Since #258 the tape ``RawLabelData`` carries the
+    same caps, so this class adds nothing but its name.
     """
-
-    title: _RawText | None = None
-    primary_id: _RawText | None = None
-    qr_payload: str | None = Field(default=None, max_length=QR_PAYLOAD_MAX)
-    secondary: tuple[_RawText, ...] = Field(default=(), max_length=RAW_SECONDARY_MAX)
-    items: tuple[SheetRawListingItem, ...] = Field(default=(), max_length=RAW_LISTING_MAX)
 
 
 class SheetItem(_Body):

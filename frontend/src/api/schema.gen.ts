@@ -1983,16 +1983,6 @@ export interface components {
             updated_at: string;
         };
         /**
-         * LabelDataItem
-         * @description One row in a qr_with_listing label (e.g. Kallax-Regal-Uebersicht).
-         */
-        LabelDataItem: {
-            /** Item */
-            item: string;
-            /** Qr Payload */
-            qr_payload?: string | null;
-        };
-        /**
          * LabelOrientation
          * @description How the label content runs on endless tape.
          * @enum {string}
@@ -2824,13 +2814,17 @@ export interface components {
          *     Mirrors LabelData minus `source_app` (set server-side to 'manual').
          *     All content fields are optional — ContentType-specific validation
          *     happens in LayoutEngine._validate_data.
+         *
+         *     Every free text is bounded at the request (the same caps as sheet items): 512 characters
+         *     per text and QR payload, at most 10 ``secondary`` lines and 100 ``items``. A label shows
+         *     far less; the renderer shortens what does not fit (#258 security review).
          */
         RawLabelData: {
             /**
              * Items
              * @default []
              */
-            items: components["schemas"]["LabelDataItem"][];
+            items: components["schemas"]["RawListingItem"][];
             /** Primary Id */
             primary_id?: string | null;
             /** Qr Payload */
@@ -2842,6 +2836,16 @@ export interface components {
             secondary: string[];
             /** Title */
             title?: string | null;
+        };
+        /**
+         * RawListingItem
+         * @description One listing row of raw label data, with bounded text.
+         */
+        RawListingItem: {
+            /** Item */
+            item: string;
+            /** Qr Payload */
+            qr_payload?: string | null;
         };
         /** ReadinessResponse */
         ReadinessResponse: {
@@ -3209,14 +3213,15 @@ export interface components {
          *     A page job stores its labels in the job row, and a preview renders them, so the sizes are
          *     capped at the request: ``qr_payload`` at 512 characters, every other text at 512, at most
          *     10 ``secondary`` lines and 100 ``items`` (listing rows). A cell shows far less than that;
-         *     the renderer shortens what does not fit.
+         *     the renderer shortens what does not fit. Since #258 the tape ``RawLabelData`` carries the
+         *     same caps, so this class adds nothing but its name.
          */
         SheetRawLabelData: {
             /**
              * Items
              * @default []
              */
-            items: components["schemas"]["SheetRawListingItem"][];
+            items: components["schemas"]["RawListingItem"][];
             /** Primary Id */
             primary_id?: string | null;
             /** Qr Payload */
@@ -3228,16 +3233,6 @@ export interface components {
             secondary: string[];
             /** Title */
             title?: string | null;
-        };
-        /**
-         * SheetRawListingItem
-         * @description One listing row of a raw item, with bounded text.
-         */
-        SheetRawListingItem: {
-            /** Item */
-            item: string;
-            /** Qr Payload */
-            qr_payload?: string | null;
         };
         /** SheetRead */
         SheetRead: {
