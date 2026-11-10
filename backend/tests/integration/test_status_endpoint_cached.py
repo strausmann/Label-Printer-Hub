@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import NoReturn
 
 import pytest
 import pytest_asyncio
@@ -158,16 +159,66 @@ async def test_status_endpoint_returns_pending_when_cache_empty(
     assert "no probe yet" in body["note"].lower()
 
 
-async def test_status_endpoint_returns_under_100ms(api_client_with_warm_cache):
-    """Even with no live SNMP path, the endpoint answers from cache in <100ms."""
+@pytest.fixture
+def printer_contact_guard(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Record (and refuse) every way the request could reach a printer.
+
+    Covers the named probe functions (SNMP preflight/identity, the ESC i S probe in the
+    printers route) and, underneath them, every outgoing socket: blocking ``connect`` and
+    the event loop's TCP/UDP endpoints (pysnmp and the IPP client go through those). The
+    test database is SQLite, so a correct request opens no socket at all.
+    """
+    import asyncio.base_events
+    import socket
+
+    import app.api.routes.printers as printers_route
+    import app.printer_backends.snmp_helper as snmp_helper
+
+    calls: list[str] = []
+
+    def _refuse(name: str) -> tuple[Callable[..., NoReturn], Callable[..., Awaitable[NoReturn]]]:
+        def _sync(*_args: object, **_kwargs: object) -> NoReturn:
+            calls.append(name)
+            raise OSError(f"test: {name} must not be called by the status endpoint")
+
+        async def _async(*_args: object, **_kwargs: object) -> NoReturn:
+            calls.append(name)
+            raise OSError(f"test: {name} must not be called by the status endpoint")
+
+        return _sync, _async
+
+    monkeypatch.setattr(socket.socket, "connect", _refuse("socket.connect")[0])
+    monkeypatch.setattr(
+        asyncio.base_events.BaseEventLoop, "create_connection", _refuse("loop.create_connection")[1]
+    )
+    monkeypatch.setattr(
+        asyncio.base_events.BaseEventLoop,
+        "create_datagram_endpoint",
+        _refuse("loop.create_datagram_endpoint")[1],
+    )
+    monkeypatch.setattr(snmp_helper, "query_preflight", _refuse("query_preflight")[1])
+    monkeypatch.setattr(snmp_helper, "query_identity", _refuse("query_identity")[1])
+    monkeypatch.setattr(printers_route, "_probe_status_sync", _refuse("_probe_status_sync")[0])
+    return calls
+
+
+async def test_status_endpoint_answers_from_cache_without_contacting_the_printer(
+    api_client_with_warm_cache, printer_contact_guard
+):
+    """The endpoint answers from the cache and never probes the printer during the request.
+
+    This used to be a wall-clock check (``< 100 ms``), which went red on a slow gate run
+    without any defect. What it is meant to prove is "no live probe on the request path";
+    that is checked by effect: no probe function is called and no socket is opened.
+    """
     client, pid = api_client_with_warm_cache
-    t0 = time.monotonic()
     resp = await client.get(f"/api/v1/printers/{pid}/status", headers={"X-Pangolin-User": "test"})
-    elapsed_ms = (time.monotonic() - t0) * 1000
     assert resp.status_code == 200
-    assert elapsed_ms < 100, f"endpoint blocked {elapsed_ms:.1f}ms"
+    assert printer_contact_guard == []
     body = resp.json()
+    # The values come from the cache row, not from a probe.
     assert body["online"] is True
+    assert body["tape_loaded"] == "12mm"
 
 
 async def test_status_endpoint_returns_404_for_unknown_printer(
