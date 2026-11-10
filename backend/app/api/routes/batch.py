@@ -13,6 +13,7 @@ from app.auth.scope_deps import require_print
 from app.db.session import get_session
 from app.models.print_batch import PrintBatch
 from app.printer_backends.exceptions import (
+    ConflictingOrientationError,
     ContentTypeDataMismatchError,
     NoTapeLoadedError,
     PrinterCoverOpenError,
@@ -200,6 +201,16 @@ async def create_batch(
                     "The label data is missing fields required for the selected content type."
                 ),
                 "error_detail": {"missing_fields": list(exc.missing_fields)},
+            },
+        ) from exc
+    except ConflictingOrientationError as exc:
+        # 422: a batch prints with one orientation (#258)
+        raise HTTPException(
+            422,
+            detail={
+                "error_code": "conflicting_orientation",
+                "error_message": "The batch items ask for different orientations.",
+                "error_detail": {"orientations": list(exc.orientations)},
             },
         ) from exc
     except QrPayloadTooLongError as exc:

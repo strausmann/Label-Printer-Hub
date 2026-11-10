@@ -44,11 +44,22 @@ def test_update_payload_accepts_a_62mm_default() -> None:
         {"62": {"orientation": "sideways"}},
         {"62": {"preset": "huge"}},
         {"62": {"orientation": "across", "extra": 1}},
+        {"0": {"orientation": "along"}},
+        {"63": {"orientation": "along"}},
+        {"100000": {"orientation": "along"}},
+        {str(w): {"orientation": "along"} for w in range(1, 18)},  # 17 widths
     ],
 )
 def test_update_payload_rejects_invalid_defaults(value: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         PrinterUpdatePayload.model_validate({"layout_defaults": value})
+
+
+def test_sixteen_widths_up_to_62mm_are_accepted() -> None:
+    value = {str(w): {"orientation": "along"} for w in range(47, 62)}
+    value["62"] = {"orientation": "across", "preset": "compact"}
+    patch = PrinterUpdatePayload.model_validate({"layout_defaults": value})
+    assert patch.layout_defaults is not None and len(patch.layout_defaults) == 16
 
 
 def test_create_and_update_store_json_with_string_keys() -> None:

@@ -57,11 +57,20 @@ ACROSS_TAPE_WIDTHS_MM: frozenset[int] = frozenset({62})
 """Tape widths with an across-width layout (#258); other DK widths follow later."""
 
 
+MAX_LAYOUT_DEFAULTS: int = 16
+"""Stored defaults per printer: more tape widths than any Brother tape family has."""
+MAX_TAPE_WIDTH_MM: int = 62
+"""Widest tape the hub supports (QL DK 62 mm)."""
+
+
 def check_layout_defaults(value: dict[int, LayoutDefault]) -> dict[int, LayoutDefault]:
-    """Validate stored defaults: ``across`` and a preset exist for 62 mm only."""
+    """Validate stored defaults: at most 16 widths, each 1-62 mm; ``across`` and a preset
+    exist for 62 mm only (review: the admin boundary bounds the stored JSON)."""
+    if len(value) > MAX_LAYOUT_DEFAULTS:
+        raise ValueError(f"at most {MAX_LAYOUT_DEFAULTS} tape widths, got {len(value)}")
     for width, default in value.items():
-        if width <= 0:
-            raise ValueError(f"tape width must be positive, got {width}")
+        if not 1 <= width <= MAX_TAPE_WIDTH_MM:
+            raise ValueError(f"tape width must be 1-{MAX_TAPE_WIDTH_MM} mm, got {width}")
         if width in ACROSS_TAPE_WIDTHS_MM:
             continue
         if default.orientation is LabelOrientation.ACROSS:

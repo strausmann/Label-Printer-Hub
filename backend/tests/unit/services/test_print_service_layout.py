@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
-from app.printer_backends.exceptions import UnsupportedTapeError
+from app.printer_backends.exceptions import ConflictingOrientationError, UnsupportedTapeError
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.schemas.content_type import ContentType
 from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
@@ -114,14 +114,30 @@ async def test_other_widths_print_along_and_refuse_across() -> None:
     store.save_queued.assert_not_awaited()
 
 
-async def test_batch_uses_one_orientation_for_every_item() -> None:
+async def test_batch_items_without_orientation_follow_the_named_one() -> None:
     svc, queue, _ = _service(62)
     await svc.submit_batch_job(
         [_request(), _request(orientation=LabelOrientation.ALONG)], half_cut=False
     )
     kwargs = queue.enqueue_batch.await_args.kwargs
-    assert kwargs["options"]["orientation"] == "across"
-    assert [im.width for im in kwargs["images"]] == [696, 696]
+    assert kwargs["options"]["orientation"] == "along"
+    assert [im.height for im in kwargs["images"]] == [696, 696]
+
+
+async def test_batch_with_conflicting_explicit_orientations_is_refused() -> None:
+    """Review M3: an item asking for along was silently printed across."""
+    svc, queue, store = _service(62)
+    with pytest.raises(ConflictingOrientationError) as excinfo:
+        await svc.submit_batch_job(
+            [
+                _request(orientation=LabelOrientation.ACROSS),
+                _request(orientation=LabelOrientation.ALONG),
+            ],
+            half_cut=False,
+        )
+    assert excinfo.value.orientations == ("across", "along")
+    queue.enqueue_batch.assert_not_awaited()
+    store.save_queued.assert_not_awaited()
 
 
 async def test_recovery_rerenders_with_the_stored_orientation_and_preset() -> None:

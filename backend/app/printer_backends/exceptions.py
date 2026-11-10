@@ -134,6 +134,23 @@ class QrPayloadTooLongError(Exception):
         )
 
 
+class ConflictingOrientationError(Exception):
+    """A batch names different explicit orientations for its items (#258).
+
+    A batch prints with one orientation (the QL backend rotates every image on one flag), so
+    items that ask for ``across`` and ``along`` cannot be honoured together.
+
+    HTTP-Status: 422 (Unprocessable Entity) — split the batch or align the orientations.
+    """
+
+    def __init__(self, orientations: tuple[str, ...]) -> None:
+        self.orientations = orientations
+        super().__init__(
+            f"Batch items ask for different orientations {list(orientations)}; "
+            "a batch prints with one orientation."
+        )
+
+
 class ContentTypeDataMismatchError(Exception):
     """Raised when LabelData lacks fields required by the chosen ContentType.
 

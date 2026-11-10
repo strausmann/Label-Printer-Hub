@@ -37,7 +37,9 @@ class PrintOptions(BaseModel):
     orientation: LabelOrientation | None = None
     """``across`` or ``along`` (#258). Omitted: the printer's stored default for the loaded
     tape, else the tape default (62 mm across, every other width along). ``across`` on a tape
-    without an across-width layout is refused with 409 ``unsupported_tape``."""
+    without an across-width layout is refused with 409 ``unsupported_tape``. A batch prints
+    with one orientation: items without one follow the item that names one; items naming
+    different orientations are refused with 422 ``conflicting_orientation``."""
     layout_preset: QlLayoutPreset | None = None
     """QL 62 mm across-width preset (#258). Omitted: stored default, else ``compact``.
     Ignored for ``along``."""

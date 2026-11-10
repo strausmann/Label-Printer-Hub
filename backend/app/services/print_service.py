@@ -23,7 +23,11 @@ from uuid import UUID, uuid4
 from PIL import Image
 
 from app.models.job import Job
-from app.printer_backends.exceptions import NoTapeLoadedError, PrinterDisabledError
+from app.printer_backends.exceptions import (
+    ConflictingOrientationError,
+    NoTapeLoadedError,
+    PrinterDisabledError,
+)
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
@@ -244,9 +248,14 @@ class PrintService:
             raise NoTapeLoadedError()
 
         tape_mm = preflight.loaded_tape_mm
-        # #258: one orientation for the whole batch (like the other collective options it
-        # comes from the first request); the backend rotates every image on that one flag.
-        orientation, _ = self._resolve_layout(tape_mm, requests[0].options)
+        # #258: one orientation for the whole batch; the backend rotates every image on that
+        # one flag. Items without an orientation follow the one an item names explicitly;
+        # different explicit orientations are refused instead of silently overridden.
+        explicit = sorted({str(r.options.orientation) for r in requests if r.options.orientation})
+        if len(explicit) > 1:
+            raise ConflictingOrientationError(tuple(explicit))
+        named = next((r.options for r in requests if r.options.orientation), requests[0].options)
+        orientation, _ = self._resolve_layout(tape_mm, named)
         resolved_options = [
             req.options.model_copy(
                 update={

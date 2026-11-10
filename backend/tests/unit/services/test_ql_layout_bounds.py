@@ -7,36 +7,121 @@ measuring work and never allocate an image beyond a documented maximum length.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
+from typing import Any
 
 import pytest
+from app.printer_backends.exceptions import QrPayloadTooLongError
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.label_data_item import LabelDataItem
-from app.schemas.label_layout import LabelOrientation
-from app.schemas.print_request import PrintRequest
+from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
+from app.schemas.print_request import PrintRequest, RawLabelData, RawListingItem
 from app.services import ql_layout
 from app.services.layout_engine import LayoutEngine
 from PIL import ImageFont
 from pydantic import ValidationError
 
 _QR = "https://example.invalid/hardware/19"
-_MEASURE_BUDGET = 3000
-"""Generous upper bound of ``getlength`` calls for one label; the unbounded code needs
-hundreds of thousands for the inputs below."""
+_MEASURE_BUDGET = 700
+"""Upper bound of font metric calls (``getlength`` + ``getbbox`` + ``font_variant``) for one
+label. The bounded layout needs at most about 630 for the worst schema-allowed label; the
+unbounded code needed hundreds of thousands, and the 1st-review layout about 15 000 (I1)."""
+_METRIC_CALLS = ("getlength", "getbbox", "font_variant")
+_BBOX_BUDGET = 60
+"""``getbbox`` calls for one label: once per laid-out line plus one cap height per font
+(at most 52 for the worst label). Without the line-metric cache it is 70-250."""
 
 
 @pytest.fixture
 def measured(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[int]]:
-    calls = [0]
-    real = ImageFont.FreeTypeFont.getlength
+    """Counts every font metric call, not only ``getlength`` (review I1).
 
-    def counting(self: ImageFont.FreeTypeFont, *args: object, **kwargs: object) -> float:
-        calls[0] += 1
-        return real(self, *args, **kwargs)  # type: ignore[arg-type]
+    ``measured[0]``: all metric calls; ``measured[1]``: ``getbbox`` alone.
+    """
+    calls = [0, 0]
 
-    monkeypatch.setattr(ImageFont.FreeTypeFont, "getlength", counting)
+    def counting(real: Callable[..., Any], name: str) -> Callable[..., Any]:
+        def wrapper(self: ImageFont.FreeTypeFont, *args: Any, **kwargs: Any) -> Any:
+            calls[0] += 1
+            if name == "getbbox":
+                calls[1] += 1
+            return real(self, *args, **kwargs)
+
+        return wrapper
+
+    for name in _METRIC_CALLS:
+        monkeypatch.setattr(
+            ImageFont.FreeTypeFont, name, counting(getattr(ImageFont.FreeTypeFont, name), name)
+        )
     yield calls
+
+
+def _worst_schema_label() -> LabelData:
+    """Every free text at the request caps: 512-char id and title, 10 secondary lines and
+    100 listing rows of 510 chars (words, so the wrapping path runs)."""
+    words = ("word " * 103)[:510]
+    raw = RawLabelData(
+        primary_id="P" * 512,
+        title=("word " * 103)[:512],
+        qr_payload="https://example.invalid/" + "a" * 90,
+        secondary=tuple(words for _ in range(10)),
+        items=tuple(RawListingItem(item=words) for _ in range(100)),
+    )
+    return LabelData(source_app="manual", **raw.model_dump())
+
+
+_WORST_CASES = (
+    [(ContentType.QR_WITH_LISTING, LabelOrientation.ACROSS, preset) for preset in QlLayoutPreset]
+    + [(ContentType.QR_THREE_LINES, LabelOrientation.ACROSS, preset) for preset in QlLayoutPreset]
+    + [
+        (ContentType.QR_WITH_LISTING, LabelOrientation.ALONG, None),
+        (ContentType.QR_THREE_LINES, LabelOrientation.ALONG, None),
+    ]
+)
+
+
+@pytest.mark.parametrize(("content_type", "orientation", "preset"), _WORST_CASES)
+def test_worst_schema_allowed_label_stays_within_the_metric_budget(
+    content_type: ContentType,
+    orientation: LabelOrientation,
+    preset: QlLayoutPreset | None,
+    measured: list[int],
+) -> None:
+    LayoutEngine().render(
+        62, content_type, _worst_schema_label(), orientation=orientation, preset=preset
+    )
+    assert measured[0] < _MEASURE_BUDGET
+    assert measured[1] <= _BBOX_BUDGET  # line metrics are measured once per line
+
+
+def test_worst_schema_allowed_label_costs_at_most_20x_the_reference_label() -> None:
+    """Relative wall-clock sanity bound (never an absolute threshold): best of 5 runs each,
+    after a warm-up, so font loading and scheduler noise do not decide the result. The
+    uncached layout was about 200x the reference."""
+    engine = LayoutEngine()
+    reference = LabelData(
+        source_app="manual",
+        primary_id="ST00019",
+        title="DOCKER1",
+        secondary=("Dell OptiPlex 3070 Micro", "S/N 72104Z2"),
+        qr_payload=_QR,
+    )
+    worst = _worst_schema_label()
+
+    def best(content_type: ContentType, data: LabelData) -> float:
+        engine.render(62, content_type, data)  # warm-up
+        runs = []
+        for _ in range(5):
+            start = time.perf_counter()
+            engine.render(62, content_type, data)
+            runs.append(time.perf_counter() - start)
+        return min(runs)
+
+    base = best(ContentType.QR_THREE_LINES, reference)
+    for content_type in (ContentType.QR_WITH_LISTING, ContentType.QR_THREE_LINES):
+        assert best(content_type, worst) <= 20 * base
 
 
 def _render(data: LabelData, content_type: ContentType, orientation: LabelOrientation):  # type: ignore[no-untyped-def]
@@ -88,8 +173,9 @@ def test_rows_left_out_of_the_layout_still_count_in_more() -> None:
             items=tuple(LabelDataItem(item=f"Box {n}") for n in range(1000)),
             qr_payload=_QR,
         ),
+        ql_layout.MAX_LISTING_ROWS_ALONG,
     )
-    assert len(fields) == 1 + ql_layout.MAX_LISTING_ROWS
+    assert len(fields) == 1 + ql_layout.MAX_LISTING_ROWS_ALONG
     lines = ql_layout._along_lines(fields, 2000, 672, hidden, listing=True)
     shown = len(lines) - 2  # minus the code line and the "+N more" line
     assert lines[-1].text == f"+{1000 - shown} more"
@@ -142,3 +228,81 @@ def test_across_label_length_stays_within_its_maximum() -> None:
 def test_the_print_request_caps_free_text(data: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         PrintRequest.model_validate({"content_type": "qr_two_lines", "data": data})
+
+
+# --- review fix round 1 ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("length", [2400, 2600, 5000])
+def test_along_payload_beyond_version_40_is_refused_not_a_value_error(length: int) -> None:
+    """Review M1: lookup data is not capped; qrcode raises ValueError beyond version 40."""
+    data = LabelData(source_app="snipeit", primary_id="X", qr_payload="h" * length)
+    with pytest.raises(QrPayloadTooLongError):
+        _render(data, ContentType.QR_ONE_LINE, LabelOrientation.ALONG)
+
+
+def test_along_many_secondary_lines_stay_inside_the_band_and_mark_the_cut() -> None:
+    """Review M2: ten secondary lines overflowed the 696 px band without a marker."""
+    data = LabelData(
+        source_app="manual",
+        primary_id="ST00019",
+        title="DOCKER1",
+        secondary=tuple(f"Line {n} of the secondary text" for n in range(10)),
+        qr_payload=_QR,
+    )
+    fields, hidden = ql_layout._fields(
+        ContentType.QR_THREE_LINES, data, ql_layout.MAX_LISTING_ROWS_ALONG
+    )
+    room = ql_layout.QL62_PRINTABLE_PX - 2 * ql_layout.TEXT_RIGHT_PX
+    lines = ql_layout._along_lines(fields, 1500, room, hidden)
+    assert sum(line.height for line in lines) <= room
+    assert len(lines) < len(fields)
+    assert lines[-1].text.endswith(ql_layout.ELLIPSIS)
+    image = _render(data, ContentType.QR_THREE_LINES, LabelOrientation.ALONG)
+    assert image.height == 696
+
+
+def test_dropped_fields_leave_a_visible_ellipsis() -> None:
+    """Review M4: trailing fields were dropped at the maximum length without any marker.
+
+    With today's caps an across label only reaches the drop step through the fit helper
+    itself (12 one-line fields stay below 50 mm), so the step is tested there directly.
+    """
+    font = ql_layout._font(ql_layout._Role.DETAIL, 30)
+    blocks = [[ql_layout._Line(f"Field {n}", font)] for n in range(12)]
+    pitch = blocks[0][0].height
+    lines = ql_layout._fit_blocks(blocks, 5 * pitch, 400, None, font)
+    assert [line.text for line in lines[:4]] == ["Field 0", "Field 1", "Field 2", "Field 3"]
+    assert lines[-1].text.endswith(ql_layout.ELLIPSIS)
+    assert sum(line.height for line in lines) <= 5 * pitch
+
+
+@pytest.mark.parametrize("preset", list(QlLayoutPreset))
+def test_worst_across_label_stays_within_50mm(preset: QlLayoutPreset) -> None:
+    data = _worst_schema_label()
+    for content_type in (ContentType.QR_THREE_LINES, ContentType.QR_WITH_LISTING):
+        lines = ql_layout._across_lines(content_type, data, preset)
+        limit = ql_layout.ACROSS_MAX_LENGTH_PX - 2 * ql_layout.ACROSS_PRESETS[preset].margin_px
+        assert sum(line.height for line in lines) <= limit
+    listing = ql_layout._across_lines(ContentType.QR_WITH_LISTING, data, preset)
+    assert listing[-1].text.startswith("+") and listing[-1].text.endswith(" more")
+
+
+def test_across_fit_without_overflow_adds_no_marker() -> None:
+    lines = ql_layout._across_lines(
+        ContentType.QR_THREE_LINES,
+        LabelData(
+            source_app="manual",
+            primary_id="ST00019",
+            title="DOCKER1",
+            secondary=("Dell OptiPlex 3070 Micro", "S/N 72104Z2"),
+            qr_payload=_QR,
+        ),
+        QlLayoutPreset.COMPACT,
+    )
+    assert [line.text for line in lines] == [
+        "ST00019",
+        "DOCKER1",
+        "Dell OptiPlex 3070 Micro",
+        "S/N 72104Z2",
+    ]

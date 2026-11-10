@@ -190,6 +190,26 @@ async def test_qr_payload_too_long_for_the_62mm_qr_is_422(batch_env) -> None:
 
 
 @pytest.mark.asyncio
+async def test_conflicting_explicit_orientations_are_422(batch_env) -> None:
+    """Review M3: a batch prints with one orientation; conflicting requests are refused."""
+    client, queue, app = batch_env
+    app.state.backend_router.get("p").preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=62, error_flags=[]
+    )
+    data = {"qr_payload": "https://example.invalid/1"}
+    items = [
+        {"content_type": "qr_only", "data": data, "options": {"orientation": "across"}},
+        {"content_type": "qr_only", "data": data, "options": {"orientation": "along"}},
+    ]
+    response = await client.post("/api/v1/print/p/batch", json={"items": items})
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["error_code"] == "conflicting_orientation"
+    assert detail["error_detail"]["orientations"] == ["across", "along"]
+    queue.enqueue_batch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_unregistered_app_is_its_own_code_not_a_500(batch_env) -> None:
     client, queue, _ = batch_env
     response = await _post(client, "grocy")

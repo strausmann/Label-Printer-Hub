@@ -31,7 +31,7 @@ requirement. Only the layout margin and the quiet zone along the feed shorten th
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
@@ -84,8 +84,11 @@ LINE_CHAR_BOUND: Final = 200
 696 px / ~4 px per narrow glyph); text beyond ``(lines + 1) * LINE_CHAR_BOUND`` can never be
 shown and is cut before any measuring."""
 MAX_SECONDARY_LINES: Final = 10
-MAX_LISTING_ROWS: Final = 40
-"""Listing rows that are laid out at all; the rest count towards "+N more"."""
+MAX_LISTING_ROWS_ACROSS: Final = 16
+"""Listing rows laid out at all across: more than 50 mm (591 px) holds at the smallest row
+pitch (~33 px); the rest count towards "+N more"."""
+MAX_LISTING_ROWS_ALONG: Final = 10
+"""Listing rows laid out at all along: more than the 696 px band holds (~80 px rows)."""
 
 ELLIPSIS: Final = "…"
 
@@ -237,7 +240,8 @@ def build_box_qr(payload: str, box: QrBox) -> tuple[Image.Image, int]:
     qr.add_data(payload)
     try:
         qr.make(fit=True)
-    except qrcode.exceptions.DataOverflowError:
+    except (qrcode.exceptions.DataOverflowError, ValueError):
+        # beyond version 40 qrcode raises ValueError("Invalid version ...") (review M1)
         raise refused from None
     if qr.version > max_version:
         raise refused
@@ -259,16 +263,27 @@ def _font(role: _Role, size_px: int) -> ImageFont.FreeTypeFont:
 
 @dataclass(frozen=True)
 class _Line:
+    """One laid-out line. Its metrics are measured once, at construction (review I1): the
+    fitting loops read ``height`` many times, and an uncached ``getbbox`` made an across
+    listing cost seconds per label."""
+
     text: str
     font: ImageFont.FreeTypeFont
+    height: int = field(init=False, compare=False)
+    """Line pitch: cap top of the line to the bottom of its ink, plus the line gap."""
 
-    @property
-    def height(self) -> int:
-        """Line pitch: cap top of the line to the bottom of its ink, plus the line gap."""
-        return int(self.font.getbbox(self.text)[3] - self.font.getbbox("H")[1]) + LINE_GAP_PX
+    def __post_init__(self) -> None:
+        pitch = int(self.font.getbbox(self.text)[3] - _cap_top(self.font)) + LINE_GAP_PX
+        object.__setattr__(self, "height", pitch)
 
     def draw(self, draw: ImageDraw.ImageDraw, x: int, y: int) -> None:
-        draw.text((x, y - self.font.getbbox("H")[1]), self.text, font=self.font, fill=0)
+        draw.text((x, y - _cap_top(self.font)), self.text, font=self.font, fill=0)
+
+
+@lru_cache(maxsize=64)
+def _cap_top(font: ImageFont.FreeTypeFont) -> int:
+    """Top of a capital ``H`` in ``font`` (one measurement per cached font)."""
+    return int(font.getbbox("H")[1])
 
 
 def _longest_fitting_prefix(
@@ -352,12 +367,14 @@ def _field_lines(text: str, role: _Role, base_px: int, width: int, max_lines: in
     return [_Line(t, font) for t in wrapped]
 
 
-def _fields(content_type: ContentType, data: LabelData) -> tuple[list[tuple[str, _Role]], int]:
+def _fields(
+    content_type: ContentType, data: LabelData, max_rows: int
+) -> tuple[list[tuple[str, _Role]], int]:
     """The text fields of a label, in print order, with the role that picks the font.
 
-    Returns the fields and how many listing rows were left out beyond ``MAX_LISTING_ROWS``
-    (they count towards "+N more"); secondary lines beyond ``MAX_SECONDARY_LINES`` are not
-    shown at all. Both bounds keep the layout work independent of the data size.
+    Returns the fields and how many listing rows were left out beyond ``max_rows`` (they
+    count towards "+N more"); secondary lines beyond ``MAX_SECONDARY_LINES`` are not shown at
+    all. Both bounds keep the layout work independent of the data size.
     """
     code = data.primary_id or ""
     title = data.title or ""
@@ -376,7 +393,7 @@ def _fields(content_type: ContentType, data: LabelData) -> tuple[list[tuple[str,
                 fields.append((line, _Role.DETAIL if index == 0 else _Role.SERIAL))
             return fields, 0
         case ContentType.QR_WITH_LISTING:
-            shown = data.items[:MAX_LISTING_ROWS]
+            shown = data.items[:max_rows]
             rows = [(it.item, _Role.DETAIL) for it in shown]
             return [(code, _Role.CODE), *rows], len(data.items) - len(shown)
 
@@ -407,20 +424,8 @@ def render_across(
     qr: Image.Image | None = None
     if has_qr:
         qr, _ = build_box_qr(data.qr_payload or "", box)  # refuses before any text work
-        qr_length = box.along
-        text_x = box.across + TEXT_GAP_PX
-    else:
-        qr_length = 0
-        text_x = TEXT_RIGHT_PX
-    text_width = width - text_x - TEXT_RIGHT_PX
-
-    fields, hidden = _fields(content_type, data)
-    blocks = [
-        _field_lines(text, role, spec.font_px[role.value], text_width, FIELD_MAX_LINES)
-        for text, role in fields
-    ]
-    blocks = _fit_length(blocks, content_type, spec, text_width, qr_length, margin, hidden)
-    lines = [line for block in blocks for line in block]
+    qr_length, text_x = _across_geometry(has_qr, box)
+    lines = _across_lines(content_type, data, preset)
 
     text_height = sum(line.height for line in lines)
     height = max(qr_length, text_height) + 2 * margin
@@ -436,52 +441,98 @@ def render_across(
     return _threshold(canvas)
 
 
-def _fit_length(
-    blocks: list[list[_Line]],
-    content_type: ContentType,
-    spec: _AcrossPreset,
-    text_width: int,
-    qr_length: int,
-    margin: int,
-    hidden: int = 0,
-) -> list[list[_Line]]:
-    """Cut lines until the label is no longer than ``ACROSS_MAX_LENGTH_PX``.
+def _across_geometry(has_qr: bool, box: QrBox) -> tuple[int, int]:
+    """(minimum label length from the QR box, x where the text block starts)."""
+    if has_qr:
+        return box.along, box.across + TEXT_GAP_PX
+    return 0, TEXT_RIGHT_PX
 
-    Wrapped fields lose lines first (the field with the most lines first, its last kept
-    line gets an ellipsis); a listing then keeps as many items as fit plus "+N more", where
-    N includes the ``hidden`` rows that were never laid out.
+
+def _across_lines(
+    content_type: ContentType, data: LabelData, preset: QlLayoutPreset
+) -> list[_Line]:
+    """The text lines of an across label, fitted to ``ACROSS_MAX_LENGTH_PX``.
+
+    Every line is measured once (``_Line`` caches its metrics) and the fit keeps running
+    totals, so the work is linear in the (bounded) number of lines.
     """
+    spec = ACROSS_PRESETS[preset]
+    has_qr = _has_qr(content_type)
+    _, text_x = _across_geometry(has_qr, spec.qr_box)
+    text_width = QL62_PRINTABLE_PX - text_x - TEXT_RIGHT_PX
+    listing = content_type is ContentType.QR_WITH_LISTING
+    fields, hidden = _fields(content_type, data, MAX_LISTING_ROWS_ACROSS)
+    blocks = [
+        _field_lines(
+            text,
+            role,
+            spec.font_px[role.value],
+            text_width,
+            1 if listing and index > 0 else FIELD_MAX_LINES,  # a listing row is one line
+        )
+        for index, (text, role) in enumerate(fields)
+    ]
+    limit = ACROSS_MAX_LENGTH_PX - 2 * spec.margin_px
+    more_font = _font(_Role.DETAIL, spec.font_px[_Role.DETAIL.value])
+    return _fit_blocks(blocks, limit, text_width, hidden if listing else None, more_font)
 
-    def length(bs: list[list[_Line]]) -> int:
-        return max(qr_length, sum(line.height for b in bs for line in b)) + 2 * margin
 
+def _mark_cut(line: _Line, width: int) -> _Line:
+    """``line`` ending in an ellipsis that still fits ``width``: content was left out."""
+    if line.text.endswith(ELLIPSIS):
+        return line
+    cut = _longest_fitting_prefix(line.text, line.font, width, ELLIPSIS)
+    return _Line(line.text[:cut].rstrip() + ELLIPSIS, line.font)
+
+
+def _fit_blocks(
+    blocks: list[list[_Line]],
+    limit: int,
+    text_width: int,
+    hidden: int | None,
+    more_font: ImageFont.FreeTypeFont,
+) -> list[_Line]:
+    """Cut lines until their total height is at most ``limit``; never silently.
+
+    1. Wrapped fields lose lines first (the field with the most lines first); the last kept
+       line of the field gets the rest and an ellipsis.
+    2. A listing (``hidden`` is not ``None``: the rows never laid out) keeps as many rows as
+       fit plus "+N more".
+    3. Otherwise trailing fields are dropped and the last kept line gets an ellipsis.
+    """
     blocks = [list(b) for b in blocks]
-    while length(blocks) > ACROSS_MAX_LENGTH_PX:
+    total = sum(line.height for block in blocks for line in block)
+    while total > limit:
         index = max(range(len(blocks)), key=lambda i: len(blocks[i]), default=None)
         if index is None or len(blocks[index]) <= 1:
             break
         block = blocks[index]
-        kept = block[:-1]
-        last = kept[-1]
-        kept[-1] = _Line(
-            _ellipsize(last.text + " " + block[-1].text, last.font, text_width), last.font
-        )
-        blocks[index] = kept
+        dropped, last = block[-1], block[-2]
+        merged = _Line(_ellipsize(last.text + " " + dropped.text, last.font, text_width), last.font)
+        total += merged.height - last.height - dropped.height
+        blocks[index] = [*block[:-2], merged]
 
-    if content_type is ContentType.QR_WITH_LISTING and (
-        hidden or length(blocks) > ACROSS_MAX_LENGTH_PX
-    ):
-        head, items = blocks[:1], blocks[1:]
-        more_font = _font(_Role.DETAIL, spec.font_px[_Role.DETAIL.value])
-        for keep in range(len(items) - (0 if hidden else 1), -1, -1):
-            more = [_Line(f"+{len(items) - keep + hidden} more", more_font)]
-            candidate = [*head, *items[:keep], more]
-            if length(candidate) <= ACROSS_MAX_LENGTH_PX:
-                return candidate
+    lines = [line for block in blocks for line in block]
+    if hidden is not None and (hidden or total > limit):
+        head, rows = lines[:1], lines[1:]
+        prefix = [0]
+        for row in rows:
+            prefix.append(prefix[-1] + row.height)
+        head_height = sum(line.height for line in head)
+        start = len(rows) if hidden else len(rows) - 1
+        for keep in range(start, -1, -1):
+            more = _Line(f"+{len(rows) - keep + hidden} more", more_font)
+            if head_height + prefix[keep] + more.height <= limit:
+                return [*head, *rows[:keep], more]
         return head
-    while len(blocks) > 1 and length(blocks) > ACROSS_MAX_LENGTH_PX:
-        blocks = blocks[:-1]
-    return blocks
+
+    cut = False
+    while len(lines) > 1 and total > limit:
+        total -= lines.pop().height
+        cut = True
+    if cut:
+        lines[-1] = _mark_cut(lines[-1], text_width)
+    return lines
 
 
 # ---------------------------------------------------------------------------------------
@@ -505,7 +556,7 @@ def render_along_62(content_type: ContentType, data: LabelData) -> Image.Image:
         box = QrBox(ALONG_BOX_PX, ALONG_BOX_PX, QR_QUIET_ACROSS_MODULES, QR_QUIET_ACROSS_MODULES)
         qr, _ = build_box_qr(data.qr_payload or "", box)
 
-    fields, hidden = _fields(content_type, data)
+    fields, hidden = _fields(content_type, data, MAX_LISTING_ROWS_ALONG)
     max_text_width = ALONG_MAX_LENGTH_PX - text_x - TEXT_RIGHT_PX
     lines = _along_lines(
         fields,
@@ -539,28 +590,23 @@ def _along_lines(
     *,
     listing: bool = False,
 ) -> list[_Line]:
-    """One line per field at the along font sizes, each cut to ``text_width`` (ellipsis).
+    """One line per field at the along font sizes, each cut to ``text_width`` (ellipsis),
+    fitted to the band height ``room``.
 
-    A listing keeps as many rows as fit the band height ``room`` plus "+N more" (N includes
-    the ``hidden`` rows never laid out). Text is cut to ``2 * LINE_CHAR_BOUND`` characters
-    before measuring, so the work does not grow with the input.
+    A listing keeps as many rows as fit plus "+N more" (N includes the ``hidden`` rows never
+    laid out); any other label drops trailing lines and ends its last kept line with an
+    ellipsis (review: ten secondary lines overflowed the band). Text is cut to
+    ``2 * LINE_CHAR_BOUND`` characters before measuring, so the work does not grow with the
+    input.
     """
     bound = 2 * LINE_CHAR_BOUND
-    lines: list[_Line] = []
+    blocks: list[list[_Line]] = []
     for text, role in fields:
         font = _font(role, ALONG_FONT_PX[role.value])
         shown = _ellipsize(text[:bound], font, text_width)
         if len(text) > bound and not shown.endswith(ELLIPSIS):
             cut = _longest_fitting_prefix(text[:bound], font, text_width, ELLIPSIS)
             shown = text[:cut].rstrip() + ELLIPSIS
-        lines.append(_Line(shown, font))
-    if listing and (hidden or sum(ln.height for ln in lines) > room):
-        more_font = _font(_Role.DETAIL, ALONG_FONT_PX[_Role.DETAIL.value])
-        head, items = lines[:1], lines[1:]
-        for keep in range(len(items) - (0 if hidden else 1), -1, -1):
-            more = _Line(f"+{len(items) - keep + hidden} more", more_font)
-            candidate = [*head, *items[:keep], more]
-            if sum(ln.height for ln in candidate) <= room:
-                return candidate
-        return head
-    return lines
+        blocks.append([_Line(shown, font)])
+    more_font = _font(_Role.DETAIL, ALONG_FONT_PX[_Role.DETAIL.value])
+    return _fit_blocks(blocks, room, text_width, hidden if listing else None, more_font)
