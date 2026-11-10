@@ -22,7 +22,7 @@ import contextlib
 import logging
 import uuid
 from collections.abc import Callable, Coroutine, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from io import BytesIO
@@ -70,6 +70,15 @@ from app.sheets.errors import MediaKindMismatchError
 
 _ON_UNKNOWN_TIMEOUT_S = 5.0
 """A handler's ``on_unknown`` runs inside ``start()``; a hanging one must not block startup."""
+
+MAX_LABELS_PER_TAPE_JOB = 50
+"""#277: a tape batch is split into sub-jobs of at most this many labels; sub-job n+1 starts only
+after the user confirms it (``confirm_run``), for example after checking or changing the tape."""
+
+TAPE_GROUP_SIZE = 10
+"""#277: inside a sub-job the labels go out in groups of this many, one print call each, with an
+SNMP status check after each group. When the tape runs out, at most one group has an unknown
+outcome. To be confirmed on a real PT-P750W: each group costs one extra feed (pre-roll)."""
 
 
 # Callback type: called after each state transition.  The optional queue_depth
@@ -205,6 +214,77 @@ class BatchJob:
     job_ids: list[UUID]
     tape_mm: int
     options: dict[str, Any]
+    # #277: the tape run this sub-job belongs to (``None``: a bare batch, no follow-up sub-jobs).
+    run_id: UUID | None = None
+
+
+RunState = Literal["printing", "awaiting_confirmation", "stopped"]
+
+
+class RunStateError(Exception):
+    """A run action that does not fit the run's state (#277); ``code`` is the API error code."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+@dataclass
+class TapeRun:
+    """#277: one tape batch, split into sub-jobs of at most ``MAX_LABELS_PER_TAPE_JOB`` labels.
+
+    ``job_ids`` is the print order (one id per label); ``sub_jobs`` are ``[start, end)`` ranges of
+    it. ``current`` is the sub-job that is queued, printing or waiting for the confirmation.
+    After a stop, ``unknown`` is the range of the group whose outcome is unknown.
+    """
+
+    run_id: UUID
+    printer_id: UUID
+    tape_mm: int
+    options: dict[str, Any]
+    job_ids: list[str]
+    payloads: dict[str, bytes]
+    sub_jobs: list[tuple[int, int]]
+    current: int = 0
+    state: RunState | Literal["reprinting"] = "printing"
+    unknown: tuple[int, int] | None = None
+    stop_code: str | None = None
+    confirmed: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class RunInfo:
+    """What the API shows of a tape run (#277). Positions are 1-based in print order."""
+
+    run_id: UUID
+    printer_id: UUID
+    state: RunState
+    current_sub_job: int
+    sub_jobs: int
+    sub_job_size: int
+    sub_job_starts: list[int]
+    job_ids: list[str]
+    confirmed_job_ids: list[str]
+    unknown_from: int | None
+    unknown_to: int | None
+    stop_code: str | None
+
+
+@dataclass(frozen=True)
+class ReprintResult:
+    """The outcome of ``reprint_from``: the new jobs and the run's print order after it."""
+
+    new_job_ids: list[UUID]
+    confirmed_job_ids: list[UUID]
+    job_ids: list[str]
+
+
+def _split(start: int, end: int) -> list[tuple[int, int]]:
+    """``[start, end)`` in sub-jobs of at most ``MAX_LABELS_PER_TAPE_JOB``."""
+    return [
+        (s, min(s + MAX_LABELS_PER_TAPE_JOB, end))
+        for s in range(start, end, MAX_LABELS_PER_TAPE_JOB)
+    ]
 
 
 class PrintQueue:
@@ -289,6 +369,9 @@ class PrintQueue:
         # for them are refused at submit and failed at dispatch. Kept by the identity sink,
         # loaded when a printer is attached; the page worker reads it without a database read.
         self._identity_holds: set[UUID] = set()
+        # #277: tape runs that are printing, wait for a confirmation or stopped; a finished run
+        # is forgotten.
+        self._runs: dict[UUID, TapeRun] = {}
 
     # --- identity hold (#231) -----------------------------------------------
 
@@ -515,6 +598,11 @@ class PrintQueue:
         self._identity_holds.discard(printer_id)
         self._held.pop(printer_id, None)
         self._to_resume.pop(printer_id, None)
+        # #277: a run of a removed printer cannot be confirmed or reprinted; its waiting labels
+        # stay ``queued`` in the store and the next add fails them (they wait for a confirmation).
+        for run_id, run in list(self._runs.items()):
+            if run.printer_id == printer_id:
+                del self._runs[run_id]
         self._printers.pop(printer_id, None)
         self._page_printers.pop(printer_id, None)
 
@@ -570,6 +658,17 @@ class PrintQueue:
             # A row handed over via enqueue_persisted() before start() is
             # already known; enqueueing it again would print it twice.
             if str(db_job.id) in self._jobs:
+                continue
+            tape_run = db_job.payload.get("tape_run")
+            if isinstance(tape_run, dict) and tape_run.get("awaits_confirmation"):
+                # #277: the label belongs to a sub-job that starts only after the user confirms
+                # it. That confirmation is not kept across a restart, so the label is never
+                # printed on its own: it fails, and the user prints it again.
+                await self._store.mark_failed(
+                    db_job.id,
+                    "tape_run_interrupted: the hub restarted while this label waited for a"
+                    " confirmation; print it again",
+                )
                 continue
             # C-1/I-2: fehlerhafte/veraltete Rows dürfen die Recovery nicht abbrechen.
             # KeyError (fehlendes label_data/content_type), ValidationError
@@ -884,8 +983,12 @@ class PrintQueue:
         job_ids: list[UUID],
         tape_mm: int,
         options: dict[str, Any],
+        run_id: UUID | None = None,
     ) -> UUID:
-        """Phase 1k.2: Submit N images as ONE BatchJob (atomic print_multi call).
+        """Submit N images as one tape run (#277): sub-jobs of at most 50, groups of 10.
+
+        Only the first sub-job is queued; each further one waits for ``confirm_run``. *run_id*
+        names the run (the API's batch id); a new id is made when it is left out.
 
         Args:
             printer_id: Target printer (must be registered in self._queues).
@@ -945,18 +1048,187 @@ class PrintQueue:
             if (own := by_id.get(str(jid))) is not None:
                 own.image_payload = payload
 
-        batch_id = uuid4()
-        batch = BatchJob(
-            batch_id=batch_id,
+        batch_id = run_id or uuid4()
+        keys = [str(jid) for jid in job_ids]
+        run = TapeRun(
+            run_id=batch_id,
             printer_id=printer_id,
-            image_payloads=list(payloads),
-            job_ids=list(job_ids),
             tape_mm=tape_mm,
             options=dict(options),
+            job_ids=keys,
+            payloads=dict(zip(keys, payloads, strict=True)),
+            sub_jobs=_split(0, len(keys)),
         )
-        await self._queues[printer_id].put(batch)
-        logger.info("Batch %s queued on %s with %d items", batch_id, printer_id, len(images))
+        if printer_id not in self._queues or self._removing(printer_id):
+            raise KeyError(f"Unknown printer: {printer_id}")  # removed while serialising
+        self._runs[batch_id] = run
+        self._queues[printer_id].put_nowait(self._sub_job(run))
+        logger.info(
+            "Batch %s queued on %s with %d items in %d sub-jobs",
+            batch_id,
+            printer_id,
+            len(images),
+            len(run.sub_jobs),
+        )
         return batch_id
+
+    def _sub_job(self, run: TapeRun) -> BatchJob:
+        """The queue item of the run's current sub-job."""
+        start, end = run.sub_jobs[run.current]
+        ids = run.job_ids[start:end]
+        return BatchJob(
+            batch_id=run.run_id,
+            printer_id=run.printer_id,
+            image_payloads=[run.payloads[j] for j in ids],
+            job_ids=[UUID(j) for j in ids],
+            tape_mm=run.tape_mm,
+            options=dict(run.options),
+            run_id=run.run_id,
+        )
+
+    # --- tape runs (#277) ---------------------------------------------------
+
+    def run_info(self, run_id: UUID) -> RunInfo | None:
+        """The state of a tape run, or ``None`` when it is finished or unknown."""
+        run = self._runs.get(run_id)
+        if run is None:
+            return None
+        unknown = run.unknown
+        return RunInfo(
+            run_id=run.run_id,
+            printer_id=run.printer_id,
+            state="printing" if run.state == "reprinting" else run.state,
+            current_sub_job=run.current + 1,
+            sub_jobs=len(run.sub_jobs),
+            sub_job_size=MAX_LABELS_PER_TAPE_JOB,
+            sub_job_starts=[start for start, _ in run.sub_jobs],
+            job_ids=list(run.job_ids),
+            confirmed_job_ids=list(run.confirmed),
+            unknown_from=None if unknown is None else unknown[0] + 1,
+            unknown_to=None if unknown is None else unknown[1],
+            stop_code=run.stop_code,
+        )
+
+    def _live_run(self, run_id: UUID) -> TapeRun:
+        run = self._runs.get(run_id)
+        if run is None or run.printer_id not in self._queues or self._removing(run.printer_id):
+            raise KeyError(f"Unknown run: {run_id}")
+        return run
+
+    async def confirm_run(self, run_id: UUID) -> RunInfo:
+        """Start the next sub-job of a run that waits for the user's confirmation.
+
+        Raises:
+            KeyError: the run is unknown or finished, or its printer is gone.
+            RunStateError: ``run_not_awaiting_confirmation``.
+        """
+        run = self._live_run(run_id)
+        if run.state != "awaiting_confirmation":
+            raise RunStateError(
+                "run_not_awaiting_confirmation", "The run does not wait for a confirmation."
+            )
+        # No await from the check to the put: two confirmations cannot both start the sub-job.
+        run.state = "printing"
+        self._queues[run.printer_id].put_nowait(self._sub_job(run))
+        logger.info("Run %s: sub-job %d confirmed", run_id, run.current + 1)
+        info = self.run_info(run_id)
+        assert info is not None
+        return info
+
+    async def reprint_from(self, run_id: UUID, label: int) -> ReprintResult:
+        """Re-queue label *label* (1-based) to the end of the unknown group, plus every label
+        that was not started, after the user fixed the tape.
+
+        The labels before *label* in the unknown group count as printed (the user says so). The
+        re-queued labels are new jobs with the stored payloads of the old ones, split into
+        sub-jobs again; the first starts at once (this call is the go-ahead), and a printer the
+        tape end paused is resumed. A manual pause stays.
+
+        Raises:
+            KeyError: the run is unknown or finished, or its printer is gone.
+            RunStateError: ``run_not_stopped``, ``label_out_of_range``.
+        """
+        run = self._live_run(run_id)
+        if run.state != "stopped" or run.unknown is None:
+            raise RunStateError("run_not_stopped", "The run has not stopped.")
+        start, end = run.unknown
+        if not start + 1 <= label <= end + 1:
+            raise RunStateError(
+                "label_out_of_range",
+                f"Reprint from a label of the unknown group, {start + 1} to {end + 1}.",
+            )
+        idx = label - 1
+        tail = [
+            j
+            for j in run.job_ids[idx:]
+            if (job := self._jobs.get(j)) is not None
+            and job.error_code in ("outcome_unknown", "not_started")
+        ]
+        run.state = "reprinting"  # claimed before the first await: no second reprint
+        new_ids: list[str] = []
+        try:
+            for position, old in enumerate(tail):
+                row = await self._store.get(UUID(old))
+                if row is None:
+                    continue  # evicted meanwhile: nothing left to print it from
+                new_id = uuid4()
+                payload = dict(row.payload)
+                payload["tape_run"] = {
+                    "run_id": str(run.run_id),
+                    "awaits_confirmation": position >= MAX_LABELS_PER_TAPE_JOB,
+                    "reprint_of": old,
+                }
+                job = Job(
+                    id=str(new_id),
+                    printer_id=run.printer_id,
+                    image_payload=run.payloads[old],
+                    tape_mm=run.tape_mm,
+                    options=dict(run.options),
+                )
+                self._jobs[job.id] = job
+                await self._store.save_queued(
+                    DbJob(
+                        id=new_id,
+                        printer_id=row.printer_id,
+                        template_key=row.template_key,
+                        payload=payload,
+                        api_key_id=row.api_key_id,
+                        source_ip=row.source_ip,
+                    )
+                )
+                run.payloads[job.id] = run.payloads[old]
+                new_ids.append(job.id)
+            self._live_run(run_id)  # removed while the rows were written: KeyError
+        except BaseException:
+            run.state = "stopped"
+            raise
+        confirmed = [
+            j
+            for j in run.job_ids[start:idx]
+            if (job := self._jobs.get(j)) is not None and job.error_code == "outcome_unknown"
+        ]
+        run.confirmed.extend(confirmed)
+        first = run.sub_jobs[run.current][0]
+        prefix = run.sub_jobs[: run.current] + ([(first, idx)] if idx > first else [])
+        run.job_ids = run.job_ids[:idx] + new_ids
+        run.sub_jobs = prefix + _split(idx, len(run.job_ids))
+        run.current = len(prefix)
+        run.unknown = None
+        run.stop_code = None
+        if run.current >= len(run.sub_jobs):  # nothing left to print
+            del self._runs[run_id]
+        else:
+            run.state = "printing"
+            self._queues[run.printer_id].put_nowait(self._sub_job(run))
+        info = self._pause_info.get(run.printer_id)
+        if self.is_paused(run.printer_id) and info is not None and info.source == "printer_error":
+            await self.resume_printer(run.printer_id)
+        logger.info("Run %s: reprint from label %d, %d labels", run_id, label, len(new_ids))
+        return ReprintResult(
+            new_job_ids=[UUID(j) for j in new_ids],
+            confirmed_job_ids=[UUID(j) for j in confirmed],
+            job_ids=list(run.job_ids),
+        )
 
     def _require_tape(self, printer_id: UUID) -> None:
         """D18: tape submission paths refuse page printers; a printer being removed is unknown."""
@@ -1714,45 +1986,77 @@ class PrintQueue:
         printer_id: UUID,
         batch: BatchJob,
     ) -> None:
-        """Phase 1k.2: Handle BatchJob — atomic success/failure for all job_ids.
+        """One sub-job of a tape run (#277): groups of ``TAPE_GROUP_SIZE``, checked one by one.
 
-        Decodes payloads, calls printer.print_images() once. On exception,
-        marks all job_ids as failed with a shared error_message.
+        Each group is one ``print_images`` call followed by the printer's status check
+        (``check_status``, the SNMP preflight; a printer without one is not checked). A group
+        whose call and check pass is done. When either fails, the run stops: that group's
+        outcome is unknown (``outcome_unknown``; the store keeps ``failed_restart``), every label
+        after it, in this and the later sub-jobs, is not started (``not_started``), and a
+        printer error pauses the printer. ``reprint_from`` picks it up from there.
 
-        Gemini-Review G2 (PR #106): Pro item MUSS JobStateMachine.transition
-        gerufen werden, sonst:
-        - _done_event wird nie gesetzt → wait_for_job(job_id) hängt unendlich
-        - _notify_state_change wird nie gerufen → SSE-Frontend (Hangar) bekommt
-          keine Updates und zeigt Jobs als ewig 'queued' an
-        - started_at/finished_at Timestamps bleiben None (UI-Probleme)
+        Between groups the worker honours a pause, a removal and a stop: the labels not taken
+        stay ``queued``. A job cancelled before its group started is skipped.
+
+        Gemini-Review G2 (PR #106): every item goes through JobStateMachine.transition, so
+        ``wait_for_job`` and the events see each job.
         """
-        # Wait while paused (mirror _worker semantics)
-        waited = False
-        while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
-            if self._stopping or self._removing(printer_id):
+        if not await self._wait_until_active(printer_id):
+            return
+        run = self._runs.get(batch.run_id) if batch.run_id is not None else None
+        for start in range(0, len(batch.job_ids), TAPE_GROUP_SIZE):
+            if start > 0 and (
+                self._stopping
+                or self._removing(printer_id)
+                or not await self._wait_until_active(printer_id)
+            ):
+                return  # the labels not taken stay ``queued``
+            group = range(start, min(start + TAPE_GROUP_SIZE, len(batch.job_ids)))
+            active, payloads = await self._take_group(printer_id, batch, group)
+            if not active:
+                continue
+            raw_images = await asyncio.gather(
+                *[asyncio.to_thread(Image.open, BytesIO(p)) for p in payloads]
+            )
+            images: list[Image.Image] = list(raw_images)
+            try:
+                await printer.print_images(images, tape_mm=batch.tape_mm, **batch.options)
+                check = getattr(printer, "check_status", None)
+                if check is not None:
+                    await check()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                later = [str(j) for j in batch.job_ids[group.stop :]]
+                await self._stop_run(printer_id, batch, run, active, later, exc)
                 return
+            await self._complete_group(printer_id, batch, active)
+        logger.info("Batch %s: sub-job done on %s", batch.batch_id, printer_id)
+        self._advance_run(run)
+
+    async def _wait_until_active(self, printer_id: UUID) -> bool:
+        """Wait while the printer is paused; ``False`` when the worker must leave instead."""
+        waited = False
+        while self._worker_states.get(printer_id) == PrinterWorkerState.PAUSED:
+            if self._stopping or self._removing(printer_id):
+                return False
             waited = True
             await self._worker_resume_events[printer_id].wait()
-        if waited and self._removing(printer_id):
-            return  # resumed and removed at once
+        return not (waited and self._removing(printer_id))
 
-        # Gemini-Review G2: in-memory transitions + SSE-Events + DB persist.
-        # QUEUED -> PRINTING für jeden Job.
-        #
-        # Gemini-Review G-R2-2 (PR #106): Wenn JobStateMachine.transition fails
-        # (z.B. job already CANCELLED), darf NICHT noch _store.mark_printing
-        # gerufen werden — sonst inkonsistent (in-memory CANCELLED vs DB PRINTING).
-        # Wir sammeln nur successfully transitioned jobs in active_jobs[] und
-        # nutzen die für alle folgenden DB-Calls + post-print transitions.
-        #
-        # Task 8 follow-up (G-R2-2): active_indices[] tracks the payload index of
-        # each active_job so we can filter batch.image_payloads to match.
-        # Without this, cancelled jobs would cause phantom prints (their payload
-        # would still be sent to the printer even though the job was cancelled).
+    async def _take_group(
+        self, printer_id: UUID, batch: BatchJob, group: range
+    ) -> tuple[list[Job], list[bytes]]:
+        """QUEUED -> PRINTING for the labels of one group; returns the taken jobs and payloads.
+
+        Gemini-Review G-R2-2 (PR #106): a job that cannot take PRINTING (cancelled) is not
+        persisted as printing, and its payload is not sent (no phantom print).
+        """
         active_jobs: list[Job] = []
-        active_indices: list[int] = []
-        for idx, jid in enumerate(batch.job_ids):
-            if idx > 0 and self._removing(printer_id):
+        payloads: list[bytes] = []
+        for idx in group:
+            jid = batch.job_ids[idx]
+            if idx > group.start and self._removing(printer_id):
                 # #224: removed while the items were taken: the rest stays ``queued``; the
                 # items already taken (rows ``printing``) print together.
                 break
@@ -1772,7 +2076,7 @@ class PrintQueue:
                     self._veto_print(job, printer_id)  # row cancelled via the API: skip item
                     continue
                 active_jobs.append(job)
-                active_indices.append(idx)
+                payloads.append(batch.image_payloads[idx])
             except InvalidStateTransitionError:
                 logger.warning(
                     "Batch %s: job %s skipped — state already %s (cancelled?)",
@@ -1780,123 +2084,108 @@ class PrintQueue:
                     job.id,
                     job.state,
                 )
+        return active_jobs, payloads
 
-        if not active_jobs:
-            logger.warning(
-                "Batch %s: 0 active jobs after transitions — skipping print", batch.batch_id
-            )
-            return
+    async def _complete_group(self, printer_id: UUID, batch: BatchJob, active: list[Job]) -> None:
+        for job in active:
+            try:
+                JobStateMachine.transition(job, JobState.COMPLETED)
+                self._notify_state_change(
+                    job,
+                    JobState.PRINTING,
+                    JobState.COMPLETED,
+                    queue_depth=self._queue_depth(printer_id),
+                )
+                await self._store.mark_done(UUID(job.id))
+            except InvalidStateTransitionError:
+                logger.warning(
+                    "Batch %s: success-transition of %s failed (state=%s)",
+                    batch.batch_id,
+                    job.id,
+                    job.state,
+                )
 
-        # Gemini-Review G1 (PR #106): Parallel image decode
-        # Task 8 follow-up: decode ONLY payloads of active_jobs to avoid phantom
-        # prints for jobs that were cancelled between enqueue_batch and worker pickup.
-        # cast to list[Image.Image]: Image.open returns ImageFile (subtype); list
-        # is invariant so mypy needs an explicit cast here.
-        active_payloads = [batch.image_payloads[i] for i in active_indices]
-        raw_images = await asyncio.gather(
-            *[asyncio.to_thread(Image.open, BytesIO(p)) for p in active_payloads]
+    async def _stop_run(
+        self,
+        printer_id: UUID,
+        batch: BatchJob,
+        run: TapeRun | None,
+        active: list[Job],
+        later: list[str],
+        exc: Exception,
+    ) -> None:
+        """A group failed: it is unknown, everything after it is not started, the run stops."""
+        if isinstance(exc, PrinterError):
+            cause, cause_msg, cause_detail = _printer_error_to_record(exc)
+        else:
+            cause, cause_msg, cause_detail = "batch_failed", f"batch print failed: {exc}", None
+        message = f"The labels of this group may or may not have printed: {cause_msg}"
+        for job in active:
+            job.error_code = "outcome_unknown"
+            job.error_message = message
+            job.error_msg = message
+            job.error_detail = {"cause": cause, "cause_message": cause_msg, **(cause_detail or {})}
+            try:
+                JobStateMachine.transition(job, JobState.FAILED)
+                depth = self._queue_depth(printer_id)
+                self._notify_state_change(
+                    job, JobState.PRINTING, JobState.FAILED, queue_depth=depth
+                )
+            except InvalidStateTransitionError:
+                logger.warning("Batch %s: %s already %s", batch.batch_id, job.id, job.state)
+            await self._store.mark_failed_restart(UUID(job.id), f"outcome_unknown: {cause}")
+        if run is not None:
+            later = [*later, *run.job_ids[run.sub_jobs[run.current][1] :]]
+        not_started: list[str] = []
+        for key in later:
+            waiting = self._jobs.get(key)
+            if waiting is None or waiting.state != JobState.QUEUED:
+                continue  # cancelled meanwhile: it stays cancelled
+            waiting.error_code = "not_started"
+            waiting.error_message = "The print stopped before this label."
+            waiting.error_msg = waiting.error_message
+            waiting.error_detail = {"cause": cause}
+            JobStateMachine.transition(waiting, JobState.FAILED)
+            depth = self._queue_depth(printer_id)
+            self._notify_state_change(waiting, JobState.QUEUED, JobState.FAILED, queue_depth=depth)
+            not_started.append(key)
+        for key in not_started:
+            await self._store.mark_failed(UUID(key), f"not_started: {cause}")
+        if run is not None and active:
+            first = run.job_ids.index(active[0].id)
+            last = run.job_ids.index(active[-1].id)
+            run.unknown = (first, last + 1)
+            run.state = "stopped"
+            run.stop_code = cause
+        logger.warning(
+            "Batch %s stopped on %s (%s): %d labels unknown, %d not started",
+            batch.batch_id,
+            printer_id,
+            cause,
+            len(active),
+            len(not_started),
+            exc_info=exc,
         )
-        images: list[Image.Image] = list(raw_images)
+        if isinstance(exc, PrinterError) and printer_id in self._worker_states:
+            await self.pause_printer(printer_id, reason=cause)
 
-        try:
-            await printer.print_images(
-                images,
-                tape_mm=batch.tape_mm,
-                **batch.options,
-            )
-            # Success: alle active_jobs PRINTING -> COMPLETED.
-            # Gemini-Review G-R2-2 (PR #106): nur active_jobs, NICHT alle jobs —
-            # cancelled-mid-flight darf nicht überschrieben werden.
-            for job in active_jobs:
-                try:
-                    JobStateMachine.transition(job, JobState.COMPLETED)
-                    self._notify_state_change(
-                        job,
-                        JobState.PRINTING,
-                        JobState.COMPLETED,
-                        queue_depth=self._queue_depth(printer_id),
-                    )
-                    await self._store.mark_done(UUID(job.id))
-                except InvalidStateTransitionError:
-                    logger.warning(
-                        "Batch %s: success-transition of %s failed (state=%s)",
-                        batch.batch_id,
-                        job.id,
-                        job.state,
-                    )
-            logger.info("Batch %s completed on %s", batch.batch_id, printer_id)
-        except asyncio.CancelledError:
-            raise
-        except PrinterError as exc:
-            # Copilot-Review C6 (PR #106): Konsistenz mit existing _worker —
-            # PrinterError-Subtypes müssen via _printer_error_to_record auf
-            # strukturierte error_code/error_detail gemapped werden. Plus:
-            # recoverable hardware errors (tape_mismatch, cover_open, offline)
-            # MÜSSEN den Printer pausieren, sonst laufen Folge-Jobs ins gleiche
-            # Problem.
-            code, msg, detail = _printer_error_to_record(exc)
-            # Gemini-Review G-R2-2 (PR #106): nur active_jobs, NICHT alle jobs.
-            for job in active_jobs:
-                job.error_code = code
-                job.error_message = msg
-                job.error_detail = detail
-                job.error_msg = msg  # legacy field sync
-                try:
-                    JobStateMachine.transition(job, JobState.FAILED)
-                    self._notify_state_change(
-                        job,
-                        JobState.PRINTING,
-                        JobState.FAILED,
-                        queue_depth=self._queue_depth(printer_id),
-                    )
-                    await self._store.mark_failed(UUID(job.id), f"{code}: {msg}")
-                except InvalidStateTransitionError:
-                    logger.warning(
-                        "Batch %s: failure-transition of %s failed (state=%s)",
-                        batch.batch_id,
-                        job.id,
-                        job.state,
-                    )
-            logger.exception(
-                "Batch %s: PrinterError on %s — %d items marked failed (%s)",
-                batch.batch_id,
-                printer_id,
-                len(active_jobs),
-                code,
-            )
-            # Recoverable hardware error -> Printer pausieren (User-Interaktion nötig)
-            if isinstance(exc, _RECOVERABLE_PRINTER_ERRORS):
-                await self.pause_printer(printer_id, reason=code)
-        except Exception as exc:
-            # Fallback für non-PrinterError exceptions
-            error_msg = f"batch print failed: {exc}"
-            # Gemini-Review G-R2-2 (PR #106): nur active_jobs.
-            for job in active_jobs:
-                job.error_code = "batch_failed"
-                job.error_message = error_msg
-                job.error_msg = error_msg  # legacy field sync
-                try:
-                    JobStateMachine.transition(job, JobState.FAILED)
-                    self._notify_state_change(
-                        job,
-                        JobState.PRINTING,
-                        JobState.FAILED,
-                        queue_depth=self._queue_depth(printer_id),
-                    )
-                    await self._store.mark_failed(UUID(job.id), error_msg)
-                except InvalidStateTransitionError:
-                    logger.warning(
-                        "Batch %s: failure-transition of %s failed (state=%s)",
-                        batch.batch_id,
-                        job.id,
-                        job.state,
-                    )
-            logger.exception(
-                "Batch %s failed on %s — %d items marked failed",
-                batch.batch_id,
-                printer_id,
-                len(active_jobs),
-            )
+    def _advance_run(self, run: TapeRun | None) -> None:
+        """After a sub-job: wait for the confirmation of the next one, or forget a finished run."""
+        if run is None or self._runs.get(run.run_id) is not run or run.state != "printing":
+            return
+        nxt = run.current + 1
+        while nxt < len(run.sub_jobs):
+            s, e = run.sub_jobs[nxt]
+            if any(
+                (job := self._jobs.get(j)) is not None and job.state == JobState.QUEUED
+                for j in run.job_ids[s:e]
+            ):
+                run.current = nxt
+                run.state = "awaiting_confirmation"
+                logger.info("Run %s: sub-job %d waits for a confirmation", run.run_id, nxt + 1)
+                return
+            nxt += 1
+        del self._runs[run.run_id]
 
 
 def _state_of(job: Job) -> JobState:

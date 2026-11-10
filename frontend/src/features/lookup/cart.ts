@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useSyncExternalStore } from "react";
 import { apiFetch } from "../../api/client";
 import type { components } from "../../api/schema.gen";
-import { watchPrint } from "../jobs/printWatch";
+import { watchBatch } from "../jobs/printWatch";
 import type { LayoutOptions } from "../layout/ql";
 
 export type BatchRead = components["schemas"]["BatchRead"];
@@ -172,7 +172,7 @@ export function useCart(): Cart {
       const accepted = await submitBatch(printerKey, sending, layout);
       // Only now: a rejected batch leaves the cart as it was. Items added meanwhile stay.
       removeItems(sending);
-      watchPrint({ kind: "cart", printerId: accepted.printer_id, jobIds: accepted.job_ids });
+      watchBatch("cart", accepted);
       void client.invalidateQueries({ queryKey: ["jobs"] });
       try {
         return await apiFetch<BatchRead>(`/api/v1/batches/${accepted.batch_id}`);

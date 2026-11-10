@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Annotated
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +29,7 @@ from app.repositories import printers as printers_repo
 from app.schemas.print_batch import BatchRequest, BatchResponse
 from app.services.batch_dispatch import dispatch_batch
 from app.services.lookup_service import LookupFailedError, UnknownAppError
+from app.services.print_queue import MAX_LABELS_PER_TAPE_JOB
 from app.sheets.errors import MediaKindMismatchError
 
 # SessionDep locally — Hub has no central app/api/deps.py module.
@@ -53,8 +55,11 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
     tags=["print"],
     summary="Submit a batch of print jobs",
     description=(
-        "Atomic batch print. Validates all items and enqueues the entire batch "
-        "as a unit — no per-item errors are returned. Any validation failure "
+        "Validates all items and enqueues the batch as one tape run — no per-item errors are "
+        "returned. The labels (copies included) print in sub-jobs of at most 50; each further "
+        "sub-job waits for `POST /api/v1/batches/{batch_id}/continue`. Inside a sub-job the "
+        "labels go out in groups of 10 with a status check after each; when the tape runs "
+        "out, the run stops (see `GET /api/v1/batches/{batch_id}`). Any validation failure "
         "or hardware precondition (printer_offline, cover_open, unsupported_tape, "
         "no_tape_loaded, content_type_data_mismatch) rejects the whole batch "
         "with the appropriate 4xx status code. A page printer (IPP) answers "
@@ -127,11 +132,16 @@ async def create_batch(
     else:
         use_half_cut = backend_supports_half_cut
 
+    # #277: the queue's tape run carries the batch id, so continue/reprint find it.
+    run_id = uuid4()
+    label_ids: list[UUID] = []
     try:
         job_ids = await dispatch_batch(
             service=service,
             items=body.items,
             half_cut=use_half_cut,
+            run_id=run_id,
+            label_ids=label_ids,
         )
     except UnknownAppError as exc:
         # 422: the request names an integration this hub does not have (a client mistake).
@@ -228,6 +238,7 @@ async def create_batch(
     # auth.subject_id does NOT exist — use api_key_id or source
     created_by = str(auth.api_key_id) if auth.api_key_id else auth.source
     batch_row = PrintBatch(
+        id=run_id,
         printer_id=printer.id,
         job_ids=[str(jid) for jid in job_ids],
         created_by=created_by,
@@ -239,4 +250,6 @@ async def create_batch(
         printer_id=printer.id,
         queued_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         job_ids=[str(jid) for jid in job_ids],
+        label_job_ids=[str(jid) for jid in label_ids],
+        sub_job_size=MAX_LABELS_PER_TAPE_JOB,
     )

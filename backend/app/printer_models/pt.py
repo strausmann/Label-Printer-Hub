@@ -286,6 +286,15 @@ class _PTPQueuePrinter:
             half_cut=bool(options.pop("half_cut", True)),
         )
 
+    async def check_status(self) -> None:
+        """#277: the status check after each group of a tape run: the SNMP preflight.
+
+        Raises ``TapeEmptyError`` (``noPaper``), ``PrinterCoverOpenError`` or
+        ``PrinterOfflineError``; the queue then stops the run.
+        """
+        backend: Any = self._backend  # the PrinterBackend protocol has no preflight_check
+        await backend.preflight_check()
+
 
 # Module-level registration so any import path triggers it.
 # cast: PTP750WDriver satisfies PrinterModel structurally at runtime;

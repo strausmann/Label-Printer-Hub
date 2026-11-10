@@ -85,6 +85,7 @@ class MockPrinterBackend:
         tape_empty: bool = False,
         cover_open: bool = False,
         offline: bool = False,
+        tape_runs_out_after: int | None = None,
     ) -> None:
         self.host = host
         self._loaded_tape_mm = loaded_tape_mm
@@ -92,6 +93,9 @@ class MockPrinterBackend:
         self._tape_empty = tape_empty
         self._cover_open = cover_open
         self._offline = offline
+        # #277: the tape ends after this many printed labels; afterwards every print and every
+        # preflight says the tape is empty (the SNMP ``noPaper`` bit).
+        self.tape_runs_out_after = tape_runs_out_after
         self.printed_images: list[Image.Image] = []
         self.status_query_count: int = 0
 
@@ -151,6 +155,11 @@ class MockPrinterBackend:
                 loaded_mm=status.loaded_tape_mm,
             )
         self.printed_images.append(image.copy())
+        if (
+            self.tape_runs_out_after is not None
+            and len(self.printed_images) >= self.tape_runs_out_after
+        ):
+            self._tape_empty = True
 
     async def print_images(
         self,

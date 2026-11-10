@@ -216,6 +216,30 @@ TAPE_L4731 = "avery-zweckform-l4731rev"  # 189 cells, the edge sheet
 E2E_CUSTOM_TYPE_KEY = "e2e-custom-unknown-radius"
 
 
+_TAPE_BACKENDS: list[Any] = []
+"""The in-memory backends of the tape printers (``MockPrinterBackend``), in build order."""
+
+
+class _TapeState(BaseModel):
+    """Body of ``POST /__e2e/tape-printer/state``: the tape ends after this many more labels."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tape_runs_out_in: int = Field(ge=0, le=10_000)
+
+
+def _tape_out_in(labels: int) -> None:
+    for backend in _TAPE_BACKENDS:
+        backend.tape_runs_out_after = len(backend.printed_images) + labels
+
+
+def _new_tape() -> None:
+    """A fresh tape in every tape printer: it no longer runs out, and it is not empty."""
+    for backend in _TAPE_BACKENDS:
+        backend.tape_runs_out_after = None
+        backend._tape_empty = False
+
+
 def _new_fake() -> Any:
     from tests.helpers.fake_ipp_printer import FakeIppPrinter
 
@@ -316,6 +340,17 @@ class E2EApp:
             stop, self._stop = self._stop, None
             await stop()
 
+    async def _resume_tape_printers(self) -> None:
+        """Lift a pause an empty tape caused, so the next spec finds the printers ready."""
+        app = getattr(self.inner, "_app", self.inner)
+        queue = getattr(app.state, "print_queue", None)
+        if queue is None:
+            return
+        for printer_id in list(getattr(queue, "_printers", {})):
+            info = queue.pause_info(printer_id)
+            if info is not None and info.source == "printer_error":
+                await queue.resume_printer(printer_id)
+
     async def _control(self, scope: Any, receive: Any, send: Any) -> None:
         request = Request(scope, receive)
         path = request.url.path.rstrip("/")
@@ -336,6 +371,18 @@ class E2EApp:
         elif path == "/__e2e/page-printer/reset" and method == "POST":
             _reset_fake(self.fake)
             response = JSONResponse({"uri": self.uri, "state": _fake_state(self.fake)})
+        elif path == "/__e2e/tape-printer/state" and method == "POST":
+            try:
+                tape = _TapeState.model_validate(await request.json())
+            except (ValueError, ValidationError) as exc:
+                response = JSONResponse({"error": str(exc)}, status_code=422)
+            else:
+                _tape_out_in(tape.tape_runs_out_in)
+                response = JSONResponse({"backends": len(_TAPE_BACKENDS)})
+        elif path == "/__e2e/tape-printer/reset" and method == "POST":
+            _new_tape()
+            await self._resume_tape_printers()
+            response = JSONResponse({"backends": len(_TAPE_BACKENDS)})
         else:
             response = JSONResponse({"error": "unknown control path"}, status_code=404)
         await response(scope, receive, send)
@@ -472,8 +519,15 @@ def build_e2e_app() -> ASGIApp:
         return None
 
     main_module.run_migrations = _already_migrated  # type: ignore[assignment]
-    # No printer is reachable: every configured printer gets the in-memory backend.
-    BackendRouter._build_one = staticmethod(lambda _cfg: MockPrinterBackend())  # type: ignore[method-assign]
+
+    # No printer is reachable: every configured printer gets the in-memory backend. They are
+    # kept, so ``/__e2e/tape-printer/state`` can let their tape run out (#277).
+    def _mock_backend(_cfg: Any) -> MockPrinterBackend:
+        backend = MockPrinterBackend()
+        _TAPE_BACKENDS.append(backend)
+        return backend
+
+    BackendRouter._build_one = staticmethod(_mock_backend)  # type: ignore[method-assign]
     IntegrationRegistry.clear()  # importing app.main discovered the real plugins
     for name, display in (("snipeit", "Snipe-IT"), ("grocy", "Grocy"), ("spoolman", "Spoolman")):
         IntegrationRegistry.register(_FakeIntegration(name, display))  # type: ignore[arg-type]

@@ -33,6 +33,7 @@ from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
 from app.schemas.print_request import PrintOptions, PrintRequest, RawLabelData
 from app.services.layout_engine import LayoutEngine
+from app.services.print_queue import MAX_LABELS_PER_TAPE_JOB
 from app.services.ql_layout import resolve_layout
 
 _log = logging.getLogger(__name__)
@@ -230,10 +231,14 @@ class PrintService:
         requests: list[PrintRequest],
         *,
         half_cut: bool,
+        run_id: UUID | None = None,
+        label_ids: list[UUID] | None = None,
     ) -> list[UUID]:
-        """Phase 1k.2: Render N items, submit ONE BatchJob to PrintQueue.
+        """Render N items and submit them to the queue as one tape run (#277).
 
-        Atomic: alle job_ids werden gemeinsam als completed/failed markiert.
+        The queue splits the run into sub-jobs of ``MAX_LABELS_PER_TAPE_JOB`` and sends groups
+        of ``TAPE_GROUP_SIZE``. *run_id* names the run (the batch id of the API). *label_ids*,
+        when given, receives the job id of every label (copies included) in print order.
         Preflight wird 1x am Anfang für alle Items geprüft.
 
         NOTE: Diese Methode verwendet noch direkte LayoutEngine-Render-Aufrufe
@@ -326,6 +331,12 @@ class PrintService:
                         "copy_index": copy_idx,
                         "copy_total": n,
                         "copy_master_id": str(master_id),
+                        # #277: a label past the first sub-job prints only after a confirmation;
+                        # a restart that finds it still queued fails it instead of printing it.
+                        "tape_run": {
+                            "run_id": None if run_id is None else str(run_id),
+                            "awaits_confirmation": len(all_job_ids) >= MAX_LABELS_PER_TAPE_JOB,
+                        },
                     },
                     api_key_id=None,
                     source_ip=None,
@@ -347,6 +358,9 @@ class PrintService:
                 "half_cut": half_cut,
                 "orientation": str(orientation),
             },
+            run_id=run_id,
         )
+        if label_ids is not None:
+            label_ids.extend(all_job_ids)
 
         return job_ids

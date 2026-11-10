@@ -261,10 +261,12 @@ async def test_batchjob_printer_offline_pauses_printer_and_marks_failed(
     finally:
         await queue.stop(timeout_s=2.0)
 
+    # #277: an error in a group leaves its outcome unknown; the cause stays in the detail.
     for jid in job_ids:
         job = await queue.get(jid)
         assert job.state == JobState.FAILED
-        assert job.error_code == "printer_offline"
+        assert job.error_code == "outcome_unknown"
+        assert (job.error_detail or {})["cause"] == "printer_offline"
 
     # Recoverable PrinterError must pause the worker
     assert queue._worker_states[fake_printer.id] == PrinterWorkerState.PAUSED

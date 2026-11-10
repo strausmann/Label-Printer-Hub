@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
 import type { components } from "../../api/schema.gen";
-import { watchPrint } from "../jobs/printWatch";
+import { watchBatch } from "../jobs/printWatch";
 import { useDebounced, type LayoutOptions } from "../layout/ql";
 import { submitBatch, type CartItem, type ContentType, type LookupApp } from "./cart";
 
@@ -76,7 +76,7 @@ export function usePrintNow() {
   return useMutation({
     mutationFn: ({ printerKey, item, layout }: { printerKey: string; item: CartItem; layout?: LayoutOptions }) =>
       submitBatch(printerKey, [item], layout),
-    onSuccess: (accepted) => void watchPrint({ kind: "item", printerId: accepted.printer_id, jobIds: accepted.job_ids }),
+    onSuccess: (accepted) => void watchBatch("item", accepted),
     onSettled: () => void client.invalidateQueries({ queryKey: ["jobs"] }),
   });
 }

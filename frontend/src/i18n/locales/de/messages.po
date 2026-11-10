@@ -190,6 +190,10 @@ msgstr "{level} %, niedrig"
 msgid "{lowCount, plural, one {# printer is running out of material} other {# printers are running out of material}}"
 msgstr "{lowCount, plural, one {# Drucker hat bald kein Material mehr} other {# Drucker haben bald kein Material mehr}}"
 
+#: src/shell/PrintToasts.tsx
+msgid "{n} (all of {from} to {to} printed)"
+msgstr "{n} ({from} bis {to} sind alle gedruckt)"
+
 #: src/features/sheets/print/errors.ts
 msgid "{name} cannot be printed with this layout: {fields} is missing. Choose another layout."
 msgstr "{name} lässt sich mit diesem Layout nicht drucken: {fields} fehlt. Wähle ein anderes Layout."
@@ -966,6 +970,10 @@ msgstr "Verbindung fehlgeschlagen"
 msgid "Continue"
 msgstr "Weiter"
 
+#: src/shell/PrintToasts.tsx
+msgid "Continue with part {next}"
+msgstr "Mit Teil {next} weitermachen"
+
 #: src/features/scan/ScanScreen.tsx
 #: src/features/settings/AccessKeys.tsx
 #: src/shell/BootstrapKeyCreated.tsx
@@ -1387,6 +1395,10 @@ msgstr "Gerät oder Standort suchen"
 msgid "First free cells"
 msgstr "Erste freie Zellen"
 
+#: src/shell/PrintToasts.tsx
+msgid "First missing label"
+msgstr "Erstes fehlendes Etikett"
+
 #: src/features/archive/TypeDetail.tsx
 msgid "first version"
 msgstr "erste Version"
@@ -1678,6 +1690,10 @@ msgstr "Etikettenbreite (mm)"
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Labels"
 msgstr "Etiketten"
+
+#: src/shell/PrintToasts.tsx
+msgid "Labels {from} to {to} may or may not have printed. Count them on the tape, put in a new tape, then reprint from the first label that is missing."
+msgstr "Ob die Etiketten {from} bis {to} gedruckt wurden, ist unklar. Zähle sie auf dem Band nach, lege ein neues Band ein und drucke ab dem ersten fehlenden Etikett neu."
 
 #: src/features/settings/sections.tsx
 msgid "Language"
@@ -2385,6 +2401,14 @@ msgstr "Papierformat"
 msgid "Paperless ASN"
 msgstr "Paperless-ASN"
 
+#: src/shell/PrintToasts.tsx
+msgid "Part {done} of {total} is done. Check the tape, then continue."
+msgstr "Teil {done} von {total} ist fertig. Prüfe das Band und mach dann weiter."
+
+#: src/shell/PrintToasts.tsx
+msgid "Part {partNo} of {parts}"
+msgstr "Teil {partNo} von {parts}"
+
 #: src/features/archive/ImportDialog.tsx
 msgid "Paste the export file or choose it."
 msgstr "Füge die Exportdatei ein oder wähle sie aus."
@@ -2756,6 +2780,10 @@ msgstr "Gerät ersetzen?"
 #: src/features/archive/FeedbackLinks.tsx
 msgid "Report a problem with the dimensions"
 msgstr "Ein Problem mit den Maßen melden"
+
+#: src/shell/PrintToasts.tsx
+msgid "Reprint from label {choice}"
+msgstr "Ab Etikett {choice} neu drucken"
 
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"
@@ -3332,6 +3360,7 @@ msgid "Step 3: Check the result"
 msgstr "Schritt 3: Ergebnis prüfen"
 
 #: src/features/printers/model.ts
+#: src/shell/PrintToasts.tsx
 msgid "Stopped"
 msgstr "Angehalten"
 
@@ -3688,6 +3717,10 @@ msgid "The hub does not know a sheet {preselectedSheet}."
 msgstr "Der Hub kennt keinen Bogen {preselectedSheet}."
 
 #: src/features/jobs/jobErrorText.ts
+msgid "The hub restarted while this label waited for the next part. Print it again."
+msgstr "Der Hub wurde neu gestartet, während dieses Etikett auf den nächsten Teil wartete. Drucke es noch einmal."
+
+#: src/features/jobs/jobErrorText.ts
 msgid "The hub was stopped before the job was printed."
 msgstr "Der Hub wurde beendet, bevor der Auftrag gedruckt war."
 
@@ -3873,6 +3906,10 @@ msgstr "Der Name ist erforderlich."
 msgid "The new sheet"
 msgstr "Der neue Bogen"
 
+#: src/shell/PrintToasts.tsx
+msgid "The next part could not be started. Try again."
+msgstr "Der nächste Teil konnte nicht gestartet werden. Versuche es noch einmal."
+
 #: src/features/archive/errors.ts
 msgid "The note about the change"
 msgstr "Die Notiz zur Änderung"
@@ -3938,6 +3975,14 @@ msgstr "Die Druckwarteschlange kennt diesen Drucker noch nicht. Versuche es glei
 #: src/features/jobs/jobErrorText.ts
 msgid "The print request could not be built."
 msgstr "Die Druckanfrage konnte nicht erstellt werden."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The print stopped before this label was sent."
+msgstr "Der Druck hat angehalten, bevor dieses Etikett gesendet wurde."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The print stopped while this label was being sent. It may or may not have printed."
+msgstr "Der Druck hat angehalten, während dieses Etikett gesendet wurde. Ob es gedruckt wurde, ist unklar."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The printer aborted the job before printing."
@@ -4061,6 +4106,10 @@ msgstr "Die eingereihten Etiketten wurden aus dem Warenkorb genommen."
 #: src/features/sheets/print/PrintResult.tsx
 msgid "The queued labels were taken out of the cart. The rest stays in it."
 msgstr "Die eingereihten Etiketten wurden aus dem Warenkorb genommen. Der Rest bleibt darin."
+
+#: src/shell/PrintToasts.tsx
+msgid "The reprint could not be started. Try again."
+msgstr "Der Neudruck konnte nicht gestartet werden. Versuche es noch einmal."
 
 #: src/features/printers/RollColourPrompt.tsx
 msgid "The roll changed again while you were choosing. Pick the colour of the new roll."
@@ -4598,6 +4647,10 @@ msgstr "Auftrag ansehen"
 #: src/features/jobs/pageJobText.ts
 msgid "Waiting at the printer"
 msgstr "Wartet beim Drucker"
+
+#: src/shell/PrintToasts.tsx
+msgid "Waiting for you"
+msgstr "Wartet auf dich"
 
 #: src/shell/StatusBadge.tsx
 msgid "Warning"

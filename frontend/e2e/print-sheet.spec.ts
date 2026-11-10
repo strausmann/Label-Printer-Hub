@@ -112,6 +112,24 @@ test.describe.serial("print onto a sheet", () => {
     await expect(page.getByText(`${free} of ${needed} labels fit on this sheet. The rest stays in the cart.`)).toBeVisible();
     await expect(page.getByText(/free cells, and this print needs/)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Print onto sheet" })).toBeEnabled({ timeout: 30_000 });
+    // Artifacts, not a gate: the note in light and dark, desktop and phone.
+    const shots = process.env.E2E_SHOTS_DIR;
+    if (shots) {
+      for (const scheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        for (const [width, height] of [
+          [1280, 800],
+          [390, 844],
+        ] as const) {
+          await page.setViewportSize({ width, height });
+          await page.getByText(/labels fit on this sheet/).scrollIntoViewIfNeeded();
+          await page.screenshot({ path: `${shots}/task-22-sheet-fit-${width}-${scheme}.png` });
+          expect(await noSideScroll(page)).toBe(true);
+        }
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.setViewportSize({ width: 1280, height: 800 });
+    }
   });
 
   test("with an empty cart the link says what to do", async () => {

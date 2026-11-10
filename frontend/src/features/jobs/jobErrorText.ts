@@ -33,6 +33,13 @@ export function useJobErrorText(): (code: string | null) => string {
         return t`The job was interrupted while it was printing. Check the printout before you retry.`;
       case "shutdown":
         return t`The hub was stopped before the job was printed.`;
+      // #277: a tape batch that stopped after a group, and what a restart does to its waiting part.
+      case "outcome_unknown":
+        return t`The print stopped while this label was being sent. It may or may not have printed.`;
+      case "not_started":
+        return t`The print stopped before this label was sent.`;
+      case "tape_run_interrupted":
+        return t`The hub restarted while this label waited for the next part. Print it again.`;
       case "cancelled":
       case "cancelled_before_print":
         return t`The job was cancelled.`;

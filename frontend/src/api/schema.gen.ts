@@ -226,11 +226,52 @@ export interface paths {
          *     Wird von Hangar's /admin/print/result/{batch_id} für das initiale
          *     Rendering genutzt. summary.all_terminal == False bedeutet, dass Hangar
          *     den JSON-Stream /api/v1/events verfolgen sollte für
-         *     Live-Updates.
+         *     Live-Updates. ``run`` shows a tape run that prints, waits for a
+         *     confirmation, or stopped (#277).
          */
         get: operations["get_batch_api_v1_batches__batch_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batches/{batch_id}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start the next sub-job of a tape batch
+         * @description A tape batch of more than 50 labels prints in sub-jobs; each further sub-job starts only after this call, for example after the user checked or changed the tape (#277).
+         */
+        post: operations["continue_batch_api_v1_batches__batch_id__continue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batches/{batch_id}/reprint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reprint a stopped tape batch from a label
+         * @description After the tape ran out (or another error stopped a group) the group's outcome is unknown. Count what printed, fix the tape, and reprint from the first label that is missing: that label to the end of the group, and every label that was not started, are queued again as new jobs; the labels before it count as printed. A printer the tape end paused is resumed (#277). `from_label` outside the group answers 422 `label_out_of_range`.
+         */
+        post: operations["reprint_batch_api_v1_batches__batch_id__reprint_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -445,7 +486,7 @@ export interface paths {
         put?: never;
         /**
          * Submit a batch of print jobs
-         * @description Atomic batch print. Validates all items and enqueues the entire batch as a unit — no per-item errors are returned. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch.
+         * @description Validates all items and enqueues the batch as one tape run — no per-item errors are returned. The labels (copies included) print in sub-jobs of at most 50; each further sub-job waits for `POST /api/v1/batches/{batch_id}/continue`. Inside a sub-job the labels go out in groups of 10 with a status check after each; when the tape runs out, the run stops (see `GET /api/v1/batches/{batch_id}`). Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch.
          */
         post: operations["create_batch_api_v1_print__printer_key__batch_post"];
         delete?: never;
@@ -1398,6 +1439,8 @@ export interface components {
              * Format: uuid
              */
             printer_id: string;
+            /** @description The tape run while it has something to show (#277). */
+            run?: components["schemas"]["TapeRunRead"] | null;
             summary: components["schemas"]["BatchSummary"];
         };
         /**
@@ -1431,12 +1474,22 @@ export interface components {
             /** Job Ids */
             job_ids: string[];
             /**
+             * Label Job Ids
+             * @description The job of every label (copies included) in print order (#277). The labels are printed in sub-jobs of `sub_job_size`; each further sub-job waits for `POST /api/v1/batches/{batch_id}/continue`.
+             */
+            label_job_ids?: string[];
+            /**
              * Printer Id
              * Format: uuid
              */
             printer_id: string;
             /** Queued At */
             queued_at: string;
+            /**
+             * Sub Job Size
+             * @description Labels per sub-job (#277).
+             */
+            sub_job_size: number;
         };
         /**
          * BatchSummary
@@ -2912,6 +2965,28 @@ export interface components {
             /** Sheet Code */
             sheet_code: string;
         };
+        /** ReprintRequest */
+        ReprintRequest: {
+            /**
+             * From Label
+             * @description Reprint from this label (1-based) to the end of the unknown group.
+             */
+            from_label: number;
+        };
+        /** ReprintResponse */
+        ReprintResponse: {
+            /** Confirmed Job Ids */
+            confirmed_job_ids: string[];
+            /**
+             * Job Ids
+             * @description The run's labels in print order after the reprint.
+             */
+            job_ids: string[];
+            /** New Job Ids */
+            new_job_ids: string[];
+            /** @description The run after the reprint; `null` if done. */
+            run: components["schemas"]["TapeRunRead"] | null;
+        };
         /** ResolveRequest */
         ResolveRequest: {
             /** Cells */
@@ -3587,6 +3662,59 @@ export interface components {
              * @description Dots per inch along the tape.
              */
             y: number;
+        };
+        /**
+         * TapeRunRead
+         * @description A tape batch that is printing, waits for a confirmation, or stopped (#277).
+         *
+         *     Positions are 1-based in print order (`job_ids`).
+         */
+        TapeRunRead: {
+            /**
+             * Confirmed Job Ids
+             * @description Labels of an unknown group the user confirmed as printed (a reprint).
+             */
+            confirmed_job_ids: string[];
+            /**
+             * Current Sub Job
+             * @description The sub-job printing or waiting, 1-based.
+             */
+            current_sub_job: number;
+            /**
+             * Job Ids
+             * @description The job of every label, in print order.
+             */
+            job_ids: string[];
+            /**
+             * State
+             * @description `awaiting_confirmation`: the next sub-job starts after `POST .../continue`. `stopped`: a group failed (the tape ran out, for example); its outcome is unknown, the labels after it were not started; `POST .../reprint` picks it up.
+             * @enum {string}
+             */
+            state: "printing" | "awaiting_confirmation" | "stopped";
+            /**
+             * Stop Code
+             * @description Why the run stopped, e.g. `tape_empty`.
+             */
+            stop_code: string | null;
+            /** Sub Job Size */
+            sub_job_size: number;
+            /**
+             * Sub Job Starts
+             * @description Where each sub-job starts in `job_ids` (0-based); a reprint re-splits.
+             */
+            sub_job_starts: number[];
+            /** Sub Jobs */
+            sub_jobs: number;
+            /**
+             * Unknown From
+             * @description First label of the unknown group.
+             */
+            unknown_from: number | null;
+            /**
+             * Unknown To
+             * @description Last label of the unknown group.
+             */
+            unknown_to: number | null;
         };
         /** TestPrintAccepted */
         TestPrintAccepted: {
@@ -4474,6 +4602,112 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    continue_batch_api_v1_batches__batch_id__continue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TapeRunRead"];
+                };
+            };
+            /** @description The key lacks the `print` scope or may not use this printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such batch, or no tape run of it that waits for an action. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reprint_batch_api_v1_batches__batch_id__reprint_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReprintRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReprintResponse"];
+                };
+            };
+            /** @description The key lacks the `print` scope or may not use this printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such batch, or no tape run of it that waits for an action. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `label_out_of_range`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

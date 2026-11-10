@@ -195,3 +195,46 @@ describe("print notifications", () => {
     expect(await within(region()).findByText(/Queued/)).toBeVisible();
   });
 });
+
+describe("a tape batch in parts (#277)", () => {
+  const BATCH = "bbbbbbbb-0000-4000-8000-000000000001";
+  const label = (i: number) => `cccccccc-0000-4000-8000-${String(i).padStart(12, "0")}`;
+  const labels = (n: number, from = 1) => Array.from({ length: n }, (_, i) => label(from + i));
+  const watchRun = (jobIds: string[], starts: number[]) =>
+    act(() => void watchPrint({ kind: "cart", printerId: PRINTER_A.id, jobIds, run: { batchId: BATCH, subJobStarts: starts, confirmed: [] } }));
+
+  it("shows the part that prints, waits after it, and Continue starts the next part", async () => {
+    const run = { state: "printing", current_sub_job: 2, sub_jobs: 2, sub_job_size: 3, sub_job_starts: [0, 3], job_ids: labels(5), confirmed_job_ids: [], unknown_from: null, unknown_to: null, stop_code: null };
+    const { calls: runCalls } = mockApi({ "GET /api/v1/printers": [PRINTER_A], [`POST /api/v1/batches/${BATCH}/continue`]: run });
+    const jobs = labels(5);
+    watchRun(jobs, [0, 3]);
+    event(jobs[0]!, "printing");
+    expect(await within(region()).findByText(/Part 1 of 2/)).toBeVisible();
+    jobs.slice(0, 3).forEach((j) => event(j, "completed"));
+    expect(await within(region()).findByText(/Part 1 of 2 is done/)).toBeVisible();
+    fireEvent.click(within(region()).getByRole("button", { name: "Continue with part 2" }));
+    await waitFor(() => expect(runCalls.some((c) => c.method === "POST" && c.path === `/api/v1/batches/${BATCH}/continue`)).toBe(true));
+    await waitFor(() => expect(within(region()).queryByRole("button", { name: "Continue with part 2" })).toBeNull());
+    expect(within(region()).getByText(/Part 2 of 2/)).toBeVisible();
+  });
+
+  it("after a stop names the labels to count and reprints from the one the user picks", async () => {
+    const jobs = labels(25);
+    const fresh = labels(11, 100);
+    const reprint = { new_job_ids: fresh, confirmed_job_ids: jobs.slice(10, 14), job_ids: [...jobs.slice(0, 14), ...fresh], run: { state: "printing", current_sub_job: 2, sub_jobs: 2, sub_job_size: 50, sub_job_starts: [0, 14], job_ids: [...jobs.slice(0, 14), ...fresh], confirmed_job_ids: jobs.slice(10, 14), unknown_from: null, unknown_to: null, stop_code: null } };
+    const { calls: runCalls } = mockApi({ "GET /api/v1/printers": [PRINTER_A], [`POST /api/v1/batches/${BATCH}/reprint`]: reprint });
+    watchRun(jobs, [0]);
+    jobs.slice(0, 10).forEach((j) => event(j, "completed"));
+    jobs.slice(10, 20).forEach((j) => event(j, "failed", { error_code: "outcome_unknown" }));
+    jobs.slice(20).forEach((j) => event(j, "failed", { error_code: "not_started" }));
+    const card = region();
+    expect(await within(card).findByText(/Labels 11 to 20 may or may not have printed/)).toBeVisible();
+    expect(within(card).queryByRole("button", { name: "Retry" })).toBeNull();
+    fireEvent.change(within(card).getByRole("combobox", { name: "First missing label" }), { target: { value: "15" } });
+    fireEvent.click(within(card).getByRole("button", { name: "Reprint from label 15" }));
+    await waitFor(() => expect(runCalls.find((c) => c.path === `/api/v1/batches/${BATCH}/reprint`)?.body).toBe(JSON.stringify({ from_label: 15 })));
+    // The card follows the new jobs: the stop is gone, 14 labels count as printed.
+    await waitFor(() => expect(within(card).queryByText(/may or may not have printed/)).toBeNull());
+    expect(within(card).getByText(/14 of 25 items/)).toBeVisible();
+  });
+});

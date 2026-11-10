@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
+import type { components } from "../../api/schema.gen";
 import type { Job } from "../printers/api";
 
 export type { Job };
@@ -49,6 +50,28 @@ export function useRetryJob() {
       }
       return request;
     },
+    onSettled: refresh,
+  });
+}
+
+export type TapeRunRead = components["schemas"]["TapeRunRead"];
+export type ReprintResponse = components["schemas"]["ReprintResponse"];
+
+/** Starts the next sub-job of a tape batch (#277). */
+export function useContinueBatch() {
+  const refresh = useRefreshJobs();
+  return useMutation({
+    mutationFn: (batchId: string) => apiFetch<TapeRunRead>(`/api/v1/batches/${batchId}/continue`, { method: "POST" }),
+    onSettled: refresh,
+  });
+}
+
+/** Reprints a stopped tape batch from a label (#277); the answer has the new jobs and the run's order. */
+export function useReprintBatch() {
+  const refresh = useRefreshJobs();
+  return useMutation({
+    mutationFn: ({ batchId, fromLabel }: { batchId: string; fromLabel: number }) =>
+      apiFetch<ReprintResponse>(`/api/v1/batches/${batchId}/reprint`, { method: "POST", json: { from_label: fromLabel } }),
     onSettled: refresh,
   });
 }

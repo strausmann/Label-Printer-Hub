@@ -4,8 +4,10 @@ import {
   claimJob,
   dismissWatch,
   errorCodeFromMessage,
+  markRunContinued,
   recordJobEvent,
   releaseClaimPending,
+  replaceRunJobs,
   replaceWatchedJob,
   resetPrintWatch,
   resyncWatchedJobs,
@@ -264,5 +266,56 @@ describe("print watch store", () => {
     act(() => void watchPrint({ kind: "item", printerId: P, jobIds: [A] }));
     act(() => recordJobEvent({ to_state: "done" }));
     expect(result.current[0]!.phase).toBe("queued");
+  });
+});
+
+describe("a tape run in sub-jobs (#277)", () => {
+  const ids = (n: number, from = 0) => Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(from + i).padStart(12, "0")}`);
+  const watchRun = (jobIds: string[]) => watchPrint({ kind: "cart", printerId: P, jobIds, run: { batchId: "batch-1", subJobStarts: [0, 3], confirmed: [] } });
+
+  it("shows the sub-job that prints and, after it, waits for the user", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    const jobs = ids(5);
+    act(() => void watchRun(jobs));
+    act(() => event(jobs[0]!, "printing"));
+    expect(result.current[0]!.run).toMatchObject({ subJob: 1, subJobs: 2, awaiting: false, unknownFrom: null });
+    act(() => jobs.slice(0, 3).forEach((j) => event(j, "completed")));
+    expect(result.current[0]!.run).toMatchObject({ subJob: 2, awaiting: true });
+    expect(result.current[0]!.phase).toBe("printing");
+    act(() => event(jobs[3]!, "printing"));
+    expect(result.current[0]!.run).toMatchObject({ subJob: 2, awaiting: false });
+  });
+
+  it("after a stop names the unknown labels and counts nothing as failed that the user confirmed", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    const jobs = ids(5);
+    let entryId = "";
+    act(() => void (entryId = watchRun(jobs)));
+    act(() => event(jobs[0]!, "completed"));
+    act(() => jobs.slice(1, 3).forEach((j) => event(j, "failed", { error_code: "outcome_unknown" })));
+    act(() => jobs.slice(3).forEach((j) => event(j, "failed", { error_code: "not_started" })));
+    expect(result.current[0]!.phase).toBe("failed");
+    expect(result.current[0]!.run).toMatchObject({ unknownFrom: 2, unknownTo: 3 });
+
+    // Reprint from label 3: label 2 printed, 3..5 are new jobs.
+    const fresh = ids(3, 100);
+    act(() => replaceRunJobs(entryId, { jobIds: [...jobs.slice(0, 2), ...fresh], confirmed: [jobs[1]!], subJobStarts: [0, 2] }));
+    const after = result.current[0]!;
+    expect(after.failedJobIds).toEqual([]);
+    expect(after.finished).toBe(2);
+    expect(after.run).toMatchObject({ unknownFrom: null, subJob: 2 });
+    act(() => fresh.forEach((j) => event(j, "completed")));
+    expect(result.current[0]!.phase).toBe("done");
+  });
+
+  it("a continued sub-job does not offer the confirmation again while it waits for the worker", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    const jobs = ids(5);
+    let entryId = "";
+    act(() => void (entryId = watchRun(jobs)));
+    act(() => jobs.slice(0, 3).forEach((j) => event(j, "completed")));
+    expect(result.current[0]!.run?.awaiting).toBe(true);
+    act(() => markRunContinued(entryId, 2));
+    expect(result.current[0]!.run?.awaiting).toBe(false);
   });
 });

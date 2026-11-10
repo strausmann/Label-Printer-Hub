@@ -256,6 +256,17 @@ class _QLQueuePrinter:
             orientation=_orientation(options.pop("orientation", None)),
         )
 
+    async def check_status(self) -> None:
+        """#277: the status check after each group of a tape run: the SNMP preflight.
+
+        Not verified on hardware whether the QL-820NWB sets ``noPaper`` when a DK roll ends;
+        the brother_ql network backend reads nothing back while printing. Without that bit
+        the check catches only an unreachable printer (``PrinterOfflineError``) and an open
+        cover.
+        """
+        backend: Any = self._backend  # the PrinterBackend protocol has no preflight_check
+        await backend.preflight_check()
+
 
 def _orientation(value: object) -> LabelOrientation | None:
     """Job option -> ``LabelOrientation``; ``None`` (pre-#258 job) keeps the heuristic."""

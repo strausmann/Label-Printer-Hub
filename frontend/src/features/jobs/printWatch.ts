@@ -28,11 +28,32 @@ export interface JobLive {
 export const errorCodeFromMessage = (message: string | null | undefined): string | null =>
   /^([a-z][a-z0-9_-]*): /.exec(message ?? "")?.[1] ?? null;
 
+/**
+ * A tape batch printed in sub-jobs (#277): the batch id for continue and reprint, where each sub-job starts in
+ * `jobIds`, the labels of an unknown group the user said printed, and the sub-job the user already continued.
+ */
+export interface WatchRun {
+  batchId: string;
+  subJobStarts: number[];
+  confirmed: string[];
+  continued?: number;
+}
+
+/** What the stack shows of a run: 1-based sub-job, whether it waits for the user, the unknown labels (1-based). */
+export interface RunView {
+  subJob: number;
+  subJobs: number;
+  awaiting: boolean;
+  unknownFrom: number | null;
+  unknownTo: number | null;
+}
+
 interface WatchRecord {
   id: string;
   kind: PrintKind;
   printerId: string | null;
   jobIds: string[];
+  run?: WatchRun;
   /**
    * A page line is about to claim this print: the stack does not announce it in the meantime (no double
    * announcement). `true`: waiting for the first claim; a job id: the claim of that job is being handed over to
@@ -42,10 +63,10 @@ interface WatchRecord {
   claimPending?: true | string;
 }
 
-const withoutPending = (r: WatchRecord): WatchRecord => ({ id: r.id, kind: r.kind, printerId: r.printerId, jobIds: r.jobIds });
+const withoutPending = (r: WatchRecord): WatchRecord => ({ id: r.id, kind: r.kind, printerId: r.printerId, jobIds: r.jobIds, ...(r.run ? { run: r.run } : {}) });
 
 /** A watched print with its state worked out from the jobs it holds. */
-export interface WatchedPrint extends WatchRecord {
+export interface WatchedPrint extends Omit<WatchRecord, "run"> {
   phase: JobPhase;
   total: number;
   /** Jobs that ended well. */
@@ -54,6 +75,9 @@ export interface WatchedPrint extends WatchRecord {
   live: Record<string, JobLive | undefined>;
   /** A page shows one of its jobs in its own live line (`claimJob`): the stack shows the card but does not announce it. */
   claimed: boolean;
+  /** A tape run in sub-jobs (#277), else undefined; `runBatchId` is its batch for continue and reprint. */
+  run?: RunView;
+  runBatchId?: string;
 }
 
 interface Store {
@@ -95,10 +119,36 @@ const phaseOf = (state: unknown): JobPhase => {
 };
 const isTerminal = (phase: JobPhase) => phase === "done" || phase === "failed" || phase === "cancelled";
 
+/**
+ * The run's state from the job events alone: the unknown group (`outcome_unknown`, minus what the user confirmed),
+ * else the sub-job of the first open label, which waits for the user when it has not begun and is not continued.
+ */
+function runViewOf(record: WatchRecord, live: Record<string, JobLive>): RunView | undefined {
+  const run = record.run;
+  if (!run) return undefined;
+  const starts = run.subJobStarts.length > 0 ? run.subJobStarts : [0];
+  const subJobOf = (index: number) => starts.filter((s) => s <= index).length;
+  const confirmed = new Set(run.confirmed);
+  const unknown = record.jobIds.flatMap((id, i) => (live[id]?.errorCode === "outcome_unknown" && !confirmed.has(id) ? [i] : []));
+  if (unknown.length > 0) {
+    return { subJob: subJobOf(unknown[0]!), subJobs: starts.length, awaiting: false, unknownFrom: unknown[0]! + 1, unknownTo: unknown.at(-1)! + 1 };
+  }
+  const phaseAt = (i: number) => live[record.jobIds[i]!]?.phase ?? "queued";
+  const firstOpen = record.jobIds.findIndex((_, i) => !confirmed.has(record.jobIds[i]!) && !isTerminal(phaseAt(i)));
+  if (firstOpen < 0) return { subJob: starts.length, subJobs: starts.length, awaiting: false, unknownFrom: null, unknownTo: null };
+  const subJob = subJobOf(firstOpen);
+  const end = starts[subJob] ?? record.jobIds.length;
+  const notBegun = record.jobIds.slice(starts[subJob - 1]!, end).every((_, k) => phaseAt(starts[subJob - 1]! + k) === "queued");
+  const awaiting = subJob > 1 && firstOpen === starts[subJob - 1] && notBegun && run.continued !== subJob;
+  return { subJob, subJobs: starts.length, awaiting, unknownFrom: null, unknownTo: null };
+}
+
 function derive(records: WatchRecord[], live: Record<string, JobLive>, claims: Record<string, number>): WatchedPrint[] {
   return records.map((record) => {
-    const phases = record.jobIds.map((id) => live[id]?.phase ?? "queued");
-    const failedJobIds = record.jobIds.filter((id) => live[id]?.phase === "failed");
+    // Labels of an unknown group the user confirmed (a reprint) count as printed.
+    const confirmed = new Set(record.run?.confirmed ?? []);
+    const phases = record.jobIds.map((id) => (confirmed.has(id) ? "done" : (live[id]?.phase ?? "queued")));
+    const failedJobIds = record.jobIds.filter((_, i) => phases[i] === "failed");
     const finished = phases.filter((p) => p === "done").length;
     const open = phases.some((p) => !isTerminal(p));
     let phase: JobPhase;
@@ -110,14 +160,16 @@ function derive(records: WatchRecord[], live: Record<string, JobLive>, claims: R
     else if (failedJobIds.length > 0) phase = "failed";
     else if (finished === 0) phase = "cancelled";
     else phase = "done";
+    const { run: tapeRun, ...rest } = record;
     return {
-      ...record,
+      ...rest,
       phase,
       total: record.jobIds.length,
       finished,
       failedJobIds,
       live: Object.fromEntries(record.jobIds.map((id) => [id, live[id]])),
       claimed: record.claimPending !== undefined || record.jobIds.some((id) => (claims[id] ?? 0) > 0),
+      ...(tapeRun ? { run: runViewOf(record, live)!, runBatchId: tapeRun.batchId } : {}),
     };
   });
 }
@@ -165,11 +217,12 @@ export function recordJobEvent(data: Record<string, unknown>): void {
 }
 
 /** Registers the jobs one print action queued; returns the entry id. Several concurrent prints are separate entries. */
-export function watchPrint(input: { kind: PrintKind; printerId: string | null; jobIds: string[]; claimPending?: boolean }): string {
+export function watchPrint(input: { kind: PrintKind; printerId: string | null; jobIds: string[]; claimPending?: boolean; run?: WatchRun }): string {
   const id = `print-${++counter}`;
   if (input.jobIds.length === 0) return id;
   const record: WatchRecord = { id, kind: input.kind, printerId: input.printerId, jobIds: [...input.jobIds] };
   if (input.claimPending) record.claimPending = true;
+  if (input.run) record.run = { ...input.run, subJobStarts: [...input.run.subJobStarts], confirmed: [...input.run.confirmed] };
   commit({ records: [...store.records, record] });
   return id;
 }
@@ -209,6 +262,40 @@ export const watchedPrintOfJob = (jobId: string): WatchedPrint | undefined => st
 
 export function dismissWatch(id: string): void {
   commit({ records: store.records.filter((r) => r.id !== id) });
+}
+
+/**
+ * Watches an accepted tape batch (#277): every label (copies included) and the run, so the stack can show the
+ * sub-jobs, the confirmation between them and a reprint after a stop.
+ */
+export function watchBatch(kind: PrintKind, accepted: { batch_id: string; printer_id: string; job_ids: string[]; label_job_ids?: string[]; sub_job_size: number }): string {
+  const jobIds = accepted.label_job_ids && accepted.label_job_ids.length > 0 ? accepted.label_job_ids : accepted.job_ids;
+  return watchPrint({
+    kind,
+    printerId: accepted.printer_id,
+    jobIds,
+    run: { batchId: accepted.batch_id, subJobStarts: subJobStartsOf(jobIds.length, accepted.sub_job_size), confirmed: [] },
+  });
+}
+
+/** The sub-jobs of a tape batch: one every `size` labels (the server's split, #277). */
+export const subJobStartsOf = (count: number, size: number): number[] =>
+  Array.from({ length: Math.max(1, Math.ceil(count / Math.max(1, size))) }, (_, i) => i * size);
+
+/** A reprint from label N (#277): the run's labels in their new order, what the user confirmed, the new split. */
+export function replaceRunJobs(entryId: string, next: { jobIds: string[]; confirmed: string[]; subJobStarts: number[] }): void {
+  commit({
+    records: store.records.map((r) =>
+      r.id === entryId && r.run
+        ? { ...r, jobIds: [...next.jobIds], run: { batchId: r.run.batchId, subJobStarts: [...next.subJobStarts], confirmed: [...new Set([...r.run.confirmed, ...next.confirmed])] } }
+        : r,
+    ),
+  });
+}
+
+/** The user continued sub-job `subJob` (1-based): the stack stops offering it while the worker picks it up. */
+export function markRunContinued(entryId: string, subJob: number): void {
+  commit({ records: store.records.map((r) => (r.id === entryId && r.run ? { ...r, run: { ...r.run, continued: subJob } } : r)) });
 }
 
 /** A retry clones a failed job into a new queued one: the entry follows the new job. */
