@@ -105,6 +105,20 @@ async def _other_printer() -> UUID:
         return p.id
 
 
+def _identity_events(queue: Any) -> list[dict[str, Any]]:
+    """The ``printer.identity_mismatch`` payloads queued so far, in order.
+
+    The state channel is shared: the IPP status producer starts its first probe with the app and
+    publishes ``printer.status`` whenever that probe lands, which can be after the subscription.
+    Only the identity events belong to these tests."""
+    seen = []
+    while not queue.empty():
+        event = queue.get_nowait()
+        if event is not None and event.event_type == "printer.identity_mismatch":
+            seen.append(event.data)
+    return seen
+
+
 def _url(printer_id: UUID) -> str:
     return f"/api/v1/admin/printers/{printer_id}/identity/resolve"
 
@@ -167,9 +181,7 @@ async def test_resolve_same_device_keeps_calibration() -> None:
         assert row.mismatch_since is None
         assert await _calibration_trays(rig.printer_id) == ["auto", "gone"]
         assert not rig.app.state.print_queue.is_identity_held(rig.printer_id)
-        event = events.get_nowait()
-        assert event.event_type == "printer.identity_mismatch"
-        assert event.data == {"mismatch": False}
+        assert _identity_events(events) == [{"mismatch": False}]
         changed = hub.get_nowait()
         assert changed.event_type == "hub.printers_changed"
         assert changed.data["printer_id"] == str(rig.printer_id)
@@ -501,9 +513,7 @@ async def test_a_probe_between_commit_and_release_keeps_the_hold(
         row = await _identity(rig.printer_id)
         assert row.mismatch_since is not None and row.observed_id == SERIAL_C
         assert rig.app.state.print_queue.is_identity_held(rig.printer_id)
-        seen = []
-        while not events.empty():
-            seen.append(events.get_nowait().data["mismatch"])
+        seen = [data["mismatch"] for data in _identity_events(events)]
         assert False not in seen  # the stream never announces "resolved"
 
 
