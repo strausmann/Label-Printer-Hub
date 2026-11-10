@@ -38,9 +38,11 @@ async function jobsOf(page: Page, id: string): Promise<string[]> {
   return jobs.filter((j) => j.printer_id === id).map((j) => j.id);
 }
 
-/** Chooses the 4 x 12 type in the select. */
+/** Chooses the 4 x 12 type in the combobox: types its key, so the one option sits at the top of the list (no scrolling that would close it). */
 async function chooseType(page: Page) {
-  await page.getByRole("button", { name: /Sheet type|Bogentyp/ }).click();
+  const box = page.getByRole("combobox", { name: /Sheet type|Bogentyp/ });
+  await box.click();
+  await box.fill(TYPE);
   await page.getByRole("option", { name: new RegExp(`\\(${TYPE}\\)`) }).click();
 }
 
@@ -112,6 +114,36 @@ test.describe.serial("calibration", () => {
     await expect(line.getByText(/measure the crossings/)).toBeVisible();
     expect({ print: await pageBox(print), pdf: await pageBox(pdf) }).toEqual(before);
     expect(await page.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true);
+  });
+
+  test("typing 4736 narrows the sheet types and Enter chooses one: the legend follows (#237)", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openCalibration(page, id);
+    const box = page.getByRole("combobox", { name: "Sheet type" });
+    const legend = page.getByRole("img", { name: /^Calibration page of / });
+
+    // Start on another type, so the change below is a change.
+    await box.click();
+    const all = await page.getByRole("option").allTextContents();
+    expect(all.length).toBeGreaterThan(2);
+    await page.getByRole("option").filter({ hasNotText: `(${TYPE})` }).first().click();
+    await expect(legend).not.toHaveAttribute("aria-label", new RegExp(`\\(${TYPE}\\)`));
+
+    await box.click();
+    await box.fill("4736");
+    const shown = await page.getByRole("option").allTextContents();
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.length).toBeLessThan(all.length);
+    expect(shown.every((text) => /4736/i.test(text))).toBe(true);
+    await box.press("Enter");
+
+    await expect(legend).toHaveAttribute("aria-label", new RegExp(`\\(${TYPE}\\)`));
+    await expect(box).toHaveValue(new RegExp(`\\(${TYPE}\\)`));
+    // The same on a phone: the field is 16 px or more (no iOS zoom) and the page does not scroll sideways.
+    await page.setViewportSize({ width: 390, height: 800 });
+    expect(await box.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+    expect(await noSideScroll(page)).toBe(true);
   });
 
   test("a failed calibration print shows its error and a Retry under the buttons (#239)", async () => {

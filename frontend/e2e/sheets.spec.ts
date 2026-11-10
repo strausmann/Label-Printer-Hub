@@ -18,6 +18,14 @@ async function choose(scope: Locator, select: RegExp, option: RegExp) {
   await scope.page().getByRole("option", { name: option }).click();
 }
 
+/** The sheet type field is a combobox: open it, type the key (the one option then sits at the top; scrolling a long list would close it), pick it. */
+async function chooseType(scope: Locator, field: RegExp, option: RegExp) {
+  const box = scope.getByRole("combobox", { name: field });
+  await box.click();
+  await box.fill(option.source);
+  await scope.page().getByRole("option", { name: option }).click();
+}
+
 // One sign-in for the whole file: the hub limits sign-ins per minute.
 test.describe.serial("sheets", () => {
   let page: Page;
@@ -62,7 +70,7 @@ test.describe.serial("sheets", () => {
     await page.goto("/sheets");
     await page.getByRole("button", { name: "New sheet" }).click();
     const dialog = page.getByRole("dialog", { name: "Add a sheet" });
-    await choose(dialog, /Sheet type/, new RegExp(TYPE_48));
+    await chooseType(dialog, /Sheet type/, new RegExp(TYPE_48));
     await expect(dialog.getByText(/It will probably become L4736-\d{4}\./)).toBeVisible();
     for (const n of [1, 2, 3]) await dialog.getByRole("gridcell", { name: new RegExp(`^Cell ${n},`) }).click();
     await expect(dialog.getByText("3 cells marked as used")).toBeVisible();
@@ -92,7 +100,7 @@ test.describe.serial("sheets", () => {
     await page.goto("/sheets");
     await page.getByRole("button", { name: "New sheet" }).click();
     const dialog = page.getByRole("dialog", { name: "Add a sheet" });
-    await choose(dialog, /Sheet type/, new RegExp(TYPE_189));
+    await chooseType(dialog, /Sheet type/, new RegExp(TYPE_189));
     const cells = dialog.getByRole("gridcell");
     await expect(cells).toHaveCount(189);
 
@@ -121,7 +129,7 @@ test.describe.serial("sheets", () => {
     await page.goto("/sheets");
     await page.getByRole("button", { name: "New sheet" }).click();
     const dialog = page.getByRole("dialog", { name: "Add a sheet" });
-    await choose(dialog, /Sheet type/, new RegExp(TYPE_189));
+    await chooseType(dialog, /Sheet type/, new RegExp(TYPE_189));
     await expect(dialog.getByRole("gridcell")).toHaveCount(189);
     const scroller = dialog.locator("[data-scroll]");
     const view = () =>
@@ -143,7 +151,7 @@ test.describe.serial("sheets", () => {
 
     // Panned somewhere and then another type chosen: the new grid starts at its leading edge, not at the old offset.
     await scroller.evaluate((el) => (el.scrollLeft = 200));
-    await choose(dialog, /Sheet type/, new RegExp(TYPE_48));
+    await chooseType(dialog, /Sheet type/, new RegExp(TYPE_48));
     await expect(dialog.getByRole("gridcell")).toHaveCount(48);
     expect((await view()).scrollLeft).toBe(0);
   });
@@ -275,7 +283,7 @@ test.describe.serial("sheets", () => {
         await page.getByRole("button", { name: de ? "Neuer Bogen" : "New sheet" }).click();
         const dialog = page.getByRole("dialog");
         await expect(dialog).toBeVisible();
-        await choose(dialog, de ? /Bogentyp/ : /Sheet type/, new RegExp(TYPE_48));
+        await chooseType(dialog, de ? /Bogentyp/ : /Sheet type/, new RegExp(TYPE_48));
         for (const n of [1, 2, 3, 4]) await dialog.getByRole("gridcell", { name: new RegExp(`^(Cell|Zelle) ${n},`) }).click();
         await choose(dialog, de ? /Drucker/ : /Printer/, /Office page printer/);
         await expect(dialog.getByRole("status").filter({ hasText: /margin|Rand|add it by hand|von Hand/ }).first()).toBeVisible();

@@ -542,7 +542,7 @@ msgid "Archive"
 msgstr "Archive"
 
 #: src/features/archive/TypeDetail.tsx
-#: src/features/sheets/print/SheetSection.tsx
+#: src/features/sheets/SheetTypeCombobox.tsx
 msgid "archived"
 msgstr "archived"
 
@@ -853,6 +853,10 @@ msgstr "Clear marks"
 #: src/features/printers/PrinterDetail.tsx
 msgid "Clear queue"
 msgstr "Clear queue"
+
+#: src/features/sheets/SheetTypeCombobox.tsx
+msgid "Clear the search"
+msgstr "Clear the search"
 
 #: src/features/settings/Integrations.tsx
 msgid "Clients"
@@ -2000,6 +2004,7 @@ msgid "No sheet matches."
 msgstr "No sheet matches."
 
 #: src/features/archive/ArchivePage.tsx
+#: src/features/sheets/SheetTypeCombobox.tsx
 msgid "No sheet type matches."
 msgstr "No sheet type matches."
 
@@ -3114,6 +3119,10 @@ msgstr "Sheets already made keep printing with the old measurements."
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Show all {count}"
 msgstr "Show all {count}"
+
+#: src/features/sheets/SheetTypeCombobox.tsx
+msgid "Show all sheet types"
+msgstr "Show all sheet types"
 
 #: src/features/archive/ArchivePage.tsx
 msgid "Show archived types"

@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { renderApp } from "../../../test-utils";
 import { CART_KEY, reloadCart } from "../../lookup/cart";
 import { mockApi, PAGE_PRINTER, PRINTER_A, respond, SHEET_TYPE, pageStatus, sheetRead, type Call } from "../../test-api";
-import { BATCH, JOB, NEW_9, P, USED_17, body, conflict, pick, previewFor, previewPage, reason, routes, sheet } from "./testkit";
+import { BATCH, JOB, NEW_9, P, USED_17, body, conflict, expectType, pick, pickType, previewFor, typeBox, previewPage, reason, routes, sheet } from "./testkit";
 
 const PREVIEW = `/api/v1/print/${P}/sheet/preview`;
 const PRINT = `/api/v1/print/${P}/sheet`;
@@ -148,7 +148,7 @@ describe("tray, sheet type and the sheet", () => {
   it("remembers the sheet type per printer", async () => {
     const other = { ...SHEET_TYPE, key: "other-type", product_codes: ["OT-1"], vendor: "Other" };
     await itemView(routes({ types: [SHEET_TYPE, other] }), 1);
-    await pick(/Sheet type/, /other-type/);
+    await pickType(/other-type/);
     expect(localStorage.getItem(`lph.sheetType.${P}`)).toBe("other-type");
   });
 
@@ -156,7 +156,7 @@ describe("tray, sheet type and the sheet", () => {
     const other = { ...SHEET_TYPE, key: "other-type", product_codes: ["OT-1"], vendor: "Other" };
     localStorage.setItem(`lph.sheetType.${P}`, "other-type");
     await itemView(routes({ types: [SHEET_TYPE, other] }), 1);
-    expect(await screen.findByRole("button", { name: /other-type/ })).toBeVisible();
+    await expectType(/other-type/);
   });
 
   it("lists the sheets that hold everything first, with the free count and 'too small' for the others", async () => {
@@ -204,7 +204,7 @@ describe("an archived sheet type", () => {
   it("stays selectable for its sheets with free cells, prints onto the existing sheet and offers no new one", async () => {
     localStorage.setItem(`lph.sheetType.${P}`, "OLDTYPE");
     const { calls } = await itemView(routes({ types: [SHEET_TYPE, OLD], sheets: [oldSheet("OLDX-0001", 17)], preview: previewFor("OLDX-0001", NEW_9, USED_17) }));
-    expect(await screen.findByRole("button", { name: /OLDTYPE.*archived/ })).toBeVisible();
+    await expectType(/OLDTYPE.*archived/);
     expect(screen.getByText(/This sheet type is archived/)).toBeVisible();
     await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
     expect(body(previews(calls).at(-1)!).placements).toEqual([{ sheet: "OLDX-0001", cells: "first_free" }]);
@@ -265,16 +265,16 @@ describe("an archived sheet type", () => {
       1,
     );
     // The user picks the archived type by hand: that is a typeChoice, not a default.
-    await pick(/Sheet type/, /OLDTYPE/);
-    expect(await screen.findByRole("button", { name: /OLDTYPE.*archived/ })).toBeVisible();
+    await pickType(/OLDTYPE/);
+    await expectType(/OLDTYPE.*archived/);
     await waitFor(() => expect(sources.length).toBeGreaterThan(0));
     taken = true;
     await act(async () => {
       sources.at(-1)!.emit("sheet.updated", null, { code: "OLDX-0001", free: 0, total: 48, changed: [48], state: "active" });
     });
     // The type is no longer offered, so the choice moves to an offered type ...
-    expect(await screen.findByRole("button", { name: /L4736REV/ }, { timeout: 2500 })).toBeVisible();
-    expect(screen.queryByRole("button", { name: /OLDTYPE/ })).toBeNull();
+    await expectType(/L4736REV/, 2500);
+    expect((await typeBox()).value).not.toMatch(/OLDTYPE/);
     // ... and no preview asks for a new sheet of the archived type, which the server refuses.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 600));
@@ -284,7 +284,7 @@ describe("an archived sheet type", () => {
 
   it("stays hidden when no active sheet of it has a free cell", async () => {
     await itemView(routes({ types: [SHEET_TYPE, OLD], sheets: [oldSheet("OLDX-0001", 48), sheet("L4736-0001", 17)] }));
-    await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
+    await userEvent.click(await typeBox());
     const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
     expect(options.join("|")).not.toMatch(/OLDTYPE/);
   });
@@ -294,7 +294,7 @@ describe("defaults and hints", () => {
   it("with nothing remembered the type that has a sheet with room comes first", async () => {
     const empty = { ...SHEET_TYPE, key: "aaa-empty-type", product_codes: ["AAA-1"], vendor: "Aaa" };
     await itemView(routes({ types: [empty, SHEET_TYPE] }), 1);
-    expect(await screen.findByRole("button", { name: /L4736REV/ })).toBeVisible();
+    await expectType(/L4736REV/);
   });
 
   it("choosing cells on a sheet that is too small says so", async () => {
@@ -439,7 +439,7 @@ describe("a picked target belongs to the type it was picked for", () => {
       }),
       1,
     );
-    expect(await screen.findByRole("button", { name: /OLDTYPE.*archived/ })).toBeVisible();
+    await expectType(/OLDTYPE.*archived/);
     await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /OLDX-0002/ }));
     await waitFor(() => expect(lastPlacements(calls)).toEqual([{ sheet: "OLDX-0002", cells: "first_free" }]));

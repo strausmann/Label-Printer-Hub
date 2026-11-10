@@ -542,7 +542,7 @@ msgid "Archive"
 msgstr "Archivieren"
 
 #: src/features/archive/TypeDetail.tsx
-#: src/features/sheets/print/SheetSection.tsx
+#: src/features/sheets/SheetTypeCombobox.tsx
 msgid "archived"
 msgstr "archiviert"
 
@@ -853,6 +853,10 @@ msgstr "Markierungen löschen"
 #: src/features/printers/PrinterDetail.tsx
 msgid "Clear queue"
 msgstr "Warteschlange leeren"
+
+#: src/features/sheets/SheetTypeCombobox.tsx
+msgid "Clear the search"
+msgstr "Suche leeren"
 
 #: src/features/settings/Integrations.tsx
 msgid "Clients"
@@ -2000,6 +2004,7 @@ msgid "No sheet matches."
 msgstr "Kein Bogen passt."
 
 #: src/features/archive/ArchivePage.tsx
+#: src/features/sheets/SheetTypeCombobox.tsx
 msgid "No sheet type matches."
 msgstr "Kein Bogentyp passt."
 
@@ -3114,6 +3119,10 @@ msgstr "Schon angelegte Bögen drucken weiter mit den alten Maßen."
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Show all {count}"
 msgstr "Alle {count} anzeigen"
+
+#: src/features/sheets/SheetTypeCombobox.tsx
+msgid "Show all sheet types"
+msgstr "Alle Bogentypen anzeigen"
 
 #: src/features/archive/ArchivePage.tsx
 msgid "Show archived types"

@@ -5,17 +5,17 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Label, Radio, RadioGroup } from "react-aria-components";
 import { printInterrupted, sheetIdJobFailed } from "../../api/errorDetail";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
-import { useSheetTypes, type SheetTypeRead } from "../archive/api";
+import { useSheetTypes } from "../archive/api";
 import { useCapabilities } from "../calibration/api";
 import { usePrinters } from "../printers/api";
 import { HINT, LABEL, ModalDialog, SelectField } from "../settings/controls";
 import { SECONDARY_BUTTON } from "../ui";
 import { useCreateSheet, useMarginCheck, useNextCode, type MarginCheck, type SheetCreate, type SheetCreated } from "./api";
-import { formatMm, type GridCell } from "./cellState";
+import type { GridCell } from "./cellState";
 import { useSheetErrorText } from "./errors";
 import { GeometryDiagram } from "./GeometryDiagram";
 import { SheetGrid } from "./SheetGrid";
-import { typeLabelWithKey } from "./typeLabel";
+import { SheetTypeCombobox } from "./SheetTypeCombobox";
 
 type Placement = SheetCreate["id_placement"];
 
@@ -123,11 +123,8 @@ function Done({
   );
 }
 
-const typeOption = (type: SheetTypeRead, locale: string) =>
-  `${typeLabelWithKey(type)} · ${formatMm(type.geometry.label_w, locale).replace(/ mm$/, "")} × ${formatMm(type.geometry.label_h, locale)}`;
-
 function AddSheetForm({ onClose }: { onClose: () => void }) {
-  const { t, i18n } = useLingui();
+  const { t } = useLingui();
   const errorText = useSheetErrorText();
   const create = useCreateSheet();
   const types = useSheetTypes();
@@ -216,13 +213,11 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
       className="flex min-w-0 flex-col gap-6"
     >
       <div className="flex flex-col gap-2">
-        <SelectField
+        <SheetTypeCombobox
           label={t`Sheet type`}
+          types={types.data ?? []}
           value={typeKey}
-          options={[
-            { id: NO_TYPE, label: t`Choose a sheet type` },
-            ...(types.data ?? []).map((x) => ({ id: x.key, label: typeOption(x, i18n.locale) })),
-          ]}
+          noneOption={{ id: NO_TYPE, label: t`Choose a sheet type` }}
           onChange={chooseType}
         />
         {types.isError ? <p role="alert">{t`The sheet types could not be loaded.`}</p> : null}

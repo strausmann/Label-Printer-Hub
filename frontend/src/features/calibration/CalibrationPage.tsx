@@ -9,7 +9,7 @@ import { useSheetTypes, type SheetTypeRead } from "../archive/api";
 import { usePrinters, usePrinterStatus, type Printer } from "../printers/api";
 import { PrinterRow } from "../sheets/print/PrinterRow";
 import { HINT, SelectField, TextInput } from "../settings/controls";
-import { formatMm } from "../sheets/cellState";
+import { SheetTypeCombobox } from "../sheets/SheetTypeCombobox";
 import { typeLabelWithKey } from "../sheets/typeLabel";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import {
@@ -39,8 +39,6 @@ const IDENTITY: Record<Field, number> = { offset_x_mm: 0, offset_y_mm: 0, scale_
 
 const hasValues = (row: CalibrationRead | undefined): boolean => !!row && FIELDS.some((f) => row[f] != null);
 
-/** A length without its unit, for "45.7 × 21.2 mm". */
-const plainMm = (v: number, locale: string) => new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(Math.round(v * 100) / 100);
 
 function useNumberText(): (n: number) => string {
   const { i18n } = useLingui();
@@ -147,7 +145,7 @@ interface WorkbenchProps {
 
 /** Everything for one printer and tray; it is rebuilt when either changes. */
 function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
-  const { t, i18n } = useLingui();
+  const { t } = useLingui();
   const session = useSession();
   const canPrint = session.scope === "print" || session.scope === "admin";
   const admin = session.scope === "admin";
@@ -181,12 +179,7 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
           <p className="text-ink-2">{t`There is no sheet type with at least two columns and two rows.`}</p>
         ) : (
           <>
-            <SelectField
-              label={t`Sheet type`}
-              value={type.key}
-              options={usable.map((x) => ({ id: x.key, label: `${typeLabelWithKey(x)} · ${plainMm(x.geometry.label_w, i18n.locale)} × ${formatMm(x.geometry.label_h, i18n.locale)}` }))}
-              onChange={setTypeChoice}
-            />
+            <SheetTypeCombobox label={t`Sheet type`} types={usable} value={type.key} onChange={setTypeChoice} />
             <CalibrationSchematic geometry={type.geometry} typeName={typeLabelWithKey(type)} />
             <GapCrossing colGap={Math.min(2, type.geometry.cols - 1)} rowGap={Math.min(6, type.geometry.rows - 1)} />
             <PrintAction

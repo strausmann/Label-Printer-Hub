@@ -4,7 +4,7 @@ import { Button, Radio, RadioGroup } from "react-aria-components";
 import { useSession } from "../../../app/session";
 import { cellsTaken, insufficientCells, planChanged, queuedJobs } from "../../../api/errorDetail";
 import { PRIMARY_BUTTON } from "../../../shell/SignIn";
-import { useSheetTypes, type SheetTypeRead } from "../../archive/api";
+import { useSheetTypes } from "../../archive/api";
 import type { CartItem } from "../../lookup/cart";
 import { ApiError } from "../../../api/client";
 import { usePrinterStatus, type Printer } from "../../printers/api";
@@ -13,8 +13,9 @@ import { ReasonLine } from "../../printers/PageStatus";
 import { HINT, LABEL, SelectField } from "../../settings/controls";
 import { PANEL, SECTION_HEADING } from "../../ui";
 import { useNextCode, usePrintSheets, useSheet, useSheetPreview, useSheets, type SheetPrintRequest, type SheetPrintResponse } from "../api";
-import { formatMm, type GridCell } from "../cellState";
+import type { GridCell } from "../cellState";
 import { SheetGrid } from "../SheetGrid";
+import { SheetTypeCombobox } from "../SheetTypeCombobox";
 import { typeLabelWithKey } from "../typeLabel";
 import { CapacityAlert } from "./CapacityAlert";
 import { usePrintDialogErrorText } from "./errors";
@@ -62,9 +63,6 @@ const PREVIEW_DEBOUNCE_MS = 400;
 /** Stands in for the request while there is none: the query is off then and never sends it. */
 const NO_REQUEST: SheetPrintRequest = { items: [], placements: [] };
 
-const typeOption = (type: SheetTypeRead, locale: string, archivedWord: string) =>
-  `${typeLabelWithKey(type)} · ${formatMm(type.geometry.label_w, locale).replace(/ mm$/, "")} × ${formatMm(type.geometry.label_h, locale)}${type.archived_at ? ` · ${archivedWord}` : ""}`;
-
 type PrintedPages = SheetPrintResponse["pages"];
 const NO_CELLS: readonly number[] = [];
 
@@ -76,7 +74,7 @@ type Changed = { kind: "plan"; sheets: string[] } | { kind: "cells"; sheet: stri
  * promised (`expected_cells`), and a changed plan is shown again and confirmed again.
  */
 export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQueued }: SheetSectionProps) {
-  const { t, i18n } = useLingui();
+  const { t } = useLingui();
   const status = usePrinterStatus(printer.id);
   // Archived types are asked for too: their existing sheets keep printing, only new sheets are refused.
   const types = useSheetTypes({ include_archived: true });
@@ -142,7 +140,6 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
   // An archived type offers no new sheet: neither as target, nor as the place for a rest.
   // Asked of the complete list, not of `typeList`, which leaves out an archived type without room.
   const archivedType = !!(types.data ?? []).find((x) => x.key === typeKey)?.archived_at;
-  const archivedWord = t`archived`;
 
   // --- sheets of the type ---
   const usable = useMemo(
@@ -327,12 +324,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
       {needed > 0 && (
         <>
           <div className="grid gap-4 sm:grid-cols-2">
-            <SelectField
-              label={t`Sheet type`}
-              value={typeKey ?? ""}
-              options={typeList.map((x) => ({ id: x.key, label: typeOption(x, i18n.locale, archivedWord) }))}
-              onChange={chooseType}
-            />
+            <SheetTypeCombobox label={t`Sheet type`} types={typeList} value={typeKey ?? ""} onChange={chooseType} />
             {tray && trays.length > 1 ? (
               <SelectField label={t`Tray`} value={tray.key} options={trays.map((x) => ({ id: x.key, label: x.label }))} onChange={setTrayChoice} />
             ) : tray ? (

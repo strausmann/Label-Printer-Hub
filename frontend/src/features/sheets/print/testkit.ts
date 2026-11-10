@@ -1,5 +1,6 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { expect } from "vitest";
 import type { components } from "../../../api/schema.gen";
 import {
   GEOMETRY_L4736,
@@ -103,6 +104,19 @@ export const body = (call: { body: string | undefined }) => JSON.parse(call.body
 /** Opens a react-aria select and takes the option. */
 export async function pick(label: string | RegExp, option: string | RegExp) {
   await userEvent.click(screen.getByRole("button", { name: label }));
+  await userEvent.click(await screen.findByRole("option", { name: option }));
+}
+
+/** The sheet type field: a combobox whose text is the chosen type. */
+export const typeBox = async () => (await screen.findByRole("combobox", { name: "Sheet type" })) as HTMLInputElement;
+
+/** Waits until the sheet type field shows the type; it can arrive after a fetch or an event. */
+export async function expectType(text: RegExp, timeout?: number) {
+  await waitFor(async () => expect((await typeBox()).value).toMatch(text), timeout ? { timeout } : undefined);
+}
+
+export async function pickType(option: string | RegExp) {
+  await userEvent.click(await typeBox());
   await userEvent.click(await screen.findByRole("option", { name: option }));
 }
 
