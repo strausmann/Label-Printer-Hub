@@ -33,9 +33,16 @@ interface WatchRecord {
   kind: PrintKind;
   printerId: string | null;
   jobIds: string[];
-  /** A page line is about to claim this print: the stack does not announce it in the meantime (no double announcement). */
-  claimPending?: boolean;
+  /**
+   * A page line is about to claim this print: the stack does not announce it in the meantime (no double
+   * announcement). `true`: waiting for the first claim; a job id: the claim of that job is being handed over to
+   * the job that replaced it (a retry). Cleared by the claim arriving, or by whoever was going to claim it
+   * going away first (`releaseClaimPending`, the release of the handed-over claim), so it can never stick.
+   */
+  claimPending?: true | string;
 }
+
+const withoutPending = (r: WatchRecord): WatchRecord => ({ id: r.id, kind: r.kind, printerId: r.printerId, jobIds: r.jobIds });
 
 /** A watched print with its state worked out from the jobs it holds. */
 export interface WatchedPrint extends WatchRecord {
@@ -110,7 +117,7 @@ function derive(records: WatchRecord[], live: Record<string, JobLive>, claims: R
       finished,
       failedJobIds,
       live: Object.fromEntries(record.jobIds.map((id) => [id, live[id]])),
-      claimed: record.claimPending === true || record.jobIds.some((id) => (claims[id] ?? 0) > 0),
+      claimed: record.claimPending !== undefined || record.jobIds.some((id) => (claims[id] ?? 0) > 0),
     };
   });
 }
@@ -174,9 +181,8 @@ export function watchPrint(input: { kind: PrintKind; printerId: string | null; j
  */
 export function claimJob(jobId: string): () => void {
   // The claim a print registered with `claimPending` was waiting for has arrived.
-  const settled = store.records.some((r) => r.claimPending && r.jobIds.includes(jobId))
-    ? store.records.map((r) => (r.claimPending && r.jobIds.includes(jobId) ? { ...r, claimPending: false } : r))
-    : undefined;
+  const waiting = (r: WatchRecord) => r.claimPending !== undefined && r.jobIds.includes(jobId);
+  const settled = store.records.some(waiting) ? store.records.map((r) => (waiting(r) ? withoutPending(r) : r)) : undefined;
   commit({ claims: { ...store.claims, [jobId]: (store.claims[jobId] ?? 0) + 1 }, ...(settled ? { records: settled } : {}) });
   let released = false;
   return () => {
@@ -186,8 +192,16 @@ export function claimJob(jobId: string): () => void {
     const left = (claims[jobId] ?? 0) - 1;
     if (left > 0) claims[jobId] = left;
     else delete claims[jobId];
-    commit({ claims });
+    // A claim that was being handed over from this job to its replacement will not arrive any more.
+    const handedOver = store.records.some((r) => r.claimPending === jobId);
+    commit({ claims, ...(handedOver ? { records: store.records.map((r) => (r.claimPending === jobId ? withoutPending(r) : r)) } : {}) });
   };
+}
+
+/** The registrant of a `claimPending` print went away before any line claimed it: nobody will, so the stack announces it again. */
+export function releaseClaimPending(jobId: string): void {
+  if (!store.records.some((r) => r.claimPending === true && r.jobIds.includes(jobId))) return;
+  commit({ records: store.records.map((r) => (r.claimPending === true && r.jobIds.includes(jobId) ? withoutPending(r) : r)) });
 }
 
 /** The watched print that holds this job right now, or undefined (never registered, or already dismissed). */
@@ -199,7 +213,14 @@ export function dismissWatch(id: string): void {
 
 /** A retry clones a failed job into a new queued one: the entry follows the new job. */
 export function replaceWatchedJob(entryId: string, oldJobId: string, newJobId: string): void {
-  commit({ records: store.records.map((r) => (r.id === entryId ? { ...r, jobIds: r.jobIds.map((j) => (j === oldJobId ? newJobId : j)) } : r)) });
+  // A page line that claims the old job will claim the new one next: until it has, the card stays claimed (no
+  // moment in the announced lists, so no second announcement).
+  const handOver = (store.claims[oldJobId] ?? 0) > 0;
+  commit({
+    records: store.records.map((r) =>
+      r.id === entryId ? { ...r, jobIds: r.jobIds.map((j) => (j === oldJobId ? newJobId : j)), ...(handOver ? { claimPending: oldJobId } : {}) } : r,
+    ),
+  });
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   dismissWatch,
   errorCodeFromMessage,
   recordJobEvent,
+  releaseClaimPending,
   replaceWatchedJob,
   resetPrintWatch,
   resyncWatchedJobs,
@@ -199,6 +200,50 @@ describe("print watch store", () => {
     expect(result.current[0]!.claimed).toBe(true);
     // The line goes away: from here the stack announces the card like any other.
     act(() => release());
+    expect(result.current[0]!.claimed).toBe(false);
+  });
+
+  it("releaseClaimPending clears a claim nobody will make", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    act(() => void watchPrint({ kind: "calibration", printerId: P, jobIds: [A], claimPending: true }));
+    expect(result.current[0]!.claimed).toBe(true);
+    act(() => releaseClaimPending(A));
+    expect(result.current[0]!.claimed).toBe(false);
+  });
+
+  it("a retry hands the claim over to the new job: the card is claimed the whole time, and cannot stick", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    let id = "";
+    act(() => void (id = watchPrint({ kind: "calibration", printerId: P, jobIds: [A] })));
+    let release = () => {};
+    act(() => void (release = claimJob(A)));
+    act(() => replaceWatchedJob(id, A, B));
+    // The new job is not claimed yet, the old claim still is: the card must not fall into the announced lists.
+    expect(result.current[0]!.claimed).toBe(true);
+    // The line follows: it releases the old claim and claims the new job in one go.
+    let releaseNew = () => {};
+    act(() => {
+      release();
+      releaseNew = claimJob(B);
+    });
+    expect(result.current[0]!.claimed).toBe(true);
+    act(() => releaseNew());
+    expect(result.current[0]!.claimed).toBe(false);
+    // The line goes away before it followed: the old claim's release clears the hand-over.
+    let id2 = "";
+    act(() => void (id2 = watchPrint({ kind: "calibration", printerId: P, jobIds: [C] })));
+    let releaseC = () => {};
+    act(() => void (releaseC = claimJob(C)));
+    act(() => replaceWatchedJob(id2, C, A));
+    act(() => releaseC());
+    expect(result.current.find((e) => e.id === id2)!.claimed).toBe(false);
+  });
+
+  it("a retry of a job nobody claims makes no claim pending", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    let id = "";
+    act(() => void (id = watchPrint({ kind: "item", printerId: P, jobIds: [A] })));
+    act(() => replaceWatchedJob(id, A, B));
     expect(result.current[0]!.claimed).toBe(false);
   });
 

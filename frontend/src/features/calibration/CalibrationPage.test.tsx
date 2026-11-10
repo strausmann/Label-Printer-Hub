@@ -764,6 +764,41 @@ describe("the live print status line (#239)", () => {
     expect(stack().getAllByText("Queued")).toHaveLength(1);
   });
 
+  it("leaving the page before the POST answers does not leave the card unannounced", async () => {
+    let answer: (() => void) | undefined;
+    await open({
+      [`POST ${BASE}/main/page`]: () => new Promise((resolve) => (answer = () => resolve(respond(202, { job_id: JOB })))),
+      [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }),
+    });
+    await userEvent.click(await button("Print calibration page"));
+    await waitFor(() => expect(answer).toBeDefined());
+    // Away from the calibration page: the line is gone before the hub answered.
+    await userEvent.click(screen.getAllByRole("link", { name: "Jobs" })[0]!);
+    await screen.findByRole("heading", { level: 1, name: "Jobs" });
+    await act(async () => answer?.());
+    expect(await stack().findByText("Queued")).toBeVisible();
+    // Nobody claimed it: it is in a live region, and a later failure is announced assertively.
+    expect(stack().getByText("Queued").closest("[aria-live]")?.getAttribute("aria-live")).toBe("polite");
+    event("failed", { error_code: "ipp_aborted" });
+    expect(stack().getByText("Failed").closest("[aria-live]")?.getAttribute("aria-live")).toBe("assertive");
+  });
+
+  it("after a Retry pressed in the stack the new job's card is still in the quiet list", async () => {
+    // The window itself (claim handed over, no moment unclaimed) is pinned by the printWatch unit test
+    // "a retry hands the claim over"; here the end state through the real components.
+    await printed({
+      [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }),
+      [`POST /api/v1/jobs/${JOB}/retry`]: job(RETRY, P, "queued", PAGE_JOB),
+    });
+    event("failed", { error_code: "ipp_aborted" });
+    const line = lineOf("Calibration page status");
+    fireEvent.click(await stack().findByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(around(line).getByRole("link", { name: "Show the job" })).toHaveAttribute("href", `/jobs/${RETRY}`));
+    expect(stack().getByText("Queued").closest("[aria-live]")).toBeNull();
+    act(() => recordJobEvent({ job_id: RETRY, from_state: "queued", to_state: "failed", queue_depth: 0, error_code: "ipp_aborted" }));
+    expect(stack().getByText("Failed").closest("[aria-live]")).toBeNull();
+  });
+
   it("a Retry pressed in the stack moves the line to the new job", async () => {
     const { calls } = await printed({
       [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }),

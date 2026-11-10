@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { useJob, useRetryJob } from "../jobs/api";
 import { useJobErrorText } from "../jobs/jobErrorText";
@@ -60,10 +60,17 @@ export function PrintResult({ jobId: firstJobId, printerId, subject, label, done
   // when its card was dismissed.
   useEffect(() => (jobId ? claimJob(jobId) : undefined), [jobId]);
 
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => void (mounted.current = false);
+  }, []);
+
   const retried = (newJobId: string) => {
     let entryId = own.entryId;
     if (entry) replaceWatchedJob(entry.id, jobId!, newJobId);
-    else entryId = watchPrint({ kind: "calibration", printerId, jobIds: [newJobId], claimPending: true });
+    // `retried` also runs from the retry's answer after this line is gone; then nobody will claim the new job.
+    else entryId = watchPrint({ kind: "calibration", printerId, jobIds: [newJobId], claimPending: mounted.current });
     setOwn({ entryId, jobId: newJobId });
   };
 
