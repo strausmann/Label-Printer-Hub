@@ -654,6 +654,7 @@ msgstr "Calibration"
 msgid "Calibration for this printer will appear here."
 msgstr "Calibration for this printer will appear here."
 
+#: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/model.ts
 #: src/features/jobs/PageJobInfo.tsx
 #: src/shell/PrintToasts.tsx
@@ -676,6 +677,10 @@ msgstr "Calibration page · {name} v{version}"
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "Calibration page of {typeName}: {0} columns and {1} rows on {2}, {3} × {4}"
 msgstr "Calibration page of {typeName}: {0} columns and {1} rows on {2}, {3} × {4}"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Calibration page status"
+msgstr "Calibration page status"
 
 #: src/features/scan/CameraScanner.tsx
 msgid "Camera view"
@@ -710,8 +715,8 @@ msgid "Cancel {queued} queued"
 msgstr "Cancel {queued} queued"
 
 #: src/features/jobs/JobsPage.tsx
+#: src/features/jobs/liveText.ts
 #: src/features/printers/model.ts
-#: src/shell/PrintToasts.tsx
 msgid "Cancelled"
 msgstr "Cancelled"
 
@@ -778,6 +783,14 @@ msgstr "Certificate check"
 #: src/features/printers/RollColourPrompt.tsx
 msgid "Change colour"
 msgstr "Change colour"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Check page"
+msgstr "Check page"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Check page status"
+msgstr "Check page status"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Check print with correction"
@@ -1155,9 +1168,9 @@ msgid "Display name"
 msgstr "Display name"
 
 #: src/features/jobs/JobsPage.tsx
+#: src/features/jobs/liveText.ts
 #: src/features/printers/model.ts
 #: src/features/settings/AccessKeys.tsx
-#: src/shell/PrintToasts.tsx
 msgid "Done"
 msgstr "Done"
 
@@ -1292,9 +1305,9 @@ msgid "Export version {0}"
 msgstr "Export version {0}"
 
 #: src/features/jobs/JobsPage.tsx
+#: src/features/jobs/liveText.ts
 #: src/features/printers/model.ts
 #: src/features/settings/Integrations.tsx
-#: src/shell/PrintToasts.tsx
 msgid "Failed"
 msgstr "Failed"
 
@@ -2341,8 +2354,8 @@ msgstr "Pause"
 msgid "paused"
 msgstr "paused"
 
+#: src/features/jobs/liveText.ts
 #: src/features/printers/model.ts
-#: src/shell/PrintToasts.tsx
 msgid "Paused"
 msgstr "Paused"
 
@@ -2492,8 +2505,8 @@ msgstr "Printers live here; there is no configuration file. A disabled printer k
 
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
+#: src/features/jobs/liveText.ts
 #: src/features/printers/model.ts
-#: src/shell/PrintToasts.tsx
 msgid "Printing"
 msgstr "Printing"
 
@@ -2587,8 +2600,8 @@ msgstr "Queue timeout (seconds)"
 
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
+#: src/features/jobs/liveText.ts
 #: src/features/printers/model.ts
-#: src/shell/PrintToasts.tsx
 msgid "Queued"
 msgstr "Queued"
 
@@ -2737,6 +2750,7 @@ msgstr "Result of the fit"
 msgid "Resume"
 msgstr "Resume"
 
+#: src/features/calibration/PrintResult.tsx
 #: src/features/jobs/JobDetail.tsx
 #: src/features/printers/RollColourPrompt.tsx
 #: src/shell/PrintToasts.tsx
@@ -3117,7 +3131,7 @@ msgstr "Show fewer"
 msgid "Show the ID label job"
 msgstr "Show the ID label job"
 
-#: src/features/calibration/CalibrationPage.tsx
+#: src/features/calibration/PrintResult.tsx
 msgid "Show the job"
 msgstr "Show the job"
 
@@ -3265,8 +3279,8 @@ msgstr "Step 3: Check the result"
 msgid "Stopped"
 msgstr "Stopped"
 
+#: src/features/jobs/liveText.ts
 #: src/features/jobs/pageJobText.ts
-#: src/shell/PrintToasts.tsx
 msgid "Stopped at the printer"
 msgstr "Stopped at the printer"
 
@@ -3481,8 +3495,8 @@ msgid "The calibration of every tray of this printer is reset, and the device no
 msgstr "The calibration of every tray of this printer is reset, and the device now at this address is stored as the new one."
 
 #: src/features/calibration/CalibrationPage.tsx
-msgid "The calibration page is queued."
-msgstr "The calibration page is queued."
+msgid "The calibration page printed. Now measure the crossings."
+msgstr "The calibration page printed. Now measure the crossings."
 
 #: src/features/scan/CameraScanner.tsx
 msgid "The camera did not start"
@@ -3517,8 +3531,8 @@ msgid "The cells could not be un-marked."
 msgstr "The cells could not be un-marked."
 
 #: src/features/calibration/CalibrationPage.tsx
-msgid "The check page is queued."
-msgstr "The check page is queued."
+msgid "The check page printed. Measure the crossings again: each one should be within 0.5 mm."
+msgstr "The check page printed. Measure the crossings again: each one should be within 0.5 mm."
 
 #: src/features/archive/errors.ts
 msgid "The code prefix"
@@ -4504,8 +4518,8 @@ msgstr "View job for page {number}"
 msgid "View the job"
 msgstr "View the job"
 
+#: src/features/jobs/liveText.ts
 #: src/features/jobs/pageJobText.ts
-#: src/shell/PrintToasts.tsx
 msgid "Waiting at the printer"
 msgstr "Waiting at the printer"
 

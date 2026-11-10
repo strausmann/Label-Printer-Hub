@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
-import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { getRouteApi, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { useSession } from "../../app/session";
@@ -24,6 +24,7 @@ import {
 import { CalibrationSchematic, GapCrossing } from "./CalibrationSchematic";
 import { useCalibrationErrorText, useValueNames } from "./errors";
 import { parseNumber, usableTypes } from "./model";
+import { PrintResult, PrintResultRegion } from "./PrintResult";
 import { ReadingsHelper } from "./ReadingsHelper";
 
 const calibrationApi = getRouteApi("/calibration");
@@ -188,19 +189,20 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
             />
             <CalibrationSchematic geometry={type.geometry} typeName={typeLabelWithKey(type)} />
             <GapCrossing colGap={Math.min(2, type.geometry.cols - 1)} rowGap={Math.min(6, type.geometry.rows - 1)} />
-            <div className="flex flex-wrap items-center gap-3">
-              <PrintAction
-                key={`print/${type.key}`}
-                printerId={printer.id}
-                tray={tray}
-                type={type}
-                corrected={false}
-                disabled={!canPrint}
-                label={t`Print calibration page`}
-                done={t`The calibration page is queued.`}
-                primary
-                noKey={!canPrint}
-              />
+            <PrintAction
+              key={`print/${type.key}`}
+              printerId={printer.id}
+              tray={tray}
+              type={type}
+              corrected={false}
+              disabled={!canPrint}
+              label={t`Print calibration page`}
+              subject={t`Calibration page`}
+              statusLabel={t`Calibration page status`}
+              doneHint={t`The calibration page printed. Now measure the crossings.`}
+              primary
+              noKey={!canPrint}
+            >
               <a
                 href={calibrationPdfUrl(printer.id, tray, { type: type.key, version: type.current_version, corrected: false })}
                 download
@@ -208,7 +210,7 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
               >
                 {t`Download PDF`}
               </a>
-            </div>
+            </PrintAction>
           </>
         )}
       </section>
@@ -249,20 +251,21 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
           {t`Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust.`}
         </p>
         {type && (
-          <div className="flex flex-wrap items-center gap-3">
-            <PrintAction
-              key={`check/${type.key}`}
-              printerId={printer.id}
-              tray={tray}
-              type={type}
-              corrected
-              disabled={!canPrint || !hasValues(stored)}
-              noKey={!canPrint}
-              label={t`Check print with correction`}
-              done={t`The check page is queued.`}
-            />
+          <PrintAction
+            key={`check/${type.key}`}
+            printerId={printer.id}
+            tray={tray}
+            type={type}
+            corrected
+            disabled={!canPrint || !hasValues(stored)}
+            noKey={!canPrint}
+            label={t`Check print with correction`}
+            subject={t`Check page`}
+            statusLabel={t`Check page status`}
+            doneHint={t`The check page printed. Measure the crossings again: each one should be within 0.5 mm.`}
+          >
             {!hasValues(stored) && <span className={HINT}>{t`Save a correction first.`}</span>}
-          </div>
+          </PrintAction>
         )}
       </section>
     </>
@@ -313,38 +316,44 @@ interface PrintActionProps {
   corrected: boolean;
   disabled: boolean;
   label: string;
-  done: string;
+  /** What the print is ("Calibration page"), for the status line. */
+  subject: string;
+  /** The accessible name of the status line. */
+  statusLabel: string;
+  /** Said once the page is out of the printer: the next step. */
+  doneHint: string;
   primary?: boolean;
   noKey: boolean;
+  /** More controls for the row next to the print button. */
+  children?: ReactNode;
 }
 
-function PrintAction({ printerId, tray, type, corrected, disabled, label, done, primary, noKey }: PrintActionProps) {
+function PrintAction({ printerId, tray, type, corrected, disabled, label, subject, statusLabel, doneHint, primary, noKey, children }: PrintActionProps) {
   const { t } = useLingui();
   const errorText = useCalibrationErrorText();
   const print = usePrintCalibrationPage(printerId);
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <Button
-        isDisabled={disabled || print.isPending}
-        onPress={() => print.mutate({ tray, request: { type: type.key, version: type.current_version, corrected } })}
-        className={primary ? PRIMARY_BUTTON : SECONDARY_BUTTON}
-      >
-        {label}
-      </Button>
-      {noKey && <p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
+    <div className="flex min-w-0 flex-col gap-3">
+      {/* The row holds only controls. Whatever a print answers goes below it, so the buttons never move. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          isDisabled={disabled || print.isPending}
+          onPress={() => print.mutate({ tray, request: { type: type.key, version: type.current_version, corrected } })}
+          className={primary ? PRIMARY_BUTTON : SECONDARY_BUTTON}
+        >
+          {label}
+        </Button>
+        {children}
+      </div>
+      {noKey &&<p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
       {print.isError && (
         <p role="alert" className="m-0 text-bad">
           {errorText(print.error, t`The page could not be queued.`)}
         </p>
       )}
-      {print.isSuccess && (
-        <p role="status" className="m-0 text-ok">
-          {done}{" "}
-          <Link to="/jobs/$jobId" params={{ jobId: print.data.job_id }} className="text-link underline underline-offset-2">
-            {t`Show the job`}
-          </Link>
-        </p>
-      )}
+      <PrintResultRegion label={statusLabel}>
+        {print.isSuccess && <PrintResult key={print.data.job_id} jobId={print.data.job_id} printerId={printerId} subject={subject} doneHint={doneHint} />}
+      </PrintResultRegion>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   resyncWatchedJobs,
   useJobLive,
   useWatchedPrints,
+  watchedPrintOfJob,
   watchPrint,
 } from "./printWatch";
 
@@ -158,6 +159,18 @@ describe("print watch store", () => {
     act(() => void watchPrint({ kind: "item", printerId: P, jobIds: [A] }));
     await act(async () => void (await resyncWatchedJobs(async () => Promise.reject(new Error("down")))));
     expect(result.current[0]!.phase).toBe("queued");
+  });
+
+  it("finds the entry that holds a job, also after a retry replaced it, and nothing once dismissed", () => {
+    let id = "";
+    act(() => void (id = watchPrint({ kind: "calibration", printerId: P, jobIds: [A] })));
+    expect(watchedPrintOfJob(A)?.id).toBe(id);
+    expect(watchedPrintOfJob(B)).toBeUndefined();
+    act(() => replaceWatchedJob(id, A, B));
+    expect(watchedPrintOfJob(A)).toBeUndefined();
+    expect(watchedPrintOfJob(B)?.id).toBe(id);
+    act(() => dismissWatch(id));
+    expect(watchedPrintOfJob(B)).toBeUndefined();
   });
 
   it("ignores events without a usable job id", () => {

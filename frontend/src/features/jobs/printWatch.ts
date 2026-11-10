@@ -150,6 +150,9 @@ export function watchPrint(input: { kind: PrintKind; printerId: string | null; j
   return id;
 }
 
+/** The watched print that holds this job right now, or undefined (never registered, or already dismissed). */
+export const watchedPrintOfJob = (jobId: string): WatchedPrint | undefined => store.derived.find((e) => e.jobIds.includes(jobId));
+
 export function dismissWatch(id: string): void {
   commit({ records: store.records.filter((r) => r.id !== id) });
 }

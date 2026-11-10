@@ -4,14 +4,13 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useJob, useRetryJob } from "../features/jobs/api";
 import { useJobErrorText } from "../features/jobs/jobErrorText";
+import { useStateWords } from "../features/jobs/liveText";
 import { canRetry } from "../features/jobs/model";
 import {
   dismissWatch,
   errorCodeFromMessage,
   replaceWatchedJob,
   useWatchedPrints,
-  type JobLive,
-  type JobPhase,
   type PrintKind,
   type WatchedPrint,
 } from "../features/jobs/printWatch";
@@ -45,30 +44,6 @@ function useKindTitle(): (kind: PrintKind) => string {
         return t`Calibration page`;
       case "test":
         return t`Test print`;
-    }
-  };
-}
-
-/** The state in words, with the page job's place at the printer where the events say so. */
-function useStateWords(): (phase: JobPhase, live: JobLive | undefined) => string {
-  const { t } = useLingui();
-  return (phase, live) => {
-    switch (phase) {
-      // No "N jobs ahead": no event or endpoint tells this job's place in the queue, and a wrong number is worse than none.
-      case "queued":
-        return t`Queued`;
-      case "paused":
-        return t`Paused`;
-      case "printing":
-        if (live?.atPrinter === "waiting") return t`Waiting at the printer`;
-        if (live?.atPrinter === "stopped") return t`Stopped at the printer`;
-        return t`Printing`;
-      case "done":
-        return t`Done`;
-      case "failed":
-        return t`Failed`;
-      case "cancelled":
-        return t`Cancelled`;
     }
   };
 }

@@ -1,4 +1,6 @@
-import type { Page } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
+import type { Locator, Page } from "@playwright/test";
 import { MAIN } from "./env";
 import { expect, mainKey, resetPagePrinter, setPagePrinter, signInWith, test } from "./fixtures";
 
@@ -6,6 +8,12 @@ const TYPE = "avery-zweckform-l4736rev"; // 4 x 12; no gap between its rows
 const PRINTER = "Office page printer";
 const TRAY = "main-tray";
 
+/** A box in page coordinates: a click scrolls the viewport, which would move a viewport-relative box without the page changing. */
+const pageBox = (locator: Locator) =>
+  locator.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height };
+  });
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
 
@@ -78,6 +86,80 @@ test.describe.serial("calibration", () => {
     expect(response.headers()["content-type"]).toContain("application/pdf");
   });
 
+  test("the print result sits below the buttons: they do not move, and the line reaches Done without a reload (#239)", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await setPagePrinter(page, { job_script: [3, 5, 9] });
+    await openCalibration(page, id);
+    await chooseType(page);
+    const print = page.getByRole("button", { name: "Print calibration page" });
+    const pdf = page.getByRole("link", { name: "Download PDF" });
+    await expect(pdf).toBeVisible();
+    const before = { print: await pageBox(print), pdf: await pageBox(pdf) };
+    // A marker on the window: a reload would erase it.
+    await page.evaluate(() => ((window as unknown as { __kept: boolean }).__kept = true));
+    await print.click();
+    const line = page.getByRole("status", { name: "Calibration page status" });
+    await expect(line.getByRole("link", { name: "Show the job" })).toBeVisible();
+    const after = { print: await pageBox(print), pdf: await pageBox(pdf) };
+    expect(after).toEqual(before);
+    // The line is under the button row, not in it.
+    const row = await pageBox(pdf);
+    expect((await pageBox(line)).y).toBeGreaterThanOrEqual(row.y + row.height);
+    await expect(line.getByText("Done", { exact: true })).toBeVisible({ timeout: 45_000 });
+    await expect(line.getByText(/measure the crossings/)).toBeVisible();
+    expect({ print: await pageBox(print), pdf: await pageBox(pdf) }).toEqual(before);
+    expect(await page.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true);
+  });
+
+  test("a failed calibration print shows its error and a Retry under the buttons (#239)", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    // IPP job-state 8 = aborted: the hub marks the job failed.
+    await setPagePrinter(page, { job_script: [3, 8] });
+    await openCalibration(page, id);
+    await chooseType(page);
+    const pdf = page.getByRole("link", { name: "Download PDF" });
+    const before = await pageBox(pdf);
+    await page.getByRole("button", { name: "Print calibration page" }).click();
+    const line = page.getByRole("status", { name: "Calibration page status" });
+    await expect(line.getByText("Failed", { exact: true })).toBeVisible({ timeout: 45_000 });
+    await expect(line.getByText("The printer aborted the job before printing.")).toBeVisible();
+    await expect(line.getByRole("button", { name: "Retry" })).toBeVisible();
+    expect(await pageBox(pdf)).toEqual(before);
+  });
+
+  test("screenshots: the status line done and failed, light and dark, desktop and phone (#239)", async () => {
+    test.skip(!process.env.E2E_SHOTS_DIR, "screenshots are an artifact, taken only with E2E_SHOTS_DIR");
+    test.setTimeout(170_000);
+    const dir = process.env.E2E_SHOTS_DIR!;
+    mkdirSync(dir, { recursive: true });
+    await setLanguage(page, "en");
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const [width, height] of [
+        [1280, 800],
+        [390, 844],
+      ] as const) {
+        await page.setViewportSize({ width, height });
+        for (const outcome of ["done", "failed"] as const) {
+          await setPagePrinter(page, { job_script: outcome === "done" ? [3, 5, 9] : [3, 8] });
+          await openCalibration(page, id);
+          await chooseType(page);
+          await page.getByRole("button", { name: "Print calibration page" }).click();
+          const line = page.getByRole("status", { name: "Calibration page status" });
+          await expect(line.getByText(outcome === "done" ? "Done" : "Failed", { exact: true })).toBeVisible({ timeout: 45_000 });
+          // Centred, so the notification stack at the bottom of a phone does not cover the line.
+          await line.evaluate((el) => el.scrollIntoView({ block: "center" }));
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+          await page.screenshot({ path: resolve(dir, `task-19b-${outcome}-${width}-${scheme}.png`) });
+          await resetPagePrinter(page);
+        }
+      }
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  });
+
   test("the Calibrate link on the printer page opens the calibration with that printer and tray chosen", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -129,7 +211,7 @@ test.describe.serial("calibration", () => {
 
       // The check print is offered now, and goes to the queue.
       await page.getByRole("button", { name: "Check print with correction" }).click();
-      await expect(page.getByText("The check page is queued.")).toBeVisible();
+      await expect(page.getByRole("status", { name: "Check page status" }).getByRole("link", { name: "Show the job" })).toBeVisible();
 
       // Back to no correction, through the page.
       await page.getByRole("button", { name: "Reset to no correction" }).click();
