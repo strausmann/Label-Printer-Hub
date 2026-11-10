@@ -212,6 +212,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/batches/runs/held": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tape batches that wait for an action
+         * @description The tape runs (#277) that wait for a confirmation or stopped, oldest first, for the printers the caller may use; `printer_id` narrows it to one printer. Their actions are `continue`, `reprint` and `discard` on the batch.
+         */
+        get: operations["held_runs_api_v1_batches_runs_held_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/batches/{batch_id}": {
         parameters: {
             query?: never;
@@ -249,9 +269,29 @@ export interface paths {
         put?: never;
         /**
          * Start the next sub-job of a tape batch
-         * @description A tape batch of more than 50 labels prints in sub-jobs; each further sub-job starts only after this call, for example after the user checked or changed the tape (#277).
+         * @description A tape batch of more than 50 labels prints in sub-jobs; each further sub-job starts only after this call, for example after the user checked or changed the tape (#277). Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). At most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`).
          */
         post: operations["continue_batch_api_v1_batches__batch_id__continue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batches/{batch_id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give up a held tape batch
+         * @description Discards a run that waits for a confirmation or stopped (#277): the labels of the waiting parts are cancelled (`run_discarded`), a stopped run's failed labels stay as they are, and the run is forgotten. A printing run answers 409 `run_not_held`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). At most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`).
+         */
+        post: operations["discard_batch_api_v1_batches__batch_id__discard_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -269,7 +309,7 @@ export interface paths {
         put?: never;
         /**
          * Reprint a stopped tape batch from a label
-         * @description After the tape ran out (or another error stopped a group) the group's outcome is unknown. Count what printed, fix the tape, and reprint from the first label that is missing: that label to the end of the group, and every label that was not started, are queued again as new jobs; the labels before it count as printed. A printer the tape end paused is resumed (#277). `from_label` outside the group answers 422 `label_out_of_range`.
+         * @description A stopped run (#277): with `stop_kind` `unknown` the group's outcome is unknown — count what printed, fix the tape, and reprint from the first label that is missing (`reprint_from` to `reprint_to`); that label to the end of the group, and every label that was not started, are queued again as new jobs, and the labels before it count as printed. With `refused` nothing of the group was sent: reprint from its first label. A printer the stop paused is resumed. Labels whose stored job was cleaned up are listed in `skipped_job_ids`. The batch then lists the run's labels (`GET` shows the new jobs). `from_label` outside the range answers 422 `label_out_of_range`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). At most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`).
          */
         post: operations["reprint_batch_api_v1_batches__batch_id__reprint_post"];
         delete?: never;
@@ -486,7 +526,7 @@ export interface paths {
         put?: never;
         /**
          * Submit a batch of print jobs
-         * @description Validates all items and enqueues the batch as one tape run — no per-item errors are returned. The labels (copies included) print in sub-jobs of at most 50; each further sub-job waits for `POST /api/v1/batches/{batch_id}/continue`. Inside a sub-job the labels go out in groups of 10 with a status check after each; when the tape runs out, the run stops (see `GET /api/v1/batches/{batch_id}`). Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch.
+         * @description Validates all items and enqueues the batch as one tape run — no per-item errors are returned. The labels (copies included) print in sub-jobs of at most 50; each further sub-job waits for `POST /api/v1/batches/{batch_id}/continue`. Inside a sub-job the labels go out in groups of 10 with a status check after each; when a group fails, the run stops (see `GET /api/v1/batches/{batch_id}`). A tape end stops it when the printer reports it: a PT sets the SNMP `noPaper` bit; whether a QL-820NWB reports the end of a DK roll is not verified, so on a QL the check reliably catches only an unreachable printer and an open cover. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch.
          */
         post: operations["create_batch_api_v1_print__printer_key__batch_post"];
         delete?: never;
@@ -2986,6 +3026,11 @@ export interface components {
             new_job_ids: string[];
             /** @description The run after the reprint; `null` if done. */
             run: components["schemas"]["TapeRunRead"] | null;
+            /**
+             * Skipped Job Ids
+             * @description Labels not re-queued because their stored job was cleaned up.
+             */
+            skipped_job_ids: string[];
         };
         /** ResolveRequest */
         ResolveRequest: {
@@ -3671,6 +3716,11 @@ export interface components {
          */
         TapeRunRead: {
             /**
+             * Batch Id
+             * Format: uuid
+             */
+            batch_id: string;
+            /**
              * Confirmed Job Ids
              * @description Labels of an unknown group the user confirmed as printed (a reprint).
              */
@@ -3686,8 +3736,23 @@ export interface components {
              */
             job_ids: string[];
             /**
+             * Printer Id
+             * Format: uuid
+             */
+            printer_id: string;
+            /**
+             * Reprint From
+             * @description Lowest `from_label` a reprint accepts.
+             */
+            reprint_from: number | null;
+            /**
+             * Reprint To
+             * @description Highest `from_label`: one past the unknown group (only the not-started).
+             */
+            reprint_to: number | null;
+            /**
              * State
-             * @description `awaiting_confirmation`: the next sub-job starts after `POST .../continue`. `stopped`: a group failed (the tape ran out, for example); its outcome is unknown, the labels after it were not started; `POST .../reprint` picks it up.
+             * @description `awaiting_confirmation`: the next sub-job starts after `POST .../continue`. `stopped`: a group failed; the labels after it were not started. With `stop_kind` `unknown` the group's outcome is unknown (an error while sending, or the status check after the group: on a PT the SNMP `noPaper` bit at tape end; whether a QL-820NWB reports a DK roll end is not verified); with `refused` the printer refused before anything was sent (wrong tape, no tape, cover open, unreachable). `POST .../reprint` picks it up, `POST .../discard` gives it up. Held runs are kept in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), and a stopped run cannot be reprinted after it.
              * @enum {string}
              */
             state: "printing" | "awaiting_confirmation" | "stopped";
@@ -3696,6 +3761,11 @@ export interface components {
              * @description Why the run stopped, e.g. `tape_empty`.
              */
             stop_code: string | null;
+            /**
+             * Stop Kind
+             * @description After a stop: the group's outcome is unknown, or nothing of it was sent.
+             */
+            stop_kind: ("unknown" | "refused") | null;
             /** Sub Job Size */
             sub_job_size: number;
             /**
@@ -4574,6 +4644,37 @@ export interface operations {
             };
         };
     };
+    held_runs_api_v1_batches_runs_held_get: {
+        parameters: {
+            query?: {
+                printer_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TapeRunRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_batch_api_v1_batches__batch_id__get: {
         parameters: {
             query?: never;
@@ -4639,7 +4740,57 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`). */
+            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, `run_not_held`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_batch_api_v1_batches__batch_id__discard_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The key lacks the `print` scope or may not use this printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such batch, or no tape run of it that waits for an action. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `run_not_held`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4695,7 +4846,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`). */
+            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, `run_not_held`). */
             409: {
                 headers: {
                     [name: string]: unknown;

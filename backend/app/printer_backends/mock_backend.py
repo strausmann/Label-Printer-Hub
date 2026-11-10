@@ -18,6 +18,7 @@ from app.printer_backends.exceptions import (
     PrinterOfflineError,
     TapeEmptyError,
     TapeMismatchError,
+    refused_before_sending,
 )
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.services.status_block import (
@@ -144,15 +145,18 @@ class MockPrinterBackend:
         half_cut: bool = False,  # noqa: ARG002
         last_page: bool = True,  # noqa: ARG002
     ) -> None:
+        # Like the PT backend's preflight: a refusal here means nothing was sent (#277).
         status = await self.query_status()
         if status.tape_empty:
-            raise TapeEmptyError()
+            raise refused_before_sending(TapeEmptyError())
         if status.cover_open:
-            raise PrinterCoverOpenError()
+            raise refused_before_sending(PrinterCoverOpenError())
         if status.loaded_tape_mm != tape_spec.width_mm:
-            raise TapeMismatchError(
-                expected_mm=tape_spec.width_mm,
-                loaded_mm=status.loaded_tape_mm,
+            raise refused_before_sending(
+                TapeMismatchError(
+                    expected_mm=tape_spec.width_mm,
+                    loaded_mm=status.loaded_tape_mm,
+                )
             )
         self.printed_images.append(image.copy())
         if (

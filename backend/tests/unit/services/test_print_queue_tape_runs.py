@@ -18,10 +18,16 @@ from uuid import UUID, uuid4
 import pytest
 from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
-from app.printer_backends.exceptions import PrintFailedError, TapeEmptyError
+from app.printer_backends.exceptions import (
+    PrintFailedError,
+    TapeEmptyError,
+    TapeMismatchError,
+    refused_before_sending,
+)
 from app.services.job_lifecycle import JobState
 from app.services.job_store import MemoryJobStore
 from app.services.print_queue import (
+    MAX_HELD_RUNS_PER_PRINTER,
     MAX_LABELS_PER_TAPE_JOB,
     TAPE_GROUP_SIZE,
     PrintQueue,
@@ -448,5 +454,273 @@ async def test_the_mock_backend_runs_out_of_tape_through_the_pt_adapter(
         assert len(backend.printed_images) == k
         info = queue.pause_info(printer.id)
         assert info is not None and info.reason_code == "tape_empty"
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+# ---------------------------------------------------------------------------- fix round 1
+
+
+class Refuses(TapeRoll):
+    """A printer whose preflight refuses call number ``on`` (1-based) before sending anything."""
+
+    def __init__(self, on: int = 1) -> None:
+        super().__init__()
+        self.on = on
+
+    async def print_images(
+        self, images: list[Image.Image], *, tape_mm: int, **options: Any
+    ) -> None:
+        if len(self.calls) + 1 == self.on:
+            self.calls.append(0)
+            raise refused_before_sending(TapeMismatchError(expected_mm=12, loaded_mm=24))
+        await super().print_images(images, tape_mm=tape_mm, **options)
+
+
+@pytest.mark.parametrize("on", [1, 2])
+async def test_a_refusal_before_sending_is_not_an_unknown_outcome(on: int) -> None:
+    """I1: the preflight said no before a byte was sent: the labels did not print."""
+    printer = Refuses(on)
+    queue, run_id, ids, store = await _run(printer, 25)
+    try:
+        await _until(_stopped(queue, run_id))
+        done = (on - 1) * 10
+        codes = await _codes(queue, ids)
+        assert "outcome_unknown" not in codes
+        assert await _states(queue, ids[:done]) == [JobState.COMPLETED] * done
+        assert codes[done : done + 10] == ["tape_mismatch"] * 10  # the real error code
+        assert codes[done + 10 :] == ["not_started"] * (15 - done)
+        row = await store.get(ids[done])
+        assert row is not None and row.state == DbJobState.FAILED.value
+        assert (row.error or "").startswith("tape_mismatch")
+        info = queue.run_info(run_id)
+        assert info is not None and info.stop_kind == "refused"
+        assert (info.unknown_from, info.unknown_to) == (None, None)
+        assert (info.reprint_from, info.reprint_to) == (done + 1, done + 1)
+        assert queue.pause_info(printer.id).reason_code == "tape_mismatch"  # type: ignore[union-attr]
+
+        with pytest.raises(RunStateError):
+            await queue.reprint_from(run_id, done + 2)
+        result = await queue.reprint_from(run_id, done + 1)
+        assert len(result.new_job_ids) == 25 - done and result.confirmed_job_ids == []
+        await _until(lambda: queue.run_info(run_id) is None)
+        assert not queue.is_paused(printer.id)
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_the_mock_backend_flags_a_refusal_of_the_first_label_only() -> None:
+    """A wrong tape refuses label 1: nothing sent. A refusal later in a group is unknown."""
+    from app.printer_backends.mock_backend import MockPrinterBackend
+    from app.printer_models.pt import PTP750WDriver
+    from app.services.tape_registry import TapeRegistry
+
+    backend = MockPrinterBackend(loaded_tape_mm=24)  # the batch asks for 12 mm
+    printer = PTP750WDriver(backend=backend).make_queue_printer(TapeRegistry())
+    queue = PrintQueue([printer])
+    await queue.start()
+    ids = [uuid4() for _ in range(12)]
+    try:
+        run_id = await queue.enqueue_batch(
+            printer_id=printer.id, images=[_img() for _ in ids], job_ids=ids, tape_mm=12, options={}
+        )
+        await _until(_stopped(queue, run_id))
+        codes = await _codes(queue, ids)
+        assert codes == ["tape_mismatch"] * 10 + ["not_started"] * 2
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+class GatedStore(MemoryJobStore):
+    """``save_queued`` waits for ``gate`` while it is set (the reviewer's probe)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate: asyncio.Event | None = None
+        self.entered = asyncio.Event()
+
+    async def save_queued(self, job: DbJob) -> None:
+        if self.gate is not None:
+            self.entered.set()
+            await self.gate.wait()
+        await super().save_queued(job)
+
+
+async def test_a_removal_during_a_reprint_leaves_no_row_queued_forever() -> None:
+    """I2: the reprint holds the printer: the removal waits; after a re-add nothing hangs."""
+    store = GatedStore()
+    printer = TapeRoll(15)
+    queue, run_id, _, _ = await _run(printer, 30, store=store)
+    try:
+        await _until(_stopped(queue, run_id))
+        printer.k = None
+        store.gate = asyncio.Event()
+        reprint = asyncio.create_task(queue.reprint_from(run_id, 11))
+        await store.entered.wait()
+        removal = asyncio.create_task(queue.remove_printer(printer.id, timeout_s=1.0))
+        await asyncio.sleep(0.05)
+        assert not removal.done()  # it waits for the reprint
+        store.gate.set()
+        store.gate = None
+        await reprint
+        await removal
+        await queue.add_printer(printer)
+
+        def clones() -> list[DbJob]:
+            return [
+                r
+                for r in store._jobs.values()
+                if (r.payload or {}).get("tape_run", {}).get("reprint_of")
+            ]
+
+        await _until(lambda: all(r.state != DbJobState.QUEUED.value for r in clones()))
+        assert len(clones()) == 20
+        assert {r.state for r in clones()} <= {DbJobState.DONE.value, DbJobState.FAILED.value}
+        assert [j for j in queue._jobs.values() if j.state == JobState.QUEUED] == []
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_a_store_failure_during_a_reprint_leaves_nothing_behind() -> None:
+    class Breaks(MemoryJobStore):
+        broken = False
+
+        async def save_queued(self, job: DbJob) -> None:
+            await super().save_queued(job)
+            if (
+                self.broken
+                and len(
+                    [
+                        r
+                        for r in self._jobs.values()
+                        if r.payload.get("tape_run", {}).get("reprint_of")
+                    ]
+                )
+                == 3
+            ):
+                raise RuntimeError("disk full")
+
+    store = Breaks()
+    printer = TapeRoll(15)
+    queue, run_id, _, _ = await _run(printer, 30, store=store)
+    try:
+        await _until(_stopped(queue, run_id))
+        store.broken = True
+        with pytest.raises(RuntimeError, match="disk full"):
+            await queue.reprint_from(run_id, 11)
+        clones = [
+            r for r in store._jobs.values() if r.payload.get("tape_run", {}).get("reprint_of")
+        ]
+        assert len(clones) == 3 and {r.state for r in clones} == {DbJobState.CANCELLED.value}
+        assert all(str(r.id) not in queue._jobs for r in clones)
+        assert queue.run_info(run_id).state == "stopped"  # type: ignore[union-attr]
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_double_reprint_and_double_confirm_each_act_once() -> None:
+    """M4: the state is claimed before the first await: a second call is refused."""
+    printer = TapeRoll(15)
+    queue, run_id, _, _ = await _run(printer, 30)
+    try:
+        await _until(_stopped(queue, run_id))
+        printer.k = None
+        results = await asyncio.gather(
+            queue.reprint_from(run_id, 11), queue.reprint_from(run_id, 11), return_exceptions=True
+        )
+        assert sorted(type(r).__name__ for r in results) == ["ReprintResult", "RunStateError"]
+        await _until(lambda: queue.run_info(run_id) is None)
+        assert printer.calls == [10, 10, 10, 10]  # every label once
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+    printer = TapeRoll()
+    queue, run_id, _, _ = await _run(printer, 60)
+    try:
+        await _until(lambda: queue.run_info(run_id).state == "awaiting_confirmation")  # type: ignore[union-attr]
+        results = await asyncio.gather(
+            queue.confirm_run(run_id), queue.confirm_run(run_id), return_exceptions=True
+        )
+        assert sorted(type(r).__name__ for r in results) == ["RunInfo", "RunStateError"]
+        await _until(lambda: queue.run_info(run_id) is None)
+        await asyncio.sleep(0.1)
+        assert printer.calls == [10] * 6
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_discard_cancels_the_waiting_part_and_frees_the_run() -> None:
+    """I3: a run that waits can be given up; its waiting labels are cancelled."""
+    printer = TapeRoll()
+    queue, run_id, ids, store = await _run(printer, 55)
+    try:
+        await _until(lambda: queue.run_info(run_id).state == "awaiting_confirmation")  # type: ignore[union-attr]
+        held = queue._runs[run_id]
+        assert set(held.payloads) == {str(j) for j in ids[50:]}  # printed pictures are freed
+        await queue.discard_run(run_id)
+        assert queue.run_info(run_id) is None
+        for jid in ids[50:]:
+            job = await queue.get(jid)
+            assert (job.state, job.error_code) == (JobState.CANCELLED, "run_discarded")
+            row = await store.get(jid)
+            assert row is not None and row.state == DbJobState.CANCELLED.value
+        with pytest.raises(KeyError):
+            await queue.confirm_run(run_id)
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_discard_frees_a_stopped_run_and_refuses_a_printing_one() -> None:
+    printer = TapeRoll(15)
+    queue, run_id, ids, _ = await _run(printer, 30)
+    try:
+        await _until(_stopped(queue, run_id))
+        await queue.discard_run(run_id)
+        assert queue.run_info(run_id) is None
+        assert (await queue.get(ids[25])).error_code == "not_started"  # unchanged
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+    printer = TapeRoll()
+    printer.gate = asyncio.Event()
+    queue, run_id, _, _ = await _run(printer, 20)
+    try:
+        await printer.started.wait()
+        with pytest.raises(RunStateError) as err:
+            await queue.discard_run(run_id)
+        assert err.value.code == "run_not_held"
+    finally:
+        printer.gate.set()
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_at_most_five_runs_wait_per_printer_the_oldest_is_discarded() -> None:
+    """I3: a sixth held run discards the oldest, with ``run_discarded_limit``."""
+    printer = TapeRoll()
+    store = MemoryJobStore()
+    queue = PrintQueue([printer], store=store)
+    await queue.start()
+    try:
+        runs: list[tuple[UUID, list[UUID]]] = []
+        for _ in range(MAX_HELD_RUNS_PER_PRINTER + 1):
+            ids = [uuid4() for _ in range(51)]
+            run_id = await queue.enqueue_batch(
+                printer_id=printer.id,
+                images=[_img() for _ in ids],
+                job_ids=ids,
+                tape_mm=12,
+                options={},
+            )
+            runs.append((run_id, ids))
+            await _until(
+                lambda r=run_id: (
+                    queue.run_info(r) is not None
+                    and queue.run_info(r).state == "awaiting_confirmation"
+                )
+            )  # type: ignore[misc,union-attr]
+        held = [info.run_id for info in queue.held_runs(printer.id)]
+        assert held == [r for r, _ in runs[1:]]  # oldest first, the first one gone
+        oldest_label = runs[0][1][50]
+        assert (await queue.get(oldest_label)).error_code == "run_discarded_limit"
     finally:
         await queue.stop(timeout_s=2.0)

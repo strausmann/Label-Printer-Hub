@@ -9,7 +9,20 @@ from uuid import UUID
 
 
 class PrinterError(Exception):
-    """Base class for any backend / hardware failure."""
+    """Base class for any backend / hardware failure.
+
+    ``nothing_sent`` (#277): the backend refused before any byte of the job reached the
+    printer (its own preflight said no). The print queue then knows the labels did not print;
+    without the flag a failure may have happened while sending, and the outcome is unknown.
+    """
+
+    nothing_sent: bool = False
+
+
+def refused_before_sending[E: PrinterError](exc: E) -> E:
+    """Mark *exc* as raised before anything was sent (see ``PrinterError.nothing_sent``)."""
+    exc.nothing_sent = True
+    return exc
 
 
 class PrinterOfflineError(PrinterError):

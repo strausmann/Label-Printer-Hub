@@ -43,12 +43,27 @@ class TapeRunRead(BaseModel):
     Positions are 1-based in print order (`job_ids`).
     """
 
+    batch_id: UUID
+    printer_id: UUID
     state: Literal["printing", "awaiting_confirmation", "stopped"] = Field(
         description=(
             "`awaiting_confirmation`: the next sub-job starts after `POST .../continue`. "
-            "`stopped`: a group failed (the tape ran out, for example); its outcome is unknown, "
-            "the labels after it were not started; `POST .../reprint` picks it up."
+            "`stopped`: a group failed; the labels after it were not started. With "
+            "`stop_kind` `unknown` the group's outcome is unknown (an error while sending, or the "
+            "status check after the group: on a PT the SNMP `noPaper` bit at tape end; whether a "
+            "QL-820NWB reports a DK roll end is not verified); with `refused` the printer refused "
+            "before anything was sent (wrong tape, no tape, cover open, unreachable). "
+            "`POST .../reprint` picks it up, `POST .../discard` gives it up. Held runs are kept "
+            "in memory: a hub restart fails every label that waited for a confirmation "
+            "(`tape_run_interrupted`), and a stopped run cannot be reprinted after it."
         )
+    )
+    stop_kind: Literal["unknown", "refused"] | None = Field(
+        description="After a stop: the group's outcome is unknown, or nothing of it was sent."
+    )
+    reprint_from: int | None = Field(description="Lowest `from_label` a reprint accepts.")
+    reprint_to: int | None = Field(
+        description="Highest `from_label`: one past the unknown group (only the not-started)."
     )
     current_sub_job: int = Field(description="The sub-job printing or waiting, 1-based.")
     sub_jobs: int
@@ -79,6 +94,9 @@ class ReprintResponse(BaseModel):
     new_job_ids: list[str]
     confirmed_job_ids: list[str]
     job_ids: list[str] = Field(description="The run's labels in print order after the reprint.")
+    skipped_job_ids: list[str] = Field(
+        description="Labels not re-queued because their stored job was cleaned up."
+    )
     run: TapeRunRead | None = Field(description="The run after the reprint; `null` if done.")
 
 
