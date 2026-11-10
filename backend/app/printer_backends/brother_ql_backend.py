@@ -11,10 +11,14 @@ from __future__ import annotations
 import asyncio
 import logging
 
+# Must run before brother_ql is used: restores Image.ANTIALIAS (removed in Pillow 10),
+# which brother_ql 0.9.x calls in its resize branch. See _pillow_compat and issue #254.
+from app.printer_backends import _pillow_compat  # noqa: F401  # isort: skip
 from brother_ql.backends.helpers import (
     send as _helpers_send,
 )
 from brother_ql.conversion import convert
+from brother_ql.labels import ALL_LABELS
 from brother_ql.raster import BrotherQLRaster
 from PIL import Image
 
@@ -46,6 +50,46 @@ _TAPE_MM_TO_QL_LABEL: dict[int, str] = {
     54: "54",
     62: "62",
 }
+
+
+def _fit_to_printable_width(image: Image.Image, ql_label: str, *, dpi_600: bool) -> Image.Image:
+    """Prepare *image* so ``brother_ql.convert`` never has to resize it (issue #254).
+
+    ``convert`` wants, for endless labels, an image whose *width* equals the label's
+    ``dots_printable[0]`` (rows span the tape; the image grows along the feed direction).
+    The LayoutEngine renders landscape in the PT convention instead (height = band across
+    the tape, width = label length), and its band height is not always the QL printable
+    width (12 mm renders 70 px high, the QL label has 106). So:
+
+    1. An image whose height does not exceed the printable width is a LayoutEngine band
+       (the band may be shorter than the tape, and a short label may be narrower than it is
+       tall) and is rotated 90 degrees clockwise: the left edge (start of text) becomes
+       row 0 and is printed first. An image whose width already equals the printable width
+       is taken as ready-made and not rotated.
+    2. An image narrower than the printable width is centred on white padding, never
+       stretched.
+    3. With ``dpi_600`` convert halves the width again before checking it, so the 300 dpi
+       source is doubled on both axes (same physical size, printed at 600 dpi).
+
+    Anything still wider than the printable width is left alone: convert's own resize
+    fallback handles (and logs) it.
+    """
+    matches = [x for x in ALL_LABELS if x.identifier == ql_label]
+    if not matches:
+        return image
+    printable = int(matches[0].dots_printable[0])
+
+    if image.mode not in ("1", "L", "RGB", "RGBA"):
+        image = image.convert("RGB")
+    if image.height <= printable and image.width != printable:
+        image = image.transpose(Image.Transpose.ROTATE_270)
+    if image.width < printable:
+        padded = Image.new(image.mode, (printable, image.height), (255,) * len(image.mode))
+        padded.paste(image, ((printable - image.width) // 2, 0))
+        image = padded
+    if dpi_600:
+        image = image.resize((image.width * 2, image.height * 2), Image.Resampling.NEAREST)
+    return image
 
 
 class BrotherQLBackend:
@@ -104,6 +148,7 @@ class BrotherQLBackend:
         # M6-Fix: red=False for monochrome; two_color capable models (QL-820NWB)
         # accept this without error — they only require red=False not to raise.
         qlr = BrotherQLRaster(self._model_id)
+        image = _fit_to_printable_width(image, ql_label, dpi_600=high_resolution)
         convert(
             qlr,
             [image],

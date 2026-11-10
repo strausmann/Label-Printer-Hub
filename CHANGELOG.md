@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## <small>1.4.1 (2026-11-09)</small>
+
+* fix(ql): render QL labels at the printable width and shim Image.ANTIALIAS for brother_ql (#257) ([c821bed](https://github.com/strausmann/Label-Printer-Hub/commit/c821bed)), closes [#257](https://github.com/strausmann/Label-Printer-Hub/issues/257) [#254](https://github.com/strausmann/Label-Printer-Hub/issues/254) [#254](https://github.com/strausmann/Label-Printer-Hub/issues/254)
+
 ## 1.4.0 (2026-11-09)
 
 * feat(ui): sheet archive, sheet printing, page jobs and calibration in the web UI (#216) ([adc38a8](https://github.com/strausmann/Label-Printer-Hub/commit/adc38a8)), closes [#216](https://github.com/strausmann/Label-Printer-Hub/issues/216)
