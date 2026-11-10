@@ -18,11 +18,15 @@ async function choose(scope: Locator, select: RegExp, option: RegExp) {
   await scope.page().getByRole("option", { name: option }).click();
 }
 
-/** The sheet type field is a combobox: open it, type the key (the one option then sits at the top; scrolling a long list would close it), pick it. */
+/**
+ * The sheet type field is a combobox: tap it, type the key (the one option then sits at the top), pick it. Playwright
+ * would otherwise scroll the dialog or page to reach a far option, and a scroll of anything that contains the field
+ * closes the (non-modal) list.
+ */
 async function chooseType(scope: Locator, field: RegExp, option: RegExp) {
   const box = scope.getByRole("combobox", { name: field });
   await box.click();
-  await box.fill(option.source);
+  await scope.page().keyboard.type(option.source);
   await scope.page().getByRole("option", { name: option }).click();
 }
 

@@ -1,5 +1,5 @@
 import { I18nProvider } from "@lingui/react";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -103,18 +103,49 @@ describe("SheetTypeCombobox", () => {
     const onChange = vi.fn();
     render(<Harness initial="my-small" onChange={onChange} />);
     await userEvent.click(box());
-    await userEvent.keyboard("{Control>}a{/Control}4736");
+    await userEvent.keyboard("4736");
     const list = await screen.findByRole("listbox");
     expect(within(list).getAllByRole("option")).toHaveLength(1);
     await userEvent.keyboard("{ArrowDown}{Enter}");
     expect(onChange).toHaveBeenCalledWith("L4736REV");
   });
 
+  it("a click starts a new search: typing replaces the shown label instead of appending to it", async () => {
+    render(<Harness initial="avery-5159" />);
+    await userEvent.click(box());
+    await userEvent.keyboard("4736");
+    expect(box()).toHaveValue("4736");
+    expect(within(await screen.findByRole("listbox")).getAllByRole("option")).toHaveLength(1);
+  });
+
+  it("a tap on the field that already has the focus opens the list again", async () => {
+    render(<Harness />);
+    await userEvent.click(box());
+    await userEvent.keyboard("{ArrowDown}{Enter}"); // chooses; the list closes, the focus stays
+    await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+    await userEvent.click(box());
+    expect(await screen.findByRole("listbox")).toBeInTheDocument();
+    await userEvent.keyboard("4736"); // and it is a new search again, not text added to the label
+    expect(box()).toHaveValue("4736");
+  });
+
+  it.each([
+    ["38,1", "38.1"],
+    ["45.7x21.2", "45.7 × 21.2"],
+    ["45,7 × 21,2", "45.7 × 21.2"],
+  ])("marks the match where it is, also after the size: %s", async (query, marked) => {
+    render(<Harness />);
+    await userEvent.click(box());
+    await userEvent.keyboard(query);
+    const option = (await screen.findAllByRole("option")).find((o) => o.querySelector("mark"));
+    expect(option?.querySelector("mark")?.textContent).toBe(marked);
+  });
+
   it("Enter on a search takes the first match", async () => {
     const onChange = vi.fn();
     render(<Harness initial="my-small" onChange={onChange} />);
     await userEvent.click(box());
-    await userEvent.keyboard("{Control>}a{/Control}avery{Enter}");
+    await userEvent.keyboard("avery{Enter}");
     expect(onChange).toHaveBeenCalledWith("avery-5159");
   });
 
@@ -123,7 +154,7 @@ describe("SheetTypeCombobox", () => {
     render(<Harness onChange={onChange} />);
     const before = (box() as HTMLInputElement).value;
     await userEvent.click(box());
-    await userEvent.keyboard("{Control>}a{/Control}zzz");
+    await userEvent.keyboard("zzz");
     expect(box()).toHaveValue("zzz");
     await userEvent.keyboard("{Escape}");
     expect(box()).toHaveValue(before);
@@ -133,9 +164,9 @@ describe("SheetTypeCombobox", () => {
   it("filters accent-insensitively and says when nothing matches", async () => {
     render(<Harness />);
     await userEvent.click(box());
-    await userEvent.keyboard("{Control>}a{/Control}cafe");
+    await userEvent.keyboard("cafe");
     expect(within(await screen.findByRole("listbox")).getAllByRole("option")).toHaveLength(1);
-    await userEvent.keyboard("{Control>}a{/Control}nothing-like-this");
+    await userEvent.keyboard("-nothing-like-this");
     expect(await screen.findByText("No sheet type matches.")).toBeInTheDocument();
   });
 
@@ -152,20 +183,22 @@ describe("SheetTypeCombobox", () => {
     expect(onChange).toHaveBeenLastCalledWith("L4736REV");
   });
 
-  it("the input is at least 16 px so iOS does not zoom, and options are 44 px high", async () => {
-    render(<Harness />);
-    expect(box().className).toContain("text-[16px]"); // the computed size is checked in the calibration e2e
-    await userEvent.click(box());
-    const option = (await screen.findAllByRole("option"))[0]!;
-    expect(option.className).toContain("min-h-11");
-  });
+  // The 16 px input and the 44 px options are measured in a real browser: e2e/calibration.spec.ts (jsdom has no layout).
 
-  it("offers the none option and the clear button", async () => {
+  it("the none option is the placeholder, never text in the field, and still listed", async () => {
     const onChange = vi.fn();
     render(<Harness initial="none" noneOption={{ id: "none", label: "Choose a sheet type" }} onChange={onChange} />);
-    expect(box()).toHaveValue("Choose a sheet type");
+    expect(box()).toHaveValue("");
+    expect(box()).toHaveAttribute("placeholder", "Choose a sheet type");
     await userEvent.click(box());
-    await userEvent.keyboard("{Control>}a{/Control}avery");
+    expect(await screen.findByRole("option", { name: "Choose a sheet type" })).toBeInTheDocument();
+  });
+
+  it("offers the clear button", async () => {
+    const onChange = vi.fn();
+    render(<Harness initial="none" noneOption={{ id: "none", label: "Choose a sheet type" }} onChange={onChange} />);
+    await userEvent.click(box());
+    await userEvent.keyboard("avery");
     await userEvent.click(screen.getByRole("button", { name: "Clear the search", hidden: true }) /* React Aria hides everything but the list while it is open */);
     expect(box()).toHaveValue("");
     expect(onChange).not.toHaveBeenCalled();

@@ -38,11 +38,15 @@ async function jobsOf(page: Page, id: string): Promise<string[]> {
   return jobs.filter((j) => j.printer_id === id).map((j) => j.id);
 }
 
-/** Chooses the 4 x 12 type in the combobox: types its key, so the one option sits at the top of the list (no scrolling that would close it). */
+/**
+ * Chooses the 4 x 12 type in the combobox the way a person does: tap it, type the key. The one option then sits at the
+ * top of the list; Playwright would otherwise scroll the page or dialog to reach a far option, and a scroll of anything
+ * that contains the field closes the (non-modal) list.
+ */
 async function chooseType(page: Page) {
   const box = page.getByRole("combobox", { name: /Sheet type|Bogentyp/ });
   await box.click();
-  await box.fill(TYPE);
+  await page.keyboard.type(TYPE);
   await page.getByRole("option", { name: new RegExp(`\\(${TYPE}\\)`) }).click();
 }
 
@@ -130,20 +134,36 @@ test.describe.serial("calibration", () => {
     await page.getByRole("option").filter({ hasNotText: `(${TYPE})` }).first().click();
     await expect(legend).not.toHaveAttribute("aria-label", new RegExp(`\\(${TYPE}\\)`));
 
+    // The field still has the focus (a tap on it opens the list again); the tap selects the shown label, typing replaces it.
     await box.click();
-    await box.fill("4736");
+    await expect(page.getByRole("listbox")).toBeVisible();
+    await page.keyboard.type("4736");
+    await expect(box).toHaveValue("4736");
     const shown = await page.getByRole("option").allTextContents();
     expect(shown.length).toBeGreaterThan(0);
     expect(shown.length).toBeLessThan(all.length);
     expect(shown.every((text) => /4736/i.test(text))).toBe(true);
-    await box.press("Enter");
+    await page.keyboard.press("Enter");
 
     await expect(legend).toHaveAttribute("aria-label", new RegExp(`\\(${TYPE}\\)`));
     await expect(box).toHaveValue(new RegExp(`\\(${TYPE}\\)`));
-    // The same on a phone: the field is 16 px or more (no iOS zoom) and the page does not scroll sideways.
-    await page.setViewportSize({ width: 390, height: 800 });
+    // Measured, not read from classes: the field is 16 px or more (no iOS zoom), an option is 44 px or more.
     expect(await box.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+    await page.keyboard.press("Escape");
+    await box.click();
+    await page.waitForTimeout(300); // the list scales in for 140 ms; a box measured mid-way is smaller
+    expect((await page.getByRole("option").first().boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+    // On a phone: no sideways scroll, and the open list ends above the fixed tab bar.
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 390, height: 800 });
     expect(await noSideScroll(page)).toBe(true);
+    await page.getByRole("heading", { level: 2, name: "Step 1: Print the calibration page" }).scrollIntoViewIfNeeded();
+    await box.click();
+    await page.waitForTimeout(300);
+    const list = (await page.getByRole("listbox").boundingBox())!;
+    const bar = (await page.locator("[data-tabbar]").boundingBox())!;
+    expect(list.y + list.height).toBeLessThanOrEqual(bar.y);
   });
 
   test("a failed calibration print shows its error and a Retry under the buttons (#239)", async () => {

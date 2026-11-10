@@ -1,10 +1,10 @@
 import { useLingui } from "@lingui/react/macro";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import type { components } from "../../api/schema.gen";
 import { FIELD } from "../../shell/SignIn";
 import { LABEL } from "../settings/controls";
-import { foldForSearch, matchSheetType } from "./matchSheetType";
+import { foldForSearch, foldWithMap, matchSheetType } from "./matchSheetType";
 import { typePickerLabel } from "./typeLabel";
 
 type SheetType = components["schemas"]["SheetTypeRead"];
@@ -29,13 +29,19 @@ export interface SheetTypeComboboxProps {
   labelFor?: (type: SheetType, locale: string) => string;
 }
 
-/** The label with the part that matched the query marked. Folding keeps the character count, so the offsets carry over. */
+/** The tallest the list gets (px) and the gap it keeps to the screen edge and the tab bar. */
+const LIST_MAX = 384;
+const LIST_GAP = 12;
+
+/** The label with the part that matched the query marked. Folding drops spaces (around "×"), so the match is mapped back to the label's own offsets. */
 function Highlighted({ text, query }: { text: string; query: string }) {
   const word = foldForSearch(query.trim()).split(/\s+/)[0] ?? "";
-  const at = word ? foldForSearch(text).indexOf(word) : -1;
-  if (at < 0) return <>{text}</>;
+  const { folded, origin } = foldWithMap(text);
+  const found = word ? folded.indexOf(word) : -1;
+  if (found < 0) return <>{text}</>;
   const chars = Array.from(text);
-  const end = at + Array.from(word).length;
+  const at = origin[found]!;
+  const end = origin[found + Array.from(word).length - 1]! + 1;
   return (
     <>
       {chars.slice(0, at).join("")}
@@ -62,20 +68,44 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
   // A key the list does not know (a link to a type that is gone) is shown as it is.
   const chosen = entries.find((e) => e.id === value);
   const chosenText = chosen?.text ?? value;
+  // "Choose a sheet type" / "Any sheet type" stand for no choice: they are the placeholder, never text the person would have to delete.
+  const isNone = !!noneOption && value === noneOption.id;
+  const shownText = isNone ? "" : chosenText;
   const query = typed?.trim() ?? "";
   const shown = query === "" ? entries : entries.filter((e) => e.type !== null && matchSheetType(e.type, query));
   const cleared = typed !== null && typed === "";
+  const trigger = useRef<HTMLButtonElement>(null);
+  const hadFocus = useRef(false);
+  const typedRef = useRef(typed);
+  useEffect(() => {
+    typedRef.current = typed;
+  }, [typed]);
+  // Where the list goes and how tall it may get. React Aria measures against the whole page, not the screen, so the list
+  // would run past the bottom edge and under the fixed tab bar of a phone; this measures the screen at the moment it opens.
+  const field = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState<{ placement: "bottom start" | "top start"; maxHeight: number }>({ placement: "bottom start", maxHeight: LIST_MAX });
 
   return (
     <ComboBox
       className="group flex min-w-0 flex-col gap-1.5"
       items={shown}
       selectedKey={chosen ? value : null}
-      inputValue={typed ?? chosenText}
+      inputValue={typed ?? shownText}
       isDisabled={disabled}
       menuTrigger="focus"
       allowsEmptyCollection
-      onInputChange={(text) => setTyped(text === chosenText ? null : text)}
+      onOpenChange={(open) => {
+        if (!open || !field.current) return;
+        const rect = field.current.getBoundingClientRect();
+        const bar = document.querySelector("[data-tabbar]");
+        const barTop = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().top : window.innerHeight;
+        const below = Math.min(window.innerHeight, barTop) - rect.bottom - LIST_GAP;
+        const above = rect.top - LIST_GAP;
+        // Below the field unless that leaves room for fewer than about four options and above has more.
+        const up = below < 4 * 44 && above > below;
+        setRoom({ placement: up ? "top start" : "bottom start", maxHeight: Math.max(88, Math.min(LIST_MAX, Math.floor(up ? above : below))) });
+      }}
+      onInputChange={(text) => setTyped(text === shownText ? null : text)}
       onSelectionChange={(key) => {
         // Typing makes React Aria let go of the selection; the value only changes when a type is picked.
         if (key === null) return;
@@ -85,14 +115,42 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
       onBlur={() => setTyped(null)}
     >
       <Label className={LABEL}>{label}</Label>
-      <div className="relative">
+      <div ref={field} className="relative">
         {/* 16 px at least (the theme's text-base is smaller): below that iOS zooms the page on focus. The title keeps a cut value readable. */}
         <Input
           className={`${FIELD} truncate pr-[5.5rem] text-[16px] disabled:opacity-60`}
           title={chosenText}
+          placeholder={isNone ? noneOption?.label : chosenText}
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
+          // Focus starts a new query: the shown label is selected, so the first keystroke replaces it. Selecting again on the
+          // next tick is for iOS, which drops a selection made inside the focus event.
+          onFocus={(e) => {
+            const input = e.currentTarget;
+            // The input gets the focus again when the list opens under the first keystroke: by then there is a query, leave it be.
+            if (typedRef.current !== null) return;
+            input.select();
+            setTimeout(() => {
+              if (typedRef.current === null) input.select();
+            }, 0);
+          }}
+          // A tap on a field that already has the focus (the list was closed by a choice or a drag) opens it again.
+          // A tap that only just gave it the focus opens the list through the focus; this is the tap that found the focus already there.
+          onPointerDown={(e) => {
+            hadFocus.current = document.activeElement === e.currentTarget;
+          }}
+          onClick={(e) => {
+            if (!hadFocus.current || e.currentTarget.getAttribute("aria-expanded") !== "false") return;
+            const input = e.currentTarget;
+            trigger.current?.click();
+            // A new search, as with a fresh focus; after the click, because opening the list moves the caret.
+            const select = () => {
+              if (typedRef.current === null) input.select();
+            };
+            select();
+            setTimeout(select, 0);
+          }}
           onKeyDownCapture={(e) => {
             // React Aria undoes a search on Escape by writing the chosen item's text back, read from the filtered list.
             // That list may not hold the chosen type, and the write is then an empty string. Escape means "back to the value".
@@ -124,6 +182,7 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
             </Button>
           ) : null}
           <Button
+            ref={trigger}
             aria-label={t`Show all sheet types`}
             className="press flex size-11 items-center justify-center rounded-r2 text-ink-2 data-[focus-visible]:outline-3 data-[focus-visible]:outline-link"
           >
@@ -133,8 +192,7 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
           </Button>
         </div>
       </div>
-      {/* Never taller than 45 % of the screen: on a phone the room below the field reaches under the tab bar. */}
-      <Popover className="flex max-h-[min(24rem,45dvh)]! w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[popin_140ms_cubic-bezier(0.23,1,0.32,1)]">
+      <Popover placement={room.placement} maxHeight={room.maxHeight} shouldFlip={false} offset={4} className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[popin_140ms_cubic-bezier(0.23,1,0.32,1)]">
         {/* The popover is as tall as the room beside the field; a long list scrolls inside it. */}
         <ListBox
           className="max-h-[inherit] overflow-y-auto overscroll-contain outline-none"
