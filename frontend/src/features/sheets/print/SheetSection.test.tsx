@@ -22,6 +22,13 @@ beforeAll(() => {
 });
 afterAll(() => configure({ asyncUtilTimeout: defaultAsyncTimeout }));
 
+// Every test here boots the whole app (about 1 s alone before the first assertion) and each
+// click re-renders it (100-500 ms in jsdom); on its own the slowest tests take 2-2.6 s. The
+// coverage run on four shared cores is about 2.5 times slower, which put the busiest test at
+// 5.3 s, past the default 5 s per test. The per-test limit is widened for this file only, with
+// the same reasoning as the async window above; vi.setConfig is scoped to this file.
+vi.setConfig({ testTimeout: 15_000 });
+
 beforeEach(() => {
   localStorage.clear();
   reloadCart();
@@ -664,7 +671,12 @@ describe("not enough free cells", () => {
     const { calls } = await overflow();
     await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /L4736-0001/ }));
+    const sheetBox = screen.getByRole("combobox", { name: "Sheet" }) as HTMLInputElement;
+    expect(sheetBox.value).toMatch(/L4736-0001/);
     await userEvent.click(await screen.findByRole("button", { name: "Use L4736-0010 instead (28 free)" }));
+    // The best fitting sheet is L4736-0010 from the start, so the last preview alone cannot tell
+    // whether the button did anything: the field must have moved off L4736-0001 again.
+    await waitFor(() => expect(sheetBox.value).toMatch(/L4736-0010/));
     await waitFor(() => expect(body(previews(calls).at(-1)!).placements).toEqual([{ sheet: "L4736-0010", cells: "first_free" }]));
   });
 });
