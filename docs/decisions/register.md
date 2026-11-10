@@ -10,7 +10,7 @@ A guard test (`backend/tests/unit/test_decision_register.py`) fails if a `D<n>` 
 |---|---|---|---|---|
 | D1 | The single backend process serves the UI | 2026-11-04 | Accepted | [0015](0015-single-process-deployment.md) |
 | D2 | React + TypeScript web UI stack | 2026-11-04 | Accepted | [0016](0016-react-typescript-web-ui.md) |
-| D3 | Design token set (spec section 5.2) | 2026-11-04 | Accepted | — |
+| D3 | Design token set (spec section 5.2) | 2026-11-04 | Accepted | [0022](0022-design-system-and-app-layout.md) |
 | D4 | Environment variables win over stored settings and lock the field | 2026-11-04 | Accepted | [0017](0017-settings-in-database-env-locks-encrypted-secrets.md) |
 | D5 | Secrets are encrypted with `PRINTER_HUB_SECRET_KEY` and write-only | 2026-11-04 | Accepted | [0017](0017-settings-in-database-env-locks-encrypted-secrets.md) |
 | D6 | Printers are managed in the UI | 2026-11-04 | Accepted | — |
@@ -21,13 +21,13 @@ A guard test (`backend/tests/unit/test_decision_register.py`) fails if a `D<n>` 
 | D11 | No global part-size or half-cut setting in the foundation | 2026-11-04 | Accepted | — |
 | D12 | `ink-500` is `#6B655A` to meet WCAG AA contrast | 2026-11-04 | Accepted | — |
 | D20 | The hub is AGPL-3.0-or-later and links to the source of the running build | 2026-11-05 | Accepted | — |
-| D13 | Sheet archive, physical sheets and calibration live in the hub (#150) | 2026-11-05 | Accepted | — |
-| D14 | Sheet type geometry is versioned; sheets pin their version | 2026-11-05 | Accepted | — |
-| D15 | Cells are reserved at job creation, used on completion, unconfirmed when the outcome is unknown | 2026-11-05 | Accepted | — |
-| D16 | Lengths stored in hundredths of a millimetre | 2026-11-05 | Accepted | — |
-| D17 | Calibration stores the printer's deviation around the page centre; the hub applies the inverse | 2026-11-06 | Accepted | — |
-| D18 | IPP backend kind with an own client | 2026-11-06 | Proposed | [0020](0020-backend-kinds-ipp-page-printers.md) |
-| D19 | Imported sheet types are never marked verified | 2026-11-05 | Accepted | — |
+| D13 | Sheet archive, physical sheets and calibration live in the hub (#150) | 2026-11-05 | Accepted | [0023](0023-sheet-archive.md) |
+| D14 | Sheet type geometry is versioned; sheets pin their version | 2026-11-05 | Accepted | [0023](0023-sheet-archive.md) |
+| D15 | Cells are reserved at job creation, used on completion, unconfirmed when the outcome is unknown | 2026-11-05 | Accepted | [0023](0023-sheet-archive.md) |
+| D16 | Lengths stored in hundredths of a millimetre | 2026-11-05 | Accepted | [0023](0023-sheet-archive.md) |
+| D17 | Calibration stores the printer's deviation around the page centre; the hub applies the inverse | 2026-11-06 | Accepted | [0023](0023-sheet-archive.md) |
+| D18 | IPP backend kind with an own client | 2026-11-06 | Accepted | [0020](0020-backend-kinds-ipp-page-printers.md) |
+| D19 | Imported sheet types are never marked verified | 2026-11-05 | Accepted | [0023](0023-sheet-archive.md) |
 | V1 | Media type `labels` is settable on the test printer via `media-col` | 2026-11-06 | To verify | — |
 | V2 | L4731REV has no vertical gap (pitch 10 mm) | 2026-11-05 | To verify | — |
 | V3 | A QR does not scan reliably on 25.4 × 10 mm cells | 2026-11-05 | To verify | — |

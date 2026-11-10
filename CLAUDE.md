@@ -34,7 +34,7 @@ If you're about to make a non-trivial change without having read those first, st
 - Adding a new dependency — explain why in the PR description
 - New API endpoint — must come with OpenAPI schema (auto via FastAPI Pydantic models — see [ADR 0011](docs/decisions/0011-openapi-as-api-contract.md))
 - New file over ~400 lines — ask whether it should be split
-- Architecture change — propose as an ADR PR before implementing
+- Architecture change — propose as an ADR PR before implementing. An ADR is `Proposed` until the change ships, then `Accepted` in the same PR; a replaced ADR gets `Superseded by` in its header. Register rows and ADR headers must agree (`backend/tests/unit/test_decision_register.py`)
 - Mid-print cancel logic on TCP/9100 — refuse, this is forbidden ([ADR 0005](docs/decisions/0005-print-queue-is-mandatory.md))
 
 ## Where to put new things
