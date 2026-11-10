@@ -17,17 +17,22 @@
 
 This project is being designed against the [Brother PT-E550W/P750W/P710BT Raster Command Reference v1.02](https://download.brother.com/welcome/docp100064/cv_pte550wp750wp710bt_eng_raster_102.pdf) and [QL-800/810W/820NWB Raster Command Reference](https://download.brother.com/welcome/docp100278/cv_ql800_eng_raster_101.pdf). Hardware tested: Brother PT-P750W (verified). Brother QL-820NWBc (in progress).
 
-## Features (planned)
+## Features
 
 - **Multi-printer support** via plugin architecture (PT-Series and QL-Series, more on request)
+- **Printers added and changed at runtime** in the UI (Settings > Printers), no restart and no environment variables (#224)
 - **Pull-mode**: Open the web UI on your phone, scan a barcode, hit print
 - **Push-mode**: Spoolman/Grocy webhook → automatic label print
 - **App integrations**: Snipe-IT (asset tags), Grocy (product labels), Spoolman (3D-print spool labels)
-- **Print queue** with pause/resume/cancel/retry/priority operations
+- **Print queue** with pause/resume/cancel/retry operations, per printer and per job; tape runs in sub-jobs that
+  stop at an unknown outcome and offer continue or reprint (#277)
 - **Live status pages** per printer via Server-Sent Events (no page reload)
 - **Tape detection** via Brother native status block (no manual configuration)
-- **PWA-installable** for smartphone use
+- **PWA-installable** for smartphone use, also behind SSO (#225)
+- **Versioned API** under `/api/v1/` (#226)
 - **Pluggable**: drop a new `printer_models/your_model.py` to add a new device
+
+Not built yet: job priorities in the queue.
 
 ## Tech Stack
 
