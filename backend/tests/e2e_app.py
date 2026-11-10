@@ -236,6 +236,8 @@ class _PageState(BaseModel):
     cancel_steps: int | None = Field(default=None, ge=0, le=20)
     media_default: str | None = Field(default=None, max_length=64)
     """A media keyword; ``""`` clears it (a real ``None`` means "leave unchanged")."""
+    printer_uuid: str | None = Field(default=None, max_length=64)
+    """The ``printer-uuid`` the printer reports (the identity the hub stores); ``""`` clears it."""
 
 
 _RESET_KEEP = frozenset({"received", "_jobs", "_next_job_id"})
@@ -260,6 +262,7 @@ def _fake_state(fake: Any) -> dict[str, Any]:
         "margins_hmm": fake.margins_hmm,
         "cancel_steps": fake.cancel_steps,
         "media_default": fake.media_default,
+        "printer_uuid": fake.printer_uuid,
         "media_sources": list(fake.media_sources),
     }
 
@@ -327,7 +330,8 @@ class E2EApp:
                 response = JSONResponse({"error": str(exc)}, status_code=422)
             else:
                 for name, value in body.model_dump(exclude_none=True).items():
-                    setattr(self.fake, name, value or None if name == "media_default" else value)
+                    clearable = name in ("media_default", "printer_uuid")
+                    setattr(self.fake, name, value or None if clearable else value)
                 response = JSONResponse({"uri": self.uri, "state": _fake_state(self.fake)})
         elif path == "/__e2e/page-printer/reset" and method == "POST":
             _reset_fake(self.fake)

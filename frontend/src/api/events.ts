@@ -14,6 +14,8 @@ const EVENT_TYPES = [
   "printer.status",
   "printer.tape_changed",
   "printer.roll_changed",
+  // Carries only `{mismatch, since}`: the status and the printer are read again for the rest.
+  "printer.identity_mismatch",
   "hub.printers_changed",
   "auth.expired",
   // The `sheets` channel (no printer restriction); the client filters by event type, not channel.
@@ -73,6 +75,11 @@ function invalidate(client: QueryClient, type: EventType, { printerId, data }: F
       if (printerId) run(["printers", printerId]);
       break;
     case "printer.tape_changed":
+      if (printerId) run(["printers", printerId]);
+      break;
+    case "printer.identity_mismatch":
+      // The cards read the status flag, the detail page the printer (admin: both identities) and its status.
+      run(["printers"]);
       if (printerId) run(["printers", printerId]);
       break;
     case "printer.roll_changed":

@@ -87,6 +87,19 @@ describe("JobDetail", () => {
     expect(await screen.findByText("The job could not be retried.")).toBeVisible();
   });
 
+  it("says that a held printer must be confirmed by an admin first", async () => {
+    mockApi(
+      routes("failed", {}, {
+        [`POST /api/v1/jobs/${ID}/retry`]: respond(409, { type: "printer-identity-mismatch", title: "Held", status: 409, detail: "held" }),
+      }),
+    );
+    await renderApp({ path: `/jobs/${ID}` });
+    await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(
+      await screen.findByText("This printer may be a different device now. An admin has to confirm it on the printer's page first."),
+    ).toBeVisible();
+  });
+
   it("a job that is not there (or not yours) reads as not found", async () => {
     mockApi({ [`GET /api/v1/jobs/${ID}`]: respond(404, { detail: "job not found" }) });
     await renderApp({ path: `/jobs/${ID}` });

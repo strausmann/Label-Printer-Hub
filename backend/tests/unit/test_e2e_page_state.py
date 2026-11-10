@@ -28,3 +28,20 @@ def test_reset_restores_the_default() -> None:
     fake.media_default = None
     _reset_fake(fake)
     assert fake.media_default == "iso_a4_210x297mm"
+
+
+def test_the_control_body_takes_a_printer_uuid_and_an_empty_one_clears_it() -> None:
+    uuid = "urn:uuid:11111111-2222-4333-8444-555555555555"
+    assert _PageState.model_validate({"printer_uuid": uuid}).printer_uuid == uuid
+    assert _PageState.model_validate({"printer_uuid": ""}).printer_uuid == ""
+    with pytest.raises(ValidationError):
+        _PageState.model_validate({"printer_uuid": "x" * 200})
+
+
+def test_the_state_reports_the_uuid_and_reset_clears_it() -> None:
+    fake = _new_fake()
+    assert _fake_state(fake)["printer_uuid"] is None
+    fake.printer_uuid = "urn:uuid:11111111-2222-4333-8444-555555555555"
+    assert _fake_state(fake)["printer_uuid"] == fake.printer_uuid
+    _reset_fake(fake)
+    assert fake.printer_uuid is None

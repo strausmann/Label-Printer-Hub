@@ -673,6 +673,7 @@ msgstr "Can't be read with the current secret key — enter it again"
 #: src/features/archive/TypeForm.tsx
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/JobDetail.tsx
+#: src/features/printers/IdentityMismatchBanner.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/printers/RollColourPrompt.tsx
 #: src/features/settings/PrinterForm.tsx
@@ -1060,9 +1061,25 @@ msgstr "Description"
 msgid "Details"
 msgstr "Details"
 
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "Device replaced"
+msgstr "Device replaced"
+
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "Device swap"
+msgstr "Device swap"
+
 #: src/features/archive/TypeForm.tsx
 msgid "Diameter (mm)"
 msgstr "Diameter (mm)"
+
+#: src/features/printers/PrinterCard.tsx
+msgid "Different device"
+msgstr "Different device"
+
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "Different device detected at this address. Sheet printing and the calibration page are held until an admin confirms."
+msgstr "Different device detected at this address. Sheet printing and the calibration page are held until an admin confirms."
 
 #: src/features/settings/Printers.tsx
 msgid "Disable"
@@ -1482,6 +1499,10 @@ msgstr "Interrupted by a restart"
 msgid "IPP address"
 msgstr "IPP address"
 
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "IPP UUID"
+msgstr "IPP UUID"
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "It will probably become <0>{hintCode}</0>."
 msgstr "It will probably become <0>{hintCode}</0>."
@@ -1693,6 +1714,10 @@ msgstr "Look up {query} in {name}"
 msgid "Look up in an integration"
 msgstr "Look up in an integration"
 
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "MAC address"
+msgstr "MAC address"
+
 #: src/shell/Sidebar.tsx
 msgid "Main"
 msgstr "Main"
@@ -1867,6 +1892,10 @@ msgstr "No code found in this photo. Hold the camera closer and try again."
 #: src/features/calibration/CalibrationPage.tsx
 msgid "No correction stored for this tray."
 msgstr "No correction stored for this tray."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "No hardware identity — device swaps are not detected"
+msgstr "No hardware identity — device swaps are not detected"
 
 #: src/features/lookup/ItemView.tsx
 msgid "No item has this ID:"
@@ -2061,6 +2090,10 @@ msgstr "Nothing needs attention."
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Nothing opened yet."
 msgstr "Nothing opened yet."
+
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "Now at this address"
+msgstr "Now at this address"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "off"
@@ -2604,10 +2637,18 @@ msgstr "Remove saved value"
 msgid "Remove the correction of {trayLabel} on {printerName}? Prints on this tray are then not corrected."
 msgstr "Remove the correction of {trayLabel} on {printerName}? Prints on this tray are then not corrected."
 
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "Replace the device?"
+msgstr "Replace the device?"
+
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"
 msgid "reserved"
 msgstr "reserved"
+
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "Reset calibration and accept"
+msgstr "Reset calibration and accept"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Reset to no correction"
@@ -2710,6 +2751,10 @@ msgstr "Rulers with a tick every 0.5 mm run along every gap line on all four edg
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "S1, S2 … number the gaps between columns (solid lines)."
 msgstr "S1, S2 … number the gaps between columns (solid lines)."
+
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "Same device"
+msgstr "Same device"
 
 #: src/features/settings/Integrations.tsx
 #: src/features/settings/SectionForm.tsx
@@ -2842,6 +2887,10 @@ msgstr "Sent to the print queue"
 #: src/features/archive/TypeForm.tsx
 msgid "Separate several with commas."
 msgstr "Separate several with commas."
+
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "Serial number"
+msgstr "Serial number"
 
 #: src/shell/Sidebar.tsx
 msgid "Server unreachable"
@@ -3069,6 +3118,10 @@ msgstr "Snipe-IT"
 msgid "some remaining"
 msgstr "some remaining"
 
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "Someone has settled this already. The page shows the current state."
+msgstr "Someone has settled this already. The page shows the current state."
+
 #: src/i18n/messages.ts
 #: src/shell/SignIn.tsx
 msgid "Something went wrong."
@@ -3147,6 +3200,10 @@ msgstr "Stopped"
 #: src/features/jobs/pageJobText.ts
 msgid "Stopped at the printer"
 msgstr "Stopped at the printer"
+
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "Stored"
+msgstr "Stored"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Supplies"
@@ -3349,6 +3406,10 @@ msgstr "The bootstrap key no longer works because an admin key exists. Sign in w
 msgid "The calibration could not be loaded."
 msgstr "The calibration could not be loaded."
 
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "The calibration of every tray of this printer is reset, and the device now at this address is stored as the new one."
+msgstr "The calibration of every tray of this printer is reset, and the device now at this address is stored as the new one."
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "The calibration page is queued."
 msgstr "The calibration page is queued."
@@ -3422,6 +3483,10 @@ msgstr "The correction could not be reset."
 msgid "The correction could not be saved."
 msgstr "The correction could not be saved."
 
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "The decision could not be saved. Try again."
+msgstr "The decision could not be saved. Try again."
+
 #: src/features/settings/IppPrinterFields.tsx
 msgid "The default tray must be one of the enabled trays."
 msgstr "The default tray must be one of the enabled trays."
@@ -3429,6 +3494,10 @@ msgstr "The default tray must be one of the enabled trays."
 #: src/features/archive/errors.ts
 msgid "The description"
 msgstr "The description"
+
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "The device at this address changed while you were looking. Check the values shown now before you decide."
+msgstr "The device at this address changed while you were looking. Check the values shown now before you decide."
 
 #: src/features/settings/System.tsx
 msgid "The download holds the settings that are not secret and not set by the container, as JSON. Keys and tokens are never included."
@@ -4017,6 +4086,10 @@ msgstr "This key is shown only once. Store it in your password manager before yo
 msgid "This key may not do this."
 msgstr "This key may not do this."
 
+#: src/features/printers/IdentityMismatchBanner.tsx
+msgid "This key may not settle a device swap."
+msgstr "This key may not settle a device swap."
+
 #: src/features/archive/errors.ts
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/RetryError.tsx
@@ -4046,6 +4119,11 @@ msgstr "This printer has no tray to calibrate."
 #: src/features/sheets/errors.ts
 msgid "This printer is switched off."
 msgstr "This printer is switched off."
+
+#: src/features/jobs/RetryError.tsx
+#: src/features/sheets/errors.ts
+msgid "This printer may be a different device now. An admin has to confirm it on the printer's page first."
+msgstr "This printer may be a different device now. An admin has to confirm it on the printer's page first."
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "This printer reports no trays, so it cannot print the ID label."

@@ -92,6 +92,25 @@ export function useClearQueue(printerId: string) {
   });
 }
 
+export type IdentityResolution = "same_device" | "replaced";
+
+/**
+ * Settle a pending device swap. The identity the admin reviewed goes with the call: if the printer
+ * answered with yet another device meanwhile, the server refuses (409 `identity-changed`) instead
+ * of accepting a device nobody looked at. Whatever the answer, the printer and its status are read again.
+ */
+export function useResolveIdentity(printerId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { resolution: IdentityResolution; expected_observed_id: string; expected_observed_kind: string }) =>
+      apiFetch<unknown>(`/api/v1/admin/printers/${printerId}/identity/resolve`, { method: "POST", json: body }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: printerKey(printerId) });
+      void client.invalidateQueries({ queryKey: printersKey });
+    },
+  });
+}
+
 /** The recorded roll of a printer: the width and media text the colour question is about. */
 export const useRoll = (id: string, enabled = true) =>
   useQuery({ queryKey: rollKey(id), queryFn: () => apiFetch<Roll>(`/api/v1/printers/${id}/roll`), enabled });

@@ -28,6 +28,8 @@ export type PagePrinterState = {
   cancel_steps?: number;
   /** The `media-default` keyword the printer reports; `""` stops it reporting one. */
   media_default?: string;
+  /** The `printer-uuid` the printer reports: the identity the hub stores; `""` stops it reporting one. */
+  printer_uuid?: string;
 };
 
 /** Switches the fake page printer; the hub notices on its next status probe (1 s in the test hub). */

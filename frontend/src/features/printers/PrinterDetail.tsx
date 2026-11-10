@@ -10,6 +10,7 @@ import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { TEST_LABEL_KEY } from "../jobs/model";
 import { useCalibration, type CalibrationRead } from "../calibration/api";
 import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, useTestPrint, type Printer, type PrinterStatus, type QueueJob } from "./api";
+import { IdentityMismatchBanner, useIdentityKindLabel } from "./IdentityMismatchBanner";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
 import { describePrinter, isPagePrinter, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
@@ -59,6 +60,8 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const ahead = status.data?.jobs_ahead ?? 0;
   // Only a key that may write is asked; a status nobody refreshes says nothing about the roll.
   const session = useSession();
+  const admin = session.scope === "admin";
+  const identityKind = useIdentityKindLabel();
   const canAskColour = (session.scope === "print" || session.scope === "admin") && !page && !unknown;
   const testPrint = useTestPrint(printer.id);
   const colourTrigger = useRef<HTMLButtonElement | null>(null);
@@ -84,6 +87,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
         </div>
       </header>
       <TestPrintFeedback mutation={testPrint} />
+      {status.data?.identity_mismatch === true && <IdentityMismatchBanner printer={printer} />}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-4">
@@ -152,7 +156,12 @@ function PrinterDetail({ printer }: { printer: Printer }) {
                   <Row label={t`Port`} value={textOf(connection.port)} mono />
                 </>
               )}
+              {admin && printer.hardware_id && <Row label={identityKind(printer.hardware_id_kind)} value={printer.hardware_id} mono />}
             </dl>
+            {/* Only an admin is told: the identity is hidden from every other key, so its absence says nothing to them. */}
+            {admin && !printer.hardware_id && (
+              <p className="mt-3 text-small text-ink-2">{t`No hardware identity — device swaps are not detected`}</p>
+            )}
           </section>
           {calibration && (
             <section aria-labelledby="calibration-h" className={PANEL}>

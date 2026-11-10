@@ -36,6 +36,7 @@ export function PrinterCard({
         <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{printer.model}</span>
       </span>
       <StatusBadge state={view.badge} label={kinds[view.kind]} />
+      {status?.identity_mismatch === true && <StatusBadge state="warn" label={t`Different device`} />}
       {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
       {view.kind === "paused" && <PauseReason pause={printer.pause} />}
       {typeof age === "number" && (

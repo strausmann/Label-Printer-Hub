@@ -99,6 +99,12 @@ describe("useHubEvents", () => {
     ]);
   });
 
+  it("printer.identity_mismatch invalidates the printers and the printer, status included", () => {
+    const { invalidate } = setup();
+    act(() => last().emit("printer.identity_mismatch", "p1", { mismatch: true, since: "2026-11-09T10:00:00Z" }));
+    expect(keys(invalidate)).toEqual([["printers"], ["printers", "p1"]]);
+  });
+
   it("an event without a printer id only invalidates the lists", () => {
     const { invalidate } = setup();
     act(() => last().emit("job.state_changed", null));

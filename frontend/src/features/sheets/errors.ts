@@ -24,6 +24,9 @@ export function useSheetErrorText(): (error: unknown, fallback?: string) => stri
           return t`This printer is switched off.`;
         case "printer-unavailable":
           return t`The print queue does not know this printer yet. Try again in a moment.`;
+        // Held after a device swap: the sheet routes send it as the envelope, the calibration page as a problem type.
+        case "printer-identity-mismatch":
+          return t`This printer may be a different device now. An admin has to confirm it on the printer's page first.`;
         case "tray_unknown":
           return t`The printer does not report that tray.`;
         case "cells_taken":

@@ -240,6 +240,17 @@ describe("step 1: the calibration page", () => {
     expect(screen.queryByText("The calibration page is queued.")).toBeNull();
   });
 
+  it("says in words when the printer is held after a device swap (printer-identity-mismatch)", async () => {
+    await open({
+      [`POST ${BASE}/main/page`]: () =>
+        respond(409, { detail: { type: "printer-identity-mismatch", title: "Held", status: 409, detail: "The printer is held" } }),
+    });
+    await userEvent.click(await button("Print calibration page"));
+    expect(
+      await screen.findByText("This printer may be a different device now. An admin has to confirm it on the printer's page first."),
+    ).toBeVisible();
+  });
+
   it("says in words when the sheet type has no crossings", async () => {
     await open({ [`POST ${BASE}/main/page`]: () => respond(422, apiErrorBody("calibration_type_unsuitable", "No crossings.", { cols: 1, rows: 4 })) });
     await userEvent.click(await button("Print calibration page"));
