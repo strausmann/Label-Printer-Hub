@@ -174,6 +174,10 @@ msgstr "{label} muss eine ganze Zahl von 1 bis 400 sein."
 msgid "{labels, plural, one {Print # label} other {Print # labels}}"
 msgstr "{labels, plural, one {# Etikett drucken} other {# Etiketten drucken}}"
 
+#: src/features/jobs/HeldRuns.tsx
+msgid "{labels} labels on {name}"
+msgstr "{labels} Etiketten auf {name}"
+
 #: src/features/sheets/print/PrintResult.tsx
 msgid "{left, plural, one {# label was not queued. The preview below shows it.} other {# labels were not queued. The preview below shows them.}}"
 msgstr "{left, plural, one {# Etikett wurde nicht eingereiht. Die Vorschau unten zeigt es.} other {# Etiketten wurden nicht eingereiht. Die Vorschau unten zeigt sie.}}"
@@ -190,9 +194,9 @@ msgstr "{level} %, niedrig"
 msgid "{lowCount, plural, one {# printer is running out of material} other {# printers are running out of material}}"
 msgstr "{lowCount, plural, one {# Drucker hat bald kein Material mehr} other {# Drucker haben bald kein Material mehr}}"
 
-#: src/shell/PrintToasts.tsx
-msgid "{n} (all of {from} to {to} printed)"
-msgstr "{n} ({from} bis {to} sind alle gedruckt)"
+#: src/features/jobs/RunControls.tsx
+msgid "{n} (all of {unknownFrom} to {unknownTo} printed)"
+msgstr "{n} ({unknownFrom} bis {unknownTo} sind alle gedruckt)"
 
 #: src/features/sheets/print/errors.ts
 msgid "{name} cannot be printed with this layout: {fields} is missing. Choose another layout."
@@ -970,7 +974,7 @@ msgstr "Verbindung fehlgeschlagen"
 msgid "Continue"
 msgstr "Weiter"
 
-#: src/shell/PrintToasts.tsx
+#: src/features/jobs/RunControls.tsx
 msgid "Continue with part {next}"
 msgstr "Mit Teil {next} weitermachen"
 
@@ -1172,6 +1176,10 @@ msgstr "{0} deaktivieren"
 msgid "Disabled"
 msgstr "Deaktiviert"
 
+#: src/features/jobs/RunControls.tsx
+msgid "Discard"
+msgstr "Verwerfen"
+
 #: src/features/sheets/SheetsPage.tsx
 msgctxt "sheet action"
 msgid "Discard"
@@ -1189,6 +1197,10 @@ msgstr "{code} verwerfen? Er verschwindet aus der Auswahl; seine Nummer wird nie
 #: src/features/sheets/SheetsPage.tsx
 msgid "Discard sheet"
 msgstr "Bogen verwerfen"
+
+#: src/features/jobs/RunControls.tsx
+msgid "Discard the rest"
+msgstr "Den Rest verwerfen"
 
 #: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -1395,7 +1407,7 @@ msgstr "Gerät oder Standort suchen"
 msgid "First free cells"
 msgstr "Erste freie Zellen"
 
-#: src/shell/PrintToasts.tsx
+#: src/features/jobs/RunControls.tsx
 msgid "First missing label"
 msgstr "Erstes fehlendes Etikett"
 
@@ -1691,9 +1703,9 @@ msgstr "Etikettenbreite (mm)"
 msgid "Labels"
 msgstr "Etiketten"
 
-#: src/shell/PrintToasts.tsx
-msgid "Labels {from} to {to} may or may not have printed. Count them on the tape, put in a new tape, then reprint from the first label that is missing."
-msgstr "Ob die Etiketten {from} bis {to} gedruckt wurden, ist unklar. Zähle sie auf dem Band nach, lege ein neues Band ein und drucke ab dem ersten fehlenden Etikett neu."
+#: src/features/jobs/RunControls.tsx
+msgid "Labels {unknownFrom} to {unknownTo} may or may not have printed. Count them on the tape, put in a new tape, then reprint from the first label that is missing."
+msgstr "Ob die Etiketten {unknownFrom} bis {unknownTo} gedruckt wurden, ist unklar. Zähle sie auf dem Band nach, lege ein neues Band ein und drucke ab dem ersten fehlenden Etikett neu."
 
 #: src/features/settings/sections.tsx
 msgid "Language"
@@ -2182,6 +2194,10 @@ msgstr "Nichts geändert."
 msgid "Nothing chosen yet"
 msgstr "Noch nichts gewählt"
 
+#: src/features/jobs/RunControls.tsx
+msgid "Nothing from label {from} on was sent, so none of them printed. {reason}"
+msgstr "Ab Etikett {from} wurde nichts gesendet, keines davon ist gedruckt. {reason}"
+
 #: src/features/sheets/print/PrintResult.tsx
 msgid "Nothing is left to print."
 msgstr "Es ist nichts mehr zu drucken."
@@ -2401,9 +2417,9 @@ msgstr "Papierformat"
 msgid "Paperless ASN"
 msgstr "Paperless-ASN"
 
-#: src/shell/PrintToasts.tsx
-msgid "Part {done} of {total} is done. Check the tape, then continue."
-msgstr "Teil {done} von {total} ist fertig. Prüfe das Band und mach dann weiter."
+#: src/features/jobs/RunControls.tsx
+msgid "Part {done} of {parts} is done. Check the tape, then continue."
+msgstr "Teil {done} von {parts} ist fertig. Prüfe das Band und mach dann weiter."
 
 #: src/shell/PrintToasts.tsx
 msgid "Part {partNo} of {parts}"
@@ -2475,6 +2491,10 @@ msgstr "Kalibrierseite drucken"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Print it onto a real sheet of labels (the sheet is used up). The page is always printed without correction, so what you measure is the printer's own deviation."
 msgstr "Drucken Sie sie auf einen echten Etikettenbogen (der Bogen ist danach verbraucht). Die Seite wird immer ohne Korrektur gedruckt, Sie messen also die eigene Abweichung des Druckers."
+
+#: src/features/jobs/RunControls.tsx
+msgid "Print labels {from} to {total} again"
+msgstr "Etiketten {from} bis {total} noch einmal drucken"
 
 #: src/features/lookup/ItemView.tsx
 msgid "Print now"
@@ -2781,7 +2801,7 @@ msgstr "Gerät ersetzen?"
 msgid "Report a problem with the dimensions"
 msgstr "Ein Problem mit den Maßen melden"
 
-#: src/shell/PrintToasts.tsx
+#: src/features/jobs/RunControls.tsx
 msgid "Reprint from label {choice}"
 msgstr "Ab Etikett {choice} neu drucken"
 
@@ -3359,6 +3379,7 @@ msgstr "Schritt 2: Abweichung eingeben"
 msgid "Step 3: Check the result"
 msgstr "Schritt 3: Ergebnis prüfen"
 
+#: src/features/jobs/HeldRuns.tsx
 #: src/features/printers/model.ts
 #: src/shell/PrintToasts.tsx
 msgid "Stopped"
@@ -3445,6 +3466,10 @@ msgctxt "printer kind"
 msgid "Tape printer"
 msgstr "Banddrucker"
 
+#: src/features/jobs/HeldRuns.tsx
+msgid "Tape prints that wait for you"
+msgstr "Banddrucke, die auf dich warten"
+
 #: src/features/settings/Integrations.tsx
 msgid "Test connection"
 msgstr "Verbindung testen"
@@ -3483,6 +3508,10 @@ msgstr "Text gekürzt"
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "Text shortened to fit: cells {shortened}"
 msgstr "Text gekürzt, damit er passt: Zellen {shortened}"
+
+#: src/features/jobs/RunControls.tsx
+msgid "That did not work. Try again."
+msgstr "Das hat nicht geklappt. Versuche es noch einmal."
 
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "That is not a sheet code."
@@ -3906,10 +3935,6 @@ msgstr "Der Name ist erforderlich."
 msgid "The new sheet"
 msgstr "Der neue Bogen"
 
-#: src/shell/PrintToasts.tsx
-msgid "The next part could not be started. Try again."
-msgstr "Der nächste Teil konnte nicht gestartet werden. Versuche es noch einmal."
-
 #: src/features/archive/errors.ts
 msgid "The note about the change"
 msgstr "Die Notiz zur Änderung"
@@ -4106,10 +4131,6 @@ msgstr "Die eingereihten Etiketten wurden aus dem Warenkorb genommen."
 #: src/features/sheets/print/PrintResult.tsx
 msgid "The queued labels were taken out of the cart. The rest stays in it."
 msgstr "Die eingereihten Etiketten wurden aus dem Warenkorb genommen. Der Rest bleibt darin."
-
-#: src/shell/PrintToasts.tsx
-msgid "The reprint could not be started. Try again."
-msgstr "Der Neudruck konnte nicht gestartet werden. Versuche es noch einmal."
 
 #: src/features/printers/RollColourPrompt.tsx
 msgid "The roll changed again while you were choosing. Pick the colour of the new roll."
@@ -4561,6 +4582,7 @@ msgstr "unbekannt"
 msgid "Unknown code"
 msgstr "Unbekannter Code"
 
+#: src/features/jobs/HeldRuns.tsx
 #: src/features/jobs/JobsPage.tsx
 #: src/features/overview/OverviewPage.tsx
 msgid "Unknown printer"
@@ -4648,6 +4670,7 @@ msgstr "Auftrag ansehen"
 msgid "Waiting at the printer"
 msgstr "Wartet beim Drucker"
 
+#: src/features/jobs/HeldRuns.tsx
 #: src/shell/PrintToasts.tsx
 msgid "Waiting for you"
 msgstr "Wartet auf dich"

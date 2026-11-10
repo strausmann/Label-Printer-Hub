@@ -76,6 +76,19 @@ export function useReprintBatch() {
   });
 }
 
+/** Gives up a held tape batch: its waiting labels are cancelled, the run is forgotten (#277). */
+export function useDiscardBatch() {
+  const refresh = useRefreshJobs();
+  return useMutation({
+    mutationFn: (batchId: string) => apiFetch<null>(`/api/v1/batches/${batchId}/discard`, { method: "POST" }),
+    onSettled: refresh,
+  });
+}
+
+/** Tape batches that wait for an action (#277). Under `["jobs"]`: every job event refreshes it. */
+export const heldRunsKey = ["jobs", "held-runs"] as const;
+export const useHeldRuns = () => useQuery({ queryKey: heldRunsKey, queryFn: () => apiFetch<TapeRunRead[]>("/api/v1/batches/runs/held") });
+
 export function useCancelJobById() {
   const refresh = useRefreshJobs();
   return useMutation({

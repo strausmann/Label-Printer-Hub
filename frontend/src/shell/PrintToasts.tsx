@@ -2,7 +2,8 @@ import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { useContinueBatch, useJob, useReprintBatch, useRetryJob } from "../features/jobs/api";
+import { useJob, useRetryJob } from "../features/jobs/api";
+import { RunControls } from "../features/jobs/RunControls";
 import { useJobErrorText } from "../features/jobs/jobErrorText";
 import { useStateWords } from "../features/jobs/liveText";
 import { canRetry } from "../features/jobs/model";
@@ -112,95 +113,20 @@ function Failure({ entry }: { entry: WatchedPrint }) {
   );
 }
 
-/** #277: the part of a tape batch is done; the next one starts when the user says so (after checking the tape). */
-function RunWaits({ entry, batchId }: { entry: WatchedPrint; batchId: string }) {
-  const { t } = useLingui();
-  const go = useContinueBatch();
+/** #277: the actions of a held tape run inside its card: continue, reprint from the first missing label, discard. */
+function RunActions({ entry, batchId }: { entry: WatchedPrint; batchId: string }) {
   const run = entry.run!;
-  const done = run.subJob - 1;
-  const next = run.subJob;
-  const total = run.subJobs;
   return (
-    <div className="mt-2 flex flex-col gap-2">
-      <p className="text-small [overflow-wrap:anywhere]">{t`Part ${done} of ${total} is done. Check the tape, then continue.`}</p>
-      {go.isError && <p className="text-small text-bad">{t`The next part could not be started. Try again.`}</p>}
-      <div>
-        <button
-          type="button"
-          className={BUTTON}
-          disabled={go.isPending}
-          onClick={(event) => {
-            event.currentTarget.blur();
-            go.mutate(batchId, { onSuccess: () => markRunContinued(entry.id, next) });
-          }}
-        >
-          {t`Continue with part ${next}`}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * #277: a group of a tape batch failed (the tape ran out, for example). Its labels may or may not have printed:
- * the user counts them, puts in a new tape and reprints from the first missing label. The labels after the group
- * were never sent and come along.
- */
-function RunStop({ entry, batchId }: { entry: WatchedPrint; batchId: string }) {
-  const { t } = useLingui();
-  const reprint = useReprintBatch();
-  const run = entry.run!;
-  const from = run.unknownFrom!;
-  const to = run.unknownTo!;
-  const [pick, setPick] = useState(from);
-  const choice = Math.min(Math.max(pick, from), to + 1);
-  const options = Array.from({ length: to - from + 2 }, (_, i) => from + i);
-  const selectId = `run-stop-${entry.id}`;
-  return (
-    <div className="mt-2 flex flex-col gap-2">
-      <p className="text-small [overflow-wrap:anywhere]">
-        {t`Labels ${from} to ${to} may or may not have printed. Count them on the tape, put in a new tape, then reprint from the first label that is missing.`}
-      </p>
-      {reprint.isError && <p className="text-small text-bad">{t`The reprint could not be started. Try again.`}</p>}
-      <div className="flex flex-wrap items-end gap-2">
-        <label htmlFor={selectId} className="flex flex-col gap-1 text-small font-bold">
-          {t`First missing label`}
-          <select
-            id={selectId}
-            value={choice}
-            onChange={(event) => setPick(Number(event.target.value))}
-            className="min-h-11 rounded-r2 border border-line-strong bg-surface px-2 text-base font-normal tabular-nums text-ink"
-          >
-            {options.map((n) => (
-              <option key={n} value={n}>
-                {n === to + 1 ? t`${n} (all of ${from} to ${to} printed)` : String(n)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          className={BUTTON}
-          disabled={reprint.isPending}
-          onClick={(event) => {
-            event.currentTarget.blur();
-            reprint.mutate(
-              { batchId, fromLabel: choice },
-              {
-                onSuccess: (answer) =>
-                  replaceRunJobs(entry.id, {
-                    jobIds: answer.job_ids,
-                    confirmed: answer.confirmed_job_ids,
-                    subJobStarts: answer.run?.sub_job_starts ?? [0],
-                  }),
-              },
-            );
-          }}
-        >
-          {t`Reprint from label ${choice}`}
-        </button>
-      </div>
-    </div>
+    <RunControls
+      run={{ ...run, batchId, waiting: run.awaiting }}
+      buttonClass={BUTTON}
+      idPrefix={`run-${entry.id}`}
+      onContinued={(next) => markRunContinued(entry.id, next)}
+      onReprinted={(answer) =>
+        replaceRunJobs(entry.id, { jobIds: answer.job_ids, confirmed: answer.confirmed_job_ids, subJobStarts: answer.run?.sub_job_starts ?? [0] })
+      }
+      onDiscarded={() => dismissWatch(entry.id)}
+    />
   );
 }
 
@@ -252,7 +178,8 @@ function Card({ entry }: { entry: WatchedPrint }) {
   const failed = entry.phase === "failed";
   const run = entry.run;
   const batchId = entry.runBatchId;
-  const stopped = !!run && run.unknownFrom !== null && !!batchId;
+  // A failed label of a run is a stop (unknown group or a refusal): the run's own actions, not a per-job Retry.
+  const stopped = !!run && run.stopKind !== null && !!batchId;
   const waits = !!run && run.awaiting && !!batchId;
   const partNo = run?.subJob ?? 0;
   const parts = run?.subJobs ?? 0;
@@ -300,8 +227,7 @@ function Card({ entry }: { entry: WatchedPrint }) {
               />
             </div>
           )}
-          {stopped ? <RunStop entry={entry} batchId={batchId} /> : failed ? <Failure entry={entry} /> : null}
-          {waits && <RunWaits entry={entry} batchId={batchId} />}
+          {stopped || waits ? <RunActions entry={entry} batchId={batchId} /> : failed ? <Failure entry={entry} /> : null}
         </div>
         <button
           type="button"

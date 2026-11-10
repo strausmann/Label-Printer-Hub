@@ -237,4 +237,33 @@ describe("a tape batch in parts (#277)", () => {
     await waitFor(() => expect(within(card).queryByText(/may or may not have printed/)).toBeNull());
     expect(within(card).getByText(/14 of 25 items/)).toBeVisible();
   });
+
+  it("a group the printer refused before sending is not an unknown outcome: it offers to print from its first label", async () => {
+    const jobs = labels(25);
+    const { calls: runCalls } = mockApi({
+      "GET /api/v1/printers": [PRINTER_A],
+      [`POST /api/v1/batches/${BATCH}/reprint`]: { new_job_ids: [], confirmed_job_ids: [], job_ids: jobs.slice(0, 10), skipped_job_ids: [], run: null },
+    });
+    watchRun(jobs, [0]);
+    jobs.slice(0, 10).forEach((j) => event(j, "completed"));
+    jobs.slice(10, 20).forEach((j) => event(j, "failed", { error_code: "tape_mismatch" }));
+    jobs.slice(20).forEach((j) => event(j, "failed", { error_code: "not_started" }));
+    const card = region();
+    expect(await within(card).findByText(/Nothing from label 11 on was sent/)).toBeVisible();
+    expect(within(card).getByText(/does not match the label/)).toBeVisible();
+    expect(within(card).queryByText(/may or may not have printed/)).toBeNull();
+    expect(within(card).queryByRole("combobox")).toBeNull();
+    fireEvent.click(within(card).getByRole("button", { name: "Print labels 11 to 25 again" }));
+    await waitFor(() => expect(runCalls.find((c) => c.path === `/api/v1/batches/${BATCH}/reprint`)?.body).toBe(JSON.stringify({ from_label: 11 })));
+  });
+
+  it("Discard gives the waiting part up and closes the card", async () => {
+    const { calls: runCalls } = mockApi({ "GET /api/v1/printers": [PRINTER_A], [`POST /api/v1/batches/${BATCH}/discard`]: null });
+    const jobs = labels(5);
+    watchRun(jobs, [0, 3]);
+    jobs.slice(0, 3).forEach((j) => event(j, "completed"));
+    fireEvent.click(await within(region()).findByRole("button", { name: "Discard the rest" }));
+    await waitFor(() => expect(runCalls.some((c) => c.method === "POST" && c.path === `/api/v1/batches/${BATCH}/discard`)).toBe(true));
+    await waitFor(() => expect(within(region()).queryByText(/Part 1 of 2 is done/)).toBeNull());
+  });
 });

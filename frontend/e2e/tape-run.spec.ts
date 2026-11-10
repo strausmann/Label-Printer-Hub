@@ -66,6 +66,21 @@ test.describe("tape batches in parts (#277)", () => {
     await expect(done(page)).toBeVisible({ timeout: 30_000 });
   });
 
+  test("a closed notification loses nothing: the jobs page keeps the stopped run and its actions", async ({ signedInPage: page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await tapeOutIn(page, 15);
+    await cartOf(page, 25);
+    await page.getByRole("button", { name: "Print 25 labels" }).click();
+    await expect(stack(page).getByText(/Labels 11 to 20 may or may not have printed/)).toBeVisible({ timeout: 30_000 });
+    await stack(page).getByRole("button", { name: "Dismiss notification" }).first().click();
+    await newTape(page);
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Jobs" }).click();
+    const held = page.getByRole("region", { name: "Tape prints that wait for you" });
+    await expect(held.getByText(/Labels 11 to 20 may or may not have printed/)).toBeVisible();
+    await held.getByRole("button", { name: "Discard" }).click();
+    await expect(held).toHaveCount(0, { timeout: 15_000 });
+  });
+
   test("screenshots: waiting for the next part and a stopped run", async ({ signedInPage: page }) => {
     test.skip(!SHOTS, "screenshots are an artifact, taken only with E2E_SHOTS_DIR");
     mkdirSync(SHOTS!, { recursive: true });

@@ -46,6 +46,14 @@ export interface RunView {
   awaiting: boolean;
   unknownFrom: number | null;
   unknownTo: number | null;
+  /** After a stop: the group's outcome is unknown, or the printer refused it before sending anything. */
+  stopKind: "unknown" | "refused" | null;
+  /** The labels a reprint may start from (1-based): the unknown group and one past it, or the refused group's first. */
+  reprintFrom: number | null;
+  reprintTo: number | null;
+  /** The error code of the first refused label (the reason in the app's words). */
+  stopCode: string | null;
+  total: number;
 }
 
 interface WatchRecord {
@@ -129,18 +137,28 @@ function runViewOf(record: WatchRecord, live: Record<string, JobLive>): RunView 
   const starts = run.subJobStarts.length > 0 ? run.subJobStarts : [0];
   const subJobOf = (index: number) => starts.filter((s) => s <= index).length;
   const confirmed = new Set(run.confirmed);
+  const total = record.jobIds.length;
+  const calm = { awaiting: false, unknownFrom: null, unknownTo: null, stopKind: null, reprintFrom: null, reprintTo: null, stopCode: null, total };
   const unknown = record.jobIds.flatMap((id, i) => (live[id]?.errorCode === "outcome_unknown" && !confirmed.has(id) ? [i] : []));
   if (unknown.length > 0) {
-    return { subJob: subJobOf(unknown[0]!), subJobs: starts.length, awaiting: false, unknownFrom: unknown[0]! + 1, unknownTo: unknown.at(-1)! + 1 };
+    const from = unknown[0]! + 1;
+    const to = unknown.at(-1)! + 1;
+    return { ...calm, subJob: subJobOf(unknown[0]!), subJobs: starts.length, unknownFrom: from, unknownTo: to, stopKind: "unknown", reprintFrom: from, reprintTo: to + 1, stopCode: "outcome_unknown" };
   }
   const phaseAt = (i: number) => live[record.jobIds[i]!]?.phase ?? "queued";
+  // Nothing unknown but a label failed: the printer refused a group before sending anything (#277).
+  const refused = record.jobIds.findIndex((id, i) => !confirmed.has(id) && phaseAt(i) === "failed");
+  if (refused >= 0) {
+    const code = live[record.jobIds[refused]!]?.errorCode ?? null;
+    return { ...calm, subJob: subJobOf(refused), subJobs: starts.length, stopKind: "refused", reprintFrom: refused + 1, reprintTo: refused + 1, stopCode: code };
+  }
   const firstOpen = record.jobIds.findIndex((_, i) => !confirmed.has(record.jobIds[i]!) && !isTerminal(phaseAt(i)));
-  if (firstOpen < 0) return { subJob: starts.length, subJobs: starts.length, awaiting: false, unknownFrom: null, unknownTo: null };
+  if (firstOpen < 0) return { ...calm, subJob: starts.length, subJobs: starts.length };
   const subJob = subJobOf(firstOpen);
   const end = starts[subJob] ?? record.jobIds.length;
   const notBegun = record.jobIds.slice(starts[subJob - 1]!, end).every((_, k) => phaseAt(starts[subJob - 1]! + k) === "queued");
   const awaiting = subJob > 1 && firstOpen === starts[subJob - 1] && notBegun && run.continued !== subJob;
-  return { subJob, subJobs: starts.length, awaiting, unknownFrom: null, unknownTo: null };
+  return { ...calm, subJob, subJobs: starts.length, awaiting };
 }
 
 function derive(records: WatchRecord[], live: Record<string, JobLive>, claims: Record<string, number>): WatchedPrint[] {
