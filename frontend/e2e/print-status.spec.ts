@@ -70,7 +70,37 @@ test.describe("print status notifications", () => {
     }
   });
 
-  test("screenshots: the stack in light and dark, desktop and phone",async ({ signedInPage: page }) => {
+  test("screenshots: five failed prints stay bounded on a phone, Close and Retry reachable", async ({ signedInPage: page }) => {
+    test.skip(!SHOTS, "screenshots are an artifact, taken only with E2E_SHOTS_DIR");
+    mkdirSync(SHOTS!, { recursive: true });
+    test.setTimeout(160_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await setPagePrinter(page, { job_script: [8] });
+    await page.goto("/printers");
+    await page.getByRole("link", { name: /Office page printer/ }).click();
+    for (let n = 1; n <= 5; n++) {
+      await page.getByRole("button", { name: "Test print" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Print test page" }).click();
+      await expect(stack(page).getByText("Failed", { exact: true })).toHaveCount(Math.min(n, 3), { timeout: 30_000 });
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+    }
+    await expect(stack(page).getByText("2 more print notifications")).toBeVisible();
+    // The stack stays inside the screen, above the tab bar, and the topmost Close button is on screen.
+    const box = await stack(page).boundingBox();
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+    const close = stack(page).getByRole("button", { name: "Dismiss notification" }).first();
+    await close.scrollIntoViewIfNeeded();
+    await expect(close).toBeInViewport();
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.screenshot({ path: `${SHOTS}/task-19a-five-failed-390-${scheme}.png` });
+    }
+    expect(await noSideScroll(page)).toBe(true);
+    await resetPagePrinter(page);
+  });
+
+  test("screenshots: the stack in light and dark, desktop and phone", async({ signedInPage: page }) => {
     test.skip(!SHOTS, "screenshots are an artifact, taken only with E2E_SHOTS_DIR");
     // Four rounds, each waits for the fake printer's queue to empty again.
     test.setTimeout(150_000);

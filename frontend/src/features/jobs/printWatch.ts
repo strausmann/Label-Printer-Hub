@@ -10,18 +10,23 @@ import { useSyncExternalStore } from "react";
  */
 
 export type PrintKind = "item" | "cart" | "sheet" | "calibration" | "test";
-export type JobPhase = "queued" | "printing" | "done" | "failed" | "cancelled";
+export type JobPhase = "queued" | "paused" | "printing" | "done" | "failed" | "cancelled";
 
-/** What the events say about one job. */
+/**
+ * What the events say about one job. There is deliberately no queue position: the events carry only the
+ * count of ALL open jobs of the printer (those behind this job included), which is not "jobs ahead".
+ */
 export interface JobLive {
   phase: JobPhase;
   /** Page jobs only: `waiting` / `printing` / `stopped` at the printer. */
   atPrinter: "waiting" | "printing" | "stopped" | null;
   atPrinterReasons: string[];
-  /** Jobs ahead in the printer's queue when the event was sent. */
-  queueDepth: number;
   errorCode: string | null;
 }
+
+/** The code a job record's `error` starts with (`ipp_aborted: The printer aborted ...`), or null. */
+export const errorCodeFromMessage = (message: string | null | undefined): string | null =>
+  /^([a-z][a-z0-9_-]*): /.exec(message ?? "")?.[1] ?? null;
 
 interface WatchRecord {
   id: string;
@@ -69,6 +74,8 @@ const phaseOf = (state: unknown): JobPhase => {
       return "failed";
     case "cancelled":
       return "cancelled";
+    case "paused":
+      return "paused";
     default:
       return "queued";
   }
@@ -82,7 +89,11 @@ function derive(records: WatchRecord[], live: Record<string, JobLive>): WatchedP
     const finished = phases.filter((p) => p === "done").length;
     const open = phases.some((p) => !isTerminal(p));
     let phase: JobPhase;
-    if (open) phase = phases.some((p) => p === "printing") || finished > 0 ? "printing" : "queued";
+    if (open) {
+      const waiting = phases.filter((p) => !isTerminal(p));
+      if (phases.some((p) => p === "printing") || finished > 0) phase = "printing";
+      else phase = waiting.every((p) => p === "paused") ? "paused" : "queued";
+    }
     else if (failedJobIds.length > 0) phase = "failed";
     else if (finished === 0) phase = "cancelled";
     else phase = "done";
@@ -90,10 +101,10 @@ function derive(records: WatchRecord[], live: Record<string, JobLive>): WatchedP
   });
 }
 
-function commit(next: { records?: WatchRecord[]; live?: Record<string, JobLive>; order?: string[] }): void {
+function commit(next: { records?: WatchRecord[]; live?: Record<string, JobLive>; order?: string[]; keepDerived?: boolean }): void {
   const records = next.records ?? store.records;
   const live = next.live ?? store.live;
-  store = { records, live, order: next.order ?? store.order, derived: derive(records, live) };
+  store = { records, live, order: next.order ?? store.order, derived: next.keepDerived ? store.derived : derive(records, live) };
   listeners.forEach((l) => l());
 }
 
@@ -114,7 +125,9 @@ function setLive(jobId: string, value: JobLive): void {
       live = Object.fromEntries(Object.entries(live).filter(([id]) => id !== drop));
     }
   }
-  commit({ live, order });
+  // A job nobody watches changes no entry: the stack keeps its snapshot and does not re-render on that traffic.
+  const watchedNow = store.records.some((r) => r.jobIds.includes(jobId));
+  commit({ live, order, keepDerived: !watchedNow });
 }
 
 /** Feeds one `job.state_changed` payload (the frame's `data`) in. Anything without a job id is ignored. */
@@ -125,7 +138,6 @@ export function recordJobEvent(data: Record<string, unknown>): void {
     phase: phaseOf(data.to_state),
     atPrinter: typeof data.at_printer === "string" && AT_PRINTER.has(data.at_printer) ? (data.at_printer as JobLive["atPrinter"]) : null,
     atPrinterReasons: reasons ? (data.at_printer_reasons as string[]) : [],
-    queueDepth: typeof data.queue_depth === "number" ? data.queue_depth : 0,
     errorCode: typeof data.error_code === "string" ? data.error_code : null,
   });
 }
@@ -158,7 +170,16 @@ export async function resyncWatchedJobs(read: (jobId: string) => Promise<{ state
       try {
         const job = await read(jobId);
         const before = store.live[jobId];
-        setLive(jobId, { atPrinter: null, atPrinterReasons: [], queueDepth: 0, errorCode: null, ...before, phase: phaseOf(job.state) });
+        if (before && isTerminal(before.phase)) return;
+        // A frame that came in while the read was out is newer than the answer: a finished job stays finished.
+        const phase = phaseOf(job.state);
+        setLive(jobId, {
+          atPrinter: null,
+          atPrinterReasons: [],
+          errorCode: phase === "failed" ? errorCodeFromMessage(job.error) : null,
+          ...before,
+          phase,
+        });
       } catch {
         // Keep what the events said; the next frame or reconnect corrects it.
       }
@@ -166,7 +187,7 @@ export async function resyncWatchedJobs(read: (jobId: string) => Promise<{ state
   );
 }
 
-/** Test helper: back to an empty store. */
+/** Back to an empty store: sign-out, a session that ended, another user behind the same cookie (and every test). */
 export function resetPrintWatch(): void {
   counter = 0;
   commit(empty());

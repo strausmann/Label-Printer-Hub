@@ -77,10 +77,6 @@ msgstr "{0} hat keine Bögen. Beim Löschen verschwinden der Typ und alle seine 
 msgid "{ahead, plural, one {# job from another computer ahead} other {# jobs from other computers ahead}}"
 msgstr "{ahead, plural, one {# Auftrag von einem anderen Rechner davor} other {# Aufträge von anderen Rechnern davor}}"
 
-#: src/shell/PrintToasts.tsx
-msgid "{ahead, plural, one {Queued, # job ahead} other {Queued, # jobs ahead}}"
-msgstr "{ahead, plural, one {In der Warteschlange, # Auftrag davor} other {In der Warteschlange, # Aufträge davor}}"
-
 #: src/features/integrations/IntegrationPage.tsx
 msgid "{appName} is not set up yet, so there is nothing to look up."
 msgstr "{appName} ist noch nicht eingerichtet, deshalb gibt es nichts nachzuschlagen."
@@ -119,7 +115,7 @@ msgstr "{dpi} dpi"
 
 #: src/shell/PrintToasts.tsx
 msgid "{finished} of {total} items"
-msgstr "{finished} von {total} Einträgen"
+msgstr "{finished} von {total} Etiketten"
 
 #: src/shell/PrintToasts.tsx
 msgid "{finished} of {total} pages"
@@ -137,6 +133,10 @@ msgstr "{free} frei"
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "{freeAfter} free afterwards"
 msgstr "{freeAfter} danach frei"
+
+#: src/shell/PrintToasts.tsx
+msgid "{hidden, plural, one {# more print notification} other {# more print notifications}}"
+msgstr "{hidden, plural, one {# weitere Druckmeldung} other {# weitere Druckmeldungen}}"
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hidden}}"
@@ -2342,6 +2342,7 @@ msgid "paused"
 msgstr "pausiert"
 
 #: src/features/printers/model.ts
+#: src/shell/PrintToasts.tsx
 msgid "Paused"
 msgstr "Pausiert"
 
@@ -3612,6 +3613,10 @@ msgstr "Der Hub kennt keinen Bogen {code}."
 msgid "The hub does not know a sheet {preselectedSheet}."
 msgstr "Der Hub kennt keinen Bogen {preselectedSheet}."
 
+#: src/features/jobs/jobErrorText.ts
+msgid "The hub was stopped before the job was printed."
+msgstr "Der Hub wurde beendet, bevor der Auftrag gedruckt war."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "The ID is printed in the margin of the sheet with the first print. No label is used."
 msgstr "Die ID wird mit dem ersten Druck in den Rand des Bogens gedruckt. Es wird kein Etikett verbraucht."
@@ -3660,6 +3665,14 @@ msgstr "Der Auftrag konnte nicht geladen werden."
 #: src/features/jobs/RetryError.tsx
 msgid "The job could not be retried."
 msgstr "Der Auftrag konnte nicht wiederholt werden."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The job was cancelled."
+msgstr "Der Auftrag wurde abgebrochen."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The job was interrupted while it was printing. Check the printout before you retry."
+msgstr "Der Auftrag wurde beim Drucken unterbrochen. Sieh dir den Ausdruck an, bevor du es erneut versuchst."
 
 #: src/features/jobs/JobsPage.tsx
 #: src/features/overview/OverviewPage.tsx
@@ -3737,6 +3750,10 @@ msgstr "Der linke Rand"
 #: src/features/archive/errors.ts
 msgid "The list of product codes"
 msgstr "Die Liste der Produktcodes"
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The loaded tape does not match the label. Put in the right tape and retry."
+msgstr "Das eingelegte Band passt nicht zum Etikett. Lege das richtige Band ein und versuche es erneut."
 
 #: src/features/settings/System.tsx
 msgid "The log could not be loaded."
@@ -3819,10 +3836,22 @@ msgstr "Der Port muss zwischen 1 und 65535 liegen."
 msgid "The prefix is fixed once sheets of this type exist."
 msgstr "Das Präfix ist fest, sobald es Bögen dieses Typs gibt."
 
+#: src/features/jobs/jobErrorText.ts
+msgid "The print failed (error code {code})."
+msgstr "Der Druck ist fehlgeschlagen (Fehlercode {code})."
+
 #: src/features/jobs/RetryError.tsx
 #: src/features/sheets/errors.ts
 msgid "The print queue does not know this printer yet. Try again in a moment."
 msgstr "Die Druckwarteschlange kennt diesen Drucker noch nicht. Versuche es gleich noch einmal."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The print request could not be built."
+msgstr "Die Druckanfrage konnte nicht erstellt werden."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The printer aborted the job before printing."
+msgstr "Der Drucker hat den Auftrag abgebrochen, bevor er gedruckt wurde."
 
 #: src/features/settings/feedback.tsx
 msgid "The printer cannot be reached at that address."
@@ -3848,13 +3877,25 @@ msgstr "Der Drucker konnte nicht geladen werden."
 msgid "The printer could not be reached."
 msgstr "Der Drucker ist nicht erreichbar."
 
+#: src/features/jobs/jobErrorText.ts
+msgid "The printer could not be reached. Check that it is switched on and connected, then retry."
+msgstr "Der Drucker ist nicht erreichbar. Prüfe, ob er eingeschaltet und verbunden ist, und versuche es erneut."
+
 #: src/features/settings/IppPrinterFields.tsx
 msgid "The printer could not be read."
 msgstr "Der Drucker konnte nicht ausgelesen werden."
 
+#: src/features/jobs/jobErrorText.ts
+msgid "The printer cover is open. Close it and retry."
+msgstr "Die Abdeckung des Druckers ist offen. Schließe sie und versuche es erneut."
+
 #: src/features/sheets/errors.ts
 msgid "The printer did not accept the ID label."
 msgstr "Der Drucker hat das ID-Etikett nicht angenommen."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The printer did not answer its status request."
+msgstr "Der Drucker hat die Statusabfrage nicht beantwortet."
 
 #: src/features/jobs/PageJobInfo.tsx
 msgid "The printer did not say whether these labels came out. Look at the sheet and settle each cell."
@@ -3884,9 +3925,13 @@ msgstr "Der Drucker ist im Hub ausgeschaltet. Schalte ihn in den Druckereinstell
 msgid "The printer is switched off. Switch it on in the settings, then retry."
 msgstr "Der Drucker ist ausgeschaltet. Schalte ihn in den Einstellungen ein und versuche es dann erneut."
 
-#: src/shell/PrintToasts.tsx
+#: src/features/jobs/jobErrorText.ts
 msgid "The printer or the hub reported an error."
 msgstr "Der Drucker oder der Hub hat einen Fehler gemeldet."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The printer refused the document."
+msgstr "Der Drucker hat das Dokument abgelehnt."
 
 #: src/features/settings/feedback.tsx
 msgid "The printer refused the request ({status})."
@@ -3900,6 +3945,10 @@ msgstr "Der Drucker hat die Anfrage abgelehnt."
 #: src/features/printers/TestPrintButton.tsx
 msgid "The printer reports no trays."
 msgstr "Der Drucker meldet keine Fächer."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The printer was busy and did not take the job."
+msgstr "Der Drucker war beschäftigt und hat den Auftrag nicht angenommen."
 
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/printers/PrinterGrid.tsx
@@ -4020,6 +4069,10 @@ msgstr "Der Name der Quelle"
 #: src/features/archive/errors.ts
 msgid "The split of this print no longer fits. Check the preview and try again."
 msgstr "Die Aufteilung dieses Drucks passt nicht mehr. Prüfe die Vorschau und versuche es erneut."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The tape is empty. Put in a new tape and retry."
+msgstr "Das Band ist leer. Lege ein neues Band ein und versuche es erneut."
 
 #: src/features/settings/Integrations.tsx
 msgid "The test could not be run."

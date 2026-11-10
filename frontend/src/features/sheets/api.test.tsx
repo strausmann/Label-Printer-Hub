@@ -24,6 +24,8 @@ import {
   useUnmarkCells,
 } from "./api";
 
+import { resetPrintWatch, useWatchedPrints } from "../jobs/printWatch";
+
 function setup() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children);
@@ -225,5 +227,22 @@ describe("preview and print", () => {
     const error = await act(() => result.current.mutateAsync(request).catch((e: unknown) => e));
     expect(printInterrupted(error)).toEqual({ batchId: "b1", jobIds: ["j1"] });
     expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual(["jobs"]);
+  });
+
+  it("the pages of a partly printed batch get a print status entry, a plain failure does not", async () => {
+    resetPrintWatch();
+    mockApi({
+      [`POST /api/v1/print/${PAGE_PRINTER.id}/sheet`]: () =>
+        respond(502, apiErrorBody("print_interrupted", "Interrupted.", { batch_id: "b1", job_ids: ["j1", "j2"] })),
+    });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => usePrintSheets(PAGE_PRINTER.id), { wrapper });
+    await act(() => result.current.mutateAsync(request).catch(() => undefined));
+    const watched = renderHook(() => useWatchedPrints());
+    expect(watched.result.current).toMatchObject([{ kind: "sheet", printerId: PAGE_PRINTER.id, jobIds: ["j1", "j2"] }]);
+    resetPrintWatch();
+    mockApi({ [`POST /api/v1/print/${PAGE_PRINTER.id}/sheet`]: () => respond(422, { detail: "no" }) });
+    await act(() => result.current.mutateAsync(request).catch(() => undefined));
+    expect(renderHook(() => useWatchedPrints()).result.current).toHaveLength(0);
   });
 });

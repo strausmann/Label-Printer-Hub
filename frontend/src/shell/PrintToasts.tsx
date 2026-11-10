@@ -3,9 +3,11 @@ import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useJob, useRetryJob } from "../features/jobs/api";
+import { useJobErrorText } from "../features/jobs/jobErrorText";
 import { canRetry } from "../features/jobs/model";
 import {
   dismissWatch,
+  errorCodeFromMessage,
   replaceWatchedJob,
   useWatchedPrints,
   type JobLive,
@@ -19,6 +21,8 @@ import { CloseIcon } from "./icons";
 
 /** A finished print leaves by itself after this long; a failed one stays until it is closed. */
 export const AUTO_DISMISS_MS = 5_000;
+/** At most this many cards show; the rest is one summary line (closing a card brings the next one up). */
+export const MAX_VISIBLE = 3;
 /** A drag this far (px), or this fast (px/ms), dismisses (the Sonner thresholds). */
 const SWIPE_DISTANCE = 80;
 const SWIPE_VELOCITY = 0.11;
@@ -45,16 +49,16 @@ function useKindTitle(): (kind: PrintKind) => string {
   };
 }
 
-/** The state in words, with the jobs ahead and the page job's place at the printer where the events say so. */
+/** The state in words, with the page job's place at the printer where the events say so. */
 function useStateWords(): (phase: JobPhase, live: JobLive | undefined) => string {
   const { t } = useLingui();
   return (phase, live) => {
     switch (phase) {
-      case "queued": {
-        // `queue_depth` counts the open jobs of the printer, this one included.
-        const ahead = Math.max(0, (live?.queueDepth ?? 0) - 1);
-        return ahead > 0 ? plural(ahead, { one: "Queued, # job ahead", other: "Queued, # jobs ahead" }) : t`Queued`;
-      }
+      // No "N jobs ahead": no event or endpoint tells this job's place in the queue, and a wrong number is worse than none.
+      case "queued":
+        return t`Queued`;
+      case "paused":
+        return t`Paused`;
       case "printing":
         if (live?.atPrinter === "waiting") return t`Waiting at the printer`;
         if (live?.atPrinter === "stopped") return t`Stopped at the printer`;
@@ -78,15 +82,31 @@ function useProgressWords(): (entry: WatchedPrint) => string | null {
   };
 }
 
-/** The reason and the way out for a failed print: the job's own words, Retry where the hub allows it. */
+/**
+ * The reason and the way out for a failed print: the reason in the app's words (from the error code),
+ * Retry for every failed job the hub allows to retry, a link to the first failed job.
+ */
 function Failure({ entry }: { entry: WatchedPrint }) {
   const { t } = useLingui();
+  const errorText = useJobErrorText();
   const jobId = entry.failedJobIds[0]!;
   const job = useJob(jobId);
   const retry = useRetryJob();
+  const code = entry.live[jobId]?.errorCode ?? errorCodeFromMessage(job.data?.error);
+  const retryAll = async () => {
+    // One at a time: each retry clones a job, and the entry follows the new one.
+    for (const failed of entry.failedJobIds) {
+      try {
+        const created = await retry.mutateAsync(failed);
+        replaceWatchedJob(entry.id, failed, created.id);
+      } catch {
+        return; // the refusal is shown below; the rest stays failed
+      }
+    }
+  };
   return (
     <div className="mt-2 flex flex-col gap-2">
-      <p className="text-small [overflow-wrap:anywhere]">{job.data?.error ?? t`The printer or the hub reported an error.`}</p>
+      <p className="text-small [overflow-wrap:anywhere]">{errorText(code)}</p>
       {retry.isError && (
         <p className="text-small text-bad [overflow-wrap:anywhere]">
           <RetryError error={retry.error} sheetCode={null} />
@@ -98,7 +118,11 @@ function Failure({ entry }: { entry: WatchedPrint }) {
             type="button"
             className={BUTTON}
             disabled={retry.isPending}
-            onClick={() => retry.mutate(jobId, { onSuccess: (created) => replaceWatchedJob(entry.id, jobId, created.id) })}
+            onClick={(event) => {
+              // The card changes under the button: focus would otherwise hold the finished card open.
+              event.currentTarget.blur();
+              void retryAll();
+            }}
           >
             {t`Retry`}
           </button>
@@ -221,12 +245,17 @@ function Card({ entry }: { entry: WatchedPrint }) {
 export function PrintToasts() {
   const { t } = useLingui();
   const entries = useWatchedPrints();
-  const failed = entries.filter((e) => e.phase === "failed");
-  const rest = entries.filter((e) => e.phase !== "failed");
+  // Failures first (they need someone), then the rest, each oldest first; only the first MAX_VISIBLE show.
+  const ordered = [...entries.filter((e) => e.phase === "failed"), ...entries.filter((e) => e.phase !== "failed")];
+  const shown = ordered.slice(0, MAX_VISIBLE);
+  const hidden = ordered.length - shown.length;
+  const failed = shown.filter((e) => e.phase === "failed");
+  const rest = shown.filter((e) => e.phase !== "failed");
   return (
+    // The height is bounded and scrolls inside, so Close and Retry stay reachable on a phone.
     <section
       aria-label={t`Print status`}
-      className="pointer-events-none fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 flex flex-col gap-2 lg:inset-x-auto lg:right-6 lg:bottom-6 lg:w-96"
+      className="pointer-events-none fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 flex max-h-[calc(100dvh-14rem)] flex-col gap-2 overflow-y-auto overscroll-contain lg:inset-x-auto lg:right-6 lg:bottom-6 lg:max-h-[calc(100dvh-3rem)] lg:w-96"
     >
       <ul aria-live="assertive" aria-relevant="additions text" className="m-0 flex list-none flex-col gap-2 p-0">
         {failed.map((entry) => (
@@ -237,6 +266,11 @@ export function PrintToasts() {
         {rest.map((entry) => (
           <Card key={entry.id} entry={entry} />
         ))}
+        {hidden > 0 && (
+          <li className="pointer-events-auto rounded-r3 border border-line-strong bg-surface px-3 py-2 text-small font-bold text-ink-2 shadow-lg">
+            {plural(hidden, { one: "# more print notification", other: "# more print notifications" })}
+          </li>
+        )}
       </ul>
     </section>
   );

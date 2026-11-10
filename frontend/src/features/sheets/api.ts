@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
+import { queuedJobs } from "../../api/errorDetail";
 import { queryString } from "../../api/queryString";
 import type { components } from "../../api/schema.gen";
 import { watchPrint } from "../jobs/printWatch";
@@ -147,7 +148,12 @@ export function usePrintSheets(printerId: string) {
   return useMutation({
     mutationFn: (request: SheetPrintRequest) => post<SheetPrintResponse>(`/api/v1/print/${encode(printerId)}/sheet`, request),
     onSuccess: (response) => void watchPrint({ kind: "sheet", printerId, jobIds: response.pages.map((p) => p.job_id) }),
-    // A partial print (`print_interrupted`) also queued pages, so this runs on failure too.
+    // A partial print (`print_interrupted`, or the failing page's own error) queued pages that keep printing: they get an entry too.
+    onError: (error) => {
+      const queued = queuedJobs(error);
+      if (queued) watchPrint({ kind: "sheet", printerId, jobIds: queued });
+    },
+    // A partial print also queued pages, so this runs on failure too.
     onSettled: () => {
       refreshAfterWrite(client);
       void client.invalidateQueries({ queryKey: [SHEET_PREVIEW_KEY] });

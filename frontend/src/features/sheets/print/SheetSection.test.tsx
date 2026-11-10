@@ -184,7 +184,7 @@ describe("tray, sheet type and the sheet", () => {
     await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
     expect(body(previews(calls)[0]!).placements).toEqual([{ sheet: "L4736-0011", cells: "first_free" }]);
     expect(body(previews(calls)[0]!).items).toHaveLength(9);
-    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /L4736-0010/ }));
     await waitFor(() => expect(body(previews(calls).at(-1)!).placements[0]).toMatchObject({ sheet: "L4736-0010" }));
   });
@@ -208,7 +208,7 @@ describe("an archived sheet type", () => {
     expect(screen.getByText(/This sheet type is archived/)).toBeVisible();
     await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
     expect(body(previews(calls).at(-1)!).placements).toEqual([{ sheet: "OLDX-0001", cells: "first_free" }]);
-    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
     expect(options).toHaveLength(1);
     expect(options.join("|")).not.toMatch(/New .* sheet/);
@@ -440,7 +440,7 @@ describe("a picked target belongs to the type it was picked for", () => {
       1,
     );
     expect(await screen.findByRole("button", { name: /OLDTYPE.*archived/ })).toBeVisible();
-    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /OLDX-0002/ }));
     await waitFor(() => expect(lastPlacements(calls)).toEqual([{ sheet: "OLDX-0002", cells: "first_free" }]));
     await ready();
@@ -472,7 +472,7 @@ describe("a picked target belongs to the type it was picked for", () => {
       }),
     );
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Sheet" })).toHaveValue("OLDX-0001"));
-    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /OLDX-0002/ }));
     await waitFor(() => expect(lastPlacements(calls)).toEqual([{ sheet: "OLDX-0002", cells: "first_free" }]));
     await ready();
@@ -490,7 +490,7 @@ describe("a picked target belongs to the type it was picked for", () => {
     const { stream, ready } = fakeStream();
     let used = 17;
     const { calls } = await itemView(routes({ extra: { "GET /api/v1/sheets": () => [sheet("L4736-0001", used)] } }), 1);
-    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /New .* sheet/ }));
     await waitFor(() => expect(lastPlacements(calls)).toEqual([{ new_sheet: { type: "L4736REV", id_placement: "margin" }, cells: "first_free" }]));
     await ready();

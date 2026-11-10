@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   dismissWatch,
+  errorCodeFromMessage,
   recordJobEvent,
   replaceWatchedJob,
   resetPrintWatch,
@@ -78,10 +79,54 @@ describe("print watch store", () => {
     expect(result.current[0]!.phase).toBe("printing");
   });
 
-  it("reads the page-job sub-state and the jobs ahead", () => {
+  it("reads the page-job sub-state", () => {
     const { result } = renderHook(() => useJobLive(A));
     act(() => event(A, "printing", { kind: "sheet_page", at_printer: "stopped", at_printer_reasons: ["toner-empty"], queue_depth: 2 }));
-    expect(result.current).toMatchObject({ phase: "printing", atPrinter: "stopped", queueDepth: 2 });
+    expect(result.current).toMatchObject({ phase: "printing", atPrinter: "stopped", atPrinterReasons: ["toner-empty"] });
+    // No position is exposed: the event's queue_depth counts the jobs behind this one as well.
+    expect(result.current).not.toHaveProperty("queueDepth");
+  });
+
+  it("reads a paused job as paused, not as waiting normally", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    act(() => void watchPrint({ kind: "item", printerId: P, jobIds: [A] }));
+    act(() => event(A, "paused"));
+    expect(result.current[0]!.phase).toBe("paused");
+  });
+
+  it("does not rebuild the stack for a job nobody watches", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    act(() => void watchPrint({ kind: "item", printerId: P, jobIds: [A] }));
+    const before = result.current;
+    act(() => event(C, "printing"));
+    expect(result.current).toBe(before);
+    act(() => event(A, "printing"));
+    expect(result.current).not.toBe(before);
+  });
+
+  it("a stale resync answer never overwrites a newer terminal frame", async () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    act(() => void watchPrint({ kind: "item", printerId: P, jobIds: [A] }));
+    let answer: (v: { state: string }) => void = () => {};
+    const read = vi.fn(() => new Promise<{ state: string }>((resolve) => (answer = resolve)));
+    let pending: Promise<void> = Promise.resolve();
+    act(() => void (pending = resyncWatchedJobs(read)));
+    // The done frame of the reopened stream arrives while the GET is out ...
+    act(() => event(A, "completed"));
+    // ... and the GET, sent earlier, answers `printing`.
+    await act(async () => {
+      answer({ state: "printing" });
+      await pending;
+    });
+    expect(result.current[0]!.phase).toBe("done");
+  });
+
+  it("takes the error code of a failed job from the record's message when the frame never came", async () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    act(() => void watchPrint({ kind: "item", printerId: P, jobIds: [A] }));
+    await act(async () => void (await resyncWatchedJobs(async () => ({ state: "failed", error: "ipp_aborted: The printer aborted the job before printing." }))));
+    expect(result.current[0]!.live[A]?.errorCode).toBe("ipp_aborted");
+    expect(errorCodeFromMessage("Printer reported: cover open")).toBeNull();
   });
 
   it("dismisses an entry and swaps a retried job for the new one", () => {
