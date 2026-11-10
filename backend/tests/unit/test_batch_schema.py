@@ -46,9 +46,26 @@ def test_batch_response_with_all_succeeded():
         printer_id=uuid4(),
         queued_at="2026-05-30T19:42:01Z",
         job_ids=[str(uuid4()) for _ in range(5)],
+        sub_job_size=50,
     )
     assert len(resp.job_ids) == 5
+    assert resp.sub_job_size == 50
     assert not hasattr(resp, "errors")
+
+
+def test_batch_response_requires_sub_job_size():
+    """#277: the client cuts the labels into sub-jobs by this size; the route always knows it.
+
+    A default would let a response silently carry a size the queue does not use, and the
+    OpenAPI document (and the generated web client) mark the field as always present."""
+    with pytest.raises(ValidationError, match="sub_job_size"):
+        BatchResponse(
+            batch_id=uuid4(),
+            printer_id=uuid4(),
+            queued_at="2026-05-30T19:42:01Z",
+            job_ids=[],
+        )
+    assert "sub_job_size" in BatchResponse.model_json_schema(mode="serialization")["required"]
 
 
 def test_batch_error_with_required_fields():
