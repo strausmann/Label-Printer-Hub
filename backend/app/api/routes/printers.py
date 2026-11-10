@@ -44,6 +44,7 @@ from app.repositories import printer_roll as roll_repo
 from app.repositories import printer_state as printer_state_repo
 from app.repositories import printer_status_cache as cache_repo
 from app.repositories import printers as printers_repo
+from app.schemas.label_layout import LayoutDefault, parse_layout_defaults
 from app.schemas.printer import (
     MarkerRead,
     PauseRead,
@@ -90,6 +91,16 @@ def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object
     if printer.backend != "ipp" or (auth is not None and auth.scope == "admin"):
         return connection
     return {"tls_verify": bool(connection.get("tls_verify", True))}
+
+
+def _layout_defaults_view(printer: Any) -> dict[str, LayoutDefault]:
+    """The stored layout defaults per tape width (string keys), without the invalid entries.
+
+    Not sensitive: it is what the print dialog preselects. Page printers store none.
+    """
+    return {
+        str(width): value for width, value in parse_layout_defaults(printer.layout_defaults).items()
+    }
 
 
 def _is_admin(auth: AuthContext | None) -> bool:
@@ -221,6 +232,7 @@ async def list_printers(
                 pause=pause,
                 created_at=p.created_at,
                 updated_at=p.updated_at,
+                layout_defaults=_layout_defaults_view(p),
                 **_identity_fields(identities.get(p.id)),
             )
         )
@@ -265,6 +277,7 @@ async def get_printer(
         pause=pause,
         created_at=printer.created_at,
         updated_at=printer.updated_at,
+        layout_defaults=_layout_defaults_view(printer),
         **await _identity_view(session, printer_id, _auth),
     )
 

@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
 import type { components } from "../../api/schema.gen";
 import { watchPrint } from "../jobs/printWatch";
+import { useDebounced, type LayoutOptions } from "../layout/ql";
 import { submitBatch, type CartItem, type ContentType, type LookupApp } from "./cart";
 
 export type LookupResult = components["schemas"]["LookupResult"];
@@ -13,6 +14,8 @@ async function toDataUrl(blob: Blob): Promise<string> {
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return `data:${blob.type || "image/png"};base64,${btoa(binary)}`;
 }
+
+const PREVIEW_DEBOUNCE_MS = 200;
 
 export const lookupKey = (app: string, id: string) => ["lookup", app, id] as const;
 
@@ -32,9 +35,13 @@ const secondaryOf = (item: LookupResult): string[] => {
  * The label as a PNG, drawn from what the lookup returned. The print itself looks the item
  * up again on the server, so the preview is a close picture, not a promise.
  */
-export function usePreviewImage(item: LookupResult, contentType: ContentType, tapeMm: number, enabled = true) {
+export function usePreviewImage(item: LookupResult, contentType: ContentType, tapeMm: number, enabled = true, layout?: LayoutOptions) {
+  // A run of clicks on the layout choice asks for one preview, not one per click.
+  const wanted = JSON.stringify(layout ?? null);
+  const settled = useDebounced(wanted, PREVIEW_DEBOUNCE_MS);
+  const asked = JSON.parse(settled) as LayoutOptions | null;
   const query = useQuery({
-    queryKey: ["preview", item.app, item.id, item.name, item.url, contentType, tapeMm],
+    queryKey: ["preview", item.app, item.id, item.name, item.url, contentType, tapeMm, settled],
     queryFn: () =>
       apiFetch<Blob>("/api/v1/render/preview", {
         method: "POST",
@@ -42,21 +49,33 @@ export function usePreviewImage(item: LookupResult, contentType: ContentType, ta
         json: {
           content_type: contentType,
           tape_mm: tapeMm,
+          ...asked,
           data: { title: item.name, primary_id: item.id, qr_payload: item.url, secondary: secondaryOf(item) },
         },
       }).then(toDataUrl),
     retry: false,
     staleTime: 60_000,
-    enabled,
+    // Not while the choice is still moving (the debounce has not caught up): that request would be a wrong one.
+    enabled: enabled && settled === wanted,
+    // The old picture stays (dimmed) while the new one is drawn, so the preview does not flash empty.
+    placeholderData: keepPreviousData,
   });
-  return { url: query.data ?? null, isPending: query.isPending, isError: query.isError };
+  return {
+    url: query.data ?? null,
+    isPending: query.isPending,
+    isError: query.isError,
+    error: query.error,
+    /** A picture of an earlier choice is shown while the current one is drawn. */
+    isRefreshing: query.isPlaceholderData || settled !== wanted,
+  };
 }
 
 /** Print one item now: a batch of one. */
 export function usePrintNow() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ printerKey, item }: { printerKey: string; item: CartItem }) => submitBatch(printerKey, [item]),
+    mutationFn: ({ printerKey, item, layout }: { printerKey: string; item: CartItem; layout?: LayoutOptions }) =>
+      submitBatch(printerKey, [item], layout),
     onSuccess: (accepted) => void watchPrint({ kind: "item", printerId: accepted.printer_id, jobIds: accepted.job_ids }),
     onSettled: () => void client.invalidateQueries({ queryKey: ["jobs"] }),
   });

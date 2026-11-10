@@ -299,6 +299,36 @@ async def test_ql_layout_default_round_trips_and_reaches_the_service(live: Live)
     }
 
 
+async def test_public_printer_read_shows_the_stored_layout_default(live: Live) -> None:
+    """#258: the print dialog (any reader) preselects the stored default, so the public
+    printer list and detail carry it too, keyed by the width as a string."""
+    from app.printer_models.ql import QL820NWBDriver
+    from app.printer_models.registry import ModelRegistry
+
+    ModelRegistry.register(QL820NWBDriver)  # type: ignore[arg-type]
+    body = {
+        "name": "Shelf QL",
+        "slug": "shelf-ql",
+        "model": "QL-820NWB",
+        "backend": "brother_ql",
+        "connection": {"host": "192.0.2.12", "port": 9100},
+        "layout_defaults": {"62": {"orientation": "across", "preset": "standard"}},
+    }
+    with patch(
+        "app.services.printer_runtime._resolve_model_id_from_config",
+        AsyncMock(return_value="QL-820NWB"),
+    ):
+        resp = await live.client.post(ADMIN, json=body)
+        assert resp.status_code == 201, resp.text
+    expected = {"62": {"orientation": "across", "preset": "standard"}}
+    listed = await live.client.get("/api/v1/printers")
+    assert listed.status_code == 200, listed.text
+    assert [p["layout_defaults"] for p in listed.json() if p["slug"] == "shelf-ql"] == [expected]
+    detail = await live.client.get(f"/api/v1/printers/{resp.json()['id']}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["layout_defaults"] == expected
+
+
 # ---------------------------------------------------------------------------- disable / enable
 
 

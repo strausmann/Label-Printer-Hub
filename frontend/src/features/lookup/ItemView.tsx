@@ -11,12 +11,14 @@ import {
   LOOKUP_CONTENT_TYPES,
   QR_PATH_APP,
   safeHref,
-  tapeMmOf,
   useAppName,
   useContentTypeLabel,
 } from "./apps";
 import { useLookup, usePreviewImage, usePrintNow, type LookupResult } from "./api";
 import { MAX_COPIES, useCart, type ContentType, type LookupApp } from "./cart";
+import { LayoutPicker } from "../layout/LayoutPicker";
+import { tapeMmOfStatus, useLabelLayout } from "../layout/ql";
+import { LabelPreview } from "./LabelPreview";
 import { lookupIdFromQrPath } from "./labelUrl";
 import { recordRecent } from "./recent";
 import { PrinterPicker, usePrinterChoice, usePrintErrorText } from "./PrinterPicker";
@@ -116,7 +118,9 @@ function ItemDetail({ item }: { item: LookupResult }) {
   const print = usePrintNow();
   // A page printer prints onto sheets (the sheet section); only tape printers get the tape preview.
   const pagePrinter = selected?.backend === "ipp";
-  const preview = usePreviewImage(item, contentType, tapeMmOf(selected ? status.data?.tape_loaded : null), !printers.isPending && !pagePrinter);
+  const tapeMm = tapeMmOfStatus(selected ? status.data : null);
+  const layout = useLabelLayout(selected, tapeMm);
+  const preview = usePreviewImage(item, contentType, tapeMm, !printers.isPending && !pagePrinter && !(selected && status.isPending), layout.options);
 
   const appName = appNames(item.app);
   const printerName = selected?.name ?? "";
@@ -151,15 +155,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
         {!pagePrinter && (
         <section aria-labelledby="preview-h" className={`${PANEL} flex flex-col gap-3`}>
           <h2 id="preview-h" className="text-section font-bold">{t`Preview`}</h2>
-          <div className="grid min-h-32 place-items-center overflow-x-auto rounded-r2 bg-sunken p-4">
-            {preview.url ? (
-              <img src={preview.url} alt={t`Label preview`} className="max-w-full bg-white [image-rendering:pixelated]" />
-            ) : preview.isError ? (
-              <p className="text-ink-2">{t`No preview for this tape.`}</p>
-            ) : (
-              <p role="status" className="text-ink-2">{t`Drawing the label…`}</p>
-            )}
-          </div>
+          <LabelPreview preview={preview} layout={layout.options} />
         </section>
         )}
 
@@ -182,6 +178,14 @@ function ItemDetail({ item }: { item: LookupResult }) {
               ))}
             </select>
           </label>
+          {layout.active && (
+            <LayoutPicker
+              orientation={layout.choice.orientation}
+              preset={layout.choice.preset}
+              onOrientation={layout.setOrientation}
+              onPreset={layout.setPreset}
+            />
+          )}
           <label className="flex flex-col gap-1.5">
             <span className="font-bold">{t`Copies`}</span>
             <input
@@ -200,7 +204,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
               <Button
                 className={PRIMARY_BUTTON}
                 isDisabled={!selected || print.isPending}
-                onPress={() => selected && print.mutate({ printerKey: selected.id, item: asItem })}
+                onPress={() => selected && print.mutate({ printerKey: selected.id, item: asItem, layout: layout.options })}
               >
                 {t`Print now`}
               </Button>

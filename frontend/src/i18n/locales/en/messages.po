@@ -387,6 +387,7 @@ msgid "Access and keys"
 msgstr "Access and keys"
 
 #: src/features/calibration/ReadingsHelper.tsx
+#: src/features/layout/LayoutPicker.tsx
 msgid "Across"
 msgstr "Across"
 
@@ -472,6 +473,10 @@ msgstr "All"
 msgid "All readings lie on one line. Read crossings that are far apart, in both directions."
 msgstr "All readings lie on one line. Read crossings that are far apart, in both directions."
 
+#: src/features/layout/LayoutPicker.tsx
+msgid "Along"
+msgstr "Along"
+
 #: src/features/settings/sections.tsx
 msgid "An IANA name such as Europe/Berlin."
 msgstr "An IANA name such as Europe/Berlin."
@@ -549,6 +554,10 @@ msgstr "archived"
 #: src/features/archive/FeedbackLinks.tsx
 msgid "Are these numbers right?"
 msgstr "Are these numbers right?"
+
+#: src/features/layout/LayoutPicker.tsx
+msgid "Arrangement"
+msgstr "Arrangement"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Ask an admin to set it up."
@@ -897,6 +906,10 @@ msgstr "Colour modes"
 msgid "Columns"
 msgstr "Columns"
 
+#: src/features/layout/LayoutPicker.tsx
+msgid "Compact"
+msgstr "Compact"
+
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/integrations/IntegrationTiles.tsx
 #: src/features/settings/AccessKeys.tsx
@@ -1122,6 +1135,10 @@ msgstr "Different device"
 msgid "Different device detected at this address. Sheet printing and the calibration page are held until an admin confirms."
 msgstr "Different device detected at this address. Sheet printing and the calibration page are held until an admin confirms."
 
+#: src/features/layout/LayoutPicker.tsx
+msgid "Direction"
+msgstr "Direction"
+
 #: src/features/settings/Printers.tsx
 msgid "Disable"
 msgstr "Disable"
@@ -1202,7 +1219,8 @@ msgstr "Download PDF"
 msgid "Download settings"
 msgstr "Download settings"
 
-#: src/features/lookup/ItemView.tsx
+#: src/features/lookup/CartPage.tsx
+#: src/features/lookup/LabelPreview.tsx
 msgid "Drawing the label…"
 msgstr "Drawing the label…"
 
@@ -1618,7 +1636,11 @@ msgstr "Label"
 msgid "Label height (mm)"
 msgstr "Label height (mm)"
 
-#: src/features/lookup/ItemView.tsx
+#: src/features/settings/PrinterForm.tsx
+msgid "Label layout on 62 mm tape"
+msgstr "Label layout on 62 mm tape"
+
+#: src/features/lookup/LabelPreview.tsx
 msgid "Label preview"
 msgstr "Label preview"
 
@@ -1977,7 +1999,11 @@ msgstr "No jobs."
 msgid "No other sheet of this type has room for all of it."
 msgstr "No other sheet of this type has room for all of it."
 
-#: src/features/lookup/ItemView.tsx
+#: src/features/lookup/CartPage.tsx
+msgid "No preview available."
+msgstr "No preview available."
+
+#: src/features/lookup/LabelPreview.tsx
 msgid "No preview for this tape."
 msgstr "No preview for this tape."
 
@@ -2385,10 +2411,15 @@ msgstr "Pitch"
 msgid "Port"
 msgstr "Port"
 
+#: src/features/lookup/CartPage.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Preview"
 msgstr "Preview"
+
+#: src/features/lookup/CartPage.tsx
+msgid "Preview of {name}"
+msgstr "Preview of {name}"
 
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/CartPage.tsx
@@ -3156,6 +3187,10 @@ msgstr "Show the unconfirmed cells"
 msgid "Show them"
 msgstr "Show them"
 
+#: src/features/lookup/CartPage.tsx
+msgid "Shows the first item: {name}."
+msgstr "Shows the first item: {name}."
+
 #: src/shell/SignIn.tsx
 msgid "Sign in"
 msgstr "Sign in"
@@ -3200,6 +3235,10 @@ msgstr "skipped"
 #: src/features/settings/PrinterForm.tsx
 msgid "Slug"
 msgstr "Slug"
+
+#: src/features/layout/LayoutPicker.tsx
+msgid "Small QR"
+msgstr "Small QR"
 
 #: src/features/lookup/apps.ts
 msgid "Snipe-IT"
@@ -3251,6 +3290,10 @@ msgstr "Spoolman"
 #: src/features/settings/AccessKeys.tsx
 msgid "Spoolman sends this key with its webhook. At least {MIN_WEBHOOK_KEY} characters."
 msgstr "Spoolman sends this key with its webhook. At least {MIN_WEBHOOK_KEY} characters."
+
+#: src/features/layout/LayoutPicker.tsx
+msgid "Standard"
+msgstr "Standard"
 
 #: src/features/scan/CameraScanner.tsx
 msgid "Starting the camera…"
@@ -3461,6 +3504,10 @@ msgstr "That value is set by the container and cannot be changed here."
 #: src/features/calibration/errors.ts
 msgid "That version of the sheet type does not exist."
 msgstr "That version of the sheet type does not exist."
+
+#: src/features/lookup/LabelPreview.tsx
+msgid "The across direction is only available for 62 mm tape. Pick along or load 62 mm tape."
+msgstr "The across direction is only available for 62 mm tape. Pick along or load 62 mm tape."
 
 #: src/features/settings/IppPrinterFields.tsx
 msgid "The address can be at most 1023 characters."
@@ -3732,6 +3779,14 @@ msgstr "The keys could not be loaded."
 msgid "The label height"
 msgstr "The label height"
 
+#: src/features/layout/LayoutPicker.tsx
+msgid "The label runs across the 62 mm width of the tape."
+msgstr "The label runs across the 62 mm width of the tape."
+
+#: src/features/layout/LayoutPicker.tsx
+msgid "The label runs along the tape."
+msgstr "The label runs along the tape."
+
 #: src/features/archive/errors.ts
 msgid "The label shape"
 msgstr "The label shape"
@@ -3769,6 +3824,14 @@ msgstr "The left and right margins differ ({0} and {1}). Measure the sheet again
 #: src/features/archive/errors.ts
 msgid "The left margin"
 msgstr "The left margin"
+
+#: src/features/lookup/LabelPreview.tsx
+msgid "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
+msgstr "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
+
+#: src/features/lookup/LabelPreview.tsx
+msgid "The link in the QR code is too long for this layout."
+msgstr "The link in the QR code is too long for this layout."
 
 #: src/features/archive/errors.ts
 msgid "The list of product codes"
@@ -4547,6 +4610,10 @@ msgstr "Webhook key"
 #: src/features/settings/AccessKeys.tsx
 msgid "Webhooks"
 msgstr "Webhooks"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "What a print uses when it names no layout. The print dialog starts from this and can still change it."
+msgstr "What a print uses when it names no layout. The print dialog starts from this and can still change it."
 
 #: src/features/archive/TypeDetail.tsx
 #: src/features/archive/TypeForm.tsx

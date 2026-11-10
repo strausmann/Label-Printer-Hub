@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.schemas._datetime import serialize_datetime_utc
+from app.schemas.label_layout import LayoutDefault
 from app.services.tape_status import TapeColourName
 
 
@@ -67,6 +68,14 @@ class PrinterRead(BaseModel):
     )
     observed_kind: str | None = Field(
         default=None, description="serial | ipp_uuid | mac; admin callers only, else null"
+    )
+    layout_defaults: dict[str, LayoutDefault] = Field(
+        default_factory=dict,
+        description=(
+            "Stored label layout per tape width in mm (#258), keyed by the width as a string; "
+            "the print dialog preselects it. A missing width uses the tape default "
+            "(62 mm across/compact, else along)"
+        ),
     )
 
     @field_serializer("created_at", "updated_at")

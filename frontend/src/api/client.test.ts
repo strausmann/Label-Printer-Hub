@@ -83,6 +83,18 @@ describe("apiFetch", () => {
     });
   });
 
+  it("reads the error envelope returned directly, not wrapped in `detail` (the label preview's 422)", async () => {
+    fetchMock.mockResolvedValue(
+      respond(422, { error_code: "qr_payload_too_long", error_message: "Too long.", error_detail: { length: 144, max_bytes: 122 } }),
+    );
+    await expect(apiFetch("/api/v1/render/preview", { method: "POST" })).rejects.toMatchObject({
+      status: 422,
+      code: "qr_payload_too_long",
+      detail: "Too long.",
+      errorDetail: { length: 144, max_bytes: 122 },
+    });
+  });
+
   it("reads a problem object that FastAPI wrapped in `detail` (the calibration page's printer-unavailable)", async () => {
     fetchMock.mockResolvedValue(
       respond(409, { detail: { type: "printer-unavailable", title: "Printer is not available to the print queue", status: 409, detail: "Printer x is not known" } }),

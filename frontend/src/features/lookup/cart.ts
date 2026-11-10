@@ -3,6 +3,7 @@ import { useCallback, useSyncExternalStore } from "react";
 import { apiFetch } from "../../api/client";
 import type { components } from "../../api/schema.gen";
 import { watchPrint } from "../jobs/printWatch";
+import type { LayoutOptions } from "../layout/ql";
 
 export type BatchRead = components["schemas"]["BatchRead"];
 export type BatchResponse = components["schemas"]["BatchResponse"];
@@ -125,16 +126,17 @@ const setCopies = (key: CartKey, copies: number): void =>
   mutate((stored) => stored.map((i) => (sameItem(i, key) ? { ...i, copies: clampCopies(copies) } : i)));
 
 /** The body item the batch endpoint takes: the server looks the item up again when it prints. */
-export const toBatchItem = (item: CartItem) => ({
+export const toBatchItem = (item: CartItem, layout?: LayoutOptions) => ({
   content_type: item.content_type,
-  options: { copies: item.copies },
+  options: { copies: item.copies, ...layout },
   lookup: { app: item.app, identifier: item.id },
 });
 
-export function submitBatch(printerKey: string, list: CartItem[]): Promise<BatchResponse> {
+/** The chosen QL layout goes on every item: a batch prints in one direction. */
+export function submitBatch(printerKey: string, list: CartItem[], layout?: LayoutOptions): Promise<BatchResponse> {
   return apiFetch<BatchResponse>(`/api/v1/print/${encodeURIComponent(printerKey)}/batch`, {
     method: "POST",
-    json: { items: list.map(toBatchItem) },
+    json: { items: list.map((item) => toBatchItem(item, layout)) },
   });
 }
 
@@ -157,17 +159,17 @@ export interface Cart {
   setCopies(key: CartKey, copies: number): void;
   clear(): void;
   /** Sends every item as ONE batch to the printer. The cart empties only once the server accepted it. */
-  print(printerKey: string): Promise<BatchRead>;
+  print(printerKey: string, layout?: LayoutOptions): Promise<BatchRead>;
 }
 
 export function useCart(): Cart {
   const shown = useSyncExternalStore(subscribe, getSnapshot);
   const client = useQueryClient();
   const print = useCallback(
-    async (printerKey: string): Promise<BatchRead> => {
+    async (printerKey: string, layout?: LayoutOptions): Promise<BatchRead> => {
       const sending = current();
       if (sending.length === 0) throw new Error("The cart is empty.");
-      const accepted = await submitBatch(printerKey, sending);
+      const accepted = await submitBatch(printerKey, sending, layout);
       // Only now: a rejected batch leaves the cart as it was. Items added meanwhile stay.
       removeItems(sending);
       watchPrint({ kind: "cart", printerId: accepted.printer_id, jobIds: accepted.job_ids });

@@ -4,14 +4,42 @@ import { getRouteApi, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "react-aria-components";
 import { FIELD, PRIMARY_BUTTON } from "../../shell/SignIn";
-import { usePrinters, usePrinterStatuses } from "../printers/api";
+import { LayoutPicker } from "../layout/LayoutPicker";
+import { tapeMmOfStatus, useLabelLayout, type LayoutOptions } from "../layout/ql";
+import { usePrinters, usePrinterStatus, usePrinterStatuses } from "../printers/api";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { useAppName } from "./apps";
-import { BatchStatusError, MAX_COPIES, useCart, type BatchRead } from "./cart";
+import { useLookup, usePreviewImage, type LookupResult } from "./api";
+import { BatchStatusError, MAX_COPIES, useCart, type BatchRead, type CartItem, type ContentType } from "./cart";
+import { LabelPreview } from "./LabelPreview";
 import { PrinterPicker, usePrinterChoice, usePrintErrorText } from "./PrinterPicker";
 import { SheetSection } from "../sheets/print/SheetSection";
 
 const cartApi = getRouteApi("/cart");
+
+/** The first item of the cart as the layout will print it: every label of the batch shares the choice. */
+function CartPreview({ first, tapeMm, layout }: { first: CartItem; tapeMm: number; layout: LayoutOptions | undefined }) {
+  const { t } = useLingui();
+  const lookup = useLookup(first.app, first.id);
+  const name = first.name;
+  return (
+    <section aria-label={t`Preview of ${name}`} className="flex flex-col gap-2">
+      <h3 className="font-bold">{t`Preview`}</h3>
+      {lookup.data ? (
+        <CartPreviewImage item={lookup.data} contentType={first.content_type} tapeMm={tapeMm} layout={layout} />
+      ) : (
+        <p role={lookup.isError ? undefined : "status"} className="text-ink-2">
+          {lookup.isError ? t`No preview available.` : t`Drawing the label…`}
+        </p>
+      )}
+      <p className="text-small text-ink-2">{t`Shows the first item: ${name}.`}</p>
+    </section>
+  );
+}
+
+function CartPreviewImage({ item, contentType, tapeMm, layout }: { item: LookupResult; contentType: ContentType; tapeMm: number; layout: LayoutOptions | undefined }) {
+  return <LabelPreview preview={usePreviewImage(item, contentType, tapeMm, true, layout)} layout={layout} />;
+}
 
 type Outcome = { kind: "sent"; labels: number; printer: string; batch: BatchRead | null } | { kind: "failed"; error: unknown };
 
@@ -32,6 +60,9 @@ export function CartPage() {
   // stays to show where the labels went (the result, or the partial-result note with the links to the queued jobs).
   const [sheetPrinted, setSheetPrinted] = useState(false);
   const pagePrinter = selected?.backend === "ipp";
+  const status = usePrinterStatus(selected?.id ?? "", !pagePrinter);
+  const tapeMm = tapeMmOfStatus(selected ? status.data : null);
+  const layout = useLabelLayout(selected, tapeMm);
   const labels = cart.items.reduce((sum, i) => sum + i.copies, 0);
 
   const send = async () => {
@@ -39,7 +70,7 @@ export function CartPage() {
     const count = labels;
     setBusy(true);
     try {
-      const batch = await cart.print(selected.id);
+      const batch = await cart.print(selected.id, layout.options);
       setOutcome({ kind: "sent", labels: count, printer: selected.name, batch });
     } catch (error) {
       // The labels are queued even though their status could not be read.
@@ -116,6 +147,17 @@ export function CartPage() {
           <section aria-labelledby="cart-print-h" className={`${PANEL} flex max-w-md flex-col gap-4`}>
             <h2 id="cart-print-h" className="text-section font-bold">{t`Print`}</h2>
             <PrinterPicker printers={usable} value={selected?.id ?? null} onChange={choose} loading={printers.isPending} statuses={statuses} />
+            {layout.active && (
+              <>
+                <LayoutPicker
+                  orientation={layout.choice.orientation}
+                  preset={layout.choice.preset}
+                  onOrientation={layout.setOrientation}
+                  onPreset={layout.setPreset}
+                />
+                {cart.items[0] && <CartPreview first={cart.items[0]} tapeMm={tapeMm} layout={layout.options} />}
+              </>
+            )}
             <div className="flex flex-wrap gap-2">
               {/* A page printer prints through the sheet section below. */}
               {/* An emptied cart (a sheet print took everything out) leaves nothing to send. */}

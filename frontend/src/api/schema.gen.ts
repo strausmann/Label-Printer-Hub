@@ -3887,6 +3887,13 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Layout Defaults
+             * @description Stored label layout per tape width in mm (#258), keyed by the width as a string; the print dialog preselects it. A missing width uses the tape default (62 mm across/compact, else along)
+             */
+            layout_defaults?: {
+                [key: string]: components["schemas"]["LayoutDefault"];
+            };
             /** Model */
             model: string;
             /** Name */
