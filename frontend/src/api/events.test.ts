@@ -342,6 +342,27 @@ describe("useHubEvents", () => {
       }
     });
 
+    it("a second event before the restarted fetch of an errored query lands still gets its own follow-up", async () => {
+      const c = client();
+      setup(c);
+      const q = pendingQuery(c, ["printers", "p1", "status"]);
+      try {
+        await act(async () => q.rejections[0]!(new Error("first fetch failed")));
+        await flush();
+        act(() => last().emit("printer.status", "p1")); // event A restarts the query: fetch 2
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+        act(() => last().emit("printer.status", "p1")); // event B joins fetch 2 (no data yet)
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+        await act(async () => q.answers[1]!("answer that may predate event B"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(3);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+
     it("a first fetch that fails is read again after the event too", async () => {
       const c = client();
       setup(c);

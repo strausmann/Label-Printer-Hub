@@ -57,7 +57,16 @@ function parseFrame(frame: MessageEvent): Frame {
  */
 const scheduledFirstLoads = new WeakSet<Promise<unknown>>();
 
-function invalidateAndRefetchFirstLoads(client: QueryClient, filters: QueryFilters): void {
+/**
+ * `startedByThisEvent` belongs to ONE event (one frame, one resync): fetches that this event's own
+ * invalidations started. A later event must not see them as handled, since its news can postdate
+ * their answer.
+ */
+function invalidateAndRefetchFirstLoads(
+  client: QueryClient,
+  filters: QueryFilters,
+  startedByThisEvent: Set<Promise<unknown>>,
+): void {
   const firstLoads: { promise: Promise<unknown>; queryKey: readonly unknown[] }[] = [];
   for (const query of client.getQueryCache().findAll({ ...filters, fetchStatus: "fetching" })) {
     // `query.promise` is the retryer's promise, so it settles after the result is stored
@@ -65,15 +74,15 @@ function invalidateAndRefetchFirstLoads(client: QueryClient, filters: QueryFilte
     // follow-up below relies on that order. Re-check this when query-core is upgraded.
     const promise = query.promise;
     // One follow-up per first load, however many events (or keys of one event) name it.
-    if (query.state.data !== undefined || !promise || scheduledFirstLoads.has(promise)) continue;
+    if (query.state.data !== undefined || !promise || scheduledFirstLoads.has(promise) || startedByThisEvent.has(promise)) continue;
     scheduledFirstLoads.add(promise);
     firstLoads.push({ promise, queryKey: query.queryKey });
   }
   void client.invalidateQueries(filters);
-  // A fetch the invalidation started is current as of now: a second key of the same event, which
-  // runs next, must not mistake it for a first load that predates the event.
+  // A fetch the invalidation started is current as of this event: a second key of the same event
+  // must not mistake it for a first load that predates the event.
   for (const query of client.getQueryCache().findAll({ ...filters, fetchStatus: "fetching" })) {
-    if (query.promise) scheduledFirstLoads.add(query.promise);
+    if (query.promise) startedByThisEvent.add(query.promise);
   }
   for (const { promise, queryKey } of firstLoads) {
     const again = () => client.invalidateQueries({ queryKey, exact: true });
@@ -83,7 +92,8 @@ function invalidateAndRefetchFirstLoads(client: QueryClient, filters: QueryFilte
 
 /** Which cached queries an event makes stale. Task 11 relies on these keys. */
 function invalidate(client: QueryClient, type: EventType, { printerId, data }: Frame): void {
-  const run = (queryKey: readonly unknown[]) => invalidateAndRefetchFirstLoads(client, { queryKey });
+  const startedByThisEvent = new Set<Promise<unknown>>();
+  const run = (queryKey: readonly unknown[]) => invalidateAndRefetchFirstLoads(client, { queryKey }, startedByThisEvent);
   switch (type) {
     case "job.state_changed": {
       // A page job's place at the printer changes with from_state == to_state, so a refetch of the
@@ -104,10 +114,11 @@ function invalidate(client: QueryClient, type: EventType, { printerId, data }: F
       if (!code) break;
       run(sheetKey(code));
       // Only previews that name the code: a worst-case preview takes seconds to render.
-      invalidateAndRefetchFirstLoads(client, {
-        queryKey: [SHEET_PREVIEW_KEY],
-        predicate: (query) => previewNamesCode(query.queryKey, code),
-      });
+      invalidateAndRefetchFirstLoads(
+        client,
+        { queryKey: [SHEET_PREVIEW_KEY], predicate: (query) => previewNamesCode(query.queryKey, code) },
+        startedByThisEvent,
+      );
       break;
     }
     case "printer.status":
@@ -198,9 +209,10 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
         // The snapshot of a fresh stream has no sheet frames, so a `sheet.updated` sent while the
         // stream was down never arrives: whatever shows sheets is fetched again.
         if (openedBefore) {
-          invalidateAndRefetchFirstLoads(queryClient, { queryKey: sheetsListKey.slice(0, 1) });
-          invalidateAndRefetchFirstLoads(queryClient, { queryKey: typesListKey.slice(0, 1) });
-          invalidateAndRefetchFirstLoads(queryClient, { queryKey: [SHEET_PREVIEW_KEY] });
+          const startedByThisResync = new Set<Promise<unknown>>();
+          invalidateAndRefetchFirstLoads(queryClient, { queryKey: sheetsListKey.slice(0, 1) }, startedByThisResync);
+          invalidateAndRefetchFirstLoads(queryClient, { queryKey: typesListKey.slice(0, 1) }, startedByThisResync);
+          invalidateAndRefetchFirstLoads(queryClient, { queryKey: [SHEET_PREVIEW_KEY] }, startedByThisResync);
           // A job that ended while the stream was down sent a frame nobody saw.
           void resyncWatchedJobs((jobId) => apiFetch<{ state: string; error: string | null }>(`/api/v1/jobs/${encodeURIComponent(jobId)}`));
         }
