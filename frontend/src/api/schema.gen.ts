@@ -835,7 +835,7 @@ export interface paths {
         put?: never;
         /**
          * Render a label preview as PNG
-         * @description Render a label using the LayoutEngine and return the result as a PNG image (no printer interaction, no job created).  Useful for UI preview and debugging.  Returns 422 when ``data`` is missing fields required by ``content_type``.  Returns 409 when ``tape_mm`` is not a supported tape width.
+         * @description Render a label using the LayoutEngine and return the result as a PNG image (no printer interaction, no job created).  Useful for UI preview and debugging.  Renders through the same engine call as a print job, so ``orientation`` and ``layout_preset`` give the exact image the job would print (an ``along`` image is the landscape band before the printer backend rotates it).  Returns 422 when ``data`` is missing fields required by ``content_type`` or the QR payload does not fit the fixed QR code (``qr_payload_too_long``).  Returns 409 when ``tape_mm`` is not a supported tape width or the orientation is not available for it.
          */
         post: operations["render_preview_api_v1_render_preview_post"];
         delete?: never;
@@ -1992,6 +1992,12 @@ export interface components {
             /** Qr Payload */
             qr_payload?: string | null;
         };
+        /**
+         * LabelOrientation
+         * @description How the label content runs on endless tape.
+         * @enum {string}
+         */
+        LabelOrientation: "across" | "along";
         /** LogEntry */
         LogEntry: {
             /** Level */
@@ -2389,7 +2395,7 @@ export interface components {
         };
         /**
          * PrintOptions
-         * @description Per-print options — copies, cut behaviour, resolution.
+         * @description Per-print options — copies, cut behaviour, resolution, layout.
          */
         PrintOptions: {
             /**
@@ -2417,6 +2423,8 @@ export interface components {
              * @default true
              */
             last_page: boolean;
+            layout_preset?: components["schemas"]["QlLayoutPreset"] | null;
+            orientation?: components["schemas"]["LabelOrientation"] | null;
         };
         /**
          * PrintRequest
@@ -2778,6 +2786,12 @@ export interface components {
              */
             type: string;
         };
+        /**
+         * QlLayoutPreset
+         * @description The built-in QL 62 mm across-width layouts (``docs/design/ql-layout-presets``).
+         * @enum {string}
+         */
+        QlLayoutPreset: "compact" | "small_qr" | "standard";
         /**
          * RawLabelData
          * @description Raw label payload accepted when the client supplies data directly.
@@ -3721,6 +3735,8 @@ export interface components {
         _PreviewRequest: {
             content_type: components["schemas"]["ContentType"];
             data: components["schemas"]["RawLabelData"];
+            layout_preset?: components["schemas"]["QlLayoutPreset"] | null;
+            orientation?: components["schemas"]["LabelOrientation"] | null;
             /**
              * Tape Mm
              * @default 12
@@ -5569,7 +5585,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. */
+            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. `qr-payload-too-long`: the printer link does not fit the fixed QR code of the loaded tape (QL 62 mm). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5600,14 +5616,14 @@ export interface operations {
                     "image/png": unknown;
                 };
             };
-            /** @description Unsupported tape width */
+            /** @description Unsupported tape width or orientation */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Data missing required fields for content_type */
+            /** @description Data missing required fields, or QR payload too long */
             422: {
                 headers: {
                     [name: string]: unknown;

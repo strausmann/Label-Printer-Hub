@@ -72,8 +72,16 @@ class UnsupportedTapeError(PrinterError):
     möglich.
     """
 
-    def __init__(self, *, tape_mm: int) -> None:
+    def __init__(self, *, tape_mm: int, orientation: str | None = None) -> None:
         self.tape_mm = tape_mm
+        self.orientation = orientation
+        if orientation is not None:
+            # #258: the across-width layout exists for QL 62 mm only (other DK widths follow).
+            super().__init__(
+                f"The {orientation} layout is not available for {tape_mm}mm tape "
+                f"(only for 62mm QL tape)."
+            )
+            return
         supported = (4, 6, 9, 12, 18, 24, 62)
         super().__init__(
             f"Tape width {tape_mm}mm is not supported by the layout engine. Supported: {supported}"
@@ -106,6 +114,24 @@ class PrinterDisabledError(PrinterError):
         self.printer_id = printer_id
         self.slug = slug
         super().__init__(f"Printer {slug} ({printer_id}) is disabled")
+
+
+class QrPayloadTooLongError(Exception):
+    """The QR payload does not fit the fixed QR code of the tape and orientation (#258).
+
+    The QR size is fixed per tape width so every label of a roll looks the same; a payload
+    that does not fit is refused instead of shrinking the modules or growing the code.
+
+    HTTP-Status: 422 (Unprocessable Entity) — the client must shorten the payload.
+    """
+
+    def __init__(self, *, length: int, max_bytes: int) -> None:
+        self.length = length
+        self.max_bytes = max_bytes
+        super().__init__(
+            f"QR payload of {length} bytes does not fit the fixed QR code of this tape "
+            f"(at most {max_bytes} bytes)."
+        )
 
 
 class ContentTypeDataMismatchError(Exception):

@@ -32,6 +32,7 @@ from app.printer_backends.exceptions import (
     NoTapeLoadedError,
     PrinterDisabledError,
     PrinterOfflineError,
+    QrPayloadTooLongError,
     SnmpQueryError,
 )
 from app.repositories import printer_state as printer_state_repo
@@ -102,7 +103,11 @@ def _version() -> str:
             )
         },
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
-            "description": "`tray-invalid`: a tray on a tape printer, or an unknown/disabled tray."
+            "description": (
+                "`tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. "
+                "`qr-payload-too-long`: the printer link does not fit the fixed QR code of "
+                "the loaded tape (QL 62 mm)."
+            )
         },
     },
     summary="Print a test label (tape) or a test page (page printer)",
@@ -183,6 +188,14 @@ async def test_print(
         ) from None
     except NoTapeLoadedError:
         raise _refuse(409, "no-tape-loaded", "No tape is loaded", "Load a tape first") from None
+    except QrPayloadTooLongError as exc:
+        # #258: the QR of a QL 62 mm label has a fixed size; the printer URL must fit it.
+        raise _refuse(
+            422,
+            "qr-payload-too-long",
+            "The printer link does not fit the fixed QR code of this tape",
+            f"{exc.length} bytes, at most {exc.max_bytes}",
+        ) from None
     return TestPrintAccepted(job_id=job_id)
 
 

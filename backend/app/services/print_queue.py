@@ -714,14 +714,23 @@ class PrintQueue:
         """
         from app.schemas.content_type import ContentType
         from app.schemas.label_data import LabelData
+        from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
 
         label_data = LabelData(**payload["label_data"])
         content_type = ContentType(payload["content_type"])
         tape_mm = int(payload["rendered_tape_mm"])
+        # #258: jobs store the orientation/preset they were rendered with; jobs queued before
+        # #258 have none and get the tape default (their options carry no orientation, so the
+        # QL backend falls back to its size heuristic, which fits that default).
+        options = payload.get("options") or {}
+        orientation = options.get("orientation")
+        preset = options.get("layout_preset")
         return self._engine.render(
             tape_mm=tape_mm,
             content_type=content_type,
             data=label_data,
+            orientation=LabelOrientation(orientation) if orientation else None,
+            preset=QlLayoutPreset(preset) if preset else None,
         )
 
     async def stop(self, timeout_s: float = 30.0) -> None:

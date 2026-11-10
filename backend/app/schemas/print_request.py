@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.content_type import ContentType
 from app.schemas.label_data_item import LabelDataItem
+from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
 
 
 class PrintLookupRequest(BaseModel):
@@ -24,14 +25,22 @@ class PrintLookupRequest(BaseModel):
 
 
 class PrintOptions(BaseModel):
-    """Per-print options — copies, cut behaviour, resolution."""
+    """Per-print options — copies, cut behaviour, resolution, layout."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     copies: int = Field(default=1, ge=1, le=10)
     auto_cut: bool = True
     high_resolution: bool = False
     half_cut: bool = False
+    """Ignored by QL printers (they have a full cut only)."""
     last_page: bool = True
+    orientation: LabelOrientation | None = None
+    """``across`` or ``along`` (#258). Omitted: the printer's stored default for the loaded
+    tape, else the tape default (62 mm across, every other width along). ``across`` on a tape
+    without an across-width layout is refused with 409 ``unsupported_tape``."""
+    layout_preset: QlLayoutPreset | None = None
+    """QL 62 mm across-width preset (#258). Omitted: stored default, else ``compact``.
+    Ignored for ``along``."""
 
 
 class RawLabelData(BaseModel):

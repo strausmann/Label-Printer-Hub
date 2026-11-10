@@ -17,6 +17,7 @@ from app.printer_backends.exceptions import (
     NoTapeLoadedError,
     PrinterCoverOpenError,
     PrinterOfflineError,
+    QrPayloadTooLongError,
     SnmpQueryError,
     TapeMismatchError,
     UnsupportedTapeError,
@@ -199,6 +200,16 @@ async def create_batch(
                     "The label data is missing fields required for the selected content type."
                 ),
                 "error_detail": {"missing_fields": list(exc.missing_fields)},
+            },
+        ) from exc
+    except QrPayloadTooLongError as exc:
+        # 422: a payload does not fit the fixed QR code of the tape (#258).
+        raise HTTPException(
+            422,
+            detail={
+                "error_code": "qr_payload_too_long",
+                "error_message": "The QR payload does not fit the fixed QR code of this tape.",
+                "error_detail": {"length": exc.length, "max_bytes": exc.max_bytes},
             },
         ) from exc
 

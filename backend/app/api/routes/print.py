@@ -22,6 +22,7 @@ from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterDisabledError,
     PrinterOfflineError,
+    QrPayloadTooLongError,
     TapeEmptyError,
     TapeMismatchError,
     UnsupportedTapeError,
@@ -29,6 +30,7 @@ from app.printer_backends.exceptions import (
 from app.repositories import printer_state as printer_state_repo
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
+from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
 from app.schemas.print_request import PrintRequest, RawLabelData
 from app.schemas.print_response import PrintJobResponse
 from app.services.layout_engine import LayoutEngine
@@ -61,6 +63,7 @@ _SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     PrinterOfflineError: (503, "printer_offline"),
     UnsupportedTapeError: (409, "unsupported_tape"),
     ContentTypeDataMismatchError: (422, "content_type_data_mismatch"),
+    QrPayloadTooLongError: (422, "qr_payload_too_long"),
 }
 
 
@@ -128,6 +131,8 @@ async def create_print_job(
                 "expected_mm": exc.expected_mm,
                 "loaded_mm": exc.loaded_mm,
             }
+        if isinstance(exc, QrPayloadTooLongError):
+            body["error_detail"] = {"length": exc.length, "max_bytes": exc.max_bytes}
         return JSONResponse(status_code=http_status, content=body)
     # Phase 2: submit_print_job gibt jetzt UUID zurück; Response-Schema erwartet str.
     return PrintJobResponse(job_id=str(job_id), status="queued")
@@ -193,6 +198,11 @@ class _PreviewRequest(BaseModel):
     content_type: ContentType
     data: RawLabelData
     tape_mm: int = 12
+    orientation: LabelOrientation | None = None
+    """``across``/``along`` (#258); omitted: the tape default (62 mm across, else along).
+    The preview never applies a printer's stored default: send it explicitly."""
+    layout_preset: QlLayoutPreset | None = None
+    """QL 62 mm across-width preset; omitted: ``compact``."""
 
 
 @render_router.post(
@@ -203,14 +213,19 @@ class _PreviewRequest(BaseModel):
         "Render a label using the LayoutEngine and return the result as a "
         "PNG image (no printer interaction, no job created).  "
         "Useful for UI preview and debugging.  "
-        "Returns 422 when ``data`` is missing fields required by ``content_type``.  "
-        "Returns 409 when ``tape_mm`` is not a supported tape width."
+        "Renders through the same engine call as a print job, so ``orientation`` and "
+        "``layout_preset`` give the exact image the job would print (an ``along`` image is "
+        "the landscape band before the printer backend rotates it).  "
+        "Returns 422 when ``data`` is missing fields required by ``content_type`` or the "
+        "QR payload does not fit the fixed QR code (``qr_payload_too_long``).  "
+        "Returns 409 when ``tape_mm`` is not a supported tape width or the orientation is "
+        "not available for it."
     ),
     response_class=Response,
     responses={
         200: {"content": {"image/png": {}}, "description": "PNG label bitmap"},
-        409: {"description": "Unsupported tape width"},
-        422: {"description": "Data missing required fields for content_type"},
+        409: {"description": "Unsupported tape width or orientation"},
+        422: {"description": "Data missing required fields, or QR payload too long"},
     },
 )
 async def render_preview(
@@ -237,7 +252,14 @@ async def render_preview(
     )
 
     def _render() -> bytes:
-        image = engine.render(body.tape_mm, body.content_type, label_data)
+        # Same code path as a print job (#258): the job renders with the same engine call.
+        image = engine.render(
+            body.tape_mm,
+            body.content_type,
+            label_data,
+            orientation=body.orientation,
+            preset=body.layout_preset,
+        )
         buf = io.BytesIO()
         image.save(buf, format="PNG")
         return buf.getvalue()
@@ -257,6 +279,8 @@ async def render_preview(
                 "error_code": "unsupported_tape",
                 "error_message": (
                     "The currently loaded tape width is not supported by the layout engine."
+                    if exc.orientation is None
+                    else "The selected orientation is not available for this tape width."
                 ),
                 "error_detail": {"tape_mm": exc.tape_mm},
             },
@@ -274,5 +298,18 @@ async def render_preview(
                 "error_detail": {"missing_fields": list(exc.missing_fields)},
             },
         )
+    except QrPayloadTooLongError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            content=_qr_too_long_body(exc),
+        )
 
     return Response(content=png_bytes, media_type="image/png")
+
+
+def _qr_too_long_body(exc: QrPayloadTooLongError) -> dict[str, object]:
+    return {
+        "error_code": "qr_payload_too_long",
+        "error_message": "The QR payload does not fit the fixed QR code of this tape.",
+        "error_detail": {"length": exc.length, "max_bytes": exc.max_bytes},
+    }

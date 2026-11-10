@@ -362,6 +362,17 @@ async def test_tape_without_tape_is_409(env: Env) -> None:
     assert await env.job_rows() == []
 
 
+async def test_tape_test_label_too_long_for_the_fixed_qr_is_422(env: Env) -> None:
+    """#258: 62 mm has a fixed version-3 QR; a longer printer URL is refused, never a 500."""
+    env.backend.preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=62, error_flags=[]
+    )
+    r = await env.post(env.tape_id)
+    assert r.status_code == 422, r.text
+    assert _err(r)["type"] == "qr-payload-too-long"
+    assert await env.job_rows() == []
+
+
 async def test_tray_on_tape_printer_is_422(env: Env) -> None:
     r = await env.post(env.tape_id, tray="auto")
     assert r.status_code == 422
