@@ -81,6 +81,9 @@ class SheetTypeRead(BaseModel):
     origin: Literal["seed", "custom", "imported"]
     source_name: str | None
     source_url: str | None
+    source_url_shipped: bool = Field(
+        description="True only for a seed type whose source URL is the one shipped with the hub."
+    )
     notes: str | None
     archived_at: datetime | None
     created_at: datetime

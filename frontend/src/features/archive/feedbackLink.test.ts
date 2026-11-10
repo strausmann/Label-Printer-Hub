@@ -24,7 +24,12 @@ const VERSION = {
 
 const input = (over: Partial<FeedbackInput> = {}): FeedbackInput => ({
   kind: "wrong",
-  sheetType: { ...SHEET_TYPE, source_name: "Vendor data sheet", source_url: "https://vendor.example/ds.pdf" },
+  sheetType: {
+    ...SHEET_TYPE,
+    source_name: "Vendor data sheet",
+    source_url: "https://vendor.example/ds.pdf",
+    source_url_shipped: true,
+  },
   version: VERSION,
   hubVersion: "1.5.0",
   scheme: "https",
@@ -140,7 +145,7 @@ describe("buildFeedbackUrl", () => {
     }
   });
 
-  it("names the source, and its URL only for a seed type", () => {
+  it("names the source, and its URL only while it is the one shipped with the hub", () => {
     const seed = params(buildFeedbackUrl(input())).get("provenance")!;
     expect(seed).toContain("Vendor data sheet");
     expect(seed).toContain("https://vendor.example/ds.pdf");
@@ -154,8 +159,20 @@ describe("buildFeedbackUrl", () => {
     }
   });
 
+  it("omits the URL of a seed type whose URL an admin edited", () => {
+    const intranet = "http://wiki.intranet.local/labels";
+    const url = buildFeedbackUrl(
+      input({
+        sheetType: { ...SHEET_TYPE, origin: "seed", source_name: "Vendor data sheet", source_url: intranet, source_url_shipped: false },
+      }),
+    );
+    expect(decodeURIComponent(url)).not.toContain("intranet");
+    expect(params(url).get("provenance")).toBe("Vendor data sheet");
+  });
+
   it("carries no host, uri or key", () => {
-    // A page state with neighbours that must never travel: the builder takes typed values only.
+    // A page state whose neighbours must never travel. It is spread into the very objects the builder
+    // receives (sheet type, version, geometry), so a builder that serialises any of them wholesale leaks.
     const page = {
       location: { host: "hub.corp.internal:8443", href: "https://hub.corp.internal:8443/sheets/archive" },
       printer: { uri: "ipp://10.9.8.7:631/ipp/print", serial: "BRN-SERIAL-123", api_key: "lph_secret_key_value" },
@@ -163,19 +180,37 @@ describe("buildFeedbackUrl", () => {
       user: "alice",
       sheet: { code: "L4736-0001" },
     };
-    const url = buildFeedbackUrl(input({ printer: { model: "PT-P750W", tray: "Tray 1", calibration: "calibrated" } }));
+    const url = buildFeedbackUrl(
+      input({
+        sheetType: {
+          ...SHEET_TYPE,
+          ...page,
+          origin: "custom",
+          source_name: "Our printer",
+          source_url: page.printer.uri,
+          notes: page.location.host,
+          description: page.printer.api_key,
+        },
+        version: { ...VERSION, ...page, geometry: { ...GEOMETRY_L4736, ...page } },
+        printer: { model: "PT-P750W", tray: "Tray 1", calibration: "calibrated" },
+      }),
+    );
     const text = decodeURIComponent(url);
     for (const secret of [
       page.location.host,
+      page.location.href,
       page.printer.uri,
       page.printer.serial,
       page.printer.api_key,
       page.integration.url,
-      page.user,
+      "alice",
       page.sheet.code,
     ]) {
       expect(text).not.toContain(secret);
     }
+    // The page state really did reach the input, and the legitimate fields are still there.
+    expect(params(url).get("type_key")).toBe("L4736REV");
+    expect(params(url).get("provenance")).toBe("Our printer");
     // The only address in the URL is the relative export path, which has no host.
     const geometryOnly = params(buildFeedbackUrl(input())).get("geometry")!;
     expect(geometryOnly).not.toContain("http");
@@ -213,6 +248,7 @@ describe("degrading to fit", () => {
         vendor: "V".repeat(200),
         source_name: "S".repeat(200),
         source_url: `https://vendor.example/${"p".repeat(300)}`,
+        source_url_shipped: true,
         // Encoded umlauts cost six bytes each: `ballast` characters spread over at most 50 codes of 40.
         product_codes: Array.from({ length: Math.ceil(ballast / 40) }, (_, i) =>
           "\u00c4".repeat(Math.min(40, ballast - i * 40)),
@@ -265,13 +301,14 @@ describe("degrading to fit", () => {
   });
 
   it("stays under the limit with the worst values the server accepts", () => {
+    const codes = Array.from({ length: 50 }, (_, i) => `${String(i).padStart(2, "0")}${"Ö".repeat(38)}`);
     const url = buildFeedbackUrl(
       input({
         sheetType: {
           ...SHEET_TYPE,
           key: "k".repeat(64),
           vendor: "\u00dc".repeat(200),
-          product_codes: Array.from({ length: 50 }, () => "\u00d6".repeat(40)),
+          product_codes: codes,
           source_name: "\u00c4".repeat(200),
           source_url: `https://example.invalid/${"\u00df".repeat(400)}`,
         },
@@ -284,5 +321,16 @@ describe("degrading to fit", () => {
     // The key and the version always survive: without them the issue says nothing.
     expect(params(url).get("type_key")).toBe("k".repeat(64));
     expect(params(url).get("type_version")).toBe("2");
+    // The codes were cut honestly: the first ones are kept, in order, and the last line counts what is missing.
+    const lines = params(url).get("product_codes")!.split("\n");
+    const last = lines.pop()!;
+    const missing = /^… and (\d+) more \(see the export\)$/.exec(last);
+    expect(missing).not.toBeNull();
+    expect(lines).toEqual(codes.slice(0, lines.length));
+    expect(Number(missing![1])).toBe(codes.length - lines.length);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.length).toBeLessThan(codes.length);
+    // The export pointer is already in place: the cut codes can be found there.
+    expect(params(url).get("geometry")).toContain("/api/v1/sheet-types/");
   });
 });

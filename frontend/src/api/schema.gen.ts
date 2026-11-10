@@ -3361,6 +3361,11 @@ export interface components {
             source_name: string | null;
             /** Source Url */
             source_url: string | null;
+            /**
+             * Source Url Shipped
+             * @description True only for a seed type whose source URL is the one shipped with the hub.
+             */
+            source_url_shipped: boolean;
             /** Updated At */
             updated_at: string | null;
             /** Vendor */
@@ -3435,6 +3440,11 @@ export interface components {
             source_name: string | null;
             /** Source Url */
             source_url: string | null;
+            /**
+             * Source Url Shipped
+             * @description True only for a seed type whose source URL is the one shipped with the hub.
+             */
+            source_url_shipped: boolean;
             /** Updated At */
             updated_at: string | null;
             /** Vendor */

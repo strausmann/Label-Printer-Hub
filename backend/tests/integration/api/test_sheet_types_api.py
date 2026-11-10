@@ -12,6 +12,7 @@ import app.models  # noqa: F401
 import bcrypt
 import pytest
 from app.models.api_key import ApiKey
+from app.seed.sheet_seed import shipped_source_urls
 from app.sheets import sheet_service as ss
 
 pytestmark = pytest.mark.asyncio
@@ -789,6 +790,44 @@ async def test_product_codes_are_capped_at_fifty_on_patch_and_export_still_works
         headers=admin,
     )
     assert created.status_code == 422
+
+
+async def test_source_url_shipped_only_for_the_unedited_seed_url(
+    api_client_with_seed, admin, reader
+):
+    shipped = shipped_source_urls()
+    assert shipped, "the seed catalogue ships source URLs"
+    key, url = next(iter(shipped.items()))
+
+    seed = (await api_client_with_seed.get(f"/api/v1/sheet-types/{key}", headers=reader)).json()
+    assert seed["origin"] == "seed"
+    assert seed["source_url"] == url
+    assert seed["source_url_shipped"] is True
+
+    # An admin edit keeps `origin` at seed but the URL is no longer the shipped one.
+    edited = "http://wiki.intranet.local/labels"
+    resp = await api_client_with_seed.patch(
+        f"/api/v1/sheet-types/{key}", json={"source_url": edited}, headers=admin
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["origin"] == "seed"
+    assert resp.json()["source_url_shipped"] is False
+    listed = await api_client_with_seed.get("/api/v1/sheet-types", headers=reader)
+    assert {t["key"]: t["source_url_shipped"] for t in listed.json()}[key] is False
+
+    # Putting the shipped URL back makes it shipped again.
+    back = await api_client_with_seed.patch(
+        f"/api/v1/sheet-types/{key}", json={"source_url": url}, headers=admin
+    )
+    assert back.json()["source_url_shipped"] is True
+
+
+async def test_source_url_shipped_is_false_for_own_types(api_client_with_seed, admin):
+    url = next(iter(shipped_source_urls().values()))
+    created = await _create(api_client_with_seed, admin, source_url=url)
+    assert created["origin"] == "custom"
+    assert created["source_url"] == url
+    assert created["source_url_shipped"] is False
 
 
 @pytest.mark.parametrize(

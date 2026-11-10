@@ -267,6 +267,7 @@ export const SHEET_TYPE: Schemas["SheetTypeRead"] = {
   sheets_in_use: 1,
   source_name: null,
   source_url: null,
+  source_url_shipped: false,
 };
 
 /** A sheet with the given cells in the given state; everything else is free. */

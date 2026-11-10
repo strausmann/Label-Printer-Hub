@@ -79,12 +79,13 @@ function geometryText(version: VersionRead): string {
 }
 
 /**
- * The source name always; its URL only for a type that shipped with the hub. For `custom` and `imported`
- * types the URL was typed in by a user and may point into an intranet.
+ * The source name always; its URL only while it is the one shipped with the hub (`source_url_shipped`, computed
+ * by the server). A `custom` or `imported` type's URL, and a seed type's URL after an admin edited it, was
+ * typed in by a user and may point into an intranet.
  */
 function provenanceText(type: SheetTypeRead): string {
   const name = type.source_name ?? "";
-  const url = type.origin === "seed" ? (type.source_url ?? "") : "";
+  const url = type.source_url_shipped ? (type.source_url ?? "") : "";
   return [name, url].filter(Boolean).join("\n");
 }
 
@@ -127,6 +128,8 @@ function trimCodes(fields: Fields, codes: string[]): Fields {
     const next = { ...fields, product_codes: [...codes.slice(0, kept), `… and ${codes.length - kept} more (see the export)`].join("\n") };
     if (serialize(next).length <= MAX_URL) return next;
   }
+  // Unreachable within the server's limits (key 64, vendor and source name 200, 50 codes of 40: with the five
+  // documented steps taken the rest is about 3000 bytes), so the "always <= MAX_URL" claim holds without a re-check.
   return { ...fields, product_codes: `${codes.length} product codes (see the export)` };
 }
 

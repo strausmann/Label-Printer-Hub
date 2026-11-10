@@ -52,6 +52,22 @@ describe("sheet type feedback links", () => {
     expect(text).not.toContain("csrf");
   });
 
+  it("shows no section at all while the hub version is not known", async () => {
+    mockApi(routes(unverified));
+    await renderApp({ path, session: PRINT_SESSION, info: { version: "" } });
+    await screen.findByRole("heading", { name: "L4736REV" });
+    expect(screen.queryByRole("heading", { name: "Are these numbers right?" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Confirm the dimensions" })).toBeNull();
+  });
+
+  it("an admin-edited source URL of a seed type is not in the link", async () => {
+    const edited = { ...unverified, source_name: "Vendor", source_url: "http://wiki.intranet.local/x", source_url_shipped: false };
+    mockApi(routes(edited));
+    await renderApp({ path, session: PRINT_SESSION });
+    const report = await screen.findByRole("link", { name: "Report a problem with the dimensions" });
+    expect(decodeURIComponent(report.getAttribute("href")!)).not.toContain("intranet");
+  });
+
   it("the verify action is for admins only", async () => {
     mockApi(routes(unverified));
     await renderApp({ path, session: PRINT_SESSION });

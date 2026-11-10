@@ -4,7 +4,7 @@ import { Button } from "react-aria-components";
 import { useInfo } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { ModalDialog } from "../settings/controls";
-import { SECONDARY_BUTTON } from "../ui";
+import { SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { usePatchType, type SheetTypeDetail } from "./api";
 import { useArchiveErrorText } from "./errors";
 import { browserLabel, buildFeedbackUrl, type FeedbackKind } from "./feedbackLink";
@@ -36,24 +36,22 @@ export function FeedbackLinks({ type, admin }: { type: SheetTypeDetail; admin: b
       : undefined;
   const report = href("wrong");
   const confirm = href("confirmed");
+  // Until the hub version is known there is nothing honest to link to: show no section at all.
+  if (!report || !confirm) return null;
 
   return (
     <section aria-labelledby="feedback-heading" className="flex flex-col gap-3">
-      <h3 id="feedback-heading" className="text-section font-bold">{t`Are these numbers right?`}</h3>
+      <h3 id="feedback-heading" className={SECTION_HEADING}>{t`Are these numbers right?`}</h3>
       <p className="max-w-prose text-ink-2">
         {t`Measured a sheet? Tell us what you found. The link opens a prepared issue on GitHub that holds this sheet type's data only: no address of your hub, no printer, no keys.`}
       </p>
       <div className="flex flex-wrap gap-3">
-        {report ? (
-          <a href={report} target="_blank" rel="noopener noreferrer" className={`${SECONDARY_BUTTON} no-underline`}>
-            {t`Report a problem with the dimensions`}
-          </a>
-        ) : null}
-        {confirm ? (
-          <a href={confirm} target="_blank" rel="noopener noreferrer" className={`${SECONDARY_BUTTON} no-underline`}>
-            {t`Confirm the dimensions`}
-          </a>
-        ) : null}
+        <a href={report} target="_blank" rel="noopener noreferrer" className={`${SECONDARY_BUTTON} no-underline`}>
+          {t`Report a problem with the dimensions`}
+        </a>
+        <a href={confirm} target="_blank" rel="noopener noreferrer" className={`${SECONDARY_BUTTON} no-underline`}>
+          {t`Confirm the dimensions`}
+        </a>
       </div>
       {admin && !type.verified ? (
         <div className="flex flex-wrap gap-3 border-t border-line pt-3">

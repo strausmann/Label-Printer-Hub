@@ -160,6 +160,51 @@ test.describe.serial("sheet archive", () => {
       await api(page, "DELETE", `/api/v1/sheet-types/${key}`);
     }
   });
+  test("worst-case vendor and product codes keep the feedback section inside the page and the link under 8000", async () => {
+    const SHOTS = process.env.E2E_SHOTS_DIR;
+    const key = "feedback-long-type";
+    const geometry = {
+      page_size: "A4", shape: "rectangle", cols: 2, rows: 5, label_w: 90, label_h: 50, pitch_x: 100, pitch_y: 55,
+      margin_top: 10, margin_left: 5, corner_radius: null,
+    };
+    await setLanguage(page, "en");
+    try {
+      expect(
+        await api(page, "POST", "/api/v1/sheet-types", {
+          key,
+          prefix: "FBL",
+          vendor: "Ünïcödé Etikettenfabrik ".repeat(10).slice(0, 200),
+          product_codes: Array.from({ length: 50 }, (_, i) => `CODE-${String(i).padStart(2, "0")}-${"Ü".repeat(30)}`),
+          source_name: "A very long source name ".repeat(10).slice(0, 200),
+          source_url: "http://wiki.intranet.local/labels",
+          geometry,
+        }),
+      ).toBe(201);
+      for (const [size, tag] of [[{ width: 1280, height: 800 }, "desktop"], [{ width: 390, height: 844 }, "phone"]] as const) {
+        await page.setViewportSize(size);
+        for (const scheme of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: scheme });
+          await page.goto(`/sheets/archive?type=${key}`);
+          const report = page.getByRole("link", { name: "Report a problem with the dimensions" });
+          await expect(report).toBeVisible();
+          expect(await noSideScroll(page)).toBe(true);
+          const box = (await report.boundingBox())!;
+          expect(box.x + box.width).toBeLessThanOrEqual(size.width);
+          const href = (await report.getAttribute("href"))!;
+          expect(href.length).toBeLessThanOrEqual(8000);
+          expect(decodeURIComponent(href)).not.toContain("intranet");
+          if (SHOTS) {
+            mkdirSync(SHOTS, { recursive: true });
+            await page.screenshot({ path: resolve(SHOTS, `task-18-long-${tag}-${scheme}.png`), fullPage: true });
+          }
+        }
+      }
+    } finally {
+      await page.emulateMedia({ colorScheme: "light" });
+      await api(page, "DELETE", `/api/v1/sheet-types/${key}`);
+    }
+  });
+
   test("feedback links open a pre-filled issue; the verify action is admin-only and asks first", async () => {
     const SHOTS = process.env.E2E_SHOTS_DIR;
     const shot = async (name: string) => {

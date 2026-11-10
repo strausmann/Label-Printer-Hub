@@ -37,7 +37,7 @@ body:
     validations:
       required: true
 
-  - type: input
+  - type: textarea
     id: version_note
     attributes:
       label: What changed in this version
@@ -133,5 +133,5 @@ body:
     attributes:
       label: Privacy
       options:
-        - label: I checked the vendor, product codes and note for anything internal.
+        - label: I checked the vendor, product codes, source name and note for anything internal.
           required: true
