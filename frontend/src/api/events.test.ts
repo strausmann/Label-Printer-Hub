@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -209,6 +209,52 @@ describe("useHubEvents", () => {
         summary: null,
       });
     });
+  });
+
+  it("an event during a status query's first fetch is not lost: the status is read again after it lands", async () => {
+    // The page printer's status producer sends a change once. If it arrives while the card's very
+    // first status request is still out, that request's answer may be from before the change.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    setup(client);
+    const answers: ((v: string) => void)[] = [];
+    const queryFn = vi.fn(() => new Promise<string>((resolve) => answers.push(resolve)));
+    const observer = new QueryObserver(client, { queryKey: ["printers", "p1", "status"], queryFn });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      act(() => last().emit("printer.status", "p1"));
+      await act(async () => answers[0]!("ready (read before the change)"));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      expect(queryFn).toHaveBeenCalledTimes(2);
+      await act(async () => answers[1]!("stopped"));
+      expect(client.getQueryData(["printers", "p1", "status"])).toBe("stopped");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("a query that already has data is refetched by the invalidation itself, not again after it lands", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    setup(client);
+    client.setQueryData(["printers", "p1", "status"], "ready");
+    const answers: ((v: string) => void)[] = [];
+    const queryFn = vi.fn(() => new Promise<string>((resolve) => answers.push(resolve)));
+    const observer = new QueryObserver(client, { queryKey: ["printers", "p1", "status"], queryFn, staleTime: 0 });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      // Data present: invalidation already cancels and restarts the fetch, so nothing more is needed.
+      const before = queryFn.mock.calls.length;
+      act(() => last().emit("printer.status", "p1"));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      const afterEvent = queryFn.mock.calls.length;
+      expect(afterEvent).toBeGreaterThan(before);
+      await act(async () => answers[answers.length - 1]!("stopped"));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      expect(queryFn).toHaveBeenCalledTimes(afterEvent);
+      expect(client.getQueryData(["printers", "p1", "status"])).toBe("stopped");
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("printers_changed invalidates printers and reopens the stream", () => {

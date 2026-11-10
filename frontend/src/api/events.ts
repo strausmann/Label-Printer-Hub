@@ -44,9 +44,36 @@ function parseFrame(frame: MessageEvent): Frame {
   return { printerId: null, data: {} };
 }
 
+/**
+ * Queries under `queryKey` whose FIRST fetch is still out are fetched again once it lands.
+ *
+ * Invalidation restarts an in-flight fetch only when the query already has data; a first load is
+ * joined, not restarted (TanStack Query). Its answer can predate the event, and producers send a
+ * change once (the page printer's status: only when it differs), so the card would keep the old
+ * state for good. Seen as a flaky e2e: a printer set to "stopped" stayed "Ready" on a fresh page.
+ */
+const scheduledFirstLoads = new WeakSet<Promise<unknown>>();
+
+function refetchFirstLoads(client: QueryClient, queryKey: readonly unknown[]): void {
+  for (const query of client.getQueryCache().findAll({ queryKey, fetchStatus: "fetching" })) {
+    const pending = query.promise;
+    // One follow-up per first load, however many events (or keys of one event) name it.
+    if (query.state.data !== undefined || !pending || scheduledFirstLoads.has(pending)) continue;
+    scheduledFirstLoads.add(pending);
+    const exact = query.queryKey;
+    void pending.then(
+      () => client.invalidateQueries({ queryKey: exact, exact: true }),
+      () => client.invalidateQueries({ queryKey: exact, exact: true }),
+    );
+  }
+}
+
 /** Which cached queries an event makes stale. Task 11 relies on these keys. */
 function invalidate(client: QueryClient, type: EventType, { printerId, data }: Frame): void {
-  const run = (queryKey: readonly unknown[]) => void client.invalidateQueries({ queryKey });
+  const run = (queryKey: readonly unknown[]) => {
+    void client.invalidateQueries({ queryKey });
+    refetchFirstLoads(client, queryKey);
+  };
   switch (type) {
     case "job.state_changed": {
       // A page job's place at the printer changes with from_state == to_state, so a refetch of the
