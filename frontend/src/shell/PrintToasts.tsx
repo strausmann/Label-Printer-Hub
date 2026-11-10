@@ -224,8 +224,10 @@ export function PrintToasts() {
   const ordered = [...entries.filter((e) => e.phase === "failed"), ...entries.filter((e) => e.phase !== "failed")];
   const shown = ordered.slice(0, MAX_VISIBLE);
   const hidden = ordered.length - shown.length;
-  const failed = shown.filter((e) => e.phase === "failed");
-  const rest = shown.filter((e) => e.phase !== "failed");
+  // A print a page shows in its own live line is still a card, but only the page announces it.
+  const claimed = shown.filter((e) => e.claimed);
+  const failed = shown.filter((e) => !e.claimed && e.phase === "failed");
+  const rest = shown.filter((e) => !e.claimed && e.phase !== "failed");
   return (
     // The height is bounded and scrolls inside, so Close and Retry stay reachable on a phone.
     <section
@@ -237,6 +239,13 @@ export function PrintToasts() {
           <Card key={entry.id} entry={entry} />
         ))}
       </ul>
+      {claimed.length > 0 && (
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          {claimed.map((entry) => (
+            <Card key={entry.id} entry={entry} />
+          ))}
+        </ul>
+      )}
       <ul aria-live="polite" aria-relevant="additions text" className="m-0 flex list-none flex-col gap-2 p-0">
         {rest.map((entry) => (
           <Card key={entry.id} entry={entry} />

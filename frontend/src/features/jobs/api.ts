@@ -31,11 +31,24 @@ function useRefreshJobs() {
   };
 }
 
+/**
+ * Retries in flight, by job id. A page line and the notification stack can both offer Retry for the same
+ * failed job; whoever presses second joins the first request instead of cloning the job (and printing) twice.
+ */
+const retrying = new Map<string, Promise<Job>>();
+
 /** Retry clones the job into a new queued one; the answer is that new job. */
 export function useRetryJob() {
   const refresh = useRefreshJobs();
   return useMutation({
-    mutationFn: (id: string) => apiFetch<Job>(`/api/v1/jobs/${id}/retry`, { method: "POST" }),
+    mutationFn: (id: string) => {
+      let request = retrying.get(id);
+      if (!request) {
+        request = apiFetch<Job>(`/api/v1/jobs/${id}/retry`, { method: "POST" }).finally(() => retrying.delete(id));
+        retrying.set(id, request);
+      }
+      return request;
+    },
     onSettled: refresh,
   });
 }

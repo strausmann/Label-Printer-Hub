@@ -33,6 +33,8 @@ interface WatchRecord {
   kind: PrintKind;
   printerId: string | null;
   jobIds: string[];
+  /** A page line is about to claim this print: the stack does not announce it in the meantime (no double announcement). */
+  claimPending?: boolean;
 }
 
 /** A watched print with its state worked out from the jobs it holds. */
@@ -43,6 +45,8 @@ export interface WatchedPrint extends WatchRecord {
   finished: number;
   failedJobIds: string[];
   live: Record<string, JobLive | undefined>;
+  /** A page shows one of its jobs in its own live line (`claimJob`): the stack shows the card but does not announce it. */
+  claimed: boolean;
 }
 
 interface Store {
@@ -50,12 +54,14 @@ interface Store {
   live: Record<string, JobLive>;
   /** Insertion order of `live`, to drop the oldest unwatched job state. */
   order: string[];
+  /** Jobs a mounted page line shows right now, with how many lines show each. */
+  claims: Record<string, number>;
   derived: WatchedPrint[];
 }
 
 const UNWATCHED_LIMIT = 200;
 const AT_PRINTER = new Set(["waiting", "printing", "stopped"]);
-const empty = (): Store => ({ records: [], live: {}, order: [], derived: [] });
+const empty = (): Store => ({ records: [], live: {}, order: [], claims: {}, derived: [] });
 
 let store: Store = empty();
 const listeners = new Set<() => void>();
@@ -82,7 +88,7 @@ const phaseOf = (state: unknown): JobPhase => {
 };
 const isTerminal = (phase: JobPhase) => phase === "done" || phase === "failed" || phase === "cancelled";
 
-function derive(records: WatchRecord[], live: Record<string, JobLive>): WatchedPrint[] {
+function derive(records: WatchRecord[], live: Record<string, JobLive>, claims: Record<string, number>): WatchedPrint[] {
   return records.map((record) => {
     const phases = record.jobIds.map((id) => live[id]?.phase ?? "queued");
     const failedJobIds = record.jobIds.filter((id) => live[id]?.phase === "failed");
@@ -97,14 +103,23 @@ function derive(records: WatchRecord[], live: Record<string, JobLive>): WatchedP
     else if (failedJobIds.length > 0) phase = "failed";
     else if (finished === 0) phase = "cancelled";
     else phase = "done";
-    return { ...record, phase, total: record.jobIds.length, finished, failedJobIds, live: Object.fromEntries(record.jobIds.map((id) => [id, live[id]])) };
+    return {
+      ...record,
+      phase,
+      total: record.jobIds.length,
+      finished,
+      failedJobIds,
+      live: Object.fromEntries(record.jobIds.map((id) => [id, live[id]])),
+      claimed: record.claimPending === true || record.jobIds.some((id) => (claims[id] ?? 0) > 0),
+    };
   });
 }
 
-function commit(next: { records?: WatchRecord[]; live?: Record<string, JobLive>; order?: string[]; keepDerived?: boolean }): void {
+function commit(next: { records?: WatchRecord[]; live?: Record<string, JobLive>; order?: string[]; claims?: Record<string, number>; keepDerived?: boolean }): void {
   const records = next.records ?? store.records;
   const live = next.live ?? store.live;
-  store = { records, live, order: next.order ?? store.order, derived: next.keepDerived ? store.derived : derive(records, live) };
+  const claims = next.claims ?? store.claims;
+  store = { records, live, order: next.order ?? store.order, claims, derived: next.keepDerived ? store.derived : derive(records, live, claims) };
   listeners.forEach((l) => l());
 }
 
@@ -118,7 +133,7 @@ function setLive(jobId: string, value: JobLive): void {
   let order = known ? store.order : [...store.order, jobId];
   let live = { ...store.live, [jobId]: value };
   if (order.length > UNWATCHED_LIMIT) {
-    const watched = new Set(store.records.flatMap((r) => r.jobIds));
+    const watched = new Set([...store.records.flatMap((r) => r.jobIds), ...Object.keys(store.claims)]);
     const drop = order.find((id) => !watched.has(id));
     if (drop) {
       order = order.filter((id) => id !== drop);
@@ -143,11 +158,36 @@ export function recordJobEvent(data: Record<string, unknown>): void {
 }
 
 /** Registers the jobs one print action queued; returns the entry id. Several concurrent prints are separate entries. */
-export function watchPrint(input: { kind: PrintKind; printerId: string | null; jobIds: string[] }): string {
+export function watchPrint(input: { kind: PrintKind; printerId: string | null; jobIds: string[]; claimPending?: boolean }): string {
   const id = `print-${++counter}`;
   if (input.jobIds.length === 0) return id;
-  commit({ records: [...store.records, { id, kind: input.kind, printerId: input.printerId, jobIds: [...input.jobIds] }] });
+  const record: WatchRecord = { id, kind: input.kind, printerId: input.printerId, jobIds: [...input.jobIds] };
+  if (input.claimPending) record.claimPending = true;
+  commit({ records: [...store.records, record] });
   return id;
+}
+
+/**
+ * A page that shows a job in its own live line claims it: the stack keeps the card but stops announcing it
+ * (one announcement per state change), and a reconnect resync reads the job even after its card was
+ * dismissed. Returns the release; call it when the line goes away or follows another job.
+ */
+export function claimJob(jobId: string): () => void {
+  // The claim a print registered with `claimPending` was waiting for has arrived.
+  const settled = store.records.some((r) => r.claimPending && r.jobIds.includes(jobId))
+    ? store.records.map((r) => (r.claimPending && r.jobIds.includes(jobId) ? { ...r, claimPending: false } : r))
+    : undefined;
+  commit({ claims: { ...store.claims, [jobId]: (store.claims[jobId] ?? 0) + 1 }, ...(settled ? { records: settled } : {}) });
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const claims = { ...store.claims };
+    const left = (claims[jobId] ?? 0) - 1;
+    if (left > 0) claims[jobId] = left;
+    else delete claims[jobId];
+    commit({ claims });
+  };
 }
 
 /** The watched print that holds this job right now, or undefined (never registered, or already dismissed). */
@@ -167,7 +207,7 @@ export function replaceWatchedJob(entryId: string, oldJobId: string, newJobId: s
  * job that is not finished is read once. A failed read keeps the state we had.
  */
 export async function resyncWatchedJobs(read: (jobId: string) => Promise<{ state: string; error?: string | null }>): Promise<void> {
-  const open = [...new Set(store.records.flatMap((r) => r.jobIds))].filter((id) => !isTerminal(store.live[id]?.phase ?? "queued"));
+  const open = [...new Set([...store.records.flatMap((r) => r.jobIds), ...Object.keys(store.claims)])].filter((id) => !isTerminal(store.live[id]?.phase ?? "queued"));
   await Promise.all(
     open.map(async (jobId) => {
       try {

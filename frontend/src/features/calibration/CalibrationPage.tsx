@@ -24,7 +24,7 @@ import {
 import { CalibrationSchematic, GapCrossing } from "./CalibrationSchematic";
 import { useCalibrationErrorText, useValueNames } from "./errors";
 import { parseNumber, usableTypes } from "./model";
-import { PrintResult, PrintResultRegion } from "./PrintResult";
+import { PrintResult } from "./PrintResult";
 import { ReadingsHelper } from "./ReadingsHelper";
 
 const calibrationApi = getRouteApi("/calibration");
@@ -345,15 +345,20 @@ function PrintAction({ printerId, tray, type, corrected, disabled, label, subjec
         </Button>
         {children}
       </div>
-      {noKey &&<p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
+      {noKey && <p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
       {print.isError && (
         <p role="alert" className="m-0 text-bad">
           {errorText(print.error, t`The page could not be queued.`)}
         </p>
       )}
-      <PrintResultRegion label={statusLabel}>
-        {print.isSuccess && <PrintResult key={print.data.job_id} jobId={print.data.job_id} printerId={printerId} subject={subject} doneHint={doneHint} />}
-      </PrintResultRegion>
+      <PrintResult
+        key={print.data?.job_id ?? "none"}
+        jobId={print.isSuccess ? print.data.job_id : null}
+        printerId={printerId}
+        subject={subject}
+        label={statusLabel}
+        doneHint={doneHint}
+      />
     </div>
   );
 }

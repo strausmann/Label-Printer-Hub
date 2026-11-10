@@ -14,6 +14,8 @@ const pageBox = (locator: Locator) =>
     const r = el.getBoundingClientRect();
     return { x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height };
   });
+/** The line block around a live status element: it also holds the job link and Retry. */
+const around = (status: Locator) => status.locator("xpath=..");
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
 
@@ -100,7 +102,7 @@ test.describe.serial("calibration", () => {
     await page.evaluate(() => ((window as unknown as { __kept: boolean }).__kept = true));
     await print.click();
     const line = page.getByRole("status", { name: "Calibration page status" });
-    await expect(line.getByRole("link", { name: "Show the job" })).toBeVisible();
+    await expect(around(line).getByRole("link", { name: "Show the job" })).toBeVisible();
     const after = { print: await pageBox(print), pdf: await pageBox(pdf) };
     expect(after).toEqual(before);
     // The line is under the button row, not in it.
@@ -125,7 +127,9 @@ test.describe.serial("calibration", () => {
     const line = page.getByRole("status", { name: "Calibration page status" });
     await expect(line.getByText("Failed", { exact: true })).toBeVisible({ timeout: 45_000 });
     await expect(line.getByText("The printer aborted the job before printing.")).toBeVisible();
-    await expect(line.getByRole("button", { name: "Retry" })).toBeVisible();
+    await expect(around(line).getByRole("button", { name: "Retry" })).toBeVisible();
+    // The live element holds only the sentence; the controls are beside it.
+    await expect(line.getByRole("button")).toHaveCount(0);
     expect(await pageBox(pdf)).toEqual(before);
   });
 
@@ -211,7 +215,7 @@ test.describe.serial("calibration", () => {
 
       // The check print is offered now, and goes to the queue.
       await page.getByRole("button", { name: "Check print with correction" }).click();
-      await expect(page.getByRole("status", { name: "Check page status" }).getByRole("link", { name: "Show the job" })).toBeVisible();
+      await expect(around(page.getByRole("status", { name: "Check page status" })).getByRole("link", { name: "Show the job" })).toBeVisible();
 
       // Back to no correction, through the page.
       await page.getByRole("button", { name: "Reset to no correction" }).click();

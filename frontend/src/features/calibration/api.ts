@@ -62,7 +62,7 @@ export function usePrintCalibrationPage(printerId: string) {
   return useMutation({
     mutationFn: ({ tray, request }: { tray: string; request: CalibrationPageRequest }) =>
       apiFetch<Schemas["PageJobAccepted"]>(`${trayPath(printerId, tray)}/page`, { method: "POST", json: request }),
-    onSuccess: (accepted) => void watchPrint({ kind: "calibration", printerId, jobIds: [accepted.job_id] }),
+    onSuccess: (accepted) => void watchPrint({ kind: "calibration", printerId, jobIds: [accepted.job_id], claimPending: true }),
     onSettled: () => void client.invalidateQueries({ queryKey: ["jobs"] }),
   });
 }

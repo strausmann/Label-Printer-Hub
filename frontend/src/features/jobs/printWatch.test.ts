@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  claimJob,
   dismissWatch,
   errorCodeFromMessage,
   recordJobEvent,
@@ -171,6 +172,46 @@ describe("print watch store", () => {
     expect(watchedPrintOfJob(B)?.id).toBe(id);
     act(() => dismissWatch(id));
     expect(watchedPrintOfJob(B)).toBeUndefined();
+  });
+
+  it("a claimed job marks its card as claimed until the claim is released (once, however often released)", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    act(() => void watchPrint({ kind: "calibration", printerId: P, jobIds: [A] }));
+    expect(result.current[0]!.claimed).toBe(false);
+    let release = () => {};
+    act(() => void (release = claimJob(A)));
+    const releaseSecond = claimJob(A);
+    expect(result.current[0]!.claimed).toBe(true);
+    act(() => release());
+    act(() => release());
+    // Two lines claimed it; one released twice must not drop the other's claim.
+    expect(result.current[0]!.claimed).toBe(true);
+    act(() => releaseSecond());
+    expect(result.current[0]!.claimed).toBe(false);
+  });
+
+  it("a print registered with claimPending is claimed until the line's claim arrives, and stays claimed with it", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    act(() => void watchPrint({ kind: "calibration", printerId: P, jobIds: [A], claimPending: true }));
+    expect(result.current[0]!.claimed).toBe(true);
+    let release = () => {};
+    act(() => void (release = claimJob(A)));
+    expect(result.current[0]!.claimed).toBe(true);
+    // The line goes away: from here the stack announces the card like any other.
+    act(() => release());
+    expect(result.current[0]!.claimed).toBe(false);
+  });
+
+  it("a reconnect resync also reads a job a page line shows after its card was dismissed", async () => {
+    let id = "";
+    act(() => void (id = watchPrint({ kind: "calibration", printerId: P, jobIds: [A] })));
+    act(() => void claimJob(A));
+    act(() => dismissWatch(id));
+    const read = vi.fn(async () => ({ state: "done" }));
+    const { result } = renderHook(() => useJobLive(A));
+    await act(async () => void (await resyncWatchedJobs(read)));
+    expect(read).toHaveBeenCalledWith(A);
+    expect(result.current?.phase).toBe("done");
   });
 
   it("ignores events without a usable job id", () => {
