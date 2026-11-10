@@ -71,12 +71,14 @@ export function CalibrationPage() {
   useEffect(() => {
     if (!printer || (calibration.isSuccess && !tray)) return;
     if (search.printer !== printer.id || (tray && search.tray !== tray)) {
-      void navigate({ to: "/calibration", search: { printer: printer.id, tray }, replace: true });
+      void navigate({ to: "/calibration", search: { printer: printer.id, tray, type: search.type }, replace: true });
     }
-  }, [printer, tray, calibration.isSuccess, search.printer, search.tray, navigate]);
+  }, [printer, tray, calibration.isSuccess, search.printer, search.tray, search.type, navigate]);
 
-  const choosePrinter = (id: string) => void navigate({ to: "/calibration", search: { printer: id, tray: undefined }, replace: true });
-  const chooseTray = (key: string) => void navigate({ to: "/calibration", search: { printer: printer?.id, tray: key }, replace: true });
+  // The chosen sheet type belongs to the page, not to one tray: all three keep it in the address.
+  const choosePrinter = (id: string) => void navigate({ to: "/calibration", search: { printer: id, tray: undefined, type: search.type }, replace: true });
+  const chooseTray = (key: string) => void navigate({ to: "/calibration", search: { printer: printer?.id, tray: key, type: search.type }, replace: true });
+  const chooseType = (key: string) => void navigate({ to: "/calibration", search: { printer: printer?.id, tray, type: key }, replace: true });
 
   return (
     <div className="flex flex-col gap-6">
@@ -121,6 +123,8 @@ export function CalibrationPage() {
               key={`${printer.id}/${tray}`}
               printer={printer}
               tray={tray}
+              typeChoice={search.type}
+              onTypeChange={chooseType}
               trayLabel={trays.find((x) => x.key === tray)?.label ?? tray}
               stored={calibration.data.find((r) => r.tray === tray)}
             />
@@ -141,17 +145,19 @@ interface WorkbenchProps {
   tray: string;
   trayLabel: string;
   stored: CalibrationRead | undefined;
+  /** The type key from the address; one that is unknown or archived means the default type. */
+  typeChoice: string | undefined;
+  onTypeChange: (key: string) => void;
 }
 
-/** Everything for one printer and tray; it is rebuilt when either changes. */
-function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
+/** Everything for one printer and tray; it is rebuilt when either changes (the type lives in the address). */
+function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange }: WorkbenchProps) {
   const { t } = useLingui();
   const session = useSession();
   const canPrint = session.scope === "print" || session.scope === "admin";
   const admin = session.scope === "admin";
   const types = useSheetTypes();
   const usable = useMemo(() => usableTypes(types.data ?? []), [types.data]);
-  const [typeChoice, setTypeChoice] = useState<string | null>(null);
   const type: SheetTypeRead | undefined = usable.find((x) => x.key === typeChoice) ?? usable[0];
 
   // The values of step 2 live here: the form edits them and the readings helper fills them.
@@ -179,7 +185,7 @@ function Workbench({ printer, tray, trayLabel, stored }: WorkbenchProps) {
           <p className="text-ink-2">{t`There is no sheet type with at least two columns and two rows.`}</p>
         ) : (
           <>
-            <SheetTypeCombobox label={t`Sheet type`} types={usable} value={type.key} onChange={setTypeChoice} />
+            <SheetTypeCombobox label={t`Sheet type`} types={usable} value={type.key} onChange={onTypeChange} />
             <CalibrationSchematic geometry={type.geometry} typeName={typeLabelWithKey(type)} />
             <GapCrossing colGap={Math.min(2, type.geometry.cols - 1)} rowGap={Math.min(6, type.geometry.rows - 1)} />
             <PrintAction

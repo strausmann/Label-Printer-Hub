@@ -516,6 +516,50 @@ describe("readings: row identity", () => {
   });
 });
 
+describe("the chosen sheet type lives in the address (#238)", () => {
+  const two = { "GET /api/v1/sheet-types": [SHEET_TYPE, typeB] };
+  const typeBox = () => screen.findByRole("combobox", { name: /Sheet type/ });
+  async function chooseB() {
+    await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /OTHERTYPE/ }));
+  }
+
+  it("type survives a tray change", async () => {
+    const { router } = await open(two);
+    await chooseB();
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ type: "OTHERTYPE" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Tray$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Bypass" }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ tray: "bypass", type: "OTHERTYPE" }));
+    expect(((await typeBox()) as HTMLInputElement).value).toContain("OTHERTYPE");
+  });
+
+  it("type survives a printer change", async () => {
+    const { router } = await open(two);
+    await chooseB();
+    await userEvent.click(await screen.findByRole("button", { name: /Printer$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Second laser" }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ printer: secondPrinter.id, type: "OTHERTYPE" }));
+    expect(((await typeBox()) as HTMLInputElement).value).toContain("OTHERTYPE");
+  });
+
+  it("opens on the type the address names (what a reload does)", async () => {
+    await open(two, SIGNED_IN, `/calibration?printer=${P}&tray=main&type=OTHERTYPE`);
+    expect(((await typeBox()) as HTMLInputElement).value).toContain("OTHERTYPE");
+  });
+
+  it("an unknown or overlong type falls back to the default type", async () => {
+    await open(two, SIGNED_IN, `/calibration?printer=${P}&tray=main&type=gone`);
+    expect(((await typeBox()) as HTMLInputElement).value).toContain("L4736REV");
+  });
+
+  it("an overlong type is dropped from the address", async () => {
+    const { router } = await open(two, SIGNED_IN, `/calibration?printer=${P}&tray=main&type=${"x".repeat(65)}`);
+    await typeBox();
+    expect(router.state.location.search.type).toBeUndefined();
+  });
+});
+
 describe("which type the values were measured on", () => {
   const two = { "GET /api/v1/sheet-types": [SHEET_TYPE, typeB], [`PUT ${BASE}/main`]: stored, [`POST ${BASE}/main/fit`]: FIT };
   async function chooseB() {

@@ -216,6 +216,65 @@ test.describe.serial("calibration", () => {
     await page.emulateMedia({ colorScheme: "light" });
   });
 
+  test("the chosen sheet type survives a reload and a tray change (#238)", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openCalibration(page, id);
+    await chooseType(page);
+    const box = page.getByRole("combobox", { name: "Sheet type" });
+    const named = new RegExp(`\\(${TYPE}\\)`);
+    await expect(box).toHaveValue(named);
+    await expect(async () => expect(new URL(page.url()).searchParams.get("type")).toBe(TYPE)).toPass();
+
+    // A reload keeps it: the address carries it.
+    await page.reload();
+    await expect(page.getByRole("combobox", { name: "Sheet type" })).toHaveValue(named);
+
+    // A tray change keeps it, when the printer has a second tray.
+    const trayButton = page.getByRole("button", { name: / Tray$/ });
+    if (await trayButton.count()) {
+      await trayButton.click();
+      const other = page.getByRole("option").filter({ hasNotText: (await trayButton.textContent()) ?? "" }).first();
+      await other.click();
+      await expect(async () => expect(new URL(page.url()).searchParams.get("tray")).not.toBe(TRAY)).toPass();
+      await expect(page.getByRole("combobox", { name: "Sheet type" })).toHaveValue(named);
+      expect(new URL(page.url()).searchParams.get("type")).toBe(TYPE);
+    }
+
+    // A key the hub does not know opens on the default type instead of breaking the page.
+    await page.goto(`/calibration?printer=${id}&tray=${TRAY}&type=no-such-type`);
+    await expect(page.getByRole("combobox", { name: "Sheet type" })).not.toHaveValue("");
+  });
+
+  test("screenshots: the kept type after a tray change, light and dark, desktop and phone (#238)", async () => {
+    test.skip(!process.env.E2E_SHOTS_DIR, "screenshots are an artifact, taken only with E2E_SHOTS_DIR");
+    test.setTimeout(120_000);
+    const dir = process.env.E2E_SHOTS_DIR!;
+    mkdirSync(dir, { recursive: true });
+    await setLanguage(page, "en");
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const [width, height] of [
+        [1280, 800],
+        [390, 844],
+      ] as const) {
+        await page.setViewportSize({ width, height });
+        await openCalibration(page, id);
+        await chooseType(page);
+        const trayButton = page.getByRole("button", { name: / Tray$/ });
+        if (await trayButton.count()) {
+          await trayButton.click();
+          await page.getByRole("option").filter({ hasNotText: (await trayButton.textContent()) ?? "" }).first().click();
+        }
+        await expect(page.getByRole("combobox", { name: "Sheet type" })).toHaveValue(new RegExp(`\\(${TYPE}\\)`));
+        await page.getByRole("heading", { level: 2, name: "Step 1: Print the calibration page" }).scrollIntoViewIfNeeded();
+        expect(await noSideScroll(page)).toBe(true);
+        await page.screenshot({ path: resolve(dir, `task-19d-tray-change-${width}-${scheme}.png`) });
+      }
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  });
+
   test("the Calibrate link on the printer page opens the calibration with that printer and tray chosen", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
