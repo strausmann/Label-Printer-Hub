@@ -36,6 +36,12 @@ class Printer(SQLModel, table=True):
         sa_column=Column(Boolean(), nullable=False, server_default="0"),
         description="Standard-Schnittmodus: True = halber Schnitt, False = voller Schnitt.",
     )
+    layout_defaults: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, server_default="{}"),
+        description="Stored label layout per tape width (#258): "
+        '{"62": {"orientation": "across", "preset": "compact"}}; empty = tape default.',
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(DateTime(timezone=True), nullable=False),

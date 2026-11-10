@@ -631,6 +631,35 @@ async def test_reconcile_tape_timeout_only_change_takes_over_the_timeout(env: En
     assert calls == [90.0]
 
 
+async def test_stored_layout_defaults_reach_the_service_and_follow_an_edit(env: Env) -> None:
+    """#258: the layout default per tape lives on the row; editing it needs no re-wire."""
+    from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
+
+    await _start(env)
+    printer = _tape(model="QL-820NWB", backend="brother_ql")
+    printer.layout_defaults = {"62": {"orientation": "across", "preset": "standard"}}
+    await _store_row(env.factory, printer)
+    resolve = AsyncMock(return_value="QL-820NWB")
+    with patch("app.services.printer_runtime._resolve_model_id_from_config", resolve):
+        await env.runtime.reconcile(printer.id)
+        service = env.runtime.print_service_for(printer.id)
+        assert service is not None
+        assert service.layout_defaults == {
+            62: LayoutDefault(orientation=LabelOrientation.ACROSS, preset=QlLayoutPreset.STANDARD)
+        }
+        await _update_row(env.factory, printer.id, layout_defaults={"62": {"orientation": "along"}})
+        await env.runtime.reconcile(printer.id)
+    assert resolve.await_count == 1  # not re-wired
+    assert env.runtime.print_service_for(printer.id) is service
+    assert service.layout_defaults == {62: LayoutDefault(orientation=LabelOrientation.ALONG)}
+
+
+def test_wiring_key_ignores_layout_defaults() -> None:
+    printer = _tape(model="QL-820NWB", backend="brother_ql")
+    changed = printer.model_copy(update={"layout_defaults": {"62": {"orientation": "along"}}})
+    assert wiring_key(changed) == wiring_key(printer)
+
+
 async def test_reconcile_failure_is_logged_and_leaves_detached(
     env: Env, caplog: pytest.LogCaptureFixture
 ) -> None:

@@ -1998,6 +1998,17 @@ export interface components {
          * @enum {string}
          */
         LabelOrientation: "across" | "along";
+        /**
+         * LayoutDefault
+         * @description A stored layout default for one tape width of one printer.
+         *
+         *     ``None`` fields fall back to the built-in default for the tape (62 mm: across, compact;
+         *     every other width: along).
+         */
+        LayoutDefault: {
+            orientation?: components["schemas"]["LabelOrientation"] | null;
+            preset?: components["schemas"]["QlLayoutPreset"] | null;
+        };
         /** LogEntry */
         LogEntry: {
             /** Level */
@@ -2524,6 +2535,13 @@ export interface components {
              * @default true
              */
             enabled: boolean;
+            /**
+             * Layout Defaults
+             * @description Stored label layout per tape width in mm (#258), used when a print job names none: {"62": {"orientation": "across", "preset": "compact"}}. ``across`` and presets exist for 62 mm only; a missing width uses the tape default (62 mm across/compact, else along). Ignored for page printers.
+             */
+            layout_defaults?: {
+                [key: string]: components["schemas"]["LayoutDefault"];
+            };
             /** Model */
             model?: string | null;
             /** Name */
@@ -2696,6 +2714,13 @@ export interface components {
             cut_defaults?: components["schemas"]["PrinterCutDefaults"] | null;
             /** Enabled */
             enabled?: boolean | null;
+            /**
+             * Layout Defaults
+             * @description Stored label layout per tape width in mm (#258), used when a print job names none: {"62": {"orientation": "across", "preset": "compact"}}. ``across`` and presets exist for 62 mm only; a missing width uses the tape default (62 mm across/compact, else along). Ignored for page printers. Replaces the stored set.
+             */
+            layout_defaults?: {
+                [key: string]: components["schemas"]["LayoutDefault"];
+            } | null;
             /** Name */
             name?: string | null;
             queue?: components["schemas"]["PrinterQueueSettings"] | null;
@@ -3795,6 +3820,13 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Layout Defaults
+             * @description Stored label layout per tape width in mm (#258), keyed by the width as a string; a missing width uses the tape default (62 mm across/compact, else along)
+             */
+            layout_defaults?: {
+                [key: string]: components["schemas"]["LayoutDefault"];
+            };
             /** Model */
             model: string;
             /** Name */

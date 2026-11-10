@@ -256,6 +256,49 @@ async def test_tape_printer_created_with_snmp_discover_has_status(live: Live) ->
     assert live.runtime.print_service_for(pid) is not None
 
 
+async def test_ql_layout_default_round_trips_and_reaches_the_service(live: Live) -> None:
+    """#258: PUT stores the default per tape width, GET shows it, the service uses it."""
+    from app.printer_models.ql import QL820NWBDriver
+    from app.printer_models.registry import ModelRegistry
+
+    # The integration conftest clears the registry; the QL driver registers on import only
+    # (no entry point), so register it for this test (the fixture restores the registry).
+    ModelRegistry.register(QL820NWBDriver)  # type: ignore[arg-type]
+    body = {
+        "name": "Shelf QL",
+        "slug": "shelf-ql",
+        "model": "QL-820NWB",
+        "backend": "brother_ql",
+        "connection": {"host": "192.0.2.12", "port": 9100},
+        "layout_defaults": {"62": {"orientation": "across", "preset": "small_qr"}},
+    }
+    with patch(
+        "app.services.printer_runtime._resolve_model_id_from_config",
+        AsyncMock(return_value="QL-820NWB"),
+    ):
+        resp = await live.client.post(ADMIN, json=body)
+        assert resp.status_code == 201, resp.text
+        pid = UUID(resp.json()["id"])
+        assert resp.json()["layout_defaults"] == {
+            "62": {"orientation": "across", "preset": "small_qr"}
+        }
+        resp = await live.client.put(
+            f"{ADMIN}/shelf-ql", json={"layout_defaults": {"62": {"orientation": "along"}}}
+        )
+        assert resp.status_code == 200, resp.text
+        bad = await live.client.put(
+            f"{ADMIN}/shelf-ql", json={"layout_defaults": {"12": {"orientation": "across"}}}
+        )
+    assert bad.status_code == 422
+    got = await live.client.get(f"{ADMIN}/shelf-ql")
+    assert got.json()["layout_defaults"] == {"62": {"orientation": "along", "preset": None}}
+    service = live.runtime.print_service_for(pid)
+    assert service is not None
+    assert {w: d.model_dump(mode="json") for w, d in service.layout_defaults.items()} == {
+        62: {"orientation": "along", "preset": None}
+    }
+
+
 # ---------------------------------------------------------------------------- disable / enable
 
 

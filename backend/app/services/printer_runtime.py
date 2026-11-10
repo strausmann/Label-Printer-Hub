@@ -48,6 +48,7 @@ from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.snmp_helper import ObservedIdentity, query_model_pjl
 from app.printer_models.registry import ModelRegistry
 from app.repositories import printer_identity as identity_repo
+from app.schemas.label_layout import parse_layout_defaults
 from app.services.backend_router import (
     BackendRouter,
     CutDefaults,
@@ -148,7 +149,8 @@ async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
 def wiring_key(printer: Printer, *, tray_keys: Sequence[str] = ()) -> tuple[object, ...]:
     """What the wiring of *printer* depends on; equal keys need no re-wire (Task 7).
 
-    Name, label and cut defaults are not in it (cut defaults come with each request).
+    Name, label and cut defaults are not in it (cut defaults come with each request), nor
+    the layout defaults (#258): ``reconcile`` hands a changed value to the service.
     ``queue_timeout_s`` is in it for IPP printers only: both IPP clients take it at
     construction; a tape printer uses it only for the detach and shutdown waits, and
     ``reconcile`` takes a changed value over without a re-wire.
@@ -311,6 +313,9 @@ class PrinterRuntime:
                 # Not in the key for tape printers (only the shutdown and detach waits read
                 # it), so take it over here or those waits would use the old value.
                 wiring.queue_timeout_s = int(row.queue_timeout_s)
+                # #258: the layout defaults are read per job, so an edit needs no re-wire.
+                if wiring.service is not None:
+                    wiring.service.set_layout_defaults(parse_layout_defaults(row.layout_defaults))
                 return
         await self._detach_locked(printer_id)
         if row is not None and row.enabled:
@@ -421,6 +426,7 @@ class PrinterRuntime:
                 printer_id=printer.id,
                 backend=cast(Any, backend),
                 store=self._app.state.job_store,
+                layout_defaults=parse_layout_defaults(printer.layout_defaults),
             )
             self._router.register_service(cfg.slug, service)
             if self._started:

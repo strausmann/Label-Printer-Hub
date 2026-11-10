@@ -17,7 +17,7 @@ Flattening-Helpers (top-level Funktionen fuer einfaches Unit-Testing):
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -43,6 +43,7 @@ from app.printer_backends.ipp.errors import (
 )
 from app.repositories import printer_identity as identity_repo
 from app.repositories import printers as printers_repo
+from app.schemas.label_layout import LayoutDefault
 from app.schemas.printer_admin import (
     IppConnection,
     PrinterConnection,
@@ -263,6 +264,9 @@ def _payload_to_row(
         "cut_defaults_half_cut": (
             False if payload.backend == IPP_BACKEND else payload.cut_defaults.half_cut
         ),
+        "layout_defaults": (
+            {} if payload.backend == IPP_BACKEND else _layout_json(payload.layout_defaults)
+        ),
         "enabled": payload.enabled,
         "created_at": created_at_utc,
         "updated_at": created_at_utc,
@@ -288,9 +292,16 @@ def _apply_update_patch(
         changes["queue_timeout_s"] = patch.queue.timeout_s
     if patch.cut_defaults is not None:
         changes["cut_defaults_half_cut"] = patch.cut_defaults.half_cut
+    if patch.layout_defaults is not None:
+        changes["layout_defaults"] = _layout_json(patch.layout_defaults)
     if patch.enabled is not None:
         changes["enabled"] = patch.enabled
     return changes
+
+
+def _layout_json(defaults: Mapping[int, LayoutDefault]) -> dict[str, Any]:
+    """``{62: LayoutDefault}`` as the JSON column stores it: ``{"62": {...}}``."""
+    return {str(width): d.model_dump(mode="json") for width, d in sorted(defaults.items())}
 
 
 def _row_to_audit_view(
@@ -311,6 +322,7 @@ def _row_to_audit_view(
         "connection": row.get("connection"),
         "queue": {"timeout_s": row.get("queue_timeout_s")},
         "cut_defaults": {"half_cut": row.get("cut_defaults_half_cut")},
+        "layout_defaults": row.get("layout_defaults") or {},
         "enabled": row.get("enabled"),
     }
     if trays is not None:
@@ -334,6 +346,7 @@ def _printer_to_row_dict(printer: Printer) -> dict[str, Any]:
         "connection": printer.connection,
         "queue_timeout_s": printer.queue_timeout_s,
         "cut_defaults_half_cut": printer.cut_defaults_half_cut,
+        "layout_defaults": dict(printer.layout_defaults or {}),
         "enabled": printer.enabled,
     }
 
@@ -493,6 +506,7 @@ class PrinterAdminService:
         changes = _apply_update_patch(_printer_to_row_dict(printer), patch)
         if is_ipp:
             changes.pop("cut_defaults_half_cut", None)  # does not apply to page printers
+            changes.pop("layout_defaults", None)  # nor do tape layouts (#258)
             changes.update(await self._ipp_update_checks(printer, patch, stored_trays))
 
         for key, value in changes.items():

@@ -60,6 +60,11 @@ class PrintService:
         self._lookup_service = lookup_service
         self._layout_defaults: dict[int, LayoutDefault] = dict(layout_defaults or {})
 
+    @property
+    def layout_defaults(self) -> dict[int, LayoutDefault]:
+        """The stored layout default per tape width (a copy)."""
+        return dict(self._layout_defaults)
+
     def set_layout_defaults(self, defaults: Mapping[int, LayoutDefault]) -> None:
         """Replace the printer's stored layout defaults per tape width (#258).
 

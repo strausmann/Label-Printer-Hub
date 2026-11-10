@@ -13,9 +13,11 @@ on ``along`` labels.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 
 class LabelOrientation(StrEnum):
@@ -49,3 +51,36 @@ class LayoutDefault(BaseModel):
 
     orientation: LabelOrientation | None = None
     preset: QlLayoutPreset | None = None
+
+
+ACROSS_TAPE_WIDTHS_MM: frozenset[int] = frozenset({62})
+"""Tape widths with an across-width layout (#258); other DK widths follow later."""
+
+
+def check_layout_defaults(value: dict[int, LayoutDefault]) -> dict[int, LayoutDefault]:
+    """Validate stored defaults: ``across`` and a preset exist for 62 mm only."""
+    for width, default in value.items():
+        if width <= 0:
+            raise ValueError(f"tape width must be positive, got {width}")
+        if width in ACROSS_TAPE_WIDTHS_MM:
+            continue
+        if default.orientation is LabelOrientation.ACROSS:
+            raise ValueError(f"the across layout is only available for 62 mm, not {width} mm")
+        if default.preset is not None:
+            raise ValueError(f"layout presets exist for 62 mm only, not {width} mm")
+    return value
+
+
+def parse_layout_defaults(raw: Mapping[str, Any] | None) -> dict[int, LayoutDefault]:
+    """The stored JSON column (``{"62": {...}}``) as ``{62: LayoutDefault}``.
+
+    Values were validated when they were written; an entry that no longer validates (e.g. a
+    preset removed in a later release) is skipped, so the tape default applies instead.
+    """
+    out: dict[int, LayoutDefault] = {}
+    for key, value in (raw or {}).items():
+        try:
+            out[int(key)] = LayoutDefault.model_validate(value)
+        except (ValueError, TypeError, ValidationError):
+            continue
+    return out

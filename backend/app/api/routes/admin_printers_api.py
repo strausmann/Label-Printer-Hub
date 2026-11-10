@@ -55,6 +55,7 @@ from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import ProbeSummary
 from app.schemas._datetime import serialize_datetime_utc
+from app.schemas.label_layout import LayoutDefault, parse_layout_defaults
 from app.schemas.printer_admin import IppConnection, PrinterCreatePayload, PrinterUpdatePayload
 from app.schemas.problem import ProblemDetail
 from app.services.event_bus import BusEvent, EventBus
@@ -112,6 +113,13 @@ class PrinterRead(BaseModel):
     connection: dict[str, Any]
     queue: dict[str, Any]
     cut_defaults: dict[str, Any]
+    layout_defaults: dict[str, LayoutDefault] = Field(
+        default_factory=dict,
+        description=(
+            "Stored label layout per tape width in mm (#258), keyed by the width as a string; "
+            "a missing width uses the tape default (62 mm across/compact, else along)"
+        ),
+    )
     enabled: bool
     created_at: str
     updated_at: str
@@ -211,6 +219,10 @@ def _row_to_read(printer: Printer) -> PrinterRead:
         connection=printer.connection or {},
         queue={"timeout_s": printer.queue_timeout_s},
         cut_defaults={"half_cut": printer.cut_defaults_half_cut},
+        layout_defaults={
+            str(width): value
+            for width, value in parse_layout_defaults(printer.layout_defaults).items()
+        },
         enabled=printer.enabled,
         created_at=printer.created_at.isoformat() if printer.created_at else "",
         updated_at=printer.updated_at.isoformat() if printer.updated_at else "",

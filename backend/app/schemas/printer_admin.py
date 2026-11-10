@@ -18,6 +18,7 @@ from typing import Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.printer_backends.ipp.client import validate_ipp_uri
+from app.schemas.label_layout import LayoutDefault, check_layout_defaults
 from app.sheets.text import sanitise_text
 
 SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"
@@ -110,6 +111,14 @@ def check_trays(trays: list[TrayIn]) -> list[TrayIn]:
     return trays
 
 
+_LAYOUT_DEFAULTS_DOC = (
+    "Stored label layout per tape width in mm (#258), used when a print job names none: "
+    '{"62": {"orientation": "across", "preset": "compact"}}. ``across`` and presets exist '
+    "for 62 mm only; a missing width uses the tape default (62 mm across/compact, else along). "
+    "Ignored for page printers."
+)
+
+
 class PrinterCutDefaults(BaseModel):
     """Standard-Schnitteinstellungen für einen Drucker."""
 
@@ -137,6 +146,9 @@ class PrinterCreatePayload(BaseModel):
     connection: PrinterConnection | IppConnection
     queue: PrinterQueueSettings = Field(default_factory=PrinterQueueSettings)
     cut_defaults: PrinterCutDefaults = Field(default_factory=PrinterCutDefaults)
+    layout_defaults: dict[int, LayoutDefault] = Field(
+        default_factory=dict, description=_LAYOUT_DEFAULTS_DOC
+    )
     enabled: bool = True
     trays: list[TrayIn] | None = Field(default=None, min_length=1, max_length=MAX_TRAYS)
 
@@ -144,6 +156,11 @@ class PrinterCreatePayload(BaseModel):
     @classmethod
     def _trays_rules(cls, value: list[TrayIn] | None) -> list[TrayIn] | None:
         return None if value is None else check_trays(value)
+
+    @field_validator("layout_defaults")
+    @classmethod
+    def _layout_rules(cls, value: dict[int, LayoutDefault]) -> dict[int, LayoutDefault]:
+        return check_layout_defaults(value)
 
     @model_validator(mode="after")
     def _backend_rules(self) -> Self:
@@ -176,6 +193,9 @@ class PrinterUpdatePayload(BaseModel):
     connection: PrinterConnection | IppConnection | None = None
     queue: PrinterQueueSettings | None = None
     cut_defaults: PrinterCutDefaults | None = None
+    layout_defaults: dict[int, LayoutDefault] | None = Field(
+        default=None, description=_LAYOUT_DEFAULTS_DOC + " Replaces the stored set."
+    )
     enabled: bool | None = None
     trays: list[TrayIn] | None = Field(default=None, min_length=1, max_length=MAX_TRAYS)
 
@@ -183,3 +203,10 @@ class PrinterUpdatePayload(BaseModel):
     @classmethod
     def _trays_rules(cls, value: list[TrayIn] | None) -> list[TrayIn] | None:
         return None if value is None else check_trays(value)
+
+    @field_validator("layout_defaults")
+    @classmethod
+    def _layout_rules(
+        cls, value: dict[int, LayoutDefault] | None
+    ) -> dict[int, LayoutDefault] | None:
+        return None if value is None else check_layout_defaults(value)
