@@ -40,6 +40,24 @@ async function cartOf(page: Page, labels: number) {
   await page.goto("/cart");
 }
 
+/**
+ * Held runs live in the hub's queue for the whole e2e session, not per test: a job another spec
+ * retried on a mock printer that refuses it stays as a stopped run ("Tape prints that wait for
+ * you"). The tests here start from an empty list, so they only ever see their own run.
+ */
+async function discardHeldRuns(page: Page) {
+  const csrf = await page.evaluate(async () => ((await (await fetch("/api/v1/auth/session")).json()) as { csrf_token: string }).csrf_token);
+  const held = (await (await page.request.get("/api/v1/batches/runs/held")).json()) as Array<{ batch_id: string }>;
+  for (const run of held) {
+    const response = await page.request.post(`/api/v1/batches/${run.batch_id}/discard`, { headers: { "X-CSRF-Token": csrf } });
+    expect(response.status(), await response.text()).toBe(204);
+  }
+}
+
+test.beforeEach(async ({ signedInPage: page }) => {
+  await discardHeldRuns(page);
+});
+
 test.afterEach(async ({ page }) => {
   await newTape(page);
 });
