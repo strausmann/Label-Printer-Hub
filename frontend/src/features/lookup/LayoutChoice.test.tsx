@@ -1,6 +1,6 @@
-import { screen } from "@testing-library/react";
+import { configure, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
 import { mockApi, pngResponse, PRINTER_A, PRINTER_B, respond, status, type Call } from "../test-api";
 import { reloadCart } from "./cart";
@@ -9,6 +9,21 @@ const BATCH = "cccccccc-0000-4000-8000-000000000001";
 const JOB = "jjjjjjjj-0000-4000-8000-000000000001";
 const QL = (layout_defaults: Record<string, unknown> = {}) => ({ ...PRINTER_B, paused: false, layout_defaults });
 const wide = (id: string) => status(id, { tape_loaded: "62mm", tape_width_mm: 62 });
+
+// Most tests go straight from renderApp to the first "Label preview". That one findBy covers the
+// whole chain: app boot, the lookup, the printers and their status, the 200 ms preview debounce
+// (PREVIEW_DEBOUNCE_MS) and the preview request. Measured from the end of renderApp: 0.5-1.3 s
+// alone, 0.9-1.1 s under `vitest --coverage` (about 2.5 times slower), so the default 1 s window
+// expired in the 1.5.0 gate. The window is widened for this file only and restored afterwards;
+// the assertions are unchanged.
+let defaultAsyncTimeout = 1000;
+beforeAll(() => {
+  configure((current) => {
+    defaultAsyncTimeout = current.asyncUtilTimeout;
+    return { asyncUtilTimeout: 5000 };
+  });
+});
+afterAll(() => configure({ asyncUtilTimeout: defaultAsyncTimeout }));
 
 beforeEach(() => {
   localStorage.clear();
