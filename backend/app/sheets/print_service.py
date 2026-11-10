@@ -38,6 +38,7 @@ from app.models.printer import Printer
 from app.models.printer_tray import PrinterTray
 from app.models.sheet import SheetType, SheetTypeVersion
 from app.printer_backends.exceptions import ContentTypeDataMismatchError
+from app.printer_backends.ipp.attributes import Margins
 from app.repositories import print_batches as batches_repo
 from app.repositories import sheet_types as types_repo
 from app.repositories import sheets as repo
@@ -82,6 +83,7 @@ from app.sheets.cell_render import (
 from app.sheets.errors import (
     CellsUnconfirmedError,
     IdCellContentMismatchError,
+    InsufficientCellsError,
     ItemContentMismatchError,
     ItemLookupFailedError,
     MediaKindMismatchError,
@@ -105,6 +107,7 @@ from app.sheets.planner import (
     MarginPlacement,
     PagePlan,
     PlacementIn,
+    Plan,
     SheetView,
     choose_feed_mark,
     choose_margin_placement,
@@ -165,7 +168,10 @@ logger = logging.getLogger(__name__)
 LOOKUP_CONCURRENCY: Final = 8
 MAX_QR_PAYLOAD: Final = QR_PAYLOAD_MAX  # request-level cap on a cell's QR payload
 MAX_CONCURRENT_RENDERS: Final = 2  # preview renders at once, process-wide (spec 18, CPU)
-MAX_PREVIEW_PAGES: Final = 10  # a plan decision, not the spec's (spec 18, CPU)
+# #277: one sheet print run prints one sheet; the items that do not fit stay in the cart. Also the
+# preview bound (spec 18, CPU): a plan has one page per placement.
+MAX_SHEETS_PER_RUN: Final = 1
+MAX_PREVIEW_PAGES: Final = MAX_SHEETS_PER_RUN
 PREVIEW_QR_MAX_MODULES: Final = 65  # version 12; a denser symbol is a placeholder in the preview
 MAX_HINTS_PER_ITEM: Final = 5
 PURPOSE_MAX: Final = 120
@@ -484,6 +490,43 @@ async def _placements(
     return out, infos, new_views
 
 
+def one_sheet_request(request: SheetPrintRequest) -> SheetPrintRequest:
+    """#277: the request of one sheet print run, before anything is read or planned.
+
+    More than ``MAX_SHEETS_PER_RUN`` placements are refused (``preview_too_large``); the one
+    placement loses its ``count``, so it takes as many items as its sheet holds.
+    """
+    if len(request.placements) > MAX_SHEETS_PER_RUN:
+        raise PreviewTooLargeError(len(request.placements), MAX_SHEETS_PER_RUN)
+    (only,) = request.placements
+    if only.count is None:
+        return request
+    return request.model_copy(update={"placements": [only.model_copy(update={"count": None})]})
+
+
+def plan_one_sheet(
+    placements: list[PlacementIn],
+    n_items: int,
+    *,
+    hw_margins_hmm: Margins | None,
+    margin: MarginContext | None,
+) -> tuple[Plan, int]:
+    """Plan the first items onto the one sheet of the run; returns the plan and the item count.
+
+    Chosen cells take one item each; ``first_free`` takes the sheet's free cells. A sheet without
+    room for a single item is still refused (``insufficient_cells``).
+    """
+    (only,) = placements
+    count = n_items if isinstance(only.cells, str) else min(n_items, len(only.cells))
+    try:
+        return plan(placements, count, hw_margins_hmm=hw_margins_hmm, margin=margin), count
+    except InsufficientCellsError as exc:
+        room = int((exc.detail or {}).get("free_cells", [0])[0])
+        if room <= 0 or room >= count:
+            raise
+        return plan(placements, room, hw_margins_hmm=hw_margins_hmm, margin=margin), room
+
+
 # ---------------------------------------------------------------------------- drawing
 
 
@@ -739,8 +782,8 @@ async def preview(
     """
     if printer.backend != "ipp":
         raise MediaKindMismatchError()
-    if len(request.placements) > MAX_PREVIEW_PAGES:  # R10-5: before any planning
-        raise PreviewTooLargeError(len(request.placements), MAX_PREVIEW_PAGES)
+    request = one_sheet_request(request)  # R10-5, #277: before any planning
+    total = len(request.items)
     scan = scan_payload_builder(str(get_settings().public_url))
     async with session_factory() as session:
         tray = await calibration_service.resolve_tray(session, printer.id, request.tray)
@@ -757,11 +800,13 @@ async def preview(
             language=language,
         )
         # Planning is CPU work (margin and feed-mark geometry per page): off the event loop.
-        result = await asyncio.to_thread(
-            plan, placements, len(request.items), hw_margins_hmm=facts.margins_hmm, margin=margin
+        result, placed = await asyncio.to_thread(
+            plan_one_sheet, placements, total, hw_margins_hmm=facts.margins_hmm, margin=margin
         )
         if len(result.pages) > MAX_PREVIEW_PAGES:  # one page per placement; kept as a guard
             raise PreviewTooLargeError(len(result.pages), MAX_PREVIEW_PAGES)
+        # #277: the items this sheet does not take are not part of the run (no lookup either).
+        request = request.model_copy(update={"items": request.items[:placed]})
 
         tray_row = await session.get(PrinterTray, (printer.id, tray))
         load_hint = tray_row.load_hint if tray_row is not None else None
@@ -872,6 +917,8 @@ async def preview(
             for e in expected_of(result, new_views)
         ],
         reprint_hints=hints,
+        placed=placed,
+        remaining=total - placed,
     )
 
 
@@ -1285,6 +1332,8 @@ async def print_sheets(
     """
     if printer.backend != "ipp":
         raise MediaKindMismatchError()
+    request = one_sheet_request(request)  # #277: one sheet per run
+    total = len(request.items)
     scan = scan_payload_builder(str(get_settings().public_url))
     async with session_factory() as session:
         tray = await calibration_service.resolve_tray(session, printer.id, request.tray)
@@ -1302,9 +1351,12 @@ async def print_sheets(
         # The version of each new sheet, resolved once here: the fit check below and the
         # reservation then use the same geometry, whatever an admin adds meanwhile.
         pinned = [infos[id(v.sheet)].version for v in views]
-        dry = await asyncio.to_thread(
-            plan, views, len(request.items), hw_margins_hmm=facts.margins_hmm, margin=margin
+        dry, placed = await asyncio.to_thread(
+            plan_one_sheet, views, total, hw_margins_hmm=facts.margins_hmm, margin=margin
         )
+        # #277: the items the sheet does not take stay with the caller; the reservation below
+        # plans exactly the placed ones, so a changed sheet still answers ``plan_changed``.
+        request = request.model_copy(update={"items": request.items[:placed]})
         await session.commit()  # no read transaction stays open while the lookups run
         items = await resolve_items(request.items, lookup)
         await asyncio.to_thread(_check_plan_items, dry.pages, items, facts.render_dpi, scan)
@@ -1344,7 +1396,9 @@ async def print_sheets(
             actor=actor,
             bus=bus,
         )
-    return SheetPrintResponse(batch_id=batch_id, pages=printed)
+    return SheetPrintResponse(
+        batch_id=batch_id, pages=printed, placed=placed, remaining=total - placed
+    )
 
 
 async def create_sheet_with_id_label(

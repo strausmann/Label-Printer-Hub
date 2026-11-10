@@ -153,17 +153,18 @@ async def test_preview_leaves_the_sheet_untouched(
     pid, _ = await _printer()
     code = await _sheet(used=2)
 
-    resp = await api_client_with_seed.post(
-        _url(pid),
-        json={
-            "items": [_item(i) for i in range(4)],
-            "placements": [{"sheet": code, "count": 2}, {"new_sheet": {"type": "acme-t1"}}],
-        },
-        headers=reader,
-    )
+    # #277: one sheet per run: the existing and the new sheet are two previews.
+    hints: list[str | None] = []
+    for placement in ({"sheet": code}, {"new_sheet": {"type": "acme-t1"}}):
+        resp = await api_client_with_seed.post(
+            _url(pid),
+            json={"items": [_item(i) for i in range(2)], "placements": [placement]},
+            headers=reader,
+        )
+        assert resp.status_code == 200, resp.text
+        hints.extend(p["new_code_hint"] for p in resp.json()["pages"])
 
-    assert resp.status_code == 200, resp.text
-    assert [p["new_code_hint"] for p in resp.json()["pages"]] == [None, "AT1-0002"]
+    assert hints == [None, "AT1-0002"]
     async with _factory()() as s:
         assert (await s.execute(select(func.count()).select_from(Sheet))).scalar() == 1
         assert (await s.execute(select(func.count()).select_from(SheetCell))).scalar() == 2

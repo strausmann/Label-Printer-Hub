@@ -61,6 +61,8 @@ export function previewFor(code: string | null, fresh: number[], used: number[] 
     free_after: [48 - used.length - fresh.length],
     expected_cells: [{ sheet: code ?? "new", cells: fresh, id_cell: null }],
     reprint_hints: [],
+    placed: fresh.length,
+    remaining: 0,
     ...over,
   });
 }
@@ -92,7 +94,7 @@ export function routes(o: RouteOptions = {}): Record<string, unknown> {
     "GET /api/v1/sheets/next-code": { code: "L4736-0005", hint: "probable" },
     ...Object.fromEntries(sheets.map((s) => [`GET /api/v1/sheets/${s.code}`, sheetRead(s.code, { used: USED_17 }, { used: s.used, free: s.free })])),
     [`POST /api/v1/print/${P}/sheet/preview`]: o.preview ?? previewFor("L4736-0001", NEW_9, USED_17),
-    [`POST /api/v1/print/${P}/sheet`]: o.print ?? { batch_id: BATCH, pages: [{ ...PRINTED_PAGE, cells: NEW_9 }] },
+    [`POST /api/v1/print/${P}/sheet`]: o.print ?? { batch_id: BATCH, pages: [{ ...PRINTED_PAGE, cells: NEW_9 }], placed: NEW_9.length, remaining: 0 },
     ...o.extra,
   };
 }

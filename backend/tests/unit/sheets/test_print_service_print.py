@@ -36,7 +36,6 @@ from app.sheets.errors import (
     MediaKindMismatchError,
     PlanChangedError,
     PrinterUnavailableError,
-    PrintInterruptedError,
     TrayUnknownError,
 )
 from app.sheets.geometry import Geometry
@@ -240,28 +239,21 @@ async def test_job_name_and_summary_carry_no_label_text(
     assert "secret" not in str(payload.detail["job_summary"])
 
 
-async def test_two_sheets_two_jobs_one_batch(
+async def test_one_sheet_one_job_one_batch(
     factory: async_sessionmaker[AsyncSession], session: AsyncSession
 ) -> None:
     printer = await make_printer(session, record())
-    code = await make_sheet(session, used=17)  # 31 free
     queue = FakeQueue()
 
-    out = await run_print(
-        factory,
-        printer,
-        req([raw(i) for i in range(40)], [on(code, count=31), fresh()]),
-        queue=queue,
-    )
+    out = await run_print(factory, printer, req([raw(i) for i in range(9)], [fresh()]), queue=queue)
 
-    first, second = out.pages
-    assert len(first.cells) == 31 and len(second.cells) == 9
-    assert second.sheet_code != code
-    assert [j for _, _, j in queue.submitted] == [first.job_id, second.job_id]
+    (page,) = out.pages  # #277: one sheet per run
+    assert len(page.cells) == 9
+    assert [j for _, _, j in queue.submitted] == [page.job_id]
     async with factory() as s:
         batch = (await s.execute(select(PrintBatch))).scalar_one()
-    assert batch.job_ids == [str(first.job_id), str(second.job_id)]
-    assert queue.payloads[1].job_name.endswith("· 9 labels")
+    assert batch.job_ids == [str(page.job_id)]
+    assert queue.payloads[0].job_name.endswith("· 9 labels")
 
 
 async def test_pages_use_the_one_snapshot_taken_before_the_reservation(
@@ -299,17 +291,13 @@ async def test_pages_use_the_one_snapshot_taken_before_the_reservation(
     await run_print(
         factory,
         printer,
-        req(
-            [raw(i) for i in range(40)],
-            [on(await make_sheet(session, used=17), count=31), fresh()],
-        ),
+        req([raw(i) for i in range(31)], [on(await make_sheet(session, used=17))]),
         queue=queue,
     )
 
     assert order == ["snapshot", "reserve"]  # taken once, before the reservation
-    assert len(queue.payloads) == 2
+    assert len(queue.payloads) == 1  # #277: one sheet per run
     assert {p.calibration.dy_hmm for p in queue.payloads if p.calibration} == {-80}
-    assert queue.payloads[0].calibration == queue.payloads[1].calibration
 
 
 async def test_print_after_type_edit_uses_the_pinned_version(
@@ -442,35 +430,37 @@ async def test_expected_cells_from_a_preview_are_accepted_for_new_and_existing_s
 ) -> None:
     printer = await make_printer(session, record())
     code = await make_sheet(session, used=17)
-    request = req([raw(i) for i in range(40)], [on(code, count=31), fresh()])
-    preview = await run_preview(session, printer, request)
-    queue = FakeQueue()
+    # #277: one sheet per run: an existing sheet (31 of 40 fit) and a new sheet, one run each.
+    for placement in (on(code), fresh()):
+        request = req([raw(i) for i in range(40)], [placement])
+        preview = await run_preview(session, printer, request)
 
-    out = await run_print(
-        factory,
-        printer,
-        req(
-            [raw(i) for i in range(40)],
-            [on(code, count=31), fresh()],
-            expected_cells=list(preview.expected_cells),
-        ),
-        queue=queue,
-    )
+        out = await run_print(
+            factory,
+            printer,
+            req(
+                [raw(i) for i in range(40)],
+                [placement],
+                expected_cells=list(preview.expected_cells),
+            ),
+            queue=FakeQueue(),
+        )
 
-    assert [p.cells for p in out.pages] == [e.cells for e in preview.expected_cells]
+        assert [p.cells for p in out.pages] == [e.cells for e in preview.expected_cells]
+        assert out.placed == preview.placed
 
 
 async def test_insufficient_cells_refuses_and_reserves_nothing(
     factory: async_sessionmaker[AsyncSession], session: AsyncSession
 ) -> None:
     printer = await make_printer(session, record())
-    code = await make_sheet(session, used=40)
+    code = await make_sheet(session, used=48)  # #277: a short sheet places what fits; a full one
 
     with pytest.raises(InsufficientCellsError) as exc:
         await run_print(factory, printer, req([raw(i) for i in range(20)], [on(code)]))
 
-    assert exc.value.detail is not None and exc.value.detail["shortfall"] == 12
-    assert len(await cell_rows(factory)) == 40
+    assert exc.value.detail is not None and exc.value.detail["shortfall"] == 20
+    assert len(await cell_rows(factory)) == 48
 
 
 # ---------------------------------------------------------------------------- refused before
@@ -513,7 +503,7 @@ async def test_nothing_reserved_on_late_failure(
     huge = [raw(i) for i in range(10)]
     huge[7] = raw(7, qr_payload="".join(random.Random(4).choices("😀😁😂🤣😃😄", k=512)))
     with pytest.raises(ItemContentMismatchError) as dense:
-        await run_print(factory, coarse, req(huge, [fresh(count=5), on(code)]), queue=queue)
+        await run_print(factory, coarse, req(huge, [fresh()]), queue=queue)
     assert dense.value.detail is not None and dense.value.detail["item_index"] == 7
 
     assert queue.calls == 0
@@ -542,33 +532,21 @@ async def test_content_check_maps_the_type_first(
 # ---------------------------------------------------------------------------- failures after
 
 
-async def test_submit_failure_on_page_two_of_three_releases_the_rest(
+async def test_submit_failure_of_the_only_page_releases_every_cell(
     factory: async_sessionmaker[AsyncSession], session: AsyncSession
 ) -> None:
+    # #277: one sheet per run, so a run has one page and no page can be left submitted.
     printer = await make_printer(session, record())
     bus = FakeBus()
-    queue = FakeQueue(fail_on=2)
+    queue = FakeQueue(fail_on=1)
 
-    with pytest.raises(PrintInterruptedError) as exc:
+    with pytest.raises(RuntimeError, match="queue is down"):
         await run_print(
-            factory,
-            printer,
-            req([raw(i) for i in range(100)], [fresh(count=48), fresh(count=48), fresh()]),
-            queue=queue,
-            bus=bus,
+            factory, printer, req([raw(i) for i in range(48)], [fresh()]), queue=queue, bus=bus
         )
 
-    assert len(queue.submitted) == 1  # page 1 stays submitted
-    first = queue.submitted[0][2]
-    rows = await cell_rows(factory)
-    assert len(rows) == 48 and {r.job_id for r in rows} == {first}
-    assert {r.state for r in rows} == {"reserved"}
-    # the error names the batch and what is printing, and nothing else
-    async with factory() as s:
-        batch = (await s.execute(select(PrintBatch))).scalar_one()
-    assert batch.job_ids == [str(first)]  # rewritten to the submitted pages
-    assert exc.value.detail == {"batch_id": str(batch.id), "job_ids": [str(first)]}
-    assert "queue is down" not in str(exc.value.to_http().detail)
+    assert queue.submitted == []
+    assert await cell_rows(factory) == []
     assert any(e.data["changed"] for e in bus.events)  # reserve and release both announced
 
 
@@ -587,14 +565,11 @@ async def test_the_batch_row_exists_with_every_job_before_the_first_submit(
     queue.before_submit = look
 
     out = await run_print(
-        factory,
-        printer,
-        req([raw(i) for i in range(60)], [fresh(count=48), fresh()]),
-        queue=queue,
+        factory, printer, req([raw(i) for i in range(48)], [fresh()]), queue=queue
     )
 
     expected = [str(p.job_id) for p in out.pages]
-    assert seen == [expected, expected]
+    assert seen == [expected]
 
 
 async def test_a_failed_batch_insert_queues_nothing_and_frees_every_cell(
@@ -611,34 +586,10 @@ async def test_a_failed_batch_insert_queues_nothing_and_frees_every_cell(
     queue = FakeQueue()
 
     with pytest.raises(RuntimeError, match="disk full"):
-        await run_print(
-            factory,
-            printer,
-            req([raw(i) for i in range(60)], [fresh(count=48), fresh()]),
-            queue=queue,
-        )
+        await run_print(factory, printer, req([raw(i) for i in range(48)], [fresh()]), queue=queue)
 
     assert queue.calls == 0 and queue.submitted == []
     assert await cell_rows(factory) == []
-
-
-async def test_a_failure_after_a_submit_on_a_sheet_error_adds_the_batch_to_its_detail(
-    factory: async_sessionmaker[AsyncSession], session: AsyncSession
-) -> None:
-    printer = await make_printer(session, record())
-    queue = FakeQueue(fail_on=2, exc=KeyError("printer"))
-
-    with pytest.raises(PrinterUnavailableError) as exc:
-        await run_print(
-            factory,
-            printer,
-            req([raw(i) for i in range(60)], [fresh(count=48), fresh()]),
-            queue=queue,
-        )
-
-    detail = exc.value.detail
-    assert detail is not None and detail["job_ids"] == [str(queue.submitted[0][2])]
-    assert UUID(detail["batch_id"])
 
 
 async def test_a_committed_job_row_keeps_its_cells_even_if_the_queue_forgot_it(
@@ -791,7 +742,7 @@ async def test_failure_while_building_a_payload_releases_everything_unsubmitted(
     def flaky(p: Any) -> Any:
         nonlocal calls
         calls += 1
-        if calls == 2:
+        if calls == 1:
             raise RuntimeError("boom")
         return original(p)
 
@@ -799,12 +750,7 @@ async def test_failure_while_building_a_payload_releases_everything_unsubmitted(
     queue = FakeQueue()
 
     with pytest.raises(RuntimeError, match="boom"):
-        await run_print(
-            factory,
-            printer,
-            req([raw(i) for i in range(60)], [fresh(count=48), fresh()]),
-            queue=queue,
-        )
+        await run_print(factory, printer, req([raw(i) for i in range(48)], [fresh()]), queue=queue)
 
     assert queue.submitted == []  # every payload is built before the first submit
     assert await cell_rows(factory) == []
@@ -823,12 +769,16 @@ async def test_stored_margin_id_and_feed_mark_equal_the_previews(
         session, record(margins=Margins(top=600, left=500, bottom=423, right=500))
     )
     code = await make_sheet(session, placement="margin")
-    request = req([raw(i) for i in range(3)], [on(code, count=2), fresh("margin")])
-    # the second page's sheet is new: its code is the preview's hint
+    # #277: one sheet per run: an existing sheet, then a new one (its code is the preview's hint)
     queue = FakeQueue()
-
-    await run_preview(session, printer, request, language="de")
-    out = await run_print(factory, printer, request, queue=queue, language="de")
+    bands: list[str | None] = []
+    for request in (
+        req([raw(i) for i in range(2)], [on(code)]),
+        req([raw(2)], [fresh("margin")]),
+    ):
+        await run_preview(session, printer, request, language="de")
+        out = await run_print(factory, printer, request, queue=queue, language="de")
+        bands.extend(p.margin_band for p in out.pages)
 
     assert len(spy.calls) == 2 and len(queue.payloads) == 2
     for n in range(2):
@@ -836,7 +786,7 @@ async def test_stored_margin_id_and_feed_mark_equal_the_previews(
         assert d.margin_id == spy.margins[n]  # the same decision, field for field
         assert d.feed_mark == spy.feed_marks[n]
         assert d.margin_id is not None and d.feed_mark is not None
-    assert [p.margin_band for p in out.pages] == [m.band for m in spy.margins if m]
+    assert bands == [m.band for m in spy.margins if m]
 
 
 async def test_margin_id_text_is_the_shared_helper_and_the_qr_the_scan_payload(

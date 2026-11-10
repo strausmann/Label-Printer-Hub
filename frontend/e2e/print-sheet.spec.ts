@@ -96,29 +96,20 @@ test.describe.serial("print onto a sheet", () => {
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem("lph.cart") ?? "[]").length)).toBe(1);
   });
 
-  test("a print bigger than the sheet gets the server's 409 insufficient_cells, shows the free count and splits at exactly that count", async () => {
+  test("a print bigger than the sheet plans exactly its free cells, one page, and says the rest stays in the cart (#277)", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
     const sheet = (await (await page.request.get(`/api/v1/sheets/${EDGE}`)).json()) as { total: number; used: number; reserved: number; unconfirmed: number };
     const free = sheet.total - sheet.used - sheet.reserved - sheet.unconfirmed;
     const needed = free + 11;
-    // The preview asks the server for real: its 409 carries free_cells as ONE COUNT per placement.
-    const conflict = page.waitForResponse((r) => r.url().includes("/preview") && r.status() === 409);
+    // The preview asks the server for real: one sheet per run, the first `free` items placed.
+    const answer = page.waitForResponse((r) => r.url().includes("/preview") && r.status() === 200);
     await openCart(page, `/cart?sheet=${EDGE}`, needed);
-    const body = (await (await conflict).json()) as { detail: { error_code: string; error_detail: { free_cells: number[]; needed: number } } };
-    expect(body.detail.error_code).toBe("insufficient_cells");
-    expect(body.detail.error_detail.free_cells).toEqual([free]);
-    expect(body.detail.error_detail.needed).toBe(needed);
+    const body = (await (await answer).json()) as { pages: unknown[]; placed: number; remaining: number };
+    expect(body.pages).toHaveLength(1);
+    expect([body.placed, body.remaining]).toEqual([free, 11]);
 
-    const alert = page.getByRole("alert").filter({ hasText: "free cells" });
-    await expect(alert).toContainText(`${EDGE} has only ${free} free cells, and this print needs ${needed}.`);
-
-    const split = page.waitForRequest((r) => r.url().includes("/preview") && (r.postData() ?? "").includes("new_sheet"));
-    await alert.getByRole("button", { name: "Put the rest onto a new sheet" }).click();
-    const placements = (JSON.parse((await split).postData()!) as { placements: Array<Record<string, unknown>> }).placements;
-    expect(placements[0]).toMatchObject({ sheet: EDGE, count: free });
-    expect(placements[1]).toHaveProperty("new_sheet");
-    // The server accepted that plan: no alert any more, the preview is there.
+    await expect(page.getByText(`${free} of ${needed} labels fit on this sheet. The rest stays in the cart.`)).toBeVisible();
     await expect(page.getByText(/free cells, and this print needs/)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Print onto sheet" })).toBeEnabled({ timeout: 30_000 });
   });

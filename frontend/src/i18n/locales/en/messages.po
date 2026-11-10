@@ -85,13 +85,13 @@ msgstr "{appName} is not set up yet, so there is nothing to look up."
 msgid "{code} could not be checked. Try again."
 msgstr "{code} could not be checked. Try again."
 
+#: src/features/sheets/print/SheetSection.tsx
+msgid "{code} has {free} free cells: choose them for the first {free} of {labels} labels. The rest goes onto the next sheet."
+msgstr "{code} has {free} free cells: choose them for the first {free} of {labels} labels. The rest goes onto the next sheet."
+
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "{code} has no free cell left."
 msgstr "{code} has no free cell left."
-
-#: src/features/sheets/print/SheetSection.tsx
-msgid "{code} has too few free cells for this print: {free} free, {needed} needed. Choose another sheet, or switch to the first free cells."
-msgstr "{code} has too few free cells for this print: {free} free, {needed} needed. Choose another sheet, or switch to the first free cells."
 
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "{code} is discarded and cannot take labels any more."
@@ -120,6 +120,14 @@ msgstr "{finished} of {total} items"
 #: src/shell/PrintToasts.tsx
 msgid "{finished} of {total} pages"
 msgstr "{finished} of {total} pages"
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "{fitPlaced} of {needed} labels fit on this sheet. The rest can go onto the next sheet."
+msgstr "{fitPlaced} of {needed} labels fit on this sheet. The rest can go onto the next sheet."
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "{fitPlaced} of {needed} labels fit on this sheet. The rest stays in the cart."
+msgstr "{fitPlaced} of {needed} labels fit on this sheet. The rest stays in the cart."
 
 #: src/features/sheets/print/CapacityAlert.tsx
 msgid "{free, plural, one {{code} has only # free cell, and this print needs {needed}.} other {{code} has only # free cells, and this print needs {needed}.}}"
@@ -206,10 +214,6 @@ msgstr "{name} must stay between {min} and {max}. More than that is a fault of t
 msgid "{name}: the app behind this item did not answer ({code}). Check Settings › Integrations."
 msgstr "{name}: the app behind this item did not answer ({code}). Check Settings › Integrations."
 
-#: src/features/sheets/print/SheetSection.tsx
-msgid "{needed} labels are too many for one sheet print: at most {MAX_ITEMS} fit in one go. Remove some, or print in two rounds."
-msgstr "{needed} labels are too many for one sheet print: at most {MAX_ITEMS} fit in one go. Remove some, or print in two rounds."
-
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "{now} printed now"
 msgstr "{now} printed now"
@@ -234,6 +238,14 @@ msgstr "{queued, plural, one {# label was queued and will print.} other {# label
 #: src/features/sheets/SheetsPage.tsx
 msgid "{reserved} reserved"
 msgstr "{reserved} reserved"
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "{rest, plural, one {# label did not fit on the sheet and stays in the cart for the next sheet.} other {# labels did not fit on the sheet and stay in the cart for the next sheet.}}"
+msgstr "{rest, plural, one {# label did not fit on the sheet and stays in the cart for the next sheet.} other {# labels did not fit on the sheet and stay in the cart for the next sheet.}}"
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "{rest, plural, one {# label did not fit on the sheet. The preview below plans it on the next one.} other {# labels did not fit on the sheet. The preview below plans them on the next one.}}"
+msgstr "{rest, plural, one {# label did not fit on the sheet. The preview below plans it on the next one.} other {# labels did not fit on the sheet. The preview below plans them on the next one.}}"
 
 #: src/features/settings/AccessKeys.tsx
 msgid "{revokingName} stops working at once, and so does every browser session that signed in with it. This cannot be undone."
@@ -1996,8 +2008,8 @@ msgid "No jobs."
 msgstr "No jobs."
 
 #: src/features/sheets/print/CapacityAlert.tsx
-msgid "No other sheet of this type has room for all of it."
-msgstr "No other sheet of this type has room for all of it."
+msgid "No other sheet of this type has a free cell."
+msgstr "No other sheet of this type has a free cell."
 
 #: src/features/lookup/CartPage.tsx
 msgid "No preview available."
@@ -2589,14 +2601,6 @@ msgstr "Public URL"
 #: src/features/sheets/SheetDetail.tsx
 msgid "Purpose (optional)"
 msgstr "Purpose (optional)"
-
-#: src/features/sheets/print/CapacityAlert.tsx
-msgid "Put the rest onto {restCode}"
-msgstr "Put the rest onto {restCode}"
-
-#: src/features/sheets/print/CapacityAlert.tsx
-msgid "Put the rest onto a new sheet"
-msgstr "Put the rest onto a new sheet"
 
 #: src/features/lookup/apps.ts
 msgid "QR code and code"

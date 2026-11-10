@@ -291,26 +291,26 @@ async def test_print_end_to_end_cells_used() -> None:
         assert str(batch.id) == body["batch_id"] and batch.job_ids == [page["job_id"]]
 
 
-async def test_print_two_sheets_one_batch() -> None:
+async def test_print_takes_one_sheet_and_reports_the_rest() -> None:
+    # #277: one sheet per run: 31 of 60 items fit, the other 29 stay with the caller.
     async with running() as rig:
         code = await _sheet(used=17)  # 31 free
-        body = {
-            "items": [_item(i) for i in range(60)],
-            "placements": [{"sheet": code, "count": 31}, {"new_sheet": {"type": "acme-t1"}}],
-        }
+        body = {"items": [_item(i) for i in range(60)], "placements": [{"sheet": code}]}
         resp = await rig.print(body)
 
         assert resp.status_code == 202, resp.text
-        first, second = resp.json()["pages"]
-        assert len(first["cells"]) == 31 and len(second["cells"]) == 29
-        assert await rig.app.state.print_queue.cancel(second["job_id"])  # before it started
+        (page,) = resp.json()["pages"]
+        assert len(page["cells"]) == 31
+        assert (resp.json()["placed"], resp.json()["remaining"]) == (31, 29)
         await rig.until_sheet(code, _used(*range(18, 49)))
-        new = second["sheet_code"]
-        sheet = await rig.until_sheet(new, lambda s: s["cells"] == [])  # page 2: cells free again
-        assert sheet["free"] == sheet["total"]
         async with _factory()() as s:
             batch = (await s.execute(select(PrintBatch))).scalar_one()
-        assert batch.job_ids == [first["job_id"], second["job_id"]]
+        assert batch.job_ids == [page["job_id"]]
+
+        two = {**body, "placements": [{"sheet": code}, {"new_sheet": {"type": "acme-t1"}}]}
+        refused = await rig.print(two)
+        assert refused.status_code == 422, refused.text
+        assert _err(refused)["error_code"] == "preview_too_large"
 
 
 async def test_print_after_type_edit_uses_v1() -> None:
@@ -354,15 +354,15 @@ async def test_expected_cells_mismatch() -> None:
 
 async def test_insufficient_over_http() -> None:
     async with running() as rig:
-        code = await _sheet(used=40)
+        code = await _sheet(used=48)  # #277: a sheet with room places what fits; a full one not
 
         resp = await rig.print(_body(code, 20))
 
         assert resp.status_code == 409, resp.text  # acceptance 3
         detail = _err(resp)
         assert detail["error_code"] == "insufficient_cells"
-        assert detail["error_detail"]["free_cells"] == [8]  # free cells per page
-        assert detail["error_detail"]["shortfall"] == 12
+        assert detail["error_detail"]["free_cells"] == [0]  # free cells per page
+        assert detail["error_detail"]["shortfall"] == 20
 
 
 async def test_qr_mapped_on_small_type_printed_as_text() -> None:
@@ -515,8 +515,7 @@ async def test_nothing_reserved_on_late_failure() -> None:
         off = await rig.print(_body(code, tray="off"))
         assert off.status_code == 422 and _err(off)["error_code"] == "tray_unknown"
 
-        broken = _body(code, 10, placements=[{"new_sheet": {"type": "acme-t1"}}, {"sheet": code}])
-        broken["placements"][0]["count"] = 4
+        broken = _body(code, 10, placements=[{"new_sheet": {"type": "acme-t1"}}])
         del broken["items"][5]["data"]["title"]
         mismatch = await rig.print(broken)
         assert mismatch.status_code == 422, mismatch.text

@@ -206,6 +206,12 @@ class SheetPreview(BaseModel):
         description="Send this back as `expected_cells` when printing."
     )
     reprint_hints: list[ReprintHint]
+    placed: int = Field(
+        description="Items this run places: the first ones of `items`, as many as the sheet takes."
+    )
+    remaining: int = Field(
+        description="Items left out because one run prints one sheet; print them in another run."
+    )
 
 
 class PrintedPage(BaseModel):
@@ -228,3 +234,7 @@ class SheetPrintResponse(BaseModel):
 
     batch_id: UUID
     pages: list[PrintedPage]
+    placed: int = Field(description="Items printed: the first ones of `items`.")
+    remaining: int = Field(
+        description="Items left out because one run prints one sheet; print them in another run."
+    )

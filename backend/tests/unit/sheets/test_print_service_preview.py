@@ -469,11 +469,9 @@ async def test_preview_has_no_side_effects(session: AsyncSession) -> None:
     code = await make_sheet(session, used=3)
     before = await _state(session)
 
-    await run_preview(
-        session,
-        printer,
-        req([grocy(i) for i in range(6)], [on(code, count=2), fresh("cell", count=4)]),
-    )
+    # #277: one sheet per run, so the existing and the new sheet are two previews.
+    await run_preview(session, printer, req([grocy(i) for i in range(2)], [on(code)]))
+    await run_preview(session, printer, req([grocy(i) for i in range(4)], [fresh("cell")]))
 
     assert await _state(session) == before
     assert await ss.peek_next_code(session, KEY) == "L4736-0002"  # no counter step was taken
@@ -574,18 +572,6 @@ async def test_preview_new_sheet_defaults_to_margin_id(session: AsyncSession) ->
     assert page.new_code_hint == "L4736-0001"
 
 
-async def test_preview_two_new_sheets_of_a_type_get_consecutive_hints(
-    session: AsyncSession,
-) -> None:
-    printer = await make_printer(session, record())
-
-    out = await run_preview(
-        session, printer, req([raw(i) for i in range(4)], [fresh(count=2), fresh()])
-    )
-
-    assert [p.new_code_hint for p in out.pages] == ["L4736-0001", "L4736-0002"]
-
-
 async def test_preview_margin_payload_uses_the_hint_for_a_new_sheet_and_the_code_otherwise(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -593,7 +579,9 @@ async def test_preview_margin_payload_uses_the_hint_for_a_new_sheet_and_the_code
     printer = await make_printer(session, record())
     code = await make_sheet(session, placement="margin")
 
-    await run_preview(session, printer, req([raw(0), raw(1)], [on(code, count=1), fresh(count=1)]))
+    # #277: one sheet per run: the existing and the new sheet are two previews.
+    await run_preview(session, printer, req([raw(0)], [on(code)]))
+    await run_preview(session, printer, req([raw(1)], [fresh()]))
 
     existing, new = spy.margins
     assert existing is not None and existing.qr_payload is not None
@@ -698,11 +686,10 @@ async def test_preview_shows_feed_mark(
     fresh_code = await make_sheet(session)
     marked_code = await make_sheet(session, feed_mark_printed=True)
 
-    out = await run_preview(
-        session, printer, req([raw(0), raw(1)], [on(fresh_code, count=1), on(marked_code)])
-    )
+    # #277: one sheet per run: one preview per sheet.
+    (with_mark,) = (await run_preview(session, printer, req([raw(0)], [on(fresh_code)]))).pages
+    (without,) = (await run_preview(session, printer, req([raw(1)], [on(marked_code)]))).pages
 
-    with_mark, without = out.pages
     assert with_mark.feed_mark is True and without.feed_mark is False
     mark = spy.feed_marks[0]
     assert mark is not None and spy.feed_marks[1] is None
@@ -736,35 +723,34 @@ async def test_preview_page_bound(session: AsyncSession, monkeypatch: pytest.Mon
 
     monkeypatch.setattr(DEFAULT_CELL_RENDERER, "render", counting, raising=False)
     printer = await make_printer(session, record())
-    placements = [fresh(count=1) for _ in range(11)]
+    placements = [fresh(count=1) for _ in range(2)]  # #277: one sheet per run
 
     with pytest.raises(PreviewTooLargeError) as err:
-        await run_preview(session, printer, req([raw(i) for i in range(11)], placements))
+        await run_preview(session, printer, req([raw(i) for i in range(2)], placements))
 
     assert err.value.status == 422 and err.value.error_code == "preview_too_large"
-    assert err.value.detail == {"pages": 11, "max": 10}
+    assert err.value.detail == {"pages": 2, "max": 1}
     assert spy.calls == [] and rendered == []
 
 
 async def test_preview_renders_exactly_the_bound(session: AsyncSession) -> None:
     printer = await make_printer(session, record())
-    placements = [fresh(count=1) for _ in range(10)]
 
-    out = await run_preview(session, printer, req([raw(i) for i in range(10)], placements))
+    out = await run_preview(session, printer, req([raw(i) for i in range(10)], [fresh()]))
 
-    assert len(out.pages) == 10
+    assert len(out.pages) == 1
 
 
 async def test_preview_refusals_make_no_lookups(session: AsyncSession) -> None:
     printer = await make_printer(session, record())
-    nearly_full = await make_sheet(session, used=47)
+    nearly_full = await make_sheet(session, used=48)  # #277: a full sheet; a short one places
     lookup = FakeLookup()
 
     with pytest.raises(PreviewTooLargeError):
         await run_preview(
             session,
             printer,
-            req([grocy(i) for i in range(11)], [fresh(count=1) for _ in range(11)]),
+            req([grocy(i) for i in range(2)], [fresh(count=1) for _ in range(2)]),
             lookup=lookup,
         )
     with pytest.raises(SheetNotFoundError):
@@ -1322,7 +1308,7 @@ async def test_the_page_bound_is_checked_before_anything_is_read_or_planned(
             language="en",
         )
 
-    assert err.value.detail == {"pages": 50, "max": 10}
+    assert err.value.detail == {"pages": 50, "max": 1}
     assert planned == []
 
 

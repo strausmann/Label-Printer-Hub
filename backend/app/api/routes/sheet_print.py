@@ -64,7 +64,7 @@ _PREVIEW_ERRORS: dict[int | str, dict[str, Any]] = {
         "description": (
             "Invalid request (`invalid_request`, field paths only), an unknown or disabled tray "
             "(`tray_unknown`), an item the cell cannot show (`content_type_data_mismatch`), a "
-            "plan of more than 10 pages (`preview_too_large`), or an unknown integration "
+            "plan of more than one sheet (`preview_too_large`), or an unknown integration "
             "(`integration_unknown_app`). Item errors carry `item_index`."
         )
     },
@@ -83,7 +83,8 @@ _PREVIEW_ERRORS: dict[int | str, dict[str, Any]] = {
         "the sheet ID and the feed-direction mark are printed, and where. Also the cells left "
         "free, the plan to send back as `expected_cells`, and where lookup items were printed "
         "before. The picture is never calibrated. Only page (IPP) printers print sheets. A "
-        "plan of more than 10 pages is refused (`preview_too_large`)."
+        "run plans one sheet: a second placement is refused (`preview_too_large`), and the items "
+        "the sheet does not take are left out (`placed`, `remaining`)."
     ),
     responses=_PREVIEW_ERRORS,
 )
@@ -160,7 +161,9 @@ _PRINT_ERRORS: dict[int | str, dict[str, Any]] = {
         "turn `used` when a page has printed. Send the preview's `expected_cells` to be refused "
         "(`plan_changed`) if the plan moved since. Nothing is reserved if an item fails: a "
         "lookup, or a cell that cannot show the item (the error names `item_index`). A sheet "
-        "job has no copies. The response names the job of each page, where its sheet ID and "
+        "job has no copies. One run prints one sheet: the first items as many as it takes; the "
+        "response says how many were placed and how many remain (`placed`, `remaining`). "
+        "The response names the job of each page, where its sheet ID and "
         "feed-direction mark are printed, and one batch id for all of them."
     ),
     responses=_PRINT_ERRORS,

@@ -1,3 +1,4 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { useMemo, useState } from "react";
 import { Button, Radio, RadioGroup } from "react-aria-components";
@@ -21,7 +22,6 @@ import { CapacityAlert } from "./CapacityAlert";
 import { usePrintDialogErrorText } from "./errors";
 import { lastType } from "./lastType";
 import {
-  countItems,
   expandItems,
   fittingFirst,
   freeOf,
@@ -89,8 +89,10 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
   const itemsKey = JSON.stringify(items.map((i) => [i.app, i.id, i.content_type, i.copies]));
   const [leftover, setLeftover] = useState<{ key: string; indices: number[] } | null>(null);
   const activeIdx = leftover && leftover.key === itemsKey ? leftover.indices : allItems.map((_, i) => i);
+  // #277: one run prints one sheet, so the cart is not limited: the first `MAX_ITEMS` labels go in the request,
+  // the server takes as many as the sheet holds, and everything else stays for the next run.
+  const sentIdx = activeIdx.slice(0, MAX_ITEMS);
   const needed = activeIdx.length;
-  const tooMany = countItems(items) > MAX_ITEMS;
   // An archived type is offered only while one of its active sheets still has a free cell; active types come first.
   const typeList = useMemo(() => {
     const roomy = (key: string) => (sheetsQuery.data ?? []).some((s) => s.type_key === key && s.state === "active" && freeOf(s) > 0);
@@ -109,6 +111,8 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
   const [zoom, setZoom] = useState<1 | 2>(1);
   const [changed, setChanged] = useState<Changed | null>(null);
   const [result, setResult] = useState<PrintedPages | null>(null);
+  // Labels the last printed sheet did not take (#277): they stay for the next run.
+  const [rest, setRest] = useState<number | null>(null);
   const [partial, setPartial] = useState<{ jobIds: string[]; queued: number; left: number; words: string | null } | null>(null);
 
   // --- the sheet of the link, if any ---
@@ -179,14 +183,17 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
 
   // --- the request ---
   const fill: Fill = { mode: sheetCode ? fillMode : "first_free", chosen, skipped };
-  const chosenReady = fill.mode !== "choose" || chosen.length === needed;
+  // Chosen cells take one label each; a sheet with fewer free cells than labels takes what it has (#277).
+  const targetSheet = usable.find((s) => s.code === sheetCode);
+  const chooseLimit = Math.min(needed, targetSheet ? freeOf(targetSheet) : needed);
+  const chosenReady = fill.mode !== "choose" || (chosen.length > 0 && chosen.length === chooseLimit);
   const planKey = JSON.stringify([target, typeKey, fill, needed]);
   const activeOverride = override && override.key === planKey ? override : null;
   const request: SheetPrintRequest | null =
-    !target || !typeKey || needed === 0 || tooMany || !chosenReady
+    !target || !typeKey || needed === 0 || !chosenReady
       ? null
       : {
-          items: activeIdx.map((i) => allItems[i]!),
+          items: sentIdx.map((i) => allItems[i]!),
           placements: activeOverride?.placements ?? [placementFor(target, typeKey, fill)],
           ...(tray ? { tray: tray.key } : {}),
         };
@@ -245,13 +252,35 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
     // The lines of this press: items another tab adds while the request runs are not among them.
     const submitted = [...items];
     setResult(null);
+    setRest(null);
     setPartial(null);
+    // Per line: how many of its expanded items are in `done` (a line is `copies` consecutive items).
+    const linesOf = (done: ReadonlySet<number>): CartItem[] => {
+      const lines: CartItem[] = [];
+      let offset = 0;
+      for (const line of submitted) {
+        let count = 0;
+        for (let k = offset; k < offset + line.copies; k++) if (done.has(k)) count++;
+        if (count > 0) lines.push({ ...line, copies: count });
+        offset += line.copies;
+      }
+      return lines;
+    };
     print.mutateAsync({ ...sent, expected_cells: planned.expected_cells }).then(
       (response) => {
         // Not a per-call callback: those are dropped when the page is left while the request runs.
         setChanged(null);
         setResult(response.pages);
-        onAccepted?.(submitted);
+        const left = activeIdx.length - response.placed;
+        setRest(left > 0 ? left : null);
+        if (left <= 0) {
+          onAccepted?.(submitted);
+          return;
+        }
+        // #277: the sheet took the first `placed` labels; only those leave the cart, the rest is the next run.
+        const placed = new Set(activeIdx.slice(0, response.placed));
+        if (onQueued) onQueued(linesOf(placed));
+        else setLeftover({ key: itemsKey, indices: activeIdx.filter((i) => !placed.has(i)) });
       },
       (error: unknown) => {
         // Pages are queued in plan order: the first k pages are the ones that will print.
@@ -264,16 +293,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
           );
           const rest = activeIdx.filter((i) => !done.has(i));
           if (onQueued) {
-            // Per line: how many of its expanded items were queued (a line is `copies` consecutive items).
-            const queuedLines: CartItem[] = [];
-            let offset = 0;
-            for (const line of submitted) {
-              let count = 0;
-              for (let k = offset; k < offset + line.copies; k++) if (done.has(k)) count++;
-              if (count > 0) queuedLines.push({ ...line, copies: count });
-              offset += line.copies;
-            }
-            onQueued(queuedLines);
+            onQueued(linesOf(done));
           } else {
             setLeftover({ key: itemsKey, indices: rest });
           }
@@ -304,7 +324,22 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
   const busy = print.isPending || preview.isFetching || settled.pending || preview.isPlaceholderData;
   // A read key sees the preview but may not print: say so before the press, not with a 403 after it.
   const readOnly = session.scope === "read";
-  const canPrint = !!previewData && !preview.isError && !busy && !tooMany && needed > 0 && !readOnly;
+  const canPrint = !!previewData && !preview.isError && !busy && needed > 0 && !readOnly;
+  // #277: the sheet takes the first labels; the rest stays (in the cart, or for the next run of the item view).
+  const fitPlaced = shownData?.placed ?? 0;
+  const inCart = onAccepted !== undefined;
+  const fitNote =
+    shownData && !insufficient && fitPlaced < needed
+      ? inCart
+        ? t`${fitPlaced} of ${needed} labels fit on this sheet. The rest stays in the cart.`
+        : t`${fitPlaced} of ${needed} labels fit on this sheet. The rest can go onto the next sheet.`
+      : null;
+  const restNote =
+    rest === null
+      ? null
+      : inCart
+        ? plural(rest, { one: "# label did not fit on the sheet and stays in the cart for the next sheet.", other: "# labels did not fit on the sheet and stay in the cart for the next sheet." })
+        : plural(rest, { one: "# label did not fit on the sheet. The preview below plans it on the next one.", other: "# labels did not fit on the sheet. The preview below plans them on the next one." });
   const buttonText = changed ? t`Print with the new plan` : waits ? t`Add to print queue` : t`Print onto sheet`;
 
   const idleNote = needed === 0 && !result && !partial ? t`There is nothing to print yet.` : null;
@@ -334,7 +369,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
             )}
           </div>
 
-          {typeKey && !tooMany && (
+          {typeKey && (
             <SheetPicker
               typeKey={typeKey}
               typeLabel={typeName}
@@ -346,12 +381,12 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
               allowNew={!archivedType}
             />
           )}
-          {archivedType && !tooMany && (
+          {archivedType && (
             <p className={`${HINT} m-0`}>{t`This sheet type is archived. It offers no new sheets, but the sheets you have keep printing.`}</p>
           )}
           {linkNote && <p role="alert" className="text-small font-bold">{linkNote}</p>}
 
-          {sheetCode && !tooMany && (
+          {sheetCode && (
             <RadioGroup
               value={fillMode}
               onChange={(v) => {
@@ -368,18 +403,13 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
             </RadioGroup>
           )}
 
-          {sheetCode && fillMode === "choose" && !tooMany && (
-            <ChooseCells code={sheetCode} chosen={chosen} needed={needed} onToggle={(cell) => setCellState({ sheet: sheetCode, chosen: toggle(chosen, cell, needed), skipped })} />
+          {sheetCode && fillMode === "choose" && (
+            <ChooseCells code={sheetCode} chosen={chosen} needed={chooseLimit} labels={needed} onToggle={(cell) => setCellState({ sheet: sheetCode, chosen: toggle(chosen, cell, chooseLimit), skipped })} />
           )}
         </>
       )}
 
       {idleNote && <p className="text-ink-2">{idleNote}</p>}
-      {tooMany && (
-        <p role="alert" className="font-bold">
-          {t`${needed} labels are too many for one sheet print: at most ${MAX_ITEMS} fit in one go. Remove some, or print in two rounds.`}
-        </p>
-      )}
 
       {request && (
         <section aria-labelledby="sheet-preview-h" className="flex min-w-0 flex-col gap-4">
@@ -396,9 +426,8 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
               typeKey={typeKey}
               fill={fill}
               others={otherSheets}
-              allowNew={!archivedType}
               onChoose={(choice) => {
-                // A sheet with room replaces the target; a split is the placements of the next preview.
+                // A sheet with room replaces the target (one sheet per run, #277).
                 if (choice.target) chooseTarget(choice.target);
                 else setOverride({ key: planKey, placements: choice.placements });
               }}
@@ -406,6 +435,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
           ) : preview.isError ? (
             <p role="alert" className="[overflow-wrap:anywhere]">{errorText(preview.error)}</p>
           ) : null}
+          {fitNote && <p role="status" className="font-bold [overflow-wrap:anywhere]">{fitNote}</p>}
           {busy && !preview.isError && (
             <p role="status" className="text-ink-2">{shownData ? t`Updating the preview…` : t`Drawing the sheet…`}</p>
           )}
@@ -427,6 +457,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
       {partial && <PartialResult jobIds={partial.jobIds} queued={partial.queued} left={partial.left} inCart={onAccepted !== undefined} words={partial.words} />}
       {showPrintError && <p role="alert" className="[overflow-wrap:anywhere]">{errorText(printError)}</p>}
       {result && <PrintResult pages={result} />}
+      {result && restNote && <p role="status" className="font-bold">{restNote}</p>}
 
       {needed > 0 && (
         <div className="flex flex-col gap-2">
@@ -459,7 +490,7 @@ function FillOption({ value, label }: { value: Fill["mode"]; label: string }) {
 }
 
 /** The sheet's own cells to pick from: free ones can be chosen, the ones chosen read as new. */
-function ChooseCells({ code, chosen, needed, onToggle }: { code: string; chosen: readonly number[]; needed: number; onToggle: (cell: number) => void }) {
+function ChooseCells({ code, chosen, needed, labels, onToggle }: { code: string; chosen: readonly number[]; needed: number; labels: number; onToggle: (cell: number) => void }) {
   const { t } = useLingui();
   const sheet = useSheet(code);
   const cells: GridCell[] = useMemo(() => {
@@ -471,9 +502,9 @@ function ChooseCells({ code, chosen, needed, onToggle }: { code: string; chosen:
   const free = freeOf(sheet.data);
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      {free < needed && (
+      {free < labels && (
         <p role="status" className="font-bold">
-          {t`${code} has too few free cells for this print: ${free} free, ${needed} needed. Choose another sheet, or switch to the first free cells.`}
+          {t`${code} has ${free} free cells: choose them for the first ${free} of ${labels} labels. The rest goes onto the next sheet.`}
         </p>
       )}
       <p className="font-bold tabular-nums">{t`${count} of ${needed} cells chosen`}</p>

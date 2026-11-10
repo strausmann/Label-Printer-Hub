@@ -465,7 +465,7 @@ export interface paths {
         put?: never;
         /**
          * Print labels onto sheets
-         * @description Reserves the cells for the items and queues one page job per planned page; the cells turn `used` when a page has printed. Send the preview's `expected_cells` to be refused (`plan_changed`) if the plan moved since. Nothing is reserved if an item fails: a lookup, or a cell that cannot show the item (the error names `item_index`). A sheet job has no copies. The response names the job of each page, where its sheet ID and feed-direction mark are printed, and one batch id for all of them.
+         * @description Reserves the cells for the items and queues one page job per planned page; the cells turn `used` when a page has printed. Send the preview's `expected_cells` to be refused (`plan_changed`) if the plan moved since. Nothing is reserved if an item fails: a lookup, or a cell that cannot show the item (the error names `item_index`). A sheet job has no copies. One run prints one sheet: the first items as many as it takes; the response says how many were placed and how many remain (`placed`, `remaining`). The response names the job of each page, where its sheet ID and feed-direction mark are printed, and one batch id for all of them.
          */
         post: operations["print_sheet_api_v1_print__printer_key__sheet_post"];
         delete?: never;
@@ -485,7 +485,7 @@ export interface paths {
         put?: never;
         /**
          * Preview a sheet print
-         * @description Plans where the items would go and draws them, without reserving or printing anything. Per page: every cell with its state, a 150 dpi PNG of the new content only, whether the sheet ID and the feed-direction mark are printed, and where. Also the cells left free, the plan to send back as `expected_cells`, and where lookup items were printed before. The picture is never calibrated. Only page (IPP) printers print sheets. A plan of more than 10 pages is refused (`preview_too_large`).
+         * @description Plans where the items would go and draws them, without reserving or printing anything. Per page: every cell with its state, a 150 dpi PNG of the new content only, whether the sheet ID and the feed-direction mark are printed, and where. Also the cells left free, the plan to send back as `expected_cells`, and where lookup items were printed before. The picture is never calibrated. Only page (IPP) printers print sheets. A run plans one sheet: a second placement is refused (`preview_too_large`), and the items the sheet does not take are left out (`placed`, `remaining`).
          */
         post: operations["preview_sheet_print_api_v1_print__printer_key__sheet_preview_post"];
         delete?: never;
@@ -3179,6 +3179,16 @@ export interface components {
             free_after: number[];
             /** Pages */
             pages: components["schemas"]["PreviewPage"][];
+            /**
+             * Placed
+             * @description Items this run places: the first ones of `items`, as many as the sheet takes.
+             */
+            placed: number;
+            /**
+             * Remaining
+             * @description Items left out because one run prints one sheet; print them in another run.
+             */
+            remaining: number;
             /** Reprint Hints */
             reprint_hints: components["schemas"]["ReprintHint"][];
         };
@@ -3205,6 +3215,16 @@ export interface components {
             batch_id: string;
             /** Pages */
             pages: components["schemas"]["PrintedPage"][];
+            /**
+             * Placed
+             * @description Items printed: the first ones of `items`.
+             */
+            placed: number;
+            /**
+             * Remaining
+             * @description Items left out because one run prints one sheet; print them in another run.
+             */
+            remaining: number;
         };
         /**
          * SheetRawLabelData
@@ -4942,7 +4962,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description Invalid request (`invalid_request`, field paths only), an unknown or disabled tray (`tray_unknown`), an item the cell cannot show (`content_type_data_mismatch`), a plan of more than 10 pages (`preview_too_large`), or an unknown integration (`integration_unknown_app`). Item errors carry `item_index`. */
+            /** @description Invalid request (`invalid_request`, field paths only), an unknown or disabled tray (`tray_unknown`), an item the cell cannot show (`content_type_data_mismatch`), a plan of more than one sheet (`preview_too_large`), or an unknown integration (`integration_unknown_app`). Item errors carry `item_index`. */
             422: {
                 headers: {
                     [name: string]: unknown;
