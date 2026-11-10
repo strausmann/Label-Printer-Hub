@@ -4,6 +4,7 @@ import {
   claimJob,
   dismissWatch,
   errorCodeFromMessage,
+  forgetRun,
   markRunContinued,
   recordJobEvent,
   releaseClaimPending,
@@ -11,6 +12,9 @@ import {
   replaceWatchedJob,
   resetPrintWatch,
   resyncWatchedJobs,
+  runContinued,
+  runDiscarded,
+  runReprinted,
   useJobLive,
   useWatchedPrints,
   watchedPrintOfJob,
@@ -306,6 +310,33 @@ describe("a tape run in sub-jobs (#277)", () => {
     expect(after.run).toMatchObject({ unknownFrom: null, subJob: 2 });
     act(() => fresh.forEach((j) => event(j, "completed")));
     expect(result.current[0]!.phase).toBe("done");
+  });
+
+  it("follows actions taken elsewhere by batch id: continue, reprint, discard, a run the hub forgot", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    const jobs = ids(5);
+    act(() => void watchRun(jobs));
+    act(() => jobs.slice(0, 3).forEach((j) => event(j, "completed")));
+    act(() => runContinued("batch-1", 2));
+    expect(result.current[0]!.run?.awaiting).toBe(false);
+    act(() => runReprinted("batch-1", { jobIds: jobs.slice(0, 4), confirmed: [], subJobStarts: [0, 3] }));
+    expect(result.current[0]!.total).toBe(4);
+    act(() => forgetRun("batch-1"));
+    expect(result.current[0]!.run).toBeUndefined();
+    // A second print of the same batch id still has its run: a discard takes that card away.
+    act(() => void watchRun(ids(2, 50)));
+    act(() => runDiscarded("batch-1"));
+    expect(result.current.map((e) => e.total)).toEqual([4]);
+  });
+
+  it("a run whose waiting labels a restart failed offers no actions any more", () => {
+    const { result } = renderHook(() => useWatchedPrints());
+    const jobs = ids(5);
+    act(() => void watchRun(jobs));
+    act(() => jobs.slice(0, 3).forEach((j) => event(j, "completed")));
+    act(() => jobs.slice(3).forEach((j) => event(j, "failed", { error_code: "tape_run_interrupted" })));
+    expect(result.current[0]!.run).toBeUndefined();
+    expect(result.current[0]!.phase).toBe("failed");
   });
 
   it("a continued sub-job does not offer the confirmation again while it waits for the worker", () => {

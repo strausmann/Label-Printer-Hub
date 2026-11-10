@@ -60,6 +60,13 @@ describe("JobsPage", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === `/api/v1/batches/${W}/discard`)).toBe(true));
   });
 
+  it("names a held run of one label in the singular", async () => {
+    const one = { batch_id: "bbbbbbbb-0000-4000-8000-000000000003", printer_id: PRINTER_A.id, state: "stopped", current_sub_job: 1, sub_jobs: 1, sub_job_size: 50, sub_job_starts: [0], job_ids: ["cccccccc-0000-4000-8000-000000000001"], confirmed_job_ids: [], unknown_from: 1, unknown_to: 1, stop_code: "tape_empty", stop_kind: "unknown", reprint_from: 1, reprint_to: 2 };
+    mockApi({ "GET /api/v1/printers": [PRINTER_A], "GET /api/v1/jobs": [], "GET /api/v1/batches/runs/held": [one] });
+    await renderApp({ path: "/jobs" });
+    expect(await screen.findByText("1 label on Workshop PT-P750W")).toBeVisible();
+  });
+
   it("each row links to the job", async () => {
     mockApi({ "GET /api/v1/printers": [PRINTER_A], "GET /api/v1/jobs": [mk(1, "done", "2026-11-04T08:00:00Z")] });
     await renderApp({ path: "/jobs" });

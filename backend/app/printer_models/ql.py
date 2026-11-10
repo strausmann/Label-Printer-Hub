@@ -244,8 +244,15 @@ class _QLQueuePrinter:
         media_type — analog zu _PTPQueuePrinter.print_images. Nur mit tape_mm
         würfe lookup_ql einen TypeError.
         """
+        from app.printer_backends.exceptions import PrintFailedError, refused_before_sending
+        from app.services.tape_registry import UnknownTapeError
+
         media_type = options.pop("media_type", self._default_media_type)
-        tape_spec = self._tape_registry.lookup_ql(tape_mm, media_type)
+        try:
+            tape_spec = self._tape_registry.lookup_ql(tape_mm, media_type)
+        except UnknownTapeError as exc:
+            # #277: no tape spec: refused before anything was sent, the labels did not print.
+            raise refused_before_sending(PrintFailedError(str(exc))) from exc
         backend: Any = self._backend  # protocol lacks ``orientation`` (#258), see print_image
         await backend.print_images(
             images,

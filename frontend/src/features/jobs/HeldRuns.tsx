@@ -1,3 +1,4 @@
+import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { usePrinters } from "../printers/api";
 import { SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
@@ -40,7 +41,9 @@ export function HeldRuns() {
           const labels = run.job_ids.length;
           return (
             <li key={run.batch_id} className="rounded-r3 border border-line-strong bg-surface px-4 py-3">
-              <p className="font-bold [overflow-wrap:anywhere]">{t`${labels} labels on ${name}`}</p>
+              <p className="font-bold [overflow-wrap:anywhere]">
+                {plural(labels, { one: `# label on ${name}`, other: `# labels on ${name}` })}
+              </p>
               <p className="text-small text-ink-2">{run.state === "stopped" ? t`Stopped` : t`Waiting for you`}</p>
               <RunControls run={controlStateOf(run)} buttonClass={SECONDARY_BUTTON} idPrefix={`held-${run.batch_id}`} />
             </li>

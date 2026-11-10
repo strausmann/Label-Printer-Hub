@@ -1,7 +1,7 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dismissWatch, recordJobEvent, resetPrintWatch, watchPrint } from "../features/jobs/printWatch";
-import { job, mockApi, PRINTER_A } from "../features/test-api";
+import { job, mockApi, PRINTER_A, respond } from "../features/test-api";
 import { renderApp } from "../test-utils";
 import { AUTO_DISMISS_MS, MAX_VISIBLE } from "./PrintToasts";
 
@@ -255,6 +255,36 @@ describe("a tape batch in parts (#277)", () => {
     expect(within(card).queryByRole("combobox")).toBeNull();
     fireEvent.click(within(card).getByRole("button", { name: "Print labels 11 to 25 again" }));
     await waitFor(() => expect(runCalls.find((c) => c.path === `/api/v1/batches/${BATCH}/reprint`)?.body).toBe(JSON.stringify({ from_label: 11 })));
+  });
+
+  it("a run the hub no longer knows (404) loses its actions instead of offering them again", async () => {
+    const jobs = labels(25);
+    mockApi({
+      "GET /api/v1/printers": [PRINTER_A],
+      [`POST /api/v1/batches/${BATCH}/reprint`]: respond(404, { detail: { error_code: "run_not_found", error_message: "gone" } }),
+      [`GET /api/v1/jobs/${jobs[10]}`]: job(jobs[10]!, PRINTER_A.id, "failed_restart", { error: "outcome_unknown: tape_empty" }),
+    });
+    watchRun(jobs, [0]);
+    jobs.slice(0, 10).forEach((j) => event(j, "completed"));
+    jobs.slice(10, 20).forEach((j) => event(j, "failed", { error_code: "outcome_unknown" }));
+    jobs.slice(20).forEach((j) => event(j, "failed", { error_code: "not_started" }));
+    fireEvent.click(await within(region()).findByRole("button", { name: "Reprint from label 11" }));
+    await waitFor(() => expect(within(region()).queryByRole("button", { name: /Reprint from label/ })).toBeNull());
+    expect(within(region()).getByText("Failed")).toBeVisible();
+  });
+
+  it("an open card follows a discard done on the jobs page", async () => {
+    const jobs = labels(5);
+    const held = { batch_id: BATCH, printer_id: PRINTER_A.id, state: "awaiting_confirmation", current_sub_job: 2, sub_jobs: 2, sub_job_size: 3, sub_job_starts: [0, 3], job_ids: jobs, confirmed_job_ids: [], unknown_from: null, unknown_to: null, stop_code: null, stop_kind: null, reprint_from: null, reprint_to: null };
+    mockApi({ "GET /api/v1/printers": [PRINTER_A], "GET /api/v1/jobs": [], "GET /api/v1/batches/runs/held": [held], [`POST /api/v1/batches/${BATCH}/discard`]: null });
+    cleanup(); // the shell of `beforeEach` shows /about; this test needs the jobs page
+    await renderApp({ path: "/jobs" });
+    watchRun(jobs, [0, 3]);
+    jobs.slice(0, 3).forEach((j) => event(j, "completed"));
+    expect(await within(region()).findByRole("button", { name: "Continue with part 2" })).toBeVisible();
+    const page = await screen.findByRole("region", { name: "Tape prints that wait for you" });
+    fireEvent.click(within(page).getByRole("button", { name: "Discard the rest" }));
+    await waitFor(() => expect(within(region()).queryByRole("button", { name: "Continue with part 2" })).toBeNull());
   });
 
   it("Discard gives the waiting part up and closes the card", async () => {

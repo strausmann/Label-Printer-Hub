@@ -1,7 +1,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { useState } from "react";
+import { ApiError } from "../../api/client";
 import { useContinueBatch, useDiscardBatch, useReprintBatch, type ReprintResponse } from "./api";
 import { useJobErrorText } from "./jobErrorText";
+import { forgetRun, runContinued, runDiscarded, runReprinted } from "./printWatch";
 
 /** What the controls need to know about a held tape run (#277), from the event stack or from the API. */
 export interface RunControlState {
@@ -30,6 +32,8 @@ export interface RunControlsProps {
   onContinued?: (subJob: number) => void;
   onReprinted?: (answer: ReprintResponse) => void;
   onDiscarded?: () => void;
+  /** The hub answered 404: the run is gone. */
+  onGone?: () => void;
 }
 
 /**
@@ -37,7 +41,7 @@ export interface RunControlsProps {
  * after a stop, or give the rest up. Used by the print status stack and by the held-runs list of the jobs page,
  * so closing a notification never loses them.
  */
-export function RunControls({ run, buttonClass, idPrefix, onContinued, onReprinted, onDiscarded }: RunControlsProps) {
+export function RunControls({ run, buttonClass, idPrefix, onContinued, onReprinted, onDiscarded, onGone }: RunControlsProps) {
   const { t } = useLingui();
   const errorText = useJobErrorText();
   const go = useContinueBatch();
@@ -49,6 +53,27 @@ export function RunControls({ run, buttonClass, idPrefix, onContinued, onReprint
   const choice = Math.min(Math.max(pick, from), to);
   const busy = go.isPending || reprint.isPending || discard.isPending;
   const failed = go.isError || reprint.isError || discard.isError;
+  // A 404 says the hub no longer holds the run (a restart, or it was discarded elsewhere): every card of it loses
+  // its actions instead of offering them again (#277).
+  const goneOn404 = (error: unknown) => {
+    if (error instanceof ApiError && error.status === 404) {
+      forgetRun(run.batchId);
+      onGone?.();
+    }
+  };
+  // Success updates the shared store, so a card of the same batch elsewhere (stack, jobs page) follows at once.
+  const continued = (next: number) => {
+    runContinued(run.batchId, next);
+    onContinued?.(next);
+  };
+  const reprinted = (answer: ReprintResponse) => {
+    runReprinted(run.batchId, { jobIds: answer.job_ids, confirmed: answer.confirmed_job_ids, subJobStarts: answer.run?.sub_job_starts ?? [0] });
+    onReprinted?.(answer);
+  };
+  const discarded = () => {
+    runDiscarded(run.batchId);
+    onDiscarded?.();
+  };
   const total = run.total;
   const selectId = `${idPrefix}-first-missing`;
 
@@ -58,7 +83,7 @@ export function RunControls({ run, buttonClass, idPrefix, onContinued, onReprint
     action();
   };
   const discardButton = (
-    <button type="button" className={buttonClass} disabled={busy} onClick={blurThen(() => discard.mutate(run.batchId, { onSuccess: () => onDiscarded?.() }))}>
+    <button type="button" className={buttonClass} disabled={busy} onClick={blurThen(() => discard.mutate(run.batchId, { onSuccess: discarded, onError: goneOn404 }))}>
       {run.waiting ? t`Discard the rest` : t`Discard`}
     </button>
   );
@@ -72,7 +97,7 @@ export function RunControls({ run, buttonClass, idPrefix, onContinued, onReprint
         <p className="text-small [overflow-wrap:anywhere]">{t`Part ${done} of ${parts} is done. Check the tape, then continue.`}</p>
         {failed && <p className="text-small text-bad">{t`That did not work. Try again.`}</p>}
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={buttonClass} disabled={busy} onClick={blurThen(() => go.mutate(run.batchId, { onSuccess: () => onContinued?.(next) }))}>
+          <button type="button" className={buttonClass} disabled={busy} onClick={blurThen(() => go.mutate(run.batchId, { onSuccess: () => continued(next), onError: goneOn404 }))}>
             {t`Continue with part ${next}`}
           </button>
           {discardButton}
@@ -86,7 +111,7 @@ export function RunControls({ run, buttonClass, idPrefix, onContinued, onReprint
       type="button"
       className={buttonClass}
       disabled={busy}
-      onClick={blurThen(() => reprint.mutate({ batchId: run.batchId, fromLabel: choice }, { onSuccess: (answer) => onReprinted?.(answer) }))}
+      onClick={blurThen(() => reprint.mutate({ batchId: run.batchId, fromLabel: choice }, { onSuccess: reprinted, onError: goneOn404 }))}
     >
       {label}
     </button>

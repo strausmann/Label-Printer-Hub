@@ -136,6 +136,8 @@ function runViewOf(record: WatchRecord, live: Record<string, JobLive>): RunView 
   if (!run) return undefined;
   const starts = run.subJobStarts.length > 0 ? run.subJobStarts : [0];
   const subJobOf = (index: number) => starts.filter((s) => s <= index).length;
+  // A restart failed the waiting labels: the hub no longer holds the run, so it offers no actions.
+  if (record.jobIds.some((id) => live[id]?.errorCode === "tape_run_interrupted")) return undefined;
   const confirmed = new Set(run.confirmed);
   const total = record.jobIds.length;
   const calm = { awaiting: false, unknownFrom: null, unknownTo: null, stopKind: null, reprintFrom: null, reprintTo: null, stopCode: null, total };
@@ -179,6 +181,7 @@ function derive(records: WatchRecord[], live: Record<string, JobLive>, claims: R
     else if (finished === 0) phase = "cancelled";
     else phase = "done";
     const { run: tapeRun, ...rest } = record;
+    const view = tapeRun ? runViewOf(record, live) : undefined;
     return {
       ...rest,
       phase,
@@ -187,7 +190,7 @@ function derive(records: WatchRecord[], live: Record<string, JobLive>, claims: R
       failedJobIds,
       live: Object.fromEntries(record.jobIds.map((id) => [id, live[id]])),
       claimed: record.claimPending !== undefined || record.jobIds.some((id) => (claims[id] ?? 0) > 0),
-      ...(tapeRun ? { run: runViewOf(record, live)!, runBatchId: tapeRun.batchId } : {}),
+      ...(view ? { run: view, runBatchId: tapeRun!.batchId } : {}),
     };
   });
 }
@@ -315,6 +318,43 @@ export function replaceRunJobs(entryId: string, next: { jobIds: string[]; confir
 export function markRunContinued(entryId: string, subJob: number): void {
   commit({ records: store.records.map((r) => (r.id === entryId && r.run ? { ...r, run: { ...r.run, continued: subJob } } : r)) });
 }
+
+/*
+ * The same run can be acted on from the stack and from the jobs page: these find every watched print of a batch,
+ * so a card never keeps buttons for something done elsewhere (#277).
+ */
+const ofBatch = (batchId: string) => store.records.filter((r) => r.run?.batchId === batchId).map((r) => r.id);
+
+/** Sub-job `subJob` of the batch was continued (anywhere). */
+export function runContinued(batchId: string, subJob: number): void {
+  ofBatch(batchId).forEach((id) => markRunContinued(id, subJob));
+}
+
+/** The batch was reprinted (anywhere): its cards follow the new jobs. */
+export function runReprinted(batchId: string, next: { jobIds: string[]; confirmed: string[]; subJobStarts: number[] }): void {
+  ofBatch(batchId).forEach((id) => replaceRunJobs(id, next));
+}
+
+/** The batch was discarded (anywhere): its cards go. */
+export function runDiscarded(batchId: string): void {
+  const ids = new Set(ofBatch(batchId));
+  if (ids.size > 0) commit({ records: store.records.filter((r) => !ids.has(r.id)) });
+}
+
+/**
+ * The hub no longer knows the run (a restart, a discard in another browser): its cards keep the jobs but lose the
+ * run's actions, so nothing offers Continue or Reprint for a run that is gone.
+ */
+export function forgetRun(batchId: string): void {
+  const ids = new Set(ofBatch(batchId));
+  if (ids.size > 0) commit({ records: store.records.map((r) => (ids.has(r.id) ? withoutRun(r) : r)) });
+}
+
+const withoutRun = (r: WatchRecord): WatchRecord => {
+  const next = { ...r };
+  delete next.run;
+  return next;
+};
 
 /** A retry clones a failed job into a new queued one: the entry follows the new job. */
 export function replaceWatchedJob(entryId: string, oldJobId: string, newJobId: string): void {

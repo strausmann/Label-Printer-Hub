@@ -10,8 +10,6 @@ import { canRetry } from "../features/jobs/model";
 import {
   dismissWatch,
   errorCodeFromMessage,
-  markRunContinued,
-  replaceRunJobs,
   replaceWatchedJob,
   useWatchedPrints,
   type PrintKind,
@@ -121,11 +119,6 @@ function RunActions({ entry, batchId }: { entry: WatchedPrint; batchId: string }
       run={{ ...run, batchId, waiting: run.awaiting }}
       buttonClass={BUTTON}
       idPrefix={`run-${entry.id}`}
-      onContinued={(next) => markRunContinued(entry.id, next)}
-      onReprinted={(answer) =>
-        replaceRunJobs(entry.id, { jobIds: answer.job_ids, confirmed: answer.confirmed_job_ids, subJobStarts: answer.run?.sub_job_starts ?? [0] })
-      }
-      onDiscarded={() => dismissWatch(entry.id)}
     />
   );
 }

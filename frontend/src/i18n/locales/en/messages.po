@@ -170,13 +170,13 @@ msgstr "{label} must be a number from 0 to 1000."
 msgid "{label} must be a whole number from 1 to 400."
 msgstr "{label} must be a whole number from 1 to 400."
 
+#: src/features/jobs/HeldRuns.tsx
+msgid "{labels, plural, one {# label on {name}} other {# labels on {name}}}"
+msgstr "{labels, plural, one {# label on {name}} other {# labels on {name}}}"
+
 #: src/features/lookup/CartPage.tsx
 msgid "{labels, plural, one {Print # label} other {Print # labels}}"
 msgstr "{labels, plural, one {Print # label} other {Print # labels}}"
-
-#: src/features/jobs/HeldRuns.tsx
-msgid "{labels} labels on {name}"
-msgstr "{labels} labels on {name}"
 
 #: src/features/sheets/print/PrintResult.tsx
 msgid "{left, plural, one {# label was not queued. The preview below shows it.} other {# labels were not queued. The preview below shows them.}}"

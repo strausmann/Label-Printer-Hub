@@ -1250,8 +1250,7 @@ class PrintQueue:
             else []
         )
         run.confirmed.extend(confirmed)
-        for old in run.job_ids[start:]:  # the old pictures are copied or not needed (I3)
-            run.payloads.pop(old, None)
+        self._drop_pictures(run, run.job_ids[start:])  # copied to the new jobs, or not needed
         first = run.sub_jobs[run.current][0]
         prefix = run.sub_jobs[: run.current] + ([(first, idx)] if idx > first else [])
         run.job_ids = run.job_ids[:idx] + new_ids
@@ -1309,6 +1308,7 @@ class PrintQueue:
         for job in cancelled:
             depth = self._queue_depth(run.printer_id)
             self._notify_state_change(job, JobState.QUEUED, JobState.CANCELLED, queue_depth=depth)
+        self._drop_pictures(run, run.job_ids)
         for job in cancelled:
             await self._store.mark_cancelled(UUID(job.id))
         logger.warning(
@@ -1318,6 +1318,23 @@ class PrintQueue:
             code,
             len(cancelled),
         )
+
+    def _drop_pictures(self, run: TapeRun | None, keys: Sequence[str]) -> None:
+        """Forget the PNG of these labels: in the run and on their in-memory jobs (#277 N2).
+
+        A retry through the API re-renders from the stored row; nothing reads the picture of a
+        printed, discarded or reprinted label again.
+        """
+        for key in keys:
+            if run is not None:
+                run.payloads.pop(key, None)
+            job = self._jobs.get(key)
+            if job is not None and job.state in (
+                JobState.COMPLETED,
+                JobState.FAILED,
+                JobState.CANCELLED,
+            ):
+                job.image_payload = None
 
     def held_runs(self, printer_id: UUID | None = None) -> list[RunInfo]:
         """The runs that wait (stopped, or for a confirmation), oldest first."""
@@ -2151,9 +2168,8 @@ class PrintQueue:
                     )
                     return
             await self._complete_group(printer_id, batch, active)
-            if run is not None:
-                for job in active:  # printed: its picture is not needed any more (I3)
-                    run.payloads.pop(job.id, None)
+            # Printed: the pictures are not needed any more (I3). A retry re-renders from the row.
+            self._drop_pictures(run, [job.id for job in active])
         logger.info("Batch %s: sub-job done on %s", batch.batch_id, printer_id)
         await self._advance_run(run)
 

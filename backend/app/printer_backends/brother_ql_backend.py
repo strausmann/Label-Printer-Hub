@@ -29,6 +29,7 @@ from app.printer_backends.exceptions import (
     PrinterOfflineError,
     PrintFailedError,
     TapeEmptyError,
+    refused_before_sending,
 )
 from app.printer_backends.snmp_helper import (
     PreflightStatus,
@@ -156,9 +157,12 @@ class BrotherQLBackend:
         try:
             ql_label = _TAPE_MM_TO_QL_LABEL[tape_spec.width_mm]
         except KeyError as exc:
-            raise PrintFailedError(
-                f"No QL label mapping for {tape_spec.width_mm}mm — "
-                f"supported widths: {sorted(_TAPE_MM_TO_QL_LABEL)}"
+            # #277: refused before anything was sent: the label did not print.
+            raise refused_before_sending(
+                PrintFailedError(
+                    f"No QL label mapping for {tape_spec.width_mm}mm — "
+                    f"supported widths: {sorted(_TAPE_MM_TO_QL_LABEL)}"
+                )
             ) from exc
 
         # Build raster instructions. convert() populates qlr.data.

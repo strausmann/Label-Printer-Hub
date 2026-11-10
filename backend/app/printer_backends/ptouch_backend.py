@@ -165,6 +165,12 @@ def _ptouch_print_multi(  # pragma: no cover - real-hardware-only, tests monkeyp
                 printer.print(label, auto_cut=auto_cut, high_resolution=high_resolution)
 
 
+def _require_tape_class(tape_mm: int) -> None:
+    """The check ``_ptouch_print_multi`` would fail on, made before anything is sent (#277)."""
+    if tape_mm not in _PTOUCH_TAPE_CLASSES:
+        raise PrintFailedError(f"No ptouch tape class for {tape_mm}mm")
+
+
 class PTouchBackend:
     """PrinterBackend backed by the ptouch library."""
 
@@ -329,6 +335,7 @@ class PTouchBackend:
             raise ValueError("print_images requires at least one image")
 
         try:
+            _require_tape_class(tape_spec.width_mm)
             preflight = await self.preflight_check()
             if preflight.loaded_tape_mm != tape_spec.width_mm:
                 raise TapeMismatchError(
@@ -336,7 +343,8 @@ class PTouchBackend:
                     loaded_mm=preflight.loaded_tape_mm,
                 )
         except PrinterError as exc:
-            # #277: the preflight refused: nothing was sent, the labels did not print.
+            # #277: refused before sending (no tape class, or the preflight said no): nothing
+            # was sent, the labels did not print.
             refused_before_sending(exc)
             raise
 

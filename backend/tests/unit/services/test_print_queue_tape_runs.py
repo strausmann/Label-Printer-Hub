@@ -276,6 +276,8 @@ async def test_reprint_from_n_requeues_n_to_the_end_of_the_group_and_the_not_sta
         # labels 14..20 of the unknown group and 21..30 that never started: 17 new jobs
         assert len(result.new_job_ids) == 17
         assert result.confirmed_job_ids == ids[10:13]  # 11..13 printed, the user says
+        # N2: the replaced labels keep no picture; the new jobs carry it.
+        assert [(await queue.get(j)).image_payload for j in ids[10:]] == [None] * 20
         await _until(lambda: queue.run_info(run_id) is None)
         assert printer.calls[2:] == [10, 7]
         assert not queue.is_paused(printer.id)  # the reprint is the user's go-ahead
@@ -573,7 +575,9 @@ async def test_a_removal_during_a_reprint_leaves_no_row_queued_forever() -> None
                 if (r.payload or {}).get("tape_run", {}).get("reprint_of")
             ]
 
-        await _until(lambda: all(r.state != DbJobState.QUEUED.value for r in clones()))
+        terminal = {DbJobState.DONE.value, DbJobState.FAILED.value, DbJobState.CANCELLED.value}
+        # Every clone has ended (not only left ``queued``: the last may still be printing).
+        await _until(lambda: len(clones()) == 20 and all(r.state in terminal for r in clones()))
         assert len(clones()) == 20
         assert {r.state for r in clones()} <= {DbJobState.DONE.value, DbJobState.FAILED.value}
         assert [j for j in queue._jobs.values() if j.state == JobState.QUEUED] == []
@@ -657,8 +661,12 @@ async def test_discard_cancels_the_waiting_part_and_frees_the_run() -> None:
         await _until(lambda: queue.run_info(run_id).state == "awaiting_confirmation")  # type: ignore[union-attr]
         held = queue._runs[run_id]
         assert set(held.payloads) == {str(j) for j in ids[50:]}  # printed pictures are freed
+        assert [(await queue.get(j)).image_payload for j in ids[:50]] == [None] * 50
         await queue.discard_run(run_id)
         assert queue.run_info(run_id) is None
+        # N2: no PNG of the discarded run stays referenced, not on its jobs either.
+        assert [(await queue.get(j)).image_payload for j in ids] == [None] * 55
+        assert held.payloads == {}
         for jid in ids[50:]:
             job = await queue.get(jid)
             assert (job.state, job.error_code) == (JobState.CANCELLED, "run_discarded")
@@ -675,9 +683,12 @@ async def test_discard_frees_a_stopped_run_and_refuses_a_printing_one() -> None:
     queue, run_id, ids, _ = await _run(printer, 30)
     try:
         await _until(_stopped(queue, run_id))
+        held = queue._runs[run_id]
         await queue.discard_run(run_id)
         assert queue.run_info(run_id) is None
         assert (await queue.get(ids[25])).error_code == "not_started"  # unchanged
+        assert [(await queue.get(j)).image_payload for j in ids] == [None] * 30  # N2
+        assert held.payloads == {}
     finally:
         await queue.stop(timeout_s=2.0)
 
