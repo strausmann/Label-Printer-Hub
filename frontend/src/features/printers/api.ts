@@ -1,6 +1,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, ApiError } from "../../api/client";
 import type { components } from "../../api/schema.gen";
+import { watchPrint } from "../jobs/printWatch";
 
 export type Printer = components["schemas"]["app__schemas__printer__PrinterRead"];
 export type PrinterStatus = components["schemas"]["PrinterStatus"];
@@ -148,6 +149,7 @@ export function useTestPrint(printerId: string) {
         method: "POST",
         ...(tray === null ? {} : { json: { tray } }),
       }),
+    onSuccess: (accepted) => void watchPrint({ kind: "test", printerId, jobIds: [accepted.job_id] }),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: queueKey(printerId) });
       void client.invalidateQueries({ queryKey: ["jobs"] });

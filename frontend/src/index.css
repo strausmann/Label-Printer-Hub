@@ -124,3 +124,14 @@
     opacity: 0;
   }
 }
+
+/* A print notification rises in from below; transform and opacity only (reduced motion shortens it to nothing above). */
+@keyframes toastin {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+.print-toast {
+  animation: toastin 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}

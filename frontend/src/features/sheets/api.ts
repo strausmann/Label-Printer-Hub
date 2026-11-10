@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClie
 import { apiFetch } from "../../api/client";
 import { queryString } from "../../api/queryString";
 import type { components } from "../../api/schema.gen";
+import { watchPrint } from "../jobs/printWatch";
 import {
   marginCheckKey,
   nextCodeKey,
@@ -145,6 +146,7 @@ export function usePrintSheets(printerId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (request: SheetPrintRequest) => post<SheetPrintResponse>(`/api/v1/print/${encode(printerId)}/sheet`, request),
+    onSuccess: (response) => void watchPrint({ kind: "sheet", printerId, jobIds: response.pages.map((p) => p.job_id) }),
     // A partial print (`print_interrupted`) also queued pages, so this runs on failure too.
     onSettled: () => {
       refreshAfterWrite(client);

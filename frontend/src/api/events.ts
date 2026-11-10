@@ -1,8 +1,9 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { pageJobStateFrom, pageJobStateKey } from "../features/jobs/pageJobState";
+import { recordJobEvent, resyncWatchedJobs } from "../features/jobs/printWatch";
 import { previewNamesCode, SHEET_PREVIEW_KEY, sheetKey, sheetsListKey, typesListKey } from "../features/sheets/keys";
-import { isSessionUnknown, notifyUnauthorized, onSessionConfirmed } from "./client";
+import { apiFetch, isSessionUnknown, notifyUnauthorized, onSessionConfirmed } from "./client";
 
 const EVENTS_URL = "/api/v1/events";
 const BACKOFF_START_MS = 1_000;
@@ -52,6 +53,8 @@ function invalidate(client: QueryClient, type: EventType, { printerId, data }: F
       // job returns nothing new: keep the event's own data for the job views.
       const pageJob = pageJobStateFrom(data);
       if (pageJob) client.setQueryData(pageJobStateKey(pageJob.jobId), pageJob.state);
+      // The print notifications (and the calibration page) read the same event.
+      recordJobEvent(data);
       run(["jobs"]);
       if (printerId) run(["printers", printerId, "queue"]);
       break;
@@ -161,6 +164,8 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
           void queryClient.invalidateQueries({ queryKey: sheetsListKey.slice(0, 1) });
           void queryClient.invalidateQueries({ queryKey: typesListKey.slice(0, 1) });
           void queryClient.invalidateQueries({ queryKey: [SHEET_PREVIEW_KEY] });
+          // A job that ended while the stream was down sent a frame nobody saw.
+          void resyncWatchedJobs((jobId) => apiFetch<{ state: string; error: string | null }>(`/api/v1/jobs/${encodeURIComponent(jobId)}`));
         }
         openedBefore = true;
         delay = BACKOFF_START_MS;

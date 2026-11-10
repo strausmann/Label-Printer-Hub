@@ -77,6 +77,10 @@ msgstr "{0} hat keine Bögen. Beim Löschen verschwinden der Typ und alle seine 
 msgid "{ahead, plural, one {# job from another computer ahead} other {# jobs from other computers ahead}}"
 msgstr "{ahead, plural, one {# Auftrag von einem anderen Rechner davor} other {# Aufträge von anderen Rechnern davor}}"
 
+#: src/shell/PrintToasts.tsx
+msgid "{ahead, plural, one {Queued, # job ahead} other {Queued, # jobs ahead}}"
+msgstr "{ahead, plural, one {In der Warteschlange, # Auftrag davor} other {In der Warteschlange, # Aufträge davor}}"
+
 #: src/features/integrations/IntegrationPage.tsx
 msgid "{appName} is not set up yet, so there is nothing to look up."
 msgstr "{appName} ist noch nicht eingerichtet, deshalb gibt es nichts nachzuschlagen."
@@ -112,6 +116,14 @@ msgstr "{count} von {needed} Zellen gewählt"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "{dpi} dpi"
 msgstr "{dpi} dpi"
+
+#: src/shell/PrintToasts.tsx
+msgid "{finished} of {total} items"
+msgstr "{finished} von {total} Einträgen"
+
+#: src/shell/PrintToasts.tsx
+msgid "{finished} of {total} pages"
+msgstr "{finished} von {total} Seiten"
 
 #: src/features/sheets/print/CapacityAlert.tsx
 msgid "{free, plural, one {{code} has only # free cell, and this print needs {needed}.} other {{code} has only # free cells, and this print needs {needed}.}}"
@@ -644,6 +656,7 @@ msgstr "Die Kalibrierung dieses Druckers erscheint hier."
 
 #: src/features/jobs/model.ts
 #: src/features/jobs/PageJobInfo.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Calibration page"
 msgstr "Kalibrierseite"
 
@@ -698,10 +711,12 @@ msgstr "{queued} wartende abbrechen"
 
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
+#: src/shell/PrintToasts.tsx
 msgid "Cancelled"
 msgstr "Abgebrochen"
 
 #: src/features/lookup/CartPage.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Cart"
 msgstr "Warenkorb"
 
@@ -1131,6 +1146,10 @@ msgstr "verworfen"
 msgid "Discarded on {discardedOn}, this ID is not used again."
 msgstr "Verworfen am {discardedOn}, diese ID wird nicht noch einmal vergeben."
 
+#: src/shell/PrintToasts.tsx
+msgid "Dismiss notification"
+msgstr "Hinweis schließen"
+
 #: src/features/settings/sections.tsx
 msgid "Display name"
 msgstr "Anzeigename"
@@ -1138,6 +1157,7 @@ msgstr "Anzeigename"
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
 #: src/features/settings/AccessKeys.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Done"
 msgstr "Fertig"
 
@@ -1274,6 +1294,7 @@ msgstr "Version {0} exportieren"
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
 #: src/features/settings/Integrations.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Failed"
 msgstr "Fehlgeschlagen"
 
@@ -1571,6 +1592,7 @@ msgstr "Schlüssel, Beschreibung oder Produktcode"
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/IppPrinterFields.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Label"
 msgstr "Etikett"
 
@@ -2172,6 +2194,10 @@ msgstr "OK"
 msgid "on"
 msgstr "an"
 
+#: src/shell/PrintToasts.tsx
+msgid "on {printerName}"
+msgstr "auf {printerName}"
+
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
 msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, die Messwerte lassen sich daher nicht berechnen. Geben Sie die Werte direkt ein."
@@ -2227,6 +2253,7 @@ msgid "Open Settings › Integrations"
 msgstr "Einstellungen › Integrationen öffnen"
 
 #: src/features/printers/TestPrintButton.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Open the job"
 msgstr "Auftrag öffnen"
 
@@ -2379,6 +2406,10 @@ msgstr "Auf den Bogen drucken"
 msgid "Print onto this sheet"
 msgstr "Auf diesen Bogen drucken"
 
+#: src/shell/PrintToasts.tsx
+msgid "Print status"
+msgstr "Druckstatus"
+
 #: src/features/printers/TestPrintButton.tsx
 msgid "Print test page"
 msgstr "Testseite drucken"
@@ -2461,6 +2492,7 @@ msgstr "Drucker werden hier verwaltet; es gibt keine Konfigurationsdatei. Ein de
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
+#: src/shell/PrintToasts.tsx
 msgid "Printing"
 msgstr "Druckt"
 
@@ -2555,6 +2587,7 @@ msgstr "Warteschlangen-Zeitlimit (Sekunden)"
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
+#: src/shell/PrintToasts.tsx
 msgid "Queued"
 msgstr "Wartet"
 
@@ -2705,6 +2738,7 @@ msgstr "Fortsetzen"
 
 #: src/features/jobs/JobDetail.tsx
 #: src/features/printers/RollColourPrompt.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Retry"
 msgstr "Wiederholen"
 
@@ -3034,6 +3068,10 @@ msgstr "Bogen-ID nicht gedruckt, bitte von Hand ergänzen"
 msgid "Sheet page"
 msgstr "Bogenseite"
 
+#: src/shell/PrintToasts.tsx
+msgid "Sheet print"
+msgstr "Bogendruck"
+
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/AddSheetDialog.tsx
@@ -3227,6 +3265,7 @@ msgid "Stopped"
 msgstr "Angehalten"
 
 #: src/features/jobs/pageJobText.ts
+#: src/shell/PrintToasts.tsx
 msgid "Stopped at the printer"
 msgstr "Beim Drucker angehalten"
 
@@ -3325,6 +3364,7 @@ msgid "Test page · {tray}"
 msgstr "Testseite · {tray}"
 
 #: src/features/printers/TestPrintButton.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Test print"
 msgstr "Testdruck"
 
@@ -3843,6 +3883,10 @@ msgstr "Der Drucker ist im Hub ausgeschaltet. Schalte ihn in den Druckereinstell
 #: src/features/jobs/RetryError.tsx
 msgid "The printer is switched off. Switch it on in the settings, then retry."
 msgstr "Der Drucker ist ausgeschaltet. Schalte ihn in den Einstellungen ein und versuche es dann erneut."
+
+#: src/shell/PrintToasts.tsx
+msgid "The printer or the hub reported an error."
+msgstr "Der Drucker oder der Hub hat einen Fehler gemeldet."
 
 #: src/features/settings/feedback.tsx
 msgid "The printer refused the request ({status})."
@@ -4408,6 +4452,7 @@ msgid "View the job"
 msgstr "Auftrag ansehen"
 
 #: src/features/jobs/pageJobText.ts
+#: src/shell/PrintToasts.tsx
 msgid "Waiting at the printer"
 msgstr "Wartet beim Drucker"
 

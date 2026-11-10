@@ -2,6 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { useHubEvents } from "../api/events";
 import { LiveStatus } from "./LiveStatus";
+import { PrintToasts } from "./PrintToasts";
 import { SessionStatus } from "./SessionStatus";
 import { Sidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
@@ -34,6 +35,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+      <PrintToasts />
       <TabBar />
     </div>
   );

@@ -77,6 +77,10 @@ msgstr "{0} has no sheets. Deleting it removes it and all its versions for good.
 msgid "{ahead, plural, one {# job from another computer ahead} other {# jobs from other computers ahead}}"
 msgstr "{ahead, plural, one {# job from another computer ahead} other {# jobs from other computers ahead}}"
 
+#: src/shell/PrintToasts.tsx
+msgid "{ahead, plural, one {Queued, # job ahead} other {Queued, # jobs ahead}}"
+msgstr "{ahead, plural, one {Queued, # job ahead} other {Queued, # jobs ahead}}"
+
 #: src/features/integrations/IntegrationPage.tsx
 msgid "{appName} is not set up yet, so there is nothing to look up."
 msgstr "{appName} is not set up yet, so there is nothing to look up."
@@ -112,6 +116,14 @@ msgstr "{count} of {needed} cells chosen"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "{dpi} dpi"
 msgstr "{dpi} dpi"
+
+#: src/shell/PrintToasts.tsx
+msgid "{finished} of {total} items"
+msgstr "{finished} of {total} items"
+
+#: src/shell/PrintToasts.tsx
+msgid "{finished} of {total} pages"
+msgstr "{finished} of {total} pages"
 
 #: src/features/sheets/print/CapacityAlert.tsx
 msgid "{free, plural, one {{code} has only # free cell, and this print needs {needed}.} other {{code} has only # free cells, and this print needs {needed}.}}"
@@ -644,6 +656,7 @@ msgstr "Calibration for this printer will appear here."
 
 #: src/features/jobs/model.ts
 #: src/features/jobs/PageJobInfo.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Calibration page"
 msgstr "Calibration page"
 
@@ -698,10 +711,12 @@ msgstr "Cancel {queued} queued"
 
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
+#: src/shell/PrintToasts.tsx
 msgid "Cancelled"
 msgstr "Cancelled"
 
 #: src/features/lookup/CartPage.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Cart"
 msgstr "Cart"
 
@@ -1131,6 +1146,10 @@ msgstr "discarded"
 msgid "Discarded on {discardedOn}, this ID is not used again."
 msgstr "Discarded on {discardedOn}, this ID is not used again."
 
+#: src/shell/PrintToasts.tsx
+msgid "Dismiss notification"
+msgstr "Dismiss notification"
+
 #: src/features/settings/sections.tsx
 msgid "Display name"
 msgstr "Display name"
@@ -1138,6 +1157,7 @@ msgstr "Display name"
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
 #: src/features/settings/AccessKeys.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Done"
 msgstr "Done"
 
@@ -1274,6 +1294,7 @@ msgstr "Export version {0}"
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
 #: src/features/settings/Integrations.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Failed"
 msgstr "Failed"
 
@@ -1571,6 +1592,7 @@ msgstr "Key, description or product code"
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/IppPrinterFields.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Label"
 msgstr "Label"
 
@@ -2172,6 +2194,10 @@ msgstr "OK"
 msgid "on"
 msgstr "on"
 
+#: src/shell/PrintToasts.tsx
+msgid "on {printerName}"
+msgstr "on {printerName}"
+
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
 msgstr "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
@@ -2227,6 +2253,7 @@ msgid "Open Settings › Integrations"
 msgstr "Open Settings › Integrations"
 
 #: src/features/printers/TestPrintButton.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Open the job"
 msgstr "Open the job"
 
@@ -2379,6 +2406,10 @@ msgstr "Print onto sheet"
 msgid "Print onto this sheet"
 msgstr "Print onto this sheet"
 
+#: src/shell/PrintToasts.tsx
+msgid "Print status"
+msgstr "Print status"
+
 #: src/features/printers/TestPrintButton.tsx
 msgid "Print test page"
 msgstr "Print test page"
@@ -2461,6 +2492,7 @@ msgstr "Printers live here; there is no configuration file. A disabled printer k
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
+#: src/shell/PrintToasts.tsx
 msgid "Printing"
 msgstr "Printing"
 
@@ -2555,6 +2587,7 @@ msgstr "Queue timeout (seconds)"
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
 #: src/features/printers/model.ts
+#: src/shell/PrintToasts.tsx
 msgid "Queued"
 msgstr "Queued"
 
@@ -2705,6 +2738,7 @@ msgstr "Resume"
 
 #: src/features/jobs/JobDetail.tsx
 #: src/features/printers/RollColourPrompt.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Retry"
 msgstr "Retry"
 
@@ -3034,6 +3068,10 @@ msgstr "Sheet ID not printed, add it by hand"
 msgid "Sheet page"
 msgstr "Sheet page"
 
+#: src/shell/PrintToasts.tsx
+msgid "Sheet print"
+msgstr "Sheet print"
+
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/AddSheetDialog.tsx
@@ -3227,6 +3265,7 @@ msgid "Stopped"
 msgstr "Stopped"
 
 #: src/features/jobs/pageJobText.ts
+#: src/shell/PrintToasts.tsx
 msgid "Stopped at the printer"
 msgstr "Stopped at the printer"
 
@@ -3325,6 +3364,7 @@ msgid "Test page · {tray}"
 msgstr "Test page · {tray}"
 
 #: src/features/printers/TestPrintButton.tsx
+#: src/shell/PrintToasts.tsx
 msgid "Test print"
 msgstr "Test print"
 
@@ -3843,6 +3883,10 @@ msgstr "The printer is switched off in the hub. Switch it on in the printer sett
 #: src/features/jobs/RetryError.tsx
 msgid "The printer is switched off. Switch it on in the settings, then retry."
 msgstr "The printer is switched off. Switch it on in the settings, then retry."
+
+#: src/shell/PrintToasts.tsx
+msgid "The printer or the hub reported an error."
+msgstr "The printer or the hub reported an error."
 
 #: src/features/settings/feedback.tsx
 msgid "The printer refused the request ({status})."
@@ -4408,6 +4452,7 @@ msgid "View the job"
 msgstr "View the job"
 
 #: src/features/jobs/pageJobText.ts
+#: src/shell/PrintToasts.tsx
 msgid "Waiting at the printer"
 msgstr "Waiting at the printer"
 

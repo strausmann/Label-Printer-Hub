@@ -104,6 +104,12 @@ export const SearchIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const CloseIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="m6 6 12 12M18 6 6 18" />
+  </Icon>
+);
+
 export const SunIcon = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="4" />

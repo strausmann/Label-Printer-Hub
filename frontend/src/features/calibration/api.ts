@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
 import type { components } from "../../api/schema.gen";
 import { queryString } from "../../api/queryString";
+import { watchPrint } from "../jobs/printWatch";
 import { calibrationKey, capabilitiesKey } from "../sheets/keys";
 
 export { calibrationKey, capabilitiesKey } from "../sheets/keys";
@@ -61,6 +62,7 @@ export function usePrintCalibrationPage(printerId: string) {
   return useMutation({
     mutationFn: ({ tray, request }: { tray: string; request: CalibrationPageRequest }) =>
       apiFetch<Schemas["PageJobAccepted"]>(`${trayPath(printerId, tray)}/page`, { method: "POST", json: request }),
+    onSuccess: (accepted) => void watchPrint({ kind: "calibration", printerId, jobIds: [accepted.job_id] }),
     onSettled: () => void client.invalidateQueries({ queryKey: ["jobs"] }),
   });
 }

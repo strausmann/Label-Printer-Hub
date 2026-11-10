@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emitSessionConfirmed, setOnUnauthorized, setSessionUnknown } from "./client";
+import { resetPrintWatch, useWatchedPrints, watchPrint } from "../features/jobs/printWatch";
 import { useHubEvents } from "./events";
 
 class FakeEventSource {
@@ -50,6 +51,7 @@ function setup(client = new QueryClient()) {
 const keys = (spy: ReturnType<typeof setup>["invalidate"]) => spy.mock.calls.map((c) => c[0]?.queryKey);
 
 beforeEach(() => {
+  resetPrintWatch();
   vi.useFakeTimers();
   FakeEventSource.instances = [];
   vi.stubGlobal("EventSource", FakeEventSource);
@@ -372,5 +374,34 @@ describe("useHubEvents", () => {
     act(() => last().emit("auth.expired", null));
     act(() => result.current.reconnect());
     expect(FakeEventSource.instances).toHaveLength(1);
+  });
+});
+
+describe("print watch feed", () => {
+  const JOB = "aaaaaaaa-0000-4000-8000-000000000001";
+  const watched = () => renderHook(() => useWatchedPrints());
+
+  it("a job.state_changed frame moves the watched print, without a reload", () => {
+    setup();
+    const { result } = watched();
+    act(() => void watchPrint({ kind: "item", printerId: "p1", jobIds: [JOB] }));
+    act(() => last().emit("job.state_changed", "p1", { job_id: JOB, from_state: "queued", to_state: "printing" }));
+    expect(result.current[0]!.phase).toBe("printing");
+  });
+
+  it("after an automatic reconnect an open watched job is read once; the first open reads nothing", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: JOB, state: "done", error: null }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    setup();
+    const { result } = watched();
+    act(() => void watchPrint({ kind: "item", printerId: "p1", jobIds: [JOB] }));
+    act(() => last().open());
+    expect(fetchMock).not.toHaveBeenCalled();
+    act(() => last().fail());
+    act(() => void vi.advanceTimersByTime(1_000));
+    await act(async () => last().open());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toContain(`/api/v1/jobs/${JOB}`);
+    expect(result.current[0]!.phase).toBe("done");
   });
 });
