@@ -63,6 +63,13 @@ describe("ItemView", () => {
     expect(calls.some((c) => c.path === `/api/v1/lookup/${app}/${id}`)).toBe(true);
   });
 
+  it("asks for no printer status while no printer is selected", async () => {
+    const { calls } = mockApi(routes("snipeit", "42", { "GET /api/v1/printers": [] }));
+    await renderApp({ path: "/asset/42" });
+    await screen.findByRole("heading", { level: 1, name: "Cordless drill" });
+    expect(calls.filter((c) => /\/printers\/\/status/.test(c.path))).toEqual([]);
+  });
+
   it("shows the item, a link to its source app, the preview and the printer picker", async () => {
     const { calls } = mockApi(routes());
     await renderApp({ path: "/asset/42" });

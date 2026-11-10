@@ -38,6 +38,13 @@ describe("CartPage", () => {
     expect(screen.getByRole("button", { name: "Print 3 labels" })).toBeEnabled();
   });
 
+  it("asks for no printer status while no printer is selected", async () => {
+    const { calls } = mockApi(routes({ "GET /api/v1/printers": [] }));
+    await renderApp({ path: "/cart" });
+    await screen.findByRole("list", { name: "Cart" });
+    expect(calls.filter((c) => /\/printers\/\/status/.test(c.path))).toEqual([]);
+  });
+
   it("prints everything as one batch and empties the cart", async () => {
     const { calls } = mockApi(routes());
     await renderApp({ path: "/cart" });

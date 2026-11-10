@@ -111,7 +111,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
   const cart = useCart();
   const printers = usePrinters();
   const { usable, selected, choose } = usePrinterChoice(printers.data);
-  const status = usePrinterStatus(selected?.id ?? "");
+  const status = usePrinterStatus(selected?.id ?? "", !!selected);
   const statuses = usePrinterStatuses(usable);
   const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
   const [copies, setCopies] = useState(1);

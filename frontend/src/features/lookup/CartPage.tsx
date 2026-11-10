@@ -60,7 +60,7 @@ export function CartPage() {
   // stays to show where the labels went (the result, or the partial-result note with the links to the queued jobs).
   const [sheetPrinted, setSheetPrinted] = useState(false);
   const pagePrinter = selected?.backend === "ipp";
-  const status = usePrinterStatus(selected?.id ?? "", !pagePrinter);
+  const status = usePrinterStatus(selected?.id ?? "", !!selected && !pagePrinter);
   const tapeMm = tapeMmOfStatus(selected ? status.data : null);
   const layout = useLabelLayout(selected, tapeMm);
   const labels = cart.items.reduce((sum, i) => sum + i.copies, 0);
