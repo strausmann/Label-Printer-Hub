@@ -53,10 +53,51 @@ describe("IdentityMismatchBanner", () => {
     expect(screen.queryByText(NOTE)).toBeNull();
   });
 
+  it("a key below admin never renders an identity the API sent anyway (stale cache, future backend change)", async () => {
+    mockApi(routes(page(identity({ hardware_id: "LEAK-STORED", observed_id: "LEAK-OBSERVED", observed_kind: "serial" })), true));
+    await renderApp({ path: `/printers/${PAGE_PRINTER.id}`, session: PRINT });
+    expect(await screen.findByText(BANNER)).toBeVisible();
+    const connection = await screen.findByRole("region", { name: "Connection" });
+    expect(within(connection).getByText("Backend")).toBeVisible();
+    expect(screen.queryByText(/LEAK-/)).toBeNull();
+    expect(screen.queryByText("Stored")).toBeNull();
+    expect(screen.queryByText("Now at this address")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Same device" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Device replaced" })).toBeNull();
+    expect(within(connection).queryByText("Serial number")).toBeNull();
+  });
+
+  it("holds only the sentence in the live region; identities and buttons sit beside it", async () => {
+    mockApi(routes(page(swapped), true));
+    await renderApp({ path: `/printers/${PAGE_PRINTER.id}` });
+    const banner = await screen.findByRole("region", { name: "Device swap" });
+    const alert = within(banner).getByRole("alert");
+    expect(alert).toHaveTextContent(BANNER);
+    expect(within(alert).queryByRole("button")).toBeNull();
+    expect(within(alert).queryByText("SN-0001")).toBeNull();
+    expect(within(banner).getByRole("button", { name: "Same device" })).toBeVisible();
+  });
+
+  it("a 409 'settled already' stays readable after the banner has gone", async () => {
+    let flagged = true;
+    mockApi({
+      ...routes(page(swapped), true),
+      [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: () => status(PAGE_PRINTER.id, { identity_mismatch: flagged }),
+      [`POST ${resolveUrl(PAGE_PRINTER.id)}`]: () => {
+        flagged = false;
+        return respond(409, { type: "no-identity-mismatch", title: "x", status: 409, detail: "x" });
+      },
+    });
+    await renderApp({ path: `/printers/${PAGE_PRINTER.id}` });
+    await userEvent.click(await screen.findByRole("button", { name: "Same device" }));
+    await waitFor(() => expect(screen.queryByText(BANNER)).toBeNull());
+    expect(await screen.findByText("Someone has settled this already. The page shows the current state.")).toBeVisible();
+  });
+
   it("shows an admin both identities, so the decision is informed", async () => {
     mockApi(routes(page(swapped), true));
     await renderApp({ path: `/printers/${PAGE_PRINTER.id}` });
-    const banner = await screen.findByRole("alert", { name: "Device swap" });
+    const banner = await screen.findByRole("region", { name: "Device swap" });
     expect(within(banner).getByText(BANNER)).toBeVisible();
     expect(within(banner).getByText("Stored")).toBeVisible();
     expect(within(banner).getByText("SN-0001")).toBeVisible();
@@ -68,7 +109,7 @@ describe("IdentityMismatchBanner", () => {
   it("lets a 64-character serial and a long UUID wrap instead of pushing the page wide", async () => {
     mockApi(routes(page(identity({ hardware_id: LONG_SERIAL, observed_id: LONG_UUID, observed_kind: "ipp_uuid" })), true));
     await renderApp({ path: `/printers/${PAGE_PRINTER.id}` });
-    const banner = await screen.findByRole("alert", { name: "Device swap" });
+    const banner = await screen.findByRole("region", { name: "Device swap" });
     for (const value of [LONG_SERIAL, LONG_UUID]) {
       expect(within(banner).getByText(value).className).toContain("[overflow-wrap:anywhere]");
     }
@@ -141,7 +182,6 @@ describe("IdentityMismatchBanner", () => {
   });
 
   it.each([
-    [409, "no-identity-mismatch", "Someone has settled this already. The page shows the current state."],
     [403, "printer_not_allowed", "This key may not settle a device swap."],
     [500, null, "The decision could not be saved. Try again."],
   ])("an answer of %s is said in words", async (code, type, words) => {

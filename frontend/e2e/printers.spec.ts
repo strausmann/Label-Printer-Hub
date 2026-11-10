@@ -400,7 +400,7 @@ test.describe("device swap", () => {
     // Another device answers: the banner arrives through the event stream, without a reload.
     await page.evaluate(() => ((window as unknown as { __kept: boolean }).__kept = true));
     await setPagePrinter(page, { printer_uuid: `urn:uuid:${second}` });
-    const banner = page.getByRole("alert", { name: "Device swap" });
+    const banner = page.getByRole("region", { name: "Device swap" });
     await expect(banner).toBeVisible({ timeout: 20_000 });
     await expect(banner.getByText(second)).toBeVisible();
     await shot(page, "task-17-banner-admin-desktop.png");
@@ -451,7 +451,9 @@ test.describe("device swap", () => {
       await page.route(`**/api/v1/printers/${id}`, async (route) => {
         const response = await route.fetch();
         const body = (await response.json()) as Record<string, unknown>;
-        if (mode === "long") Object.assign(body, { hardware_id: LONG, hardware_id_kind: "serial", observed_id: `${LONG.slice(0, 40)}ZZZZZZZZZZZZZZZZZZZZZZZZ`, observed_kind: "serial" });
+        // "print" keeps the identities the hub really has: a non-admin must not render them even if they arrive.
+        if (mode === "print") Object.assign(body, {});
+        else if (mode === "long") Object.assign(body, { hardware_id: LONG, hardware_id_kind: "serial", observed_id: `${LONG.slice(0, 40)}ZZZZZZZZZZZZZZZZZZZZZZZZ`, observed_kind: "serial" });
         else Object.assign(body, { hardware_id: null, hardware_id_kind: null, observed_id: null, observed_kind: null });
         await route.fulfill({ response, json: body });
       });
@@ -479,9 +481,15 @@ test.describe("device swap", () => {
           await tweak(mode);
           await page.goto(`/printers/${id}`);
           await expect(page.getByRole("heading", { level: 1, name: "Office page printer" })).toBeVisible();
-          if (mode !== "none") await expect(page.getByRole("alert", { name: "Device swap" })).toBeVisible({ timeout: 15_000 });
+          if (mode !== "none") await expect(page.getByRole("region", { name: "Device swap" })).toBeVisible({ timeout: 15_000 });
           else await expect(page.getByText("No hardware identity")).toBeVisible();
           expect(await noSideScroll(page), `${label} ${tag}`).toBe(true);
+          if (mode === "print") {
+            // The admin read carries both identities; the page must show neither for a print key.
+            await expect(page.getByText(first)).toHaveCount(0);
+            await expect(page.getByText(second)).toHaveCount(0);
+            await expect(page.getByRole("button", { name: "Same device" })).toHaveCount(0);
+          }
           await shot(page, `task-17-${label}-${tag}.png`);
           if (mode === "long") {
             await page.getByRole("button", { name: "Device replaced" }).click();
