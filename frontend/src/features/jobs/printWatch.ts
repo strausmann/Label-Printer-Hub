@@ -382,11 +382,14 @@ export async function resyncWatchedJobs(read: (jobId: string) => Promise<{ state
         if (before && isTerminal(before.phase)) return;
         // A frame that came in while the read was out is newer than the answer: a finished job stays finished.
         const phase = phaseOf(job.state);
+        // The record knows why a job failed; the entry from before the reconnect only knows the last frame seen
+        // (a printing label has no code). The record's code wins, so an unknown outcome stays unknown (#277).
+        const readCode = phase === "failed" ? errorCodeFromMessage(job.error) : null;
         setLive(jobId, {
           atPrinter: null,
           atPrinterReasons: [],
-          errorCode: phase === "failed" ? errorCodeFromMessage(job.error) : null,
           ...before,
+          errorCode: readCode ?? before?.errorCode ?? null,
           phase,
         });
       } catch {

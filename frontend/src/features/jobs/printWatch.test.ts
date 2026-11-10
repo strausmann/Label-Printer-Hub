@@ -339,6 +339,38 @@ describe("a tape run in sub-jobs (#277)", () => {
     expect(result.current[0]!.phase).toBe("failed");
   });
 
+  describe("after a reconnect the code of the job record decides the run view", () => {
+    it("a printing label the read reports as outcome_unknown is an unknown group, not a refusal", async () => {
+      const { result } = renderHook(() => useWatchedPrints());
+      const jobs = ids(5);
+      act(() => void watchRun(jobs));
+      act(() => jobs.slice(0, 3).forEach((j) => event(j, "completed")));
+      act(() => jobs.slice(3).forEach((j) => event(j, "printing")));
+      await act(async () => void (await resyncWatchedJobs(async () => ({ state: "failed_restart", error: "outcome_unknown: the link broke while sending" }))));
+      expect(result.current[0]!.run).toMatchObject({ stopKind: "unknown", stopCode: "outcome_unknown", unknownFrom: 4, unknownTo: 5 });
+    });
+
+    it("a printing label the read reports as tape_run_interrupted takes the actions away", async () => {
+      const { result } = renderHook(() => useWatchedPrints());
+      const jobs = ids(5);
+      act(() => void watchRun(jobs));
+      act(() => jobs.slice(0, 3).forEach((j) => event(j, "completed")));
+      act(() => jobs.slice(3).forEach((j) => event(j, "printing")));
+      await act(async () => void (await resyncWatchedJobs(async () => ({ state: "failed_restart", error: "tape_run_interrupted: the hub restarted" }))));
+      expect(result.current[0]!.run).toBeUndefined();
+    });
+
+    it("a refusal code of the read survives as the stop code", async () => {
+      const { result } = renderHook(() => useWatchedPrints());
+      const jobs = ids(5);
+      act(() => void watchRun(jobs));
+      act(() => jobs.slice(0, 3).forEach((j) => event(j, "completed")));
+      act(() => jobs.slice(3).forEach((j) => event(j, "printing")));
+      await act(async () => void (await resyncWatchedJobs(async () => ({ state: "failed", error: "ipp_aborted: The printer aborted the job." }))));
+      expect(result.current[0]!.run).toMatchObject({ stopKind: "refused", stopCode: "ipp_aborted" });
+    });
+  });
+
   it("a continued sub-job does not offer the confirmation again while it waits for the worker", () => {
     const { result } = renderHook(() => useWatchedPrints());
     const jobs = ids(5);
