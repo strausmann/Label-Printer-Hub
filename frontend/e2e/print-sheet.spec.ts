@@ -59,7 +59,8 @@ test.describe.serial("print onto a sheet", () => {
 
     await openCart(page, `/cart?sheet=${PARTLY_USED}`, 9);
     await expect(page.getByRole("heading", { level: 2, name: "Print onto a sheet" })).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "Sheet" })).toHaveValue(PARTLY_USED);
+    // exact: Playwright matches names by substring, and "Sheet type" is a combobox here too.
+    await expect(page.getByRole("combobox", { name: "Sheet", exact: true })).toHaveValue(PARTLY_USED);
     await expect(page.getByText("9 printed now")).toBeVisible({ timeout: 30_000 });
     expect(await noSideScroll(page)).toBe(true);
 
