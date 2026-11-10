@@ -534,6 +534,10 @@ msgstr "Archivieren"
 msgid "archived"
 msgstr "archiviert"
 
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Are these numbers right?"
+msgstr "Stimmen diese Zahlen?"
+
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Ask an admin to set it up."
 msgstr "Bitten Sie einen Admin, es einzurichten."
@@ -668,6 +672,7 @@ msgstr "Kamerabild"
 msgid "Can't be read with the current secret key — enter it again"
 msgstr "Lässt sich mit dem aktuellen Geheimschlüssel nicht lesen — bitte erneut eingeben"
 
+#: src/features/archive/FeedbackLinks.tsx
 #: src/features/archive/ImportDialog.tsx
 #: src/features/archive/TypeDetail.tsx
 #: src/features/archive/TypeForm.tsx
@@ -866,6 +871,10 @@ msgstr "Spalten"
 #: src/features/settings/Integrations.tsx
 msgid "Configured"
 msgstr "Eingerichtet"
+
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Confirm the dimensions"
+msgstr "Die Maße bestätigen"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Confirm the reset"
@@ -1730,9 +1739,21 @@ msgstr "Hersteller und Modell"
 msgid "margin"
 msgstr "Rand"
 
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Mark as verified"
+msgstr "Als geprüft markieren"
+
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Mark as verified locally"
+msgstr "Lokal als geprüft markieren"
+
 #: src/features/sheets/SheetDetail.tsx
 msgid "Mark cells as used"
 msgstr "Zellen als belegt markieren"
+
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Mark this type as verified?"
+msgstr "Diesen Typ als geprüft markieren?"
 
 #: src/features/sheets/SheetDetail.tsx
 msgctxt "cell source"
@@ -1757,6 +1778,10 @@ msgstr "{0} neu vermessen"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Measure with the readings helper"
 msgstr "Mit dem Messwert-Helfer berechnen"
+
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Measured a sheet? Tell us what you found. The link opens a prepared issue on GitHub that holds this sheet type's data only: no address of your hub, no printer, no keys."
+msgstr "Hast du einen Bogen ausgemessen? Sag uns, was du gefunden hast. Der Link öffnet ein vorbereitetes Issue auf GitHub, das nur die Daten dieses Bogentyps enthält: keine Adresse deines Hubs, keinen Drucker, keine Schlüssel."
 
 #: src/features/archive/TypeDetail.tsx
 #: src/features/archive/TypeForm.tsx
@@ -2640,6 +2665,10 @@ msgstr "Korrektur von {trayLabel} an {printerName} entfernen? Drucke aus diesem 
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "Replace the device?"
 msgstr "Gerät ersetzen?"
+
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Report a problem with the dimensions"
+msgstr "Ein Problem mit den Maßen melden"
 
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"
@@ -4320,6 +4349,11 @@ msgstr "URL"
 #: src/features/sheets/print/CapacityAlert.tsx
 msgid "Use {roomyCode} instead ({room} free)"
 msgstr "Stattdessen {roomyCode} verwenden ({room} frei)"
+
+#. placeholder {0}: type.key
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Use this when you measured a sheet and the numbers match. It only marks {0} as verified in this hub; nothing is sent to GitHub."
+msgstr "Nutze das, wenn du einen Bogen ausgemessen hast und die Zahlen stimmen. Es markiert {0} nur in diesem Hub als geprüft; an GitHub wird nichts gesendet."
 
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"

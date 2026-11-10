@@ -534,6 +534,10 @@ msgstr "Archive"
 msgid "archived"
 msgstr "archived"
 
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Are these numbers right?"
+msgstr "Are these numbers right?"
+
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Ask an admin to set it up."
 msgstr "Ask an admin to set it up."
@@ -668,6 +672,7 @@ msgstr "Camera view"
 msgid "Can't be read with the current secret key — enter it again"
 msgstr "Can't be read with the current secret key — enter it again"
 
+#: src/features/archive/FeedbackLinks.tsx
 #: src/features/archive/ImportDialog.tsx
 #: src/features/archive/TypeDetail.tsx
 #: src/features/archive/TypeForm.tsx
@@ -866,6 +871,10 @@ msgstr "Columns"
 #: src/features/settings/Integrations.tsx
 msgid "Configured"
 msgstr "Configured"
+
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Confirm the dimensions"
+msgstr "Confirm the dimensions"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Confirm the reset"
@@ -1730,9 +1739,21 @@ msgstr "Make and model"
 msgid "margin"
 msgstr "margin"
 
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Mark as verified"
+msgstr "Mark as verified"
+
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Mark as verified locally"
+msgstr "Mark as verified locally"
+
 #: src/features/sheets/SheetDetail.tsx
 msgid "Mark cells as used"
 msgstr "Mark cells as used"
+
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Mark this type as verified?"
+msgstr "Mark this type as verified?"
 
 #: src/features/sheets/SheetDetail.tsx
 msgctxt "cell source"
@@ -1757,6 +1778,10 @@ msgstr "Measure {0} again"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Measure with the readings helper"
 msgstr "Measure with the readings helper"
+
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Measured a sheet? Tell us what you found. The link opens a prepared issue on GitHub that holds this sheet type's data only: no address of your hub, no printer, no keys."
+msgstr "Measured a sheet? Tell us what you found. The link opens a prepared issue on GitHub that holds this sheet type's data only: no address of your hub, no printer, no keys."
 
 #: src/features/archive/TypeDetail.tsx
 #: src/features/archive/TypeForm.tsx
@@ -2640,6 +2665,10 @@ msgstr "Remove the correction of {trayLabel} on {printerName}? Prints on this tr
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "Replace the device?"
 msgstr "Replace the device?"
+
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Report a problem with the dimensions"
+msgstr "Report a problem with the dimensions"
 
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"
@@ -4320,6 +4349,11 @@ msgstr "URL"
 #: src/features/sheets/print/CapacityAlert.tsx
 msgid "Use {roomyCode} instead ({room} free)"
 msgstr "Use {roomyCode} instead ({room} free)"
+
+#. placeholder {0}: type.key
+#: src/features/archive/FeedbackLinks.tsx
+msgid "Use this when you measured a sheet and the numbers match. It only marks {0} as verified in this hub; nothing is sent to GitHub."
+msgstr "Use this when you measured a sheet and the numbers match. It only marks {0} as verified in this hub; nothing is sent to GitHub."
 
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"

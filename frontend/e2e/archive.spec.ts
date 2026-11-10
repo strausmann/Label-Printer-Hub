@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
 import { MAIN } from "./env";
 import { expect, mainKey, signInWith, test } from "./fixtures";
@@ -156,6 +157,103 @@ test.describe.serial("sheet archive", () => {
         await page.screenshot({ path: testInfo.outputPath(`worst-list-${size.width}-en-light.png`), fullPage: true });
       }
     } finally {
+      await api(page, "DELETE", `/api/v1/sheet-types/${key}`);
+    }
+  });
+  test("feedback links open a pre-filled issue; the verify action is admin-only and asks first", async () => {
+    const SHOTS = process.env.E2E_SHOTS_DIR;
+    const shot = async (name: string) => {
+      if (!SHOTS) return;
+      mkdirSync(SHOTS, { recursive: true });
+      await page.screenshot({ path: resolve(SHOTS, name), fullPage: true });
+    };
+    const key = "feedback-e2e-type";
+    const geometry = {
+      page_size: "A4", shape: "rectangle", cols: 2, rows: 5, label_w: 90, label_h: 50, pitch_x: 100, pitch_y: 55,
+      margin_top: 10, margin_left: 5, corner_radius: null,
+    };
+    const verifiedOf = (k: string) =>
+      page.evaluate(async (p) => ((await (await fetch(p)).json()) as { verified: boolean }).verified, `/api/v1/sheet-types/${k}`);
+    const REPORT = "Report a problem with the dimensions";
+    const CONFIRM = "Confirm the dimensions";
+    const BASE = "https://github.com/strausmann/Label-Printer-Hub/issues/new?template=sheet-type-feedback.yml";
+    await setLanguage(page, "en");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    try {
+      expect(
+        await api(page, "POST", "/api/v1/sheet-types", {
+          key, prefix: "FBE", vendor: "Müller & Söhne", product_codes: ["FB-1", "FB#2"], source_name: "Our wiki",
+          source_url: "http://wiki.intranet.local/labels", geometry,
+        }),
+      ).toBe(201);
+      await page.goto(`/sheets/archive?type=${key}`);
+      await expect(page.getByRole("heading", { name: key })).toBeVisible();
+
+      // Both links, for the admin we are signed in as.
+      const report = page.getByRole("link", { name: REPORT });
+      const confirm = page.getByRole("link", { name: CONFIRM });
+      for (const link of [report, confirm]) {
+        expect(await link.getAttribute("href")).toMatch(new RegExp(`^${BASE.replace(/[?.]/g, "\\$&")}`));
+        await expect(link).toHaveAttribute("target", "_blank");
+        await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      }
+      const wrong = new URL((await report.getAttribute("href"))!).searchParams;
+      expect(wrong.get("title")).toBe(`[sheet type] ${key} v1: dimensions wrong`);
+      expect(wrong.get("vendor")).toBe("Müller & Söhne");
+      expect(wrong.get("product_codes")).toBe("FB-1\nFB#2");
+      // A custom type's source URL is user-entered and may point into an intranet: only the name travels.
+      expect(wrong.get("provenance")).toBe("Our wiki");
+      expect(await report.getAttribute("href")).not.toContain("intranet");
+      expect(await report.getAttribute("href")).not.toContain(new URL(page.url()).host);
+      expect(await noSideScroll(page)).toBe(true);
+
+      for (const [size, tag] of [[{ width: 1280, height: 800 }, "desktop"], [{ width: 390, height: 844 }, "phone"]] as const) {
+        await page.setViewportSize(size);
+        for (const scheme of ["light", "dark"] as const) {
+          await page.emulateMedia({ colorScheme: scheme });
+          await expect(report).toBeVisible();
+          expect(await noSideScroll(page)).toBe(true);
+          await shot(`task-18-${tag}-${scheme}.png`);
+        }
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.setViewportSize({ width: 1280, height: 800 });
+
+      // A user below admin (the lowest the fixtures can be: the session answer is rewritten to "print").
+      await page.route("**/api/v1/auth/session", async (route) => {
+        const response = await route.fetch();
+        if (route.request().method() !== "GET") return route.fulfill({ response });
+        await route.fulfill({ response, json: { ...(await response.json()), scope: "print" } });
+      });
+      await page.goto(`/sheets/archive?type=${key}`);
+      await expect(page.getByRole("link", { name: REPORT })).toBeVisible();
+      await expect(page.getByRole("link", { name: CONFIRM })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Mark as verified locally" })).toHaveCount(0);
+      await page.unroute("**/api/v1/auth/session");
+
+      // The admin: nothing is sent until the dialog is confirmed.
+      await page.goto(`/sheets/archive?type=${key}`);
+      await page.getByRole("button", { name: "Mark as verified locally" }).click();
+      const dialog = page.getByRole("alertdialog");
+      await expect(dialog).toBeVisible();
+      await shot("task-18-dialog-desktop.png");
+      expect(await verifiedOf(key)).toBe(false);
+      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await expect(dialog).toBeHidden();
+      expect(await verifiedOf(key)).toBe(false);
+
+      await page.getByRole("button", { name: "Mark as verified locally" }).click();
+      await page.getByRole("alertdialog").getByRole("button", { name: "Mark as verified", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Mark as verified locally" })).toHaveCount(0);
+      expect(await verifiedOf(key)).toBe(true);
+
+      await setLanguage(page, "de");
+      await page.goto(`/sheets/archive?type=${key}`);
+      await expect(page.getByRole("link", { name: "Ein Problem mit den Maßen melden" })).toBeVisible();
+      await setLanguage(page, "en");
+    } finally {
+      await page.unroute("**/api/v1/auth/session").catch(() => {});
       await api(page, "DELETE", `/api/v1/sheet-types/${key}`);
     }
   });

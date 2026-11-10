@@ -1,0 +1,137 @@
+name: Sheet type dimensions
+description: Report wrong dimensions of a sheet type, or confirm that they are right
+title: "[sheet type] "
+labels:
+  - "area:sheets"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for checking a sheet type. The fields below were filled in by the hub from the
+        sheet type page; they carry nothing but the sheet type itself.
+
+        **Before submitting:** do not add private host names, addresses, keys or user names.
+        The hub never puts them into this form, and neither should you.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What do you want to tell us?
+      options:
+        - Dimensions are wrong
+        - Dimensions are confirmed
+    validations:
+      required: true
+
+  - type: input
+    id: type_key
+    attributes:
+      label: Sheet type
+    validations:
+      required: true
+
+  - type: input
+    id: type_version
+    attributes:
+      label: Version
+    validations:
+      required: true
+
+  - type: input
+    id: version_note
+    attributes:
+      label: What changed in this version
+
+  - type: input
+    id: vendor
+    attributes:
+      label: Vendor
+
+  - type: textarea
+    id: product_codes
+    attributes:
+      label: Product codes
+
+  - type: textarea
+    id: geometry
+    attributes:
+      label: Stored dimensions
+      description: Every number the hub stores for this version.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: allow_qr
+    attributes:
+      label: QR codes on labels
+      options:
+        - allowed
+        - not allowed
+
+  - type: dropdown
+    id: verified
+    attributes:
+      label: Marked as verified in the hub
+      options:
+        - "yes"
+        - "no"
+
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Where the numbers come from
+
+  - type: input
+    id: printer_model
+    attributes:
+      label: Printer model
+      description: Only if you printed on a printer the hub knows.
+
+  - type: input
+    id: tray
+    attributes:
+      label: Paper tray
+
+  - type: dropdown
+    id: calibration
+    attributes:
+      label: Printer calibration
+      options:
+        - calibrated
+        - uncalibrated
+
+  - type: textarea
+    id: observed
+    attributes:
+      label: What did you measure or see?
+      description: >-
+        Measure the sheet with a ruler or calipers and say what differs from the stored
+        dimensions (or what matched).
+    validations:
+      required: true
+
+  - type: input
+    id: hub_version
+    attributes:
+      label: Hub version
+
+  - type: dropdown
+    id: scheme
+    attributes:
+      label: How you reach the hub
+      options:
+        - http
+        - https
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+
+  - type: checkboxes
+    id: privacy_check
+    attributes:
+      label: Privacy
+      options:
+        - label: I checked the vendor, product codes and note for anything internal.
+          required: true
