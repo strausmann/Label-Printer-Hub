@@ -117,6 +117,7 @@ from app.db.lifespan import (
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
 from app.observability.log_buffer import install_log_buffer
+from app.page_render.pdf import register_pdf_font
 from app.page_render.test_page import render_test_page
 from app.printer_models.registry import ModelRegistry
 from app.repositories import printers as printers_repo
@@ -263,6 +264,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
     warn_if_insecure_cookies(settings)
+    # 266-14: the PDF font is registered before any planner or renderer thread can need it.
+    # A missing font is reported where it is used (the sheet print answers with it).
+    try:
+        register_pdf_font()
+    except Exception:
+        _log.exception("The PDF font could not be registered at startup")
 
     # --- DB startup: migrations first, then in-memory state, then DB writes ---
     await run_migrations()

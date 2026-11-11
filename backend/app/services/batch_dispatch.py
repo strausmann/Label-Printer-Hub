@@ -11,9 +11,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from app.config import get_settings
 from app.schemas.print_request import PrintRequest
 
 if TYPE_CHECKING:
+    from app.services.print_queue import PrintQueue
     from app.services.print_service import PrintService
 
 
@@ -24,6 +26,9 @@ async def dispatch_batch(
     half_cut: bool = False,
     run_id: UUID | None = None,
     label_ids: list[UUID] | None = None,
+    queue: PrintQueue | None = None,
+    printer_id: UUID | None = None,
+    api_key_id: UUID | None = None,
 ) -> list[UUID]:
     """Submit a batch of mixed-ContentType print requests.
 
@@ -35,16 +40,34 @@ async def dispatch_batch(
         service: PrintService-Instanz für den Ziel-Drucker.
         items: Liste von PrintRequest-Objekten (mindestens einer).
         half_cut: Half-Cut zwischen Labels aktivieren (Standard: False).
+        queue, printer_id, api_key_id: with a queue, the batch first claims a place under the
+            queued-run caps (263-76, ``PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER`` / ``…_PER_KEY``)
+            before anything is looked up, drawn or stored; a submit that fails gives it back.
 
     Returns:
         list[UUID]: Job-IDs aller eingereihten Print-Jobs.
 
     Raises:
         ValueError: items ist leer.
+        TooManyQueuedRunsError: the printer or the key has no queued-run place left.
     """
     if not items:
         msg = "Batch must contain at least one item."
         raise ValueError(msg)
-    return await service.submit_batch_job(
-        items, half_cut=half_cut, run_id=run_id, label_ids=label_ids
+    if queue is None or printer_id is None:
+        return await service.submit_batch_job(
+            items, half_cut=half_cut, run_id=run_id, label_ids=label_ids
+        )
+    settings = get_settings()
+    slot = queue.claim_run_slot(
+        printer_id,
+        api_key_id,
+        per_printer=settings.max_queued_runs_per_printer,
+        per_key=settings.max_queued_runs_per_key,
     )
+    try:
+        return await service.submit_batch_job(
+            items, half_cut=half_cut, run_id=run_id, label_ids=label_ids, slot=slot
+        )
+    finally:
+        queue.release_run_slot(slot)  # a no-op once the run took the claim over

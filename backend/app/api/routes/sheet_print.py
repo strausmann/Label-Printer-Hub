@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Path, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.identity_hold import ensure_sheet_not_held
@@ -71,6 +71,16 @@ _PREVIEW_ERRORS: dict[int | str, dict[str, Any]] = {
     502: {"description": "An integration lookup failed (`integration_lookup_failed`)."},
     503: {"description": "An integration is not configured (`integration_not_configured`)."},
 }
+_PREVIEW_ONLY_ERRORS: dict[int | str, dict[str, Any]] = {
+    **_PREVIEW_ERRORS,
+    429: {
+        "description": (
+            "The key has a preview in progress already (`too-many-previews`): one per key at "
+            "a time. The body has the rate limit's shape (`retry_after_seconds`)."
+        )
+    },
+}
+_PREVIEW_RETRY_AFTER_S = 1
 
 
 @router.post(
@@ -86,7 +96,7 @@ _PREVIEW_ERRORS: dict[int | str, dict[str, Any]] = {
         "run plans one sheet: a second placement is refused (`preview_too_large`), and the items "
         "the sheet does not take are left out (`placed`, `remaining`)."
     ),
-    responses=_PREVIEW_ERRORS,
+    responses=_PREVIEW_ONLY_ERRORS,
 )
 async def preview_sheet_print(
     printer_key: PrinterKey,
@@ -106,15 +116,31 @@ async def preview_sheet_print(
     # Give the connection back before the lookups and the drawing (R10-1): the printer row is
     # all this request still needs from the session, and a committed session keeps it usable.
     await session.commit()
-    with mapped():
-        return await print_service.preview(
-            db_engine.async_session,
-            printer=printer,
-            request=body,
-            lookup=lookup,
-            renderer=DEFAULT_CELL_RENDERER,
-            language=None if language is None else str(language),
-        )
+    # 266-07: one preview per key at a time (a request without a key: per caller and address).
+    owner = auth.api_key_id or (auth.source, auth.user, auth.ip)
+    try:
+        with print_service.preview_slot(owner), mapped():
+            return await print_service.preview(
+                db_engine.async_session,
+                printer=printer,
+                request=body,
+                lookup=lookup,
+                renderer=DEFAULT_CELL_RENDERER,
+                language=None if language is None else str(language),
+            )
+    except print_service.TooManyPreviewsError:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error_code": "too-many-previews",
+                "error_message": (
+                    "A preview of this key is in progress. Retry after "
+                    f"{_PREVIEW_RETRY_AFTER_S} seconds."
+                ),
+                "retry_after_seconds": _PREVIEW_RETRY_AFTER_S,
+            },
+            headers={"Retry-After": str(_PREVIEW_RETRY_AFTER_S)},
+        ) from None
 
 
 _PRINT_ERRORS: dict[int | str, dict[str, Any]] = {

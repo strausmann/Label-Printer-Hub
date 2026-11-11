@@ -39,6 +39,10 @@ from app.services.ql_layout import resolve_layout
 _log = logging.getLogger(__name__)
 
 
+MAX_BATCH_LOOKUPS = 8
+"""263-78: integration lookups of one batch that run at once."""
+
+
 class PrintService:
     """Orchestrate preflight → render → persist → queue.submit."""
 
@@ -233,8 +237,12 @@ class PrintService:
         half_cut: bool,
         run_id: UUID | None = None,
         label_ids: list[UUID] | None = None,
+        slot: UUID | None = None,
     ) -> list[UUID]:
         """Render N items and submit them to the queue as one tape run (#277).
+
+        *slot* is the queued-run claim the run takes over (263-76, ``dispatch_batch``). At most
+        ``MAX_BATCH_LOOKUPS`` integration lookups of the batch run at once (263-78).
 
         The queue splits the run into sub-jobs of ``MAX_LABELS_PER_TAPE_JOB`` and sends groups
         of ``TAPE_GROUP_SIZE``. *run_id* names the run (the batch id of the API). *label_ids*,
@@ -278,10 +286,13 @@ class PrintService:
         ]
 
         # 2. Resolve LabelData ONCE per item, then render via LayoutEngine
+        lookups = asyncio.Semaphore(MAX_BATCH_LOOKUPS)
+
         async def _prepare_one(
             req: PrintRequest, opts: PrintOptions
         ) -> tuple[Image.Image, dict[str, Any]]:
-            label_data = await self._resolve_label_data(req)
+            async with lookups:
+                label_data = await self._resolve_label_data(req)
             image = await asyncio.to_thread(
                 functools.partial(
                     self._engine.render,
@@ -362,6 +373,7 @@ class PrintService:
                 "orientation": str(orientation),
             },
             run_id=run_id,
+            slot=slot,
         )
         if label_ids is not None:
             label_ids.extend(all_job_ids)

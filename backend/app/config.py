@@ -126,6 +126,12 @@ class Settings(BaseSettings):
     sse_probe_interval_s: float = Field(default=30.0, gt=0)
     """SNMP probe interval for StatusProbeProducer (seconds). Must be > 0."""
 
+    # 263-76: tape runs (batches) a printer and an API key may have in the queue at once. A run
+    # counts from the request until it is over, also while it waits for ``/continue`` or a
+    # reprint. Over the cap the batch answers 429 ``too-many-queued-runs``.
+    max_queued_runs_per_printer: int = Field(default=5, gt=0)
+    max_queued_runs_per_key: int = Field(default=20, gt=0)
+
     # D10: proxy headers are trusted only with the SSO trust token. The two legacy
     # paths below are opt-in (default off) and never mint a browser session.
     # Legacy ``X-Pangolin-User`` header without a trust token.

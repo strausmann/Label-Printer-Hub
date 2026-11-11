@@ -151,3 +151,8 @@ class CleanupTask:
             evict_finished(self._queue, now=datetime.now(UTC), keep_s=KEEP_FINISHED_S)
         except Exception:
             logger.exception("CleanupTask: dropping finished jobs from memory failed")
+        try:
+            # 263-76: runs that wait for ``/continue`` too long give up their pictures.
+            self._queue.drop_waiting_pictures()
+        except Exception:
+            logger.exception("CleanupTask: dropping the pictures of waiting runs failed")

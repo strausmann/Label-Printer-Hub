@@ -16,6 +16,7 @@ are the decision.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -381,7 +382,11 @@ async def _attempt(
     explicit = any(isinstance(p.cells, list) for p in placements)
     async with write_transaction(session):
         views, new_views = await _resolve_views(session, placements, required_type_key, actor)
-        pl = plan(views, len(items), hw_margins_hmm=hw_margins_hmm, margin=margin)
+        # 266-14: planning is CPU work (margin and feed-mark geometry); it runs in a thread while
+        # this transaction holds the write lock, so the event loop serves other requests meanwhile.
+        pl = await asyncio.to_thread(
+            plan, views, len(items), hw_margins_hmm=hw_margins_hmm, margin=margin
+        )
         fresh = expected_of(pl, new_views)
         if expected is not None and list(expected) != fresh:
             raise PlanChangedError(_plan_detail(fresh))  # write_transaction rolls it all back

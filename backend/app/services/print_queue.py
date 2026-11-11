@@ -320,6 +320,41 @@ MAX_HELD_RUNS_PER_PRINTER = 5
 discards the oldest (its waiting labels are cancelled with ``run_discarded``)."""
 
 
+WAITING_RUN_PICTURES_TTL_S = 15 * 60
+"""263-76: a run that waits for ``/continue`` this long drops the PNGs of its waiting labels;
+the continue draws them again from the stored rows."""
+
+QUEUED_RUN_RETRY_AFTER_S = 30
+"""The ``Retry-After`` hint of a ``too-many-queued-runs`` answer (a run ends when it prints)."""
+
+
+class TooManyQueuedRunsError(Exception):
+    """263-76: the printer (``scope="printer"``) or the API key (``scope="key"``) already has
+    ``limit`` tape runs in the queue."""
+
+    def __init__(self, scope: Literal["printer", "key"], limit: int) -> None:
+        super().__init__(f"At most {limit} queued tape runs per {scope}.")
+        self.scope = scope
+        self.limit = limit
+
+
+@dataclass
+class _RunSlot:
+    """One place under the queued-run caps (263-76).
+
+    ``pending``: claimed for a batch that is still being prepared (lookups, render, rows).
+    Afterwards it follows ``run`` (a live tape run) or ``job_ids`` (a recovered batch): the slot
+    counts while the run is held, or while any of its labels is not terminal or its terminal
+    state could not be written (``_unpersisted``).
+    """
+
+    printer_id: UUID
+    api_key_id: UUID | None
+    pending: bool = False
+    run: TapeRun | None = None
+    job_ids: Sequence[str] = ()
+
+
 _TERMINAL_JOB_STATES = frozenset({JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED})
 _BATCH_OPTION_KEYS = ("auto_cut", "high_resolution", "half_cut", "orientation")
 
@@ -434,6 +469,8 @@ class PrintQueue:
         # #277: tape runs that are printing, wait for a confirmation or stopped; a finished run
         # is forgotten.
         self._runs: dict[UUID, TapeRun] = {}
+        # 263-76: the places under the queued-run caps, by run id (or claim token while pending).
+        self._run_slots: dict[UUID, _RunSlot] = {}
 
     # --- identity hold (#231) -----------------------------------------------
 
@@ -682,6 +719,9 @@ class PrintQueue:
         for run_id, run in list(self._runs.items()):
             if run.printer_id == printer_id:
                 del self._runs[run_id]
+        for key, slot in list(self._run_slots.items()):
+            if slot.printer_id == printer_id and not slot.pending:
+                del self._run_slots[key]
         self._printers.pop(printer_id, None)
         self._page_printers.pop(printer_id, None)
 
@@ -735,6 +775,7 @@ class PrintQueue:
         # a row without a run stays a single job.
         plan: list[Job | UUID] = []
         runs: dict[UUID, list[Job]] = {}
+        recovered_keys: dict[UUID, UUID | None] = {}
         for db_job in pending_db_jobs:
             # S-1: StrEnum-Konsistenz — DbJobState.QUEUED.value statt String-Literal
             if db_job.state != DbJobState.QUEUED.value:
@@ -809,11 +850,19 @@ class PrintQueue:
                 if run_id not in runs:
                     runs[run_id] = []
                     plan.append(run_id)
+                    recovered_keys[run_id] = db_job.api_key_id
                 runs[run_id].append(wrapper)
             logger.info(
                 "Recovery: QUEUED-Job %s auf Drucker %s re-enqueued",
                 db_job.id,
                 printer_id,
+            )
+        for run_id, members in runs.items():
+            # 263-76: a recovered run counts against its printer's cap until it is over.
+            self._run_slots[run_id] = _RunSlot(
+                printer_id=printer_id,
+                api_key_id=recovered_keys.get(run_id),
+                job_ids=[m.id for m in members],
             )
         for entry in plan:
             if isinstance(entry, UUID):
@@ -1145,11 +1194,15 @@ class PrintQueue:
         tape_mm: int,
         options: dict[str, Any],
         run_id: UUID | None = None,
+        slot: UUID | None = None,
     ) -> UUID:
         """Submit N images as one tape run (#277): sub-jobs of at most 50, groups of 10.
 
         Only the first sub-job is queued; each further one waits for ``confirm_run``. *run_id*
-        names the run (the API's batch id); a new id is made when it is left out.
+        names the run (the API's batch id); a new id is made when it is left out. *slot* is the
+        claim of ``claim_run_slot`` (263-76): the run takes it over; without one the run still
+        counts against its printer's cap. The same image object (the copies of one item) is
+        encoded once, and its labels share that PNG.
 
         Args:
             printer_id: Target printer (must be registered in self._queues).
@@ -1195,11 +1248,19 @@ class PrintQueue:
             self._jobs[str(jid)] = job
             registered.append(job)
 
-        # Gemini-Review G1 (PR #106): Parallel PNG-Serialisierung
+        # Gemini-Review G1 (PR #106): Parallel PNG-Serialisierung; 263-76: once per distinct
+        # image, so the copies of an item share one PNG.
+        distinct: dict[int, int] = {}
+        unique: list[Image.Image] = []
+        for img in images:
+            if id(img) not in distinct:
+                distinct[id(img)] = len(unique)
+                unique.append(img)
         try:
-            payloads = await asyncio.gather(
-                *[asyncio.to_thread(_serialize_image_to_png, img) for img in images]
+            encoded = await asyncio.gather(
+                *[asyncio.to_thread(_serialize_image_to_png, img) for img in unique]
             )
+            payloads = [encoded[distinct[id(img)]] for img in images]
         except BaseException:
             for job in registered:
                 self._drop_unqueued(job)
@@ -1223,6 +1284,13 @@ class PrintQueue:
         if printer_id not in self._queues or self._removing(printer_id):
             raise KeyError(f"Unknown printer: {printer_id}")  # removed while serialising
         self._runs[batch_id] = run
+        # No await from here: the claim becomes the run's place under the caps (263-76).
+        claim = self._run_slots.pop(slot, None) if slot is not None else None
+        self._run_slots[batch_id] = _RunSlot(
+            printer_id=printer_id,
+            api_key_id=claim.api_key_id if claim is not None else None,
+            run=run,
+        )
         self._queues[printer_id].put_nowait(self._sub_job(run))
         logger.info(
             "Batch %s queued on %s with %d items in %d sub-jobs",
@@ -1297,10 +1365,22 @@ class PrintQueue:
             RunStateError: ``run_not_awaiting_confirmation``.
         """
         run = self._live_run(run_id)
-        if run.state != "awaiting_confirmation":
-            raise RunStateError(
-                "run_not_awaiting_confirmation", "The run does not wait for a confirmation."
-            )
+        while True:
+            if run.state != "awaiting_confirmation":
+                raise RunStateError(
+                    "run_not_awaiting_confirmation", "The run does not wait for a confirmation."
+                )
+            start, end = run.sub_jobs[run.current]
+            missing = [k for k in run.job_ids[start:end] if k not in run.payloads]
+            if not missing:
+                break
+            # 263-76: the pictures were dropped while the run waited; draw them again. The run
+            # can change across the awaits: it is looked up and checked again afterwards.
+            drawn = await self._redraw(missing)
+            run = self._live_run(run_id)
+            for key, picture in drawn.items():
+                if key in run.job_ids:
+                    run.payloads.setdefault(key, picture)
         # No await from the check to the put: two confirmations cannot both start the sub-job.
         run.state = "printing"
         run.held_since = None
@@ -1359,6 +1439,8 @@ class PrintQueue:
                     "awaits_confirmation": len(new_ids) >= MAX_LABELS_PER_TAPE_JOB,
                     "reprint_of": old,
                 }
+                if old not in run.payloads:  # dropped while the run waited (263-76)
+                    run.payloads.update(await self._redraw([old]))
                 job = Job(
                     id=str(new_id),
                     printer_id=run.printer_id,
@@ -1510,6 +1592,124 @@ class PrintQueue:
         for info in held[: max(0, len(held) - MAX_HELD_RUNS_PER_PRINTER)]:
             with contextlib.suppress(KeyError, RunStateError):
                 await self.discard_run(info.run_id, code="run_discarded_limit")
+
+    # --- queued-run caps and waiting pictures (263-76) -----------------------
+
+    def claim_run_slot(
+        self, printer_id: UUID, api_key_id: UUID | None, *, per_printer: int, per_key: int
+    ) -> UUID:
+        """Claim a place for one more tape run of *printer_id* and *api_key_id*.
+
+        Synchronous (no await): two concurrent claims cannot both take the last place. The
+        claim counts at once, while the batch is still looked up and drawn; ``enqueue_batch``
+        hands it to the run, ``release_run_slot`` gives it back when the submit failed. A run
+        counts until it is really over: while it is held (stopped, or waiting for a
+        confirmation), while any of its labels is not terminal, and while the end of a label
+        could not be written. A key of ``None`` is limited by the printer's cap only.
+
+        Raises:
+            TooManyQueuedRunsError: the printer or the key has no place left.
+        """
+        by_printer = 0
+        by_key = 0
+        for key, slot in list(self._run_slots.items()):
+            if not self._slot_counts(slot):
+                del self._run_slots[key]
+                continue
+            by_printer += slot.printer_id == printer_id
+            by_key += api_key_id is not None and slot.api_key_id == api_key_id
+        if by_printer >= per_printer:
+            raise TooManyQueuedRunsError("printer", per_printer)
+        if api_key_id is not None and by_key >= per_key:
+            raise TooManyQueuedRunsError("key", per_key)
+        token = uuid4()
+        self._run_slots[token] = _RunSlot(
+            printer_id=printer_id, api_key_id=api_key_id, pending=True
+        )
+        return token
+
+    def release_run_slot(self, token: UUID) -> None:
+        """Give back a claim that no run took over (idempotent; a taken claim is left alone)."""
+        slot = self._run_slots.get(token)
+        if slot is not None and slot.pending:
+            del self._run_slots[token]
+
+    def _slot_counts(self, slot: _RunSlot) -> bool:
+        if slot.pending:
+            return True
+        run = slot.run
+        if run is not None and self._runs.get(run.run_id) is run and run.state != "printing":
+            return True  # held: it waits for a confirmation, a reprint or a discard
+        for key in run.job_ids if run is not None else slot.job_ids:
+            if key in self._unpersisted:
+                return True
+            job = self._jobs.get(key)
+            if job is not None and job.state not in _TERMINAL_JOB_STATES:
+                return True
+        return False
+
+    def drop_waiting_pictures(
+        self, *, now: float | None = None, max_age_s: float = WAITING_RUN_PICTURES_TTL_S
+    ) -> int:
+        """Forget the PNGs of the labels of runs that wait for ``/continue`` for *max_age_s*.
+
+        Called from the cleanup task's tick. ``confirm_run`` (and ``reprint_from``) draw a
+        dropped picture again from the label's stored row, as a recovery does. Returns how many
+        labels lost their picture.
+        """
+        now = time.monotonic() if now is None else now
+        dropped = 0
+        for run in self._runs.values():
+            if (
+                run.state != "awaiting_confirmation"
+                or run.held_since is None
+                or now - run.held_since < max_age_s
+            ):
+                continue
+            for key in run.job_ids[run.sub_jobs[run.current][0] :]:
+                picture = run.payloads.pop(key, None)
+                if picture is None:
+                    continue
+                dropped += 1
+                job = self._jobs.get(key)
+                if job is not None and job.image_payload is picture:
+                    job.image_payload = None
+        if dropped:
+            logger.info("Dropped the pictures of %d labels of waiting runs", dropped)
+        return dropped
+
+    async def _redraw(self, keys: Sequence[str]) -> dict[str, bytes]:
+        """Draw the labels *keys* again from their stored rows; copies share one PNG.
+
+        Raises:
+            RunStateError: ``run_pictures_lost`` (a row is gone or cannot be drawn).
+        """
+        drawn: dict[str, bytes] = {}
+        by_item: dict[str, bytes] = {}
+        for key in keys:
+            row = await self._store.get(UUID(key))
+            payload = dict(row.payload) if row is not None else {}
+            if row is None or _REQUIRED_RERENDER_KEYS - payload.keys():
+                raise RunStateError(
+                    "run_pictures_lost",
+                    "The waiting labels cannot be drawn again; discard the run and print it again.",
+                )
+            item = str(payload.get("copy_master_id") or key)
+            if item not in by_item:
+                try:
+                    image = await asyncio.to_thread(self._rerender_from_db_payload, payload)
+                    by_item[item] = await asyncio.to_thread(_serialize_image_to_png, image)
+                except Exception as exc:
+                    logger.warning(
+                        "Run label %s cannot be drawn again (%s)", key, type(exc).__name__
+                    )
+                    raise RunStateError(
+                        "run_pictures_lost",
+                        "The waiting labels cannot be drawn again; discard the run and print it "
+                        "again.",
+                    ) from None
+            drawn[key] = by_item[item]
+        return drawn
 
     def _require_tape(self, printer_id: UUID) -> None:
         """D18: tape submission paths refuse page printers; a printer being removed is unknown."""

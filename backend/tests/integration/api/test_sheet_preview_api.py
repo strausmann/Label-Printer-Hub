@@ -446,9 +446,10 @@ async def test_no_db_connection_is_held_while_the_lookups_run(
     import app.db.engine as engine_module
     from app.api.routes.sheet_print import get_lookup_service
 
+    # One key per request: a key previews one sheet at a time (266-07).
     keys = {
-        "preview": {"X-Label-Hub-Key": await _insert_key(["read"])},
-        "print": {"X-Label-Hub-Key": await _insert_key(["print"])},
+        "preview": [{"X-Label-Hub-Key": await _insert_key(["read"])} for _ in range(8)],
+        "print": [{"X-Label-Hub-Key": await _insert_key(["print"])}] * 8,
     }
     pid, _ = await _printer()
     code = await _sheet()
@@ -469,8 +470,8 @@ async def test_no_db_connection_is_held_while_the_lookups_run(
 
     try:
         tasks = [
-            asyncio.create_task(api_client_with_seed.post(url, json=body, headers=keys[route]))
-            for _ in range(8)
+            asyncio.create_task(api_client_with_seed.post(url, json=body, headers=headers))
+            for headers in keys[route]
         ]
         for _ in range(100):  # until every request is inside its lookups: 8 x 6 started
             if slow.started >= 48:
@@ -483,3 +484,78 @@ async def test_no_db_connection_is_held_while_the_lookups_run(
         fastapi_app.dependency_overrides.pop(get_lookup_service, None)
 
     assert held == 0
+
+
+class _GatedLookup:
+    """An integration that answers once ``gate`` is set; ``entered`` is set by the first call."""
+
+    def __init__(self) -> None:
+        import asyncio
+
+        self.gate = asyncio.Event()
+        self.entered = asyncio.Event()
+
+    async def lookup(self, source_app: str, identifier: str) -> Any:
+        from app.schemas.label_data import LabelData
+
+        self.entered.set()
+        await self.gate.wait()
+        return LabelData(
+            source_app=source_app,
+            title=f"T {identifier}",
+            primary_id=f"P-{identifier}",
+            qr_payload=f"https://x.example.invalid/{identifier}",
+        )
+
+
+async def test_preview_cap_per_key(api_client_with_seed: httpx.AsyncClient) -> None:
+    """266-07: one preview per key at a time; the second answers 429 in the rate limit's shape.
+    Another key is not affected, and the key may preview again once the first one ended."""
+    import asyncio
+
+    from app.api.routes.sheet_print import get_lookup_service
+
+    mine = {"X-Label-Hub-Key": await _insert_key(["read"])}
+    other = {"X-Label-Hub-Key": await _insert_key(["read"])}
+    pid, _ = await _printer()
+    code = await _sheet()
+    await api_client_with_seed.get("/healthz")  # the lifespan starts on the first request
+    transport_app = api_client_with_seed._transport.app  # type: ignore[attr-defined]
+    fastapi_app = getattr(transport_app, "_app", transport_app)
+    gated = _GatedLookup()
+    fastapi_app.dependency_overrides[get_lookup_service] = lambda: gated
+    body = {
+        "items": [{"content_type": "qr_two_lines", "lookup": {"app": "grocy", "identifier": "1"}}],
+        "placements": [{"sheet": code}],
+    }
+    try:
+        first = asyncio.create_task(api_client_with_seed.post(_url(pid), json=body, headers=mine))
+        async with asyncio.timeout(5):
+            await gated.entered.wait()  # the first preview is inside its lookup
+
+        second = await api_client_with_seed.post(_url(pid), json=_body(code), headers=mine)
+        assert second.status_code == 429, second.text
+        detail = second.json()["detail"]
+        assert set(detail) == {"error_code", "error_message", "retry_after_seconds"}
+        assert detail["error_code"] == "too-many-previews"
+        assert second.headers["Retry-After"] == str(detail["retry_after_seconds"])
+
+        third = await api_client_with_seed.post(_url(pid), json=_body(code), headers=other)
+        assert third.status_code == 200, third.text
+
+        gated.gate.set()
+        assert (await first).status_code == 200
+    finally:
+        gated.gate.set()
+        fastapi_app.dependency_overrides.pop(get_lookup_service, None)
+
+    # Release path: the slot is free after a success and after a failure.
+    again = await api_client_with_seed.post(_url(pid), json=_body(code), headers=mine)
+    assert again.status_code == 200, again.text
+    bad = _body(code, 2)
+    bad["items"].append(
+        {"content_type": "qr_two_lines", "lookup": {"app": "no-such-app", "identifier": "7"}}
+    )
+    assert (await api_client_with_seed.post(_url(pid), json=bad, headers=mine)).status_code == 422
+    after = await api_client_with_seed.post(_url(pid), json=_body(code), headers=mine)
+    assert after.status_code == 200, after.text

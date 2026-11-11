@@ -23,7 +23,8 @@ import asyncio
 import base64
 import logging
 import traceback
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Hashable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from typing import Any, Final, Literal, Protocol
 from uuid import UUID, uuid4
@@ -150,12 +151,14 @@ __all__ = [
     "NO_MARGIN_BAND_REASON",
     "MarginCheck",
     "ResolvedItem",
+    "TooManyPreviewsError",
     "create_sheet_with_id_label",
     "id_cell_label",
     "margin_check",
     "margin_id_text",
     "page_margin_id_payload",
     "preview",
+    "preview_slot",
     "print_sheets",
     "reserved_margin_id_payload",
     "resolve_items",
@@ -672,9 +675,47 @@ def _gate() -> asyncio.Semaphore:
 
 
 async def draw_page_bounded(*args: Any) -> Any:
-    """``_draw_page`` in a thread, at most ``MAX_CONCURRENT_RENDERS`` at once in the process."""
-    async with _gate():
-        return await asyncio.to_thread(_draw_page, *args)
+    """``_draw_page`` in a thread, at most ``MAX_CONCURRENT_RENDERS`` at once in the process.
+
+    266-07: the slot is held until the thread has finished, not until the caller stops
+    waiting: a cancelled request (the client went away) leaves its thread drawing, and a slot
+    freed at the cancel would let the next request start one more thread than the cap.
+    """
+    gate = _gate()
+    await gate.acquire()
+    # No await from the acquire to the callback: the slot is always given back by the task.
+    task = asyncio.ensure_future(asyncio.to_thread(_draw_page, *args))
+    task.add_done_callback(lambda done: _end_render(gate, done))
+    return await asyncio.shield(task)
+
+
+def _end_render(gate: asyncio.Semaphore, done: asyncio.Future[Any]) -> None:
+    gate.release()
+    if not done.cancelled():
+        done.exception()  # retrieved: a render nobody waits for any more is not logged twice
+
+
+class TooManyPreviewsError(Exception):
+    """266-07: the caller has a preview in progress already (one per key at a time)."""
+
+
+_previews_in_progress: set[Hashable] = set()
+
+
+@contextmanager
+def preview_slot(owner: Hashable) -> Iterator[None]:
+    """One preview per *owner* (API key) at a time; a second one raises at once.
+
+    Synchronous check and claim (no await between them), freed when the block ends however it
+    ends.
+    """
+    if owner in _previews_in_progress:
+        raise TooManyPreviewsError()
+    _previews_in_progress.add(owner)
+    try:
+        yield
+    finally:
+        _previews_in_progress.discard(owner)
 
 
 def _margin_payload(
