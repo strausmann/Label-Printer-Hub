@@ -763,8 +763,9 @@ def preview_slot(owner: Hashable, render_owner: Hashable | None = None) -> Itera
     drawing in a thread keeps it, so one key cannot take both render slots (F3). All callers
     without a key are grouped by source, user and address (see the route). ``render_owner``
     (default: ``owner``) is whom the preview's stuck renders count against (#293): the key, or
-    ``render_slots.NO_KEY`` for every caller without a key, which no stuck render locks (each
-    of those callers is held to one preview by ``owner`` instead).
+    ``render_slots.NO_KEY`` for every caller without a key: that group is not locked per
+    caller but may hold at most ``render_slots.NO_KEY_STUCK_LIMIT`` stuck renders (each of
+    those callers is held to one preview by ``owner``).
     """
     if owner in _previews_in_progress:
         raise TooManyPreviewsError()

@@ -81,8 +81,12 @@ ends the preview with `HTTP 504` `render-timeout` and fails a page job with
 `render_timeout`. Its drawing thread cannot be stopped and keeps its slot until it ends;
 until then the key's next preview answers 429 `too-many-previews` and its next page job
 fails with `render_timeout` at once, so one key cannot take both slots by retrying.
-Callers without a key (browser sessions, SSO users) are not locked this way, or one user's
-stuck render would lock out every user; each of them still previews once at a time. With
+Callers without a key (browser sessions, SSO users) share one group and are not locked per
+user; each of them still previews once at a time. The group may hold at most one stuck
+render (all slots but one): past that a preview without a key answers `HTTP 503`
+`render-unavailable` and a page job without a key fails with `render_unavailable` at once,
+so one slot always stays free for the keys. Several different keys can still each hang one
+render and so take every slot; keys are issued by an admin, revoke such a key. With
 every slot stuck, a preview answers `HTTP 503` `render-unavailable` and a page job fails
 with `render_unavailable` at once; a caller never waits longer than the time limit for a
 slot. `GET /readiness` shows stuck renders in the check `render_slots` (failing when every

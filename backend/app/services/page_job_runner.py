@@ -327,7 +327,7 @@ class PageJobRunner:
         except (render_slots.RenderTimeoutError, render_slots.OwnerRenderStuckError):
             # #293: the thread draws on and keeps its slot (``render_slots``); the job is over.
             # A key with a stuck render gets no further slot: its job ends the same way at once
-            # (jobs without a key are not locked this way, ``render_slots.NO_KEY``).
+            # (jobs without a key: ``render_unavailable`` once their group is at its limit).
             await self._fail(page_job, result, "render_timeout", started=False)
             return
         except render_slots.RenderUnavailableError:

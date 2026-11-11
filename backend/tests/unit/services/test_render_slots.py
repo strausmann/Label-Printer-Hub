@@ -181,31 +181,72 @@ async def test_an_owner_that_gets_stuck_while_its_next_call_waits_is_refused(
     assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
 
 
-async def test_callers_without_a_key_are_not_locked_by_another_ones_stuck_render(
+async def test_callers_without_a_key_can_hang_at_most_all_but_one_slot(
     hang: _Hang,
 ) -> None:
-    """UI users share the owner ``NO_KEY``: one hanging render of a user must not lock every
-    UI user out until a restart. Only the global bound protects them; a key stays locked."""
+    """``NO_KEY`` may hold at most ``MAX_CONCURRENT_RENDERS - 1`` stuck renders: past that a
+    caller without a key is refused at once (503), and one slot is always left that the
+    group cannot hang; a key renders on it. Keys stay locked per key."""
     no_key = render_slots.owner_of(None)
-    with pytest.raises(render_slots.RenderTimeoutError):
-        await render_slots.render_bounded(hang, 1, label="t", owner=no_key, timeout_s=SHORT_S)
-    assert await render_slots.render_bounded(lambda: 2, label="t", owner=no_key) == 2
+    assert render_slots.NO_KEY_STUCK_LIMIT == render_slots.MAX_CONCURRENT_RENDERS - 1
+    assert await render_slots.render_bounded(lambda: 1, label="t", owner=no_key) == 1
+    for n in range(render_slots.NO_KEY_STUCK_LIMIT):
+        with pytest.raises(render_slots.RenderTimeoutError):
+            await render_slots.render_bounded(hang, n, label="t", owner=no_key, timeout_s=SHORT_S)
+    started: list[int] = []
+    async with asyncio.timeout(WAIT_S / 10):  # at once
+        with pytest.raises(render_slots.RenderUnavailableError):
+            await render_slots.render_bounded(
+                lambda: started.append(1), label="t", owner=no_key, timeout_s=WAIT_S
+            )
+    assert started == []
+    assert render_slots.free_slots() == 1  # the slot the group cannot hang
     key = uuid4()
+    assert await render_slots.render_bounded(lambda: 2, label="t", owner=key) == 2
     with pytest.raises(render_slots.RenderTimeoutError):
         await render_slots.render_bounded(hang, 3, label="t", owner=key, timeout_s=SHORT_S)
     with pytest.raises(render_slots.OwnerRenderStuckError):
         await render_slots.render_bounded(lambda: 4, label="t", owner=key)
-    # Both slots stuck now: the global bound refuses everyone at once, UI users too.
-    with pytest.raises(render_slots.RenderUnavailableError):
-        await render_slots.render_bounded(lambda: 5, label="t", owner=no_key)
     hang.release.set()
     await _until(lambda: render_slots.stuck_renders() == 0)
+    assert await render_slots.render_bounded(lambda: 5, label="t", owner=no_key) == 5
 
 
-async def test_ui_user_b_previews_while_ui_user_a_has_a_stuck_render(
+async def test_a_caller_without_a_key_waiting_for_a_slot_is_refused_once_the_group_is_full(
+    hang: _Hang,
+) -> None:
+    """The group limit is checked again once the slot is taken (it filled while waiting)."""
+    no_key = render_slots.owner_of(None)
+    other = _Hang()
+    try:
+        first = asyncio.create_task(
+            render_slots.render_bounded(hang, 1, label="t", owner=no_key, timeout_s=0.3)
+        )
+        busy = asyncio.create_task(
+            render_slots.render_bounded(other, 2, label="t", owner=uuid4(), timeout_s=WAIT_S)
+        )
+        await _until(lambda: render_slots.free_slots() == 0)
+        waiting = asyncio.create_task(
+            render_slots.render_bounded(lambda: 3, label="t", owner=no_key, timeout_s=WAIT_S)
+        )
+        with pytest.raises(render_slots.RenderTimeoutError):
+            await first
+        other.release.set()
+        with pytest.raises(render_slots.RenderUnavailableError):
+            await waiting
+        assert await busy == 2
+    finally:
+        other.release.set()
+    hang.release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+
+
+async def test_ui_user_b_gets_503_while_ui_user_a_has_a_stuck_render_and_a_key_previews(
     hang: _Hang, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Preview path: A keeps its own preview slot (429), B previews on the free render slot."""
+    """Preview path: A keeps its own preview slot (429), B without a key gets 503
+    ``render-unavailable`` at once, a key previews on the slot the group cannot hang."""
     monkeypatch.setattr(sps, "_draw_page", hang)
     no_key = render_slots.owner_of(None)
     user_a, user_b = ("ui", "a", "ip-a"), ("ui", "b", "ip-b")
@@ -214,8 +255,12 @@ async def test_ui_user_b_previews_while_ui_user_a_has_a_stuck_render(
     monkeypatch.setattr(sps, "_draw_page", lambda n: n * 10)
     with pytest.raises(sps.TooManyPreviewsError), sps.preview_slot(user_a, no_key):
         pass
-    with sps.preview_slot(user_b, no_key):
-        assert await sps.draw_page_bounded(2, timeout_s=WAIT_S) == 20
+    with pytest.raises(sps.RenderUnavailableApiError) as caught, sps.preview_slot(user_b, no_key):
+        await sps.draw_page_bounded(2, timeout_s=WAIT_S)
+    assert caught.value.to_http().status_code == 503
+    key = uuid4()
+    with sps.preview_slot(key, key):
+        assert await sps.draw_page_bounded(3, timeout_s=WAIT_S) == 30
     hang.release.set()
     await _until(lambda: render_slots.stuck_renders() == 0)
 

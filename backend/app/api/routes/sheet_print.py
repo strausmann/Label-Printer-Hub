@@ -85,7 +85,8 @@ _PREVIEW_ONLY_ERRORS: dict[int | str, dict[str, Any]] = {
         "description": (
             "An integration is not configured (`integration_not_configured`), or no render "
             "slot became free in time (`render-unavailable`): every slot is held by a stuck "
-            "render, or the wait reached `PRINTER_HUB_RENDER_TIMEOUT_S`."
+            "render, the callers without a key hold all slots but one, or the wait reached "
+            "`PRINTER_HUB_RENDER_TIMEOUT_S`."
         )
     },
     504: {

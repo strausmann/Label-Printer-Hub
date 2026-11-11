@@ -11,11 +11,17 @@ the thread ends; the count is logged and shown by the readiness check ``render_s
 
 Stuck renders are counted per API key (``owner_of``). A key with a stuck render gets no
 further slot (``OwnerRenderStuckError``), so one key cannot hang every slot by sending hanging
-input again. Callers without a key (``NO_KEY``: browser sessions, SSO, the hub itself) are
-not locked this way: they share that owner, and one user's stuck render would lock every
-user out until a restart. Only the global bound below protects them. Waiting for a slot is
-bounded too: with every slot stuck a caller is refused at once, otherwise it waits at most
-the time limit (``RenderUnavailableError``).
+input again. Callers without a key (``NO_KEY``: browser sessions, SSO, the hub itself) share
+one owner, so a per-owner lock would let one user lock every user out. Instead the group may
+hold at most ``NO_KEY_STUCK_LIMIT`` (all slots but one) stuck renders; past that a caller
+without a key is refused at once (``RenderUnavailableError``), and one slot is always left
+that the group cannot hang.
+
+Accepted risk: several *different* keys can each hang one render and so take every slot.
+Keys are issued by an admin; a key that does this is revoked, and the hub restarted.
+
+Waiting for a slot is bounded too: with every slot stuck a caller is refused at once,
+otherwise it waits at most the time limit (``RenderUnavailableError``).
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ from app.config import get_settings
 __all__ = [
     "MAX_CONCURRENT_RENDERS",
     "NO_KEY",
+    "NO_KEY_STUCK_LIMIT",
     "OwnerRenderStuckError",
     "RenderTimeoutError",
     "RenderUnavailableError",
@@ -46,7 +53,10 @@ logger = logging.getLogger(__name__)
 MAX_CONCURRENT_RENDERS: Final = 2  # renders at once, process-wide (spec 18, CPU)
 NO_KEY: Final = "no-key"
 """The owner of every render without an API key (browser sessions, SSO, the hub itself).
-Exempt from the owner lock (see the module docstring)."""
+Not locked per owner, but bounded by ``NO_KEY_STUCK_LIMIT`` (see the module docstring)."""
+NO_KEY_STUCK_LIMIT: Final = MAX_CONCURRENT_RENDERS - 1
+"""Stuck renders the callers without a key may hold together: one slot always stays theirs
+to lose, never the last."""
 
 
 class RenderTimeoutError(Exception):
@@ -104,9 +114,15 @@ def free_slots() -> int:
     return MAX_CONCURRENT_RENDERS if slots is None else MAX_CONCURRENT_RENDERS - slots.in_use
 
 
-def _locks(owner: Hashable | None) -> bool:
-    """Whether stuck renders of ``owner`` refuse its further renders (keys only)."""
-    return owner is not None and owner != NO_KEY
+def _refusal(slots: _Slots, owner: Hashable | None) -> Exception | None:
+    """Why ``owner`` gets no slot now: a key with a stuck render, or the group without a key
+    at its limit. ``None``: it may render."""
+    if owner is None:
+        return None
+    stuck = slots.stuck_by_owner.get(owner, 0)
+    if owner == NO_KEY:
+        return RenderUnavailableError() if stuck >= NO_KEY_STUCK_LIMIT else None
+    return OwnerRenderStuckError() if stuck else None
 
 
 def default_timeout_s() -> float:
@@ -125,8 +141,8 @@ async def render_bounded[T](
     """``fn(*args)`` in a thread under a render slot, within ``timeout_s`` seconds.
 
     ``label`` names the render in the log (an id and a kind, never payload data). ``owner``
-    (see ``owner_of``) is refused with ``OwnerRenderStuckError`` while it has a stuck render,
-    unless it is ``NO_KEY``.
+    (see ``owner_of``) is refused with ``OwnerRenderStuckError`` while it has a stuck render;
+    ``NO_KEY`` with ``RenderUnavailableError`` once it holds ``NO_KEY_STUCK_LIMIT`` of them.
     With every slot stuck the call raises ``RenderUnavailableError`` at once; otherwise it
     waits at most ``timeout_s`` for a slot (then the same error). ``on_start`` runs when the
     slot is taken, ``on_end`` once the thread has ended (both on the event loop, without an
@@ -135,8 +151,9 @@ async def render_bounded[T](
     """
     limit = default_timeout_s() if timeout_s is None else timeout_s
     slots = _current()
-    if _locks(owner) and slots.stuck_by_owner.get(owner):
-        raise OwnerRenderStuckError()
+    refused = _refusal(slots, owner)
+    if refused is not None:
+        raise refused
     if slots.stuck >= MAX_CONCURRENT_RENDERS:
         raise RenderUnavailableError()
     try:
@@ -145,11 +162,11 @@ async def render_bounded[T](
         raise RenderUnavailableError() from None
     # No await from the acquire to the callback: the slot is always given back by the task.
     slots.in_use += 1
-    if _locks(owner) and slots.stuck_by_owner.get(owner):
-        # Got stuck while this call waited for the slot.
+    refused = _refusal(slots, owner)
+    if refused is not None:  # the owner got stuck, or the group full, while this call waited
         slots.in_use -= 1
         slots.gate.release()
-        raise OwnerRenderStuckError()
+        raise refused
     state = {"stuck": False}
     try:
         if on_start is not None:

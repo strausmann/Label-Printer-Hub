@@ -704,17 +704,18 @@ async def test_a_key_with_a_stuck_render_cannot_hang_the_second_slot(
     await _until(lambda: render_slots.stuck_renders() == 0)
 
 
-async def test_a_stuck_render_without_a_key_does_not_block_the_next_job_without_a_key(
-    handler: RecordingHandler,
-) -> None:
-    """Jobs without a key share ``NO_KEY``; one stuck render must not fail all of them."""
+async def test_jobs_without_a_key_cannot_hang_the_last_slot(handler: RecordingHandler) -> None:
+    """Jobs without a key share ``NO_KEY``, which may hang all slots but one: the next job
+    without a key fails ``render_unavailable`` at once, a key's job prints on the last slot."""
     import threading
 
     from app.services import render_slots
 
     release = threading.Event()
+    drawn: list[str] = []
 
     def render(p: PagePayload) -> bytes:
+        drawn.append(p.detail["tag"])
         if p.detail["tag"] == "hang":
             release.wait(TEST_TIMEOUT_S)
         return b"%PDF-"
@@ -725,9 +726,13 @@ async def test_a_stuck_render_without_a_key_does_not_block_the_next_job_without_
             first = await env.job(payload(tag="hang"))
             await env.run(first)
             assert handler.ended(UUID(first.job.id))["error_code"] == "render_timeout"
-            second = await env.job(payload(tag="ok"))
+            second = await env.job(payload(tag="no-key"))
             await env.run(second)
-            assert (await env.row(second)).state == DbJobState.DONE.value
+            assert handler.ended(UUID(second.job.id))["error_code"] == "render_unavailable"
+            keyed = await env.job(payload(tag="key"), api_key_id=uuid4())
+            await env.run(keyed)
+            assert (await env.row(keyed)).state == DbJobState.DONE.value
+            assert drawn == ["hang", "key"]
     finally:
         release.set()
     await _until(lambda: render_slots.stuck_renders() == 0)
