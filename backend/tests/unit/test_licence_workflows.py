@@ -31,7 +31,8 @@ def _triggers(workflow: dict[Any, Any]) -> dict[str, Any]:
 
 def test_gate_runs_on_every_pull_request_to_main() -> None:
     pull_request = _triggers(_load("licence-gate.yml"))["pull_request"]
-    assert pull_request["branches"] == ["main"]
+    # Milestone integration branches get the gate too (ADR 0025).
+    assert pull_request["branches"] == ["main", "milestone/**"]
     # A required check that a paths filter skips never reports and blocks docs-only PRs.
     assert "paths" not in pull_request
     assert "paths-ignore" not in pull_request
