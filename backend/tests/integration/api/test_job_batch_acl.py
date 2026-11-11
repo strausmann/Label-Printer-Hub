@@ -1,7 +1,9 @@
 """Per-printer ACL on job and batch endpoints (follow-up to #146).
 
 Foreign jobs/batches answer 404 (not 403) so their existence is not leaked.
-Covers restricted and unrestricted API keys and a browser session.
+Covers restricted and unrestricted API keys and a browser session. The job tests use admin
+keys: a plain key sees only the jobs it submitted (#294, test_job_ownership.py), and the
+printer ACL applies to admin keys as well.
 """
 
 from __future__ import annotations
@@ -81,7 +83,7 @@ def _job_ids(resp) -> set[str]:
 @pytest.mark.asyncio
 async def test_job_list_filtered_to_allowed_printers(api_client_with_seed, world):
     (pa, ja, _), (pb, jb, _) = world
-    key = await _insert_key(["read"], [str(pa)])
+    key = await _insert_key(["admin"], [str(pa)])
     h = {"X-Label-Hub-Key": key}
     resp = await api_client_with_seed.get("/api/v1/jobs?limit=200", headers=h)
     assert resp.status_code == 200, resp.text
@@ -94,7 +96,7 @@ async def test_job_list_filtered_to_allowed_printers(api_client_with_seed, world
 @pytest.mark.asyncio
 async def test_job_list_unrestricted_sees_all(api_client_with_seed, world):
     (_, ja, _), (_, jb, _) = world
-    key = await _insert_key(["read"], [])
+    key = await _insert_key(["admin"], [])
     resp = await api_client_with_seed.get(
         "/api/v1/jobs?limit=200", headers={"X-Label-Hub-Key": key}
     )
@@ -104,7 +106,7 @@ async def test_job_list_unrestricted_sees_all(api_client_with_seed, world):
 @pytest.mark.asyncio
 async def test_job_detail_and_mutations_of_foreign_job_404(api_client_with_seed, world):
     (pa, ja, _), (_, jb, _) = world
-    key = await _insert_key(["read", "print"], [str(pa)])
+    key = await _insert_key(["admin"], [str(pa)])
     h = {"X-Label-Hub-Key": key}
     own = await api_client_with_seed.get(f"/api/v1/jobs/{ja}", headers=h)
     assert own.status_code == 200, own.text

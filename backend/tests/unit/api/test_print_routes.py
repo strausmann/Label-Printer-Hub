@@ -24,6 +24,7 @@ from httpx import ASGITransport, AsyncClient
 
 _PRINTER_ID = UUID("dddddddd-0000-0000-0000-000000000001")
 _PRINTER_ID_STR = str(_PRINTER_ID)
+_KEY_ID = _uuid4()
 
 
 @pytest.fixture
@@ -51,7 +52,7 @@ def _app(service, queue):
         yield s
 
     app.dependency_overrides[get_session] = _fake_session
-    _fake_ctx = AuthContext(source="api-key", scope="admin", api_key_id=_uuid4(), ip="127.0.0.1")
+    _fake_ctx = AuthContext(source="api-key", scope="admin", api_key_id=_KEY_ID, ip="127.0.0.1")
     for _dep in (require_read, require_print):
         app.dependency_overrides[_dep] = lambda _c=_fake_ctx: _c
     return app
@@ -78,6 +79,21 @@ async def test_post_print_data_path_returns_202(fake_service, fake_queue) -> Non
     assert r.status_code == 202
     body = r.json()
     assert body == {"job_id": "job-1", "status": "queued"}
+
+
+async def test_post_print_hands_the_submitting_key_to_the_service(fake_service, fake_queue) -> None:
+    """#294: the job row records the key (and address) that submitted it."""
+    async with _client(_app(fake_service, fake_queue)) as c:
+        r = await c.post(
+            "/api/v1/print",
+            json={
+                "content_type": "qr_two_lines",
+                "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},
+            },
+        )
+    assert r.status_code == 202
+    kwargs = fake_service.submit_print_job.await_args.kwargs
+    assert kwargs == {"api_key_id": _KEY_ID, "source_ip": "127.0.0.1"}
 
 
 async def test_post_print_lookup_path_returns_202(fake_service, fake_queue) -> None:

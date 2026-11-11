@@ -64,6 +64,9 @@ async def build_snapshot(
     printer_id: uuid.UUID,
     queue: PrintQueue | None = None,
     runtime: PrinterRuntime | None = None,
+    *,
+    jobs_of_key: uuid.UUID | None = None,
+    no_jobs: bool = False,
 ) -> list[dict[str, Any]]:
     """Return synthetic events describing the current state of ``printer_id``.
 
@@ -76,6 +79,10 @@ async def build_snapshot(
     A stale cache row (same bound as the status route) or, when a ``runtime`` is given, a printer
     nobody polls yields a ``printer.status`` frame with ``online: null`` and ``stale: true`` and
     no ``printer.tape_changed`` frame. Without a ``runtime`` only staleness is judged.
+
+    ``jobs_of_key`` limits the job frames to the jobs that API key submitted, ``no_jobs`` drops
+    them (#294: a plain API key's stream shows its own jobs only). ``queue_depth`` stays the
+    printer's whole queue, as in the live events.
     """
     snapshot: list[dict[str, Any]] = []
     now = datetime.now(UTC)
@@ -152,12 +159,17 @@ async def build_snapshot(
 
         # Printing (at the printer) first: those are the jobs whose sub-state the UI needs, and
         # waiting jobs must never push them past the limit.
-        active_jobs = await jobs_repo.list_by_filter(
-            session, printer_id=printer_id, state=JobState.PRINTING.value, limit=SNAPSHOT_JOB_LIMIT
-        )
-        active_jobs += await jobs_repo.list_by_filter(
-            session, printer_id=printer_id, state=JobState.QUEUED.value, limit=SNAPSHOT_JOB_LIMIT
-        )
+        active_jobs: list[Job] = []
+        for active in (JobState.PRINTING.value, JobState.QUEUED.value):
+            if no_jobs:
+                break
+            active_jobs += await jobs_repo.list_by_filter(
+                session,
+                printer_id=printer_id,
+                state=active,
+                limit=SNAPSHOT_JOB_LIMIT,
+                api_key_id=jobs_of_key,
+            )
         for job in active_jobs[:SNAPSHOT_JOB_LIMIT]:
             snapshot.append(
                 {

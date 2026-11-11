@@ -316,6 +316,15 @@ async def test_tape_test_print_creates_one_job_done(env: Env) -> None:
     assert env.backend.preflight_check.await_count == 1  # one preflight, not two
 
 
+async def test_tape_test_print_belongs_to_the_submitting_key(env: Env) -> None:
+    """#294: the tape test label records its key, so that key can follow and cancel it."""
+    r = await env.post(env.tape_id)
+    await env.done(r.json()["job_id"])
+    [row] = await env.job_rows()
+    assert row.api_key_id == env.auth.api_key_id
+    assert row.source_ip == env.auth.ip
+
+
 async def test_tape_label_names_the_printer_and_points_at_it(env: Env) -> None:
     r = await env.post(env.tape_id)
     await env.done(r.json()["job_id"])

@@ -178,7 +178,9 @@ async def test_print(
         raise _unavailable(printer_id)
     try:
         job_id = await service.submit_test_label(
-            lambda width_mm: tape_test_label(printer, width_mm, now, version, url)
+            lambda width_mm: tape_test_label(printer, width_mm, now, version, url),
+            api_key_id=auth.api_key_id,
+            source_ip=auth.ip,
         )
     except PrinterDisabledError:
         raise _refuse(409, "printer-disabled", "The printer is disabled") from None

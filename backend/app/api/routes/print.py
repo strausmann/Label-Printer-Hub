@@ -120,7 +120,9 @@ async def create_print_job(
             },
         )
     try:
-        job_id = await service.submit_print_job(request)
+        job_id = await service.submit_print_job(
+            request, api_key_id=_auth.api_key_id, source_ip=_auth.ip
+        )
     except tuple(_SYNC_ERROR_MAP) as exc:
         http_status, code = _mapping_for(exc)
         if isinstance(exc, PrinterDisabledError):

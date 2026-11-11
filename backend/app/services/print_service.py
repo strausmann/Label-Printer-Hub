@@ -93,8 +93,16 @@ class PrintService:
             self._layout_defaults.get(tape_mm),
         )
 
-    async def submit_print_job(self, request: PrintRequest) -> UUID:
+    async def submit_print_job(
+        self,
+        request: PrintRequest,
+        *,
+        api_key_id: UUID | None = None,
+        source_ip: str | None = None,
+    ) -> UUID:
         """Submit a print job: preflight → render → persist → queue.
+
+        ``api_key_id`` / ``source_ip`` are stored on the job: the key owns it (#294).
 
         Raises:
             PrinterDisabledError (409): Drucker ist deaktiviert (enabled=False).
@@ -111,9 +119,17 @@ class PrintService:
             content_type=request.content_type,
             options=request.options,
             template_key=None,
+            api_key_id=api_key_id,
+            source_ip=source_ip,
         )
 
-    async def submit_test_label(self, build: Callable[[int], RawLabelData]) -> UUID:
+    async def submit_test_label(
+        self,
+        build: Callable[[int], RawLabelData],
+        *,
+        api_key_id: UUID | None = None,
+        source_ip: str | None = None,
+    ) -> UUID:
         """Submit the test label (#228): the same path as ``submit_print_job``.
 
         One preflight decides the tape; ``build`` gets its width and returns the label data.
@@ -139,6 +155,8 @@ class PrintService:
             content_type=ContentType.QR_THREE_LINES,
             options=PrintOptions(),
             template_key="test_label",
+            api_key_id=api_key_id,
+            source_ip=source_ip,
         )
 
     async def _submit_label(
@@ -148,6 +166,8 @@ class PrintService:
         content_type: ContentType,
         options: PrintOptions,
         template_key: str | None,
+        api_key_id: UUID | None = None,
+        source_ip: str | None = None,
     ) -> UUID:
         """enabled check → one preflight → label data → render → persist → queue."""
         if not self._printer_enabled:
@@ -188,8 +208,8 @@ class PrintService:
                 "tape_mm": tape_mm,
                 "options": options.model_dump(mode="json"),
             },
-            api_key_id=None,
-            source_ip=None,
+            api_key_id=api_key_id,
+            source_ip=source_ip,
         )
         await self._store.save_queued(job)
         await self._queue.submit_with_id(
@@ -238,6 +258,8 @@ class PrintService:
         run_id: UUID | None = None,
         label_ids: list[UUID] | None = None,
         slot: UUID | None = None,
+        api_key_id: UUID | None = None,
+        source_ip: str | None = None,
     ) -> list[UUID]:
         """Render N items and submit them to the queue as one tape run (#277).
 
@@ -247,6 +269,7 @@ class PrintService:
         The queue splits the run into sub-jobs of ``MAX_LABELS_PER_TAPE_JOB`` and sends groups
         of ``TAPE_GROUP_SIZE``. *run_id* names the run (the batch id of the API). *label_ids*,
         when given, receives the job id of every label (copies included) in print order.
+        Every row records *api_key_id* and *source_ip*: the key owns the run's jobs (#294).
         Preflight wird 1x am Anfang für alle Items geprüft.
 
         NOTE: Diese Methode verwendet noch direkte LayoutEngine-Render-Aufrufe
@@ -352,8 +375,8 @@ class PrintService:
                             "awaits_confirmation": len(all_job_ids) >= MAX_LABELS_PER_TAPE_JOB,
                         },
                     },
-                    api_key_id=None,
-                    source_ip=None,
+                    api_key_id=api_key_id,
+                    source_ip=source_ip,
                 )
                 await self._store.save_queued(db_job)
                 images.append(img)

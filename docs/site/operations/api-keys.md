@@ -70,7 +70,8 @@ without a held run there is refused with 429; smaller batches are always taken.
 
 Only the key that submitted a batch may `continue`, `reprint` or `discard` its run, and
 `GET /api/v1/batches/runs/held` shows a key only its own runs. For any other key the batch
-answers 404. Browser sessions, SSO users and admin keys may act on all runs.
+answers 404, and `GET /api/v1/batches/{id}` shows its `run` as `null`. Browser sessions,
+SSO users and admin keys may act on all runs.
 
 A sheet preview (`POST /api/v1/print/{printer}/sheet/preview`) runs once per key at a
 time; a second one answers 429 `too-many-previews`.
@@ -99,6 +100,31 @@ All callers without a key (browser sessions, SSO users) count as **one** key for
 held-run limits: one UI user's held run lets every UI user pass the held-places check, and
 a UI user's further held run can discard another UI user's oldest one. For previews they
 are told apart by source, user and address.
+
+## Jobs belong to the key that submitted them
+
+Every job records the API key that submitted it (tape labels, batches, sheets, page jobs,
+test prints and retries). An API key without `admin` scope sees and acts on its own
+jobs only:
+
+- `GET /api/v1/jobs` lists only the jobs the key submitted.
+- `GET /api/v1/jobs/{id}`, `POST …/cancel`, `…/retry`, `…/pause` and `…/resume` answer
+  404 for a job another key submitted, with the same body as for a job that does not exist.
+- The event stream `GET /api/v1/events` delivers `job.state_changed` and
+  `run.state_changed` only for the key's own jobs and tape runs, live and in the snapshot.
+  Printer events (`printer.status`, `printer.tape_changed`, …) still reach every key of the
+  printer; `queue_depth` still counts the whole queue of the printer.
+
+A job without an owner key belongs to no API key, so a plain key gets 404 for it. That is
+every job a browser session or an SSO user submitted, every webhook job (the webhook key is
+not an API key), and every tape job stored by 1.5.0 or earlier: those versions stored tape
+labels, tape batches and tape retries without their key. A job the hub recovers after a
+restart keeps the key it was stored with.
+
+Browser sessions (also one signed in with a print key), SSO users and admin keys keep
+seeing and acting on every job of their printers. If several clients shared one printer's
+jobs through different keys, give the client that must see all of them an admin key, or let
+each client follow its own jobs.
 
 ## Printer ACL
 

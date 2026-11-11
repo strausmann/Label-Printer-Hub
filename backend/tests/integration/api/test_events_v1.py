@@ -2,6 +2,8 @@
 
 All keys and tokens are obviously fake test values. The stream never ends on its
 own, so these tests drive the ASGI app directly and read the body chunk by chunk.
+Tests that publish job events with made-up job ids use admin keys: a plain key gets job
+events of its own jobs only (#294, test_events_job_ownership.py).
 """
 
 from __future__ import annotations
@@ -211,7 +213,7 @@ async def test_stream_requires_auth(hub_app):
 @pytest.mark.asyncio
 async def test_stream_json_frames(hub_app):
     app, _ = hub_app
-    key, _ = await _insert_key(["read"])
+    key, _ = await _insert_key(["admin"])
     printer_id = await _insert_printer("alpha")
     stream = await _open(app, _key_header(key))
     try:
@@ -234,7 +236,7 @@ async def test_stream_json_frames(hub_app):
 @pytest.mark.asyncio
 async def test_stream_without_printer_filter_gets_all_printers(hub_app):
     app, _ = hub_app
-    key, _ = await _insert_key(["read"])
+    key, _ = await _insert_key(["admin"])
     first = await _insert_printer("alpha")
     second = await _insert_printer("beta")
     stream = await _open(app, _key_header(key))
@@ -254,7 +256,7 @@ async def test_stream_without_printer_filter_gets_all_printers(hub_app):
 @pytest.mark.asyncio
 async def test_printer_filter_limits_the_stream(hub_app):
     app, _ = hub_app
-    key, _ = await _insert_key(["read"])
+    key, _ = await _insert_key(["admin"])
     first = await _insert_printer("alpha")
     second = await _insert_printer("beta")
     stream = await _open(app, _key_header(key), f"printer_id={first}")
@@ -442,7 +444,7 @@ async def test_restricted_key_stream_excludes_other_printers(hub_app):
     app, _ = hub_app
     allowed = await _insert_printer("alpha")
     other = await _insert_printer("beta")
-    key, _ = await _insert_key(["read"], allowed_printer_ids=[str(allowed)])
+    key, _ = await _insert_key(["admin"], allowed_printer_ids=[str(allowed)])
     stream = await _open(app, _key_header(key))
     try:
         await _connected(stream)
@@ -734,7 +736,7 @@ async def test_queue_producer_transitions_reach_the_stream(hub_app):
     from app.services.producers.print_queue_producer import PrintQueueProducer
 
     app, _ = hub_app
-    key, _ = await _insert_key(["read"])
+    key, _ = await _insert_key(["admin"])
     printer_id = await _insert_printer("producer")
     producer = PrintQueueProducer(_bus(app))
     stream = await _open(app, _key_header(key))

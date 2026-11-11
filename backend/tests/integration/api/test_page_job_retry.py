@@ -17,6 +17,7 @@ import httpx
 import pytest
 from app.calibration import service as calibration_service
 from app.calibration.model import CalibrationIn
+from app.models.api_key import ApiKey
 from app.models.job import Job
 from app.models.printer import Printer
 from app.models.printer_tray import PrinterTray
@@ -59,6 +60,14 @@ async def _until_job(job_id: str, state: str) -> Job:
             if row.state == state:
                 return row
             await asyncio.sleep(0.02)
+
+
+async def _key_id(rig: Rig) -> UUID:
+    """The id of the rig's print key: rows stored by hand belong to it (#294)."""
+    prefix = rig.key["X-Label-Hub-Key"][:16]
+    async with _factory()() as s:
+        key = (await s.execute(select(ApiKey).where(ApiKey.key_prefix == prefix))).scalar_one()
+    return key.id
 
 
 async def _job_count() -> int:
@@ -432,6 +441,7 @@ async def test_retry_of_a_sheet_page_without_a_usable_payload_is_422() -> None:
                 printer_id=rig.printer_id,
                 payload={"kind": "sheet_page", "detail": {}},
                 state="failed",
+                api_key_id=await _key_id(rig),
             )
             s.add(row)
             await s.commit()
@@ -531,7 +541,12 @@ async def test_retry_of_a_calibration_page_on_a_disabled_printer_is_refused() ->
             detail={},
         ).model_dump(mode="json")
         async with _factory()() as s:
-            row = Job(printer_id=rig.printer_id, payload=stored, state="failed")
+            row = Job(
+                printer_id=rig.printer_id,
+                payload=stored,
+                state="failed",
+                api_key_id=await _key_id(rig),
+            )
             s.add(row)
             printer = await s.get(Printer, rig.printer_id)
             assert printer is not None

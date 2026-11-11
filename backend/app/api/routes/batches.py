@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import AuthContext, check_printer_access
+from app.auth.ownership import may_see
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
 from app.models.job import JobState
@@ -56,11 +57,6 @@ def _run_read(info: RunInfo | None) -> TapeRunRead | None:
 
 def _queue(http: Request) -> PrintQueue | None:
     return getattr(http.app.state, "print_queue", None)
-
-
-def _owner_only(auth: AuthContext | None) -> bool:
-    """A plain API key acts on its own runs only; browser sessions, SSO and admin keys on all."""
-    return auth is not None and auth.source == "api-key" and auth.scope != "admin"
 
 
 async def _visible_batch(session: AsyncSession, batch_id: UUID, auth: AuthContext) -> PrintBatch:
@@ -124,7 +120,11 @@ async def get_batch(
         created_at=batch.created_at,
         jobs=[JobRead.model_validate(j) for j in ordered],
         summary=summary,
-        run=None if queue is None else _run_read(queue.run_info(batch.id)),
+        run=(
+            None
+            if queue is None or not may_see(_auth, batch.created_by)
+            else _run_read(queue.run_info(batch.id))
+        ),
     )
 
 
@@ -148,11 +148,10 @@ async def held_runs(
         return []
     allowed = set(auth.allowed_printer_ids or []) if auth is not None else set()
     out: list[TapeRunRead] = []
-    owner_only = _owner_only(auth)
     for info in queue.held_runs(printer_id):
         if allowed and str(info.printer_id) not in allowed:
             continue
-        if owner_only and (auth.api_key_id is None or info.api_key_id != auth.api_key_id):
+        if not may_see(auth, info.api_key_id):
             continue  # another key's run: not listed (security review: run ownership)
         run = _run_read(info)
         if run is not None:
@@ -195,7 +194,7 @@ async def _run_batch(
     check_printer_access(auth, batch.printer_id)
     # Only the key that submitted the batch may continue, reprint or discard its run; for any
     # other plain key the batch does not exist (404, no hint that it does).
-    if _owner_only(auth) and (auth.api_key_id is None or batch.created_by != str(auth.api_key_id)):
+    if not may_see(auth, batch.created_by):
         raise HTTPException(status_code=404, detail="Batch not found")
     queue = _queue(http)
     if queue is None:

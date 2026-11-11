@@ -30,6 +30,7 @@ async def dispatch_batch(
     queue: PrintQueue | None = None,
     printer_id: UUID | None = None,
     api_key_id: UUID | None = None,
+    source_ip: str | None = None,
 ) -> list[UUID]:
     """Submit a batch of mixed-ContentType print requests.
 
@@ -44,6 +45,7 @@ async def dispatch_batch(
         queue, printer_id, api_key_id: with a queue, the batch first claims a place under the
             queued-run caps (263-76, ``PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER`` / ``…_PER_KEY``)
             before anything is looked up, drawn or stored; a submit that fails gives it back.
+            ``api_key_id`` and ``source_ip`` are stored on every job row (#294).
 
     Returns:
         list[UUID]: Job-IDs aller eingereihten Print-Jobs.
@@ -57,7 +59,12 @@ async def dispatch_batch(
         raise ValueError(msg)
     if queue is None or printer_id is None:
         return await service.submit_batch_job(
-            items, half_cut=half_cut, run_id=run_id, label_ids=label_ids
+            items,
+            half_cut=half_cut,
+            run_id=run_id,
+            label_ids=label_ids,
+            api_key_id=api_key_id,
+            source_ip=source_ip,
         )
     settings = get_settings()
     labels = sum(max(1, int(item.options.copies)) for item in items)
@@ -71,7 +78,13 @@ async def dispatch_batch(
     )
     try:
         return await service.submit_batch_job(
-            items, half_cut=half_cut, run_id=run_id, label_ids=label_ids, slot=slot
+            items,
+            half_cut=half_cut,
+            run_id=run_id,
+            label_ids=label_ids,
+            slot=slot,
+            api_key_id=api_key_id,
+            source_ip=source_ip,
         )
     finally:
         queue.release_run_slot(slot)  # a no-op once the run took the claim over

@@ -185,3 +185,17 @@ async def test_a_print_key_of_the_printer_lists_and_discards(held: dict[str, Any
     assert held["queue"].run_info(UUID(held["run"])) is None
     again = await _post(held, "discard", None, mine)
     assert again.status_code == 404
+
+
+async def test_the_batch_shows_its_run_to_the_owner_only(held: dict[str, Any]) -> None:
+    """#294 (Task 9 review): GET /batches/{id} names the run to the key that submitted it;
+    another key of the printer gets ``run: null``. Admin keys and sessions see it."""
+    url = f"/api/v1/batches/{held['run']}"
+    other = _key(await _insert_key(["print"], [str(held["a"])]))
+    resp = await held["client"].get(url, headers=other)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["run"] is None
+    mine = await held["client"].get(url, headers=held["owner"])
+    assert mine.json()["run"]["batch_id"] == held["run"]
+    admin = _key(await _insert_key(["admin"]))
+    assert (await held["client"].get(url, headers=admin)).json()["run"]["batch_id"] == held["run"]

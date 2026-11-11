@@ -49,6 +49,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.identity_hold import ensure_not_held
 from app.api.routes.sheet_common import actor
 from app.auth.dependencies import AuthContext
+from app.auth.ownership import may_see, owner_only
 from app.auth.scope_deps import require_print, require_read
 from app.db import engine as db_engine
 from app.db.session import get_session
@@ -105,7 +106,8 @@ async def _get_job_or_404(
 
     A job on a printer outside the caller's ``allowed_printer_ids`` answers the
     same 404 as an unknown job, so its existence is not disclosed.  An empty
-    allowed list means all printers.
+    allowed list means all printers.  For a plain API key the same holds for a job
+    another key submitted, or one without an owner key (#294).
     """
     job = await jobs_repo.get(session, job_id)
     if (
@@ -114,6 +116,8 @@ async def _get_job_or_404(
         and auth.allowed_printer_ids
         and str(job.printer_id) not in auth.allowed_printer_ids
     ):
+        job = None
+    if job is not None and not may_see(auth, job.api_key_id):
         job = None
     if job is None:
         raise HTTPException(
@@ -137,7 +141,9 @@ async def _get_job_or_404(
         "``state`` accepts any valid JobState value (``queued``, ``printing``, "
         "``done``, ``failed``, ``cancelled``, ``failed_restart``).  "
         "``since`` is an ISO-8601 datetime; only jobs created at or after that "
-        "instant are returned.  ``limit`` caps the result (default 50, max 200)."
+        "instant are returned.  ``limit`` caps the result (default 50, max 200).  "
+        "An API key without ``admin`` scope sees only the jobs it submitted; browser "
+        "sessions, SSO users and admin keys see every job of their printers."
     ),
 )
 async def list_jobs(
@@ -153,6 +159,12 @@ async def list_jobs(
     allowed = [UUID(p) for p in _auth.allowed_printer_ids] if _auth is not None else []
     if printer_id is not None and allowed and printer_id not in allowed:
         return []
+    # #294: a plain API key lists the jobs it submitted, nothing else.
+    owner: UUID | None = None
+    if owner_only(_auth):
+        if _auth.api_key_id is None:
+            return []
+        owner = _auth.api_key_id
     rows = await jobs_repo.list_by_filter(
         session,
         state=state,
@@ -160,6 +172,7 @@ async def list_jobs(
         since=since,
         limit=limit,
         allowed_printer_ids=allowed,
+        api_key_id=owner,
     )
     return [JobRead.model_validate(r, from_attributes=True) for r in rows]
 
@@ -173,7 +186,11 @@ async def list_jobs(
     "/{job_id}",
     response_model=JobRead,
     summary="Get a single job",
-    description="Return the full job record for the given UUID.  Returns 404 if not found.",
+    description=(
+        "Return the full job record for the given UUID.  Returns 404 if not found; for an "
+        "API key without ``admin`` scope also for a job another key (or a browser, SSO user "
+        "or webhook) submitted.  Cancel, retry, pause and resume answer the same 404."
+    ),
 )
 async def get_job(
     job_id: UUID,
@@ -404,6 +421,9 @@ async def retry_job(
         printer_id=job.printer_id,
         template_key=job.template_key,
         payload=dict(job.payload),
+        # #294: the clone belongs to the caller that asked for it, like a page retry.
+        api_key_id=_auth.api_key_id if _auth is not None else None,
+        source_ip=_auth.ip if _auth is not None else None,
     )
     if queue is not None:
         try:

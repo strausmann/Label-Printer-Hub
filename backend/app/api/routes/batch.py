@@ -156,6 +156,7 @@ async def create_batch(
             queue=getattr(http.app.state, "print_queue", None),
             printer_id=printer.id,
             api_key_id=auth.api_key_id,
+            source_ip=auth.ip,
         )
     except TooManyQueuedRunsError as exc:
         # 263-76: the rate-limit answer's shape; nothing was looked up, drawn or stored.

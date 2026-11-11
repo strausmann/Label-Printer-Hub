@@ -899,3 +899,31 @@ async def test_dispatch_marks_only_batches_of_more_than_one_sub_job_as_holdable(
     )
     assert queue.claim_run_slot.call_args.kwargs["may_hold"] is may_hold
     queue.release_run_slot.assert_called_once()
+
+
+@pytest.mark.parametrize("with_queue", [True, False])
+async def test_dispatch_hands_the_submitting_key_to_the_service(with_queue: bool) -> None:
+    """#294: every row of the batch records the key that submitted it, queue or not."""
+    from app.schemas.print_request import RawLabelData
+    from app.services.batch_dispatch import dispatch_batch
+
+    queue = MagicMock()
+    queue.claim_run_slot = MagicMock(return_value=uuid4())
+    service = MagicMock()
+    service.submit_batch_job = AsyncMock(return_value=[])
+    key_id = uuid4()
+    batch = [
+        PrintRequest(
+            content_type=ContentType.QR_ONLY, data=RawLabelData(qr_payload="https://e.invalid/1")
+        )
+    ]
+    await dispatch_batch(
+        service=service,
+        items=batch,
+        queue=queue if with_queue else None,
+        printer_id=uuid4(),
+        api_key_id=key_id,
+        source_ip="192.0.2.5",
+    )
+    kwargs = service.submit_batch_job.await_args.kwargs
+    assert (kwargs["api_key_id"], kwargs["source_ip"]) == (key_id, "192.0.2.5")
