@@ -1,10 +1,12 @@
 name: CI
 
 on:
+  # milestone/** too: feature PRs target the milestone integration branch
+  # (CONTRIBUTING.md, "Milestones, branches and releases").
   push:
-    branches: [main]
+    branches: [main, 'milestone/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'milestone/**']
 
 permissions:
   contents: read
@@ -125,6 +127,20 @@ jobs:
       - name: No-op (no Python project yet — skipped)
         if: steps.pyproject.outputs.exists != 'true'
         run: echo "No pyproject.toml found — skipping Python checks for this branch"
+
+  scripts:
+    name: Scripts — unit tests
+    # The release tooling (release_impact.py, ghcr_rules.py) is also checked by
+    # release-impact.yml, but only on pull requests into main. This job runs the
+    # same tests on every push and pull request into main and milestone/**, so a
+    # red script test shows up on the milestone branch, not at the milestone PR.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run the script tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
 
   web:
     name: Web — typecheck, lint, test, build

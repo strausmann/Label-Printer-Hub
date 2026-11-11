@@ -8,7 +8,8 @@ name: Licences — backend runtime
 
 on:
   pull_request:
-    branches: [main]
+    # milestone/** too: feature PRs target the milestone integration branch.
+    branches: [main, 'milestone/**']
     paths:
       - backend/pyproject.toml
       - licence-policy.yml

@@ -277,6 +277,20 @@ class IppPdfUnsupportedError(SheetApiError):
     message = "The printer does not accept PDF documents."
 
 
+class StoredConnectionInvalidError(SheetApiError):
+    """A saved IPP connection no longer validates (e.g. a hand-edited or old row)."""
+
+    status = 409
+    error_code = "stored_connection_invalid"
+    message = "The stored connection of this printer is invalid."
+
+    def __init__(self, printer_id: UUID) -> None:
+        super().__init__(
+            f"The stored connection of printer {printer_id} is invalid; "
+            "send a new connection to replace it."
+        )
+
+
 class IppRejectedError(SheetApiError):
     status = 502
     error_code = "ipp_rejected"

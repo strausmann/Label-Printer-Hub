@@ -1,10 +1,12 @@
 name: CodeQL
 
 on:
+  # milestone/** too: feature PRs target the milestone integration branch
+  # (CONTRIBUTING.md, "Milestones, branches and releases").
   push:
-    branches: [main]
+    branches: [main, 'milestone/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'milestone/**']
   schedule:
     - cron: "30 3 * * 1"  # Mondays 03:30 UTC
 

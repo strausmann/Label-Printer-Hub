@@ -67,6 +67,7 @@
     [
       "@semantic-release/exec",
       {
+        "verifyReleaseCmd": "python3 scripts/release_impact.py guard --repo \"$GITHUB_REPOSITORY\" --next \"${nextRelease.version}\" --last \"${lastRelease.version}\"",
         "publishCmd": "echo \"version=${nextRelease.version}\" >> \"$GITHUB_OUTPUT\""
       }
     ]
