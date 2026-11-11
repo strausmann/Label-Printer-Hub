@@ -288,12 +288,17 @@ class ReprintResult:
 
     ``skipped_job_ids``: labels that could not be re-queued because their stored job is gone
     (cleaned up); they are not in ``job_ids`` any more (M6).
+
+    ``confirmed_job_ids`` are the labels THIS reprint confirmed as printed;
+    ``all_confirmed_job_ids`` are all confirmations of the run so far (earlier reprints
+    included), also when the run is gone because nothing is left to print.
     """
 
     new_job_ids: list[UUID]
     confirmed_job_ids: list[UUID]
     job_ids: list[str]
     skipped_job_ids: list[UUID] = field(default_factory=list)
+    all_confirmed_job_ids: list[UUID] = field(default_factory=list)
 
 
 MAX_HELD_RUNS_PER_PRINTER = 5
@@ -1275,6 +1280,7 @@ class PrintQueue:
             confirmed_job_ids=[UUID(j) for j in confirmed],
             job_ids=list(run.job_ids),
             skipped_job_ids=[UUID(j) for j in skipped],
+            all_confirmed_job_ids=[UUID(j) for j in run.confirmed],
         )
 
     async def discard_run(self, run_id: UUID, *, code: str = "run_discarded") -> None:

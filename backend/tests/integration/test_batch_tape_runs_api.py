@@ -157,3 +157,34 @@ async def test_a_batch_without_a_run(rig: Rig) -> None:
     await rig.until_run(batch_id, lambda r: r is None)
     gone = await rig.client.post(f"/api/v1/batches/{batch_id}/reprint", json={"from_label": 1})
     assert gone.status_code == 404 and _code(gone) == "run_not_found"
+
+
+async def test_a_second_reprint_keeps_the_earlier_confirmations_out_of_the_batch(
+    rig: Rig,
+) -> None:
+    rig.printer.k = 15
+    batch_id = await rig.batch(25)
+    await rig.until_run(batch_id, lambda r: r is not None and r["state"] == "stopped")
+
+    rig.printer.k = 22  # the second tape ends again, inside the first re-queued group
+    first = await rig.client.post(f"/api/v1/batches/{batch_id}/reprint", json={"from_label": 14})
+    assert first.status_code == 200, first.text
+    first_confirmed = set(first.json()["confirmed_job_ids"])
+    assert len(first_confirmed) == 3  # 11..13
+    run = await rig.until_run(batch_id, lambda r: r is not None and r["state"] == "stopped")
+    assert run is not None
+
+    rig.printer.k = None
+    second = await rig.client.post(
+        f"/api/v1/batches/{batch_id}/reprint", json={"from_label": run["unknown_from"] + 2}
+    )
+    assert second.status_code == 200, second.text
+    # this call's own confirmations only (API contract), not the earlier ones
+    assert not first_confirmed & set(second.json()["confirmed_job_ids"])
+    await rig.until_run(batch_id, lambda r: r is None)
+
+    everything_confirmed = first_confirmed | set(second.json()["confirmed_job_ids"])
+    batch = await rig.db.get(PrintBatch, UUID(batch_id))
+    await rig.db.refresh(batch)
+    assert not everything_confirmed & set(batch.job_ids)
+    assert set(second.json()["job_ids"]) == set(batch.job_ids) | everything_confirmed

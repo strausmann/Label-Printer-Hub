@@ -255,7 +255,9 @@ async def reprint_batch(
         raise _run_error(exc) from None
     # M5: the batch follows the run: its labels without the ones the user confirmed as printed
     # (they stay `failed_restart`), so a batch that printed completely reads as done.
-    confirmed = {str(j) for j in result.confirmed_job_ids}
+    # Every confirmation of the run so far, not only this reprint's: an earlier reprint's
+    # labels are still in the run's job list.
+    confirmed = {str(j) for j in result.all_confirmed_job_ids}
     batch.job_ids = [j for j in result.job_ids if j not in confirmed]
     session.add(batch)
     await session.commit()

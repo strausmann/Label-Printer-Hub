@@ -735,3 +735,22 @@ async def test_at_most_five_runs_wait_per_printer_the_oldest_is_discarded() -> N
         assert (await queue.get(oldest_label)).error_code == "run_discarded_limit"
     finally:
         await queue.stop(timeout_s=2.0)
+
+
+async def test_reprint_reports_every_confirmation_of_the_run_so_far() -> None:
+    printer = TapeRoll(15)
+    queue, run_id, ids, _ = await _run(printer, 25)
+    try:
+        await _until(_stopped(queue, run_id))
+        printer.k = 22  # the new tape ends again inside the re-queued group
+        first = await queue.reprint_from(run_id, 14)
+        await _until(_stopped(queue, run_id))
+        info = queue.run_info(run_id)
+        assert info is not None and info.unknown_from is not None
+        printer.k = None
+        second = await queue.reprint_from(run_id, info.unknown_from + 2)
+        assert first.all_confirmed_job_ids == first.confirmed_job_ids == ids[10:13]
+        assert second.confirmed_job_ids and not set(second.confirmed_job_ids) & set(ids[10:13])
+        assert second.all_confirmed_job_ids == [*first.confirmed_job_ids, *second.confirmed_job_ids]
+    finally:
+        await queue.stop(timeout_s=2.0)
