@@ -48,6 +48,7 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0021](0021-api-versioning.md) | Every API route lives under `/api/v1` | Accepted |
 | [0022](0022-design-system-and-app-layout.md) | Design system and app layout | Accepted |
 | [0023](0023-sheet-archive.md) | Sheet archive, physical sheets and calibration (D13–D19) | Accepted |
+| [0024](0024-runtime-printer-wiring-and-hardware-identity.md) | Printers are wired at runtime through one code path and identified by hardware | Accepted |
 
 The [decision register](register.md) lists the short `D<n>` labels cited in code.
 
