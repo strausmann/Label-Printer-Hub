@@ -39,6 +39,31 @@ export async function setPagePrinter(page: Page, state: PagePrinterState): Promi
 }
 
 /**
+ * Waits until the hub's cached status of the page printer was captured twice after this call.
+ *
+ * `setPagePrinter` returns as soon as the fake has switched; the hub still holds the previous reading
+ * until its next probe. The first new `captured_at` may belong to a probe that was already running
+ * before the switch, so the second one is the first reading that surely shows it. A test whose
+ * outcome depends on that reading (the hub decides from its cache, e.g. the paper size of a test
+ * print) calls this before it acts; a slow runner otherwise acts on the old reading.
+ */
+export async function waitForFreshProbe(page: Page): Promise<void> {
+  const list = (await (await page.request.get(`${MAIN.url}/api/v1/printers`)).json()) as { id: string; name: string }[];
+  const id = list.find((p) => p.name === "Office page printer")!.id;
+  const capturedAt = async () => ((await (await page.request.get(`${MAIN.url}/api/v1/printers/${id}/status`)).json()) as { captured_at?: string | null }).captured_at ?? null;
+  const seen = new Set<string | null>([await capturedAt()]);
+  await expect
+    .poll(
+      async () => {
+        seen.add(await capturedAt());
+        return seen.size;
+      },
+      { message: "the hub did not capture the page printer's status twice", timeout: 15_000, intervals: [100, 200, 400] },
+    )
+    .toBeGreaterThanOrEqual(3);
+}
+
+/**
  * Puts the fake page printer back to idle and ready. Every spec that switches it calls this in `afterEach`.
  * It then waits until the hub's queue for that printer is empty again (see `waitForQuietQueue`).
  */

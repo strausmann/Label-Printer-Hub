@@ -1,4 +1,4 @@
-import { expect, pagePrinterControl, resetPagePrinter, setPagePrinter, test } from "./fixtures";
+import { expect, pagePrinterControl, resetPagePrinter, setPagePrinter, test, waitForFreshProbe } from "./fixtures";
 
 const SHOTS = process.env.E2E_SHOTS_DIR;
 
@@ -90,6 +90,8 @@ test.describe("page printer test hub", () => {
 
   test("a page printer without any paper size is refused in the app's words", async ({ signedInPage: page }) => {
     await setPagePrinter(page, { media_default: "" });
+    // The hub refuses from its cached reading of the printer; wait until that reading shows the switch (1 s probe interval).
+    await waitForFreshProbe(page);
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/printers");
     await page.getByRole("link", { name: /Office page printer/ }).click();
