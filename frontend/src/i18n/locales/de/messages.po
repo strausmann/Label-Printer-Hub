@@ -1530,11 +1530,6 @@ msgstr "Zustand"
 msgid "Healthy"
 msgstr "Gesund"
 
-#: src/features/about/DependencyLicences.tsx
-#~ msgctxt "action"
-#~ msgid "Hide licence text"
-#~ msgstr "Lizenztext ausblenden"
-
 #. placeholder {0}: entry.name
 #: src/features/about/DependencyLicences.tsx
 msgctxt "action"
@@ -3308,11 +3303,6 @@ msgstr "Verworfene Bögen anzeigen"
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Show fewer"
 msgstr "Weniger anzeigen"
-
-#: src/features/about/DependencyLicences.tsx
-#~ msgctxt "action"
-#~ msgid "Show licence text"
-#~ msgstr "Lizenztext anzeigen"
 
 #. placeholder {0}: entry.name
 #: src/features/about/DependencyLicences.tsx

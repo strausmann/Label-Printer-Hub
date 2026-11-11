@@ -1530,11 +1530,6 @@ msgstr "Health"
 msgid "Healthy"
 msgstr "Healthy"
 
-#: src/features/about/DependencyLicences.tsx
-#~ msgctxt "action"
-#~ msgid "Hide licence text"
-#~ msgstr "Hide licence text"
-
 #. placeholder {0}: entry.name
 #: src/features/about/DependencyLicences.tsx
 msgctxt "action"
@@ -3308,11 +3303,6 @@ msgstr "Show discarded sheets"
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Show fewer"
 msgstr "Show fewer"
-
-#: src/features/about/DependencyLicences.tsx
-#~ msgctxt "action"
-#~ msgid "Show licence text"
-#~ msgstr "Show licence text"
 
 #. placeholder {0}: entry.name
 #: src/features/about/DependencyLicences.tsx
