@@ -337,11 +337,15 @@ test.describe("short viewport (on-screen keyboard)", () => {
         // All within 300 ms: Escape closes, the arrow opens, the keyboard scrolls the frame. The arrow opens the list, so the
         // Escape before it must not count when the scroll closes the list again.
         await frame.evaluate(async (el, arrow) => {
-          const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+          // Waits for what happened instead of for a guessed time: a slow runner takes longer for each step.
+          const until = async (done: () => boolean) => {
+            for (let i = 0; i < 200 && !done(); i++) await new Promise((resolve) => setTimeout(resolve, 5));
+          };
+          const listOpen = () => document.querySelector('[role="listbox"]') !== null;
           document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
-          await pause(30);
+          await until(() => !listOpen());
           document.querySelector<HTMLElement>(arrow)!.click();
-          await pause(120);
+          await until(listOpen);
           el.scrollTop += 30;
         }, ARROW);
         // Opened by the arrow, closed by the scroll, opened again once it was over: two openings, and it ends open.
