@@ -474,7 +474,7 @@ def guard_allows(next_version: str, last: str | None, milestones: Callable[[], s
     return next_version in milestones()
 
 
-MILESTONE_MERGE_RE = re.compile(r"^Merge pull request #\d+ from [^/\s]+/milestone/(\d+\.\d+\.\d+)$")
+MILESTONE_MERGE_RE = re.compile(r"^Merge pull request #\d+ from ([^/\s]+)/milestone/(\d+\.\d+\.\d+)$")
 ABOVE_PATCH = ("major", "premajor", "minor", "preminor")
 
 
@@ -488,6 +488,7 @@ def provenance_violation(
     last: str | None,
     rules: list[dict[str, Any]] | None = None,
     cwd: Path = REPO_ROOT,
+    owner: str | None = None,
 ) -> str | None:
     """Why a non-patch release does not come from its milestone merge, or None.
 
@@ -511,7 +512,8 @@ def provenance_violation(
     for line in run("log", "--first-parent", "--merges", "--format=%H %s", rev_range).splitlines():
         sha, _, subject = line.partition(" ")
         found = MILESTONE_MERGE_RE.match(subject)
-        if found and found.group(1) == next_version:
+        # The merge must come from this repository's own milestone branch, not a fork's.
+        if found and found.group(2) == next_version and (owner is None or found.group(1) == owner):
             merges.append(sha)
     out = run("log", "--format=%H%x1f%B%x1e", rev_range)
     commits = []
@@ -538,13 +540,33 @@ def provenance_violation(
     return None
 
 
-def open_block_issue(repo: str, version: str, last: str | None, request: Callable[..., Any] | None = None) -> None:
+def open_block_issue(
+    repo: str,
+    version: str,
+    last: str | None,
+    request: Callable[..., Any] | None = None,
+    provenance: str | None = None,
+) -> None:
     request = request or _request
     title = f"release blocked: computed {version}"
     for issue in request("GET", api_url(f"/repos/{repo}/issues", state="open", per_page=100)) or []:
         if issue.get("title") == title and "pull_request" not in issue:
             print(f"  issue already open: #{issue.get('number')}")
             return
+    if provenance:
+        body = (
+            f"The release run computed version `{version}` (last release `{last or 'none'}`), and an open "
+            "milestone has that title, but the release does not come from the milestone merge, so the "
+            "release guard stopped semantic-release before anything was tagged or published.\n\n"
+            f"Reason: {_clean(provenance)}\n\n"
+            f"A minor or major release needs the merge commit `Merge pull request #<n> from <owner>/milestone/{version}` "
+            "on the first-parent line of `main`, and every `feat`, `!` or `BREAKING CHANGE` commit must have come in "
+            "through it. Revert the listed commits on `main` and bring them in through the milestone branch.\n\n"
+            'See CONTRIBUTING.md, section "Milestones, branches and releases".'
+        )
+        created = request("POST", api_url(f"/repos/{repo}/issues"), {"title": title, "body": body})
+        print(f"  opened issue #{(created or {}).get('number')}")
+        return
     body = (
         f"The release run computed version `{version}` (last release `{last or 'none'}`). "
         "That is neither the next patch release nor the title of an open milestone, so the "
@@ -568,12 +590,19 @@ def run_guard(args: argparse.Namespace) -> int:
         return 1
     if allowed:
         try:
-            violation = provenance_violation(args.next, last)
+            violation = provenance_violation(args.next, last, owner=args.repo.split("/")[0])
         except (subprocess.CalledProcessError, OSError, ValueError) as exc:
             print(annotation("error", f"release guard could not read the history, refusing to release: {exc}"))
             return 1
         if violation:
             print(annotation("error", f"release blocked: {args.next} does not come from its milestone: {violation}"))
+            if os.environ.get("DRY_RUN") == "true":
+                print("  dry run: no issue opened")
+            else:
+                try:
+                    open_block_issue(args.repo, args.next, last, provenance=violation)
+                except urllib.error.URLError as exc:
+                    print(annotation("warning", f"could not open the blocking issue: {exc}"))
             return 1
         print(f"  release guard: {args.next} allowed (last release {last or 'none'})")
         return 0

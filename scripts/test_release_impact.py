@@ -322,18 +322,60 @@ class GuardTest(unittest.TestCase):
             ri.open_block_issue("o/r", "1.5.0", "1.4.1", request=fake_request)
         self.assertIn("#5", out.getvalue())
 
-    def test_provenance_violation_blocks_an_allowed_version(self) -> None:
+    def run_provenance_guard(self, env: dict[str, str], violation: Any) -> tuple[int, str, list[Any]]:
+        calls: list[Any] = []
+
+        def fake_request(method: str, url: str, body: Any = None) -> Any:
+            calls.append((method, url, body))
+            if "/milestones" in url:
+                return [{"title": "1.6.0"}]
+            return [] if method == "GET" else {"number": 42}
+
         out = io.StringIO()
         with (
-            mock.patch.object(ri, "_request", lambda *a, **k: [{"title": "1.6.0"}]),
-            mock.patch.object(
-                ri, "provenance_violation", lambda *a, **k: "minor/major commits outside the milestone merge: abc1234"
-            ),
+            mock.patch.object(ri, "_request", fake_request),
+            mock.patch.object(ri, "provenance_violation", violation),
+            mock.patch.dict(os.environ, env, clear=False),
             redirect_stdout(out),
         ):
             code = ri.main(["guard", "--repo", "o/r", "--next", "1.6.0", "--last", "1.4.1"])
+        return code, out.getvalue(), calls
+
+    def test_provenance_violation_blocks_and_opens_an_issue_naming_the_commits(self) -> None:
+        reason = "minor/major commits outside the milestone merge: abc1234"
+        code, out, calls = self.run_provenance_guard({"DRY_RUN": "false"}, lambda *a, **k: reason)
         self.assertEqual(code, 1)
-        self.assertIn("abc1234", out.getvalue())
+        self.assertIn("abc1234", out)
+        posts = [c for c in calls if c[0] == "POST"]
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0][2]["title"], "release blocked: computed 1.6.0")
+        self.assertIn("abc1234", posts[0][2]["body"])
+        self.assertIn("does not come from the milestone merge", posts[0][2]["body"])
+        self.assertNotIn("neither the next patch", posts[0][2]["body"])
+
+    def test_provenance_violation_dry_run_opens_no_issue(self) -> None:
+        code, out, calls = self.run_provenance_guard({"DRY_RUN": "true"}, lambda *a, **k: "abc1234")
+        self.assertEqual(code, 1)
+        self.assertIn("dry run", out)
+        self.assertFalse([c for c in calls if c[0] == "POST"])
+
+    def test_provenance_is_checked_against_the_repository_owner(self) -> None:
+        seen: dict[str, Any] = {}
+
+        def spy(*a: Any, **k: Any) -> None:
+            seen.update(k)
+
+        code, _, _ = self.run_provenance_guard({"DRY_RUN": "false"}, spy)
+        self.assertEqual(code, 0)
+        self.assertEqual(seen.get("owner"), "o")
+
+    def test_git_failure_in_the_provenance_check_refuses_to_release(self) -> None:
+        def broken(*a: Any, **k: Any) -> None:
+            raise subprocess.CalledProcessError(128, ["git", "log"])
+
+        code, out, _calls = self.run_provenance_guard({"DRY_RUN": "false"}, broken)
+        self.assertEqual(code, 1)
+        self.assertIn("refusing to release", out)
 
     def test_api_failure_refuses_to_release(self) -> None:
         def broken(method: str, url: str, body: Any = None) -> Any:
@@ -418,6 +460,20 @@ class ProvenanceTest(unittest.TestCase):
         self.git("switch", "-q", "main")
         self.merge_milestone("1.6.0")
         self.assertIsNotNone(self.violation("1.5.0"))
+
+    def test_merge_from_another_owner_does_not_count(self) -> None:
+        self.git("switch", "-q", "-c", "milestone/1.5.0")
+        self.commit("feat: inside")
+        self.git("switch", "-q", "main")
+        self.git("merge", "-q", "--no-ff", "milestone/1.5.0", "-m", "Merge pull request #7 from fork-owner/milestone/1.5.0")
+        self.assertIsNone(ri.provenance_violation("1.5.0", "1.4.1", RULES, cwd=self.repo))
+        message = ri.provenance_violation("1.5.0", "1.4.1", RULES, cwd=self.repo, owner="o")
+        assert message is not None
+        self.assertIn("no merge of milestone/1.5.0", message)
+
+    def test_real_git_failure_raises(self) -> None:
+        with self.assertRaises(subprocess.CalledProcessError):
+            ri.provenance_violation("1.5.0", "9.9.9", RULES, cwd=self.repo)
 
     def test_patch_release_needs_no_milestone_merge(self) -> None:
         self.commit("fix: a")
