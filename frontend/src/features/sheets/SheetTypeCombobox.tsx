@@ -131,15 +131,13 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
     measureRef.current = measure;
   });
   // While the list is open: measure again when the visible area changes (the keyboard comes up after the focus opened the
-  // list) and when anything scrolls (the frame of a dialog scrolls when the browser brings the field into view).
+  // list). A scroll needs no measuring of its own: it closes the list, and opening it again measures (see above).
   useEffect(() => {
     if (!open) return;
     const again = perFrame(() => measureRef.current());
     const stop = subscribeViewport(again.run);
-    document.addEventListener("scroll", again.run, true);
     return () => {
       stop();
-      document.removeEventListener("scroll", again.run, true);
       again.cancel();
     };
   }, [open]);
