@@ -60,20 +60,34 @@ MISSING_PACKAGE_STATUSES = frozenset({403, 404})
 Opener = Callable[[urllib.request.Request], Any]
 
 
+# The cleanup action rejects exclude-tags longer than this (validateUserRegex).
+MAX_REGEX_LENGTH = 1000
+
+
 def keep_regex(tags: list[str]) -> str:
     """Return the exclude-tags regex: base rule plus every open preview.
 
     A preview x.y.z-rc.N is open while the release x.y.z is not among the tags.
+    Previews are matched per open version (``x\\.y\\.z-rc\\.[0-9]+``), not per
+    tag, so the pattern grows with the number of open versions, not with the
+    number of preview builds. Raises ValueError if it still exceeds the length
+    the cleanup action accepts, so the job fails here with a clear message.
     """
     present = set(tags)
-    open_previews: list[str] = []
+    open_versions: list[str] = []
     for tag in tags:
         match = _PREVIEW.match(tag)
-        if match is None or match.group(1) in present:
+        if match is None or match.group(1) in present or match.group(1) in open_versions:
             continue
-        open_previews.append(tag.replace(".", r"\."))
-    suffix = "".join(f"|{p}" for p in open_previews)
-    return f"^({BASE_KEEP}{suffix})$"
+        open_versions.append(match.group(1))
+    suffix = "".join(f"|{re.escape(v)}-rc\\.[0-9]+" for v in sorted(open_versions))
+    pattern = f"^({BASE_KEEP}{suffix})$"
+    if len(pattern) > MAX_REGEX_LENGTH:
+        raise ValueError(
+            f"keep rule is {len(pattern)} characters, the cleanup action accepts {MAX_REGEX_LENGTH}; "
+            f"{len(open_versions)} versions have open previews"
+        )
+    return pattern
 
 
 def next_preview_tag(version_or_milestone: str, tags: list[str], released: list[str]) -> str:

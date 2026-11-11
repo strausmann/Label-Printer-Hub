@@ -112,6 +112,25 @@ class KeepRegexTest(unittest.TestCase):
     def test_preview_dots_are_escaped(self) -> None:
         self.assertFalse(re.match(g.keep_regex(["1.5.1-rc.1"]), "1x5x1-rc.1"))
 
+    def test_many_previews_of_one_version_stay_short(self) -> None:
+        tags = [f"1.6.0-rc.{i}" for i in range(1, 80)]
+        pattern = g.keep_regex(tags)
+        self.assertLessEqual(len(pattern), g.MAX_REGEX_LENGTH)
+        self.assertTrue(re.match(pattern, "1.6.0-rc.80"))
+        self.assertFalse(re.match(pattern, "1.6.1-rc.1"))
+        self.assertFalse(re.match(g.keep_regex(tags + ["1.6.0"]), "1.6.0-rc.3"))
+
+    def test_too_many_open_versions_fail_with_a_clear_error(self) -> None:
+        tags = [f"1.{minor}.0-rc.1" for minor in range(10, 120)]
+        with self.assertRaisesRegex(ValueError, "cleanup action accepts"):
+            g.keep_regex(tags)
+
+    def test_pattern_with_several_open_versions_passes_the_validator_model(self) -> None:
+        tags = ["1.5.1-rc.1", "1.5.1-rc.2", "1.6.0-rc.1", "2.0.0-rc.4"]
+        height, count = safe_regex_metrics(g.keep_regex(tags))
+        self.assertLessEqual(height, SAFE_REGEX_STAR_LIMIT)
+        self.assertLessEqual(count, SAFE_REGEX_REPETITION_LIMIT)
+
 
 class NextPreviewTest(unittest.TestCase):
     def test_patch_milestone_after_release(self) -> None:
@@ -198,7 +217,7 @@ class CliTest(unittest.TestCase):
     def test_keep_regex(self) -> None:
         code, out = self.run_cli(["keep-regex"], "1.5.1-rc.1\n1.4.0\n")
         self.assertEqual(code, 0)
-        self.assertIn(r"1\.5\.1-rc\.1", out)
+        self.assertIn(r"1\.5\.1-rc\.[0-9]+", out)
 
     def test_next_preview_reads_released_from_tags(self) -> None:
         code, out = self.run_cli(["next-preview", "1.5.x"], "1.5.0\n1.5.1\n")
