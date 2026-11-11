@@ -323,12 +323,9 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await expect(list).toHaveCount(0);
       });
 
-      test("New sheet: the arrow that opens the list does not keep a scroll from being undone (the keyboard comes up)", async () => {
+      test("New sheet: a list opened right after Escape is still brought back after a scroll (the mark of the Escape is stale)", async () => {
         await prepare(mode);
-        const { box, frame, list } = await listOpenAtTop();
-        await box.press("Escape");
-        await expect(list).toHaveCount(0);
-        await page.waitForTimeout(400); // past the window in which the Escape counts
+        const { frame, list } = await listOpenAtTop();
         await page.evaluate(() => {
           const w = window as unknown as { __opens: number };
           w.__opens = 0;
@@ -337,10 +334,16 @@ test.describe("short viewport (on-screen keyboard)", () => {
               for (const n of r.addedNodes) if (n instanceof Element && (n.matches('[role="listbox"]') || n.querySelector('[role="listbox"]'))) w.__opens++;
           }).observe(document.body, { childList: true, subtree: true });
         });
-        await page.locator(ARROW).click();
-        await expect(list).toBeVisible();
-        // The keyboard is up a moment after the press and the browser scrolls the frame to the field.
-        await frame.evaluate((el) => (el.scrollTop += 30));
+        // All within 300 ms: Escape closes, the arrow opens, the keyboard scrolls the frame. The arrow opens the list, so the
+        // Escape before it must not count when the scroll closes the list again.
+        await frame.evaluate(async (el, arrow) => {
+          const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+          document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+          await pause(30);
+          document.querySelector<HTMLElement>(arrow)!.click();
+          await pause(120);
+          el.scrollTop += 30;
+        }, ARROW);
         // Opened by the arrow, closed by the scroll, opened again once it was over: two openings, and it ends open.
         await expect.poll(() => page.evaluate(() => (window as unknown as { __opens: number }).__opens)).toBe(2);
         await expect(list).toBeVisible();

@@ -190,6 +190,8 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
         setOpen(isOpen);
         if (isOpen) {
           stopReopening();
+          // A mark from before this opening (a choice, Escape) belongs to the list that was closed then, not to this one.
+          scroll.current.person = -Infinity;
           measure();
         } else listClosed();
       }}
