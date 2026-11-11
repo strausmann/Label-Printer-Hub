@@ -38,9 +38,11 @@ from app.models.job import Job, JobState
 from app.models.sheet import Sheet, SheetCell, SheetTypeVersion
 from app.repositories import sheets as repo
 from app.services.event_bus import EventBus
+from app.services.page_jobs import PagePayload
 from app.sheets.events import SheetTouched, publish_touched
 from app.sheets.geometry import cell_count
 from app.sheets.reservation import HUB_SOURCE
+from app.sheets.sheet_page import SheetPageDetail
 from app.sheets.text import log_value
 from app.sheets.type_service import version_geometry, write_transaction
 
@@ -174,6 +176,23 @@ class SheetCellsOutcome:
 
     async def on_unknown(self, job_id: UUID) -> None:
         await self._apply(job_id, "unconfirmed")
+
+    async def may_recover(self, job_id: UUID, payload: PagePayload) -> bool:
+        """The recovery check of the ``sheet_page`` kind (263-47): a ``queued`` sheet page prints
+        after a restart only while every cell it prints (and its ID cell) is still ``reserved``
+        for this job on its sheet. Cells freed meanwhile may carry another print's labels. A
+        payload that does not describe a sheet page is refused (it could not render either)."""
+        try:
+            detail = SheetPageDetail.model_validate(payload.detail)
+        except ValueError:
+            return False
+        wanted = {c.cell for c in detail.cells}
+        if detail.id_cell is not None:
+            wanted.add(detail.id_cell.cell)
+        async with self._factory() as session:
+            rows = await repo.reserved_cells_of_job(session, job_id)
+        held = {r.cell_no for r in rows if r.sheet_id == detail.sheet_id}
+        return wanted <= held
 
     async def _apply(self, job_id: UUID, outcome: Outcome) -> None:
         async with self._factory() as session, write_transaction(session):

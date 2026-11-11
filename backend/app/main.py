@@ -128,7 +128,9 @@ from app.services.layout_engine import LayoutEngine
 from app.services.page_jobs import (
     register_outcome_handler,
     register_page_renderer,
+    register_recovery_check,
     unregister_outcome_handler,
+    unregister_recovery_check,
 )
 from app.services.print_queue import PrintQueue, load_manual_pauses
 from app.services.printer_runtime import PrinterRuntime
@@ -358,6 +360,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # handler is registered first (a registry without it would hand the call to a no-op).
     sheet_outcome = SheetCellsOutcome(async_session, event_bus)
     register_outcome_handler("sheet_page", sheet_outcome)
+    sheet_recovery = sheet_outcome.may_recover  # one bound method: unregister compares by identity
+    register_recovery_check("sheet_page", sheet_recovery)
     # Persisted manual pauses must be in place before any worker task exists.
     async with async_session() as _pause_session:
         _initially_paused = await load_manual_pauses(_pause_session)
@@ -385,6 +389,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await runtime.stop()
         await cleanup_task.stop()
         unregister_outcome_handler("sheet_page", sheet_outcome)
+        unregister_recovery_check("sheet_page", sheet_recovery)
         await engine.dispose()
         # Close shared HTTP clients held by integration plugins that support it.
         # Plugins that pre-date connection pooling may not have aclose(); skip them.

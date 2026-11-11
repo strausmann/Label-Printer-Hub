@@ -538,3 +538,64 @@ async def test_reservation_sweep_starts_after_the_runtime_and_stops_first(
         assert app.state.sheet_reservation_sweep._queue is app.state.print_queue
 
     assert order == ["runtime.start", "sweep.start", "sweep.stop", "runtime.stop"]
+
+
+# ---------------------------------------------------------------- recovery check (263-47)
+
+
+async def _seed_queued_sheet_page(pid: UUID, *, free_the_cells: bool) -> UUID:
+    """A ``queued`` sheet page row as a failed end write leaves it: reserved cells, or (the case
+    the check exists for) cells that were freed meanwhile and taken by nobody yet."""
+    import app.db.engine as eng
+    from sqlalchemy import delete
+
+    async with eng.async_session() as s:
+        await ts.create_type(s, _fields(), G48, actor="tester")
+    page, code = await _reserve_manual(MARGIN, n=2)
+    async with eng.async_session() as s:
+        s.add(
+            DbJob(
+                id=page.job_id,
+                printer_id=pid,
+                template_key=None,
+                payload=_mark_payload(page, code).model_dump(mode="json"),
+                state="queued",
+            )
+        )
+        if free_the_cells:
+            await s.execute(delete(SheetCell).where(SheetCell.job_id == page.job_id))
+        await s.commit()
+    return page.job_id
+
+
+async def test_restart_prints_a_queued_sheet_page_whose_cells_are_still_its_own() -> None:
+    fake = FakeIppPrinter(job_script=[9])
+    pid = await _printer()
+    jid = await _seed_queued_sheet_page(pid, free_the_cells=False)
+    app = _app(fake)
+    async with app.router.lifespan_context(app):
+
+        async def _done() -> bool:
+            return (await _row(jid)).state == "done"
+
+        await _until(_done)
+    assert [r.operation for r in fake.received].count("Print-Job") == 1
+
+
+async def test_restart_refuses_a_queued_sheet_page_whose_cells_were_freed() -> None:
+    """The page would print over whatever another print reserved there: it ends ``failed``
+    (never started) instead, and nothing reaches the printer."""
+    fake = FakeIppPrinter(job_script=[9])
+    pid = await _printer()
+    jid = await _seed_queued_sheet_page(pid, free_the_cells=True)
+    app = _app(fake)
+    async with app.router.lifespan_context(app):
+
+        async def _failed() -> bool:
+            return (await _row(jid)).state == "failed"
+
+        await _until(_failed)
+        await asyncio.sleep(0.1)
+    row = await _row(jid)
+    assert (row.error or "").startswith("recovery_refused:")
+    assert "Print-Job" not in [r.operation for r in fake.received]

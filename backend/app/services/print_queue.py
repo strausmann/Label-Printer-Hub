@@ -66,6 +66,7 @@ from app.services.page_jobs import (
     PageJob,
     PagePayload,
     PagePrinter,
+    may_recover,
     notify_ended,
     outcome_handler,
 )
@@ -76,6 +77,9 @@ _ON_UNKNOWN_TIMEOUT_S = 5.0
 
 _PRINT_INTERRUPTED = "print_interrupted"
 """A page job whose row was written, but whose save raised after the commit (266-09)."""
+
+_RECOVERY_REFUSED_CODE = "recovery_refused"
+_RECOVERY_REFUSED = "Not printed after the restart: its sheet cells are no longer reserved for it."
 
 MAX_LABELS_PER_TAPE_JOB = 50
 """#277: a tape batch is split into sub-jobs of at most this many labels; sub-job n+1 starts only
@@ -862,9 +866,43 @@ class PrintQueue:
                 logger.warning("Recovery: page job %s has an invalid payload", db_job.id)
                 await self._store.mark_failed(db_job.id, "recovery_invalid_page_payload")
                 continue
+            if not await self._may_recover_page_job(db_job.id, payload):
+                continue
             job = self._new_page_job(db_job.id, printer_id, payload)
             await self._queues[printer_id].put(PageJob(job=job, payload=payload))
             logger.info("Recovery: page job %s re-enqueued on %s", db_job.id, printer_id)
+
+    async def _may_recover_page_job(self, job_id: UUID, payload: PagePayload) -> bool:
+        """The kind's owner agrees that a ``queued`` row prints after a restart (263-47).
+
+        A sheet page prints only onto cells that are still reserved for it: cells freed while
+        its end could not be written may carry another print's labels by now. Refused: the row
+        ends ``failed`` (never started; the outcome handler frees what is left of it). A check
+        that raises leaves the row ``queued`` and unprinted; the next start asks again.
+        """
+        try:
+            allowed = await may_recover(payload.kind, job_id, payload)
+        except Exception as exc:
+            logger.error(
+                "Recovery: page job %s not re-enqueued, its check failed (%s)",
+                job_id,
+                type(exc).__name__,
+            )
+            return False
+        if allowed:
+            return True
+        logger.warning("Recovery: page job %s refused: %s", job_id, _RECOVERY_REFUSED)
+        await self._store.mark_failed_code(
+            job_id,
+            _RECOVERY_REFUSED_CODE,
+            _RECOVERY_REFUSED,
+            None,
+            result={"phase": "ended", "started": False},
+        )
+        await notify_ended(
+            payload.kind, job_id, state="failed", started=False, error_code=_RECOVERY_REFUSED_CODE
+        )
+        return False
 
     async def _recover_in_flight_page_jobs(self, printer_id: UUID) -> None:
         resumable: list[PageJob] = []
@@ -1529,6 +1567,9 @@ class PrintQueue:
             await self._end_unsaved_page_job(job, payload)
             raise
         except BaseException:
+            # A cancellation (shutdown, a dropped request): no database await here, it would be
+            # cancelled again. A committed row stays ``queued``; the caller counts the page as
+            # queued (T7-1) and keeps its cells, so the next start prints it onto its own cells.
             self._drop_unqueued(job)
             raise
         if job.state != JobState.QUEUED:
@@ -1570,13 +1611,28 @@ class PrintQueue:
                     None,
                     result={"phase": "ended", "started": False},
                 )
-        except Exception:
-            logger.exception("Page job %s: could not end the job whose save failed", job.id)
+        except Exception as end_exc:
+            # By type only, and without ``exc_info``: the chain holds the save error, and a
+            # database error quotes its parameters, i.e. the page payload (266-13).
+            logger.error(
+                "Page job %s: could not end the job whose save failed (%s)",
+                job.id,
+                type(end_exc).__name__,
+            )
+            self._unpersisted.add(job.id)
+            if job.state != JobState.QUEUED:
+                return  # cancelled meanwhile: that cancel sent its own event and outcome
             job.error_code = _PRINT_INTERRUPTED
             job.error_msg = job.error_message = "The job could not be queued."
-            with contextlib.suppress(InvalidStateTransitionError):
-                JobStateMachine.transition(job, JobState.FAILED)
-            self._unpersisted.add(job.id)
+            JobStateMachine.transition(job, JobState.FAILED)
+            self._notify_page_change(job, JobState.QUEUED, JobState.FAILED)
+            return
+        # Not atomic against a cancel: the job stays QUEUED across the awaits above, so a cancel
+        # in between persists ``cancelled`` and sends ``on_ended(cancelled)``; this may then
+        # write ``failed`` (which write lands last decides the row) and send a second
+        # ``on_ended`` (harmless: the first freed the cells). Accepted. What must not happen is
+        # that a job such a cancel left unpersisted (its write failed) falls out of memory.
+        if job.id in self._unpersisted:
             return
         self._drop_unqueued(job)
         if row is not None:
@@ -2159,7 +2215,7 @@ class PrintQueue:
                     raise
                 except Exception:
                     logger.exception("Page job %s: could not end on an identity hold", item.job.id)
-                    await self._end_held_in_memory(item)
+                    self._end_held_in_memory(item)
                 continue
             try:
                 await self._page_runner.run(printer, item)
@@ -2175,15 +2231,15 @@ class PrintQueue:
             except Exception:
                 await self._page_backstop(item, printer_id)
 
-    async def _end_held_in_memory(self, item: PageJob) -> None:
-        """A held job whose end could not be written still ends here (263-47).
+    def _end_held_in_memory(self, item: PageJob) -> None:
+        """A held job whose end could not be written still ends in memory (263-47).
 
         Without this it would stay ``queued`` in memory, out of the queue: its waiters would
-        hang and its cells stay reserved. It ends ``failed`` in memory with the identity code,
-        the event goes out and the cells are freed (it never started). Its row could not be
-        written, so it is kept unpersisted: never evicted, and a re-add in this process does
-        not take it up again. A restart re-queues the ``queued`` row, and the hold, loaded again
-        from the database, ends it the same way.
+        hang. It ends ``failed`` in memory with the identity code and the event goes out. Its
+        row could not be written, so it is kept unpersisted: never evicted, and a re-add in this
+        process does not take it up again. Its cells stay reserved for the ``queued`` row: a
+        restart re-queues it, and the hold, loaded again from the database, ends it through the
+        normal path (which frees them), or it prints onto its own cells.
         """
         job = item.job
         if job.state != JobState.QUEUED:
@@ -2195,13 +2251,9 @@ class PrintQueue:
         JobStateMachine.transition(job, JobState.FAILED)
         self._unpersisted.add(job.id)
         self._notify_page_change(job, JobState.QUEUED, JobState.FAILED)
-        await notify_ended(
-            item.payload.kind,
-            UUID(job.id),
-            state="failed",
-            started=False,
-            error_code=IDENTITY_MISMATCH_CODE,
-        )
+        # No ``on_ended``: the cells stay reserved. The row still says ``queued`` and a restart
+        # takes it up again; freed cells could be reserved by another print meanwhile, and the
+        # page would print over those labels (C4). The cells belong to the row until it ends.
 
     async def _page_backstop(self, item: PageJob, printer_id: UUID) -> None:
         """The runner ends every job itself; this is the backstop for a bug in it."""

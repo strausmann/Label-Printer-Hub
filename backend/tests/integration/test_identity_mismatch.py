@@ -508,8 +508,10 @@ async def test_mismatch_failure_does_not_strand_held_job(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """263-47: ending a held job raises (its failure write fails). The job still ends in
-    memory (its waiters are released, nothing prints it), its cells are freed and the failure
-    is logged; it is never evicted, because its row could not be written."""
+    memory (its waiters are released, nothing prints it) and the failure is logged; it is
+    never evicted, because its row could not be written. Its cells stay reserved: the row still
+    says ``queued``, and freed cells could be reserved by another print that the restarted job
+    would then print over."""
     async with running() as rig:
         queue: PrintQueue = rig.app.state.print_queue
         code = await _sheet()
@@ -530,9 +532,8 @@ async def test_mismatch_failure_does_not_strand_held_job(
         job = await queue.wait_for_job(page["job_id"], timeout_s=TIMEOUT_S)
         assert job.state == JobState.FAILED
         assert job.error_code == "printer-identity-mismatch"
-        async with asyncio.timeout(TIMEOUT_S):
-            while await _cells():
-                await asyncio.sleep(0.02)
+        await asyncio.sleep(0.1)  # an outcome call would have settled the cells by now
+        assert {c.state for c in await _cells()} == {"reserved"} and len(await _cells()) == 3
         assert queue.forget_job(UUID(page["job_id"])) is False  # unpersisted: kept
         assert sum(1 for r in rig.fake.received if r.operation == "Print-Job") == 0
         assert any(page["job_id"] in r.getMessage() for r in caplog.records)

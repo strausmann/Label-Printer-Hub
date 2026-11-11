@@ -4,6 +4,7 @@ the printer, and the media-kind guard. The printer is ``FakeIppPrinter``; waits 
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -563,16 +564,37 @@ async def test_save_queued_failure_marks_row_failed_and_releases_cells(
 
 
 async def test_save_queued_failure_with_a_failing_end_write_keeps_the_cells(
-    handler: RecordingHandler,
+    handler: RecordingHandler, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The end cannot be written either: the row may still say ``queued`` and a restart could
     print it, so the cells stay reserved (the startup sweep or the job settles them) and the
-    job stays known, ended, and is never evicted or printed by this process."""
+    job stays known, ended, and is never evicted or printed by this process. The failure is
+    logged by type: the save error in the chain quotes the payload (a database error quotes
+    its parameters), and none of it reaches the log."""
+    marker = "QR-MARKER-9f3e"
     async with _env(FakeIppPrinter(job_script=[9])) as env:
-        store = _SavedThenRaises(RuntimeError("database is locked"), mark_fails=True)
+        store = _SavedThenRaises(
+            RuntimeError(f"database is locked [parameters: {marker}]"), mark_fails=True
+        )
         jid = uuid4()
+        caplog.set_level(logging.DEBUG)
         with pytest.raises(RuntimeError):
-            await _submit_into(env, store, jid)
+            env.queue._store = store  # type: ignore[assignment]
+            env.runner._store = store  # type: ignore[assignment]
+            await env.queue.pause_printer(env.page.id, reason="user", source="user")
+            await env.queue.submit_page_job(
+                env.page.id,
+                payload("sheet_page", title=marker),
+                api_key_id=None,
+                source_ip=None,
+                job_id=jid,
+            )
+        assert marker not in caplog.text
+        assert any(
+            str(jid) in r.getMessage() and "RuntimeError" in r.getMessage() for r in caplog.records
+        )
+        # F4: readers see the job end (no waiter exists, the caller got the error)
+        assert (str(jid), JobState.QUEUED, JobState.FAILED) in [e[:3] for e in env.events]
         assert "ended" not in handler.names(jid)
         assert env.queue.has_job(jid)
         assert (await env.queue.get(jid)).state == JobState.FAILED
@@ -655,3 +677,37 @@ async def test_backstop_end_that_cannot_be_written_is_never_evicted(
         assert job.state == JobState.FAILED
         assert env.queue.forget_job(jid) is False
         assert jid not in {j for j, _ in env.queue.finished_jobs()}
+
+
+async def test_a_cancel_whose_write_fails_during_the_end_keeps_the_job_known(
+    handler: RecordingHandler,
+) -> None:
+    """F3 edge case: the save raised after its commit; while the job's end is written, a cancel
+    lands whose own write fails. That cancel marks the job unpersisted; the end that follows
+    must not drop it from memory (an unpersisted job is never forgotten)."""
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+
+    class _Store(_SavedThenRaises):
+        async def mark_failed_code(self, job_id: UUID, *a: Any, **k: Any) -> None:
+            entered.set()
+            await gate.wait()
+            await super().mark_failed_code(job_id, *a, **k)
+
+        async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+            raise RuntimeError("database is locked")
+
+    async with _env(FakeIppPrinter(job_script=[9])) as env:
+        store = _Store(RuntimeError("database is locked"))
+        jid = uuid4()
+        submit = asyncio.create_task(_submit_into(env, store, jid))
+        async with asyncio.timeout(TEST_TIMEOUT_S):
+            await entered.wait()
+        with pytest.raises(RuntimeError):
+            await env.queue.cancel(str(jid))
+        gate.set()
+        with pytest.raises(RuntimeError):
+            await submit
+        assert env.queue.has_job(jid)
+        assert (await env.queue.get(jid)).state == JobState.CANCELLED
+        assert env.queue.forget_job(jid) is False

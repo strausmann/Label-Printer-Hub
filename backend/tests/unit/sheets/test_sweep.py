@@ -164,11 +164,11 @@ async def test_the_loop_sweeps_on_its_interval_and_stops(
     code = await make_sheet(session)
     job_id = uuid4()
     await seed_reserved(session, async_session_factory, code, 1, job_id)
-    sweep = _sweep(async_session_factory, FakeQueue(), interval_s=0, min_age_s=0)
+    sweep = _sweep(async_session_factory, FakeQueue(), interval_s=1, min_age_s=0)
     await sweep.start()
     try:
         await add_job(session, job_id, "cancelled")  # ends after the loop started
-        async with asyncio.timeout(5):
+        async with asyncio.timeout(10):
             while await read_cells(async_session_factory):
                 await asyncio.sleep(0.02)
     finally:
@@ -188,11 +188,11 @@ async def test_a_failing_sweep_is_logged_and_the_loop_goes_on(
         raise RuntimeError("database is locked")
 
     monkeypatch.setattr(sheets_repo, "all_reserved_cells", boom)
-    sweep = _sweep(async_session_factory, FakeQueue(), interval_s=0)
+    sweep = _sweep(async_session_factory, FakeQueue(), interval_s=1)
     caplog.set_level(logging.ERROR, logger="app.sheets.sweep")
     await sweep.start()
     try:
-        async with asyncio.timeout(5):
+        async with asyncio.timeout(10):
             while len(calls) < 2:
                 await asyncio.sleep(0.01)
     finally:
@@ -210,7 +210,8 @@ async def test_stop_before_start_and_twice_is_harmless(async_session_factory: Fa
 
 
 def test_bad_parameters_are_refused(async_session_factory: Factory) -> None:
-    with pytest.raises(ValueError):
-        _sweep(async_session_factory, FakeQueue(), interval_s=-1)
+    for interval in (0, -1):
+        with pytest.raises(ValueError):
+            _sweep(async_session_factory, FakeQueue(), interval_s=interval)
     with pytest.raises(ValueError):
         _sweep(async_session_factory, FakeQueue(), min_age_s=-1)

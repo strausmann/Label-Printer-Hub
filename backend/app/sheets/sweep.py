@@ -57,8 +57,10 @@ class SheetReservationSweep:
         interval_s: int = 300,
         min_age_s: int = 600,
     ) -> None:
-        if interval_s < 0 or min_age_s < 0:
-            raise ValueError("interval_s and min_age_s must be >= 0")
+        if interval_s <= 0:
+            raise ValueError("interval_s must be > 0")  # 0 would loop write transactions
+        if min_age_s < 0:
+            raise ValueError("min_age_s must be >= 0")
         self._factory = session_factory
         self._queue = queue
         self._bus = bus

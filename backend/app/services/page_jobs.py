@@ -18,7 +18,7 @@ synchronous reads of the ``IppPrinterState`` the status producer keeps — never
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID
@@ -174,6 +174,29 @@ def unregister_outcome_handler(kind: PageKind, handler: PageOutcomeHandler) -> N
 def outcome_handler(kind: str) -> PageOutcomeHandler:
     """The handler registered for ``kind``; a no-op handler when there is none."""
     return _HANDLERS.get(kind, _NOOP)
+
+
+RecoveryCheck = Callable[[UUID, PagePayload], Awaitable[bool]]
+"""``True``: a ``queued`` row of this kind may print after a restart. The kind's owner decides
+(a sheet page only while its cells are still reserved for it)."""
+
+_RECOVERY_CHECKS: dict[str, RecoveryCheck] = {}
+
+
+def register_recovery_check(kind: PageKind, check: RecoveryCheck) -> None:
+    _RECOVERY_CHECKS[kind] = check
+
+
+def unregister_recovery_check(kind: PageKind, check: RecoveryCheck) -> None:
+    """Remove ``check`` if it is still the one registered."""
+    if _RECOVERY_CHECKS.get(kind) is check:
+        del _RECOVERY_CHECKS[kind]
+
+
+async def may_recover(kind: str, job_id: UUID, payload: PagePayload) -> bool:
+    """Ask the kind's recovery check; a kind without one always may. Raises what it raises."""
+    check = _RECOVERY_CHECKS.get(kind)
+    return True if check is None else await check(job_id, payload)
 
 
 async def notify_ended(
