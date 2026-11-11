@@ -6,10 +6,11 @@ The image ships it as `/opt/app/THIRD_PARTY_NOTICES.md`; the licence texts that 
 with the web app's fonts and barcode reader are in the web app's `licenses/` folder
 (`/opt/app/web/licenses/` in the image).
 
-The complete lists are generated at build time and ship in the image: `/licenses/backend.json`
-(Python packages and the bundled fonts) and `/licenses/frontend.json` (everything the web app
-ships), both with the licence text of each package and both shown on the About page.
-`/frontend.cdx.json` is the CycloneDX SBOM of the web bundle. The tables below are a
+The complete lists are generated at build time and ship in the image. They are served by the
+running web app at the URLs `/licenses/backend.json` (Python packages and the bundled fonts) and
+`/licenses/frontend.json` (everything the web app ships), both with the licence text of each
+package and both shown on the About page; in the image the files are in `/opt/app/web/licenses/`.
+`/frontend.cdx.json` (URL of the running app) is the CycloneDX SBOM of the web bundle. The tables below are a
 hand-kept summary of the direct dependencies; where they differ from the generated lists, the
 lists are authoritative. The project's own licence text is `/opt/app/LICENSE` in the image.
 
@@ -26,9 +27,9 @@ lists are authoritative. The project's own licence text is `/opt/app/LICENSE` in
 
 | Font | Licence | Notes |
 |---|---|---|
-| Atkinson Hyperlegible Next, variable weight (`AtkinsonHyperlegibleNext[wght].ttf` from google/fonts commit `66eef70`) | OFL-1.1 | Title and detail lines of QL 62 mm labels (#258). Ships as `app/page_render/fonts/AtkinsonHyperlegibleNext-Variable.ttf` with `app/page_render/fonts/LICENSE-AtkinsonHyperlegibleNext-OFL.txt`. Also listed in `/licenses/backend.json` |
-| DejaVu Sans (`DejaVuSans.ttf`, Debian `fonts-dejavu-core` 2.37) | Bitstream Vera licence (DejaVu changes are public domain) | Embedded as a subset in the PDF pages for page printers. The file and its licence text ship in the package as `app/page_render/fonts/DejaVuSans.ttf` and `app/page_render/fonts/LICENSE-DejaVu.txt`. Also listed in `/licenses/backend.json` |
-| IBM Plex Mono Bold (`IBMPlexMono-Bold.ttf` from google/fonts commit `633f320`) | OFL-1.1 | Code and serial lines of QL 62 mm labels (#258). Ships as `app/page_render/fonts/IBMPlexMono-Bold.ttf` with `app/page_render/fonts/LICENSE-IBMPlexMono-OFL.txt`. Also listed in `/licenses/backend.json` |
+| Atkinson Hyperlegible Next, variable weight (`AtkinsonHyperlegibleNext[wght].ttf` from google/fonts commit `66eef70`) | OFL-1.1 | Title and detail lines of QL 62 mm labels (#258). Ships as `app/page_render/fonts/AtkinsonHyperlegibleNext-Variable.ttf` with `app/page_render/fonts/LICENSE-AtkinsonHyperlegibleNext-OFL.txt`. Also listed in URL `/licenses/backend.json` |
+| DejaVu Sans (`DejaVuSans.ttf`, Debian `fonts-dejavu-core` 2.37) | Bitstream Vera licence (DejaVu changes are public domain) | Embedded as a subset in the PDF pages for page printers. The file and its licence text ship in the package as `app/page_render/fonts/DejaVuSans.ttf` and `app/page_render/fonts/LICENSE-DejaVu.txt`. Also listed in URL `/licenses/backend.json` |
+| IBM Plex Mono Bold (`IBMPlexMono-Bold.ttf` from google/fonts commit `633f320`) | OFL-1.1 | Code and serial lines of QL 62 mm labels (#258). Ships as `app/page_render/fonts/IBMPlexMono-Bold.ttf` with `app/page_render/fonts/LICENSE-IBMPlexMono-OFL.txt`. Also listed in URL `/licenses/backend.json` |
 
 ## Web app (npm, bundled into `dist`)
 
@@ -52,18 +53,23 @@ similar) are not part of the image.
 
 ## Copyleft dependencies
 
-Two runtime dependencies are copyleft. Both are installed as Python packages in the image and
+Two Python dependencies are copyleft. Both are installed as Python packages in the image and
 ship as `.py` source files in `/opt/venv`, so their source is part of the image itself.
 
 | Package | Licence | Upstream | Notes |
 |---|---|---|---|
-| brother_ql | GPL-3.0-or-later | [pklaus/brother_ql](https://github.com/pklaus/brother_ql) | QL-Series raster protocol. The wheel ships no licence text; the image carries the canonical GPL-3.0-or-later text from `backend/licences/` and lists it in `/licenses/backend.json` |
-| ptouch | LGPL-2.1-or-later | [ptouch on PyPI](https://pypi.org/project/ptouch/) | PT-Series protocol. The wheel ships no licence text; the image carries the canonical LGPL-2.1-or-later text from `backend/licences/` and lists it in `/licenses/backend.json` |
+| brother_ql | GPL-3.0-or-later | [pklaus/brother_ql](https://github.com/pklaus/brother_ql) | QL-Series raster protocol. The wheel ships no licence text; the image carries the canonical GPL-3.0-or-later text from `backend/licences/` and lists it in URL `/licenses/backend.json` |
+| ptouch | LGPL-2.1-or-later | [ptouch on PyPI](https://pypi.org/project/ptouch/) | PT-Series protocol. The wheel ships no licence text; the image carries the canonical LGPL-2.1-or-later text from `backend/licences/` and lists it in URL `/licenses/backend.json` |
 
 Because of `brother_ql` the combined work is distributed under the AGPL-3.0-or-later (the
 project's licence is in `/opt/app/LICENSE`). The complete corresponding source of the project
 itself, for the exact version that runs, is linked from the About page of every instance
 (GPLv3 section 6(d), AGPL section 13).
+
+The Debian base image contains further packages under their own licences, some of them
+copyleft (for example GPL-2.0-or-later scripts in `ca-certificates`). Their source is available
+from Debian: [sources.debian.org](https://sources.debian.org/) and the Debian source packages
+of the release the image is built on (`apt source <package>`).
 
 ## Operating system packages
 
