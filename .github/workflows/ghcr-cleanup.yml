@@ -60,9 +60,15 @@ jobs:
           ACTOR: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_PATH: ${{ github.repository_owner }}/label-printer-hub-backend
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
         run: |
           set -euo pipefail
-          python3 scripts/ghcr_rules.py fetch-tags > tags.txt
+          # An empty tag list may be a false 403/404 for an existing package, and
+          # the cleanup would then delete open previews: abort a real run, only
+          # warn in a dry run.
+          on_empty=fail
+          [ "$DRY_RUN" = "true" ] && on_empty=warn
+          python3 scripts/ghcr_rules.py fetch-tags --on-empty="$on_empty" > tags.txt
           regex=$(python3 scripts/ghcr_rules.py keep-regex < tags.txt)
           echo "regex=$regex" >> "$GITHUB_OUTPUT"
           echo "Keep rule: \`$regex\`" >> "$GITHUB_STEP_SUMMARY"

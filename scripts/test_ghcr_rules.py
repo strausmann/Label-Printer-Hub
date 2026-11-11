@@ -13,6 +13,7 @@ import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -168,13 +169,15 @@ class _Response(io.BytesIO):
         self.close()
 
 
-def _opener(list_status: int, tags: list[str] | None = None):
+def _opener(list_status: int, tags: list[str] | None = None, link: str | None = None):
     def opener(request: urllib.request.Request) -> _Response:
         if "/token" in request.full_url:
             return _Response(json.dumps({"token": "t"}).encode())
         if list_status != 200:
             raise urllib.error.HTTPError(request.full_url, list_status, "x", {}, None)  # type: ignore[arg-type]
-        return _Response(json.dumps({"tags": tags}).encode())
+        response = _Response(json.dumps({"tags": tags}).encode())
+        response.headers = {"Link": link} if link else {}  # type: ignore[attr-defined]
+        return response
 
     return opener
 
@@ -203,6 +206,15 @@ class FetchTagsTest(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError):
             self.fetch(401)
 
+    def test_paginated_answer_is_an_error(self) -> None:
+        opener = _opener(200, ["1.5.0"], link='</v2/o/i/tags/list?last=1.5.0&n=10000>; rel="next"')
+        with self.assertRaisesRegex(RuntimeError, "paginated"):
+            g.fetch_tags("o/i", "a", "s", opener=opener)
+
+    def test_other_link_relation_is_fine(self) -> None:
+        opener = _opener(200, ["1.5.0"], link='</x>; rel="prev"')
+        self.assertEqual(g.fetch_tags("o/i", "a", "s", opener=opener), ["1.5.0"])
+
     def test_credentials_not_in_urls(self) -> None:
         seen: list[urllib.request.Request] = []
 
@@ -212,6 +224,40 @@ class FetchTagsTest(unittest.TestCase):
 
         g.fetch_tags("o/i", "actor", "secret-value", opener=opener)
         self.assertTrue(all("secret-value" not in r.full_url for r in seen))
+
+
+class FetchTagsCliTest(unittest.TestCase):
+    ENV = {"IMAGE_PATH": "O/I", "ACTOR": "a", "GHCR_TOKEN": "s"}
+
+    def run_fetch(self, argv: list[str], tags: list[str]) -> tuple[int, str]:
+        out = io.StringIO()
+        err = io.StringIO()
+        with (
+            mock.patch.dict("os.environ", self.ENV),
+            mock.patch.object(g, "fetch_tags", return_value=tags),
+            mock.patch("sys.stderr", err),
+        ):
+            code = g.main(["fetch-tags", *argv], stdout=out)
+        return code, out.getvalue() + err.getvalue()
+
+    def test_empty_list_aborts_a_real_cleanup(self) -> None:
+        code, text = self.run_fetch(["--on-empty=fail"], [])
+        self.assertEqual(code, 1)
+        self.assertIn("::error::", text)
+
+    def test_empty_list_only_warns_in_a_dry_run(self) -> None:
+        code, text = self.run_fetch(["--on-empty=warn"], [])
+        self.assertEqual(code, 0)
+        self.assertIn("::warning::", text)
+
+    def test_empty_list_is_fine_for_a_preview(self) -> None:
+        self.assertEqual(self.run_fetch([], []), (0, ""))
+
+    def test_non_empty_list_passes_in_every_mode(self) -> None:
+        for mode in ("allow", "warn", "fail"):
+            with self.subTest(mode=mode):
+                code, text = self.run_fetch([f"--on-empty={mode}"], ["1.5.0"])
+                self.assertEqual((code, text), (0, "1.5.0\n"))
 
 
 class CliTest(unittest.TestCase):
@@ -252,6 +298,11 @@ class WorkflowsCallTheScriptTest(unittest.TestCase):
             for needle in needles:
                 with self.subTest(file=name, needle=needle):
                     self.assertIn(needle, text, f"{name}: missing call '{needle}'")
+
+    def test_cleanup_aborts_on_an_empty_tag_list(self) -> None:
+        text = (WORKFLOWS / "ghcr-cleanup.yml").read_text()
+        self.assertIn("fetch-tags --on-empty=", text, "ghcr-cleanup.yml: fetch-tags without --on-empty")
+        self.assertIn("on_empty=fail", text)
 
     def test_no_inline_keep_regex_or_tag_curl(self) -> None:
         for name in ["ghcr-cleanup.yml", "preview-image.yml"]:

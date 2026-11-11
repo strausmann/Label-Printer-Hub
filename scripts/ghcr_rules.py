@@ -133,7 +133,9 @@ def fetch_tags(
     """Read the tag list of ``image`` from ghcr.io.
 
     A package that does not exist yet (first preview of a new image) answers
-    403 or 404: that is an empty tag list. Every other error is raised.
+    403 or 404: that is an empty tag list. Every other error is raised, and so
+    is a paginated answer (``Link: ...; rel="next"``): a partial list would
+    silently shrink the keep rule.
     Credentials are sent in-process and never appear in a command line.
     """
     scope = urllib.parse.quote(f"repository:{image}:pull", safe=":/")
@@ -150,10 +152,13 @@ def fetch_tags(
     try:
         with opener(list_request) as response:
             payload = json.load(response)
+            link = getattr(response, "headers", None) and response.headers.get("Link")
     except urllib.error.HTTPError as err:
         if err.code in MISSING_PACKAGE_STATUSES:
             return []
         raise
+    if link and re.search(r'rel="?next"?', link):
+        raise RuntimeError("tag list is paginated (Link rel=next); refusing to use a partial list")
     return list(payload.get("tags") or [])
 
 
@@ -164,9 +169,17 @@ def _read_tags(stream: Any) -> list[str]:
 def main(argv: list[str], stdin: Any = None, stdout: Any = None) -> int:
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    if len(argv) >= 1 and argv[0] == "fetch-tags" and len(argv) == 1:
+    if argv[:1] == ["fetch-tags"] and argv[1:] in ([], ["--on-empty=allow"], ["--on-empty=warn"], ["--on-empty=fail"]):
+        mode = argv[1].split("=")[1] if argv[1:] else "allow"
         image = os.environ["IMAGE_PATH"].lower()
         tags = fetch_tags(image, os.environ["ACTOR"], os.environ["GHCR_TOKEN"])
+        if not tags and mode != "allow":
+            # An existing package with a falsely empty list (403/404) would make
+            # the cleanup treat every open preview as deletable.
+            level = "error" if mode == "fail" else "warning"
+            print(f"::{level}::tag list of {image} is empty; open previews cannot be protected", file=sys.stderr)
+            if mode == "fail":
+                return 1
         stdout.write("".join(f"{t}\n" for t in tags))
         return 0
     if argv == ["keep-regex"]:
