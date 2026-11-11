@@ -10,9 +10,11 @@ the schema has no colour keys; the colour comes from the operator's roll record.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal, TypedDict
+from typing import Any, TypedDict
 
-TapeColourName = Literal["white", "yellow", "green", "blue", "red", "black", "clear"]
+from app.schemas.tape import TapeColourName
+
+__all__ = ["TapeColourName", "TapeStatusParsed", "read_tape_status"]
 
 
 class TapeStatusParsed(TypedDict, total=False):

@@ -18,6 +18,15 @@ describe("TapeSwatch", () => {
     render(ui({ widthMm: null, colour: null, probed: false }));
     expect(screen.getByText("Tape not known yet")).toBeVisible();
   });
+  it("says the tape is not known, not that there is none, while the printer is offline", () => {
+    render(ui({ widthMm: null, colour: null, probed: true, offline: true }));
+    expect(screen.getByText("Tape not known")).toBeVisible();
+    expect(screen.queryByText("No tape loaded")).toBeNull();
+  });
+  it("still says no tape for an online printer that reports none", () => {
+    render(ui({ widthMm: null, colour: null, probed: true, offline: false }));
+    expect(screen.getByText("No tape loaded")).toBeVisible();
+  });
   it("shows no colour line without a colour", () => {
     render(ui({ widthMm: 12, colour: null }));
     expect(screen.getByText("12 mm")).toBeVisible();

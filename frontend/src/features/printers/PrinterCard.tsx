@@ -47,7 +47,7 @@ export function PrinterCard({
         {unknown ? (
           <span className="text-ink-2">{page ? t`Supplies not known` : t`Tape not known`}</span>
         ) : !page ? (
-          <TapeSwatch widthMm={tapeWidthOf(status)} colour={status?.tape_colour} probed={status?.captured_at != null} />
+          <TapeSwatch widthMm={tapeWidthOf(status)} colour={status?.tape_colour} probed={status?.captured_at != null} offline={status?.online === false} />
         ) : noAnswerYet(status) ? (
           <span className="text-ink-2">{t`No answer yet`}</span>
         ) : (

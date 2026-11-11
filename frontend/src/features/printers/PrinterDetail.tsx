@@ -123,7 +123,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
                 {unknown ? (
                   <span className="text-ink-2">{t`Tape not known`}</span>
                 ) : (
-                  <TapeSwatch widthMm={tapeWidthOf(status.data)} colour={status.data?.tape_colour} probed={status.data?.captured_at != null} />
+                  <TapeSwatch widthMm={tapeWidthOf(status.data)} colour={status.data?.tape_colour} probed={status.data?.captured_at != null} offline={status.data?.online === false} />
                 )}
               </p>
               {canAskColour && tapeWidthOf(status.data) !== null && (

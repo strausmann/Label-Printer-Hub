@@ -221,7 +221,7 @@ export interface paths {
         };
         /**
          * Tape batches that wait for an action
-         * @description The tape runs (#277) that wait for a confirmation or stopped, oldest first, for the printers the caller may use; `printer_id` narrows it to one printer. Their actions are `continue`, `reprint` and `discard` on the batch.
+         * @description The tape runs (#277) that wait for a confirmation or stopped, oldest first, for the printers the caller may use; `printer_id` narrows it to one printer. An API key without `admin` scope sees only the runs it submitted; browser sessions, SSO and admin keys see all. Their actions are `continue`, `reprint` and `discard` on the batch, allowed to the same callers (another key gets 404).
          */
         get: operations["held_runs_api_v1_batches_runs_held_get"];
         put?: never;
@@ -269,7 +269,7 @@ export interface paths {
         put?: never;
         /**
          * Start the next sub-job of a tape batch
-         * @description A tape batch of more than 50 labels prints in sub-jobs; each further sub-job starts only after this call, for example after the user checked or changed the tape (#277). Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). At most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`).
+         * @description A tape batch of more than 50 labels prints in sub-jobs; each further sub-job starts only after this call, for example after the user checked or changed the tape (#277). Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, not against the printer's cap: over it a new batch of that key answers 429 `too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At most five runs per printer are held, at most two of one key: a further held run discards that key's own oldest (`run_discarded_limit`), never another key's. While the five places are taken, a batch of more than 50 labels from a key without a held run there gets 429 `too-many-queued-runs`; smaller batches are always taken. All callers without a key (browser sessions, SSO) count as one key.
          */
         post: operations["continue_batch_api_v1_batches__batch_id__continue_post"];
         delete?: never;
@@ -289,7 +289,7 @@ export interface paths {
         put?: never;
         /**
          * Give up a held tape batch
-         * @description Discards a run that waits for a confirmation or stopped (#277): the labels of the waiting parts are cancelled (`run_discarded`), a stopped run's failed labels stay as they are, and the run is forgotten. A printing run answers 409 `run_not_held`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). At most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`).
+         * @description Discards a run that waits for a confirmation or stopped (#277): the labels of the waiting parts are cancelled (`run_discarded`), a stopped run's failed labels stay as they are, and the run is forgotten. A printing run answers 409 `run_not_held`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, not against the printer's cap: over it a new batch of that key answers 429 `too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At most five runs per printer are held, at most two of one key: a further held run discards that key's own oldest (`run_discarded_limit`), never another key's. While the five places are taken, a batch of more than 50 labels from a key without a held run there gets 429 `too-many-queued-runs`; smaller batches are always taken. All callers without a key (browser sessions, SSO) count as one key.
          */
         post: operations["discard_batch_api_v1_batches__batch_id__discard_post"];
         delete?: never;
@@ -309,7 +309,7 @@ export interface paths {
         put?: never;
         /**
          * Reprint a stopped tape batch from a label
-         * @description A stopped run (#277): with `stop_kind` `unknown` the group's outcome is unknown — count what printed, fix the tape, and reprint from the first label that is missing (`reprint_from` to `reprint_to`); that label to the end of the group, and every label that was not started, are queued again as new jobs, and the labels before it count as printed. With `refused` nothing of the group was sent: reprint from its first label. A printer the stop paused is resumed. Labels whose stored job was cleaned up are listed in `skipped_job_ids`. The batch then lists the run's labels (`GET` shows the new jobs). `from_label` outside the range answers 422 `label_out_of_range`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). At most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`).
+         * @description A stopped run (#277): with `stop_kind` `unknown` the group's outcome is unknown — count what printed, fix the tape, and reprint from the first label that is missing (`reprint_from` to `reprint_to`); that label to the end of the group, and every label that was not started, are queued again as new jobs, and the labels before it count as printed. With `refused` nothing of the group was sent: reprint from its first label. A printer the stop paused is resumed. Labels whose stored job was cleaned up are listed in `skipped_job_ids`. The batch then lists the run's labels (`GET` shows the new jobs). `from_label` outside the range answers 422 `label_out_of_range`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, not against the printer's cap: over it a new batch of that key answers 429 `too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At most five runs per printer are held, at most two of one key: a further held run discards that key's own oldest (`run_discarded_limit`), never another key's. While the five places are taken, a batch of more than 50 labels from a key without a held run there gets 429 `too-many-queued-runs`; smaller batches are always taken. All callers without a key (browser sessions, SSO) count as one key.
          */
         post: operations["reprint_batch_api_v1_batches__batch_id__reprint_post"];
         delete?: never;
@@ -526,7 +526,7 @@ export interface paths {
         put?: never;
         /**
          * Submit a batch of print jobs
-         * @description Validates all items and enqueues the batch as one tape run — no per-item errors are returned. The labels (copies included) print in sub-jobs of at most 50; each further sub-job waits for `POST /api/v1/batches/{batch_id}/continue`. Inside a sub-job the labels go out in groups of 10 with a status check after each; when a group fails, the run stops (see `GET /api/v1/batches/{batch_id}`). A tape end stops it when the printer reports it: a PT sets the SNMP `noPaper` bit; whether a QL-820NWB reports the end of a DK roll is not verified, so on a QL the check reliably catches only an unreachable printer and an open cover. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch.
+         * @description Validates all items and enqueues the batch as one tape run — no per-item errors are returned. The labels (copies included) print in sub-jobs of at most 50; each further sub-job waits for `POST /api/v1/batches/{batch_id}/continue`. Inside a sub-job the labels go out in groups of 10 with a status check after each; when a group fails, the run stops (see `GET /api/v1/batches/{batch_id}`). A tape end stops it when the printer reports it: a PT sets the SNMP `noPaper` bit; whether a QL-820NWB reports the end of a DK roll is not verified, so on a QL the check reliably catches only an unreachable printer and an open cover. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch. A printer holds at most `PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) runs and a key at most `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over. A run that waits for `/continue` or a reprint counts against its key only. Over a cap the batch answers 429 too-many-queued-runs.
          */
         post: operations["create_batch_api_v1_print__printer_key__batch_post"];
         delete?: never;
@@ -854,7 +854,7 @@ export interface paths {
         };
         /**
          * Return the latest cached printer status
-         * @description Returns the most recent status written by the background probe worker (SNMP for tape printers, IPP for page printers; page printers add ``kind``, ``printer_state``, reasons, markers, trays and ``jobs_ahead``). The response is served from ``printer_status_cache`` — no synchronous SNMP probe is performed, so the response always returns in <10 ms. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Returns 404 when the printer is not registered.
+         * @description Returns the most recent status written by the background probe worker (SNMP for tape printers, IPP for page printers; page printers add ``kind``, ``printer_state``, reasons, markers, trays and ``jobs_ahead``). The response is served from ``printer_status_cache``. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Reads the hub's cache only; never contacts the printer. Returns 404 when the printer is not registered.
          */
         get: operations["get_printer_status_api_v1_printers__printer_id__status_get"];
         put?: never;
@@ -1761,6 +1761,20 @@ export interface components {
          * @enum {string}
          */
         ContentType: "qr_only" | "qr_one_line" | "qr_two_lines" | "qr_three_lines" | "text_one_line" | "text_two_lines" | "qr_with_listing";
+        /**
+         * DetailError
+         * @description The error body the routes actually send: FastAPI's ``{"detail": "<text>"}``.
+         *
+         *     Routes raise ``HTTPException(status, detail="<text>")``; this is the model that describes
+         *     that body in OpenAPI. It is not :class:`ProblemDetail`, which no route sends.
+         */
+        DetailError: {
+            /**
+             * Detail
+             * @description Human-readable explanation of the error
+             */
+            detail: string;
+        };
         /**
          * ExpectedPageModel
          * @description What a preview promised for one page; the print refuses a different plan.
@@ -4740,7 +4754,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, `run_not_held`). */
+            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, `run_not_held`), or a run that waited 15 minutes and gave up its pictures cannot draw them again from the stored labels (`run_pictures_lost`; discard it). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4846,7 +4860,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, `run_not_held`). */
+            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, `run_not_held`), or a run that waited 15 minutes and gave up its pictures cannot draw them again from the stored labels (`run_pictures_lost`; discard it). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5349,6 +5363,15 @@ export interface operations {
             };
             /** @description Invalid request (`invalid_request`, field paths only), an unknown or disabled tray (`tray_unknown`), an item the cell cannot show (`content_type_data_mismatch`), a plan of more than one sheet (`preview_too_large`), or an unknown integration (`integration_unknown_app`). Item errors carry `item_index`. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description The key has a preview in progress already (`too-many-previews`): one per key at a time. The body has the rate limit's shape (`retry_after_seconds`). */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5936,6 +5959,15 @@ export interface operations {
                     "application/json": components["schemas"]["PrinterStatus"];
                 };
             };
+            /** @description The printer is not registered. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DetailError"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -5967,12 +5999,14 @@ export interface operations {
                     "application/json": components["schemas"]["TapeRead"];
                 };
             };
-            /** @description No tape to report: the printer is unknown, has no cached status (``no cached status for printer ...``), is not polled (``Not polled``), its status is stale (``Status older than N s``, as in the status note), or no tape is loaded (``no tape loaded in printer ...``). */
+            /** @description No tape to report: the printer is unknown, has no cached status (``no cached status for printer ...``), is not polled (``Not polled``), its status is stale (``Status older than N s``, as in the status note), it is offline (``printer offline``: the hub cannot see a tape through a printer it cannot reach), or no tape is loaded (``no tape loaded in printer ...``). The body is ``{"detail": "<text>"}``. */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DetailError"];
+                };
             };
             /** @description Validation Error */
             422: {

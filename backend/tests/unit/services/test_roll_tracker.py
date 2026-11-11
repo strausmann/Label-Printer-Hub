@@ -95,7 +95,9 @@ async def test_no_tape_clears_without_prompt(async_session_factory) -> None:
             )
         )
         await s.commit()
-    change = await RollTracker(EventBus(), async_session_factory).observe(pid, None, None)
+    tracker = RollTracker(EventBus(), async_session_factory)
+    assert await tracker.observe(pid, None, None) is None  # the first one is not believed
+    change = await tracker.observe(pid, None, None)
     row = await _row(async_session_factory, pid)
     assert change is not None and change.prompt_pending is False
     assert (row.width_mm, row.colour, row.prompt_pending) == (None, None, False)
@@ -106,6 +108,7 @@ async def test_cassette_out_and_back_prompts_again(async_session_factory) -> Non
     tracker = RollTracker(EventBus(), async_session_factory)
     await tracker.observe(pid, 62, "62mm")
     await tracker.observe(pid, None, None)
+    await tracker.observe(pid, None, None)  # two in a row: the cassette is out
     back = await tracker.observe(pid, 62, "62mm")
     assert back is not None and back.prompt_pending is True
 
@@ -158,3 +161,55 @@ async def test_media_raw_is_trimmed_and_capped(async_session_factory) -> None:
     change = await RollTracker(EventBus(), async_session_factory).observe(pid, 12, " " + "x" * 200)
     assert change is not None and change.media_raw == "x" * 64
     assert (await _row(async_session_factory, pid)).media_raw == "x" * 64
+
+
+async def _seed(factory, pid: UUID, *, colour: str | None = "red") -> None:
+    async with factory() as s:
+        s.add(PrinterRoll(printer_id=pid, width_mm=62, media_raw="62mm", colour=colour))
+        await s.commit()
+
+
+async def test_single_no_tape_probe_keeps_colour(async_session_factory) -> None:
+    """One probe that sees no tape is a hiccup; the recorded colour survives it (263-37)."""
+    bus = EventBus()
+    pid = uuid4()
+    q = _events(bus, pid)
+    await _seed(async_session_factory, pid)
+    tracker = RollTracker(bus, async_session_factory)
+    assert await tracker.observe(pid, None, None) is None
+    row = await _row(async_session_factory, pid)
+    assert (row.width_mm, row.media_raw, row.colour) == (62, "62mm", "red")
+    assert q.qsize() == 0
+    # The same cassette is back: no new question for the operator.
+    assert await tracker.observe(pid, 62, "62mm") is None
+    assert (await _row(async_session_factory, pid)).colour == "red"
+    assert q.qsize() == 0
+
+
+async def test_two_no_tape_probes_clear_colour(async_session_factory) -> None:
+    bus = EventBus()
+    pid = uuid4()
+    await _seed(async_session_factory, pid)
+    tracker = RollTracker(bus, async_session_factory)
+    assert await tracker.observe(pid, None, None) is None
+    change = await tracker.observe(pid, None, None)
+    assert change is not None and change.width_mm is None
+    row = await _row(async_session_factory, pid)
+    assert (row.width_mm, row.colour, row.prompt_pending) == (None, None, False)
+
+
+async def test_a_tape_probe_resets_the_no_tape_count(async_session_factory) -> None:
+    """No tape, tape, no tape is not two in a row."""
+    pid = uuid4()
+    await _seed(async_session_factory, pid)
+    tracker = RollTracker(EventBus(), async_session_factory)
+    for width, raw in ((None, None), (62, "62mm"), (None, None)):
+        assert await tracker.observe(pid, width, raw) is None
+    assert (await _row(async_session_factory, pid)).colour == "red"
+
+
+async def test_a_different_roll_is_still_found_at_once(async_session_factory) -> None:
+    """The debounce is for "no tape" only; another cassette counts on the first probe."""
+    pid = uuid4()
+    await _seed(async_session_factory, pid)
+    assert await RollTracker(EventBus(), async_session_factory).observe(pid, 29, "29mm")

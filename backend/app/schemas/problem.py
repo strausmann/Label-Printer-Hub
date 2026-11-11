@@ -38,3 +38,13 @@ class ProblemDetail(BaseModel):
         default_factory=dict,
         description="Additional problem-type-specific fields",
     )
+
+
+class DetailError(BaseModel):
+    """The error body the routes actually send: FastAPI's ``{"detail": "<text>"}``.
+
+    Routes raise ``HTTPException(status, detail="<text>")``; this is the model that describes
+    that body in OpenAPI. It is not :class:`ProblemDetail`, which no route sends.
+    """
+
+    detail: str = Field(description="Human-readable explanation of the error")

@@ -191,7 +191,11 @@ class StatusProbeProducer:
             )
 
     async def _mark_offline(self, exc: Exception) -> None:
-        """Persist a failed probe; preserves any previous parsed snapshot."""
+        """Persist a failed probe: offline, with the tape forgotten, the rest of the snapshot kept.
+
+        The hub cannot see a tape through a printer it cannot reach, so it does not go on
+        reporting the last one it saw (``loaded_tape_mm`` and ``media_raw`` are cleared).
+        """
         from app.db.engine import async_session
         from app.models.printer_status_cache import PrinterStatusCache
 
@@ -208,6 +212,8 @@ class StatusProbeProducer:
             parsed: dict[str, object] = dict(row.parsed) if (row is not None and row.parsed) else {}
             parsed["online"] = False
             parsed["last_error"] = str(exc)
+            parsed["loaded_tape_mm"] = None
+            parsed["media_raw"] = None
             if row is not None:
                 row.parsed = parsed
                 row.captured_at = now

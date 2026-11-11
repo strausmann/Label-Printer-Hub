@@ -260,3 +260,50 @@ def test_get_engine_reinitialises_after_closed_loop() -> None:
         # Restore a working event loop for subsequent tests
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
+
+
+async def test_media_raw_control_characters_removed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The media text comes from the network; C0/C1 control characters are not stored (263-38)."""
+    from pysnmp.proto import rfc1902
+
+    async def fake_get_cmd(*args, **_kwargs):
+        oids = [args[i] for i in (4, 5, 6)]
+        return (
+            None,
+            None,
+            0,
+            [
+                (oids[0], rfc1902.Integer(3)),
+                (oids[1], rfc1902.OctetString(b"\x00\x00")),
+                (oids[2], rfc1902.OctetString('12mm\x1b[0m\x00(0.47")\x07\x7f\x85\n')),
+            ],
+        )
+
+    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
+    pf = await query_preflight("192.0.2.10", community="public", timeout_s=1.0)
+    assert pf.media_raw == '12mm[0m(0.47")'
+    assert pf.loaded_tape_mm == 12
+    assert not any(ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F for c in pf.media_raw)
+
+
+async def test_media_raw_of_only_control_characters_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pysnmp.proto import rfc1902
+
+    async def fake_get_cmd(*args, **_kwargs):
+        oids = [args[i] for i in (4, 5, 6)]
+        return (
+            None,
+            None,
+            0,
+            [
+                (oids[0], rfc1902.Integer(3)),
+                (oids[1], rfc1902.OctetString(b"\x00\x00")),
+                (oids[2], rfc1902.OctetString("\x00\x07 \x1f")),
+            ],
+        )
+
+    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
+    pf = await query_preflight("192.0.2.10", community="public", timeout_s=1.0)
+    assert pf.media_raw is None

@@ -121,6 +121,16 @@ def decode_error_flags(blob: bytes) -> list[str]:
     return out
 
 
+# C0 (U+0000-U+001F), DEL and C1 (U+0080-U+009F): never part of a media name, and the text is
+# stored and shown to operators.
+_CONTROL_CHARACTERS_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _strip_control_characters(text: str) -> str:
+    """Remove C0/C1 control characters from text a printer reported over the network."""
+    return _CONTROL_CHARACTERS_RE.sub("", text)
+
+
 _TAPE_MM_RE = re.compile(r"^\s*(\d+)\s*mm", re.IGNORECASE)
 
 
@@ -252,7 +262,7 @@ async def query_preflight(
 
     raw_status = int(var_binds[0][1])
     raw_error_blob = bytes(var_binds[1][1])
-    raw_media_text = str(var_binds[2][1])
+    raw_media_text = _strip_control_characters(str(var_binds[2][1]))
 
     return PreflightStatus(
         hr_printer_status=_PRINTER_STATUS_MAP.get(raw_status, "other"),
