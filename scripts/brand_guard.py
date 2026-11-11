@@ -87,6 +87,14 @@ LEGACY_CLI_FILES: tuple[str, ...] = (
 )
 
 
+# Files that must show the old image and repository names so users can recognise their own
+# ``image:`` line: the migration guide and the rename ADR, nothing else.
+LEGACY_SLUG_FILES: tuple[str, ...] = (
+    "docs/migration/labelyard.md",
+    "docs/decisions/*-rename-to-labelyard.md",
+)
+
+
 def _glob_to_regex(glob: str) -> re.Pattern[str]:
     """Translate a path glob: ``**`` crosses directories, ``*`` and ``?`` do not."""
     out: list[str] = []
@@ -138,10 +146,11 @@ def _never(_path: str, _line: str, _m: re.Match[str]) -> bool:
     return False
 
 
-def _slug_allowed(_path: str, line: str, m: re.Match[str]) -> bool:
+def _slug_allowed(path: str, line: str, m: re.Match[str]) -> bool:
     # `<slug>.sheet-type` is the file format's registered name; it is stored in
-    # users' exported files and stays.
-    return line.startswith(".sheet-type", m.end())
+    # users' exported files and stays. The migration guide and the rename ADR may
+    # name the old image and repository.
+    return line.startswith(".sheet-type", m.end()) or _matches_any(path, LEGACY_SLUG_FILES)
 
 
 def _in_legacy_env_file(path: str, _line: str, _m: re.Match[str]) -> bool:

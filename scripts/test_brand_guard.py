@@ -73,6 +73,20 @@ class BrandGuardTest(unittest.TestCase):
         self.add("docs/formats.md", f"{SLUG}.sheet and {SLUG}-backend\n")
         self.assertEqual(self.rules(), ["slug"])
 
+    def test_slug_allowed_in_migration_guide_and_rename_adr(self) -> None:
+        self.add("docs/migration/labelyard.md", f"image: ghcr.io/strausmann/{SLUG}-backend\n")
+        self.add("docs/decisions/0099-rename-to-labelyard.md", f"repo strausmann/{SLUG}\n")
+        self.assertEqual(self.rules(), [])
+
+    def test_slug_still_hit_in_other_docs_and_old_adrs(self) -> None:
+        # counter-test: the allowance names exactly two files, not their directories
+        self.add("docs/migration/other.md", f"{SLUG}-backend\n")
+        self.add("docs/site/guide.md", f"{SLUG}\n")
+        self.add("docs/decisions/0099-something-else.md", f"{SLUG}\n")
+        self.add("README.md", f"{SLUG}-backend\n")
+        hits = {h.path for h in brand_guard.find_hits(self.root)}
+        self.assertEqual(hits, {"docs/migration/other.md", "docs/site/guide.md", "README.md"})
+
     def test_slug_not_reported_twice(self) -> None:
         self.add("README.md", f"{SLUG}-backend\n")
         self.assertEqual(self.rules(), ["slug"])
