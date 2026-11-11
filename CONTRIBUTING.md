@@ -197,6 +197,27 @@ If you want to bypass a gate locally during exploration, use `mypy --no-strict-o
 
 PRs that fail any check won't be reviewed until green.
 
+### Web UI: the on-screen keyboard
+
+The hub is used on phones and tablets next to the printer. When a text field has the focus and the on-screen keyboard
+is open, the field, its list and the main buttons of a dialog must stay in sight (or be reachable by scrolling inside
+the dialog). Browsers shrink the page for the keyboard in two different ways, so a layout that works in one can be wrong
+in the other:
+
+- Chromium resizes the layout viewport (`interactive-widget=resizes-content` in `frontend/index.html`); `dvh` follows it.
+- iOS Safari and older browsers only shrink `window.visualViewport`; `vh`, `dvh` and `fixed` boxes keep the full height.
+
+So, in `frontend/`:
+
+- Size anything that must stay in sight with `var(--vvh)` (visible height) and `var(--vv-top)` (its offset), published by
+  `src/shell/viewport.ts`, not with `vh`/`dvh`/`window.innerHeight`. `ModalDialog` already does: it is as tall as the
+  visible area and scrolls inside itself, so use it for every dialog.
+- A list or popover that opens beside a field measures against `readViewport()` and measures again while it is open
+  (the keyboard usually comes up after the focus has opened the list); see `SheetTypeCombobox`.
+- Check a new dialog, combobox or search field in `e2e/short-viewport.spec.ts`: it runs at 1280x500 and 390x400 and with
+  a keyboard that only covers the visual viewport, and asserts that the field, the first option and the main buttons lie
+  inside the visible area.
+
 ## Dependencies and licences
 
 Every dependency that ships in the container image has to carry a licence the project can redistribute. One file decides: [`licence-policy.yml`](licence-policy.yml) (JSON, which is valid YAML). It holds the allow list (`allow-licenses`) and the reviewed exceptions (`x-licence-exceptions`). Every check reads this file.

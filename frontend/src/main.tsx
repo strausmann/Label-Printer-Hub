@@ -9,6 +9,7 @@ import { startUpdates } from "./app/updates";
 import { initI18n, pickLanguage } from "./i18n";
 import "./index.css";
 import { applyTheme, readTheme } from "./shell/theme";
+import { trackVisibleViewport } from "./shell/viewport";
 
 async function serverDefaultLanguage(): Promise<string | undefined> {
   try {
@@ -23,6 +24,9 @@ async function serverDefaultLanguage(): Promise<string | undefined> {
 async function start() {
   await initI18n(pickLanguage(await serverDefaultLanguage()));
   applyTheme(readTheme());
+  const stopTracking = trackVisibleViewport();
+  // Vite re-runs this entry on a hot update: take the old listeners down first.
+  import.meta.hot?.dispose(stopTracking);
   const queryClient = createQueryClient();
   installUnauthorizedGuard(queryClient);
   const router = createAppRouter();
