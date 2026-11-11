@@ -181,6 +181,45 @@ async def test_an_owner_that_gets_stuck_while_its_next_call_waits_is_refused(
     assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
 
 
+async def test_callers_without_a_key_are_not_locked_by_another_ones_stuck_render(
+    hang: _Hang,
+) -> None:
+    """UI users share the owner ``NO_KEY``: one hanging render of a user must not lock every
+    UI user out until a restart. Only the global bound protects them; a key stays locked."""
+    no_key = render_slots.owner_of(None)
+    with pytest.raises(render_slots.RenderTimeoutError):
+        await render_slots.render_bounded(hang, 1, label="t", owner=no_key, timeout_s=SHORT_S)
+    assert await render_slots.render_bounded(lambda: 2, label="t", owner=no_key) == 2
+    key = uuid4()
+    with pytest.raises(render_slots.RenderTimeoutError):
+        await render_slots.render_bounded(hang, 3, label="t", owner=key, timeout_s=SHORT_S)
+    with pytest.raises(render_slots.OwnerRenderStuckError):
+        await render_slots.render_bounded(lambda: 4, label="t", owner=key)
+    # Both slots stuck now: the global bound refuses everyone at once, UI users too.
+    with pytest.raises(render_slots.RenderUnavailableError):
+        await render_slots.render_bounded(lambda: 5, label="t", owner=no_key)
+    hang.release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
+async def test_ui_user_b_previews_while_ui_user_a_has_a_stuck_render(
+    hang: _Hang, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Preview path: A keeps its own preview slot (429), B previews on the free render slot."""
+    monkeypatch.setattr(sps, "_draw_page", hang)
+    no_key = render_slots.owner_of(None)
+    user_a, user_b = ("ui", "a", "ip-a"), ("ui", "b", "ip-b")
+    with pytest.raises(sps.RenderTimeoutApiError), sps.preview_slot(user_a, no_key):
+        await sps.draw_page_bounded(1, timeout_s=SHORT_S)
+    monkeypatch.setattr(sps, "_draw_page", lambda n: n * 10)
+    with pytest.raises(sps.TooManyPreviewsError), sps.preview_slot(user_a, no_key):
+        pass
+    with sps.preview_slot(user_b, no_key):
+        assert await sps.draw_page_bounded(2, timeout_s=WAIT_S) == 20
+    hang.release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
 def test_callers_without_a_key_are_one_owner() -> None:
     key = uuid4()
     assert render_slots.owner_of(key) == key

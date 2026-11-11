@@ -704,6 +704,35 @@ async def test_a_key_with_a_stuck_render_cannot_hang_the_second_slot(
     await _until(lambda: render_slots.stuck_renders() == 0)
 
 
+async def test_a_stuck_render_without_a_key_does_not_block_the_next_job_without_a_key(
+    handler: RecordingHandler,
+) -> None:
+    """Jobs without a key share ``NO_KEY``; one stuck render must not fail all of them."""
+    import threading
+
+    from app.services import render_slots
+
+    release = threading.Event()
+
+    def render(p: PagePayload) -> bytes:
+        if p.detail["tag"] == "hang":
+            release.wait(TEST_TIMEOUT_S)
+        return b"%PDF-"
+
+    try:
+        with registered(handler, render=render):
+            env = _Env(FakeIppPrinter(job_script=[9]), render_timeout_s=0.05)
+            first = await env.job(payload(tag="hang"))
+            await env.run(first)
+            assert handler.ended(UUID(first.job.id))["error_code"] == "render_timeout"
+            second = await env.job(payload(tag="ok"))
+            await env.run(second)
+            assert (await env.row(second)).state == DbJobState.DONE.value
+    finally:
+        release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
 async def test_with_every_slot_stuck_a_page_job_fails_render_unavailable_at_once(
     handler: RecordingHandler,
 ) -> None:
