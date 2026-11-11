@@ -571,7 +571,7 @@ async def test_update_with_invalid_stored_connection_is_409(hub: Hub) -> None:
     )
     assert resp.status_code == 409, resp.text
     detail = _error(resp)
-    assert detail["error_code"] == "stored-connection-invalid"
+    assert detail["error_code"] == "stored_connection_invalid"
     assert str(printer_id) in detail["error_message"]
     assert "uri" not in detail["error_message"].lower()  # the broken value is not echoed
     assert hub.ops() == []

@@ -281,7 +281,7 @@ class StoredConnectionInvalidError(SheetApiError):
     """A saved IPP connection no longer validates (e.g. a hand-edited or old row)."""
 
     status = 409
-    error_code = "stored-connection-invalid"
+    error_code = "stored_connection_invalid"
     message = "The stored connection of this printer is invalid."
 
     def __init__(self, printer_id: UUID) -> None:
