@@ -101,6 +101,12 @@ describe("useHubEvents", () => {
     ]);
   });
 
+  it("run.state_changed refreshes the held tape runs", () => {
+    const { invalidate } = setup();
+    act(() => last().emit("run.state_changed", "p1", { run_id: "r1", printer_id: "p1", state: "awaiting_confirmation" }));
+    expect(keys(invalidate)).toEqual([["jobs", "held-runs"]]);
+  });
+
   it("printer.identity_mismatch invalidates the printers and the printer, status included", () => {
     const { invalidate } = setup();
     act(() => last().emit("printer.identity_mismatch", "p1", { mismatch: true, since: "2026-11-09T10:00:00Z" }));

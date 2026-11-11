@@ -86,10 +86,14 @@ def _img() -> Image.Image:
 
 
 async def _run(
-    printer: TapeRoll, n: int, store: MemoryJobStore | None = None, **options: Any
+    printer: TapeRoll,
+    n: int,
+    store: MemoryJobStore | None = None,
+    on_run_change: Callable[[UUID, UUID, str], None] | None = None,
+    **options: Any,
 ) -> tuple[PrintQueue, UUID, list[UUID], MemoryJobStore]:
     store = store or MemoryJobStore()
-    queue = PrintQueue([printer], store=store)
+    queue = PrintQueue([printer], store=store, on_run_change=on_run_change)
     await queue.start()  # running before the rows exist, as in the hub: no recovery of them
     ids = [uuid4() for _ in range(n)]
     for i, jid in enumerate(ids):
@@ -752,5 +756,61 @@ async def test_reprint_reports_every_confirmation_of_the_run_so_far() -> None:
         assert first.all_confirmed_job_ids == first.confirmed_job_ids == ids[10:13]
         assert second.confirmed_job_ids and not set(second.confirmed_job_ids) & set(ids[10:13])
         assert second.all_confirmed_job_ids == [*first.confirmed_job_ids, *second.confirmed_job_ids]
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_a_run_that_starts_waiting_is_announced_after_its_state_is_set() -> None:
+    printer = TapeRoll()
+    seen: list[tuple[UUID, UUID, str, str | None]] = []
+    holder: list[PrintQueue] = []
+
+    def on_run_change(run_id: UUID, printer_id: UUID, state: str) -> None:
+        info = holder[0].run_info(run_id)  # what a client refetching on the event would read
+        seen.append((run_id, printer_id, state, None if info is None else info.state))
+
+    queue, run_id, _, _ = await _run(printer, 51, on_run_change=on_run_change)
+    holder.append(queue)
+    try:
+        await _until(lambda: queue.run_info(run_id).state == "awaiting_confirmation")  # type: ignore[union-attr]
+        # the order matters: the state a reader sees when the event arrives is already the new one
+        assert (run_id, printer.id, "awaiting_confirmation", "awaiting_confirmation") in seen
+        await queue.confirm_run(run_id)
+        assert (run_id, printer.id, "printing", "printing") in seen
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_a_stopped_run_is_announced_and_so_is_its_discard() -> None:
+    printer = TapeRoll(15)
+    seen: list[tuple[str, str | None]] = []
+    holder: list[PrintQueue] = []
+
+    def on_run_change(run_id: UUID, printer_id: UUID, state: str) -> None:
+        info = holder[0].run_info(run_id)
+        seen.append((state, None if info is None else info.state))
+
+    queue, run_id, _, _ = await _run(printer, 25, on_run_change=on_run_change)
+    holder.append(queue)
+    try:
+        await _until(_stopped(queue, run_id))
+        assert ("stopped", "stopped") in seen
+        await queue.discard_run(run_id)
+        assert ("discarded", None) in seen  # the run is gone when the event arrives
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_a_failing_run_callback_does_not_break_the_run() -> None:
+    printer = TapeRoll()
+
+    def boom(run_id: UUID, printer_id: UUID, state: str) -> None:
+        raise RuntimeError("callback bug")
+
+    queue, run_id, _, _ = await _run(printer, 51, on_run_change=boom)
+    try:
+        await _until(lambda: queue.run_info(run_id).state == "awaiting_confirmation")  # type: ignore[union-attr]
+        await queue.confirm_run(run_id)
+        await _until(lambda: queue.run_info(run_id) is None)
     finally:
         await queue.stop(timeout_s=2.0)

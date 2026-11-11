@@ -178,6 +178,11 @@ class PauseInfo:
 # Called with (printer_id, info) after a pause and (printer_id, None) after a resume.
 _PauseChangeCallback = Callable[[UUID, "PauseInfo | None"], None]
 
+# #277: called with (run_id, printer_id, state) when a tape run enters or leaves the held list
+# (stopped, waiting for a confirmation) without a job event of its own telling the client.
+# ``state`` is the run's state, or ``discarded`` / ``finished`` when the run is gone.
+_RunChangeCallback = Callable[[UUID, UUID, str], None]
+
 
 @runtime_checkable
 class _PrinterLike(Protocol):
@@ -326,6 +331,7 @@ class PrintQueue:
         on_pause_change: _PauseChangeCallback | None = None,
         page_printers: Sequence[PagePrinter] = (),
         page_runner: PageJobRunner | None = None,
+        on_run_change: _RunChangeCallback | None = None,
     ) -> None:
         """Konstruktor.
 
@@ -345,6 +351,7 @@ class PrintQueue:
         """
         self._on_state_change = on_state_change
         self._on_pause_change = on_pause_change
+        self._on_run_change = on_run_change
         self._pause_info: dict[UUID, PauseInfo] = {}
         self._store: JobStore = store if store is not None else MemoryJobStore()
         self._engine: LayoutEngine = engine if engine is not None else LayoutEngine()
@@ -1140,6 +1147,15 @@ class PrintQueue:
             reprint_to=None if reprint is None else reprint[1] + 1,
         )
 
+    def _notify_run_change(self, run: TapeRun, state: str) -> None:
+        """Tell the callback that a run entered or left the held list (never raises)."""
+        if self._on_run_change is None:
+            return
+        try:
+            self._on_run_change(run.run_id, run.printer_id, state)
+        except Exception:
+            logger.exception("on_run_change callback raised for run=%s (%s)", run.run_id, state)
+
     def _live_run(self, run_id: UUID) -> TapeRun:
         run = self._runs.get(run_id)
         if run is None or run.printer_id not in self._queues or self._removing(run.printer_id):
@@ -1162,6 +1178,7 @@ class PrintQueue:
         run.state = "printing"
         run.held_since = None
         self._queues[run.printer_id].put_nowait(self._sub_job(run))
+        self._notify_run_change(run, "printing")
         logger.info("Run %s: sub-job %d confirmed", run_id, run.current + 1)
         info = self.run_info(run_id)
         assert info is not None
@@ -1268,9 +1285,11 @@ class PrintQueue:
         run.held_since = None
         if run.current >= len(run.sub_jobs):  # nothing left to print
             del self._runs[run_id]
+            self._notify_run_change(run, "finished")
         else:
             run.state = "printing"
             self._queues[run.printer_id].put_nowait(self._sub_job(run))
+            self._notify_run_change(run, "printing")
         info = self._pause_info.get(run.printer_id)
         if self.is_paused(run.printer_id) and info is not None and info.source == "printer_error":
             await self.resume_printer(run.printer_id)
@@ -1299,6 +1318,7 @@ class PrintQueue:
             raise RunStateError("run_not_held", "Only a stopped or waiting run can be discarded.")
         # No await until the run is forgotten: a confirm or reprint after this sees no run.
         del self._runs[run_id]
+        self._notify_run_change(run, "discarded")
         cancelled: list[Job] = []
         if run.state == "awaiting_confirmation":
             start = run.sub_jobs[run.current][0]
@@ -2318,6 +2338,7 @@ class PrintQueue:
             run.state = "stopped"
             run.stop_code = cause
             run.held_since = time.monotonic()
+            self._notify_run_change(run, "stopped")
         for job in group_failed:
             depth = self._queue_depth(printer_id)
             self._notify_state_change(job, JobState.PRINTING, JobState.FAILED, queue_depth=depth)
@@ -2358,6 +2379,8 @@ class PrintQueue:
                 run.current = nxt
                 run.state = "awaiting_confirmation"
                 run.held_since = time.monotonic()
+                # No job event follows this state: the jobs page learns of the waiting run here.
+                self._notify_run_change(run, "awaiting_confirmation")
                 logger.info("Run %s: sub-job %d waits for a confirmation", run.run_id, nxt + 1)
                 await self._bound_held_runs(run.printer_id)
                 return

@@ -1,5 +1,6 @@
 import { useQueryClient, type QueryClient, type QueryFilters } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { heldRunsKey } from "../features/jobs/api";
 import { pageJobStateFrom, pageJobStateKey } from "../features/jobs/pageJobState";
 import { recordJobEvent, resyncWatchedJobs } from "../features/jobs/printWatch";
 import { previewNamesCode, SHEET_PREVIEW_KEY, sheetKey, sheetsListKey, typesListKey } from "../features/sheets/keys";
@@ -17,6 +18,8 @@ const EVENT_TYPES = [
   "printer.roll_changed",
   // Carries only `{mismatch, since}`: the status and the printer are read again for the rest.
   "printer.identity_mismatch",
+  // A tape run entered or left the held list (waiting for a confirmation, stopped); carries ids and the state.
+  "run.state_changed",
   "hub.printers_changed",
   "auth.expired",
   // The `sheets` channel (no printer restriction); the client filters by event type, not channel.
@@ -139,6 +142,10 @@ function invalidate(client: QueryClient, type: EventType, { printerId, data }: F
         run(["printers", printerId, "status"]);
         run(["printers", printerId, "roll"]);
       }
+      break;
+    case "run.state_changed":
+      // No job event tells the jobs page that a run started waiting: the held-runs list reads the run itself.
+      run(heldRunsKey);
       break;
     case "hub.printers_changed":
       run(["printers"]);

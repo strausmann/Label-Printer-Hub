@@ -350,6 +350,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         store=job_store,
         engine=shared_engine,
         on_pause_change=pause_producer.handle_change,
+        on_run_change=pq_producer.handle_run_change,
     )
     app.state.print_queue = queue
 
