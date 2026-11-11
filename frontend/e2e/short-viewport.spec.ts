@@ -257,6 +257,72 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await expect(list).toBeVisible();
         await expectInSight(page, list, "the list");
       });
+
+      /** The tall form with its type list open, the frame at the top. */
+      async function listOpenAtTop() {
+        const { box, frame } = await openTallAddSheet();
+        await frame.evaluate((el) => (el.scrollTop = 0));
+        await box.click();
+        const list = page.locator('[role="listbox"]');
+        await expect(list).toBeVisible();
+        return { box, frame, list };
+      }
+
+      test("New sheet: Escape closes the list for good, even while the frame is still scrolling", async () => {
+        await prepare(mode);
+        const { frame, list } = await listOpenAtTop();
+        // The scroll event comes a frame after the key: it must not bring the list back.
+        await frame.evaluate((el) => {
+          el.scrollTop = 30;
+          document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        });
+        await expect(list).toHaveCount(0);
+        await page.waitForTimeout(700);
+        await expect(list).toHaveCount(0);
+      });
+
+      test("New sheet: a choice closes the list for good, even when the form moves under it", async () => {
+        await prepare(mode);
+        const { box, frame, list } = await listOpenAtTop();
+        await box.fill("4731");
+        await page.locator('[role="option"]').first().click();
+        // The chosen type changes the form (grid, margin check); the frame moves right after the click.
+        await frame.evaluate((el) => (el.scrollTop += 20));
+        await page.waitForTimeout(700);
+        await expect(list).toHaveCount(0);
+        await expect(box).toHaveValue(/4731/);
+      });
+
+      test("New sheet: a scroll that goes on opens the list once, after it has stopped, and once per focus", async () => {
+        await prepare(mode);
+        const { frame, list } = await listOpenAtTop();
+        await page.evaluate(() => {
+          const w = window as unknown as { __opens: number };
+          w.__opens = 0;
+          new MutationObserver((records) => {
+            for (const r of records)
+              for (const n of r.addedNodes) if (n instanceof Element && (n.matches('[role="listbox"]') || n.querySelector('[role="listbox"]'))) w.__opens++;
+          }).observe(document.body, { childList: true, subtree: true });
+        });
+        const opens = () => page.evaluate(() => (window as unknown as { __opens: number }).__opens);
+        // Eight scrolls 70 ms apart (a finger on the frame): the list must stay shut until it is over.
+        const duringScroll = await frame.evaluate(async (el) => {
+          for (let i = 1; i <= 8; i++) {
+            el.scrollTop = i * 12;
+            await new Promise((resolve) => setTimeout(resolve, 70));
+          }
+          return (window as unknown as { __opens: number }).__opens;
+        });
+        expect(duringScroll, "the list opened between scrolls").toBe(0);
+        await expect(list).toBeVisible();
+        await page.waitForTimeout(400);
+        expect(await opens(), "the list opened exactly once after the scrolling").toBe(1);
+        // A second scroll closes it, and it stays closed (once per focus).
+        await frame.evaluate((el) => (el.scrollTop = 150));
+        await page.waitForTimeout(700);
+        await expect(list).toHaveCount(0);
+        expect(await opens()).toBe(1);
+      });
     });
   }
 

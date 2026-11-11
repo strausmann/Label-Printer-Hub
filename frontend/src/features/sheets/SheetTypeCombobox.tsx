@@ -34,6 +34,10 @@ export interface SheetTypeComboboxProps {
 const LIST_MAX = 384;
 const LIST_GAP = 12;
 /** What a field sits in when it is in a dialog. */
+/** How long the dialog frame must have stopped scrolling before a list that its scroll closed is opened again (ms). */
+const QUIET = 150;
+/** A close this soon after Escape, a choice or a press on the arrow is the person's, not a scroll's (ms). */
+const PERSON = 300;
 const DIALOG = '[role="dialog"], [role="alertdialog"]';
 
 /** The label with the part that matched the query marked. Folding drops spaces (around "×"), so the match is mapped back to the label's own offsets. */
@@ -100,31 +104,61 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
   };
   // React Aria closes a list that is not modal when an ancestor of the field scrolls. Inside a dialog that ancestor is the
   // dialog's own frame, and the browser scrolls it when it brings the field above the keyboard, so the list would close
-  // the moment the keyboard comes up. A close that comes with such a scroll is undone once the scrolling is over.
-  const lastScroll = useRef(-Infinity);
-  const reopen = useRef(0);
+  // the moment the keyboard comes up. A close that comes with such a scroll is undone, but only
+  //  - when nothing else closed it (Escape, a choice, the arrow button: `person`),
+  //  - once the scrolling has been quiet for `QUIET` ms (a finger still scrolling is not overruled), and
+  //  - once per focus.
+  const scroll = useRef({ last: -Infinity, armed: false, reopened: false, person: -Infinity, timer: 0, check: 0 });
+  const settle = () => {
+    const state = scroll.current;
+    window.clearTimeout(state.timer);
+    state.timer = window.setTimeout(() => {
+      state.armed = false;
+      const input = field.current?.querySelector("input");
+      if (input && input === document.activeElement && input.getAttribute("aria-expanded") === "false") {
+        state.reopened = true;
+        trigger.current?.click();
+      }
+    }, QUIET);
+  };
   useEffect(() => {
+    const state = scroll.current;
     const note = (event: Event) => {
       // The text field scrolls inside itself while a long query is typed; that is not what is meant.
-      if (!(event.target instanceof HTMLInputElement)) lastScroll.current = performance.now();
+      if (event.target instanceof HTMLInputElement) return;
+      state.last = performance.now();
+      if (state.armed) settle();
     };
     document.addEventListener("scroll", note, true);
     return () => {
       document.removeEventListener("scroll", note, true);
-      window.clearTimeout(reopen.current);
+      window.clearTimeout(state.timer);
+      window.clearTimeout(state.check);
     };
   }, []);
-  const reopenAfterScroll = () => {
+  // Marks a close that is about to happen (or just happened) as the person's doing: Escape, a choice, the arrow button.
+  const closedByPerson = () => {
+    scroll.current.person = performance.now();
+  };
+  const stopReopening = () => {
+    const state = scroll.current;
+    state.armed = false;
+    window.clearTimeout(state.timer);
+    window.clearTimeout(state.check);
+  };
+  const listClosed = () => {
+    const state = scroll.current;
+    if (performance.now() - state.person < PERSON) return;
     // Only in a dialog: on a page a scroll that closes the list is the expected behaviour (the field moved away).
-    if (!field.current?.closest(DIALOG)) return;
+    if (state.reopened || !field.current?.closest(DIALOG)) return;
     const closedAt = performance.now();
-    window.clearTimeout(reopen.current);
-    reopen.current = window.setTimeout(() => {
-      const input = field.current?.querySelector("input");
-      if (lastScroll.current >= closedAt - 50 && input && input === document.activeElement && input.getAttribute("aria-expanded") === "false") {
-        trigger.current?.click();
-      }
-    }, 200);
+    // React Aria closes inside the scroll event; ours may come a moment later, so look back a little and ahead a little.
+    window.clearTimeout(state.check);
+    state.check = window.setTimeout(() => {
+      if (state.last < closedAt - 50) return;
+      state.armed = true;
+      settle();
+    }, 20);
   };
   const measureRef = useRef(measure);
   useEffect(() => {
@@ -154,18 +188,23 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
       onOpenChange={(isOpen) => {
         setOpen(isOpen);
         if (isOpen) {
-          window.clearTimeout(reopen.current);
+          stopReopening();
           measure();
-        } else reopenAfterScroll();
+        } else listClosed();
       }}
       onInputChange={(text) => setTyped(text === shownText ? null : text)}
       onSelectionChange={(key) => {
         // Typing makes React Aria let go of the selection; the value only changes when a type is picked.
         if (key === null) return;
+        closedByPerson();
         setTyped(null);
         onChange(String(key));
       }}
-      onBlur={() => setTyped(null)}
+      onBlur={() => {
+        setTyped(null);
+        stopReopening();
+        scroll.current.reopened = false;
+      }}
     >
       <Label className={LABEL}>{label}</Label>
       <div ref={field} className="relative">
@@ -207,12 +246,16 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
           onKeyDownCapture={(e) => {
             // React Aria undoes a search on Escape by writing the chosen item's text back, read from the filtered list.
             // That list may not hold the chosen type, and the write is then an empty string. Escape means "back to the value".
-            if (e.key === "Escape") setTimeout(() => setTyped(null), 0);
+            if (e.key === "Escape") {
+              closedByPerson();
+              setTimeout(() => setTyped(null), 0);
+            }
             // Enter on a search nobody has moved into takes the first match, so "type 4736, Enter" works.
             const first = shown[0];
             if (e.key === "Enter" && query !== "" && first && !e.currentTarget.getAttribute("aria-activedescendant")) {
               e.preventDefault();
               e.stopPropagation();
+              closedByPerson();
               setTyped(null);
               onChange(first.id);
             }
@@ -236,6 +279,7 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
           ) : null}
           <Button
             ref={trigger}
+            onPress={closedByPerson}
             aria-label={t`Show all sheet types`}
             className="press flex size-11 items-center justify-center rounded-r2 text-ink-2 data-[focus-visible]:outline-3 data-[focus-visible]:outline-link"
           >
