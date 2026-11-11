@@ -1,6 +1,5 @@
-import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { listRoom, readViewport, subscribeViewport, trackVisibleViewport, useVisibleViewport } from "./viewport";
+import { listRoom, perFrame, readViewport, sameRoom, subscribeViewport, trackVisibleViewport } from "./viewport";
 
 /** A stand-in for `window.visualViewport` that a test can resize like a keyboard would. */
 class FakeViewport extends EventTarget {
@@ -90,18 +89,36 @@ describe("trackVisibleViewport", () => {
   });
 });
 
-describe("useVisibleViewport", () => {
-  function Probe() {
-    const { height, offsetTop } = useVisibleViewport();
-    return <p>{`${height}/${offsetTop}`}</p>;
-  }
-  it("re-renders when the keyboard opens and closes", () => {
-    render(<Probe />);
-    expect(screen.getByText("800/0")).toBeInTheDocument();
-    act(() => vv!.set(380, 10));
-    expect(screen.getByText("380/10")).toBeInTheDocument();
-    act(() => vv!.set(800));
-    expect(screen.getByText("800/0")).toBeInTheDocument();
+describe("perFrame", () => {
+  it("runs once per frame however often it is asked, and not after cancel", () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+      frames[id - 1] = () => {};
+    });
+    const fn = vi.fn();
+    const frame = perFrame(fn);
+    frame.run();
+    frame.run();
+    frame.run();
+    frames.splice(0).forEach((cb) => cb(0));
+    expect(fn).toHaveBeenCalledTimes(1);
+    frame.run();
+    frame.cancel();
+    frames.splice(0).forEach((cb) => cb(0));
+    expect(fn).toHaveBeenCalledTimes(1);
+    frame.run();
+    frames.splice(0).forEach((cb) => cb(0));
+    expect(fn).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("sameRoom", () => {
+  it("compares placement and height", () => {
+    expect(sameRoom({ placement: "bottom start", maxHeight: 100 }, { placement: "bottom start", maxHeight: 100 })).toBe(true);
+    expect(sameRoom({ placement: "bottom start", maxHeight: 100 }, { placement: "top start", maxHeight: 100 })).toBe(false);
+    expect(sameRoom({ placement: "bottom start", maxHeight: 100 }, { placement: "bottom start", maxHeight: 99 })).toBe(false);
   });
 });
 

@@ -1,5 +1,3 @@
-import { useSyncExternalStore } from "react";
-
 /**
  * The part of the page the person can see right now.
  *
@@ -58,17 +56,25 @@ export function trackVisibleViewport(root: HTMLElement = document.documentElemen
   };
 }
 
-let snapshot: VisibleViewport = readViewport();
-function getSnapshot(): VisibleViewport {
-  const now = readViewport();
-  if (now.height !== snapshot.height || now.offsetTop !== snapshot.offsetTop) snapshot = now;
-  return snapshot;
-}
-const SERVER: VisibleViewport = { height: 0, offsetTop: 0 };
-
-/** The visible area as React state: re-renders when the keyboard opens or closes. */
-export function useVisibleViewport(): VisibleViewport {
-  return useSyncExternalStore(subscribeViewport, getSnapshot, () => SERVER);
+/**
+ * Runs `fn` at most once per animation frame, however many events ask for it (the window and the visual viewport both
+ * report one resize; iOS reports a scroll of the visual viewport continuously).
+ */
+export function perFrame(fn: () => void): { run: () => void; cancel: () => void } {
+  let frame = 0;
+  return {
+    run: () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        fn();
+      });
+    },
+    cancel: () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+    },
+  };
 }
 
 /** Where a list beside a field goes and how tall it may get. */
@@ -89,3 +95,6 @@ export function listRoom(field: { top: number; bottom: number }, view: VisibleVi
   const up = below < 4 * opts.option && above > below;
   return { placement: up ? "top start" : "bottom start", maxHeight: Math.max(2 * opts.option, Math.min(opts.max, Math.floor(up ? above : below))) };
 }
+
+/** Do two rooms say the same? (`setRoom` keeps the old object then, and nothing re-renders.) */
+export const sameRoom = (a: ListRoom, b: ListRoom) => a.placement === b.placement && a.maxHeight === b.maxHeight;

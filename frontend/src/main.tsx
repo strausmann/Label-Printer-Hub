@@ -24,7 +24,9 @@ async function serverDefaultLanguage(): Promise<string | undefined> {
 async function start() {
   await initI18n(pickLanguage(await serverDefaultLanguage()));
   applyTheme(readTheme());
-  trackVisibleViewport();
+  const stopTracking = trackVisibleViewport();
+  // Vite re-runs this entry on a hot update: take the old listeners down first.
+  import.meta.hot?.dispose(stopTracking);
   const queryClient = createQueryClient();
   installUnauthorizedGuard(queryClient);
   const router = createAppRouter();

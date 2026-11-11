@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import type { components } from "../../api/schema.gen";
 import { FIELD } from "../../shell/SignIn";
-import { listRoom, readViewport, subscribeViewport, type ListRoom } from "../../shell/viewport";
+import { listRoom, perFrame, readViewport, sameRoom, subscribeViewport, type ListRoom } from "../../shell/viewport";
 import { LABEL } from "../settings/controls";
 import { foldForSearch, foldWithMap, matchSheetType } from "./matchSheetType";
 import { typePickerLabel } from "./typeLabel";
@@ -89,17 +89,55 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
   const [open, setOpen] = useState(false);
   const measure = () => {
     if (!field.current) return;
-    const bar = document.querySelector("[data-tabbar]");
+    // The tab bar of a phone limits the list, but not inside a dialog: the dialog covers it, and with the keyboard open
+    // the bar sits right above the keyboard, so counting it would take a strip of the room off for nothing.
+    const bar = field.current.closest('[role="dialog"], [role="alertdialog"]') ? null : document.querySelector("[data-tabbar]");
     const lowest = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().top : undefined;
-    setRoom(listRoom(field.current.getBoundingClientRect(), readViewport(), { lowest, gap: LIST_GAP, max: LIST_MAX, option: 44 }));
+    const next = listRoom(field.current.getBoundingClientRect(), readViewport(), { lowest, gap: LIST_GAP, max: LIST_MAX, option: 44 });
+    setRoom((prev) => (sameRoom(prev, next) ? prev : next));
+  };
+  // React Aria closes a list that is not modal when an ancestor of the field scrolls. Inside a dialog that ancestor is the
+  // dialog's own frame, and the browser scrolls it when it brings the field above the keyboard, so the list would close
+  // the moment the keyboard comes up. A close that comes with such a scroll is undone once the scrolling is over.
+  const lastScroll = useRef(-Infinity);
+  const reopen = useRef(0);
+  useEffect(() => {
+    const note = (event: Event) => {
+      // The text field scrolls inside itself while a long query is typed; that is not what is meant.
+      if (!(event.target instanceof HTMLInputElement)) lastScroll.current = performance.now();
+    };
+    document.addEventListener("scroll", note, true);
+    return () => {
+      document.removeEventListener("scroll", note, true);
+      window.clearTimeout(reopen.current);
+    };
+  }, []);
+  const reopenAfterScroll = () => {
+    const closedAt = performance.now();
+    window.clearTimeout(reopen.current);
+    reopen.current = window.setTimeout(() => {
+      const input = field.current?.querySelector("input");
+      if (lastScroll.current >= closedAt - 50 && input && input === document.activeElement && input.getAttribute("aria-expanded") === "false") {
+        trigger.current?.click();
+      }
+    }, 200);
   };
   const measureRef = useRef(measure);
   useEffect(() => {
     measureRef.current = measure;
   });
+  // While the list is open: measure again when the visible area changes (the keyboard comes up after the focus opened the
+  // list) and when anything scrolls (the frame of a dialog scrolls when the browser brings the field into view).
   useEffect(() => {
     if (!open) return;
-    return subscribeViewport(() => measureRef.current());
+    const again = perFrame(() => measureRef.current());
+    const stop = subscribeViewport(again.run);
+    document.addEventListener("scroll", again.run, true);
+    return () => {
+      stop();
+      document.removeEventListener("scroll", again.run, true);
+      again.cancel();
+    };
   }, [open]);
 
   return (
@@ -113,7 +151,10 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
       allowsEmptyCollection
       onOpenChange={(isOpen) => {
         setOpen(isOpen);
-        if (isOpen) measure();
+        if (isOpen) {
+          window.clearTimeout(reopen.current);
+          measure();
+        } else reopenAfterScroll();
       }}
       onInputChange={(text) => setTyped(text === shownText ? null : text)}
       onSelectionChange={(key) => {

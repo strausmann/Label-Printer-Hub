@@ -44,6 +44,15 @@ async function expectInSight(page: Page, what: Locator, name: string) {
 async function coverWithKeyboard(page: Page, visibleHeight: number) {
   await page.evaluate((h) => (window as unknown as { __keyboard(h: number | null): void }).__keyboard(h), visibleHeight);
 }
+const panTo = (page: Page, offsetTop: number) => page.evaluate((t) => (window as unknown as { __pan(t: number): void }).__pan(t), offsetTop);
+
+/** Is the box inside [top, bottom], numbers the test chose (not read back from the stand-in)? */
+async function expectWithin(what: Locator, top: number, bottom: number, name: string) {
+  const box = await what.boundingBox();
+  expect(box, `${name} has a box`).not.toBeNull();
+  expect(box!.y, `${name} starts at or below ${top}`).toBeGreaterThanOrEqual(top - 1);
+  expect(box!.y + box!.height, `${name} ends at or above ${bottom}`).toBeLessThanOrEqual(bottom + 1);
+}
 
 test.describe("short viewport (on-screen keyboard)", () => {
   let page: Page;
@@ -54,11 +63,14 @@ test.describe("short viewport (on-screen keyboard)", () => {
       const real = window.visualViewport;
       const target = new EventTarget();
       let height: number | null = null;
+      let top = 0;
       const stand = {
         get height() {
           return height ?? real?.height ?? window.innerHeight;
         },
-        offsetTop: 0,
+        get offsetTop() {
+          return top;
+        },
         offsetLeft: 0,
         pageTop: 0,
         pageLeft: 0,
@@ -71,9 +83,17 @@ test.describe("short viewport (on-screen keyboard)", () => {
       };
       Object.defineProperty(window, "visualViewport", { configurable: true, value: stand });
       window.addEventListener("resize", () => target.dispatchEvent(new Event("resize")));
-      (window as unknown as { __keyboard(h: number | null): void }).__keyboard = (h) => {
+      const api = window as unknown as { __keyboard(h: number | null, offsetTop?: number): void; __pan(offsetTop: number): void };
+      // The keyboard opens: the visual viewport gets shorter (and, as on iOS, may sit lower in the layout viewport).
+      api.__keyboard = (h, offsetTop = 0) => {
         height = h;
+        top = offsetTop;
         target.dispatchEvent(new Event("resize"));
+      };
+      // The browser scrolls the visual viewport inside the layout viewport: only a `scroll` event, no `resize`.
+      api.__pan = (offsetTop) => {
+        top = offsetTop;
+        target.dispatchEvent(new Event("scroll"));
       };
     });
     page = await context.newPage();
@@ -150,6 +170,11 @@ test.describe("short viewport (on-screen keyboard)", () => {
         // The rest is reachable by scrolling the list, and it stays inside the visible area.
         const list = page.locator('[role="listbox"]');
         await expectInSight(page, list, "the list");
+        // Inside a dialog the list uses the room down to the edge of the visible area; the tab bar of a phone is behind the
+        // dialog and takes none of it (without the keyboard's help it sits right above the keyboard).
+        const edge = (await visible(page)).bottom;
+        const listBox = (await list.boundingBox())!;
+        expect(edge - (listBox.y + listBox.height), "the list reaches the edge of the visible area").toBeLessThanOrEqual(12 + 6);
         await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
         await expectInSight(page, options.last(), "the last option after scrolling");
       });
@@ -196,6 +221,86 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await buttonIn(dialog, "Cancel").scrollIntoViewIfNeeded();
         await expectInSight(page, buttonIn(dialog, "Cancel"), "the Cancel button");
         await page.keyboard.press("Escape");
+      });
+
+      /** New sheet with a type chosen: the tallest state of the form, with the keyboard still open. */
+      async function openTallAddSheet() {
+        const dialog = await openAddSheet();
+        const box = dialog.locator('input[role="combobox"]').first();
+        await box.click();
+        await keyboard(mode);
+        await page.keyboard.type(TYPE);
+        await page.locator('[role="option"]').first().click();
+        // The form now holds the grid, the printer and the placement: it is taller than what is visible.
+        const frame = frameOf(dialog);
+        await expect.poll(() => frame.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(100);
+        return { dialog, box, frame };
+      }
+
+      test("New sheet with a type chosen: the main button and Cancel stay in sight without scrolling", async () => {
+        await prepare(mode);
+        const { dialog, frame } = await openTallAddSheet();
+        await expectInSight(page, frame, "the dialog");
+        await expectInSight(page, buttonIn(dialog, "Add sheet"), "the Add sheet button");
+        await expectInSight(page, buttonIn(dialog, "Cancel"), "the Cancel button");
+      });
+
+      test("New sheet: the list stays open when the dialog frame scrolls (the browser does that to show the field)", async () => {
+        await prepare(mode);
+        const { box, frame } = await openTallAddSheet();
+        await frame.evaluate((el) => (el.scrollTop = 0));
+        await box.click();
+        const list = page.locator('[role="listbox"]');
+        await expect(list).toBeVisible();
+        // React Aria closes a non-modal list when an ancestor of the field scrolls; the combobox opens it again.
+        await frame.evaluate((el) => (el.scrollTop = 30));
+        await expect(list).toBeVisible();
+        await expectInSight(page, list, "the list");
+      });
+    });
+  }
+
+  // iOS Safari scrolls the layout viewport to show the focused field, so the visual viewport sits lower (offsetTop > 0) and
+  // reports it with a `scroll` event only. The numbers are the scenario's; the assertions read where the page really put things.
+  const PANNED = [
+    { name: "tablet", width: 1280, height: 800 },
+    { name: "phone", width: 390, height: 800 },
+  ] as const;
+  const PAN = { top: 150, height: 420 };
+  for (const mode of PANNED) {
+    test.describe(`${mode.name}, visual viewport panned to ${PAN.top}`, () => {
+      test("a dialog follows the visible area (resize, then a scroll of the visual viewport)", async () => {
+        await prepare(mode);
+        const dialog = await openAddSheet();
+        const frame = frameOf(dialog);
+        await page.evaluate(([h]) => (window as unknown as { __keyboard(h: number, t: number): void }).__keyboard(h!, 0), [PAN.height]);
+        await panTo(page, PAN.top);
+        const overlay = frame.locator("xpath=..");
+        await expect.poll(async () => Math.round((await overlay.boundingBox())!.y)).toBe(PAN.top);
+        const box = (await overlay.boundingBox())!;
+        expect(Math.round(box.height), "the overlay is as tall as the visible area").toBe(PAN.height);
+        await expectWithin(frame, PAN.top, PAN.top + PAN.height, "the dialog");
+        // The list of the type field lies in the visible area too.
+        const field = dialog.locator('input[role="combobox"]').first();
+        await field.click();
+        await page.keyboard.type(TYPE);
+        await expectWithin(page.locator('[role="option"]').first(), PAN.top, PAN.top + PAN.height, "the first option");
+        await expectWithin(buttonIn(dialog, "Cancel"), PAN.top, PAN.top + PAN.height, "the Cancel button");
+      });
+
+      test("the search results follow the visible area on a phone", async () => {
+        test.skip(mode.width > 1000, "the results hang from the top bar on a wide screen");
+        await prepare(mode);
+        await page.goto("/sheets");
+        const search = page.getByRole("combobox", { name: "Search" });
+        await search.click();
+        await page.evaluate(([h]) => (window as unknown as { __keyboard(h: number, t: number): void }).__keyboard(h!, 0), [PAN.height]);
+        await page.keyboard.type("L4736");
+        const results = page.getByRole("listbox", { name: "Search results" });
+        await expect(results).toBeVisible();
+        await panTo(page, PAN.top);
+        await expect.poll(async () => (await results.boundingBox())!.y).toBeGreaterThanOrEqual(PAN.top - 1);
+        await expectWithin(results, PAN.top, PAN.top + PAN.height, "the results");
       });
     });
   }
