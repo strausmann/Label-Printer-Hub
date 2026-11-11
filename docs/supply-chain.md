@@ -29,7 +29,7 @@ receive the same multi-arch image (`linux/amd64`, `linux/arm64`).
 | Web SBOM | CycloneDX document of the web bundle | `frontend.cdx.json` in the image (`/opt/app/web/frontend.cdx.json`) | on the branch |
 | Backend licence list | Python packages and bundled fonts, with licence and text | `/licenses/backend.json` of the running app; About page | lands with the backend list step (B1); until then the About page says the list is missing |
 | BuildKit SBOM (SPDX) | Attached to each platform image by the build | registry, read without pulling | published today; see the note on its limits below |
-| BuildKit provenance | How and where the image was built | registry, read without pulling | published today in the default detail; full detail (`mode=max`) lands with the attestation step (B5) |
+| BuildKit provenance | How and where the image was built | registry, read without pulling | published today, with `mode=max` content by the build action's default; the attestation step (B5) makes it explicit |
 | Image SBOM as a release asset | CycloneDX document of the whole image, `labelyard-<version>.cdx.json` | the GitHub release | lands with the release SBOM step (B6); the first release that carries it is 1.6.0 |
 | SPDX headers in every own file | `reuse lint` clean | repository | lands with the header sweep (B9) |
 
@@ -42,26 +42,40 @@ them without pulling the layers:
 # Which manifests belong to the tag: two platform images and their attestations.
 docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version>
 
-# The SBOM (SPDX) of each platform.
+# Which platforms have an SBOM: the keys of the map.
 docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> \
-  --format '{{ json .SBOM.SPDX }}'
+  --format '{{ json .SBOM }}'
 
-# The provenance of each platform.
+# The SBOM (SPDX) of one platform; repeat with "linux/arm64".
 docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> \
-  --format '{{ json .Provenance }}'
+  --format '{{ json (index .SBOM "linux/amd64").SPDX }}'
+
+# The provenance (SLSA) of one platform; repeat with "linux/arm64".
+docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> \
+  --format '{{ json (index .Provenance "linux/amd64").SLSA }}'
 ```
 
-The same commands work on Docker Hub with `docker.io/<user>/labelyard:<version>`; both registries carry the
-attestations. If a command prints `null` or nothing for a tag, that tag has no attestation: report it, do not
-assume it is clean.
+On a multi-platform image, `.SBOM` and `.Provenance` are maps keyed by platform. The short forms
+`{{ json .SBOM.SPDX }}` and `{{ json .Provenance }}` work only on a single-platform image; on this image
+`.SBOM.SPDX` prints `null`, which does **not** mean the image has no attestation. The commands were run
+read-only against the 1.5.0 image of the predecessor name: `{{ json .SBOM }}` has the keys `linux/amd64` and
+`linux/arm64`, and the indexed forms print the SPDX document and the SLSA provenance.
+
+The same commands work on Docker Hub with `docker.io/<user>/labelyard:<version>` for a release version.
+Pre-release previews (`<version>-rc.N`) stay off Docker Hub until the rename step (Task 4) publishes them
+there; before that, check a preview on GHCR only. If the platform-indexed command prints `null` or an error for a
+platform that `{{ json .SBOM }}` lists, report it; do not assume the image is clean.
 
 Two limits you should know before relying on the BuildKit SBOM:
 
 - It describes what a scan of the final image layers finds. It does **not** list the packages bundled into the
   web app by the Vite build. Measured on 2026-11-11 on the 1.5.0 image: the SPDX document has no `react`. The
   web bundle is therefore covered by the embedded document in the next section.
-- Provenance at `mode=max` (from the attestation step on) records the build arguments, the full build steps and the source of the build. It
-  contains no secrets by design (the workflow passes none as build arguments), but read it before you share it.
+- The provenance records the build arguments, the build steps and the source of the build. On the 1.5.0 image it
+  already carries the `mode=max` content (`buildkit_metadata` with layer information): the build action's
+  default for a public repository. The attestation step (B5) sets `mode=max` explicitly so that it no longer
+  depends on that default. It contains no secrets by design (the workflow passes none as build arguments), but
+  read it before you share it.
 
 ## The web bundle: `frontend.cdx.json`
 
@@ -88,7 +102,9 @@ selection for images. To make it read the document, select it explicitly:
 syft scan ghcr.io/strausmann/labelyard:<version> --select-catalogers +sbom-cataloger -o cyclonedx-json
 ```
 
-Without `+sbom-cataloger` the result will lack the web packages, in line with the BuildKit SBOM above.
+Without `+sbom-cataloger` the result is expected to lack the web packages, in line with the BuildKit SBOM
+above. Status: Syft 1.55.0 accepts the flag (run against the 1.5.0 image, which has no embedded document yet);
+that it picks up `frontend.cdx.json` is verified in B8 against the milestone preview.
 
 ### What is in it, and what is over-approximated
 
@@ -118,7 +134,7 @@ Where a package ships no text, one kept under `frontend/licenses/` is used (the 
 From release 1.6.0 on, every GitHub release has one asset, `labelyard-<version>.cdx.json`: a CycloneDX
 document of the image of that release, generated from the published image. It is built by the image workflow
 and uploaded by the release workflow, so an asset exists only for a published version. A preview build
-(`<version>-rc.N`) has no release and therefore no asset; use the registry commands above for it.
+(`<version>-rc.N`) has no release and therefore no asset; use the registry commands above for it (GHCR only, see above).
 
 Until the release SBOM step has landed, no release has this asset.
 
@@ -126,7 +142,8 @@ Until the release SBOM step has landed, no release has this asset.
 
 The About page of the running app shows the web list and, once the backend list has landed, the Python list: package,
 version, licence and the licence text on demand. The same data is available as `/licenses/frontend.json` and
-`/licenses/backend.json`. A list that is missing in an image (for example an API-only build) is reported as
+`/licenses/backend.json` (the app serves the files of its web directory, `/opt/app/web/licenses/` in the image;
+that the running app answers these URLs is confirmed in B8, and `backend.json` exists only after B1). A list that is missing in an image (for example an API-only build) is reported as
 missing; the page keeps the project's own licence and source link either way.
 
 Both lists exclude the project itself. The backend list reads the name from `backend/pyproject.toml`.

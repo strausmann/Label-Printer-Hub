@@ -89,8 +89,9 @@ def test_supply_chain_doc() -> None:
     doc = _read(SUPPLY_CHAIN_DOC)
     for needle in (
         "imagetools inspect",
-        "{{ json .SBOM.SPDX }}",
-        "{{ json .Provenance }}",
+        '{{ json (index .SBOM "linux/amd64").SPDX }}',
+        '{{ json (index .Provenance "linux/amd64").SLSA }}',
+        "linux/arm64",
         "--select-catalogers +sbom-cataloger",
         "frontend.cdx.json",
         ".cdx.json",
@@ -98,6 +99,8 @@ def test_supply_chain_doc() -> None:
         "/usr/share/doc",
     ):
         assert needle in doc, needle
+    # On a multi-platform image the short form prints null; it must not be recommended.
+    assert "--format '{{ json .SBOM.SPDX }}'" not in doc
     # The README only points here; it does not repeat the text.
     readme = _read("README.md")
     assert f"]({SUPPLY_CHAIN_DOC})" in readme
