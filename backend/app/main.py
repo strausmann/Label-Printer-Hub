@@ -31,7 +31,7 @@ from typing import Annotated, Any
 #
 # app.config.get_settings() is called at module load by engine.py (imported
 # below) and by integration plugins (imported via app.integrations).  If an
-# env var fails Pydantic validation (e.g. PRINTER_HUB_WEBHOOK_API_KEY is
+# env var fails Pydantic validation (e.g. LABELYARD_WEBHOOK_API_KEY is
 # shorter than 32 chars) we catch the ValidationError here — BEFORE any
 # integration imports that would produce multiple interleaved tracebacks —
 # and print a human-readable summary, then exit with EX_CONFIG (78).
@@ -46,12 +46,12 @@ from app.config import get_settings as _get_settings
 try:
     _get_settings()
 except ValidationError as _cfg_exc:
-    # Honour both the app-prefixed var (PRINTER_HUB_LOG_LEVEL, consistent with
-    # all other Settings fields) and the short alias (LOG_LEVEL) that uvicorn
-    # and other tools conventionally set.
-    _debug = (
-        os.environ.get("PRINTER_HUB_LOG_LEVEL", "").upper() == "DEBUG"
-        or os.environ.get("LOG_LEVEL", "").upper() == "DEBUG"
+    # Honour the app-prefixed var (LABELYARD_LOG_LEVEL, consistent with all other Settings
+    # fields), its deprecated predecessor (PRINTER_HUB_LOG_LEVEL) and the short alias
+    # (LOG_LEVEL) that uvicorn and other tools conventionally set.
+    _debug = any(
+        os.environ.get(_name, "").upper() == "DEBUG"
+        for _name in ("LABELYARD_LOG_LEVEL", "PRINTER_HUB_LOG_LEVEL", "LOG_LEVEL")
     )
     if _debug:
         raise
@@ -59,7 +59,7 @@ except ValidationError as _cfg_exc:
     for _err in _cfg_exc.errors():
         _field = ".".join(str(_p) for _p in _err["loc"])
         _msg = _err["msg"]
-        _lines.append(f"   • PRINTER_HUB_{_field.upper()}: {_msg}\n")
+        _lines.append(f"   • LABELYARD_{_field.upper()}: {_msg}\n")
     _lines.append("\n")
     _lines.append("Hint: see backend/.env.example for all supported variables.\n")
     sys.stderr.writelines(_lines)
@@ -108,6 +108,7 @@ from app.auth.sessions import warn_if_insecure as warn_if_insecure_cookies
 from app.build_info import PROJECT_LICENSE, public_repo_url
 from app.calibration.page import render_calibration_page
 from app.config import get_settings
+from app.config_legacy import report_from_process, warn_legacy_env
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
     ensure_printer_state,
@@ -270,6 +271,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     closes the page clients.
     """
     settings = get_settings()
+    warn_legacy_env(report_from_process(), _log)
     warn_if_insecure_cookies(settings)
 
     # --- DB startup: migrations first, then in-memory state, then DB writes ---

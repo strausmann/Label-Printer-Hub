@@ -4,7 +4,7 @@ WAL journal_mode requires a file-based database (not supported on :memory:),
 so these tests spin up a temporary file-based engine with the same hook.
 FK and busy_timeout work on both :memory: and file-based engines.
 
-F2 tests: database URL must come from Settings (PRINTER_HUB_ prefix), and the
+F2 tests: database URL must come from Settings (LABELYARD_ prefix), and the
 default URL must include the +aiosqlite async driver so create_async_engine
 never raises "The asyncio extension requires an async driver".
 """
@@ -47,7 +47,7 @@ async def test_pragmas_applied(file_session):
 
 
 # ---------------------------------------------------------------------------
-# F2 — DATABASE_URL must come from Settings (PRINTER_HUB_ prefix) and default
+# F2 — DATABASE_URL must come from Settings (LABELYARD_ prefix) and default
 #      must include the +aiosqlite async driver. (Finding F2 from smoke-test.)
 # ---------------------------------------------------------------------------
 
@@ -72,16 +72,16 @@ def test_settings_respects_printer_hub_database_url_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """PRINTER_HUB_DATABASE_URL env var must control database_url.
+    """LABELYARD_DATABASE_URL env var must control database_url.
 
     Finding F2: engine.py read the old LABEL_HUB_DATABASE_URL env var.
-    After the fix, Settings (PRINTER_HUB_ prefix) is the single source of
+    After the fix, Settings (LABELYARD_ prefix) is the single source of
     truth and must honour the correctly-prefixed env var.
     """
     from app.config import Settings
 
     custom_url = f"sqlite+aiosqlite:///{tmp_path}/custom.db"
-    monkeypatch.setenv("PRINTER_HUB_DATABASE_URL", custom_url)
+    monkeypatch.setenv("LABELYARD_DATABASE_URL", custom_url)
     s = Settings(_env_file=None)
     assert s.database_url == custom_url
 
@@ -92,19 +92,19 @@ def test_label_hub_database_url_is_ignored(
 ) -> None:
     """LABEL_HUB_DATABASE_URL (old rename-relict) must NOT affect Settings.
 
-    Finding F2: after the rename LABEL_HUB_* → PRINTER_HUB_*, setting the
-    old var must have no effect. Settings uses env_prefix='PRINTER_HUB_' and
+    Finding F2: after the rename LABEL_HUB_* → LABELYARD_*, setting the
+    old var must have no effect. Settings uses env_prefix='LABELYARD_' and
     extra='ignore', so unknown prefixes are silently dropped.
     """
     from app.config import Settings
 
     monkeypatch.setenv("LABEL_HUB_DATABASE_URL", "sqlite+aiosqlite:////tmp/old.db")
-    # Do NOT set PRINTER_HUB_DATABASE_URL so we get the default.
-    monkeypatch.delenv("PRINTER_HUB_DATABASE_URL", raising=False)
+    # Do NOT set LABELYARD_DATABASE_URL so we get the default.
+    monkeypatch.delenv("LABELYARD_DATABASE_URL", raising=False)
     s = Settings(_env_file=None)
     # Must fall back to the default, not the old env var.
     assert "old.db" not in s.database_url, (
-        "LABEL_HUB_DATABASE_URL must be ignored; only PRINTER_HUB_DATABASE_URL is read."
+        "LABEL_HUB_DATABASE_URL must be ignored; only LABELYARD_DATABASE_URL is read."
     )
 
 

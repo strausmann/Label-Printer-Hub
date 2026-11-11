@@ -18,10 +18,10 @@ from sqlmodel import SQLModel
 # settings must exist before any test module is imported (a fixture is too late).
 # Obviously fake values, derived at runtime from readable text (no high-entropy literal).
 os.environ.setdefault(
-    "PRINTER_HUB_SECRET_KEY",
+    "LABELYARD_SECRET_KEY",
     base64.urlsafe_b64encode(b"test-secret-key-0123456789abcdef").decode(),
 )
-os.environ.setdefault("PRINTER_HUB_PUBLIC_URL", "http://localhost:8000")
+os.environ.setdefault("LABELYARD_PUBLIC_URL", "http://localhost:8000")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

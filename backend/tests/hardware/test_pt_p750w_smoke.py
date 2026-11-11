@@ -10,8 +10,8 @@ pytestmark = pytest.mark.hardware
 
 
 @pytest.mark.skipif(
-    not os.environ.get("PRINTER_HUB_PT750W_HOST"),
-    reason="PRINTER_HUB_PT750W_HOST not set",
+    not os.environ.get("LABELYARD_PT750W_HOST"),
+    reason="LABELYARD_PT750W_HOST not set",
 )
 async def test_smoke_first_print_succeeds() -> None:
     """End-to-end hardware test: real printer prints a QR-only label."""

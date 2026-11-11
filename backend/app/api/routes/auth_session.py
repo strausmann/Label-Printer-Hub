@@ -121,7 +121,7 @@ async def sign_in(
             raise _unauthorized(
                 "bootstrap_disabled",
                 "The bootstrap key is disabled because an admin key exists. "
-                "Remove PRINTER_HUB_BOOTSTRAP_ADMIN_KEY.",
+                "Remove LABELYARD_BOOTSTRAP_ADMIN_KEY.",
             )
         row, token = await ui_sessions.create_session(
             db, source="bootstrap", scope="admin", api_key_id=None, allowed_printer_ids=[]

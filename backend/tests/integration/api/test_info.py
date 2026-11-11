@@ -77,7 +77,7 @@ async def test_info_shape(api_client_with_seed) -> None:
 async def test_info_sso_configured_follows_trust_token(
     api_client_with_seed, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PRINTER_HUB_SSO_TRUST_TOKEN", FAKE_TRUST)
+    monkeypatch.setenv("LABELYARD_SSO_TRUST_TOKEN", FAKE_TRUST)
     get_settings.cache_clear()
     body = (await api_client_with_seed.get("/api/v1/info")).json()
     assert body["auth"]["sso_configured"] is True
@@ -93,7 +93,7 @@ async def test_bootstrap_open_reflects_admin_keys(
     # No bootstrap key configured -> closed.
     assert await bootstrap_open() is False
 
-    monkeypatch.setenv("PRINTER_HUB_BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP)
+    monkeypatch.setenv("LABELYARD_BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP)
     get_settings.cache_clear()
     assert await bootstrap_open() is True
 
@@ -116,7 +116,7 @@ async def test_info_never_contains_secrets(
         "WEBHOOK_API_KEY": FAKE_WEBHOOK,
         "PAPERLESS_TOKEN": FAKE_PAPERLESS,
     }.items():
-        monkeypatch.setenv(f"PRINTER_HUB_{name}", value)
+        monkeypatch.setenv(f"LABELYARD_{name}", value)
     get_settings.cache_clear()
     resp = await api_client_with_seed.get("/api/v1/info")
     assert resp.status_code == 200

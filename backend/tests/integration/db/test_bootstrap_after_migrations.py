@@ -50,7 +50,7 @@ async def test_fresh_migrated_db_has_no_key_and_bootstrap_sign_in_works(
         monkeypatch.setattr(module, "engine", eng)
     for module in (_engine_module, _main_module, _session_module):
         monkeypatch.setattr(module, "async_session", sess)
-    monkeypatch.setenv("PRINTER_HUB_BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP_KEY)
+    monkeypatch.setenv("LABELYARD_BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP_KEY)
     get_settings.cache_clear()
     from app.services.rate_limiter import _sign_in_rate_limiter
 

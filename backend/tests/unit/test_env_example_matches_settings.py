@@ -8,7 +8,7 @@ from pathlib import Path
 from app.config import Settings
 
 ENV_EXAMPLE = Path(__file__).parent.parent.parent / ".env.example"
-_LINE = re.compile(r"^\s*#?\s*PRINTER_HUB_([A-Z0-9_]+)=", re.MULTILINE)
+_LINE = re.compile(r"^\s*#?\s*LABELYARD_([A-Z0-9_]+)=", re.MULTILINE)
 
 
 def _names() -> set[str]:

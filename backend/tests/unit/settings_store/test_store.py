@@ -78,7 +78,7 @@ async def test_defaults_without_env(store, async_session_factory) -> None:
 
 
 async def test_locked_when_env_set(monkeypatch, store, async_session_factory) -> None:
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipeit.example.invalid")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "https://snipeit.example.invalid")
     get_settings.cache_clear()
     async with async_session_factory() as s:
         await store.load(s)
@@ -89,7 +89,7 @@ async def test_locked_when_env_set(monkeypatch, store, async_session_factory) ->
 
 
 async def test_empty_env_value_does_not_lock(monkeypatch, store, async_session_factory) -> None:
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "")
     get_settings.cache_clear()
     assert "snipeit_url" in get_settings().model_fields_set
     assert store.is_locked("integrations.snipeit.url") is False
@@ -109,7 +109,7 @@ async def test_value_set_after_env_is_ignored_when_locked(
     async with async_session_factory() as s:
         await store.set_many(s, {"jobs.retention_days": 10})
     assert store.get("jobs.retention_days") == 10
-    monkeypatch.setenv("PRINTER_HUB_JOB_RETENTION_DAYS", "45")
+    monkeypatch.setenv("LABELYARD_JOB_RETENTION_DAYS", "45")
     get_settings.cache_clear()
     assert store.get("jobs.retention_days") == 45
 
@@ -326,7 +326,7 @@ async def test_env_secret_with_ui_url_is_never_sent(
     monkeypatch, store, async_session_factory
 ) -> None:
     """S1: an env secret must not follow a URL that the UI can change."""
-    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", FAKE_TOKEN)
+    monkeypatch.setenv("LABELYARD_GROCY_API_KEY", FAKE_TOKEN)
     get_settings.cache_clear()
     async with async_session_factory() as s:
         await store.set_many(s, WITH_URL)
@@ -339,8 +339,8 @@ async def test_env_secret_with_ui_url_is_never_sent(
 
 
 async def test_env_secret_with_env_url_is_usable(monkeypatch, store) -> None:
-    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", FAKE_TOKEN)
-    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", GROCY_URL)
+    monkeypatch.setenv("LABELYARD_GROCY_API_KEY", FAKE_TOKEN)
+    monkeypatch.setenv("LABELYARD_GROCY_URL", GROCY_URL)
     get_settings.cache_clear()
     assert store.get("integrations.grocy.api_key") == FAKE_TOKEN
     # the locked URL wins over a form URL, so the secret still only goes to the env URL
@@ -406,7 +406,7 @@ async def test_non_ascii_secret_rejected(store, async_session_factory, secret) -
 
 async def test_describe_strips_userinfo_from_env_url(monkeypatch, store) -> None:
     monkeypatch.setenv(
-        "PRINTER_HUB_SNIPEIT_URL", "https://user:pw-secret@snipeit.example.invalid:8443/x"
+        "LABELYARD_SNIPEIT_URL", "https://user:pw-secret@snipeit.example.invalid:8443/x"
     )
     get_settings.cache_clear()
     view = next(v for v in store.describe() if v.key == "integrations.snipeit.url")

@@ -30,7 +30,7 @@ from tests.helpers.fake_printer_runtime import FakeRuntime
 def _trust_legacy_pangolin_user(monkeypatch: pytest.MonkeyPatch):
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER", "true")
+    monkeypatch.setenv("LABELYARD_TRUST_LEGACY_PANGOLIN_USER", "true")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

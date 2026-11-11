@@ -2,7 +2,7 @@
 
 Run against a real Brother PT-P750W on the local network:
 
-    PRINTER_HUB_PT750W_HOST=<printer-ip> \\
+    LABELYARD_PT750W_HOST=<printer-ip> \\
         python -m scripts.smoke_first_print
 
 Flow:
@@ -51,10 +51,10 @@ def _qr_only_template_for(tape_mm: int) -> str:
 
 
 async def main() -> int:
-    host = os.environ.get("PRINTER_HUB_PT750W_HOST", "")
+    host = os.environ.get("LABELYARD_PT750W_HOST", "")
     if not host:
         print(  # noqa: T201 - CLI script
-            "error: set PRINTER_HUB_PT750W_HOST to the printer's IP/hostname",
+            "error: set LABELYARD_PT750W_HOST to the printer's IP/hostname",
             file=sys.stderr,
         )
         return 2

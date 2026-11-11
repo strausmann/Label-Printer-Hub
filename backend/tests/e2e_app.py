@@ -1,7 +1,7 @@
 """The app the browser tests (Playwright) run against.
 
 ``uvicorn tests.e2e_app:app`` serves the real FastAPI app and the built web UI
-(``PRINTER_HUB_WEB_DIST_DIR``) on a throw-away SQLite database. Hardware and upstream
+(``LABELYARD_WEB_DIST_DIR``) on a throw-away SQLite database. Hardware and upstream
 apps are replaced: both tape printers use ``MockPrinterBackend`` and Snipe-IT, Grocy and
 Spoolman are in-memory fakes, so no network is involved. The one page printer is real IPP
 against a scriptable fake on a loopback port; ``E2EApp`` (below) starts it, seeds the sheets
@@ -92,24 +92,22 @@ def _prepare_environment(workdir: Path) -> tuple[bool, Path | None]:
     """Fill the settings ``app.main`` reads at import time. Returns (bootstrap, key_file)."""
     bootstrap = os.environ.get("E2E_BOOTSTRAP") == "1"
     key_file_raw = os.environ.get("E2E_KEY_FILE")
-    os.environ["PRINTER_HUB_SECRET_KEY"] = base64.urlsafe_b64encode(
-        secrets.token_bytes(32)
-    ).decode()
-    os.environ["PRINTER_HUB_PUBLIC_URL"] = f"http://localhost:{os.environ.get('E2E_PORT', '8765')}"
-    os.environ["PRINTER_HUB_DATABASE_URL"] = f"sqlite+aiosqlite:///{workdir / 'e2e.db'}"
+    os.environ["LABELYARD_SECRET_KEY"] = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
+    os.environ["LABELYARD_PUBLIC_URL"] = f"http://localhost:{os.environ.get('E2E_PORT', '8765')}"
+    os.environ["LABELYARD_DATABASE_URL"] = f"sqlite+aiosqlite:///{workdir / 'e2e.db'}"
     # Every spec signs in from 127.0.0.1; the production default (10/min) would trip.
-    os.environ["PRINTER_HUB_SIGN_IN_LIMIT_PER_MINUTE"] = "100000"
+    os.environ["LABELYARD_SIGN_IN_LIMIT_PER_MINUTE"] = "100000"
     # The page printer's status is probed over IPP; a 30 s interval would make every state
     # switch in the specs take half a minute. The tape printers use the in-memory backend.
-    os.environ["PRINTER_HUB_SSE_PROBE_INTERVAL_S"] = E2E_PROBE_INTERVAL_S
-    os.environ.setdefault("PRINTER_HUB_WEB_DIST_DIR", "../frontend/dist")
+    os.environ["LABELYARD_SSE_PROBE_INTERVAL_S"] = E2E_PROBE_INTERVAL_S
+    os.environ.setdefault("LABELYARD_WEB_DIST_DIR", "../frontend/dist")
     # One integration URL comes from the container, so the settings UI has a locked field (D4).
-    os.environ["PRINTER_HUB_GROCY_URL"] = "http://grocy.example.invalid"
+    os.environ["LABELYARD_GROCY_URL"] = "http://grocy.example.invalid"
     if bootstrap:
         # A throw-away bootstrap key: at least 32 characters.
-        os.environ["PRINTER_HUB_BOOTSTRAP_ADMIN_KEY"] = "e2e-bootstrap-" + secrets.token_urlsafe(24)
+        os.environ["LABELYARD_BOOTSTRAP_ADMIN_KEY"] = "e2e-bootstrap-" + secrets.token_urlsafe(24)
     else:
-        os.environ.pop("PRINTER_HUB_BOOTSTRAP_ADMIN_KEY", None)
+        os.environ.pop("LABELYARD_BOOTSTRAP_ADMIN_KEY", None)
     return bootstrap, Path(key_file_raw) if key_file_raw else None
 
 
@@ -505,7 +503,7 @@ def build_e2e_app() -> ASGIApp:
     from app.config import get_settings
 
     get_settings.cache_clear()
-    database_url = os.environ["PRINTER_HUB_DATABASE_URL"]
+    database_url = os.environ["LABELYARD_DATABASE_URL"]
     _migrate(database_url)
     admin_key = asyncio.run(_seed(database_url, with_admin_key=not bootstrap))
 
@@ -533,7 +531,7 @@ def build_e2e_app() -> ASGIApp:
         IntegrationRegistry.register(_FakeIntegration(name, display))  # type: ignore[arg-type]
 
     if key_file is not None:
-        key = os.environ["PRINTER_HUB_BOOTSTRAP_ADMIN_KEY"] if bootstrap else admin_key
+        key = os.environ["LABELYARD_BOOTSTRAP_ADMIN_KEY"] if bootstrap else admin_key
         assert key is not None
         _write_key_file(key_file, key)
     return E2EApp(main_module.create_app())

@@ -173,7 +173,7 @@ async def api_client_with_broken_db(tmp_path):
 def _mock_backend_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure integration tests use the mock backend and a known model.
 
-    Phase 5 (#124): printers.yaml und PRINTER_HUB_PRINTERS_CONFIG entfernt.
+    Phase 5 (#124): printers.yaml und LABELYARD_PRINTERS_CONFIG entfernt.
     Der Lifespan lädt Drucker jetzt aus der DB — die _temp_db_engine-Fixture
     sorgt für eine leere SQLite-DB (kein Printer-Row). BackendRouter._build_one
     wird auf MockPrinterBackend gepatcht damit Tests die BackendRouter mocken

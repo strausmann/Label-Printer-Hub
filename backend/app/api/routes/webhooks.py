@@ -8,7 +8,7 @@ POST /api/v1/webhook/grocy   — accept a Grocy event, enqueue a print job
 Both routes are guarded by ``Depends(require_webhook_key)``.  The dependency
 validates the ``X-API-Key`` request header and returns:
 
-- **503** when ``PRINTER_HUB_WEBHOOK_API_KEY`` is not configured.
+- **503** when ``LABELYARD_WEBHOOK_API_KEY`` is not configured.
 - **401** when the supplied key does not match.
 
 On a valid request the handler:

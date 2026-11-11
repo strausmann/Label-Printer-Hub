@@ -15,8 +15,8 @@ from tests.unit.integrations._bound import bound
 @pytest.fixture(autouse=True)
 def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Point the plugin at a fake host. respx mocks the actual HTTP."""
-    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "https://spoolman.example")
-    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_TIMEOUT", "5.0")
+    monkeypatch.setenv("LABELYARD_SPOOLMAN_URL", "https://spoolman.example")
+    monkeypatch.setenv("LABELYARD_SPOOLMAN_TIMEOUT", "5.0")
     from app.config import get_settings
 
     get_settings.cache_clear()
@@ -96,7 +96,7 @@ async def test_lookup_strips_trailing_slash(monkeypatch: pytest.MonkeyPatch) -> 
     )
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "https://spoolman.example/")
+    monkeypatch.setenv("LABELYARD_SPOOLMAN_URL", "https://spoolman.example/")
     get_settings.cache_clear()
     client = bound(SpoolmanPlugin)
     data = await client.lookup("7")
@@ -248,7 +248,7 @@ async def test_runtime_base_url_uses_same_normalisation_as_probe(
 ) -> None:
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", typed)
+    monkeypatch.setenv("LABELYARD_SPOOLMAN_URL", typed)
     get_settings.cache_clear()
     base = "https://spoolman.example" + ("/sub" if "/sub" in typed else "")
     route = respx.get(f"{base}/api/v1/spool/7").mock(
@@ -266,7 +266,7 @@ async def test_malformed_env_url_does_not_break_startup(
 ) -> None:
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "http://[::1")
+    monkeypatch.setenv("LABELYARD_SPOOLMAN_URL", "http://[::1")
     get_settings.cache_clear()
     plugin = bound(SpoolmanPlugin)  # bind() -> _refresh() must not raise
 

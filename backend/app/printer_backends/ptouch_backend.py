@@ -194,7 +194,7 @@ class PTouchBackend:
         if not host:
             raise ValueError(
                 "Empty pt750w_host with printer_backend=ptouch — "
-                "set PRINTER_HUB_PT750W_HOST to the printer's IP/hostname."
+                "set LABELYARD_PT750W_HOST to the printer's IP/hostname."
             )
         return cls(
             host=host,

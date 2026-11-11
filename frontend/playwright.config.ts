@@ -7,7 +7,7 @@ import { BOOTSTRAP, FAKE_CAMERA, MAIN } from "./e2e/env";
 const python = "${E2E_PYTHON:-.venv/bin/python}";
 const serve = (port: number, keyFile: string, extra = "") =>
   `cd ../backend && ${extra}E2E_PORT=${port} E2E_KEY_FILE=${keyFile} ` +
-  `PRINTER_HUB_WEB_DIST_DIR=../frontend/dist ${python} -m uvicorn tests.e2e_app:app --port ${port}`;
+  `LABELYARD_WEB_DIST_DIR=../frontend/dist ${python} -m uvicorn tests.e2e_app:app --port ${port}`;
 
 // The scan tests run in a browser whose camera is a video file showing one code; the file
 // (and so the browser) differs per project. Headless Chromium has no BarcodeDetector for these

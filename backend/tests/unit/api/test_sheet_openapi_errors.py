@@ -19,10 +19,10 @@ def schema(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     key = base64.urlsafe_b64encode(
         bytes(32)
     ).decode()  # all-zero throw-away key, schema export only
-    monkeypatch.setenv("PRINTER_HUB_SECRET_KEY", key)
-    monkeypatch.setenv("PRINTER_HUB_PUBLIC_URL", "http://localhost:8000")
-    monkeypatch.setenv("PRINTER_HUB_WEB_DIST_DIR", tempfile.gettempdir())
-    monkeypatch.setenv("PRINTER_HUB_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    monkeypatch.setenv("LABELYARD_SECRET_KEY", key)
+    monkeypatch.setenv("LABELYARD_PUBLIC_URL", "http://localhost:8000")
+    monkeypatch.setenv("LABELYARD_WEB_DIST_DIR", tempfile.gettempdir())
+    monkeypatch.setenv("LABELYARD_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
     from app.main import create_app
 
     return create_app()._app.openapi()  # type: ignore[no-any-return]

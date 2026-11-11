@@ -2,7 +2,7 @@
 
 D7: this migration used to seed an enabled ``bootstrap-admin`` key and print its
 plaintext to stdout. That is removed: the first admin key now comes from the
-one-time ``PRINTER_HUB_BOOTSTRAP_ADMIN_KEY`` sign-in or from
+one-time ``LABELYARD_BOOTSTRAP_ADMIN_KEY`` sign-in or from
 ``printer-hub admin create-key``. Existing installs keep their rows.
 
 Revision ID: 20260517_phase7c_api_keys

@@ -34,7 +34,9 @@ from app.page_render.transform import (
 
 #: The font shipped inside the package (DejaVu Sans, Bitstream Vera licence, see fonts/).
 BUNDLED_FONT = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
-FONT_ENV = "PRINTHUB_PDF_FONT"
+FONT_ENV = "LABELYARD_PDF_FONT"
+#: Deprecated name of the same override, read when ``FONT_ENV`` is unset or empty.
+LEGACY_FONT_ENV = "PRINTHUB_PDF_FONT"
 
 _Anchor = Literal["start", "middle", "end"]
 
@@ -46,16 +48,18 @@ class FontNotFoundError(RuntimeError):
 def resolve_font_path() -> Path:
     """The font file used for all PDF text.
 
-    ``PRINTHUB_PDF_FONT`` (a path) overrides the bundled DejaVu Sans. A missing file is an
+    ``LABELYARD_PDF_FONT`` (a path) overrides the bundled DejaVu Sans; the deprecated
+    ``PRINTHUB_PDF_FONT`` is read when the new one is unset or empty. A missing file is an
     error that names the path and the remedy; there is no search path and no silent fallback,
     so the output never depends on which fonts the machine happens to have.
     """
-    override = os.environ.get(FONT_ENV)
+    env_name = FONT_ENV if os.environ.get(FONT_ENV) else LEGACY_FONT_ENV
+    override = os.environ.get(env_name)
     if override:
         path = Path(override)
         if not path.is_file():
             raise FontNotFoundError(
-                f"PDF font not found at {path}; fix or unset {FONT_ENV} "
+                f"PDF font not found at {path}; fix or unset {env_name} "
                 f"(unset uses the bundled {BUNDLED_FONT.name})"
             )
         return path

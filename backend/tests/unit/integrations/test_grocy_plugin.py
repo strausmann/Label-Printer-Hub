@@ -15,9 +15,9 @@ from tests.unit.integrations._bound import bound
 @pytest.fixture(autouse=True)
 def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Point the plugin at a fake host. respx mocks the actual HTTP."""
-    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "https://grocy.example")
-    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "grocy-key")
-    monkeypatch.setenv("PRINTER_HUB_GROCY_TIMEOUT", "5.0")
+    monkeypatch.setenv("LABELYARD_GROCY_URL", "https://grocy.example")
+    monkeypatch.setenv("LABELYARD_GROCY_API_KEY", "grocy-key")
+    monkeypatch.setenv("LABELYARD_GROCY_TIMEOUT", "5.0")
     from app.config import get_settings
 
     get_settings.cache_clear()
@@ -82,7 +82,7 @@ async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.Mo
     )
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "https://grocy.example/")
+    monkeypatch.setenv("LABELYARD_GROCY_URL", "https://grocy.example/")
     get_settings.cache_clear()
     client = bound(GrocyPlugin)
     data = await client.lookup("7")
@@ -128,7 +128,7 @@ async def test_lookup_sends_grocy_api_key_header(monkeypatch: pytest.MonkeyPatch
     """Outgoing request must carry GROCY-API-KEY header (not Bearer)."""
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "my-grocy-key-42")
+    monkeypatch.setenv("LABELYARD_GROCY_API_KEY", "my-grocy-key-42")
     get_settings.cache_clear()
 
     route = respx.get("https://grocy.example/api/objects/products/1").mock(

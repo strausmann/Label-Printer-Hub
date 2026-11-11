@@ -40,7 +40,7 @@ def _fresh_sign_in_limiter():
 
 def _set_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
     for name, value in values.items():
-        monkeypatch.setenv(f"PRINTER_HUB_{name.upper()}", value)
+        monkeypatch.setenv(f"LABELYARD_{name.upper()}", value)
     get_settings.cache_clear()
 
 

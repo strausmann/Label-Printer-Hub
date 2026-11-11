@@ -70,7 +70,7 @@ async def _client_for(dist_dir: Path, monkeypatch: pytest.MonkeyPatch):
     )
     from app.main import create_app
 
-    monkeypatch.setenv("PRINTER_HUB_WEB_DIST_DIR", str(dist_dir))
+    monkeypatch.setenv("LABELYARD_WEB_DIST_DIR", str(dist_dir))
     get_settings.cache_clear()
     _session_module.async_session = _engine_module.async_session
     if not IntegrationRegistry.names():

@@ -45,7 +45,7 @@ async def test_put_updates_and_returns_list(client) -> None:
 
 
 async def test_put_locked_key_returns_409_and_writes_nothing(client, monkeypatch) -> None:
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipeit.example.invalid")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "https://snipeit.example.invalid")
     get_settings.cache_clear()
     resp = await _put(
         client,
@@ -249,7 +249,7 @@ async def test_integration_test_does_not_follow_redirects(client) -> None:
 
 
 async def test_settings_export_has_no_secrets(client, monkeypatch) -> None:
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipeit.example.invalid")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "https://snipeit.example.invalid")
     get_settings.cache_clear()
     await _put(client, {URL_KEY: GROCY, SECRET_KEY: FAKE_TOKEN, "general.display_name": "Hub 1"})
     resp = await client.get("/api/v1/settings/export")
@@ -307,8 +307,8 @@ async def test_non_ascii_secret_422_and_probe_survives(client, monkeypatch) -> N
     assert resp.status_code == 422
     assert "tëst" not in resp.text
     # env secret with a non-ASCII value must not crash the probe (500)
-    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", GROCY)
-    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "tëst-token")
+    monkeypatch.setenv("LABELYARD_GROCY_URL", GROCY)
+    monkeypatch.setenv("LABELYARD_GROCY_API_KEY", "tëst-token")
     get_settings.cache_clear()
     with respx.mock(assert_all_called=False):
         test = await client.post("/api/v1/settings/integrations/grocy/test", json={})
@@ -319,7 +319,7 @@ async def test_non_ascii_secret_422_and_probe_survives(client, monkeypatch) -> N
 
 async def test_env_secret_with_ui_url_sends_nothing(client, monkeypatch) -> None:
     """S1: env secret + UI-changed URL -> no request leaves."""
-    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", FAKE_TOKEN)
+    monkeypatch.setenv("LABELYARD_GROCY_API_KEY", FAKE_TOKEN)
     get_settings.cache_clear()
     assert (await _put(client, {URL_KEY: GROCY})).status_code == 200
     item = _by_key(await client.get("/api/v1/settings"))[SECRET_KEY]
@@ -334,7 +334,7 @@ async def test_env_secret_with_ui_url_sends_nothing(client, monkeypatch) -> None
 
 
 async def test_env_url_userinfo_not_shown(client, monkeypatch) -> None:
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://user:pw-secret@snipeit.example.invalid")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "https://user:pw-secret@snipeit.example.invalid")
     get_settings.cache_clear()
     resp = await client.get("/api/v1/settings")
     assert "pw-secret" not in resp.text
@@ -433,7 +433,7 @@ async def test_paperless_probe_does_not_follow_redirect_with_secret(client) -> N
 async def test_integration_probe_reports_invalid_url_instead_of_crashing(
     client, monkeypatch
 ) -> None:
-    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "http://[::1")
+    monkeypatch.setenv("LABELYARD_GROCY_URL", "http://[::1")
     get_settings.cache_clear()
     resp = await client.post("/api/v1/settings/integrations/grocy/test", json={})
     assert resp.status_code == 200

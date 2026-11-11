@@ -1,6 +1,6 @@
 """AES-256-GCM box for secrets stored in the database.
 
-D5: secrets are encrypted with PRINTER_HUB_SECRET_KEY and are write-only in the UI.
+D5: secrets are encrypted with LABELYARD_SECRET_KEY and are write-only in the UI.
 
 Token format: ``v1.<b64url nonce>.<b64url ciphertext>``. The associated data is the
 setting key of the record (for example ``integrations.snipeit.api_key``), so a

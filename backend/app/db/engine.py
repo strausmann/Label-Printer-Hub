@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.config import get_settings
 
-# Single source of truth: Settings.database_url (env var PRINTER_HUB_DATABASE_URL).
+# Single source of truth: Settings.database_url (env var LABELYARD_DATABASE_URL).
 # The previous code read the old LABEL_HUB_DATABASE_URL env var which was a
 # rename relict — see Finding F2 in docs/decisions/.
 DATABASE_URL = get_settings().database_url

@@ -1,7 +1,7 @@
 """Runtime settings store.
 
 D4: an environment variable wins over a stored value; such a setting is *locked*.
-D5: secrets are sealed with ``PRINTER_HUB_SECRET_KEY`` and are write-only: the store
+D5: secrets are sealed with ``LABELYARD_SECRET_KEY`` and are write-only: the store
 returns plaintext only inside the process, never through :meth:`SettingsStore.describe`.
 
 A secret belonging to an integration is bound to the URL it was saved with and is only

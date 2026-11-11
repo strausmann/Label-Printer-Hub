@@ -79,7 +79,7 @@ async def live(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Live]:
 
     if not IntegrationRegistry.names():
         _discover_plugins()
-    monkeypatch.setenv("PRINTER_HUB_SSE_PROBE_INTERVAL_S", str(INTERVAL_S))
+    monkeypatch.setenv("LABELYARD_SSE_PROBE_INTERVAL_S", str(INTERVAL_S))
     monkeypatch.setattr(
         "app.services.print_queue.PageJobRunner",
         functools.partial(PageJobRunner, poll_interval_s=0.05),

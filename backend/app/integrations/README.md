@@ -45,7 +45,7 @@ entry-points.
    ```
 
    Settings reads them from environment variables prefixed with
-   `PRINTER_HUB_` (e.g. `PRINTER_HUB_MYAPP_URL`). Also add the
+   `LABELYARD_` (e.g. `LABELYARD_MYAPP_URL`). Also add the
    `integrations.myapp.*` keys to `app/settings_store/registry.py`; the
    plugin reads them through the store (an environment value locks the
    field, D4).
@@ -80,7 +80,7 @@ modify the host application's source. External plugins should manage
 their own configuration: read environment variables directly (with
 `os.environ` or a local `pydantic_settings.BaseSettings` subclass),
 or accept a dedicated env-var prefix (e.g. `LABEL_HUB_OPENFOODFACTS_*`)
-that does not collide with the core `PRINTER_HUB_*` namespace.
+that does not collide with the core `LABELYARD_*` namespace.
 
 Bundled plugins read the runtime settings store; third-party plugins
 must NOT depend on it for their own keys, because adding a key there
@@ -133,6 +133,6 @@ store). To test live changes, use a `SettingsStore` and `set_many` as in
 ```python
 @pytest.fixture(autouse=True)
 def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PRINTER_HUB_MYAPP_URL", "https://example.test")
+    monkeypatch.setenv("LABELYARD_MYAPP_URL", "https://example.test")
     get_settings.cache_clear()
 ```

@@ -44,7 +44,7 @@ async def _client(dist_dir: Path, monkeypatch: pytest.MonkeyPatch, hub_version: 
         _discover_plugins,
     )
 
-    monkeypatch.setenv("PRINTER_HUB_WEB_DIST_DIR", str(dist_dir))
+    monkeypatch.setenv("LABELYARD_WEB_DIST_DIR", str(dist_dir))
     if hub_version is not None:
         monkeypatch.setattr(main_module, "HUB_VERSION", hub_version)
     get_settings.cache_clear()

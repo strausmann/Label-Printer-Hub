@@ -83,7 +83,7 @@ async def test_spa_owns_former_legacy_job_path(spa: AsyncClient, accept: str) ->
 async def test_bootstrap_session_creates_first_key_on_v1_path(
     spa: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PRINTER_HUB_BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP_KEY)
+    monkeypatch.setenv("LABELYARD_BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP_KEY)
     get_settings.cache_clear()
     signed_in = await spa.post("/api/v1/auth/session", json={"key": FAKE_BOOTSTRAP_KEY})
     assert signed_in.status_code == 204, signed_in.text

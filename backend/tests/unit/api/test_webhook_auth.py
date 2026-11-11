@@ -2,8 +2,8 @@
 
 Three scenarios are tested:
 
-1. ``PRINTER_HUB_WEBHOOK_API_KEY`` is unset (or empty) → 503
-2. ``PRINTER_HUB_WEBHOOK_API_KEY`` is set but caller sends a wrong key → 401
+1. ``LABELYARD_WEBHOOK_API_KEY`` is unset (or empty) → 503
+2. ``LABELYARD_WEBHOOK_API_KEY`` is set but caller sends a wrong key → 401
 3. Caller sends the correct key → dependency passes (route returns 200)
 
 We build a minimal FastAPI app with a single GET ``/guarded`` route that
@@ -57,7 +57,7 @@ def test_missing_key_returns_503_when_unconfigured() -> None:
     client = TestClient(app, raise_server_exceptions=False)
     r = client.get("/guarded", headers={"X-API-Key": "anything"})
     assert r.status_code == 503
-    assert "PRINTER_HUB_WEBHOOK_API_KEY" in r.json()["detail"]
+    assert "LABELYARD_WEBHOOK_API_KEY" in r.json()["detail"]
 
 
 # ---------------------------------------------------------------------------

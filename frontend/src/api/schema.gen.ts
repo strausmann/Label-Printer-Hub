@@ -327,7 +327,7 @@ export interface paths {
         };
         /**
          * Server-Sent Events stream for the web UI
-         * @description ``text/event-stream`` with JSON frames ``{channel, printer_id, type, ts, data}``. Without ``printer_id`` it carries every printer the caller may see plus the ``hub`` channel (``hub.printers_changed``) and the ``sheets`` channel (``sheet.updated``). Ends with ``auth.expired`` when the session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 when the credentials exclude it, 429 when ``PRINTER_HUB_SSE_MAX_SUBSCRIBERS`` connections are open.
+         * @description ``text/event-stream`` with JSON frames ``{channel, printer_id, type, ts, data}``. Without ``printer_id`` it carries every printer the caller may see plus the ``hub`` channel (``hub.printers_changed``) and the ``sheets`` channel (``sheet.updated``). Ends with ``auth.expired`` when the session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 when the credentials exclude it, 429 when ``LABELYARD_SSE_MAX_SUBSCRIBERS`` connections are open.
          */
         get: operations["stream_events_api_v1_events_get"];
         put?: never;

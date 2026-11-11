@@ -115,7 +115,7 @@ async def test_ipp_printer_is_a_page_printer_of_the_queue(monkeypatch: pytest.Mo
 
     from tests.helpers.page_jobs import RecordingHandler, payload, registered
 
-    monkeypatch.setenv("PRINTER_HUB_SSE_PROBE_INTERVAL_S", "0.05")
+    monkeypatch.setenv("LABELYARD_SSE_PROBE_INTERVAL_S", "0.05")
     get_settings.cache_clear()
     fake = FakeIppPrinter(job_script=[9])
     async with eng.async_session() as s:
