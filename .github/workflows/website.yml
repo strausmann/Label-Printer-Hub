@@ -93,12 +93,15 @@ jobs:
         with:
           name: website-dist
           path: website/dist
-      # labelyard.app and github.com/strausmann/labelyard are excluded until the first Pages
+      # Root-relative links resolve against the built site (internal links are already checked by
+      # the build). labelyard.app and github.com/strausmann/labelyard are excluded until the first Pages
       # deploy is live with HTTPS and the repository is renamed (both in Task 13).
       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: >-
             --no-progress
+            --root-dir '${{ github.workspace }}/website/dist'
+            --index-files index.html
             --exclude '^https://(www\.)?labelyard\.app'
             --exclude '^https://github\.com/strausmann/labelyard'
             'website/dist/**/*.html'
