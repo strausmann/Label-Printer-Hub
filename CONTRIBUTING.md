@@ -236,6 +236,8 @@ Releases are **scheduled, not on every merge.** Merging to `main` does NOT publi
 | `cron: '0 4 * * *'` | Nightly at 04:00 UTC. semantic-release analyses commits since the last tag and publishes if there's anything releasable, otherwise skips silently |
 | `workflow_dispatch` | Manual button in the Actions tab. Optional `dry-run` input lets a maintainer preview what would be released without publishing |
 
+The release tooling (semantic-release and its plugins, pinned to exact versions with a lockfile) lives only in `.github/release-tools/`; `release.yml` installs it from there. The root `package.json` holds only commitlint.
+
 Behind the scenes, semantic-release reads the Conventional Commit messages on `main` since the previous tag, decides the next semver version, generates the `CHANGELOG.md` entry, creates the Git tag and GitHub Release, and triggers the Docker image push to GHCR and Docker Hub.
 
 **A scheduled run only skips publishing when there are no releasable commits since the last tag.** semantic-release evaluates the entire history since the previous release, not just "today's" commits. If a `feat`, `fix`, or `perf` commit is already on `main` from an earlier merge, the next scheduled run **will** publish — adding a `chore` or `docs` commit on top doesn't suppress that. To genuinely skip a release window, the only options are: rely on there being no releasable commits, or postpone merges that would bump the version.
