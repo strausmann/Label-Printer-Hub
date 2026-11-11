@@ -382,7 +382,7 @@ def evaluate_pr(
     entries: list[Entry] = []
     # A milestone PR is merged with a merge commit, never squashed: its title does
     # not reach main. Every other PR is squash-merged, so its title becomes a commit.
-    if not (same_repo and head_ref.startswith("milestone/")):
+    if branch is None:
         entries.append(Entry("PR title", title, commit_impact(parse_commit(title), rules)))
     for c in filter_reverted(commits):
         entries.append(Entry(c.hash[:7] or "commit", c.header, commit_impact(c, rules)))

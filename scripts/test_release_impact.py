@@ -244,6 +244,13 @@ class EvaluatePrTest(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("PR title", result.errors[0])
 
+    def test_malformed_milestone_branch_keeps_the_title(self) -> None:
+        # milestone/1.5 is not a milestone branch (MILESTONE_BRANCH_RE): it is squash-merged
+        # like any other branch, so its title becomes the commit on main and must be checked.
+        result = self.evaluate(title="feat: x", head_ref="milestone/1.5", commits=commits("chore: a"))
+        self.assertFalse(result.ok)
+        self.assertIn("PR title", result.errors[0])
+
 
 class GuardTest(unittest.TestCase):
     def test_next_patch_is_allowed_without_milestone(self) -> None:
