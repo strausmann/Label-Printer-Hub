@@ -685,8 +685,9 @@ async def draw_page_bounded(*args: Any, timeout_s: float | None = None) -> Any:
     waiting: a cancelled request (the client went away) leaves its thread drawing, and a slot
     freed at the cancel would let the next request start one more thread than the cap.
     #293: past the time limit the caller gets ``RenderTimeoutApiError`` (504
-    ``render-timeout``) and its preview slot is free (the key may try again); the render slot
-    stays with the stuck thread, so the threads stay bounded by the cap.
+    ``render-timeout``). The render slot and the key's preview slot stay with the stuck thread
+    until it ends: a key whose render hangs gets 429 ``too-many-previews`` meanwhile, so one
+    key cannot hang every render slot by retrying.
     """
     # The caller's preview slot (``preview_slot``) stays taken with the render (F3).
     owner = _preview_owner.get()
@@ -713,7 +714,6 @@ async def draw_page_bounded(*args: Any, timeout_s: float | None = None) -> Any:
             timeout_s=timeout_s,
             on_start=take_owner,
             on_end=release_owner,
-            on_timeout=release_owner,
         )
     except render_slots.RenderTimeoutError:
         raise RenderTimeoutApiError() from None

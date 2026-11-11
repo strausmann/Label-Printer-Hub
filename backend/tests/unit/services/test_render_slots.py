@@ -131,9 +131,11 @@ async def test_without_an_explicit_limit_the_setting_applies(
 # ---------------------------------------------------------------------------- preview
 
 
-async def test_a_preview_past_its_limit_is_a_504_and_frees_the_key_slot(
+async def test_a_preview_past_its_limit_is_a_504_and_keeps_the_key_slot_until_the_thread_ends(
     hang: _Hang, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A key whose render hangs keeps its preview slot until the thread ends: otherwise one key
+    could hang every render slot by retrying and block all other callers."""
     monkeypatch.setattr(sps, "_draw_page", hang)
     key = uuid4()
     with pytest.raises(sps.RenderTimeoutApiError) as caught, sps.preview_slot(key):
@@ -141,29 +143,33 @@ async def test_a_preview_past_its_limit_is_a_504_and_frees_the_key_slot(
     http = caught.value.to_http()
     assert http.status_code == 504
     assert http.detail["error_code"] == "render-timeout"  # type: ignore[index]
-    # The key was answered: it may preview again, although the render slot is still taken.
-    assert key not in sps._previews_in_progress
-    with sps.preview_slot(key):
+    with pytest.raises(sps.TooManyPreviewsError), sps.preview_slot(key):  # still drawing
         pass
     assert render_slots.stuck_renders() == 1
     hang.release.set()
     await _until(lambda: render_slots.stuck_renders() == 0)
-    assert key not in sps._previews_in_progress  # the late end does not release twice
+    assert key not in sps._previews_in_progress  # freed once, at the thread's end
+    with sps.preview_slot(key):
+        pass
 
 
-async def test_another_preview_of_the_key_runs_while_its_old_render_is_stuck(
+async def test_a_key_with_a_stuck_render_cannot_take_the_other_slot_but_another_key_can(
     hang: _Hang, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(sps, "_draw_page", hang)
-    key = uuid4()
-    with pytest.raises(sps.RenderTimeoutApiError), sps.preview_slot(key):
+    key_a, key_b = uuid4(), uuid4()
+    with pytest.raises(sps.RenderTimeoutApiError), sps.preview_slot(key_a):
         await sps.draw_page_bounded(1, timeout_s=SHORT_S)
     monkeypatch.setattr(sps, "_draw_page", lambda n: n * 10)
-    with sps.preview_slot(key):
-        assert await sps.draw_page_bounded(2, timeout_s=WAIT_S) == 20
-    assert key not in sps._previews_in_progress
+    with pytest.raises(sps.TooManyPreviewsError), sps.preview_slot(key_a):
+        await sps.draw_page_bounded(2, timeout_s=WAIT_S)
+    assert _free_slots() == 1  # key A holds one slot only
+    with sps.preview_slot(key_b):
+        assert await sps.draw_page_bounded(3, timeout_s=WAIT_S) == 30
     hang.release.set()
-    await _until(lambda: render_slots.stuck_renders() == 0)
+    await _until(lambda: key_a not in sps._previews_in_progress)
+    with sps.preview_slot(key_a):
+        assert await sps.draw_page_bounded(4, timeout_s=WAIT_S) == 40
 
 
 # ---------------------------------------------------------------------------- readiness

@@ -82,7 +82,8 @@ _PREVIEW_ONLY_ERRORS: dict[int | str, dict[str, Any]] = {
     504: {
         "description": (
             "A page took longer than `PRINTER_HUB_RENDER_TIMEOUT_S` to draw (`render-timeout`). "
-            "The key may preview again at once."
+            "The drawing goes on: the key's next preview answers 429 `too-many-previews` until "
+            "it has ended."
         )
     },
 }

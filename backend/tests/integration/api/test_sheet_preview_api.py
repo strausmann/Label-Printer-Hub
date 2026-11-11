@@ -564,8 +564,9 @@ async def test_preview_cap_per_key(api_client_with_seed: httpx.AsyncClient) -> N
 async def test_a_preview_past_the_render_limit_is_504_and_the_hub_shows_it_stuck(
     api_client_with_seed: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#293: a hung page render answers 504 ``render-timeout`` in the route's error shape; the
-    key may preview again at once, and readiness counts the stuck render until it ends."""
+    """#293: a hung page render answers 504 ``render-timeout`` in the route's error shape. The
+    key keeps its preview slot until the thread ends (429), another key previews meanwhile, and
+    readiness counts the stuck render until it ends."""
     import asyncio
     import threading
 
@@ -597,16 +598,22 @@ async def test_a_preview_past_the_render_limit_is_504_and_the_hub_shows_it_stuck
         check = ready.json()["checks"]["render_slots"]
         assert check["metric"] == {"stuck": 1, "slots": render_slots.MAX_CONCURRENT_RENDERS}
 
-        # The key was answered: the next preview runs on the free slot.
         monkeypatch.setattr(print_service, "_draw_page", real_draw)
         monkeypatch.setattr(render_slots, "default_timeout_s", lambda: 30.0)
+        # The key's render still draws: its next preview is refused, another key's runs.
         again = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
-        assert again.status_code == 200, again.text
+        assert again.status_code == 429, again.text
+        assert again.json()["detail"]["error_code"] == "too-many-previews"
+        other = {"X-Label-Hub-Key": await _insert_key(["read"])}
+        theirs = await api_client_with_seed.post(_url(pid), json=_body(code), headers=other)
+        assert theirs.status_code == 200, theirs.text
     finally:
         release.set()
     async with asyncio.timeout(10):
         while render_slots.stuck_renders():
             await asyncio.sleep(0.01)
+    after = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
+    assert after.status_code == 200, after.text
 
 
 async def test_a_real_preview_draws_with_a_single_render_slot(

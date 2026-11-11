@@ -5397,7 +5397,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description A page took longer than `PRINTER_HUB_RENDER_TIMEOUT_S` to draw (`render-timeout`). The key may preview again at once. */
+            /** @description A page took longer than `PRINTER_HUB_RENDER_TIMEOUT_S` to draw (`render-timeout`). The drawing goes on: the key's next preview answers 429 `too-many-previews` until it has ended. */
             504: {
                 headers: {
                     [name: string]: unknown;
