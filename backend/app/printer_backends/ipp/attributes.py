@@ -90,18 +90,6 @@ _SUFFIXES: tuple[tuple[str, Literal["report", "warning", "error"]], ...] = (
 # Spec 11.3: low supplies are shown, never blocking. Without a suffix they would count
 # as errors (OC-20), so these four are the exception.
 _LOW_SUPPLY = frozenset({"toner-low", "marker-supply-low", "media-low", "developer-low"})
-_BLOCKING = frozenset(
-    {
-        "media-empty",
-        "media-jam",
-        "door-open",
-        "cover-open",
-        "toner-empty",
-        "marker-supply-empty",
-        "paused",
-        "offline",
-    }
-)
 _LOW_REASONS = frozenset({"toner-low", "marker-supply-low"})
 _EMPTY_REASONS = frozenset({"toner-empty", "marker-supply-empty"})
 _STATES: dict[int, Literal["idle", "printing", "stopped"]] = {
@@ -413,13 +401,14 @@ def _reasons(attrs: Mapping[str, list[Value]]) -> list[Reason]:
             continue
         if severity is None:
             severity = "warning" if base in _LOW_SUPPLY else "error"  # OC-20
-        # Any explicit "-error" blocks, also "toner-low-error" (spec 11.3: a printer that states
-        # an error is not reporting a mere low supply). Blocking only keeps a job queued.
+        # Only severity "error" blocks (RFC 8011 4.4.12: "-warning" and "-report" leave the printer
+        # working), a bare keyword counts as an error (OC-20) except the low supplies. An explicit
+        # "-error" blocks also "toner-low-error" (spec 11.3). Blocking only keeps a job queued.
         out.append(
             Reason(
                 keyword=base,
                 severity=severity,
-                blocking=severity == "error" or base in _BLOCKING,
+                blocking=severity == "error",
             )
         )
     return out
