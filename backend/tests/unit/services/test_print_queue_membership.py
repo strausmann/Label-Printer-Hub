@@ -845,3 +845,23 @@ async def test_removal_timeout_after_print_marks_group_done() -> None:
             assert await _state(store, jid) == DbJobState.DONE.value
     finally:
         await queue.stop(timeout_s=2)
+
+
+async def test_single_job_completed_event_survives_the_removal_timeout() -> None:
+    """The COMPLETED event goes out before the row is written (as for a batch group): a removal
+    timeout that cuts in during the write must not swallow it."""
+    store = _CallGatedStore("mark_done")
+    seen: list[tuple[str, str]] = []
+
+    def on_change(job: Any, from_state: JobState, to_state: JobState, queue_depth: int = 0) -> None:
+        seen.append((job.id, to_state.value))
+
+    queue = PrintQueue([_TapePrinter()], store=store, on_state_change=on_change)
+    await queue.start()
+    try:
+        jid = await _submit(queue, store, "j1")
+        await asyncio.wait_for(store.reached.wait(), TEST_TIMEOUT_S)
+        await _remove_with_timeout_then_release(queue, store)
+        assert (str(jid), "completed") in seen
+    finally:
+        await queue.stop(timeout_s=2)

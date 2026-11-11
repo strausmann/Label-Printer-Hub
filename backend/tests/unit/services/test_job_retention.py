@@ -107,3 +107,24 @@ def test_labels_of_a_held_run_are_not_forgotten() -> None:
     assert evict_finished(queue, now=_NOW, keep_s=_HOUR) == 0
     del queue._runs[run_id]
     assert evict_finished(queue, now=_NOW, keep_s=_HOUR) == 1
+
+
+async def test_job_whose_cancel_was_not_persisted_is_never_evicted() -> None:
+    """``cancel()`` keeps the job cancelled in memory when the store write fails; its row may
+    still be ``queued``. The known id is what keeps a recovery from printing it, so the job
+    must stay in memory however old it is."""
+    from unittest.mock import AsyncMock
+
+    from app.services.job_store import MemoryJobStore
+
+    store = MemoryJobStore()
+    store.mark_cancelled = AsyncMock(side_effect=RuntimeError("database is locked"))  # type: ignore[method-assign]
+    queue = PrintQueue([], store=store)
+    job = _track(queue, JobState.QUEUED)
+    with pytest.raises(RuntimeError):
+        await queue.cancel(job.id)
+    assert job.state == JobState.CANCELLED
+    job.finished_at = _NOW - timedelta(days=2)
+    assert evict_finished(queue, now=_NOW, keep_s=_HOUR) == 0
+    assert queue.forget_job(UUID(job.id)) is False
+    assert queue.has_job(job.id)

@@ -341,3 +341,30 @@ async def test_recovery_rows_without_run_id_stay_single(async_session_factory):
     items = _drain(queue, printer_id)
     assert [type(i).__name__ for i in items] == ["Job", "Job"]
     await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_recovered_run_keeps_the_half_cut_of_the_batch(async_session_factory):
+    """The rows carry the batch-level cut mode (PrintService stores it); the recovered batch
+    prints with it, not with a default."""
+    from datetime import UTC, datetime
+
+    store = SQLiteJobStore(async_session_factory)
+    printer_id = uuid4()
+    run_id = uuid4()
+    for i in range(2):
+        payload = _run_payload(run_id)
+        payload["options"] = {**payload["options"], "half_cut": True}
+        await store.save_queued(
+            Job(
+                printer_id=printer_id,
+                template_key=None,
+                payload=payload,
+                created_at=datetime(2026, 11, 1, 0, 0, i, tzinfo=UTC),
+            )
+        )
+    queue = PrintQueue(printers=[_RecordingPrinter(printer_id)], store=store, engine=_engine())
+    await queue.start()
+    batch = _drain(queue, printer_id)[0]
+    assert batch.options["half_cut"] is True
+    await queue.stop()

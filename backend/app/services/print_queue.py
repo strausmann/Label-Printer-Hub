@@ -403,6 +403,10 @@ class PrintQueue:
         # (``forget_job``, driven by ``job_retention.evict_finished`` from the cleanup task);
         # its row stays in the store, which is where the API reads it afterwards.
         self._jobs: dict[str, Job] = {}
+        # Ids of jobs that ended in memory while the store write of that end failed: their row
+        # may still be ``queued``, and the known id in ``_jobs`` is what keeps a later recovery
+        # from printing them. They are never forgotten.
+        self._unpersisted: set[str] = set()
         self._workers: dict[UUID, asyncio.Task[None]] = {}
         self._running: bool = False
         self._stopping: bool = False
@@ -450,12 +454,14 @@ class PrintQueue:
         """
         if self._running:
             return
+        ids = list(self._queues)
+        # No add can be running for a printer of this snapshot: an add of a known id is a no-op
+        # or raises, and an add of an unknown id registers itself in ``_adds`` and, while the
+        # queue is not running, returns without a real suspension (``pause_printer`` never
+        # awaits). If ``pause_printer`` ever does, this assert is the first thing to fail.
+        assert not (set(ids) & self._adds.keys()), "start() found a printer that is being added"
         # I-1: Race-Guard — sofort setzen bevor erster await, damit ein zweiter
         # gleichzeitiger start()-Aufruf am Guard oben scheitert.
-        ids = list(self._queues)
-        # An add cannot be running for a printer of this snapshot: ``_add`` only registers an id
-        # that is not known yet, and start() takes the snapshot without an await in between.
-        assert not (set(ids) & self._adds.keys()), "start() found a printer that is being added"
         self._running = True
         # Each printer of the snapshot counts as "being added" until its worker exists: a
         # remove that lands during the recovery below waits instead of purging under it.
@@ -1002,7 +1008,11 @@ class PrintQueue:
                 job.error_msg = job.error_message  # keep legacy field in sync (see line 466)
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
-                    await self._store.mark_failed(UUID(job.id), "shutdown")
+                    try:
+                        await self._store.mark_failed(UUID(job.id), "shutdown")
+                    except BaseException:
+                        self._unpersisted.add(job.id)
+                        raise
                 except InvalidStateTransitionError:
                     # Defensive: job already moved to a terminal state by the
                     # worker — just ensure _done_event is set.
@@ -1547,18 +1557,19 @@ class PrintQueue:
         return [
             (UUID(job.id), job.finished_at or job.submitted_at)
             for job in self._jobs.values()
-            if job.state in _TERMINAL_JOB_STATES
+            if job.state in _TERMINAL_JOB_STATES and job.id not in self._unpersisted
         ]
 
     def forget_job(self, job_id: UUID) -> bool:
         """Drop a terminal job (and its image) from memory; its row in the store stays.
 
-        ``False`` for an unknown job, one that is not terminal, and one that belongs to a tape
-        run the queue still holds (a stopped run reprints from its labels).
+        ``False`` for an unknown job, one that is not terminal, one whose terminal state could not
+        be written to the store (its known id keeps a recovery from printing it), and one that
+        belongs to a tape run the queue still holds (a stopped run reprints from its labels).
         """
         key = str(job_id)
         job = self._jobs.get(key)
-        if job is None or job.state not in _TERMINAL_JOB_STATES:
+        if job is None or job.state not in _TERMINAL_JOB_STATES or key in self._unpersisted:
             return False
         if any(key in run.job_ids for run in self._runs.values()):
             return False
@@ -1607,25 +1618,15 @@ class PrintQueue:
         )
         # A store failure propagates (the route answers 5xx instead of a false
         # success); the job stays cancelled in memory, so this process never prints it.
-        await self._store.mark_cancelled(UUID(job.id))
+        try:
+            await self._store.mark_cancelled(UUID(job.id))
+        except BaseException:
+            self._unpersisted.add(job.id)
+            raise
         if job.kind is not None:
             await notify_ended(
                 job.kind, UUID(job.id), state="cancelled", started=False, error_code="cancelled"
             )
-        return True
-
-    async def pause_job(self, job_id: str) -> bool:
-        """Pause a queued job — worker skips it when it pops the queue."""
-        job = self._jobs[job_id]
-        if job.state != JobState.QUEUED:
-            return False
-        JobStateMachine.transition(job, JobState.PAUSED)
-        self._notify_state_change(
-            job,
-            JobState.QUEUED,
-            JobState.PAUSED,
-            queue_depth=self._queue_depth(job.printer_id),
-        )
         return True
 
     async def retry_job(self, job_id: str) -> str | None:
@@ -1777,6 +1778,7 @@ class PrintQueue:
                 await self._store.mark_cancelled(UUID(job.id))
             except Exception as exc:
                 logger.exception("clear_queue: persisting cancellation of %s failed", job.id)
+                self._unpersisted.add(job.id)
                 first_error = first_error or exc
         for job in cleared:
             if job.kind is not None:  # queued and held page jobs; tracked ones are PRINTING
@@ -1984,16 +1986,18 @@ class PrintQueue:
                 await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
                 _from = job.state
                 JobStateMachine.transition(job, JobState.COMPLETED)
-                # Phase 2: DB-State persistieren. The label printed: a removal timeout must not
-                # cut the write short (the row would be reported ``failed_restart``).
-                await self._persist_through_cancel(
-                    functools.partial(self._store.mark_done, UUID(job.id))
-                )
+                # The event goes out before the write, as in ``_complete_group``: a removal
+                # timeout that cuts in during the write must not swallow it.
                 self._notify_state_change(
                     job,
                     _from,
                     JobState.COMPLETED,
                     queue_depth=self._queue_depth(printer_id),
+                )
+                # Phase 2: DB-State persistieren. The label printed: a removal timeout must not
+                # cut the write short (the row would be reported ``failed_restart``).
+                await self._persist_through_cancel(
+                    functools.partial(self._store.mark_done, UUID(job.id))
                 )
                 logger.info("Job %s completed on %s", job.id, printer_id)
             except asyncio.CancelledError:

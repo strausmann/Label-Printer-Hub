@@ -265,6 +265,9 @@ class PrintService:
             req.options.model_copy(
                 update={
                     "orientation": orientation,
+                    # The batch-level cut mode goes into every stored row, so a recovery after a
+                    # restart prints the run with the same cut as the live batch.
+                    "half_cut": half_cut,
                     "layout_preset": self._resolve_layout(
                         tape_mm,
                         req.options.model_copy(update={"orientation": orientation}),

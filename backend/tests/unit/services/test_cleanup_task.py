@@ -69,8 +69,10 @@ async def test_cleanup_session_purge_failure_does_not_stop_job_eviction() -> Non
 
 
 @pytest.mark.asyncio
-async def test_cleanup_drops_finished_jobs_from_the_queue_each_cycle() -> None:
-    """Each cycle also evicts finished jobs from the queue's memory (263-70)."""
+async def test_finished_jobs_leave_memory_on_the_short_tick_not_the_daily_cycle() -> None:
+    """Eviction has its own tick (263-70): a job that finishes after the daily cycle ran is
+    still dropped, and stop() ends both loops."""
+    import asyncio
     from datetime import UTC, datetime
     from uuid import uuid4
 
@@ -78,13 +80,30 @@ async def test_cleanup_drops_finished_jobs_from_the_queue_each_cycle() -> None:
     from app.services.print_queue import PrintQueue
 
     queue = PrintQueue([])
-    old = Job(id=str(uuid4()), printer_id=uuid4(), state=JobState.COMPLETED)
-    old.finished_at = datetime(2020, 1, 1, tzinfo=UTC)
-    waiting = Job(id=str(uuid4()), printer_id=old.printer_id)
-    queue._jobs = {old.id: old, waiting.id: waiting}
+    waiting = Job(id=str(uuid4()), printer_id=uuid4())
+    queue._jobs = {waiting.id: waiting}
     store = AsyncMock()
     store.evict_terminal_older_than.return_value = 0
-    task = CleanupTask(store=store, retention_days=30, interval=timedelta(seconds=99), queue=queue)
+    task = CleanupTask(
+        store=store,
+        retention_days=30,
+        interval=timedelta(seconds=99),  # the daily cycle runs once, at start
+        queue=queue,
+        evict_interval=timedelta(milliseconds=10),
+    )
     await task.start()
-    await task.stop(timeout_s=1.0)
-    assert set(queue._jobs) == {waiting.id}
+    try:
+        await asyncio.sleep(0.05)  # the cycle at start has run and found nothing to drop
+        old = Job(id=str(uuid4()), printer_id=waiting.printer_id, state=JobState.COMPLETED)
+        old.finished_at = datetime(2020, 1, 1, tzinfo=UTC)
+        queue._jobs[old.id] = old
+        async with asyncio.timeout(5):
+            while old.id in queue._jobs:
+                await asyncio.sleep(0.01)
+        assert set(queue._jobs) == {waiting.id}
+        assert store.evict_terminal_older_than.await_count == 1  # no second daily cycle
+    finally:
+        loops = [task._task, task._evict_task]
+        await task.stop(timeout_s=1.0)
+    assert all(t is not None and t.done() for t in loops)
+    assert task._evict_task is None and task._task is None
