@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import type { components } from "../../api/schema.gen";
 import { FIELD } from "../../shell/SignIn";
+import { listRoom, readViewport, subscribeViewport, type ListRoom } from "../../shell/viewport";
 import { LABEL } from "../settings/controls";
 import { foldForSearch, foldWithMap, matchSheetType } from "./matchSheetType";
 import { typePickerLabel } from "./typeLabel";
@@ -81,9 +82,25 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
     typedRef.current = typed;
   }, [typed]);
   // Where the list goes and how tall it may get. React Aria measures against the whole page, not the screen, so the list
-  // would run past the bottom edge and under the fixed tab bar of a phone; this measures the screen at the moment it opens.
+  // would run past the bottom edge, under the fixed tab bar of a phone and under the on-screen keyboard. This measures what
+  // is visible: when the list opens, and again while it is open, because the keyboard comes up after the focus opened it.
   const field = useRef<HTMLDivElement>(null);
-  const [room, setRoom] = useState<{ placement: "bottom start" | "top start"; maxHeight: number }>({ placement: "bottom start", maxHeight: LIST_MAX });
+  const [room, setRoom] = useState<ListRoom>({ placement: "bottom start", maxHeight: LIST_MAX });
+  const [open, setOpen] = useState(false);
+  const measure = () => {
+    if (!field.current) return;
+    const bar = document.querySelector("[data-tabbar]");
+    const lowest = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().top : undefined;
+    setRoom(listRoom(field.current.getBoundingClientRect(), readViewport(), { lowest, gap: LIST_GAP, max: LIST_MAX, option: 44 }));
+  };
+  const measureRef = useRef(measure);
+  useEffect(() => {
+    measureRef.current = measure;
+  });
+  useEffect(() => {
+    if (!open) return;
+    return subscribeViewport(() => measureRef.current());
+  }, [open]);
 
   return (
     <ComboBox
@@ -94,16 +111,9 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
       isDisabled={disabled}
       menuTrigger="focus"
       allowsEmptyCollection
-      onOpenChange={(open) => {
-        if (!open || !field.current) return;
-        const rect = field.current.getBoundingClientRect();
-        const bar = document.querySelector("[data-tabbar]");
-        const barTop = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().top : window.innerHeight;
-        const below = Math.min(window.innerHeight, barTop) - rect.bottom - LIST_GAP;
-        const above = rect.top - LIST_GAP;
-        // Below the field unless that leaves room for fewer than about four options and above has more.
-        const up = below < 4 * 44 && above > below;
-        setRoom({ placement: up ? "top start" : "bottom start", maxHeight: Math.max(88, Math.min(LIST_MAX, Math.floor(up ? above : below))) });
+      onOpenChange={(isOpen) => {
+        setOpen(isOpen);
+        if (isOpen) measure();
       }}
       onInputChange={(text) => setTyped(text === shownText ? null : text)}
       onSelectionChange={(key) => {
