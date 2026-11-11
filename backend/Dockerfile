@@ -35,6 +35,12 @@ RUN corepack enable
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
+# The build fails on a licence outside the policy and writes the web licence list and its CycloneDX document.
+COPY licence-policy.yml /licence-policy.yml
+ENV LICENCE_POLICY=/licence-policy.yml
+# Placed directly before the build so a new version never invalidates the `pnpm install` layer above.
+ARG VERSION=0.0.0-dev
+ENV HUB_VERSION=${VERSION}
 RUN pnpm build && mkdir /dist && cp -r dist/. /dist/
 
 # -----------------------------------------------------------------------------

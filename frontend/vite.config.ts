@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { lingui } from "@lingui/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { createViteLicensePlugin } from "rollup-license-plugin";
 import { VitePWA } from "vite-plugin-pwa";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+import { EXTRA_RECORDS, extraPackagePaths, isUnacceptableLicence, loadPolicy, projectName, toCycloneDx, toLicenceList } from "./src/licences/build";
 import { pwaOptions } from "./pwa.config";
 
 // Licence texts that must travel with the files they cover (OFL-1.1 for the fonts, Apache-2.0 for the
@@ -43,6 +46,25 @@ function scalarApiReference(): Plugin {
   };
 }
 
+// What the web app ships, as a licence list (`licenses/frontend.json`, shown on the About page) and a CycloneDX
+// document (`frontend.cdx.json`, for scanners). The build fails on a licence outside licence-policy.yml; the
+// image build sets LICENCE_POLICY to the copy it receives. Both files are plain assets: no JSON is precached
+// (pwa.config.ts), so neither reaches an installed app. The project itself is not one of its dependencies.
+function licenceLists(): Plugin {
+  const policy = loadPolicy(process.env.LICENCE_POLICY ?? fileURLToPath(new URL("../licence-policy.yml", import.meta.url)));
+  const name = projectName();
+  return createViteLicensePlugin({
+    outputFilename: false,
+    includePackages: extraPackagePaths,
+    excludedPackageTest: (packageName) => packageName === name,
+    unacceptableLicenseTest: (licence) => isUnacceptableLicence(licence, policy),
+    additionalFiles: {
+      "licenses/frontend.json": (packages) => toLicenceList(packages, EXTRA_RECORDS),
+      "frontend.cdx.json": (packages) => toCycloneDx(packages, EXTRA_RECORDS, process.env.HUB_VERSION ?? "0.0.0-dev", name),
+    },
+  });
+}
+
 // D1: the backend serves `dist/` — same origin, so the dev server proxies the API.
 export default defineConfig({
   plugins: [
@@ -52,6 +74,7 @@ export default defineConfig({
     VitePWA(pwaOptions),
     licenseNotices(),
     scalarApiReference(),
+    licenceLists(),
   ],
   server: {
     proxy: {
