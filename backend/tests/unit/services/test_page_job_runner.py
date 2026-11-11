@@ -704,6 +704,41 @@ async def test_a_key_with_a_stuck_render_cannot_hang_the_second_slot(
     await _until(lambda: render_slots.stuck_renders() == 0)
 
 
+async def test_two_page_jobs_of_one_key_on_two_printers_leave_a_slot(
+    handler: RecordingHandler,
+) -> None:
+    """Round 2, ruling 1: two page jobs of one key with hanging input, started together on
+    two printers. One draws and times out, the other never draws and fails
+    ``render_unavailable``; one slot stays free."""
+    import threading
+
+    from app.services import render_slots
+
+    release = threading.Event()
+    drawn: list[str] = []
+
+    def render(p: PagePayload) -> bytes:
+        drawn.append(p.detail["tag"])
+        release.wait(TEST_TIMEOUT_S)
+        return b"%PDF-"
+
+    key = uuid4()
+    try:
+        with registered(handler, render=render):
+            one = _Env(FakeIppPrinter(), render_timeout_s=0.2)
+            two = _Env(FakeIppPrinter(), render_timeout_s=0.2)
+            a = await one.job(payload(tag="a"), api_key_id=key)
+            b = await two.job(payload(tag="b"), api_key_id=key)
+            await asyncio.gather(one.run(a), two.run(b))
+            codes = sorted(handler.ended(UUID(pj.job.id))["error_code"] for pj in (a, b))
+            assert codes == ["render_timeout", "render_unavailable"]
+            assert len(drawn) == 1
+            assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
+    finally:
+        release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
 async def test_jobs_without_a_key_cannot_hang_the_last_slot(handler: RecordingHandler) -> None:
     """Jobs without a key share ``NO_KEY``, which may hang all slots but one: the next job
     without a key fails ``render_unavailable`` at once, a key's job prints on the last slot."""

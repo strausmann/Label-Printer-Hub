@@ -79,22 +79,27 @@ time; a second one answers 429 `too-many-previews`.
 At most two pages are drawn at once in the hub (sheet previews and page jobs together). A
 page that takes longer than `PRINTER_HUB_RENDER_TIMEOUT_S` (default 60 seconds) to draw
 ends the preview with `HTTP 504` `render-timeout` and fails a page job with
-`render_timeout`. Its drawing thread cannot be stopped and keeps its slot until it ends;
-until then the key's next preview answers 429 `too-many-previews` and its next page job
-fails with `render_timeout` at once, so one key cannot take both slots by retrying.
-Callers without a key (browser sessions, SSO users, the hub's own page jobs) share one
-group: it draws at most one page at a time (all slots but one), running or stuck, so one
-slot always stays free for the keys. A caller of the group waits at most the time limit for
-its turn; while a render of the group is stuck, a preview without a key answers `HTTP 503`
-`render-unavailable` and a page job without a key fails with `render_unavailable` at once.
-Known limitation: the callers without a key therefore block each other (one stuck render of
-one UI user refuses every UI user until it ends or the hub restarts); signed-in UI users
-are trusted, and each of them still previews once at a time. Several different keys can
-still each hang one render and so take every slot; keys are issued by an admin, revoke such
-a key. With every slot stuck, a preview answers `HTTP 503` `render-unavailable` and a page job fails
-with `render_unavailable` at once; a caller never waits longer than the time limit for a
-slot. `GET /readiness` shows stuck renders in the check `render_slots` (failing when every
-slot is stuck). `/healthz` does not, so restart the hub by hand then.
+`render_timeout`. Its drawing thread cannot be stopped and keeps its slot until it ends; it
+counts as stuck from the time limit on, even if its caller has gone away.
+
+Each owner holds at most one of the two slots at once, running or stuck: each API key on
+its own, and all callers without a key (browser sessions, SSO users, the hub's own page
+jobs) together as one group. A second render of the same owner waits for its turn, at most
+the time limit, and then fails like a full hub (below). While a key has a stuck render, its
+next preview answers 429 `too-many-previews` and its next page job fails with
+`render_timeout` at once. While the group without a key has a stuck render, a preview
+without a key answers `HTTP 503` `render-unavailable` and a page job without a key fails
+with `render_unavailable` at once. With every slot stuck, every caller gets that answer at
+once.
+
+Accepted residual risk: one party cannot hang both slots, but two different owners together
+can (two keys, or a key and a UI user). Keys are issued by an admin; revoke such a key.
+Known limitation: the callers without a key share their slot and so block each other (one
+stuck render of one UI user refuses every UI user until it ends or the hub restarts);
+signed-in UI users are trusted, and each of them still previews once at a time.
+
+`GET /readiness` shows stuck renders in the check `render_slots` (failing when every slot is
+stuck). `/healthz` does not, so restart the hub by hand then.
 
 All callers without a key (browser sessions, SSO users) count as **one** key for the
 held-run limits: one UI user's held run lets every UI user pass the held-places check, and

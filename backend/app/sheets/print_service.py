@@ -697,8 +697,10 @@ async def draw_page_bounded(*args: Any, timeout_s: float | None = None) -> Any:
     ``render-timeout``). The render slot and the key's preview slot stay with the stuck thread
     until it ends: a key whose render hangs gets 429 ``too-many-previews`` meanwhile, so one
     key cannot hang every render slot by retrying. A key with a stuck page job gets 429 as
-    well (stuck renders count per key, ``render_slots.owner_of``). With every slot stuck, or
-    no slot free within the limit, the caller gets ``RenderUnavailableApiError`` (503).
+    well (stuck renders count per key, ``render_slots.owner_of``). Each owner holds at most
+    ``render_slots.OWNER_LIMIT`` slots at once, previews and page jobs together. With every
+    slot stuck, or no turn and slot within the limit, the caller gets
+    ``RenderUnavailableApiError`` (503).
     """
     # The caller's preview slot (``preview_slot``) stays taken with the render (F3).
     owner = _preview_owner.get()
@@ -762,10 +764,10 @@ def preview_slot(owner: Hashable, render_owner: Hashable | None = None) -> Itera
     ended AND every render it started has finished: a cancelled request whose picture is still
     drawing in a thread keeps it, so one key cannot take both render slots (F3). All callers
     without a key are grouped by source, user and address (see the route). ``render_owner``
-    (default: ``owner``) is whom the preview's stuck renders count against (#293): the key, or
-    ``render_slots.NO_KEY`` for every caller without a key: that group is not locked per
-    caller but may hold at most ``render_slots.NO_KEY_STUCK_LIMIT`` stuck renders (each of
-    those callers is held to one preview by ``owner``).
+    (default: ``owner``) is whom the preview's renders count against (#293): the key, or
+    ``render_slots.NO_KEY`` for every caller without a key, one group that holds at most
+    ``render_slots.OWNER_LIMIT`` slots (each of those callers is held to one preview by
+    ``owner``).
     """
     if owner in _previews_in_progress:
         raise TooManyPreviewsError()

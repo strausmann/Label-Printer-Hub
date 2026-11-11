@@ -327,7 +327,7 @@ export interface paths {
         };
         /**
          * Server-Sent Events stream for the web UI
-         * @description ``text/event-stream`` with JSON frames ``{channel, printer_id, type, ts, data}``. Without ``printer_id`` it carries every printer the caller may see plus the ``hub`` channel (``hub.printers_changed``) and the ``sheets`` channel (``sheet.updated``). Ends with ``auth.expired`` when the session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 when the credentials exclude it, 429 when ``PRINTER_HUB_SSE_MAX_SUBSCRIBERS`` connections are open.
+         * @description ``text/event-stream`` with JSON frames ``{channel, printer_id, type, ts, data}``. Without ``printer_id`` it carries every printer the caller may see plus the ``hub`` channel (``hub.printers_changed``) and the ``sheets`` channel (``sheet.updated``). An API key without ``admin`` scope gets ``job.state_changed`` and ``run.state_changed`` (live and in the snapshot) only for the jobs and tape runs it submitted. Ends with ``auth.expired`` when the session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 when the credentials exclude it, 429 when ``PRINTER_HUB_SSE_MAX_SUBSCRIBERS`` connections are open.
          */
         get: operations["stream_events_api_v1_events_get"];
         put?: never;
@@ -364,7 +364,7 @@ export interface paths {
         };
         /**
          * List jobs
-         * @description Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).
+         * @description Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).  An API key without ``admin`` scope sees only the jobs it submitted; browser sessions, SSO users and admin keys see every job of their printers.
          */
         get: operations["list_jobs_api_v1_jobs_get"];
         put?: never;
@@ -384,7 +384,7 @@ export interface paths {
         };
         /**
          * Get a single job
-         * @description Return the full job record for the given UUID.  Returns 404 if not found.
+         * @description Return the full job record for the given UUID.  Returns 404 if not found; for an API key without ``admin`` scope also for a job another key (or a browser, SSO user or webhook) submitted.  Cancel, retry, pause and resume answer the same 404.
          */
         get: operations["get_job_api_v1_jobs__job_id__get"];
         put?: never;
@@ -770,7 +770,7 @@ export interface paths {
         };
         /**
          * Get the active job queue for a printer
-         * @description Returns all jobs in ``queued`` or ``printing`` state for this printer, ordered by creation time.
+         * @description Returns all jobs in ``queued`` or ``printing`` state for this printer, ordered by creation time.  An API key without ``admin`` scope sees only the jobs it submitted.
          */
         get: operations["get_printer_queue_api_v1_printers__printer_id__queue_get"];
         put?: never;
@@ -792,7 +792,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel all queued jobs for a printer
-         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire; a page job the IPP printer already holds is left to finish as well (cancel it with ``POST /api/v1/jobs/{id}/cancel``).  Returns 204 even when there are no queued jobs.
+         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire; a page job the IPP printer already holds is left to finish as well (cancel it with ``POST /api/v1/jobs/{id}/cancel``).  An API key without ``admin`` scope cancels only the queued jobs it submitted; the jobs of other keys and of browser or SSO users stay queued.  Returns 204 even when there are no queued jobs.
          */
         post: operations["clear_printer_queue_api_v1_printers__printer_id__queue_clear_post"];
         delete?: never;
@@ -5388,7 +5388,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description An integration is not configured (`integration_not_configured`), or no render slot became free in time (`render-unavailable`): every slot is held by a stuck render, the callers without a key hold all slots but one, or the wait reached `PRINTER_HUB_RENDER_TIMEOUT_S`. */
+            /** @description An integration is not configured (`integration_not_configured`), or no render slot became free in time (`render-unavailable`): every slot is held by a stuck render, the callers without a key have a stuck render, or the wait for the caller's turn (one slot per key, one for all callers without a key) reached `PRINTER_HUB_RENDER_TIMEOUT_S`. */
             503: {
                 headers: {
                     [name: string]: unknown;

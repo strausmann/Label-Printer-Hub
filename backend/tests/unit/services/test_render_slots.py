@@ -150,35 +150,157 @@ async def test_an_owner_with_a_stuck_render_is_refused_without_waiting_for_a_slo
     await _until(lambda: render_slots.stuck_renders() == 0)
 
 
-async def test_an_owner_that_gets_stuck_while_its_next_call_waits_is_refused(
+async def test_a_keys_second_render_waits_for_its_turn_and_never_gets_a_second_slot(
     hang: _Hang,
 ) -> None:
-    """F1: the check is repeated once the slot is taken (the owner got stuck meanwhile)."""
+    """Round 2, ruling 1: a key holds at most ``OWNER_LIMIT`` slots, running or stuck. Its next
+    render waits for the key's own turn (at most its limit) and is refused there, even after
+    the other slot became free."""
     mine = uuid4()
-    other = _Hang()  # the busy render, released on its own
+    other = _Hang()
     try:
         first = asyncio.create_task(
-            render_slots.render_bounded(hang, 1, label="t", owner=mine, timeout_s=0.3)
+            render_slots.render_bounded(hang, 1, label="t", owner=mine, timeout_s=0.2)
         )
         busy = asyncio.create_task(
             render_slots.render_bounded(other, 2, label="t", timeout_s=WAIT_S)
         )
         await _until(lambda: render_slots.free_slots() == 0)
         waiting = asyncio.create_task(
-            render_slots.render_bounded(lambda: 3, label="t", owner=mine, timeout_s=WAIT_S)
+            render_slots.render_bounded(lambda: 3, label="t", owner=mine, timeout_s=0.6)
         )
         with pytest.raises(render_slots.RenderTimeoutError):
-            await first  # ``mine`` is stuck now; ``waiting`` is still in the queue
-        other.release.set()  # the busy render ends and hands its slot to ``waiting``
-        with pytest.raises(render_slots.OwnerRenderStuckError):
-            await waiting
+            await first
+        other.release.set()  # a slot is free now, but not for ``mine``
         assert await busy == 2
+        with pytest.raises(render_slots.RenderUnavailableError):
+            await waiting
         assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
     finally:
         other.release.set()
     hang.release.set()
     await _until(lambda: render_slots.stuck_renders() == 0)
     assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+    assert render_slots.owner_gates() == 0
+
+
+async def test_two_renders_of_one_key_started_together_never_take_every_slot(
+    hang: _Hang,
+) -> None:
+    """Round 2, ruling 1 (TOCTOU, P1): two hanging renders of one key that start before either
+    is stuck. One starts, the other never starts a thread; one slot stays free for others."""
+    key = uuid4()
+    results = await asyncio.gather(
+        render_slots.render_bounded(hang, 1, label="preview", owner=key, timeout_s=0.2),
+        render_slots.render_bounded(hang, 2, label="page job", owner=key, timeout_s=0.2),
+        return_exceptions=True,
+    )
+    kinds = sorted(type(r).__name__ for r in results)
+    assert kinds == ["RenderTimeoutError", "RenderUnavailableError"]
+    assert render_slots.stuck_renders() == 1
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
+    assert await render_slots.render_bounded(lambda: 3, label="t", owner=uuid4()) == 3
+    hang.release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+    assert hang.ended == [1] or hang.ended == [2]  # only one thread ever ran
+    assert render_slots.owner_gates() == 0
+
+
+async def test_a_preview_and_a_page_job_of_one_key_started_together_leave_a_slot(
+    hang: _Hang, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Round 2, ruling 1: the preview path and the page-job path share the key's limit."""
+    from app.services.page_jobs import render_page
+
+    from tests.helpers.page_jobs import RecordingHandler, payload, registered
+
+    monkeypatch.setattr(sps, "_draw_page", hang)
+    key = uuid4()
+
+    async def preview() -> object:
+        with sps.preview_slot(key, key):
+            return await sps.draw_page_bounded(1, timeout_s=0.2)
+
+    with registered(RecordingHandler(), render=lambda _p: hang(2)):
+        results = await asyncio.gather(
+            preview(),
+            render_slots.render_bounded(
+                render_page, payload(), label="page job", owner=key, timeout_s=0.2
+            ),
+            return_exceptions=True,
+        )
+    timeouts = (render_slots.RenderTimeoutError, sps.RenderTimeoutApiError)
+    refusals = (render_slots.RenderUnavailableError, sps.RenderUnavailableApiError)
+    assert sum(isinstance(r, timeouts) for r in results) == 1, results
+    assert sum(isinstance(r, refusals) for r in results) == 1, results
+    assert render_slots.stuck_renders() == 1
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
+    hang.release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+    assert len(hang.ended) == 1
+
+
+async def test_a_cancelled_callers_hanging_render_counts_as_stuck(hang: _Hang) -> None:
+    """Round 2, ruling 2 (P3): the render is marked stuck by a timer started with the thread.
+    A caller that went away before the limit leaves a render that readiness still counts,
+    and that still locks its key."""
+    key = uuid4()
+    task = asyncio.create_task(
+        render_slots.render_bounded(hang, 1, label="t", owner=key, timeout_s=0.1)
+    )
+    assert await asyncio.to_thread(hang.entered.acquire, True, WAIT_S)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert render_slots.stuck_renders() == 0  # not yet past its limit
+    await _until(lambda: render_slots.stuck_renders() == 1)
+    check = _check_render_slots()
+    assert check.metric == {"stuck": 1, "slots": render_slots.MAX_CONCURRENT_RENDERS}
+    with pytest.raises(render_slots.OwnerRenderStuckError):
+        await render_slots.render_bounded(lambda: 2, label="t", owner=key)
+    hang.release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+
+
+async def test_a_normal_render_is_never_marked_stuck() -> None:
+    """The timer is cancelled at the end of the thread."""
+    assert await render_slots.render_bounded(lambda: 1, label="t", timeout_s=0.05) == 1
+    await asyncio.sleep(0.1)
+    assert render_slots.stuck_renders() == 0
+
+
+async def test_per_owner_semaphores_are_dropped_when_unused() -> None:
+    for _ in range(20):
+        assert await render_slots.render_bounded(lambda: 1, label="t", owner=uuid4()) == 1
+    assert render_slots.owner_gates() == 0
+
+
+async def test_with_three_slots_a_stuck_group_render_keeps_its_group_place_until_the_end(
+    hang: _Hang, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """G6 (reviewer's test): with 3 slots and an owner limit of 2, one group render stuck, then
+    two group renders started together: one runs (and hangs), the other is refused, one slot
+    stays free. Freeing the group's place at the timeout would let both start."""
+    monkeypatch.setattr(render_slots, "MAX_CONCURRENT_RENDERS", 3)
+    monkeypatch.setattr(render_slots, "OWNER_LIMIT", 2)
+    monkeypatch.setattr(render_slots, "NO_KEY_STUCK_LIMIT", 2)
+    monkeypatch.setattr(render_slots, "_slots", None)
+    no_key = render_slots.owner_of(None)
+    with pytest.raises(render_slots.RenderTimeoutError):
+        await render_slots.render_bounded(hang, 1, label="t", owner=no_key, timeout_s=SHORT_S)
+    results = await asyncio.gather(
+        render_slots.render_bounded(hang, 2, label="t", owner=no_key, timeout_s=0.2),
+        render_slots.render_bounded(hang, 3, label="t", owner=no_key, timeout_s=0.2),
+        return_exceptions=True,
+    )
+    kinds = sorted(type(r).__name__ for r in results)
+    assert kinds == ["RenderTimeoutError", "RenderUnavailableError"]
+    assert render_slots.stuck_renders() == 2
+    assert render_slots.free_slots() == 1
+    hang.release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+    assert render_slots.free_slots() == 3
 
 
 async def test_callers_without_a_key_can_hang_at_most_all_but_one_slot(
