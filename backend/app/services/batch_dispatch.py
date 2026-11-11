@@ -1,4 +1,4 @@
-"""Batch-Dispatcher: orchestriert POST /api/print/{slug}/batch.
+"""Batch-Dispatcher: orchestriert POST /api/v1/print/{slug}/batch.
 
 Phase 1k.1a Task 17: tape-consistency-Check entfernt, weil tape-unabhängige
 ContentTypes gemischte ContentTypes pro Batch erlauben — alle Items rendern
@@ -22,6 +22,8 @@ async def dispatch_batch(
     service: PrintService,
     items: list[PrintRequest],
     half_cut: bool = False,
+    run_id: UUID | None = None,
+    label_ids: list[UUID] | None = None,
 ) -> list[UUID]:
     """Submit a batch of mixed-ContentType print requests.
 
@@ -43,4 +45,6 @@ async def dispatch_batch(
     if not items:
         msg = "Batch must contain at least one item."
         raise ValueError(msg)
-    return await service.submit_batch_job(items, half_cut=half_cut)
+    return await service.submit_batch_job(
+        items, half_cut=half_cut, run_id=run_id, label_ids=label_ids
+    )

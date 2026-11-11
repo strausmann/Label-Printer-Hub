@@ -101,3 +101,34 @@ describe("jobTitle in German", () => {
     expect(jobTitle(calibration() as never, "Avery Zweckform L4736REV-25")).toBe("Kalibrierseite · Avery Zweckform L4736REV-25 v1");
   });
 });
+
+describe("test print jobs", () => {
+  const testPage = (over: Record<string, unknown> = {}) =>
+    job("j3", P, "queued", {
+      template_key: null,
+      payload: { kind: "test_page", media: "A4", tray: "main", detail: { printer_name: "Office laser", margins_mm: null } },
+      ...over,
+    });
+  const testLabel = () => job("j4", P, "queued", { template_key: "test_label", payload: { label_data: { primary_id: "Workshop PT-P750W", title: "12 mm · 2026-11-09 10:00" } } });
+
+  it("pageInfoOf returns info for test_page", () => {
+    expect(pageInfoOf(testPage() as never)).toMatchObject({ kind: "test_page", tray: "main", media: "A4", sheetCode: null, cellCount: 0 });
+  });
+
+  it("pageInfoOf keeps a missing tray or media as null", () => {
+    expect(pageInfoOf(testPage({ payload: { kind: "test_page", detail: {} } }) as never)).toMatchObject({ tray: null, media: null });
+  });
+
+  it("names a test page by its tray and a test label by its template", () => {
+    expect(jobTitle(testPage() as never)).toBe("Test page · main");
+    // The tray's label, once known, replaces the key.
+    expect(jobTitle(testPage() as never, "Main tray")).toBe("Test page · Main tray");
+    expect(jobTitle(testPage({ payload: { kind: "test_page", detail: {} } }) as never)).toBe("Test page");
+    expect(jobTitle(testLabel() as never)).toBe("Test label");
+  });
+
+  it("a cancelled test page can be retried, a finished one cannot", () => {
+    expect(canRetry(testPage({ state: "cancelled" }) as never)).toBe(true);
+    expect(canRetry(testPage({ state: "done" }) as never)).toBe(false);
+  });
+});

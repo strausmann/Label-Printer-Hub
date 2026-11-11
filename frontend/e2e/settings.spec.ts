@@ -143,7 +143,7 @@ test.describe.serial("settings", () => {
   test("printers: add a second IPP page printer from the fake, then switch it off", async () => {
     // The e2e state is shared across specs: count relative to the start, use a slug and name that are
     // unique per attempt (a retry must not meet the printer of the failed attempt), and switch the printer
-    // off whatever happens (it is never wired in this hub, so it must not turn up in later pickers).
+    // off whatever happens (it is wired at once since #224, so it must not stay on for later specs).
     const stamp = `${test.info().retry}-${Date.now().toString(36)}`;
     const slug = `second-page-${stamp}`;
     const name = `Second page printer ${stamp}`;
@@ -173,8 +173,9 @@ test.describe.serial("settings", () => {
       await expect(form.getByRole("button", { name: "Create printer" })).toBeEnabled();
       await form.getByRole("button", { name: "Create printer" }).click();
 
-      await expect(page.getByText("The printer is ready after the hub restarts.")).toBeVisible();
       await expect(edits).toHaveCount(before + 1);
+      // Wired at once (#224): no restart note.
+      await expect(page.getByText(/restart/i)).toHaveCount(0);
       const row = page.getByRole("listitem").filter({ hasText: name });
       await expect(row.getByText(uri)).toBeVisible();
       await row.getByRole("button", { name: `Disable ${name}` }).click();

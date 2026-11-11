@@ -1,4 +1,4 @@
-"""End-to-end integration tests for POST /print → GET /jobs/{id}.
+"""End-to-end integration tests for POST /api/v1/print → GET /api/v1/jobs/{id}.
 
 Phase 1k.1a (Task 25): Adapted from template_id-based to content_type-based API.
 test_template_not_found_synchronous_404 removed (TemplateNotFoundError gone).
@@ -43,19 +43,19 @@ async def _poll_until(c: AsyncClient, job_id: str, *, target: str, timeout_s: fl
     deadline = asyncio.get_event_loop().time() + timeout_s
     body: dict = {}
     while asyncio.get_event_loop().time() < deadline:
-        r = await c.get(f"/jobs/{job_id}")
-        assert r.status_code == 200, f"GET /jobs/{job_id} returned {r.status_code}"
+        r = await c.get(f"/api/v1/jobs/{job_id}")
+        assert r.status_code == 200, f"GET /api/v1/jobs/{job_id} returned {r.status_code}"
         body = r.json()
-        if body["status"] == target:
+        if body["state"] == target:
             return body
-        if body["status"] == "failed":
+        if body["state"] == "failed":
             return body
         await asyncio.sleep(0.05)
-    raise AssertionError(f"job {job_id} never reached status {target!r}; last={body.get('status')}")
+    raise AssertionError(f"job {job_id} never reached status {target!r}; last={body.get('state')}")
 
 
 async def test_happy_path_raw_data() -> None:
-    """POST /print → 202 + job_id → poll → completed.
+    """POST /api/v1/print → 202 + job_id → poll → done.
 
     Phase 5 (#124): /print-Endpunkt nutzt app.state.print_service, das bei
     leerer Drucker-DB None ist. Test wird nach Task C2 (auto-seed) reaktiviert.
@@ -67,7 +67,7 @@ async def test_happy_path_raw_data() -> None:
         _inner.dependency_overrides[_dep] = lambda _c=_FAKE_AUTH: _c
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "Smoke", "primary_id": "S-1", "qr_payload": "https://e.x"},
@@ -76,9 +76,9 @@ async def test_happy_path_raw_data() -> None:
         assert r.status_code == 202, r.text
         job_id = r.json()["job_id"]
 
-        body = await _poll_until(c, job_id, target="completed")
-        assert body["status"] == "completed"
-        assert body["error_code"] is None
+        body = await _poll_until(c, job_id, target="done")
+        assert body["state"] == "done"
+        assert body["error"] is None
 
 
 # Failure-mode tests — override the "mock" factory before lifespan starts
@@ -124,7 +124,7 @@ async def test_offline_synchronous_503(offline_mock_backend) -> None:
         _inner.dependency_overrides[_dep] = lambda _c=_FAKE_AUTH: _c
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "X", "primary_id": "1", "qr_payload": "u"},

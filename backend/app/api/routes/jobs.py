@@ -2,12 +2,12 @@
 
 Routes
 ------
-GET  /api/jobs                   — list jobs with optional filters + pagination
-GET  /api/jobs/{id}              — single job by ID
-POST /api/jobs/{id}/cancel       — cancel a QUEUED job (409 for any other state)
-POST /api/jobs/{id}/pause        — 501 placeholder (safe mid-print pause not yet implemented)
-POST /api/jobs/{id}/resume       — 501 placeholder
-POST /api/jobs/{id}/retry        — clone a FAILED job into a fresh QUEUED job
+GET  /api/v1/jobs                   — list jobs with optional filters + pagination
+GET  /api/v1/jobs/{id}              — single job by ID
+POST /api/v1/jobs/{id}/cancel       — cancel a QUEUED job (409 for any other state)
+POST /api/v1/jobs/{id}/pause        — 501 placeholder (safe mid-print pause not yet implemented)
+POST /api/v1/jobs/{id}/resume       — 501 placeholder
+POST /api/v1/jobs/{id}/retry        — clone a FAILED job into a fresh QUEUED job
 
 Design notes
 ------------
@@ -46,6 +46,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.identity_hold import ensure_not_held
 from app.api.routes.sheet_common import actor
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
@@ -56,7 +57,7 @@ from app.repositories import jobs as jobs_repo
 from app.repositories import printers as printers_repo
 from app.schemas.job import JobRead
 from app.schemas.problem import ProblemDetail
-from app.services.page_jobs import PagePayload
+from app.services.page_jobs import IDENTITY_HELD_KINDS, PagePayload
 from app.services.print_queue import UnrenderableJobError
 from app.sheets import print_service
 from app.sheets.errors import (
@@ -66,7 +67,7 @@ from app.sheets.errors import (
     SheetPrinterDisabledError,
 )
 
-router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -123,7 +124,7 @@ async def _get_job_or_404(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/jobs
+# GET /api/v1/jobs
 # ---------------------------------------------------------------------------
 
 
@@ -164,7 +165,7 @@ async def list_jobs(
 
 
 # ---------------------------------------------------------------------------
-# GET /api/jobs/{id}
+# GET /api/v1/jobs/{id}
 # ---------------------------------------------------------------------------
 
 
@@ -185,7 +186,7 @@ async def get_job(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/jobs/{id}/cancel
+# POST /api/v1/jobs/{id}/cancel
 # ---------------------------------------------------------------------------
 
 
@@ -261,7 +262,7 @@ def _cancel_conflict(job_state: str) -> HTTPException:
 
 
 # ---------------------------------------------------------------------------
-# POST /api/jobs/{id}/pause
+# POST /api/v1/jobs/{id}/pause
 # ---------------------------------------------------------------------------
 
 
@@ -297,7 +298,7 @@ async def pause_job(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/jobs/{id}/resume
+# POST /api/v1/jobs/{id}/resume
 # ---------------------------------------------------------------------------
 
 
@@ -332,7 +333,7 @@ async def resume_job(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/jobs/{id}/retry
+# POST /api/v1/jobs/{id}/retry
 # ---------------------------------------------------------------------------
 
 
@@ -428,10 +429,10 @@ async def _retry_page_job(
 ) -> JobRead:
     """Re-submit a page job through the queue (it renders at send time).
 
-    A calibration page is re-sent from its payload. Retry means "the same page again": the
-    stored payload carries the calibration snapshot and the date of the first submit, and both
-    are kept on purpose. After the admin has corrected the values, a new check print is a new
-    calibration-page request.
+    A calibration page and a test page are re-sent from their payload. Retry means "the same
+    page again": the stored payload carries the calibration snapshot and the date of the first
+    submit, and both are kept on purpose. After the admin has corrected the values, a new check
+    print is a new calibration-page request.
 
     A sheet page goes to ``print_service.retry_sheet_page``: the same cells, a new job, a fresh
     snapshot. A ``done`` sheet page is not retried (its labels came out).
@@ -442,9 +443,11 @@ async def _retry_page_job(
     printer = await printers_repo.get(session, job.printer_id)
     if printer is not None and not printer.enabled:
         raise SheetPrinterDisabledError().to_http()  # pre-flight C18; #167 is the general fix
+    if kind in IDENTITY_HELD_KINDS:
+        ensure_not_held(queue, job.printer_id)  # #231 (a test page is never held)
     if kind == "sheet_page":
         return await _retry_sheet_page(request, session, queue, job, auth)
-    if kind != "calibration_page":
+    if kind not in ("calibration_page", "test_page"):
         raise PageJobNotRetryableError().to_http()
     try:
         payload = PagePayload.model_validate(job.payload)

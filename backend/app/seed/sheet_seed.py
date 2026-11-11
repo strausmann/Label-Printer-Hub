@@ -12,6 +12,7 @@ with the database (one query per table) and acts only where the database is unto
 
 from __future__ import annotations
 
+import functools
 import importlib.resources
 import json
 import logging
@@ -43,6 +44,12 @@ class SeedReport:
 def load_seed() -> tuple[int, list[ExportDoc]]:
     raw = json.loads(SEED_FILE.read_text(encoding="utf-8"))
     return int(raw["seed_revision"]), [ExportDoc.model_validate(d) for d in raw["types"]]
+
+
+@functools.cache
+def shipped_source_urls() -> dict[str, str]:
+    """The source URL of every seed type as shipped, by key (a type without one is left out)."""
+    return {d.type.key: d.type.source_url for d in load_seed()[1] if d.type.source_url}
 
 
 @dataclass

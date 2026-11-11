@@ -2,7 +2,7 @@
 
 Routes
 ------
-GET /api/lookup/{app}/{id} — resolve an integration entity and return LookupResult
+GET /api/v1/lookup/{app}/{id} — resolve an integration entity and return LookupResult
 
 Design notes
 ------------
@@ -45,7 +45,7 @@ from app.schemas.label_data import LabelData
 from app.schemas.lookup import LookupResult
 from app.services.lookup_service import AppLookupService
 
-router = APIRouter(prefix="/api/lookup", tags=["lookup"])
+router = APIRouter(prefix="/api/v1/lookup", tags=["lookup"])
 
 ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
 

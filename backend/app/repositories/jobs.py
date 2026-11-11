@@ -279,7 +279,7 @@ async def list_by_ids(
 ) -> list[Job]:
     """Bulk-Fetch jobs by ids — order not guaranteed, caller re-orders.
 
-    Phase 2: used by GET /api/batches/{id} to load all jobs referenced
+    Phase 2: used by GET /api/v1/batches/{id} to load all jobs referenced
     by a PrintBatch.job_ids list in a single SQL query.
     """
     if not job_ids:

@@ -106,3 +106,11 @@ def test_label_hub_database_url_is_ignored(
     assert "old.db" not in s.database_url, (
         "LABEL_HUB_DATABASE_URL must be ignored; only PRINTER_HUB_DATABASE_URL is read."
     )
+
+
+def test_engine_hides_bound_parameters() -> None:
+    """Bound values (a hardware identity among them) must not reach SQLAlchemy's logs and
+    error texts, nor the driver's DEBUG log through them (#231)."""
+    from app.db.engine import engine
+
+    assert engine.sync_engine.hide_parameters is True

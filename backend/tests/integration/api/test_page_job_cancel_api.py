@@ -161,7 +161,7 @@ async def test_cancel_route_queued_page_job_not_sent(env: _Env) -> None:
     await env.queue.pause_printer(env.printer_id, reason="user", source="user")
     jid = await env.submit()
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{jid}/cancel")
+        r = await c.post(f"/api/v1/jobs/{jid}/cancel")
     assert r.status_code == 200, r.text
     assert r.json()["state"] == JobState.CANCELLED.value
     await env.queue.resume_printer(env.printer_id)
@@ -180,7 +180,7 @@ async def test_cancel_route_held_page_job(env: _Env) -> None:
     jid = await env.submit()
     await env.until(lambda: env.queue.is_paused(env.printer_id))
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{jid}/cancel")
+        r = await c.post(f"/api/v1/jobs/{jid}/cancel")
     assert r.status_code == 200, r.text
     assert r.json()["state"] == JobState.CANCELLED.value
     assert env.ops("Print-Job") == 0
@@ -192,7 +192,7 @@ async def test_cancel_route_tracked_page_job_sends_cancel_job(env: _Env) -> None
     jid = await env.submit()
     await env.until(lambda: env.runner.is_tracking(jid))
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{jid}/cancel")
+        r = await c.post(f"/api/v1/jobs/{jid}/cancel")
     assert r.status_code == 202, r.text
     assert r.json()["state"] == JobState.PRINTING.value
     assert env.ops("Cancel-Job") == 1
@@ -210,7 +210,7 @@ async def test_queue_clear_cancels_queued_page_jobs(env: _Env) -> None:
     await env.queue.pause_printer(env.printer_id, reason="user", source="user")
     jobs = [await env.submit(), await env.submit()]
     async with env.client() as c:
-        r = await c.post(f"/api/printers/{env.printer_id}/queue/clear")
+        r = await c.post(f"/api/v1/printers/{env.printer_id}/queue/clear")
     assert r.status_code == 204, r.text
     for jid in jobs:
         assert (await env.row(jid)).state == JobState.CANCELLED.value
@@ -226,7 +226,7 @@ async def test_retry_route_calibration_page_resubmits(env: _Env) -> None:
     env.fake.print_status = 0
     env.fake.job_script = [9]
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{jid}/retry")
+        r = await c.post(f"/api/v1/jobs/{jid}/retry")
     assert r.status_code == 201, r.text
     new_id = UUID(r.json()["id"])
     assert new_id != jid
@@ -244,7 +244,7 @@ async def test_retry_route_sheet_page_without_a_usable_payload_is_422(env: _Env)
     jid = await env.submit("sheet_page")
     await env.wait_state(jid, JobState.FAILED.value)
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{jid}/retry")
+        r = await c.post(f"/api/v1/jobs/{jid}/retry")
     assert r.status_code == 422, r.text
     assert r.json()["detail"]["type"] == "job-not-retryable"
     async with env.factory() as s:
@@ -267,7 +267,7 @@ async def test_retry_route_tape_payload_on_page_printer_is_409(env: _Env) -> Non
         await s.commit()
         old_id = row.id
     async with env.client() as c:
-        r = await c.post(f"/api/jobs/{old_id}/retry")
+        r = await c.post(f"/api/v1/jobs/{old_id}/retry")
     assert r.status_code == 409, r.text
     assert r.json()["detail"]["error_code"] == "media_kind_mismatch"
 
@@ -289,23 +289,23 @@ async def test_job_responses_and_events_never_carry_the_printer_address(env: _En
     jid = await env.submit()
     await env.until(lambda: env.runner.is_tracking(jid))
     async with env.client() as c:
-        tracked = await c.get(f"/api/jobs/{jid}")
-        cancel = await c.post(f"/api/jobs/{jid}/cancel")
+        tracked = await c.get(f"/api/v1/jobs/{jid}")
+        cancel = await c.post(f"/api/v1/jobs/{jid}/cancel")
     assert cancel.status_code == 202, cancel.text
     await env.wait_state(jid, JobState.CANCELLED.value)
     async with env.client() as c:
-        detail = await c.get(f"/api/jobs/{jid}")
+        detail = await c.get(f"/api/v1/jobs/{jid}")
     env.fake.print_status = 0x040A
     failed = await env.submit()
     await env.wait_state(failed, JobState.FAILED.value)
     env.fake.print_status = 0
     env.fake.job_script = [9]
     async with env.client() as c:
-        retry = await c.post(f"/api/jobs/{failed}/retry")
+        retry = await c.post(f"/api/v1/jobs/{failed}/retry")
     assert retry.status_code == 201, retry.text
     await env.wait_state(UUID(retry.json()["id"]), JobState.DONE.value)
     async with env.client() as c:
-        listing = await c.get("/api/jobs")
+        listing = await c.get("/api/v1/jobs")
     for response in (tracked, cancel, detail, listing, retry):
         _assert_no_printer_address(response.text)
     assert env.events, "the runner emitted no job events"

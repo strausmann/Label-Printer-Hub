@@ -14,6 +14,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.schemas._datetime import serialize_datetime_utc
+from app.schemas.label_layout import LayoutDefault
+from app.services.tape_status import TapeColourName
 
 
 class PauseRead(BaseModel):
@@ -50,10 +52,39 @@ class PrinterRead(BaseModel):
     pause: PauseRead | None = None  # reason, when the queue knows one
     created_at: datetime
     updated_at: datetime
+    hardware_id: str | None = Field(
+        default=None,
+        description="Stored device serial, IPP printer-uuid or MAC; admin callers only, else null",
+    )
+    hardware_id_kind: str | None = Field(
+        default=None, description="serial | ipp_uuid | mac; admin callers only, else null"
+    )
+    hardware_id_seen_at: datetime | None = Field(
+        default=None, description="When a probe last saw the stored device; admin callers only"
+    )
+
+    observed_id: str | None = Field(
+        default=None, description="The differing device of a flagged swap; admin callers only"
+    )
+    observed_kind: str | None = Field(
+        default=None, description="serial | ipp_uuid | mac; admin callers only, else null"
+    )
+    layout_defaults: dict[str, LayoutDefault] = Field(
+        default_factory=dict,
+        description=(
+            "Stored label layout per tape width in mm (#258), keyed by the width as a string; "
+            "the print dialog preselects it. A missing width uses the tape default "
+            "(62 mm across/compact, else along)"
+        ),
+    )
 
     @field_serializer("created_at", "updated_at")
     def _serialise_datetimes(self, dt: datetime, _info: object) -> str:
         return serialize_datetime_utc(dt, _info)
+
+    @field_serializer("hardware_id_seen_at")
+    def _serialise_seen_at(self, dt: datetime | None, _info: object) -> str | None:
+        return serialize_datetime_utc(dt, _info) if dt is not None else None
 
 
 class ReasonRead(BaseModel):
@@ -89,6 +120,60 @@ class TrayStatusRead(BaseModel):
     )
 
 
+class TapeRead(BaseModel):
+    """The tape loaded in a polled tape printer (``GET /printers/{id}/tape``)."""
+
+    width_mm: int = Field(description="Width of the loaded tape in mm")
+    label: str = Field(description='Display label from the printer model, e.g. "62mm DK"')
+    media_raw: str | None = Field(
+        default=None, description="The media name text as the printer reported it"
+    )
+    colour: TapeColourName | None = Field(
+        default=None, description="Tape colour from the operator's roll record; None if unknown"
+    )
+
+
+class RollRead(BaseModel):
+    """The roll recorded for a printer (``GET/PUT /printers/{id}/roll``)."""
+
+    width_mm: int | None = Field(default=None, description="Width of the roll last seen, in mm")
+    media_raw: str | None = Field(
+        default=None, description="The media name text of the roll as the printer reported it"
+    )
+    colour: TapeColourName | None = Field(
+        default=None, description="Tape colour the operator gave this roll; None if unknown"
+    )
+    set_at: datetime | None = Field(default=None, description="When the colour was recorded")
+    prompt_pending: bool = Field(
+        default=False, description="True while the operator is still to be asked for the colour"
+    )
+
+    @field_serializer("set_at")
+    def _serialise_set_at(self, dt: datetime | None, _info: object) -> str | None:
+        return serialize_datetime_utc(dt, _info) if dt is not None else None
+
+
+class RollColourUpdate(BaseModel):
+    """Body of ``PUT /printers/{id}/roll``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    colour: TapeColourName | None = Field(
+        description="The tape colour; null skips the question and clears a recorded colour"
+    )
+    width_mm: int | None = Field(
+        default=None,
+        description=(
+            "Width of the roll the operator saw. When given and different from the stored "
+            "roll, the call answers 409 roll-changed instead of colouring the new roll."
+        ),
+    )
+    media_raw: str | None = Field(
+        default=None,
+        description="The roll media_raw the operator saw; checked like width_mm when given",
+    )
+
+
 class PrinterStatus(BaseModel):
     """Printer status sourced from the printer_status_cache table.
 
@@ -108,6 +193,15 @@ class PrinterStatus(BaseModel):
     offline page printer: since its last successful reading).
     ``last_error`` is the exception message from the most recent failed probe.
     ``note`` carries a human-readable hint (e.g. "No probe yet").
+    ``polled`` is ``False`` when no status producer runs for the printer (SNMP discovery
+    off, printer disabled or not wired). ``stale`` is ``True`` when the last probe attempt
+    (``printer_status_cache.updated_at``) is older than
+    ``max(90, 3 * probe interval, 2 * max backoff)`` seconds (an IPP printer that stopped answering
+    is probed with a backoff of up to 300 s, so its bound is 600 s),
+    or implausibly in the future. For an unpolled or stale printer ``online`` is
+    ``None`` and the cached values (tape, error state, markers, trays) are not returned;
+    ``captured_at`` and ``last_probe_age_s`` stay so a client can show how old the last
+    reading is.
     """
 
     printer_id: UUID
@@ -118,6 +212,24 @@ class PrinterStatus(BaseModel):
     tape_loaded: str | None = Field(
         default=None,
         description='e.g. "12mm laminated black/clear"; None when no tape is loaded',
+    )
+    tape_width_mm: int | None = Field(
+        default=None,
+        description="Width of the loaded tape in mm; None when no tape is loaded or unknown",
+    )
+    tape_colour: TapeColourName | None = Field(
+        default=None,
+        description=(
+            "Tape colour from the operator's roll record. The printer reports none over the "
+            "network, so this stays None until a roll is recorded."
+        ),
+    )
+    roll_prompt: bool = Field(
+        default=False,
+        description=(
+            "True when the roll changed and the operator is still to be asked for the tape "
+            "colour (``PUT /printers/{id}/roll``); False for an unpolled or stale printer"
+        ),
     )
     error_state: str | None = Field(
         default=None,
@@ -144,6 +256,22 @@ class PrinterStatus(BaseModel):
     note: str | None = Field(
         default=None,
         description="Human-readable hint, e.g. 'No probe yet'",
+    )
+    stale: bool = Field(
+        default=False,
+        description="True when the last probe attempt is older than the staleness bound",
+    )
+    polled: bool = Field(
+        default=True,
+        description="False when no status producer runs for this printer",
+    )
+    identity_mismatch: bool = Field(
+        default=False,
+        description=(
+            "True while the device behind the printer's address differs from the one the hub "
+            "stored (a swapped printer). Sheet and calibration jobs are held meanwhile. Only the "
+            "flag is returned here; the identity values are for admins."
+        ),
     )
     # Page printers (IPP) only; all ``None`` for tape printers.
     kind: Literal["tape", "page"] | None = Field(

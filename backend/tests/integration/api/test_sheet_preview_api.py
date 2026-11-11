@@ -1,4 +1,4 @@
-"""HTTP tests of POST /api/print/{printer}/sheet/preview: scopes, errors, no echo, no writes."""
+"""HTTP tests of POST /api/v1/print/{printer}/sheet/preview: scopes, errors, no echo, no writes."""
 
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ def _body(code: str, n: int = 3, **kw: Any) -> dict[str, Any]:
 
 
 def _url(printer: str) -> str:
-    return f"/api/print/{printer}/sheet/preview"
+    return f"/api/v1/print/{printer}/sheet/preview"
 
 
 def _err(resp: httpx.Response) -> dict[str, Any]:
@@ -153,17 +153,18 @@ async def test_preview_leaves_the_sheet_untouched(
     pid, _ = await _printer()
     code = await _sheet(used=2)
 
-    resp = await api_client_with_seed.post(
-        _url(pid),
-        json={
-            "items": [_item(i) for i in range(4)],
-            "placements": [{"sheet": code, "count": 2}, {"new_sheet": {"type": "acme-t1"}}],
-        },
-        headers=reader,
-    )
+    # #277: one sheet per run: the existing and the new sheet are two previews.
+    hints: list[str | None] = []
+    for placement in ({"sheet": code}, {"new_sheet": {"type": "acme-t1"}}):
+        resp = await api_client_with_seed.post(
+            _url(pid),
+            json={"items": [_item(i) for i in range(2)], "placements": [placement]},
+            headers=reader,
+        )
+        assert resp.status_code == 200, resp.text
+        hints.extend(p["new_code_hint"] for p in resp.json()["pages"])
 
-    assert resp.status_code == 200, resp.text
-    assert [p["new_code_hint"] for p in resp.json()["pages"]] == [None, "AT1-0002"]
+    assert hints == [None, "AT1-0002"]
     async with _factory()() as s:
         assert (await s.execute(select(func.count()).select_from(Sheet))).scalar() == 1
         assert (await s.execute(select(func.count()).select_from(SheetCell))).scalar() == 2
@@ -380,7 +381,7 @@ async def test_openapi_documents_the_route_and_its_error_envelope(
 ) -> None:
     schema = (await api_client_with_seed.get("/openapi.json")).json()
 
-    op = schema["paths"]["/api/print/{printer_key}/sheet/preview"]["post"]
+    op = schema["paths"]["/api/v1/print/{printer_key}/sheet/preview"]["post"]
     assert op["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/SheetPreview"
     )
@@ -389,7 +390,7 @@ async def test_openapi_documents_the_route_and_its_error_envelope(
     )
     assert op["summary"] and op["description"]
     # the tape batch route keeps FastAPI's own validation error
-    batch = schema["paths"]["/api/print/{printer_key}/batch"]["post"]
+    batch = schema["paths"]["/api/v1/print/{printer_key}/batch"]["post"]
     assert not batch["responses"]["422"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/SheetApiErrorResponse"
     )
@@ -463,7 +464,7 @@ async def test_no_db_connection_is_held_while_the_lookups_run(
         ],
         "placements": [{"sheet": code}],
     }
-    url = _url(pid) if route == "preview" else f"/api/print/{pid}/sheet"
+    url = _url(pid) if route == "preview" else f"/api/v1/print/{pid}/sheet"
     pool = engine_module.engine.pool
 
     try:

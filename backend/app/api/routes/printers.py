@@ -7,13 +7,13 @@ FastAPI event loop).
 
 Routes
 ------
-GET  /api/printers                — list all printers + paused flag
-GET  /api/printers/{id}/status    — force fresh ESC i S probe; upserts cache
-GET  /api/printers/{id}/tape      — current tape spec via TapeRegistry
-GET  /api/printers/{id}/queue     — jobs in QUEUED or PRINTING state
-POST /api/printers/{id}/pause     — set paused=True  (204 No Content)
-POST /api/printers/{id}/resume    — set paused=False (204 No Content)
-POST /api/printers/{id}/queue/clear — bulk-cancel QUEUED jobs (204 No Content)
+GET  /api/v1/printers                — list all printers + paused flag
+GET  /api/v1/printers/{id}/status    — force fresh ESC i S probe; upserts cache
+GET  /api/v1/printers/{id}/tape      — current tape spec via TapeRegistry
+GET  /api/v1/printers/{id}/queue     — jobs in QUEUED or PRINTING state
+POST /api/v1/printers/{id}/pause     — set paused=True  (204 No Content)
+POST /api/v1/printers/{id}/resume    — set paused=False (204 No Content)
+POST /api/v1/printers/{id}/queue/clear — bulk-cancel QUEUED jobs (204 No Content)
 
 References:
     docs/superpowers/specs/2026-05-16-phase6a-rest-api-design.md — Printers section
@@ -23,7 +23,6 @@ References:
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import logging
 from datetime import UTC, datetime
 from typing import Annotated, Any
@@ -32,29 +31,38 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies.printer_runtime import get_printer_runtime
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print, require_read
+from app.config import get_settings
 from app.db.session import get_session
 from app.models.job import JobState
+from app.models.printer_identity import PrinterIdentity
 from app.repositories import jobs as jobs_repo
+from app.repositories import printer_identity as identity_repo
+from app.repositories import printer_roll as roll_repo
 from app.repositories import printer_state as printer_state_repo
 from app.repositories import printer_status_cache as cache_repo
 from app.repositories import printers as printers_repo
+from app.schemas.label_layout import LayoutDefault, parse_layout_defaults
 from app.schemas.printer import (
     MarkerRead,
     PauseRead,
     PrinterRead,
     PrinterStatus,
     ReasonRead,
+    TapeRead,
     TrayStatusRead,
 )
 from app.services.print_queue import PrinterAlreadyActiveError
-from app.services.status_block import MediaType, PrinterError, StatusBlockParser
-from app.services.tape_registry import TapeRegistry, UnknownTapeError
+from app.services.printer_runtime import PrinterRuntime
+from app.services.status_block import PrinterError, StatusBlockParser
+from app.services.status_freshness import backoff_of, is_stale, stale_after_s
+from app.services.tape_status import read_tape_status
 
 _log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/printers", tags=["printers"])
+router = APIRouter(prefix="/api/v1/printers", tags=["printers"])
 
 
 def _pause_view(
@@ -85,9 +93,49 @@ def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object
     return {"tls_verify": bool(connection.get("tls_verify", True))}
 
 
+def _layout_defaults_view(printer: Any) -> dict[str, LayoutDefault]:
+    """The stored layout defaults per tape width (string keys), without the invalid entries.
+
+    Not sensitive: it is what the print dialog preselects. Page printers store none.
+    """
+    return {
+        str(width): value for width, value in parse_layout_defaults(printer.layout_defaults).items()
+    }
+
+
+def _is_admin(auth: AuthContext | None) -> bool:
+    return auth is not None and auth.scope == "admin"
+
+
+def _identity_fields(row: PrinterIdentity | None) -> dict[str, Any]:
+    """Field by field, never through ``from_attributes``; the stored and the flagged device."""
+    if row is None:
+        return {}
+    return {
+        "hardware_id": row.hardware_id,
+        "hardware_id_kind": row.hardware_id_kind,
+        "hardware_id_seen_at": row.hardware_id_seen_at,
+        "observed_id": row.observed_id,
+        "observed_kind": row.observed_kind,
+    }
+
+
+async def _identity_view(
+    session: AsyncSession, printer_id: UUID, auth: AuthContext | None
+) -> dict[str, Any]:
+    """The hardware identity fields, for admin callers only (#231, M1).
+
+    The serial is inventory data: every other caller gets ``null`` and no read happens.
+    """
+    if not _is_admin(auth):
+        return {}
+    return _identity_fields(await identity_repo.get(session, printer_id))
+
+
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
+RuntimeDep = Annotated[PrinterRuntime | None, Depends(get_printer_runtime)]
 PrintAuthDep = Annotated[AuthContext, Depends(require_print)]
 
 
@@ -107,8 +155,15 @@ async def _get_printer_or_404(session: AsyncSession, printer_id: UUID) -> Any:
     return printer
 
 
+def roll_colour(roll: Any, loaded_width_mm: int | None) -> str | None:
+    """The operator's colour of the loaded roll; None when unknown or for another width."""
+    if roll is None or not loaded_width_mm or roll.width_mm != loaded_width_mm:
+        return None
+    return roll.colour  # type: ignore[no-any-return]
+
+
 # ---------------------------------------------------------------------------
-# GET /api/printers
+# GET /api/v1/printers
 # ---------------------------------------------------------------------------
 
 
@@ -157,6 +212,9 @@ async def list_printers(
                     "error_message": f"slug={slug!r} not found",
                 },
             )
+    identities = (
+        await identity_repo.get_many(session, [p.id for p in printers]) if _is_admin(_auth) else {}
+    )
     result: list[PrinterRead] = []
     for p in printers:
         state = await printer_state_repo.get(session, p.id)
@@ -174,13 +232,15 @@ async def list_printers(
                 pause=pause,
                 created_at=p.created_at,
                 updated_at=p.updated_at,
+                layout_defaults=_layout_defaults_view(p),
+                **_identity_fields(identities.get(p.id)),
             )
         )
     return result
 
 
 # ---------------------------------------------------------------------------
-# GET /api/printers/{id}
+# GET /api/v1/printers/{id}
 # ---------------------------------------------------------------------------
 
 
@@ -217,11 +277,13 @@ async def get_printer(
         pause=pause,
         created_at=printer.created_at,
         updated_at=printer.updated_at,
+        layout_defaults=_layout_defaults_view(printer),
+        **await _identity_view(session, printer_id, _auth),
     )
 
 
 # ---------------------------------------------------------------------------
-# GET /api/printers/{id}/status
+# GET /api/v1/printers/{id}/status
 # ---------------------------------------------------------------------------
 
 
@@ -364,12 +426,24 @@ async def get_printer_status(
     printer_id: UUID,
     session: SessionDep,
     _auth: ReadAuthDep,
+    runtime: RuntimeDep = None,
 ) -> PrinterStatus:
     """Return the latest cached status for a printer; no sync SNMP probe."""
     await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
+    status_ = await _cached_status(session, printer_id, runtime)
+    # #231: the flag is on every branch of the status (probed, stale, not polled, never probed);
+    # the identity values are not part of this response.
+    identity = await identity_repo.get(session, printer_id)
+    status_.identity_mismatch = identity is not None and identity.mismatch_since is not None
+    return status_
 
+
+async def _cached_status(
+    session: AsyncSession, printer_id: UUID, runtime: PrinterRuntime | None
+) -> PrinterStatus:
+    polled = runtime is not None and runtime.is_polled(printer_id)
     row = await cache_repo.get(session, printer_id)
     if row is None or row.captured_at is None:
         return PrinterStatus(
@@ -377,54 +451,102 @@ async def get_printer_status(
             online=None,
             captured_at=None,
             note="No probe yet — wait up to 30s for first probe cycle",
+            polled=polled,
         )
 
     parsed = row.parsed or {}
     captured = row.captured_at
     if captured.tzinfo is None:
         captured = captured.replace(tzinfo=UTC)
-    age_s = int((datetime.now(UTC) - captured).total_seconds())
+    now = datetime.now(UTC)
+    age_s = int((now - captured).total_seconds())
+
+    interval_s = get_settings().sse_probe_interval_s
+    backoff_s = backoff_of(parsed)
+    stale = is_stale(row.updated_at, now, interval_s, backoff_s)
+    if not polled or stale:
+        # The cached values describe a printer nobody has looked at for a while (or at all):
+        # returning them next to "no tape" is the bug this guards against.
+        return PrinterStatus(
+            printer_id=printer_id,
+            online=None,
+            captured_at=row.captured_at,
+            last_probe_age_s=age_s,
+            last_error=parsed.get("last_error"),
+            note=(
+                "Not polled"
+                if not polled
+                else f"Status older than {int(stale_after_s(interval_s, backoff_s))} s"
+            ),
+            kind="page" if parsed.get("kind") == "page" else None,
+            stale=True,
+            polled=polled,
+        )
 
     if parsed.get("kind") == "page":
         return await _page_status(session, printer_id, parsed, row.captured_at, age_s)
 
-    loaded_tape_mm = parsed.get("loaded_tape_mm")
+    tape = read_tape_status(parsed)
+    loaded_tape_mm = tape.get("loaded_tape_mm")
     tape_loaded = f"{loaded_tape_mm}mm" if loaded_tape_mm else None
 
-    error_flags = parsed.get("error_flags") or []
+    error_flags = tape.get("error_flags") or []
     error_state = ", ".join(error_flags) if error_flags else None
+    roll = await roll_repo.get(session, printer_id)
 
     return PrinterStatus(
         printer_id=printer_id,
-        online=parsed.get("online"),
+        online=tape.get("online"),
         tape_loaded=tape_loaded,
+        tape_width_mm=loaded_tape_mm,
+        tape_colour=roll_colour(roll, loaded_tape_mm),  # type: ignore[arg-type]
+        roll_prompt=bool(
+            roll is not None
+            and roll.prompt_pending
+            and loaded_tape_mm
+            and roll.width_mm == loaded_tape_mm
+        ),
         error_state=error_state,
         captured_at=row.captured_at,
         last_probe_age_s=age_s,
-        last_error=parsed.get("last_error"),
+        last_error=tape.get("last_error"),
+        polled=polled,
     )
 
 
 # ---------------------------------------------------------------------------
-# GET /api/printers/{id}/tape
+# GET /api/v1/printers/{id}/tape
 # ---------------------------------------------------------------------------
 
 
 @router.get(
     "/{printer_id}/tape",
-    summary="Get the current tape spec",
+    summary="Get the tape loaded in a printer",
+    response_model=TapeRead,
+    responses={
+        404: {
+            "description": (
+                "No tape to report: the printer is unknown, has no cached status "
+                "(``no cached status for printer ...``), is not polled (``Not polled``), "
+                "its status is stale (``Status older than N s``, as in the status note), or "
+                "no tape is loaded (``no tape loaded in printer ...``)."
+            )
+        }
+    },
     description=(
-        "Returns the tape specification for the tape currently loaded in the "
-        "printer, derived from the cached status block.  Returns 404 if the "
-        "printer has no cached status or no tape is loaded."
+        "Returns the width, display label and raw media text of the tape loaded in the "
+        "printer, read from the status cache that the SNMP status producer writes. "
+        "``colour`` comes from the operator's roll record and is null until one exists. "
+        "Answers 404 when there is no tape to report; see the 404 response."
     ),
 )
 async def get_printer_tape(
     printer_id: UUID,
     session: SessionDep,
     _auth: ReadAuthDep,
-) -> dict[str, object]:
-    """Return the current tape spec for a printer."""
+    runtime: RuntimeDep = None,
+) -> TapeRead:
+    """Return the tape loaded in a polled tape printer."""
     await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
@@ -437,32 +559,32 @@ async def get_printer_tape(
         )
 
     parsed = cache.parsed
-    width_mm = int(parsed.get("media_width_mm", 0))
-    if width_mm == 0:
+    interval_s = get_settings().sse_probe_interval_s
+    backoff_s = backoff_of(parsed)
+    if runtime is None or not runtime.is_polled(printer_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not polled")
+    if is_stale(cache.updated_at, datetime.now(UTC), interval_s, backoff_s):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Status older than {int(stale_after_s(interval_s, backoff_s))} s",
+        )
+    tape = read_tape_status(parsed)
+    width_mm = tape.get("loaded_tape_mm")
+    if not width_mm:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"no tape loaded in printer {printer_id}",
         )
-
-    try:
-        media_type = MediaType[str(parsed.get("media_type", "UNKNOWN"))]
-    except KeyError:
-        media_type = MediaType.UNKNOWN
-
-    tape_registry = TapeRegistry()
-    try:
-        spec = tape_registry.lookup_pt(width_mm, media_type)
-    except UnknownTapeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-
-    return dataclasses.asdict(spec)
+    return TapeRead(
+        width_mm=width_mm,
+        label=runtime.describe_tape_for(printer_id, width_mm).label,
+        media_raw=tape.get("media_raw"),
+        colour=roll_colour(await roll_repo.get(session, printer_id), width_mm),  # type: ignore[arg-type]
+    )
 
 
 # ---------------------------------------------------------------------------
-# GET /api/printers/{id}/queue
+# GET /api/v1/printers/{id}/queue
 # ---------------------------------------------------------------------------
 
 
@@ -501,7 +623,7 @@ async def get_printer_queue(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/printers/{id}/pause
+# POST /api/v1/printers/{id}/pause
 # ---------------------------------------------------------------------------
 
 
@@ -536,7 +658,7 @@ async def pause_printer(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/printers/{id}/resume
+# POST /api/v1/printers/{id}/resume
 # ---------------------------------------------------------------------------
 
 
@@ -570,7 +692,7 @@ async def resume_printer(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/printers/{id}/queue/clear
+# POST /api/v1/printers/{id}/queue/clear
 # ---------------------------------------------------------------------------
 
 
@@ -585,7 +707,7 @@ async def resume_printer(
         "Jobs in ``printing`` state are intentionally **not** cancelled — "
         "a mid-print abort is unsafe over TCP/9100 because the raster data is "
         "already on the wire; a page job the IPP printer already holds is left to "
-        "finish as well (cancel it with ``POST /api/jobs/{id}/cancel``).  "
+        "finish as well (cancel it with ``POST /api/v1/jobs/{id}/cancel``).  "
         "Returns 204 even when there are no queued jobs."
     ),
 )

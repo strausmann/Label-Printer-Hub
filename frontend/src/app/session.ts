@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { resetPrintWatch } from "../features/jobs/printWatch";
 import {
   ApiError,
   apiFetch,
@@ -26,7 +27,7 @@ export const SIGNED_OUT: SessionData = { signed_in: false, bootstrap: false };
 export function useInfo(): UseQueryResult<InfoData> {
   return useQuery({
     queryKey: INFO_KEY,
-    queryFn: () => apiFetch<InfoData>("/api/info"),
+    queryFn: () => apiFetch<InfoData>("/api/v1/info"),
     staleTime: 60_000,
   });
 }
@@ -58,6 +59,8 @@ export interface Session {
 /** Drop everything the previous user could see; keep what is public. */
 function resetUserData(queryClient: QueryClient): void {
   queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== INFO_KEY[0] && q.queryKey[0] !== SESSION_KEY[0] });
+  // The print notifications (a failed card shows the previous user's job) are user data too.
+  resetPrintWatch();
 }
 
 /** The session ended: drop everything the previous user could see (data, recent lookups, CSRF). */

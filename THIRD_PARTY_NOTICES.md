@@ -23,7 +23,9 @@ covers the direct runtime dependencies this release added.
 
 | Font | Licence | Notes |
 |---|---|---|
+| Atkinson Hyperlegible Next, variable weight (`AtkinsonHyperlegibleNext[wght].ttf` from google/fonts commit `66eef70`) | OFL-1.1 | Title and detail lines of QL 62 mm labels (#258). Ships as `app/page_render/fonts/AtkinsonHyperlegibleNext-Variable.ttf` with `app/page_render/fonts/LICENSE-AtkinsonHyperlegibleNext-OFL.txt` |
 | DejaVu Sans (`DejaVuSans.ttf`, Debian `fonts-dejavu-core` 2.37) | Bitstream Vera licence (DejaVu changes are public domain) | Embedded as a subset in the PDF pages for page printers. The file and its licence text ship in the package as `app/page_render/fonts/DejaVuSans.ttf` and `app/page_render/fonts/LICENSE-DejaVu.txt` |
+| IBM Plex Mono Bold (`IBMPlexMono-Bold.ttf` from google/fonts commit `633f320`) | OFL-1.1 | Code and serial lines of QL 62 mm labels (#258). Ships as `app/page_render/fonts/IBMPlexMono-Bold.ttf` with `app/page_render/fonts/LICENSE-IBMPlexMono-OFL.txt` |
 
 ## Web app (npm, bundled into `dist`)
 

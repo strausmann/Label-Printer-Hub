@@ -12,7 +12,9 @@ item (voller Cut zur Trennung vom nächsten Batch).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from app.printer_backends.exceptions import PrinterError
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -29,8 +31,12 @@ async def default_print_images_loop(
     auto_cut: bool = True,
     high_resolution: bool = False,
     half_cut: bool = True,
+    **extra: Any,
 ) -> None:
     """Loop over print_image(); set half_cut + last_page per index.
+
+    ``extra`` keyword arguments (e.g. the QL ``orientation``, #258) are forwarded unchanged
+    to every ``print_image`` call; only pass what the backend's ``print_image`` accepts.
 
     Args:
         backend: PrinterBackend instance whose print_image() is called per item.
@@ -51,11 +57,18 @@ async def default_print_images_loop(
     last_index = len(images) - 1
     for i, image in enumerate(images):
         is_last = i == last_index
-        await backend.print_image(
-            image,
-            tape_spec,
-            auto_cut=auto_cut,
-            high_resolution=high_resolution,
-            half_cut=half_cut and not is_last,
-            last_page=is_last,
-        )
+        try:
+            await backend.print_image(
+                image,
+                tape_spec,
+                auto_cut=auto_cut,
+                high_resolution=high_resolution,
+                half_cut=half_cut and not is_last,
+                last_page=is_last,
+                **extra,
+            )
+        except PrinterError as exc:
+            # #277: only a refusal of the FIRST image means nothing of the batch was sent.
+            if i > 0:
+                exc.nothing_sent = False
+            raise

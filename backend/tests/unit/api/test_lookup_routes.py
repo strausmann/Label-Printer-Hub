@@ -1,9 +1,9 @@
 """Unit tests for app.api.routes.lookup — 1 endpoint, 3 scenarios (Phase 6a Task 4).
 
 Test mapping:
-    1. GET /api/lookup/snipeit/ASSET-001  → 200 LookupResult (happy path)
-    2. GET /api/lookup/snipeit/MISSING    → 404 ProblemDetail (not-found)
-    3. GET /api/lookup/unknown/123        → 422 Unprocessable Entity (invalid app)
+    1. GET /api/v1/lookup/snipeit/ASSET-001  → 200 LookupResult (happy path)
+    2. GET /api/v1/lookup/snipeit/MISSING    → 404 ProblemDetail (not-found)
+    3. GET /api/v1/lookup/unknown/123        → 422 Unprocessable Entity (invalid app)
 """
 
 from __future__ import annotations
@@ -56,13 +56,13 @@ _SNIPEIT_LABEL = LabelData(
 
 @pytest.mark.asyncio
 async def test_lookup_known_app_and_entity_returns_200_lookup_result() -> None:
-    """GET /api/lookup/snipeit/ASSET-001 returns 200 LookupResult."""
+    """GET /api/v1/lookup/snipeit/ASSET-001 returns 200 LookupResult."""
     with patch(
         "app.api.routes.lookup._lookup_service.lookup",
         new=AsyncMock(return_value=_SNIPEIT_LABEL),
     ):
         client = TestClient(_build_app(), raise_server_exceptions=True)
-        r = client.get("/api/lookup/snipeit/ASSET-001")
+        r = client.get("/api/v1/lookup/snipeit/ASSET-001")
 
     assert r.status_code == 200
     body = r.json()
@@ -81,13 +81,13 @@ async def test_lookup_known_app_and_entity_returns_200_lookup_result() -> None:
 
 @pytest.mark.asyncio
 async def test_lookup_not_found_entity_returns_404_problem_detail() -> None:
-    """GET /api/lookup/snipeit/MISSING returns 404 ProblemDetail."""
+    """GET /api/v1/lookup/snipeit/MISSING returns 404 ProblemDetail."""
     with patch(
         "app.api.routes.lookup._lookup_service.lookup",
         new=AsyncMock(side_effect=AppLookupNotFoundError("Asset MISSING not found")),
     ):
         client = TestClient(_build_app(), raise_server_exceptions=False)
-        r = client.get("/api/lookup/snipeit/MISSING")
+        r = client.get("/api/v1/lookup/snipeit/MISSING")
 
     assert r.status_code == 404
     body = r.json()
@@ -103,7 +103,7 @@ async def test_lookup_not_found_entity_returns_404_problem_detail() -> None:
 
 @pytest.mark.asyncio
 async def test_lookup_invalid_app_returns_422() -> None:
-    """GET /api/lookup/unknown/123 returns 422 because 'unknown' is not in the Literal."""
+    """GET /api/v1/lookup/unknown/123 returns 422 because 'unknown' is not in the Literal."""
     client = TestClient(_build_app(), raise_server_exceptions=True)
-    r = client.get("/api/lookup/unknown/123")
+    r = client.get("/api/v1/lookup/unknown/123")
     assert r.status_code == 422

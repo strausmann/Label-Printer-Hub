@@ -69,7 +69,7 @@ async def test_batch_route_rejects_mismatched_printer_slug(
         ],
         "printer_slug": "wrong-slug",  # mismatch with URL printer_slug
     }
-    resp = await client.post(f"/api/print/{printer_slug}/batch", json=body)
+    resp = await client.post(f"/api/v1/print/{printer_slug}/batch", json=body)
     assert resp.status_code == 400, resp.text
     assert resp.json()["detail"]["error_code"] == "printer_slug_mismatch"
 
@@ -94,7 +94,7 @@ async def test_batch_route_accepts_matching_printer_slug(slug_check_client, slug
         ],
         "printer_slug": printer_slug,  # matches URL slug
     }
-    resp = await client.post(f"/api/print/{printer_slug}/batch", json=body)
+    resp = await client.post(f"/api/v1/print/{printer_slug}/batch", json=body)
     assert resp.status_code == 202, resp.text
 
 
@@ -118,5 +118,5 @@ async def test_batch_route_accepts_none_printer_slug(slug_check_client, slug_che
         ],
         # printer_slug not set (defaults to None) — no check
     }
-    resp = await client.post(f"/api/print/{printer_slug}/batch", json=body)
+    resp = await client.post(f"/api/v1/print/{printer_slug}/batch", json=body)
     assert resp.status_code == 202, resp.text

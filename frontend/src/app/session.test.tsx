@@ -1,6 +1,7 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { apiFetch, isSessionUnknown, setCsrfToken, setOnUnauthorized, setSessionUnknown } from "../api/client";
+import { recordJobEvent, useWatchedPrints, watchPrint } from "../features/jobs/printWatch";
 import { installUnauthorizedGuard, SESSION_KEY } from "./session";
 import { renderApp, SIGNED_IN, SIGNED_OUT } from "../test-utils";
 
@@ -65,6 +66,39 @@ describe("session", () => {
       await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
       expect(queryClient.getQueryData(["jobs"])).toBeUndefined();
       expect(localStorage.getItem("lph.recent.snipeit")).toBeNull();
+    });
+
+    describe("the print status stack belongs to the user who printed", () => {
+      const JOB = "aaaaaaaa-0000-4000-8000-000000000001";
+      const failedCard = () => {
+        act(() => void watchPrint({ kind: "test", printerId: "p1", jobIds: [JOB] }));
+        act(() => recordJobEvent({ job_id: JOB, from_state: "printing", to_state: "failed", error_code: "ipp_aborted" }));
+        expect(within(screen.getByRole("region", { name: "Print status" })).getAllByRole("listitem")).toHaveLength(1);
+      };
+      const cards = () => within(screen.getByRole("region", { name: "Print status" })).queryAllByRole("listitem");
+
+      it("a failed card of user A is gone when the session comes back as user B", async () => {
+        const { queryClient } = await renderApp({ path: "/jobs", session: { ...SIGNED_IN, user: "user-a" } });
+        failedCard();
+        stubFetch((url) => (url === "/api/v1/auth/session" ? json({ ...SIGNED_IN, user: "user-b" }) : json([])));
+        await act(async () => {
+          await queryClient.refetchQueries({ queryKey: SESSION_KEY });
+        });
+        expect(queryClient.getQueryData(SESSION_KEY)).toMatchObject({ user: "user-b" });
+        expect(cards()).toHaveLength(0);
+      });
+
+      it("a failed card is gone after sign-out", async () => {
+        const { queryClient } = await renderApp({ path: "/jobs" });
+        failedCard();
+        stubFetch((url) => (url === "/api/v1/auth/session" ? json(SIGNED_OUT) : json([])));
+        await act(async () => {
+          await queryClient.refetchQueries({ queryKey: SESSION_KEY });
+        });
+        // The shell is gone with the session; the store is what the next sign-in would render.
+        const { result } = renderHook(() => useWatchedPrints());
+        expect(result.current).toHaveLength(0);
+      });
     });
 
     it("the same user keeps data and recent lookups across a refetch", async () => {
@@ -206,7 +240,7 @@ describe("session", () => {
   it("keeps the CSRF token of the session for state-changing requests", async () => {
     await renderApp({ path: "/" });
     const fetchMock = stubFetch(() => json({}, 200));
-    await apiFetch("/api/x", { method: "POST", json: {} });
+    await apiFetch("/api/v1/x", { method: "POST", json: {} });
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
     expect(headers.get("X-CSRF-Token")).toBe("csrf-test");
   });

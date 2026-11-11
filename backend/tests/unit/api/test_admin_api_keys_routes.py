@@ -1,4 +1,4 @@
-"""Unit tests for /api/admin/api-keys CRUD endpoints — Phase 7c Step 8."""
+"""Unit tests for /api/v1/admin/api-keys CRUD endpoints — Phase 7c Step 8."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def _build_app(session: AsyncSession) -> FastAPI:
 async def test_list_api_keys_empty_returns_empty_list(session):
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        resp = await c.get("/api/admin/api-keys")
+        resp = await c.get("/api/v1/admin/api-keys")
     assert resp.status_code == 200
     assert resp.json() == []
 
@@ -76,7 +76,7 @@ async def test_list_api_keys_returns_existing_keys(session):
 
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        resp = await c.get("/api/admin/api-keys")
+        resp = await c.get("/api/v1/admin/api-keys")
     assert resp.status_code == 200
     keys = resp.json()
     assert len(keys) == 1
@@ -87,11 +87,11 @@ async def test_list_api_keys_returns_existing_keys(session):
 
 @pytest.mark.asyncio
 async def test_create_api_key_returns_plaintext_once(session):
-    """POST /api/admin/api-keys creates a key and returns plaintext in the response."""
+    """POST /api/v1/admin/api-keys creates a key and returns plaintext in the response."""
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         resp = await c.post(
-            "/api/admin/api-keys",
+            "/api/v1/admin/api-keys",
             json={
                 "name": "new-key",
                 "scopes": ["read", "print"],
@@ -113,7 +113,7 @@ async def test_create_api_key_does_not_store_plaintext(session):
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         resp = await c.post(
-            "/api/admin/api-keys",
+            "/api/v1/admin/api-keys",
             json={
                 "name": "hash-test",
                 "scopes": ["read"],
@@ -149,7 +149,7 @@ async def test_get_api_key_detail_returns_metadata(session):
 
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        resp = await c.get(f"/api/admin/api-keys/{key.id}")
+        resp = await c.get(f"/api/v1/admin/api-keys/{key.id}")
     assert resp.status_code == 200
     body = resp.json()
     assert body["name"] == "detail-key"
@@ -161,7 +161,7 @@ async def test_get_api_key_detail_returns_metadata(session):
 async def test_get_api_key_not_found_returns_404(session):
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        resp = await c.get(f"/api/admin/api-keys/{uuid4()}")
+        resp = await c.get(f"/api/v1/admin/api-keys/{uuid4()}")
     assert resp.status_code == 404
 
 
@@ -182,7 +182,7 @@ async def test_patch_api_key_updates_fields(session):
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         resp = await c.patch(
-            f"/api/admin/api-keys/{key.id}",
+            f"/api/v1/admin/api-keys/{key.id}",
             json={
                 "enabled": False,
                 "rate_limit_per_minute": 120,
@@ -211,7 +211,7 @@ async def test_delete_api_key_revokes_it(session):
 
     app = _build_app(session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        resp = await c.delete(f"/api/admin/api-keys/{key.id}")
+        resp = await c.delete(f"/api/v1/admin/api-keys/{key.id}")
     assert resp.status_code == 204
 
     # Key should now be disabled in DB

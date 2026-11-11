@@ -282,8 +282,12 @@ async def test_unknown_printer_filter_is_404(hub_app):
 
 
 @pytest.mark.asyncio
-async def test_snapshot_is_emitted_per_printer(hub_app):
+async def test_snapshot_is_emitted_per_printer(hub_app, monkeypatch):
     app, _ = hub_app
+    # The row is inserted directly, so the runtime does not poll this printer; a polled one
+    # keeps its reading in the snapshot (an unpolled or stale one is covered in
+    # test_printer_status_staleness.py).
+    monkeypatch.setattr(app._app.state.printer_runtime, "is_polled", lambda _id: True)
     key, _ = await _insert_key(["read"])
     printer_id = await _insert_printer("alpha")
     from app.repositories import printer_status_cache as status_cache_repo
@@ -567,7 +571,7 @@ async def test_open_streams_do_not_pin_db_connections(hub_app):
             await asyncio.sleep(0.05)
         assert pool.checkedout() == 0
         resp = await asyncio.wait_for(
-            client.get("/api/printers", headers=_key_header(key)), timeout=3.0
+            client.get("/api/v1/printers", headers=_key_header(key)), timeout=3.0
         )
         assert resp.status_code == 200
     finally:
@@ -785,10 +789,10 @@ async def test_sheet_updated_event_on_stream(hub_app):
     admin_key, _ = await _insert_key(["admin"])
     print_key, _ = await _insert_key(["print"])
     read_key, _ = await _insert_key(["read"])
-    made = await client.post("/api/sheet-types", json=_body(), headers=_key_header(admin_key))
+    made = await client.post("/api/v1/sheet-types", json=_body(), headers=_key_header(admin_key))
     assert made.status_code == 201, made.text
     sheet = await client.post(
-        "/api/sheets",
+        "/api/v1/sheets",
         json={"type": "acme-t1", "id_placement": "manual"},
         headers=_key_header(print_key),
     )
@@ -798,7 +802,7 @@ async def test_sheet_updated_event_on_stream(hub_app):
     try:
         await _connected(stream)
         marked = await client.post(
-            f"/api/sheets/{code}/cells/mark",
+            f"/api/v1/sheets/{code}/cells/mark",
             json={"cells": [{"cell": 7}, {"cell": 3}]},
             headers=_key_header(print_key),
         )

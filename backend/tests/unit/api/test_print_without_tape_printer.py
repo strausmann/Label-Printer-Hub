@@ -1,4 +1,4 @@
-"""POST /print on an install without a tape printer (fresh, or only IPP page printers)."""
+"""POST /api/v1/print on an install without a tape printer (fresh, or only IPP page printers)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ async def test_post_print_without_print_service_is_503_with_error_shape() -> Non
     app.dependency_overrides[require_print] = lambda: ctx
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
-            "/print",
+            "/api/v1/print",
             json={
                 "content_type": "qr_two_lines",
                 "data": {"title": "T", "primary_id": "P-1", "qr_payload": "https://e.x"},

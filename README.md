@@ -17,17 +17,22 @@
 
 This project is being designed against the [Brother PT-E550W/P750W/P710BT Raster Command Reference v1.02](https://download.brother.com/welcome/docp100064/cv_pte550wp750wp710bt_eng_raster_102.pdf) and [QL-800/810W/820NWB Raster Command Reference](https://download.brother.com/welcome/docp100278/cv_ql800_eng_raster_101.pdf). Hardware tested: Brother PT-P750W (verified). Brother QL-820NWBc (in progress).
 
-## Features (planned)
+## Features
 
 - **Multi-printer support** via plugin architecture (PT-Series and QL-Series, more on request)
+- **Printers added and changed at runtime** in the UI (Settings > Printers), no restart and no environment variables (#224)
 - **Pull-mode**: Open the web UI on your phone, scan a barcode, hit print
 - **Push-mode**: Spoolman/Grocy webhook → automatic label print
 - **App integrations**: Snipe-IT (asset tags), Grocy (product labels), Spoolman (3D-print spool labels)
-- **Print queue** with pause/resume/cancel/retry/priority operations
+- **Print queue** with pause/resume/cancel/retry operations, per printer and per job; tape runs in sub-jobs that
+  stop at an unknown outcome and offer continue or reprint (#277)
 - **Live status pages** per printer via Server-Sent Events (no page reload)
 - **Tape detection** via Brother native status block (no manual configuration)
-- **PWA-installable** for smartphone use
+- **PWA-installable** for smartphone use, also behind SSO (#225)
+- **Versioned API** under `/api/v1/` (#226)
 - **Pluggable**: drop a new `printer_models/your_model.py` to add a new device
+
+Not built yet: job priorities in the queue.
 
 ## Tech Stack
 
@@ -63,12 +68,13 @@ git clone https://github.com/strausmann/Label-Printer-Hub.git
 cd Label-Printer-Hub/examples
 cp .env.example .env
 # Required: PRINTER_HUB_SECRET_KEY (openssl rand -base64 32 | tr '+/' '-_')
-#           PRINTER_HUB_PUBLIC_URL (the address you open the hub at)
+#           PRINTER_HUB_PUBLIC_URL (the address you open the hub at; a local
+#           address such as http://localhost:8000 is fine)
 $EDITOR .env
 docker compose -f compose.standalone.yml up -d
 
 curl http://localhost:8000/healthz
-curl http://localhost:8000/api/info
+curl http://localhost:8000/api/v1/info
 # Open http://localhost:8000/ and sign in. A fresh install has no admin key:
 # either set PRINTER_HUB_BOOTSTRAP_ADMIN_KEY (one-time key, 32+ characters) or run
 docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
@@ -92,12 +98,36 @@ For the REST API alone, without the web UI, see [`examples/compose.backend-only.
 
 | Method | Path | Purpose | Body |
 |---|---|---|---|
-| `POST` | `/print` | Submit a print job | `PrintRequest` (see below) |
-| `GET` | `/jobs/{job_id}` | Poll job status (includes live SNMP block while printing) | — |
-| `POST` | `/jobs/{job_id}/resume` | Resume a job paused by tape mismatch (after the user changed the tape physically) | — |
-| `POST` | `/printer/resume` | Resume the printer queue after a recoverable error halted it (tape empty / cover open / offline) | — |
+| `POST` | `/api/v1/print` | Submit a print job | `PrintRequest` (see below) |
+| `GET` | `/api/v1/jobs/{job_id}` | Poll job status | — |
+| `POST` | `/api/v1/printer/resume` | Resume the printer queue after a recoverable error halted it (tape empty / cover open / offline) | — |
 | `GET` | `/healthz` | Liveness probe for orchestrators | — |
 | `GET` | `/readiness` | Readiness probe — deep check for reverse-proxy routing | — |
+
+### Moved API paths (1.5.0)
+
+Since 1.5.0 every API route lives under `/api/v1/`. There are no aliases and no redirects: update scripts, reverse-proxy rules (the webhook bypass in particular) and bookmarks.
+
+| Before | Now |
+|---|---|
+| `/api/admin/api-keys…` | `/api/v1/admin/api-keys…` |
+| `/api/printers…` (printers, calibration, capabilities) | `/api/v1/printers…` |
+| `/api/jobs…` | `/api/v1/jobs…` |
+| `/api/batches/{batch_id}` | `/api/v1/batches/{batch_id}` |
+| `/api/print/{printer_key}/batch`, `…/sheet`, `…/sheet/preview` | `/api/v1/print/{printer_key}/…` |
+| `/api/render/preview` | `/api/v1/render/preview` |
+| `/api/lookup/{app}/{entity_id}` | `/api/v1/lookup/{app}/{entity_id}` |
+| `/api/sheet-types…`, `/api/sheets…`, `/api/sheet-cells` | `/api/v1/sheet-types…`, `/api/v1/sheets…`, `/api/v1/sheet-cells` |
+| `/api/webhook/spoolman`, `/api/webhook/grocy` | `/api/v1/webhook/spoolman`, `/api/v1/webhook/grocy` |
+| `/api/info` | `/api/v1/info` |
+| `POST /print` | `POST /api/v1/print` |
+| `POST /printer/resume` | `POST /api/v1/printer/resume` |
+| `GET /jobs/{job_id}` | removed: it duplicated `GET /api/v1/jobs/{job_id}`, which reads the stored job and applies the per-key printer ACL |
+| `POST /jobs/{job_id}/resume` | removed: nothing produces a paused job any more (the tape-mismatch pause was removed with the layout engine) |
+
+Unchanged: `/healthz`, `/readiness`, `/openapi.json`, `/docs`, the label links `/loc/…`, `/asset/…`, `/spool/…`, `/product/…`, and `/jobs/{id}`: that path is no longer an API route; where the web app is mounted a browser `GET` returns the web app, and in API-only mode it is a plain 404.
+
+**Installed web app:** the service worker updates the app in the background and asks before switching. A client that has not accepted the update prompt yet keeps calling the old paths until the user accepts, so expect old-path 404s from such clients after the upgrade.
 
 ### Health Probes
 
@@ -114,39 +144,39 @@ Pangolin's `targets[0].healthcheck.path` can use `/readiness` for deep checks in
 
 See `docs/superpowers/specs/2026-05-17-phase-7b-foundation-design.md` for the full check list and rationale.
 
-### `POST /print` request body
+### `POST /api/v1/print` request body
 
 ```jsonc
 {
-  "template_id": "qr-only-12mm",         // id from app/seed/templates/<id>.yaml
-  // Exactly one of `lookup` or `data` is required.
-  "lookup":  { "app": "snipeit", "identifier": "123" },
+  // One of the ContentType values (app/schemas/content_type.py), e.g. "qr_two_lines".
+  "content_type": "qr_two_lines",
+  // Exactly one of `data` or `lookup` is required.
   "data":    { "title": "Asset 123",
                "primary_id": "ASSET-123",
                "qr_payload": "https://snipe.example/assets/123",
                "secondary": ["optional", "extra lines"] },
+  // "lookup": { "app": "snipeit", "identifier": "123" },
   "options": { "copies": 1,              // 1..10, default 1
                "auto_cut": true,
-               "high_resolution": false },
-  // Default "fail" → synchronous 409 + error_detail{expected_mm, loaded_mm}.
-  // "queue"        → 202 + job_id; job lands in PAUSED until the user POSTs
-  //                  /jobs/{id}/resume after physically swapping the tape.
-  "on_tape_mismatch": "fail"
+               "high_resolution": false }
 }
 ```
 
-### Synchronous error codes (`POST /print`)
+Unknown fields are rejected (`extra="forbid"`). The label is laid out for the loaded tape width.
+
+### Synchronous error codes (`POST /api/v1/print`)
 
 | HTTP | `error_code` | When |
 |---|---|---|
-| 404 | `template_not_found` | unknown `template_id` |
-| 409 | `tape_mismatch` | loaded tape ≠ template tape, `on_tape_mismatch="fail"` |
 | 409 | `tape_empty` | preflight detects no media |
+| 409 | `no_tape_loaded` | no tape cassette is loaded |
 | 409 | `printer_cover_open` | preflight detects cover open |
+| 409 | `printer_disabled` | the printer is disabled |
+| 409 | `unsupported_tape` | the loaded tape width is not supported by the layout engine |
+| 422 | `content_type_data_mismatch` | `data` lacks fields the `content_type` needs (`error_detail.missing_fields`) |
+| 422 | `integration_unknown_app` | `lookup.app` is not a configured integration |
 | 502 | `integration_lookup_failed` | integration plugin raised |
 | 503 | `printer_offline` | SNMP preflight could not reach the printer |
-
-`tape_mismatch` responses include `error_detail: {expected_mm, loaded_mm}` so the client can build a "swap the tape" dialog.
 
 ## Environment variables
 
@@ -155,7 +185,7 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 | Variable | Default | Purpose |
 |---|---|---|
 | **`PRINTER_HUB_SECRET_KEY`** | _required_ | Master key for secrets stored in the database (base64url of 32 random bytes; `openssl rand -base64 32 \| tr '+/' '-_'`) |
-| **`PRINTER_HUB_PUBLIC_URL`** | _required_ | The address people open the UI at; decides cookie security (`Secure` and `__Host-` prefix when `https`) and the allowed `Origin` |
+| **`PRINTER_HUB_PUBLIC_URL`** | _required_ | Any `http(s)` URL, local ones included (`http://localhost:8000`, `http://printer-hub:8000`, a LAN IP). Set it to the address people open the UI at if you use the browser UI; decides cookie security (`Secure` and `__Host-` prefix when `https`) and the allowed `Origin` |
 | `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` | _empty_ | One-time key (32+ characters) that signs you in while no admin key exists; empty disables it |
 | `PRINTER_HUB_DATABASE_URL` | `sqlite+aiosqlite:////data/printer-hub.db` | Database |
 | `PRINTER_HUB_SSO_TRUST_TOKEN` | _empty_ | Shared secret the proxy sends as `X-Pangolin-Token`; without it `Remote-User` is ignored |

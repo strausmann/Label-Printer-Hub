@@ -6,14 +6,14 @@ Why this exists (2026-08-14 security audit)
 Two REST endpoints shipped with NO auth dependency at all, while every
 sibling endpoint in the same router file required one:
 
-- ``GET /api/printers/{printer_id}`` (``printers.py::get_printer``) —
+- ``GET /api/v1/printers/{printer_id}`` (``printers.py::get_printer``) —
   ``list_printers``, ``get_printer_status``, ``get_printer_tape``,
   ``get_printer_queue``, ``pause_printer``, ``resume_printer`` and
   ``clear_printer_queue`` all required ``ReadAuthDep``/``PrintAuthDep``; the
   single-printer detail GET did not. It leaked full printer metadata
   (including the raw ``connection`` dict — host/port/SNMP config) to any
   caller that could reach the backend, with zero credentials.
-- ``POST /api/jobs/{job_id}/retry`` (``jobs.py::retry_job``) — clones a
+- ``POST /api/v1/jobs/{job_id}/retry`` (``jobs.py::retry_job``) — clones a
   terminal job into a fresh ``QUEUED`` job that the worker actually
   dispatches to the physical printer. ``list_jobs``, ``get_job`` and
   ``cancel_job`` in the same file all required ``read``/``print`` scope;
@@ -43,7 +43,8 @@ from __future__ import annotations
 from typing import Any
 
 import app.models  # noqa: F401 — registers all SQLModel tables with metadata
-from fastapi.routing import APIRoute
+
+from tests.helpers.routes import iter_api_routes
 
 # ---------------------------------------------------------------------------
 # Allowlist: routes that are deliberately reachable without an app-level
@@ -69,7 +70,7 @@ _PUBLIC_BY_DESIGN: dict[tuple[str, str], str] = {
     ("GET", "/product/{entity_id}"): "QR landing page — see qr.py module docstring",
     ("POST", "/api/v1/auth/session"): "the sign-in itself: exchanges an API key or the "
     "bootstrap key for a session (auth_session.py); rate limited per client IP",
-    ("GET", "/api/info"): "the web shell and sign-in screen need version, language and "
+    ("GET", "/api/v1/info"): "the web shell and sign-in screen need version, language and "
     "auth hints before sign-in (info.py); returns no secrets, only booleans and build info",
     ("GET", "/api/v1/auth/session"): "reports whether the caller is signed in and mints a "
     "session from trusted SSO headers (auth_session.py); returns no data without a session",
@@ -80,23 +81,6 @@ _PUBLIC_BY_DESIGN: dict[tuple[str, str], str] = {
 # scope_deps.py) and the webhook key dependency are recognised regardless of
 # how they're wired (function param vs. router-level `dependencies=[...]`).
 _RECOGNISED_AUTH_MARKERS = ("require_scope", "require_webhook_key")
-
-
-def _iter_api_routes(routes: list[Any]) -> list[APIRoute]:
-    """Recursively flatten FastAPI's route tree into concrete APIRoute objects.
-
-    Included routers show up as opaque wrapper objects (not the routes
-    themselves) rather than being flattened into ``app.routes`` directly —
-    each one exposes the original ``APIRouter`` via ``.original_router``.
-    """
-    out: list[APIRoute] = []
-    for route in routes:
-        original_router = getattr(route, "original_router", None)
-        if original_router is not None:
-            out.extend(_iter_api_routes(original_router.routes))
-        elif isinstance(route, APIRoute):
-            out.append(route)
-    return out
 
 
 def _collect_dependency_qualnames(dependant: Any) -> set[str]:
@@ -128,11 +112,11 @@ def test_every_route_has_recognised_auth_or_is_explicitly_allowlisted() -> None:
     """Fail the build the moment a route ships with no recognised auth dependency.
 
     This is the guardrail: it re-discovers the exact class of bug this file's
-    module docstring describes (GET /api/printers/{id}, POST
-    /api/jobs/{id}/retry) and keeps rediscovering it for every future route.
+    module docstring describes (GET /api/v1/printers/{id}, POST
+    /api/v1/jobs/{id}/retry) and keeps rediscovering it for every future route.
     """
     app = _build_real_app()
-    routes = _iter_api_routes(app.routes)
+    routes = iter_api_routes(app.routes)
     assert routes, "expected at least one APIRoute — route discovery is broken"
 
     unguarded: list[str] = []
@@ -168,7 +152,7 @@ def test_allowlist_entries_still_exist_as_routes() -> None:
     growing one that silently gains them — this keeps the allowlist honest.
     """
     app = _build_real_app()
-    routes = _iter_api_routes(app.routes)
+    routes = iter_api_routes(app.routes)
     live_keys = {(method, route.path) for route in routes for method in route.methods or []}
 
     stale = [key for key in _PUBLIC_BY_DESIGN if key not in live_keys]

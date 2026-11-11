@@ -38,13 +38,13 @@ afterEach(() => vi.unstubAllGlobals());
 
 function setup(routes: Record<string, unknown> = {}) {
   return mockApi({
-    "GET /api/sheets": [],
-    "GET /api/sheet-types": TWO_TYPES,
-    "GET /api/printers": [PRINTER_A, PAGE_PRINTER],
-    [`GET /api/printers/${PAGE_PRINTER.id}/capabilities`]: PAGE_CAPABILITIES,
-    "GET /api/sheets/next-code": { code: "L4736-0004", hint: "probable" },
-    "GET /api/sheets/margin-check": MARGIN_OK,
-    "POST /api/sheets": CREATED,
+    "GET /api/v1/sheets": [],
+    "GET /api/v1/sheet-types": TWO_TYPES,
+    "GET /api/v1/printers": [PRINTER_A, PAGE_PRINTER],
+    [`GET /api/v1/printers/${PAGE_PRINTER.id}/capabilities`]: PAGE_CAPABILITIES,
+    "GET /api/v1/sheets/next-code": { code: "L4736-0004", hint: "probable" },
+    "GET /api/v1/sheets/margin-check": MARGIN_OK,
+    "POST /api/v1/sheets": CREATED,
     ...routes,
   });
 }
@@ -62,7 +62,7 @@ async function pick(label: string | RegExp, option: string | RegExp) {
 
 const chooseType = () => pick(/Sheet type/, /\(L4736REV\)/);
 const choosePrinter = () => pick(/Printer/, "Office laser");
-const posts = (calls: Call[]) => calls.filter((c) => c.method === "POST" && c.path === "/api/sheets");
+const posts = (calls: Call[]) => calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sheets");
 const body = (call: Call) => JSON.parse(call.body!) as Record<string, unknown>;
 const cell = (n: number) => screen.getByRole("gridcell", { name: new RegExp(`^Cell ${n},`) });
 
@@ -113,7 +113,7 @@ describe("the add-a-sheet dialog", () => {
 
   it("preselects the margin, and it stays enabled and is sent as margin even when this printer cannot print the ID", async () => {
     const { calls } = setup({
-      "GET /api/sheets/margin-check": { ...MARGIN_OK, band: null, printable: false, qr: false, reason: "no band wide enough" },
+      "GET /api/v1/sheets/margin-check": { ...MARGIN_OK, band: null, printable: false, qr: false, reason: "no band wide enough" },
     });
     await openDialog();
     await chooseType();
@@ -135,10 +135,10 @@ describe("the add-a-sheet dialog", () => {
     expect(screen.queryByText(/margin, with QR/)).toBeNull(); // no printer, nothing to check
     await choosePrinter();
     expect(await screen.findByText("The ID will be printed in the top margin, with QR.")).toBeVisible();
-    expect(first.calls.some((c) => c.path === "/api/sheets/margin-check")).toBe(true);
+    expect(first.calls.some((c) => c.path === "/api/v1/sheets/margin-check")).toBe(true);
     view.unmount();
 
-    setup({ "GET /api/sheets/margin-check": { ...MARGIN_OK, band: "left", qr: false } });
+    setup({ "GET /api/v1/sheets/margin-check": { ...MARGIN_OK, band: "left", qr: false } });
     await openDialog();
     await chooseType();
     await choosePrinter();
@@ -151,7 +151,7 @@ describe("the add-a-sheet dialog", () => {
     await chooseType();
     await choosePrinter();
     await screen.findByText("The ID will be printed in the top margin, with QR.");
-    const checks = () => calls.filter((c) => c.path === "/api/sheets/margin-check").map((c) => new URLSearchParams(c.search));
+    const checks = () => calls.filter((c) => c.path === "/api/v1/sheets/margin-check").map((c) => new URLSearchParams(c.search));
     expect(checks().at(-1)!.get("tray")).toBe("main"); // the default tray
     expect(checks().at(-1)!.get("printer")).toBe(PAGE_PRINTER.id);
     expect(checks().at(-1)!.get("type")).toBe("L4736REV");
@@ -162,7 +162,7 @@ describe("the add-a-sheet dialog", () => {
 
   it("offers only enabled page printers, never a tape printer", async () => {
     setup({
-      "GET /api/printers": [PRINTER_A, PAGE_PRINTER, { ...PAGE_PRINTER, id: "55555555-5555-4555-8555-555555555555", name: "Off laser", enabled: false }],
+      "GET /api/v1/printers": [PRINTER_A, PAGE_PRINTER, { ...PAGE_PRINTER, id: "55555555-5555-4555-8555-555555555555", name: "Off laser", enabled: false }],
     });
     await openDialog();
     await chooseType();
@@ -173,7 +173,7 @@ describe("the add-a-sheet dialog", () => {
 
   it("the first free cell needs a printer and a tray, and the button then prints the ID label", async () => {
     const { calls } = setup({
-      "POST /api/sheets": { ...CREATED, id_placement: "cell", job_id: "66666666-6666-4666-8666-666666666666" },
+      "POST /api/v1/sheets": { ...CREATED, id_placement: "cell", job_id: "66666666-6666-4666-8666-666666666666" },
     });
     await openDialog();
     await chooseType();
@@ -199,7 +199,7 @@ describe("the add-a-sheet dialog", () => {
   });
 
   it("a printer that reports no trays cannot print the ID label from here", async () => {
-    setup({ [`GET /api/printers/${PAGE_PRINTER.id}/capabilities`]: { ...PAGE_CAPABILITIES, trays: [] } });
+    setup({ [`GET /api/v1/printers/${PAGE_PRINTER.id}/capabilities`]: { ...PAGE_CAPABILITIES, trays: [] } });
     await openDialog();
     await chooseType();
     await userEvent.click(screen.getByRole("radio", { name: /In the first free cell/ }));
@@ -210,7 +210,7 @@ describe("the add-a-sheet dialog", () => {
   });
 
   it("shows the probable code, and the real code from the answer when it differs", async () => {
-    setup({ "POST /api/sheets": { ...CREATED, code: "L4736-0005" } });
+    setup({ "POST /api/v1/sheets": { ...CREATED, code: "L4736-0005" } });
     await openDialog();
     await chooseType();
     expect(await screen.findByText((_, el) => el?.tagName === "P" && el.textContent === "It will probably become L4736-0004.")).toBeVisible();
@@ -247,7 +247,7 @@ describe("the add-a-sheet dialog", () => {
   });
 
   it("shows why it failed, in words, and keeps what was entered", async () => {
-    setup({ "POST /api/sheets": () => respond(409, apiErrorBody("sheet_type_archived", "archived")) });
+    setup({ "POST /api/v1/sheets": () => respond(409, apiErrorBody("sheet_type_archived", "archived")) });
     await openDialog();
     await chooseType();
     await userEvent.click(cell(1));
@@ -258,7 +258,7 @@ describe("the add-a-sheet dialog", () => {
 
   it("when only the ID label failed the sheet exists, and the dialog says so with a link", async () => {
     setup({
-      "POST /api/sheets": () =>
+      "POST /api/v1/sheets": () =>
         respond(500, apiErrorBody("sheet_id_job_failed", "The sheet was created, but its ID label could not be queued.", { sheet_code: "L4736-0004" })),
     });
     await openDialog();
@@ -273,7 +273,7 @@ describe("the add-a-sheet dialog", () => {
 
   it("a partly queued ID label is said in words, the marks stay and the form stays open", async () => {
     setup({
-      "POST /api/sheets": () =>
+      "POST /api/v1/sheets": () =>
         respond(502, apiErrorBody("print_interrupted", "The print stopped.", { batch_id: "b1", job_ids: ["66666666-6666-4666-8666-666666666666"] })),
     });
     await openDialog();
@@ -291,7 +291,7 @@ describe("the add-a-sheet dialog", () => {
 
   it("a network failure while adding with an ID label says the server cannot be reached and keeps the form", async () => {
     setup({
-      "POST /api/sheets": () => {
+      "POST /api/v1/sheets": () => {
         throw new TypeError("Failed to fetch");
       },
     });
@@ -309,7 +309,7 @@ describe("the add-a-sheet dialog", () => {
   });
 
   it("a failed capabilities request is not reported as a printer without trays", async () => {
-    const { calls } = setup({ [`GET /api/printers/${PAGE_PRINTER.id}/capabilities`]: () => respond(403, { detail: "no" }) });
+    const { calls } = setup({ [`GET /api/v1/printers/${PAGE_PRINTER.id}/capabilities`]: () => respond(403, { detail: "no" }) });
     await openDialog();
     await chooseType();
     await userEvent.click(screen.getByRole("radio", { name: /In the first free cell/ }));
@@ -318,7 +318,7 @@ describe("the add-a-sheet dialog", () => {
     expect(screen.queryByText(/reports no trays/)).toBeNull();
     expect(screen.getByRole("button", { name: "Add and print ID label" })).toBeDisabled();
     // Without the trays the margin check would run for a tray nobody chose: it waits.
-    expect(calls.some((c) => c.path === "/api/sheets/margin-check")).toBe(false);
+    expect(calls.some((c) => c.path === "/api/v1/sheets/margin-check")).toBe(false);
   });
 
   it("names types by their label with the key, in the dialog's list and on the trigger with the full text as a tooltip", async () => {

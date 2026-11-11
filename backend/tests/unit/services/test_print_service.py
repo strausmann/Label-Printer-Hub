@@ -7,7 +7,7 @@ tests with new LayoutEngine-based tests.
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from app.printer_backends.exceptions import (
@@ -234,6 +234,29 @@ class TestSubmitBatchJobCopies:
         assert len(set(kwargs["job_ids"])) == 3, "all 3 copy jobs must be unique"
         # 1 master_id pro Request (Hangar-API): 2 Requests → 2 master ids.
         assert len(master_ids) == 2
+
+    @pytest.mark.asyncio
+    async def test_labels_past_the_first_sub_job_await_a_confirmation(self, make_service) -> None:
+        """#277: the run id goes to the queue; label 51 on waits for a confirmation."""
+        svc, queue, store, _backend = make_service(loaded_tape_mm=12)
+        queue.enqueue_batch = AsyncMock()
+        run_id = uuid4()
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+            options=PrintOptions(copies=10),
+        )
+        labels: list[UUID] = []
+        masters = await svc.submit_batch_job(
+            [request] * 6, half_cut=False, run_id=run_id, label_ids=labels
+        )
+        kwargs = queue.enqueue_batch.await_args.kwargs
+        assert kwargs["run_id"] == run_id
+        assert labels == kwargs["job_ids"] and len(labels) == 60 and len(masters) == 6
+        rows = [c.args[0] for c in store.save_queued.await_args_list]
+        waits = [r.payload["tape_run"]["awaits_confirmation"] for r in rows]
+        assert waits == [False] * 50 + [True] * 10
+        assert {r.payload["tape_run"]["run_id"] for r in rows} == {str(run_id)}
 
 
 # ---------------------------------------------------------------------------

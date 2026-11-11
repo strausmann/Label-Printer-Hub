@@ -47,16 +47,16 @@ const TYPE_KEY = "avery-zweckform-l4736rev";
 
 /** The name the UI gives the sheet type: "<vendor> <first product code>". */
 async function typeName(page: Page): Promise<string> {
-  const type = (await (await page.request.get(`/api/sheet-types/${TYPE_KEY}`)).json()) as { vendor: string | null; product_codes: string[] };
+  const type = (await (await page.request.get(`/api/v1/sheet-types/${TYPE_KEY}`)).json()) as { vendor: string | null; product_codes: string[] };
   return type.vendor && type.product_codes[0] ? `${type.vendor} ${type.product_codes[0]}` : (type.product_codes[0] ?? TYPE_KEY);
 }
 
 /** A calibration page job on the fake page printer: it needs no sheet and no cells. */
 async function startPageJob(page: Page): Promise<string> {
-  const printers = (await (await page.request.get("/api/printers")).json()) as Array<{ id: string; name: string }>;
+  const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string }>;
   const printer = printers.find((p) => p.name === "Office page printer")!;
   const csrf = await page.evaluate(async () => ((await (await fetch("/api/v1/auth/session")).json()) as { csrf_token: string }).csrf_token);
-  const response = await page.request.post(`/api/printers/${printer.id}/calibration/main-tray/page`, {
+  const response = await page.request.post(`/api/v1/printers/${printer.id}/calibration/main-tray/page`, {
     data: { type: TYPE_KEY },
     headers: { "X-CSRF-Token": csrf },
   });
@@ -130,10 +130,10 @@ test.describe("page job worst case", () => {
   ] as const) {
     for (const scheme of ["light", "dark"] as const) {
       test(`an interrupted page job with 120 cells, ${lang} at ${size.width} px, ${scheme}`, async ({ signedInPage: page }) => {
-        const printers = (await (await page.request.get("/api/printers")).json()) as Array<{ id: string; name: string }>;
+        const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string }>;
         const printerId = printers.find((p) => p.name === "Office page printer")!.id;
         const now = new Date().toISOString();
-        await page.route(`**/api/jobs/${WORST_ID}`, (route) =>
+        await page.route(`**/api/v1/jobs/${WORST_ID}`, (route) =>
           route.fulfill({
             json: {
               id: WORST_ID,
@@ -158,7 +158,7 @@ test.describe("page job worst case", () => {
             },
           }),
         );
-        await page.route(`**/api/sheets/${WORST_CODE}`, (route) =>
+        await page.route(`**/api/v1/sheets/${WORST_CODE}`, (route) =>
           route.fulfill({
             json: {
               code: WORST_CODE,

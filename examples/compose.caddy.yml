@@ -17,8 +17,13 @@ services:
       - "${BACKEND_PORT:-8000}"
     environment:
       - PORT=${BACKEND_PORT:-8000}
-      # Reachable only through the proxy network, so its forwarded headers are accepted.
-      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-*}
+      # Trust X-Forwarded-For from exactly one peer: the proxy's fixed address (#160). Behind the proxy every
+      # client otherwise looks like the proxy and shares one sign-in rate-limit bucket. Never "*" or a
+      # subnet: any other container on the network could then forge the client address.
+      # Pin the proxy's address in the proxy's own stack (ipv4_address on this network) and set PROXY_IP.
+      # uvicorn takes the right-most X-Forwarded-For entry that is not trusted. Caddy replaces any client-supplied X-Forwarded-For with the real peer address by default
+      # (reverse_proxy trusted_proxies unset), so the right-most entry is always the real client.
+      - "FORWARDED_ALLOW_IPS=${PROXY_IP:?set PROXY_IP to the fixed address of your reverse proxy on this network - e.g. 192.0.2.10}"
       - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
       - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. https://printerhub.example.invalid}"
       - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}

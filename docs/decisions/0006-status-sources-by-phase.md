@@ -1,6 +1,6 @@
 # 0006 — Status sources by phase (ESC i S / passive notifications / SNMP)
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-11-10, see "Amendment" at the end)
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
@@ -81,3 +81,7 @@ If a future QL firmware version starts answering standalone `ESC i S` (or a cont
 - Brother Enterprise OID 2435 — verified against PT-P750W and QL-820NWBc
 - Issue [#14](https://github.com/strausmann/label-printer-hub/issues/14) — SSE EventBus
 - Related: ADR 0004 (plugin architecture surfaces these methods), ADR 0005 (queue worker uses passive monitoring during print)
+
+## Amendment — 2026-11-10 (#252)
+
+A live read-only spike (#229) on a PT-P750W and a QL-820NWB found that `ESC i S` on TCP/9100 gets no answer within 8 seconds over the network, with or without the invalidate and initialise prefix. Network status therefore comes from SNMP; `ESC i S` is not a usable status source over TCP/9100 for these families. SNMP reports the tape width but no tape colour (the media colour entry holds a generic value, not a tape colour), so both families ask the person when the roll changes. The `ESC i S` rows in the tables above describe the original plan, not what the hub does today; the decision text is left as written.

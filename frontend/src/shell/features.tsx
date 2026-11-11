@@ -27,7 +27,7 @@ export interface NavEntry {
   id: string;
   to: NavPath;
   icon: ReactNode;
-  /** Hidden until `GET /api/info` reports this feature as shipped (spec 5.3). */
+  /** Hidden until `GET /api/v1/info` reports this feature as shipped (spec 5.3). */
   feature?: string;
 }
 

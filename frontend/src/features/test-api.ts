@@ -31,8 +31,14 @@ export const status = (printerId: string, over: Record<string, unknown> = {}) =>
   error_state: null,
   last_error: null,
   last_probe_age_s: 4,
+  stale: false,
+  polled: true,
+  identity_mismatch: false,
+  roll_prompt: false,
   note: null,
-  tape_loaded: "12mm laminated blue/white",
+  tape_loaded: "12mm laminated",
+  tape_width_mm: 12,
+  tape_colour: "blue" as const,
   ...over,
 });
 
@@ -184,7 +190,7 @@ export const PAGE_TRAYS: Schemas["TrayStatusRead"][] = [
   { key: "bypass", label: "Bypass", enabled: true, is_default: false, load_hint: null, media: null },
 ];
 
-/** `GET /api/printers/{id}/status` of a page printer. */
+/** `GET /api/v1/printers/{id}/status` of a page printer. */
 export const pageStatus = (printerId: string, over: Partial<Schemas["PrinterStatus"]> = {}): Schemas["PrinterStatus"] => ({
   printer_id: printerId,
   online: true,
@@ -198,6 +204,10 @@ export const pageStatus = (printerId: string, over: Partial<Schemas["PrinterStat
   error_state: null,
   last_error: null,
   last_probe_age_s: 3,
+  stale: false,
+  polled: true,
+  identity_mismatch: false,
+  roll_prompt: false,
   note: null,
   tape_loaded: null,
   ...over,
@@ -205,6 +215,7 @@ export const pageStatus = (printerId: string, over: Partial<Schemas["PrinterStat
 
 export const PAGE_CAPABILITIES: Schemas["Capabilities"] = {
   kind: "page",
+  stale: false,
   captured_at: "2026-11-04T10:00:00Z",
   document_formats: ["application/pdf", "image/png"],
   media: {
@@ -256,6 +267,7 @@ export const SHEET_TYPE: Schemas["SheetTypeRead"] = {
   sheets_in_use: 1,
   source_name: null,
   source_url: null,
+  source_url_shipped: false,
 };
 
 /** A sheet with the given cells in the given state; everything else is free. */
@@ -318,7 +330,7 @@ export function sheetSummary(code = "L4736-0001", over: Partial<Schemas["SheetSu
   };
 }
 
-/** `POST /api/print/{printer}/sheet/preview`: one page with three new labels. */
+/** `POST /api/v1/print/{printer}/sheet/preview`: one page with three new labels. */
 export const sheetPreview = (over: Partial<Schemas["SheetPreview"]> = {}): Schemas["SheetPreview"] => ({
   pages: [
     {
@@ -348,6 +360,8 @@ export const sheetPreview = (over: Partial<Schemas["SheetPreview"]> = {}): Schem
   free_after: [7, 8, 9],
   reprint_hints: [],
   expected_cells: [{ sheet: "L4736-0001", cells: [4, 5, 6], id_cell: null }],
+  placed: 3,
+  remaining: 0,
   ...over,
 });
 

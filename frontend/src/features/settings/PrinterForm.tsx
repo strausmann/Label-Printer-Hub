@@ -2,6 +2,8 @@ import { useLingui } from "@lingui/react/macro";
 import { useState } from "react";
 import { Button } from "react-aria-components";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
+import { LayoutPicker } from "../layout/LayoutPicker";
+import { layoutDefaultFor, QL_WIDE_MM, type LayoutChoice } from "../layout/ql";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { usePrinterAdmin, type AdminPrinter, type PrinterCreate } from "./api";
 import { SelectField, SwitchField, TextInput } from "./controls";
@@ -26,8 +28,8 @@ export function PrinterForm({
   onDone,
 }: {
   printer: AdminPrinter | null;
-  /** Called when the form closes. `restartNote` is set when what was saved only applies after a restart (page printers). */
-  onDone: (result?: { restartNote: boolean }) => void;
+  /** Called when the form closes. What was saved applies at once; the hub needs no restart. */
+  onDone: () => void;
 }) {
   const { t } = useLingui();
   const errorText = useErrorText();
@@ -45,10 +47,15 @@ export function PrinterForm({
   const [port, setPort] = useState(String(conn.port ?? 9100));
   const [timeout, setTimeoutValue] = useState(String(numberIn(printer?.queue, "timeout_s", 30)));
   const [halfCut, setHalfCut] = useState(Boolean(printer?.cut_defaults?.half_cut));
+  const storedLayout = layoutDefaultFor(printer?.layout_defaults, QL_WIDE_MM);
+  // The 62 mm default is only sent when it was touched: saving the form must not pin the tape default.
+  const [layoutDraft, setLayoutDraft] = useState<LayoutChoice | null>(null);
+  const layoutShown = layoutDraft ?? storedLayout;
   const ipp = useIppDraft(printer);
   const [formError, setFormError] = useState<string | null>(null);
 
   const isIpp = backend === "ipp";
+  const isQl = backend === "brother_ql";
   const pending = admin.create.isPending || admin.update.isPending;
   const serverError = admin.create.error ?? admin.update.error;
 
@@ -66,10 +73,9 @@ export function PrinterForm({
     const queue = { timeout_s: timeoutNumber };
     const trays = trayPayload(ipp.trays);
     if (printer) {
-      const restartNote = ipp.connectionChanged || ipp.enabledChanged;
-      admin.update.mutate({ slug: printer.slug, body: { name: name.trim(), connection, queue, enabled: ipp.enabled, trays } }, { onSuccess: () => onDone({ restartNote }) });
+      admin.update.mutate({ slug: printer.slug, body: { name: name.trim(), connection, queue, enabled: ipp.enabled, trays } }, { onSuccess: () => onDone() });
     } else {
-      admin.create.mutate({ name: name.trim(), slug, backend: "ipp", connection, queue, enabled: ipp.enabled, trays }, { onSuccess: () => onDone({ restartNote: true }) });
+      admin.create.mutate({ name: name.trim(), slug, backend: "ipp", connection, queue, enabled: ipp.enabled, trays }, { onSuccess: () => onDone() });
     }
   }
 
@@ -85,10 +91,15 @@ export function PrinterForm({
     const connection = { ...(conn as object), host: host.trim(), port: portNumber } as PrinterCreate["connection"];
     const queue = { timeout_s: timeoutNumber };
     const cut_defaults = { half_cut: halfCut };
+    // PUT replaces the whole map: the other widths stay as they are stored.
+    const layout_defaults =
+      isQl && layoutDraft
+        ? { ...(printer?.layout_defaults ?? {}), [String(QL_WIDE_MM)]: layoutDraft.orientation === "across" ? layoutDraft : { orientation: layoutDraft.orientation } }
+        : undefined;
     if (printer) {
-      admin.update.mutate({ slug: printer.slug, body: { name: name.trim(), connection, queue, cut_defaults } }, { onSuccess: () => onDone() });
+      admin.update.mutate({ slug: printer.slug, body: { name: name.trim(), connection, queue, cut_defaults, layout_defaults } }, { onSuccess: () => onDone() });
     } else {
-      admin.create.mutate({ name: name.trim(), slug, model, backend: backend as PrinterCreate["backend"], connection, queue, cut_defaults, enabled: true }, { onSuccess: () => onDone() });
+      admin.create.mutate({ name: name.trim(), slug, model, backend: backend as PrinterCreate["backend"], connection, queue, cut_defaults, layout_defaults, enabled: true }, { onSuccess: () => onDone() });
     }
   }
 
@@ -140,7 +151,8 @@ export function PrinterForm({
         </div>
       )}
       <TextInput label={t`Queue timeout (seconds)`} value={timeout} onChange={setTimeoutValue} inputMode="numeric" />
-      {isIpp ? null : (
+      {/* A QL printer always cuts fully; the half cut is a P-touch feature. */}
+      {isIpp || isQl ? null : (
         <SwitchField
           label={t`Half cut by default`}
           isSelected={halfCut}
@@ -148,6 +160,18 @@ export function PrinterForm({
           description={t`Cuts the tape but leaves the backing, so a strip of labels stays together. A print can still override it.`}
         />
       )}
+      {isQl ? (
+        <fieldset className="flex flex-col gap-3">
+          <legend className="font-bold">{t`Label layout on 62 mm tape`}</legend>
+          <p className="text-small text-ink-2">{t`What a print uses when it names no layout. The print dialog starts from this and can still change it.`}</p>
+          <LayoutPicker
+            orientation={layoutShown.orientation}
+            preset={layoutShown.preset}
+            onOrientation={(orientation) => setLayoutDraft({ ...layoutShown, orientation })}
+            onPreset={(preset) => setLayoutDraft({ ...layoutShown, preset })}
+          />
+        </fieldset>
+      ) : null}
       <div className="flex flex-wrap gap-3">
         <Button type="submit" isDisabled={pending || (isIpp && !ipp.verified)} className={PRIMARY_BUTTON}>
           {editing ? t`Save printer` : t`Create printer`}

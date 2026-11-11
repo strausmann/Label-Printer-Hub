@@ -1,18 +1,23 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { useFeature, useSession } from "../../app/session";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
+import { TEST_LABEL_KEY } from "../jobs/model";
 import { useCalibration, type CalibrationRead } from "../calibration/api";
-import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, type Printer, type PrinterStatus, type QueueJob } from "./api";
+import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, useTestPrint, type Printer, type PrinterStatus, type QueueJob } from "./api";
+import { IdentityMismatchBanner, SettledNotice, useIdentityKindLabel } from "./IdentityMismatchBanner";
 import { PauseReason } from "./PauseReason";
-import { describePrinter, isPagePrinter, useJobStateBadge, useKindLabel } from "./model";
+import { formatAge } from "./age";
+import { describePrinter, isPagePrinter, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, ReasonLine } from "./PageStatus";
+import { TestPrintButton, TestPrintFeedback } from "./TestPrintButton";
 import { PauseResumeButton } from "./PauseResumeButton";
+import { RollColourEdit, RollColourPrompt } from "./RollColourPrompt";
 import { TapeSwatch } from "./TapeSwatch";
 
 const route = getRouteApi("/printers/$printerId");
@@ -37,7 +42,7 @@ export function PrinterPage() {
 }
 
 function PrinterDetail({ printer }: { printer: Printer }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const kinds = useKindLabel();
   const status = usePrinterStatus(printer.id);
   const queue = useQueue(printer.id);
@@ -47,10 +52,20 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const page = isPagePrinter(printer, status.data);
   // The union is wider than what the server sends: an IPP printer's address is left out for keys below admin.
   const connection: Record<string, unknown> = printer.connection;
-  const unanswered = page && noAnswerYet(status.data);
+  const unknown = statusIsUnknown(status.data);
+  const unanswered = page && !unknown && noAnswerYet(status.data);
   // A page printer that never answered has no reading to be "last updated".
   const age = unanswered ? undefined : status.data?.last_probe_age_s;
+  const ageWord = typeof age === "number" ? formatAge(age, i18n.locale) : "";
   const ahead = status.data?.jobs_ahead ?? 0;
+  // Only a key that may write is asked; a status nobody refreshes says nothing about the roll.
+  const session = useSession();
+  const admin = session.scope === "admin";
+  const identityKind = useIdentityKindLabel();
+  const [settledNotice, setSettledNotice] = useState(false);
+  const canAskColour = (session.scope === "print" || session.scope === "admin") && !page && !unknown;
+  const testPrint = useTestPrint(printer.id);
+  const colourTrigger = useRef<HTMLButtonElement | null>(null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -67,8 +82,16 @@ function PrinterDetail({ printer }: { printer: Printer }) {
             </p>
           )}
         </div>
-        <PauseResumeButton printer={printer} />
+        <div className="flex min-w-0 max-w-full flex-wrap items-start gap-2">
+          <TestPrintButton printer={printer} status={status.data} mutation={testPrint} />
+          <PauseResumeButton printer={printer} />
+        </div>
       </header>
+      <TestPrintFeedback mutation={testPrint} />
+      {status.data?.identity_mismatch === true && (
+        <IdentityMismatchBanner printer={printer} onSettled={() => setSettledNotice(true)} />
+      )}
+      {settledNotice && status.data?.identity_mismatch !== true && <SettledNotice />}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-4">
@@ -77,24 +100,42 @@ function PrinterDetail({ printer }: { printer: Printer }) {
               <section aria-labelledby="supplies-h" className={PANEL}>
                 <h2 id="supplies-h" className={SECTION_HEADING}>{t`Supplies`}</h2>
                 <div className="mt-3">
-                  {unanswered ? <span className="text-ink-2">{t`No answer yet`}</span> : <MarkerList markers={status.data?.markers} />}
+                  {unknown ? (
+                    <span className="text-ink-2">{t`Supplies not known`}</span>
+                  ) : unanswered ? (
+                    <span className="text-ink-2">{t`No answer yet`}</span>
+                  ) : (
+                    <MarkerList markers={status.data?.markers} />
+                  )}
                 </div>
                 {typeof age === "number" && (
-                  <p className="mt-2 text-small text-ink-2">{t`Last status ${age} s ago`}</p>
+                  <p className="mt-2 text-small text-ink-2">{t`Last status ${ageWord}`}</p>
                 )}
               </section>
               <TraysSection trays={status.data?.trays} unanswered={unanswered} />
             </>
           ) : (
+            <>
+            {canAskColour && <RollColourPrompt printer={printer} status={status.data} onDone={() => queueMicrotask(() => colourTrigger.current?.focus())} />}
             <section aria-labelledby="material-h" className={PANEL}>
               <h2 id="material-h" className={SECTION_HEADING}>{t`Material`}</h2>
               <p className="mt-3">
-                <TapeSwatch tapeLoaded={status.data?.tape_loaded} probed={status.data?.captured_at != null} />
+                {unknown ? (
+                  <span className="text-ink-2">{t`Tape not known`}</span>
+                ) : (
+                  <TapeSwatch widthMm={tapeWidthOf(status.data)} colour={status.data?.tape_colour} probed={status.data?.captured_at != null} />
+                )}
               </p>
+              {canAskColour && tapeWidthOf(status.data) !== null && (
+                <div className="mt-3">
+                  <RollColourEdit printer={printer} status={status.data} triggerRef={colourTrigger} />
+                </div>
+              )}
               {typeof age === "number" && (
-                <p className="mt-2 text-small text-ink-2">{t`Last status ${age} s ago`}</p>
+                <p className="mt-2 text-small text-ink-2">{t`Last status ${ageWord}`}</p>
               )}
             </section>
+            </>
           )}
           <QueueSection printer={printer} jobs={queue.data} loading={queue.isPending} failed={queue.isError} />
         </div>
@@ -119,7 +160,12 @@ function PrinterDetail({ printer }: { printer: Printer }) {
                   <Row label={t`Port`} value={textOf(connection.port)} mono />
                 </>
               )}
+              {admin && printer.hardware_id && <Row label={identityKind(printer.hardware_id_kind)} value={printer.hardware_id} mono />}
             </dl>
+            {/* Only an admin is told: the identity is hidden from every other key, so its absence says nothing to them. */}
+            {admin && !printer.hardware_id && (
+              <p className="mt-3 text-small text-ink-2">{t`No hardware identity — device swaps are not detected`}</p>
+            )}
           </section>
           {calibration && (
             <section aria-labelledby="calibration-h" className={PANEL}>
@@ -271,7 +317,7 @@ function QueueSection({
       {jobs && jobs.length > 0 && (
         <ul className="mt-3 flex flex-col gap-2">
           {jobs.map((job) => {
-            const label = job.template_key ?? t`Label`;
+            const label = job.template_key === TEST_LABEL_KEY ? t`Test label` : (job.template_key ?? t`Label`);
             const state = stateOf(job.state);
             return (
               <li key={job.id} className="flex flex-wrap items-center justify-between gap-3 rounded-r2 bg-sunken px-3 py-2">

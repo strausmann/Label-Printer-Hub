@@ -13,7 +13,7 @@ const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => loca
 
 /** The cart holds `copies` Grocy labels and the page printer is the chosen one; then the cart page opens. */
 async function openCart(page: Page, path: string, copies: number) {
-  const printers = (await (await page.request.get("/api/printers")).json()) as Array<{ id: string; name: string }>;
+  const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string }>;
   const printerId = printers.find((p) => p.name === "Office page printer")!.id;
   await page.goto("/");
   await page.evaluate(
@@ -28,10 +28,10 @@ async function openCart(page: Page, path: string, copies: number) {
   await page.goto(path);
 }
 
-const sheetUsed = async (page: Page, code: string) => ((await (await page.request.get(`/api/sheets/${code}`)).json()) as { used: number }).used;
+const sheetUsed = async (page: Page, code: string) => ((await (await page.request.get(`/api/v1/sheets/${code}`)).json()) as { used: number }).used;
 /** Cells a completed Grocy job wrote: a retry of this group prints more, so counts are taken against this. */
 const grocyCells = async (page: Page, code: string) =>
-  ((await (await page.request.get(`/api/sheets/${code}`)).json()) as { cells: Array<{ source: string }> }).cells.filter((c) => c.source === "grocy").length;
+  ((await (await page.request.get(`/api/v1/sheets/${code}`)).json()) as { cells: Array<{ source: string }> }).cells.filter((c) => c.source === "grocy").length;
 
 // One sign-in for the whole file: the hub limits sign-ins per minute.
 test.describe.serial("print onto a sheet", () => {
@@ -59,7 +59,8 @@ test.describe.serial("print onto a sheet", () => {
 
     await openCart(page, `/cart?sheet=${PARTLY_USED}`, 9);
     await expect(page.getByRole("heading", { level: 2, name: "Print onto a sheet" })).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "Sheet" })).toHaveValue(PARTLY_USED);
+    // exact: Playwright matches names by substring, and "Sheet type" is a combobox here too.
+    await expect(page.getByRole("combobox", { name: "Sheet", exact: true })).toHaveValue(PARTLY_USED);
     await expect(page.getByText("9 printed now")).toBeVisible({ timeout: 30_000 });
     expect(await noSideScroll(page)).toBe(true);
 
@@ -96,31 +97,43 @@ test.describe.serial("print onto a sheet", () => {
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem("lph.cart") ?? "[]").length)).toBe(1);
   });
 
-  test("a print bigger than the sheet gets the server's 409 insufficient_cells, shows the free count and splits at exactly that count", async () => {
+  test("a print bigger than the sheet plans exactly its free cells, one page, and says the rest stays in the cart (#277)", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
-    const sheet = (await (await page.request.get(`/api/sheets/${EDGE}`)).json()) as { total: number; used: number; reserved: number; unconfirmed: number };
+    const sheet = (await (await page.request.get(`/api/v1/sheets/${EDGE}`)).json()) as { total: number; used: number; reserved: number; unconfirmed: number };
     const free = sheet.total - sheet.used - sheet.reserved - sheet.unconfirmed;
     const needed = free + 11;
-    // The preview asks the server for real: its 409 carries free_cells as ONE COUNT per placement.
-    const conflict = page.waitForResponse((r) => r.url().includes("/preview") && r.status() === 409);
+    // The page of the test before may still be a cart that previews: leave it first, or its
+    // preview answer is the one taken below and its body is gone with the navigation.
+    await page.goto("/");
+    // The preview asks the server for real: one sheet per run, the first `free` items placed.
+    const answer = page.waitForResponse((r) => r.url().includes("/preview") && r.status() === 200);
     await openCart(page, `/cart?sheet=${EDGE}`, needed);
-    const body = (await (await conflict).json()) as { detail: { error_code: string; error_detail: { free_cells: number[]; needed: number } } };
-    expect(body.detail.error_code).toBe("insufficient_cells");
-    expect(body.detail.error_detail.free_cells).toEqual([free]);
-    expect(body.detail.error_detail.needed).toBe(needed);
+    const body = (await (await answer).json()) as { pages: unknown[]; placed: number; remaining: number };
+    expect(body.pages).toHaveLength(1);
+    expect([body.placed, body.remaining]).toEqual([free, 11]);
 
-    const alert = page.getByRole("alert").filter({ hasText: "free cells" });
-    await expect(alert).toContainText(`${EDGE} has only ${free} free cells, and this print needs ${needed}.`);
-
-    const split = page.waitForRequest((r) => r.url().includes("/preview") && (r.postData() ?? "").includes("new_sheet"));
-    await alert.getByRole("button", { name: "Put the rest onto a new sheet" }).click();
-    const placements = (JSON.parse((await split).postData()!) as { placements: Array<Record<string, unknown>> }).placements;
-    expect(placements[0]).toMatchObject({ sheet: EDGE, count: free });
-    expect(placements[1]).toHaveProperty("new_sheet");
-    // The server accepted that plan: no alert any more, the preview is there.
+    await expect(page.getByText(`${free} of ${needed} labels fit on this sheet. The rest stays in the cart.`)).toBeVisible();
     await expect(page.getByText(/free cells, and this print needs/)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Print onto sheet" })).toBeEnabled({ timeout: 30_000 });
+    // Artifacts, not a gate: the note in light and dark, desktop and phone.
+    const shots = process.env.E2E_SHOTS_DIR;
+    if (shots) {
+      for (const scheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        for (const [width, height] of [
+          [1280, 800],
+          [390, 844],
+        ] as const) {
+          await page.setViewportSize({ width, height });
+          await page.getByText(/labels fit on this sheet/).scrollIntoViewIfNeeded();
+          await page.screenshot({ path: `${shots}/task-22-sheet-fit-${width}-${scheme}.png` });
+          expect(await noSideScroll(page)).toBe(true);
+        }
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.setViewportSize({ width: 1280, height: 800 });
+    }
   });
 
   test("with an empty cart the link says what to do", async () => {
@@ -171,7 +184,7 @@ test.describe.serial("print onto a sheet", () => {
         await shot("item");
 
         // A tape printer keeps the tape preview.
-        const printers = (await (await page.request.get("/api/printers")).json()) as Array<{ id: string; name: string }>;
+        const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string }>;
         await page.evaluate((id) => localStorage.setItem("lph.printer", id), printers.find((p) => p.name === "Workshop PT-P750W")!.id);
         await page.goto("/lookup/grocy/7");
         await expect(page.getByRole("heading", { level: 2, name: heading })).toHaveCount(0);

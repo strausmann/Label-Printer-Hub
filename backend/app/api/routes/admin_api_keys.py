@@ -4,11 +4,11 @@ All endpoints require ``admin`` scope.
 
 Routes
 ------
-GET    /api/admin/api-keys          — list all keys (metadata only, no hashes/plaintexts)
-POST   /api/admin/api-keys          — create key, returns plaintext ONCE in response
-GET    /api/admin/api-keys/{id}     — single key metadata
-PATCH  /api/admin/api-keys/{id}     — update enabled/rate_limit/notes
-DELETE /api/admin/api-keys/{id}     — revoke key (sets enabled=False)
+GET    /api/v1/admin/api-keys          — list all keys (metadata only, no hashes/plaintexts)
+POST   /api/v1/admin/api-keys          — create key, returns plaintext ONCE in response
+GET    /api/v1/admin/api-keys/{id}     — single key metadata
+PATCH  /api/v1/admin/api-keys/{id}     — update enabled/rate_limit/notes
+DELETE /api/v1/admin/api-keys/{id}     — revoke key (sets enabled=False)
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from app.models.api_key import ApiKey
 from app.repositories import api_keys as api_keys_repo
 from app.services.rate_limiter import _rate_limiter
 
-router = APIRouter(prefix="/api/admin/api-keys", tags=["admin"])
+router = APIRouter(prefix="/api/v1/admin/api-keys", tags=["admin"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 AdminAuthDep = Annotated[AuthContext, Depends(require_admin)]

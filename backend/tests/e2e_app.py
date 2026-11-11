@@ -205,6 +205,8 @@ def _write_key_file(path: Path, key: str) -> None:
 E2E_PAGE_PRINTER_NAME = "Office page printer"
 E2E_PAGE_PRINTER_SLUG = "office-page"
 E2E_PAGE_TRAY = "main-tray"
+# What the real HP CP1525N reports (spike #231): a default paper size, no per-tray media.
+E2E_MEDIA_DEFAULT = "iso_a4_210x297mm"
 E2E_CONTROL_PREFIX = "/__e2e/"
 # Short probe interval: the hub learns of a state switch within about a second (default: 30 s).
 E2E_PROBE_INTERVAL_S = "1"
@@ -214,10 +216,34 @@ TAPE_L4731 = "avery-zweckform-l4731rev"  # 189 cells, the edge sheet
 E2E_CUSTOM_TYPE_KEY = "e2e-custom-unknown-radius"
 
 
+_TAPE_BACKENDS: list[Any] = []
+"""The in-memory backends of the tape printers (``MockPrinterBackend``), in build order."""
+
+
+class _TapeState(BaseModel):
+    """Body of ``POST /__e2e/tape-printer/state``: the tape ends after this many more labels."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tape_runs_out_in: int = Field(ge=0, le=10_000)
+
+
+def _tape_out_in(labels: int) -> None:
+    for backend in _TAPE_BACKENDS:
+        backend.tape_runs_out_after = len(backend.printed_images) + labels
+
+
+def _new_tape() -> None:
+    """A fresh tape in every tape printer: it no longer runs out, and it is not empty."""
+    for backend in _TAPE_BACKENDS:
+        backend.tape_runs_out_after = None
+        backend._tape_empty = False
+
+
 def _new_fake() -> Any:
     from tests.helpers.fake_ipp_printer import FakeIppPrinter
 
-    return FakeIppPrinter(media_sources=[E2E_PAGE_TRAY])
+    return FakeIppPrinter(media_sources=[E2E_PAGE_TRAY], media_default=E2E_MEDIA_DEFAULT)
 
 
 class _PageState(BaseModel):
@@ -232,6 +258,10 @@ class _PageState(BaseModel):
     job_script: list[int] | None = None
     margins_hmm: int | None = Field(default=None, ge=0, le=5000)
     cancel_steps: int | None = Field(default=None, ge=0, le=20)
+    media_default: str | None = Field(default=None, max_length=64)
+    """A media keyword; ``""`` clears it (a real ``None`` means "leave unchanged")."""
+    printer_uuid: str | None = Field(default=None, max_length=64)
+    """The ``printer-uuid`` the printer reports (the identity the hub stores); ``""`` clears it."""
 
 
 _RESET_KEEP = frozenset({"received", "_jobs", "_next_job_id"})
@@ -255,6 +285,8 @@ def _fake_state(fake: Any) -> dict[str, Any]:
         "job_script": list(fake.job_script),
         "margins_hmm": fake.margins_hmm,
         "cancel_steps": fake.cancel_steps,
+        "media_default": fake.media_default,
+        "printer_uuid": fake.printer_uuid,
         "media_sources": list(fake.media_sources),
     }
 
@@ -308,6 +340,17 @@ class E2EApp:
             stop, self._stop = self._stop, None
             await stop()
 
+    async def _resume_tape_printers(self) -> None:
+        """Lift a pause an empty tape caused, so the next spec finds the printers ready."""
+        app = getattr(self.inner, "_app", self.inner)
+        queue = getattr(app.state, "print_queue", None)
+        if queue is None:
+            return
+        for printer_id in list(getattr(queue, "_printers", {})):
+            info = queue.pause_info(printer_id)
+            if info is not None and info.source == "printer_error":
+                await queue.resume_printer(printer_id)
+
     async def _control(self, scope: Any, receive: Any, send: Any) -> None:
         request = Request(scope, receive)
         path = request.url.path.rstrip("/")
@@ -322,11 +365,24 @@ class E2EApp:
                 response = JSONResponse({"error": str(exc)}, status_code=422)
             else:
                 for name, value in body.model_dump(exclude_none=True).items():
-                    setattr(self.fake, name, value)
+                    clearable = name in ("media_default", "printer_uuid")
+                    setattr(self.fake, name, value or None if clearable else value)
                 response = JSONResponse({"uri": self.uri, "state": _fake_state(self.fake)})
         elif path == "/__e2e/page-printer/reset" and method == "POST":
             _reset_fake(self.fake)
             response = JSONResponse({"uri": self.uri, "state": _fake_state(self.fake)})
+        elif path == "/__e2e/tape-printer/state" and method == "POST":
+            try:
+                tape = _TapeState.model_validate(await request.json())
+            except (ValueError, ValidationError) as exc:
+                response = JSONResponse({"error": str(exc)}, status_code=422)
+            else:
+                _tape_out_in(tape.tape_runs_out_in)
+                response = JSONResponse({"backends": len(_TAPE_BACKENDS)})
+        elif path == "/__e2e/tape-printer/reset" and method == "POST":
+            _new_tape()
+            await self._resume_tape_printers()
+            response = JSONResponse({"backends": len(_TAPE_BACKENDS)})
         else:
             response = JSONResponse({"error": "unknown control path"}, status_code=404)
         await response(scope, receive, send)
@@ -463,8 +519,15 @@ def build_e2e_app() -> ASGIApp:
         return None
 
     main_module.run_migrations = _already_migrated  # type: ignore[assignment]
-    # No printer is reachable: every configured printer gets the in-memory backend.
-    BackendRouter._build_one = staticmethod(lambda _cfg: MockPrinterBackend())  # type: ignore[method-assign]
+
+    # No printer is reachable: every configured printer gets the in-memory backend. They are
+    # kept, so ``/__e2e/tape-printer/state`` can let their tape run out (#277).
+    def _mock_backend(_cfg: Any) -> MockPrinterBackend:
+        backend = MockPrinterBackend()
+        _TAPE_BACKENDS.append(backend)
+        return backend
+
+    BackendRouter._build_one = staticmethod(_mock_backend)  # type: ignore[method-assign]
     IntegrationRegistry.clear()  # importing app.main discovered the real plugins
     for name, display in (("snipeit", "Snipe-IT"), ("grocy", "Grocy"), ("spoolman", "Spoolman")):
         IntegrationRegistry.register(_FakeIntegration(name, display))  # type: ignore[arg-type]
@@ -476,4 +539,20 @@ def build_e2e_app() -> ASGIApp:
     return E2EApp(main_module.create_app())
 
 
-app = build_e2e_app()
+_APP: ASGIApp | None = None
+
+
+def __getattr__(name: str) -> ASGIApp:
+    """``tests.e2e_app:app`` is built on first access, not at import.
+
+    Building the app writes ``os.environ``, clears the settings cache and patches
+    ``app.main`` and the backend router. A unit test that only imports the helpers above
+    (``test_e2e_page_state``) must not change the process, so only the server entry point
+    (``uvicorn tests.e2e_app:app``), which reads the attribute, pays for it.
+    """
+    global _APP
+    if name != "app":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if _APP is None:
+        _APP = build_e2e_app()
+    return _APP

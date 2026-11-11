@@ -39,11 +39,13 @@ logger = logging.getLogger(__name__)
 
 PRINTER_ATTRS: tuple[str, ...] = (
     "printer-make-and-model",
+    "printer-uuid",  # hardware identity (#231); read by the status producer, not mapped
     "ipp-versions-supported",
     "document-format-supported",
     "document-format-version-supported",
     "printer-resolution-supported",
     "media-supported",
+    "media-default",
     "media-size-supported",
     "media-type-supported",
     "media-source-supported",
@@ -133,6 +135,7 @@ class ProbeSummary(BaseModel):
     pdf_versions: list[str]
     resolutions_dpi: list[int]
     media_sizes: list[str]
+    media_default: str | None = None
     media_types: list[str]
     media_sources: list[str]
     color_modes: list[str]
@@ -354,6 +357,7 @@ def summarise(attrs: Mapping[str, list[Value]]) -> ProbeSummary:
         pdf_versions=_strings(attrs, "document-format-version-supported"),
         resolutions_dpi=_resolutions(attrs),
         media_sizes=_strings(attrs, "media-supported"),
+        media_default=_first_text(attrs, "media-default"),
         media_types=_strings(attrs, "media-type-supported"),
         media_sources=_strings(attrs, "media-source-supported"),
         color_modes=_strings(attrs, "print-color-mode-supported"),

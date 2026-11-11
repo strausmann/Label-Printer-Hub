@@ -80,3 +80,11 @@ class Capabilities(BaseModel):
             "its last successful reading."
         )
     )
+    stale: bool = Field(
+        default=False,
+        description=(
+            "True when the cached reading is older than the status bound or the printer is "
+            "not polled: ``media`` is then null (unknown), ``captured_at`` stays so a client "
+            "can show the age. Same rule as ``stale`` on the status endpoint."
+        ),
+    )

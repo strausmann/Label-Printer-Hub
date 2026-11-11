@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
 import type { components } from "../../api/schema.gen";
 import { queryString } from "../../api/queryString";
+import { useEffect, useRef } from "react";
+import { releaseClaimPending, watchPrint } from "../jobs/printWatch";
 import { calibrationKey, capabilitiesKey } from "../sheets/keys";
 
 export { calibrationKey, capabilitiesKey } from "../sheets/keys";
@@ -15,13 +17,13 @@ export type CalibrationPageRequest = Schemas["PageRequest"];
 export type Capabilities = Schemas["Capabilities"];
 
 const encode = encodeURIComponent;
-const trayPath = (printerId: string, tray: string) => `/api/printers/${encode(printerId)}/calibration/${encode(tray)}`;
+const trayPath = (printerId: string, tray: string) => `/api/v1/printers/${encode(printerId)}/calibration/${encode(tray)}`;
 
 /** One calibration per tray of the printer. Nested under `["printers", id]`, so a printer event refreshes it. */
 export const useCalibration = (printerId: string) =>
   useQuery({
     queryKey: calibrationKey(printerId),
-    queryFn: () => apiFetch<CalibrationRead[]>(`/api/printers/${encode(printerId)}/calibration`),
+    queryFn: () => apiFetch<CalibrationRead[]>(`/api/v1/printers/${encode(printerId)}/calibration`),
   });
 
 export function useSaveCalibration(printerId: string) {
@@ -58,9 +60,25 @@ export const useFit = (printerId: string) =>
 /** Prints the calibration page (`{job_id}` back). */
 export function usePrintCalibrationPage(printerId: string) {
   const client = useQueryClient();
+  // The print is registered "claim pending" (the page's status line is about to claim it, so the stack does not
+  // announce it twice). That only holds while this page is there: after it went away, nobody will claim it.
+  const mounted = useRef(false);
+  const registered = useRef<string[]>([]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      registered.current.forEach(releaseClaimPending);
+      registered.current = [];
+    };
+  }, []);
   return useMutation({
     mutationFn: ({ tray, request }: { tray: string; request: CalibrationPageRequest }) =>
       apiFetch<Schemas["PageJobAccepted"]>(`${trayPath(printerId, tray)}/page`, { method: "POST", json: request }),
+    onSuccess: (accepted) => {
+      registered.current.push(accepted.job_id);
+      void watchPrint({ kind: "calibration", printerId, jobIds: [accepted.job_id], claimPending: mounted.current });
+    },
     onSettled: () => void client.invalidateQueries({ queryKey: ["jobs"] }),
   });
 }
@@ -81,7 +99,7 @@ export function calibrationPdfUrl(
 export const useCapabilities = (printerId: string) =>
   useQuery({
     queryKey: capabilitiesKey(printerId),
-    queryFn: () => apiFetch<Capabilities>(`/api/printers/${encode(printerId)}/capabilities`),
+    queryFn: () => apiFetch<Capabilities>(`/api/v1/printers/${encode(printerId)}/capabilities`),
     // A screen that has not chosen a printer yet passes "" and asks for nothing.
     enabled: printerId !== "",
   });

@@ -2,8 +2,8 @@
 
 Routes
 ------
-POST /api/webhook/spoolman — accept a Spoolman event, enqueue a print job
-POST /api/webhook/grocy   — accept a Grocy event, enqueue a print job
+POST /api/v1/webhook/spoolman — accept a Spoolman event, enqueue a print job
+POST /api/v1/webhook/grocy   — accept a Grocy event, enqueue a print job
 
 Both routes are guarded by ``Depends(require_webhook_key)``.  The dependency
 validates the ``X-API-Key`` request header and returns:
@@ -58,7 +58,7 @@ from app.schemas.webhook import (
 )
 from app.services.lookup_service import AppLookupService
 
-router = APIRouter(prefix="/api/webhook", tags=["webhooks"])
+router = APIRouter(prefix="/api/v1/webhook", tags=["webhooks"])
 
 # Shared service instance — stateless, safe to reuse across requests.
 _lookup_service = AppLookupService()

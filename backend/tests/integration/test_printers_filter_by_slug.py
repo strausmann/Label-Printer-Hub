@@ -1,4 +1,4 @@
-"""GET /api/printers?slug=... filtert auf einzelnen Printer."""
+"""GET /api/v1/printers?slug=... filtert auf einzelnen Printer."""
 
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ async def test_filter_by_slug_returns_one(
         ),
     )
 
-    resp = await slug_client.get("/api/printers?slug=brother-p750w", headers=read_auth_headers)
+    resp = await slug_client.get("/api/v1/printers?slug=brother-p750w", headers=read_auth_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert len(body) == 1
@@ -94,7 +94,7 @@ async def test_filter_by_slug_returns_one(
 
 @pytest.mark.asyncio
 async def test_filter_by_slug_returns_404_when_missing(slug_client, read_auth_headers):
-    resp = await slug_client.get("/api/printers?slug=unknown", headers=read_auth_headers)
+    resp = await slug_client.get("/api/v1/printers?slug=unknown", headers=read_auth_headers)
     assert resp.status_code == 404
 
 
@@ -115,6 +115,6 @@ async def test_no_filter_returns_all(slug_client: AsyncClient, slug_db_session, 
         slug_db_session, Printer(name="B", slug="b", model="X", backend="mock")
     )
 
-    resp = await slug_client.get("/api/printers", headers=read_auth_headers)
+    resp = await slug_client.get("/api/v1/printers", headers=read_auth_headers)
     assert resp.status_code == 200
     assert len(resp.json()) >= 2

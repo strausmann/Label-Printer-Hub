@@ -86,12 +86,12 @@ async def _poll_job_state(
     timeout_s: float = 5.0,
     poll_interval: float = 0.05,
 ) -> dict:
-    """Poll GET /api/jobs/{id} until state reaches target (or timeout)."""
+    """Poll GET /api/v1/jobs/{id} until state reaches target (or timeout)."""
     deadline = asyncio.get_event_loop().time() + timeout_s
     last: dict = {}
     while asyncio.get_event_loop().time() < deadline:
-        r = await client.get(f"/api/jobs/{job_id}")
-        assert r.status_code == 200, f"GET /api/jobs/{job_id} → {r.status_code}: {r.text}"
+        r = await client.get(f"/api/v1/jobs/{job_id}")
+        assert r.status_code == 200, f"GET /api/v1/jobs/{job_id} → {r.status_code}: {r.text}"
         last = r.json()
         if last["state"] == target:
             return last
@@ -128,7 +128,7 @@ async def test_post_batch_4_items_calls_print_images_once(ml_batch_client):
     print_images_mock = AsyncMock(return_value=None)
     with patch.object(mock_backend, "print_images", print_images_mock):
         resp = await client.post(
-            f"/api/print/{printer_slug}/batch",
+            f"/api/v1/print/{printer_slug}/batch",
             json=_four_item_body(),
         )
         assert resp.status_code == 202, resp.text
@@ -190,7 +190,7 @@ async def test_post_batch_failure_marks_all_jobs_failed(ml_batch_client):
 
     with patch.object(mock_backend, "print_images", failing_mock):
         resp = await client.post(
-            f"/api/print/{printer_slug}/batch",
+            f"/api/v1/print/{printer_slug}/batch",
             json=_four_item_body(),
         )
         assert resp.status_code == 202, resp.text

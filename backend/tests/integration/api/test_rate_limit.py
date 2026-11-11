@@ -48,7 +48,7 @@ async def test_429_after_rate_limit_exceeded(api_client_with_seed):
     # First 3 requests should succeed (or 200-level)
     for i in range(3):
         resp = await api_client_with_seed.get(
-            "/api/printers",
+            "/api/v1/printers",
             headers={"X-Label-Hub-Key": plaintext},
         )
         assert resp.status_code in (200, 404), (
@@ -57,7 +57,7 @@ async def test_429_after_rate_limit_exceeded(api_client_with_seed):
 
     # 4th request should be rate-limited
     resp = await api_client_with_seed.get(
-        "/api/printers",
+        "/api/v1/printers",
         headers={"X-Label-Hub-Key": plaintext},
     )
     assert resp.status_code == 429, f"Expected 429, got {resp.status_code}: {resp.text}"
@@ -73,12 +73,12 @@ async def test_429_body_has_correct_error_code(api_client_with_seed):
 
     for _ in range(2):
         await api_client_with_seed.get(
-            "/api/printers",
+            "/api/v1/printers",
             headers={"X-Label-Hub-Key": plaintext},
         )
 
     resp = await api_client_with_seed.get(
-        "/api/printers",
+        "/api/v1/printers",
         headers={"X-Label-Hub-Key": plaintext},
     )
     assert resp.status_code == 429
@@ -97,12 +97,12 @@ async def test_429_response_has_retry_after_header(api_client_with_seed):
 
     for _ in range(2):
         await api_client_with_seed.get(
-            "/api/printers",
+            "/api/v1/printers",
             headers={"X-Label-Hub-Key": plaintext},
         )
 
     resp = await api_client_with_seed.get(
-        "/api/printers",
+        "/api/v1/printers",
         headers={"X-Label-Hub-Key": plaintext},
     )
     assert resp.status_code == 429

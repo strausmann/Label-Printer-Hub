@@ -12,8 +12,8 @@ const payload = { content_type: "qr_two_lines", tape_mm: 12, options: { copies: 
 
 function routes(state: string, over: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
   return {
-    [`GET /api/jobs/${ID}`]: job(ID, PRINTER_A.id, state, { template_key: null, payload, ...over }),
-    "GET /api/printers": [PRINTER_A],
+    [`GET /api/v1/jobs/${ID}`]: job(ID, PRINTER_A.id, state, { template_key: null, payload, ...over }),
+    "GET /api/v1/printers": [PRINTER_A],
     ...extra,
   };
 }
@@ -61,34 +61,47 @@ describe("JobDetail", () => {
   it("Retry posts with the CSRF header and opens the new job", async () => {
     const { calls } = mockApi(
       routes("failed", {}, {
-        [`POST /api/jobs/${ID}/retry`]: job(NEW, PRINTER_A.id, "queued", { payload }),
-        [`GET /api/jobs/${NEW}`]: job(NEW, PRINTER_A.id, "queued", { payload, template_key: null }),
+        [`POST /api/v1/jobs/${ID}/retry`]: job(NEW, PRINTER_A.id, "queued", { payload }),
+        [`GET /api/v1/jobs/${NEW}`]: job(NEW, PRINTER_A.id, "queued", { payload, template_key: null }),
       }),
     );
     const { router } = await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
     await waitFor(() => expect(router.state.location.pathname).toBe(`/jobs/${NEW}`));
     const post = calls.find((c) => c.method === "POST")!;
-    expect(post.path).toBe(`/api/jobs/${ID}/retry`);
+    expect(post.path).toBe(`/api/v1/jobs/${ID}/retry`);
     expect(post.headers.get("X-CSRF-Token")).toBe("csrf-test");
   });
 
   it("Cancel posts for a queued job", async () => {
-    const { calls } = mockApi(routes("queued", {}, { [`POST /api/jobs/${ID}/cancel`]: job(ID, PRINTER_A.id, "cancelled") }));
+    const { calls } = mockApi(routes("queued", {}, { [`POST /api/v1/jobs/${ID}/cancel`]: job(ID, PRINTER_A.id, "cancelled") }));
     await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(calls.some((c) => c.path === `/api/jobs/${ID}/cancel`)).toBe(true));
+    await waitFor(() => expect(calls.some((c) => c.path === `/api/v1/jobs/${ID}/cancel`)).toBe(true));
   });
 
   it("says so when the retry is refused", async () => {
-    mockApi(routes("failed", {}, { [`POST /api/jobs/${ID}/retry`]: respond(409, { detail: "busy" }) }));
+    mockApi(routes("failed", {}, { [`POST /api/v1/jobs/${ID}/retry`]: respond(409, { detail: "busy" }) }));
     await renderApp({ path: `/jobs/${ID}` });
     await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
     expect(await screen.findByText("The job could not be retried.")).toBeVisible();
   });
 
+  it("says that a held printer must be confirmed by an admin first", async () => {
+    mockApi(
+      routes("failed", {}, {
+        [`POST /api/v1/jobs/${ID}/retry`]: respond(409, { type: "printer-identity-mismatch", title: "Held", status: 409, detail: "held" }),
+      }),
+    );
+    await renderApp({ path: `/jobs/${ID}` });
+    await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(
+      await screen.findByText("This printer may be a different device now. An admin has to confirm it on the printer's page first."),
+    ).toBeVisible();
+  });
+
   it("a job that is not there (or not yours) reads as not found", async () => {
-    mockApi({ [`GET /api/jobs/${ID}`]: respond(404, { detail: "job not found" }) });
+    mockApi({ [`GET /api/v1/jobs/${ID}`]: respond(404, { detail: "job not found" }) });
     await renderApp({ path: `/jobs/${ID}` });
     expect(await screen.findByText("This job does not exist.")).toBeVisible();
   });

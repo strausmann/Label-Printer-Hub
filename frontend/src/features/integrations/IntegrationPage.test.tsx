@@ -50,7 +50,7 @@ describe("integration start page", () => {
   });
 
   it("Enter opens the item view with the value as id", async () => {
-    mockApi({ "GET /api/lookup/snipeit/42": item("snipeit", "42"), "GET /api/printers": [] });
+    mockApi({ "GET /api/v1/lookup/snipeit/42": item("snipeit", "42"), "GET /api/v1/printers": [] });
     const { router } = await renderApp({ path: "/integrations/snipeit" });
     await userEvent.type(screen.getByRole("textbox", { name: "Find an asset or location" }), "42{Enter}");
     expect(router.state.location.pathname).toBe("/lookup/snipeit/42");
@@ -58,7 +58,7 @@ describe("integration start page", () => {
   });
 
   it("the Open button does the same, a loc: value stays a location id", async () => {
-    mockApi({ "GET /api/lookup/snipeit/loc%3A17": item("snipeit", "loc:17"), "GET /api/printers": [] });
+    mockApi({ "GET /api/v1/lookup/snipeit/loc%3A17": item("snipeit", "loc:17"), "GET /api/v1/printers": [] });
     const { router } = await renderApp({ path: "/integrations/snipeit" });
     await userEvent.type(screen.getByRole("textbox", { name: "Find an asset or location" }), "loc:17");
     await userEvent.click(screen.getByRole("button", { name: "Open" }));
@@ -79,7 +79,7 @@ describe("integration start page", () => {
     ["https://hub.example.invalid/spool/5", "/lookup/spoolman/5"],
     ["https://hub.example.invalid/product/9", "/lookup/grocy/9"],
   ])("a pasted label link %s is routed to %s", async (url, target) => {
-    mockApi({ "GET /api/printers": [] });
+    mockApi({ "GET /api/v1/printers": [] });
     const { router } = await renderApp({ path: "/integrations/snipeit" });
     await userEvent.click(screen.getByRole("textbox", { name: "Find an asset or location" }));
     await userEvent.paste(url);
@@ -148,7 +148,7 @@ describe("recently opened", () => {
   });
 
   it("opening an item records it, a failed lookup does not", async () => {
-    mockApi({ "GET /api/lookup/grocy/118": item("grocy", "118"), "GET /api/printers": [] });
+    mockApi({ "GET /api/v1/lookup/grocy/118": item("grocy", "118"), "GET /api/v1/printers": [] });
     await renderApp({ path: "/lookup/grocy/118" });
     await screen.findByRole("heading", { level: 1, name: "Cordless drill" });
     expect(JSON.parse(localStorage.getItem("lph.recent.grocy") ?? "[]")).toMatchObject([{ id: "118", name: "Cordless drill", kind: "product" }]);
@@ -160,8 +160,8 @@ describe("link to the app itself", () => {
 
   it("appears once an item of the app was shown in this session, never before", async () => {
     mockApi({
-      "GET /api/lookup/snipeit/42": { ...item("snipeit", "42"), url: "https://assets.example.invalid/hardware/42" },
-      "GET /api/printers": [],
+      "GET /api/v1/lookup/snipeit/42": { ...item("snipeit", "42"), url: "https://assets.example.invalid/hardware/42" },
+      "GET /api/v1/printers": [],
     });
     await renderApp({ path: "/integrations/snipeit" });
     expect(page().queryByRole("link", { name: /Open Snipe-IT/ })).toBeNull();
@@ -176,8 +176,8 @@ describe("link to the app itself", () => {
 
   it("is left out when the deep link is not a web link in a known shape", async () => {
     mockApi({
-      "GET /api/lookup/snipeit/42": { ...item("snipeit", "42"), url: "javascript:alert(1)" },
-      "GET /api/printers": [],
+      "GET /api/v1/lookup/snipeit/42": { ...item("snipeit", "42"), url: "javascript:alert(1)" },
+      "GET /api/v1/printers": [],
     });
     await renderApp({ path: "/lookup/snipeit/42" });
     await screen.findByRole("heading", { level: 1, name: "Cordless drill" });

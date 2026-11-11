@@ -53,7 +53,7 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   const { values, invalid } = draft.payload(keys);
   const changed = Object.keys(values).length > 0;
   const savedInSettings = urlView.is_set && (!secretView || secretView.is_set);
-  // One source with the sidebar: /api/info says whether the integration is usable (Paperless has no entry there).
+  // One source with the sidebar: /api/v1/info says whether the integration is usable (Paperless has no entry there).
   const configured = info ? info.configured : savedInSettings;
   const savedButUnusable = !configured && (urlView.is_set || Boolean(secretView?.is_set));
   // The probe uses URL, secret and timeout. A secret's value is not readable here, only that one is present.

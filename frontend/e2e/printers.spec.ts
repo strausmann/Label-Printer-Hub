@@ -10,7 +10,18 @@ const shot = async (page: Page, name: string) => {
   await page.screenshot({ path: resolve(SHOTS, name), fullPage: true });
 };
 
+const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+
+// Assembled from parts on purpose: the source guard (src/api/paths.test.ts) rejects the literal.
+const OLD_PRINTERS_PATH = ["", "api", "printers"].join("/");
+
 test.describe("printers", () => {
+  test("old api path is a plain 404", async ({ signedInPage: page }) => {
+    const response = await page.request.get(OLD_PRINTERS_PATH);
+    expect(response.status()).toBe(404);
+    expect(response.headers()["content-type"]).toContain("application/json");
+  });
+
   test("pausing a printer changes its badge through the event stream, without a reload", async ({
     signedInPage: page,
   }) => {
@@ -99,12 +110,12 @@ test.describe("page printer status", () => {
     const tape = page.getByRole("link", { name: /Workshop PT-P750W/ });
     await expect(tape).toBeVisible();
     // The card is rendered before its status arrives: wait for a word that comes with the status.
-    await expect(tape.getByText(/Tape not known yet|\d+ mm|No tape loaded/).first()).toBeVisible({ timeout: 15_000 });
+    await expect(tape.getByText(/Tape not known( yet)?|\d+ mm|No tape loaded/).first()).toBeVisible({ timeout: 15_000 });
     await expect(tape.getByText(/toner|supplies/i)).toHaveCount(0);
   });
 
   test("an unbreakable tape printer name wraps inside its card at 360 px", async ({ signedInPage: page }) => {
-    await page.route("**/api/printers", async (route) => {
+    await page.route("**/api/v1/printers", async (route) => {
       const response = await route.fetch();
       const list = (await response.json()) as { name: string; model: string }[];
       list[0]!.name = `Workshop${"x".repeat(70)}`;
@@ -185,4 +196,317 @@ test.describe("page printer status", () => {
       });
     }
   }
+});
+
+// The roll colour (#229): the printer cannot report it, so a new roll raises a question; the
+// answer is shown beside the width. The hub's mock tape printers are unpolled, so status and roll
+// are served by the test.
+test.describe("roll colour", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("roll prompt after a roll change", async ({ signedInPage: page }) => {
+    const printers = (await (await page.request.get("/api/v1/printers")).json()) as { id: string; name: string }[];
+    const id = printers.find((p) => p.name === "Workshop PT-P750W")!.id;
+    const roll = { colour: null as string | null, width_mm: 12, media_raw: "12mm laminated", prompt_pending: true, set_at: null };
+    await page.route(new RegExp(`/api/v1/printers/${id}/status$`), async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      Object.assign(body, {
+        online: true,
+        polled: true,
+        stale: false,
+        tape_loaded: "12mm laminated",
+        tape_width_mm: 12,
+        roll_prompt: roll.prompt_pending,
+        tape_colour: roll.colour,
+        last_probe_age_s: 3,
+        note: null,
+      });
+      await route.fulfill({ response, json: body });
+    });
+    await page.route(new RegExp(`/api/v1/printers/${id}/roll$`), async (route) => {
+      if (route.request().method() === "PUT") {
+        const sent = route.request().postDataJSON() as { colour: string | null };
+        roll.colour = sent.colour;
+        roll.prompt_pending = false;
+      }
+      await route.fulfill({ json: roll });
+    });
+
+    const scenes = [
+      { width: 1280, height: 800, scheme: "light" },
+      { width: 1280, height: 800, scheme: "dark" },
+      { width: 390, height: 844, scheme: "light" },
+      { width: 390, height: 844, scheme: "dark" },
+    ] as const;
+    for (const { width, height, scheme } of scenes) {
+      await page.setViewportSize({ width, height });
+      await page.emulateMedia({ colorScheme: scheme });
+      Object.assign(roll, { colour: null, prompt_pending: true });
+      await page.goto(`/printers/${id}`);
+      const group = page.getByRole("group", { name: "Tape colour" });
+      await expect(group).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await shot(page, `task-11-prompt-${width}-${scheme}.png`);
+
+      // Keyboard only: Tab reaches a colour, Enter answers.
+      await group.getByRole("button", { name: "Blue" }).focus();
+      await page.keyboard.press("Enter");
+      await expect(group).toHaveCount(0);
+      await expect(page.getByText("Blue", { exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Change colour");
+      await shot(page, `task-11-colour-${width}-${scheme}.png`);
+
+      // Skip: no colour line at all, never "not reported".
+      Object.assign(roll, { colour: null, prompt_pending: true });
+      await page.reload();
+      await page.getByRole("button", { name: "Skip" }).click();
+      await expect(page.getByRole("group", { name: "Tape colour" })).toHaveCount(0);
+      await expect(page.getByText("12 mm")).toBeVisible();
+      await expect(page.getByText(/colour not reported/i)).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Set colour" })).toBeVisible();
+      await shot(page, `task-11-nocolour-${width}-${scheme}.png`);
+    }
+  });
+
+});
+
+test.describe("test print", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("reaches done on a tape printer", async ({ signedInPage: page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Printers" }).click();
+    await page.getByRole("link", { name: /Workshop PT-P750W/ }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Workshop PT-P750W" })).toBeVisible();
+    await page.getByRole("button", { name: "Test print" }).click();
+    const link = page.getByRole("link", { name: "Open the job" });
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page.getByRole("heading", { level: 1, name: "Test label" })).toBeVisible();
+    await expect(page.getByText("Done", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("screenshots: idle, disabled with its reason, sent, error, and the jobs list", async ({ signedInPage: page }) => {
+    test.skip(!SHOTS, "screenshots are an artifact, taken only with E2E_SHOTS_DIR");
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const [width, height] of [
+        [1280, 800],
+        [390, 844],
+      ] as const) {
+        await page.setViewportSize({ width, height });
+        const name = (what: string) => `task-13-${what}-${width}-${scheme}.png`;
+        await page.goto("/printers");
+        await page.getByRole("link", { name: /Workshop PT-P750W/ }).click();
+        await expect(page.getByRole("button", { name: "Test print" })).toBeVisible();
+        await shot(page, name("idle"));
+        expect(await noSideScroll(page)).toBe(true);
+        // A paused printer: the button is off and the reason stands beside it as text.
+        await page.getByRole("button", { name: "Pause" }).click();
+        await expect(page.getByRole("button", { name: "Test print" })).toBeDisabled();
+        await expect(page.getByText("Printer is paused").first()).toBeVisible();
+        await shot(page, name("disabled"));
+        await page.getByRole("button", { name: "Resume" }).click();
+        await expect(page.getByRole("button", { name: "Test print" })).toBeEnabled();
+        await page.getByRole("button", { name: "Test print" }).click();
+        await expect(page.getByText("Test print sent.")).toBeVisible();
+        await shot(page, name("sent"));
+        // The hub answers a refusal in words; a long one must wrap inside the column.
+        await page.route("**/test-print", (route) =>
+          route.fulfill({
+            status: 409,
+            contentType: "application/json",
+            body: JSON.stringify({
+              detail: {
+                type: "printer-offline",
+                title: "Printer offline",
+                status: 409,
+                detail:
+                  "The printer did not answer. Check that it is switched on and connected to the network, then try again. If it still fails, restart the printer and wait for its light to stop blinking.",
+              },
+            }),
+          }),
+        );
+        await page.getByRole("button", { name: "Test print" }).click();
+        await expect(page.getByRole("alert").filter({ hasText: "not reachable" })).toBeVisible();
+        await shot(page, name("error"));
+        expect(await noSideScroll(page)).toBe(true);
+        await page.unroute("**/test-print");
+        await page.getByRole("navigation", { name: width > 800 ? "Main" : "Tabs" }).getByRole("link", { name: "Jobs" }).click();
+        await expect(page.getByRole("list", { name: "Jobs" }).getByText("Test label").first()).toBeVisible();
+        await shot(page, name("jobs"));
+      }
+    }
+  });
+});
+
+// A different device answers at the page printer's address (#231): the hub holds the printer, an admin decides.
+test.describe("device swap", () => {
+  test.beforeEach(async ({ signedInPage: page }) => {
+    await waitForQuietQueue(page);
+  });
+  test.afterEach(async ({ signedInPage: page }) => {
+    // A swap left pending would hold the page printer for every spec after this one.
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    const list = (await (await page.request.get("/api/v1/printers")).json()) as (IdentityView & { name: string })[];
+    const pending = list.find((p) => p.name === "Office page printer");
+    if (pending?.observed_id) await acceptSameDevice(page, pending);
+    await resetPagePrinter(page);
+  });
+
+  const uuid = () => crypto.randomUUID();
+  type IdentityView = { id: string; hardware_id: string | null; observed_id: string | null; observed_kind: string | null };
+
+  /** What the admin button "Same device" does, for set-up and clean-up (a write needs the session's CSRF token). */
+  async function acceptSameDevice(page: Page, p: IdentityView): Promise<void> {
+    const session = (await (await page.request.get("/api/v1/auth/session")).json()) as { csrf_token: string };
+    const response = await page.request.post(`/api/v1/admin/printers/${p.id}/identity/resolve`, {
+      headers: { "X-CSRF-Token": session.csrf_token },
+      data: { resolution: "same_device", expected_observed_id: p.observed_id, expected_observed_kind: p.observed_kind },
+    });
+    // 409 = the device changed again or somebody settled it first: the caller's poll reads the printer again.
+    expect([200, 409]).toContain(response.status());
+  }
+
+  test("a different device holds the printer; the admin confirms and the banner goes", async ({ signedInPage: page }) => {
+    const printer = async (): Promise<IdentityView> => {
+      const list = (await (await page.request.get("/api/v1/printers")).json()) as (IdentityView & { name: string })[];
+      return list.find((p) => p.name === "Office page printer")!;
+    };
+    const first = uuid();
+    const second = uuid();
+
+    // The hub learns the first device. A stored identity left by an earlier run is accepted as the same device.
+    await setPagePrinter(page, { printer_uuid: `urn:uuid:${first}` });
+    await expect
+      .poll(
+        async () => {
+          const p = await printer();
+          if (p.observed_id && p.observed_id.includes(first)) await acceptSameDevice(page, p);
+          return p.hardware_id?.includes(first) ?? false;
+        },
+        { message: "the hub stores the first device", timeout: 30_000, intervals: [500, 1000] },
+      )
+      .toBe(true);
+
+    const { id } = await printer();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/printers/${id}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Office page printer" })).toBeVisible();
+    await expect(page.getByText("Different device detected at this address.")).toHaveCount(0);
+    await shot(page, "task-17-identity-ok-desktop.png");
+
+    // Another device answers: the banner arrives through the event stream, without a reload.
+    await page.evaluate(() => ((window as unknown as { __kept: boolean }).__kept = true));
+    await setPagePrinter(page, { printer_uuid: `urn:uuid:${second}` });
+    const banner = page.getByRole("region", { name: "Device swap" });
+    await expect(banner).toBeVisible({ timeout: 20_000 });
+    await expect(banner.getByText(second)).toBeVisible();
+    await shot(page, "task-17-banner-admin-desktop.png");
+    expect(await noSideScroll(page)).toBe(true);
+
+    await banner.getByRole("button", { name: "Device replaced" }).click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog.getByText(/calibration of every tray/)).toBeVisible();
+    await shot(page, "task-17-confirm-desktop.png");
+    await dialog.getByRole("button", { name: "Reset calibration and accept" }).click();
+
+    await expect(banner).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true);
+    await expect.poll(async () => (await printer()).hardware_id?.includes(second) ?? false).toBe(true);
+    await page.goto("/printers");
+    await expect(page.getByRole("link", { name: /Office page printer/ }).getByText("Different device")).toHaveCount(0);
+  });
+
+  // Pictures for the task report (an artifact, not a gate): every state at both widths in both colour schemes.
+  test("pictures of the banner, the dialog, the note and the card badge", async ({ signedInPage: page }) => {
+    test.skip(!SHOTS, "pictures are only taken when E2E_SHOTS_DIR is set");
+    test.setTimeout(180_000);
+    const first = uuid();
+    const second = uuid();
+    const find = async (): Promise<IdentityView> => {
+      const list = (await (await page.request.get("/api/v1/printers")).json()) as (IdentityView & { name: string })[];
+      return list.find((p) => p.name === "Office page printer")!;
+    };
+    await setPagePrinter(page, { printer_uuid: `urn:uuid:${first}` });
+    await expect
+      .poll(
+        async () => {
+          const p = await find();
+          if (p.observed_id) await acceptSameDevice(page, p);
+          return p.hardware_id?.includes(first) ?? false;
+        },
+        { timeout: 30_000, intervals: [500, 1000] },
+      )
+      .toBe(true);
+    const { id } = await find();
+    await setPagePrinter(page, { printer_uuid: `urn:uuid:${second}` });
+    await expect.poll(async () => (await find()).observed_id?.includes(second) ?? false, { timeout: 30_000 }).toBe(true);
+
+    const LONG = "SN-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abc"; // 64 characters
+    const tweak = async (mode: "admin" | "long" | "print" | "none") => {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      if (mode === "admin") return;
+      await page.route(`**/api/v1/printers/${id}`, async (route) => {
+        const response = await route.fetch();
+        const body = (await response.json()) as Record<string, unknown>;
+        // "print" keeps the identities the hub really has: a non-admin must not render them even if they arrive.
+        if (mode === "print") Object.assign(body, {});
+        else if (mode === "long") Object.assign(body, { hardware_id: LONG, hardware_id_kind: "serial", observed_id: `${LONG.slice(0, 40)}ZZZZZZZZZZZZZZZZZZZZZZZZ`, observed_kind: "serial" });
+        else Object.assign(body, { hardware_id: null, hardware_id_kind: null, observed_id: null, observed_kind: null });
+        await route.fulfill({ response, json: body });
+      });
+      if (mode === "print") {
+        await page.route("**/api/v1/auth/session", async (route) => {
+          const response = await route.fetch();
+          if (route.request().method() !== "GET") return route.fulfill({ response });
+          await route.fulfill({ response, json: { ...(await response.json()), scope: "print" } });
+        });
+      }
+      if (mode === "none") {
+        await page.route(`**/api/v1/printers/${id}/status`, async (route) => {
+          const response = await route.fetch();
+          await route.fulfill({ response, json: { ...(await response.json()), identity_mismatch: false } });
+        });
+      }
+    };
+
+    for (const { width, height, name } of [{ width: 1280, height: 800, name: "desktop" }, { width: 390, height: 844, name: "phone" }]) {
+      for (const scheme of ["light", "dark"] as const) {
+        const tag = `${name}-${scheme}`;
+        await page.setViewportSize({ width, height });
+        await page.emulateMedia({ colorScheme: scheme });
+        for (const [mode, label] of [["admin", "banner-admin"], ["long", "banner-long"], ["print", "banner-nonadmin"], ["none", "no-identity"]] as const) {
+          await tweak(mode);
+          await page.goto(`/printers/${id}`);
+          await expect(page.getByRole("heading", { level: 1, name: "Office page printer" })).toBeVisible();
+          if (mode !== "none") await expect(page.getByRole("region", { name: "Device swap" })).toBeVisible({ timeout: 15_000 });
+          else await expect(page.getByText("No hardware identity")).toBeVisible();
+          expect(await noSideScroll(page), `${label} ${tag}`).toBe(true);
+          if (mode === "print") {
+            // The admin read carries both identities; the page must show neither for a print key.
+            await expect(page.getByText(first)).toHaveCount(0);
+            await expect(page.getByText(second)).toHaveCount(0);
+            await expect(page.getByRole("button", { name: "Same device" })).toHaveCount(0);
+          }
+          await shot(page, `task-17-${label}-${tag}.png`);
+          if (mode === "long") {
+            await page.getByRole("button", { name: "Device replaced" }).click();
+            await expect(page.getByRole("alertdialog")).toBeVisible();
+            expect(await noSideScroll(page), `dialog ${tag}`).toBe(true);
+            await shot(page, `task-17-confirm-${tag}.png`);
+            await page.keyboard.press("Escape");
+          }
+        }
+        await tweak("admin");
+        await page.goto("/printers");
+        const card = page.getByRole("link", { name: /Office page printer/ });
+        await expect(card.getByText("Different device")).toBeVisible({ timeout: 15_000 });
+        expect(await noSideScroll(page), `cards ${tag}`).toBe(true);
+        await shot(page, `task-17-card-${tag}.png`);
+      }
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  });
 });

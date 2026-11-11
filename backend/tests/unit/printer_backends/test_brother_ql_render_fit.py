@@ -19,6 +19,7 @@ from app.printer_backends.brother_ql_backend import BrotherQLBackend
 from app.printer_models.ql import QL_DK_ENDLESS_TAPES
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
+from app.schemas.label_layout import LabelOrientation
 from app.services.layout_engine import LayoutEngine
 from brother_ql.labels import ALL_LABELS
 from PIL import Image
@@ -84,7 +85,9 @@ async def test_hub_rendered_62mm_label_goes_through_real_convert_without_resize(
         secondary=("shelf 3",),
         qr_payload="https://example.invalid/x/42",
     )
-    image = LayoutEngine().render(62, content_type, data)
+    # #258: 62 mm defaults to across; the along band (landscape) exercises the 1.4.1
+    # heuristic that stays as the safety net for images without an orientation flag.
+    image = LayoutEngine().render(62, content_type, data, orientation=LabelOrientation.ALONG)
     backend = BrotherQLBackend(host="192.0.2.11")
 
     with caplog.at_level(logging.WARNING, logger="brother_ql"):
@@ -264,7 +267,9 @@ async def test_high_resolution_hub_rendered_62mm_label(
         title="Box",
         qr_payload="https://example.invalid/1",
     )
-    image = LayoutEngine().render(62, ContentType.QR_TWO_LINES, data)
+    image = LayoutEngine().render(
+        62, ContentType.QR_TWO_LINES, data, orientation=LabelOrientation.ALONG
+    )
     with caplog.at_level(logging.WARNING, logger="brother_ql"):
         await BrotherQLBackend(host="192.0.2.11").print_image(
             image, _TAPES[62], high_resolution=True

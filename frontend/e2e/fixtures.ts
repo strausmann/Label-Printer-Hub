@@ -26,12 +26,41 @@ export type PagePrinterState = {
   margins_hmm?: number;
   /** Polls that report "stopping" after a Cancel-Job. */
   cancel_steps?: number;
+  /** The `media-default` keyword the printer reports; `""` stops it reporting one. */
+  media_default?: string;
+  /** The `printer-uuid` the printer reports: the identity the hub stores; `""` stops it reporting one. */
+  printer_uuid?: string;
 };
 
 /** Switches the fake page printer; the hub notices on its next status probe (1 s in the test hub). */
 export async function setPagePrinter(page: Page, state: PagePrinterState): Promise<void> {
   const response = await page.request.post(`${MAIN.url}/__e2e/page-printer/state`, { data: state });
   expect(response.ok(), await response.text()).toBe(true);
+}
+
+/**
+ * Waits until the hub's cached status of the page printer was captured twice after this call.
+ *
+ * `setPagePrinter` returns as soon as the fake has switched; the hub still holds the previous reading
+ * until its next probe. The first new `captured_at` may belong to a probe that was already running
+ * before the switch, so the second one is the first reading that surely shows it. A test whose
+ * outcome depends on that reading (the hub decides from its cache, e.g. the paper size of a test
+ * print) calls this before it acts; a slow runner otherwise acts on the old reading.
+ */
+export async function waitForFreshProbe(page: Page): Promise<void> {
+  const list = (await (await page.request.get(`${MAIN.url}/api/v1/printers`)).json()) as { id: string; name: string }[];
+  const id = list.find((p) => p.name === "Office page printer")!.id;
+  const capturedAt = async () => ((await (await page.request.get(`${MAIN.url}/api/v1/printers/${id}/status`)).json()) as { captured_at?: string | null }).captured_at ?? null;
+  const seen = new Set<string | null>([await capturedAt()]);
+  await expect
+    .poll(
+      async () => {
+        seen.add(await capturedAt());
+        return seen.size;
+      },
+      { message: "the hub did not capture the page printer's status twice", timeout: 15_000, intervals: [100, 200, 400] },
+    )
+    .toBeGreaterThanOrEqual(3);
 }
 
 /**
@@ -55,7 +84,7 @@ export async function resetPagePrinter(page: Page): Promise<void> {
  */
 export async function waitForQuietQueue(page: Page): Promise<void> {
   const named = async () => {
-    const list = await page.request.get(`${MAIN.url}/api/printers`);
+    const list = await page.request.get(`${MAIN.url}/api/v1/printers`);
     if (!list.ok()) return null; // not signed in: there is no queue to ask about
     const printers = (await list.json()) as { id: string; name: string; paused?: boolean }[];
     return printers.find((p) => p.name === "Office page printer") ?? null;
@@ -65,7 +94,7 @@ export async function waitForQuietQueue(page: Page): Promise<void> {
   await expect
     .poll(
       async () => {
-        const queue = await page.request.get(`${MAIN.url}/api/printers/${printer.id}/queue`);
+        const queue = await page.request.get(`${MAIN.url}/api/v1/printers/${printer.id}/queue`);
         const jobs = queue.ok() ? ((await queue.json()) as unknown[]).length : -1;
         return { jobs, paused: (await named())?.paused ?? null };
       },

@@ -76,7 +76,7 @@ def _ids(resp) -> set[str]:
 async def test_list_filters_to_allowed_printers(api_client_with_seed, two_printers):
     a, _b, _, _ = two_printers
     key = await _insert_key(["read"], [str(a)])
-    resp = await api_client_with_seed.get("/api/printers", headers={"X-Label-Hub-Key": key})
+    resp = await api_client_with_seed.get("/api/v1/printers", headers={"X-Label-Hub-Key": key})
     assert resp.status_code == 200, resp.text
     assert _ids(resp) == {str(a)}
 
@@ -85,7 +85,7 @@ async def test_list_filters_to_allowed_printers(api_client_with_seed, two_printe
 async def test_list_unrestricted_key_sees_all(api_client_with_seed, two_printers):
     a, b, _, _ = two_printers
     key = await _insert_key(["read"], [])
-    resp = await api_client_with_seed.get("/api/printers", headers={"X-Label-Hub-Key": key})
+    resp = await api_client_with_seed.get("/api/v1/printers", headers={"X-Label-Hub-Key": key})
     assert resp.status_code == 200, resp.text
     assert {str(a), str(b)} <= _ids(resp)
 
@@ -95,17 +95,19 @@ async def test_slug_lookup_of_foreign_printer_is_404(api_client_with_seed, two_p
     a, _, slug_a, slug_b = two_printers
     key = await _insert_key(["read"], [str(a)])
     headers = {"X-Label-Hub-Key": key}
-    own = await api_client_with_seed.get("/api/printers", params={"slug": slug_a}, headers=headers)
+    own = await api_client_with_seed.get(
+        "/api/v1/printers", params={"slug": slug_a}, headers=headers
+    )
     assert own.status_code == 200, own.text
     assert _ids(own) == {str(a)}
     foreign = await api_client_with_seed.get(
-        "/api/printers", params={"slug": slug_b}, headers=headers
+        "/api/v1/printers", params={"slug": slug_b}, headers=headers
     )
     assert foreign.status_code == 404, foreign.text
     assert foreign.json()["detail"]["error_code"] == "printer_not_found"
     # Indistinguishable from a slug that does not exist.
     missing = await api_client_with_seed.get(
-        "/api/printers", params={"slug": "acl-read-missing"}, headers=headers
+        "/api/v1/printers", params={"slug": "acl-read-missing"}, headers=headers
     )
     assert missing.status_code == 404
     assert missing.json()["detail"]["error_code"] == foreign.json()["detail"]["error_code"]
@@ -117,7 +119,7 @@ async def test_tape_and_queue_of_foreign_printer_403(api_client_with_seed, two_p
     a, b, _, _ = two_printers
     key = await _insert_key(["read"], [str(a)])
     resp = await api_client_with_seed.get(
-        f"/api/printers/{b}/{suffix}", headers={"X-Label-Hub-Key": key}
+        f"/api/v1/printers/{b}/{suffix}", headers={"X-Label-Hub-Key": key}
     )
     assert resp.status_code == 403, resp.text
     assert resp.json()["detail"]["error_code"] == "printer_not_allowed"
@@ -128,12 +130,12 @@ async def test_queue_of_allowed_printer_ok_and_unrestricted_ok(api_client_with_s
     a, b, _, _ = two_printers
     restricted = await _insert_key(["read"], [str(a)])
     resp = await api_client_with_seed.get(
-        f"/api/printers/{a}/queue", headers={"X-Label-Hub-Key": restricted}
+        f"/api/v1/printers/{a}/queue", headers={"X-Label-Hub-Key": restricted}
     )
     assert resp.status_code == 200, resp.text
     unrestricted = await _insert_key(["read"], [])
     resp = await api_client_with_seed.get(
-        f"/api/printers/{b}/queue", headers={"X-Label-Hub-Key": unrestricted}
+        f"/api/v1/printers/{b}/queue", headers={"X-Label-Hub-Key": unrestricted}
     )
     assert resp.status_code == 200, resp.text
 
@@ -144,11 +146,11 @@ async def test_session_list_tape_queue_follow_key_restriction(api_client_with_se
     key = await _insert_key(["print"], [str(a)])
     signed_in = await api_client_with_seed.post("/api/v1/auth/session", json={"key": key})
     assert signed_in.status_code in (200, 201, 204), signed_in.text
-    listing = await api_client_with_seed.get("/api/printers")
+    listing = await api_client_with_seed.get("/api/v1/printers")
     assert listing.status_code == 200, listing.text
     assert _ids(listing) == {str(a)}
-    foreign_slug = await api_client_with_seed.get("/api/printers", params={"slug": slug_b})
+    foreign_slug = await api_client_with_seed.get("/api/v1/printers", params={"slug": slug_b})
     assert foreign_slug.status_code == 404
-    assert (await api_client_with_seed.get(f"/api/printers/{b}/tape")).status_code == 403
-    assert (await api_client_with_seed.get(f"/api/printers/{b}/queue")).status_code == 403
-    assert (await api_client_with_seed.get(f"/api/printers/{a}/queue")).status_code == 200
+    assert (await api_client_with_seed.get(f"/api/v1/printers/{b}/tape")).status_code == 403
+    assert (await api_client_with_seed.get(f"/api/v1/printers/{b}/queue")).status_code == 403
+    assert (await api_client_with_seed.get(f"/api/v1/printers/{a}/queue")).status_code == 200

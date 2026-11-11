@@ -79,16 +79,16 @@ async def test_put_get_delete_happy_path(api_client_with_seed):
     c = api_client_with_seed
     admin, reader = await _key(["admin"]), await _key(["read"])
     pid = await _printer()
-    put = await c.put(f"/api/printers/{pid}/calibration/auto", json=BODY, headers=admin)
+    put = await c.put(f"/api/v1/printers/{pid}/calibration/auto", json=BODY, headers=admin)
     assert put.status_code == 200, put.text
     assert put.json()["offset_x_mm"] == 1.2 and put.json()["method"] == "manual"
-    got = await c.get(f"/api/printers/{pid}/calibration", headers=reader)
+    got = await c.get(f"/api/v1/printers/{pid}/calibration", headers=reader)
     assert got.status_code == 200
     assert [r["tray"] for r in got.json()] == ["auto"]
     assert got.json()[0]["rotation_deg"] == 0.3
-    gone = await c.delete(f"/api/printers/{pid}/calibration/auto", headers=admin)
+    gone = await c.delete(f"/api/v1/printers/{pid}/calibration/auto", headers=admin)
     assert gone.status_code == 204
-    again = await c.get(f"/api/printers/{pid}/calibration", headers=reader)
+    again = await c.get(f"/api/v1/printers/{pid}/calibration", headers=reader)
     assert again.json()[0]["method"] is None and again.json()[0]["offset_x_mm"] is None
 
 
@@ -98,7 +98,7 @@ async def test_put_measured_on(api_client_with_seed):
     pid = await _printer()
     await _type()
     ok = await c.put(
-        f"/api/printers/{pid}/calibration/auto",
+        f"/api/v1/printers/{pid}/calibration/auto",
         json={**BODY, "measured_on": {"type_key": "cal-test", "version": 1}},
         headers=admin,
     )
@@ -107,7 +107,7 @@ async def test_put_measured_on(api_client_with_seed):
         "version": 1,
     }
     bad = await c.put(
-        f"/api/printers/{pid}/calibration/auto",
+        f"/api/v1/printers/{pid}/calibration/auto",
         json={**BODY, "measured_on": {"type_key": "cal-test", "version": 9}},
         headers=admin,
     )
@@ -124,7 +124,7 @@ async def test_put_checks_the_path_before_the_body(api_client_with_seed):
     wild = {**BODY, "offset_x_mm": 10.01}
 
     async def put(tray: str, body: dict) -> Any:
-        return await c.put(f"/api/printers/{pid}/calibration/{tray}", json=body, headers=admin)
+        return await c.put(f"/api/v1/printers/{pid}/calibration/{tray}", json=body, headers=admin)
 
     unknown_tray_and_type = await put("nope", {**BODY, "measured_on": ghost})
     assert unknown_tray_and_type.status_code == 422
@@ -145,21 +145,23 @@ async def test_put_errors(api_client_with_seed):
     admin = await _key(["admin"])
     pid = await _printer()
     out = await c.put(
-        f"/api/printers/{pid}/calibration/auto", json={**BODY, "offset_x_mm": 10.01}, headers=admin
+        f"/api/v1/printers/{pid}/calibration/auto",
+        json={**BODY, "offset_x_mm": 10.01},
+        headers=admin,
     )
     assert out.status_code == 422
     assert _err(out)["error_code"] == "calibration_out_of_range"
     assert _err(out)["error_detail"]["field"] == "offset_x_mm"
-    tray = await c.put(f"/api/printers/{pid}/calibration/nope", json=BODY, headers=admin)
+    tray = await c.put(f"/api/v1/printers/{pid}/calibration/nope", json=BODY, headers=admin)
     assert tray.status_code == 422 and _err(tray)["error_code"] == "tray_unknown"
-    disabled = await c.put(f"/api/printers/{pid}/calibration/off", json=BODY, headers=admin)
+    disabled = await c.put(f"/api/v1/printers/{pid}/calibration/off", json=BODY, headers=admin)
     assert disabled.status_code == 422 and _err(disabled)["error_code"] == "tray_unknown"
     tape = await _printer("brother_ql")
-    kind = await c.put(f"/api/printers/{tape}/calibration/auto", json=BODY, headers=admin)
+    kind = await c.put(f"/api/v1/printers/{tape}/calibration/auto", json=BODY, headers=admin)
     assert kind.status_code == 409 and _err(kind)["error_code"] == "media_kind_mismatch"
-    missing = await c.put(f"/api/printers/{uuid4()}/calibration/auto", json=BODY, headers=admin)
+    missing = await c.put(f"/api/v1/printers/{uuid4()}/calibration/auto", json=BODY, headers=admin)
     assert missing.status_code == 404 and _err(missing)["error_code"] == "printer_not_found"
-    listing = await c.get(f"/api/printers/{pid}/calibration", headers=admin)
+    listing = await c.get(f"/api/v1/printers/{pid}/calibration", headers=admin)
     assert listing.json()[0]["method"] is None  # nothing was stored
 
 
@@ -167,10 +169,10 @@ async def test_delete_errors(api_client_with_seed):
     c = api_client_with_seed
     admin = await _key(["admin"])
     pid = await _printer()
-    tray = await c.delete(f"/api/printers/{pid}/calibration/nope", headers=admin)
+    tray = await c.delete(f"/api/v1/printers/{pid}/calibration/nope", headers=admin)
     assert tray.status_code == 422 and _err(tray)["error_code"] == "tray_unknown"
     tape = await _printer("brother_ql")
-    kind = await c.delete(f"/api/printers/{tape}/calibration/auto", headers=admin)
+    kind = await c.delete(f"/api/v1/printers/{tape}/calibration/auto", headers=admin)
     assert kind.status_code == 409 and _err(kind)["error_code"] == "media_kind_mismatch"
 
 
@@ -182,20 +184,20 @@ async def test_scope_matrix(api_client_with_seed):
     await _type()
     fit_body = _fit_body(Deviation(120, -40, 1_001_000, 999_000, 300_000))
     for headers in (reader, printer_key):
-        put = await c.put(f"/api/printers/{pid}/calibration/auto", json=BODY, headers=headers)
+        put = await c.put(f"/api/v1/printers/{pid}/calibration/auto", json=BODY, headers=headers)
         assert put.status_code == 403, headers
-        delete = await c.delete(f"/api/printers/{pid}/calibration/auto", headers=headers)
+        delete = await c.delete(f"/api/v1/printers/{pid}/calibration/auto", headers=headers)
         assert delete.status_code == 403
-    assert (await c.put(f"/api/printers/{pid}/calibration/auto", json=BODY)).status_code == 401
+    assert (await c.put(f"/api/v1/printers/{pid}/calibration/auto", json=BODY)).status_code == 401
     assert (
-        await c.get(f"/api/printers/{pid}/calibration", headers=printer_key)
+        await c.get(f"/api/v1/printers/{pid}/calibration", headers=printer_key)
     ).status_code == 200  # print implies read
-    assert (await c.get(f"/api/printers/{pid}/calibration", headers=reader)).status_code == 200
-    assert (await c.get(f"/api/printers/{pid}/calibration", headers=admin)).status_code == 200
-    ok = await c.post(f"/api/printers/{pid}/calibration/auto/fit", json=fit_body, headers=reader)
+    assert (await c.get(f"/api/v1/printers/{pid}/calibration", headers=reader)).status_code == 200
+    assert (await c.get(f"/api/v1/printers/{pid}/calibration", headers=admin)).status_code == 200
+    ok = await c.post(f"/api/v1/printers/{pid}/calibration/auto/fit", json=fit_body, headers=reader)
     assert ok.status_code == 200, ok.text
     assert (
-        await c.post(f"/api/printers/{pid}/calibration/auto/fit", json=fit_body)
+        await c.post(f"/api/v1/printers/{pid}/calibration/auto/fit", json=fit_body)
     ).status_code == 401
 
 
@@ -206,17 +208,21 @@ async def test_printer_restricted_key_gets_403_on_another_printer(api_client_wit
     admin_r = await _key(["admin"], [str(mine)])
     read_r = await _key(["read"], [str(mine)])
     for method, path, kwargs in [
-        ("GET", f"/api/printers/{other}/calibration", {}),
-        ("PUT", f"/api/printers/{other}/calibration/auto", {"json": BODY}),
-        ("DELETE", f"/api/printers/{other}/calibration/auto", {}),
-        ("POST", f"/api/printers/{other}/calibration/auto/fit", {"json": _fit_body(Deviation())}),
+        ("GET", f"/api/v1/printers/{other}/calibration", {}),
+        ("PUT", f"/api/v1/printers/{other}/calibration/auto", {"json": BODY}),
+        ("DELETE", f"/api/v1/printers/{other}/calibration/auto", {}),
+        (
+            "POST",
+            f"/api/v1/printers/{other}/calibration/auto/fit",
+            {"json": _fit_body(Deviation())},
+        ),
     ]:
         resp = await c.request(
             method, path, headers=admin_r if method in ("PUT", "DELETE") else read_r, **kwargs
         )
         assert resp.status_code == 403, (method, resp.text)
         assert resp.json()["detail"]["error_code"] == "printer_not_allowed"
-    own = await c.put(f"/api/printers/{mine}/calibration/auto", json=BODY, headers=admin_r)
+    own = await c.put(f"/api/v1/printers/{mine}/calibration/auto", json=BODY, headers=admin_r)
     assert own.status_code == 200
 
 
@@ -235,7 +241,7 @@ async def test_fit_returns_values_and_saves_nothing(api_client_with_seed):
     pid = await _printer()
     await _type()
     resp = await c.post(
-        f"/api/printers/{pid}/calibration/auto/fit",
+        f"/api/v1/printers/{pid}/calibration/auto/fit",
         json=_fit_body(Deviation(120, -40, 1_001_000, 999_000, 300_000)),
         headers=reader,
     )
@@ -245,7 +251,7 @@ async def test_fit_returns_values_and_saves_nothing(api_client_with_seed):
     assert out["values"]["scale_x"] == pytest.approx(1.001, abs=1e-5)
     assert out["values"]["rotation_deg"] == pytest.approx(0.3, abs=0.001)
     assert out["flagged"] == [] and out["out_of_range"] == [] and len(out["residuals_mm"]) == 4
-    listing = await c.get(f"/api/printers/{pid}/calibration", headers=reader)
+    listing = await c.get(f"/api/v1/printers/{pid}/calibration", headers=reader)
     assert listing.json()[0]["method"] is None
 
 
@@ -255,7 +261,7 @@ async def test_fit_out_of_range_is_returned_with_names(api_client_with_seed):
     pid = await _printer()
     await _type()
     resp = await c.post(
-        f"/api/printers/{pid}/calibration/auto/fit",
+        f"/api/v1/printers/{pid}/calibration/auto/fit",
         json=_fit_body(Deviation(1500, 0, 1_000_000, 1_000_000, 0)),
         headers=reader,
     )
@@ -269,7 +275,7 @@ async def test_fit_errors(api_client_with_seed):
     reader = await _key(["read"])
     pid = await _printer()
     await _type()
-    url = f"/api/printers/{pid}/calibration/auto/fit"
+    url = f"/api/v1/printers/{pid}/calibration/auto/fit"
     good = _fit_body(Deviation())
     few = await c.post(url, json={**good, "readings": good["readings"][:2]}, headers=reader)
     assert few.status_code == 422  # request validation: min 3 readings
@@ -291,10 +297,10 @@ async def test_fit_errors(api_client_with_seed):
     assert outside.status_code == 422
     assert _err(outside)["error_code"] == "invalid_geometry"
     assert _err(outside)["error_detail"]["reading"] == 3
-    tray = await c.post(f"/api/printers/{pid}/calibration/off/fit", json=good, headers=reader)
+    tray = await c.post(f"/api/v1/printers/{pid}/calibration/off/fit", json=good, headers=reader)
     assert tray.status_code == 422 and _err(tray)["error_code"] == "tray_unknown"
     tape = await _printer("brother_ql")
-    kind = await c.post(f"/api/printers/{tape}/calibration/auto/fit", json=good, headers=reader)
+    kind = await c.post(f"/api/v1/printers/{tape}/calibration/auto/fit", json=good, headers=reader)
     assert kind.status_code == 409 and _err(kind)["error_code"] == "media_kind_mismatch"
 
 
@@ -304,7 +310,7 @@ async def test_fit_with_explicit_version(api_client_with_seed):
     pid = await _printer()
     await _type()
     body = {**_fit_body(Deviation(120, -40, 1_001_000, 999_000, 300_000)), "version": 1}
-    resp = await c.post(f"/api/printers/{pid}/calibration/auto/fit", json=body, headers=reader)
+    resp = await c.post(f"/api/v1/printers/{pid}/calibration/auto/fit", json=body, headers=reader)
     assert resp.status_code == 200, resp.text
     assert resp.json()["values"]["offset_y_mm"] == pytest.approx(-0.4, abs=0.01)
 
@@ -315,7 +321,7 @@ async def test_measured_on_is_validated(api_client_with_seed):
     pid = await _printer()
     for measured in ({"type_key": "k" * 201, "version": 1}, {"type_key": "k", "version": 0}):
         resp = await c.put(
-            f"/api/printers/{pid}/calibration/auto",
+            f"/api/v1/printers/{pid}/calibration/auto",
             json={**BODY, "measured_on": measured},
             headers=admin,
         )

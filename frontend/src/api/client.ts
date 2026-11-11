@@ -125,6 +125,15 @@ function parseProblem(status: number, body: unknown): ApiError {
             : fallback;
     return new ApiError(status, code, message, isObject(d.error_detail) ? d.error_detail : null);
   }
+  // The envelope returned directly (the label preview's refusals), not wrapped in `detail`.
+  if (typeof body.error_code === "string") {
+    return new ApiError(
+      status,
+      body.error_code,
+      typeof body.error_message === "string" ? body.error_message : fallback,
+      isObject(body.error_detail) ? body.error_detail : null,
+    );
+  }
   const code = typeof body.type === "string" && body.type !== "about:blank" ? body.type : null;
   const extensions = isObject(body.extensions) ? body.extensions : null;
   if (typeof d === "string") return new ApiError(status, code, d, extensions);

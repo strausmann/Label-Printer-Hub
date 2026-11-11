@@ -1,8 +1,9 @@
 import { act, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
-import { apiErrorBody, GEOMETRY_L4736, mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, pageStatus, PRINTER_A, respond, SHEET_TYPE, status, type Call } from "../test-api";
+import { recordJobEvent, resetPrintWatch } from "../jobs/printWatch";
+import { apiErrorBody, GEOMETRY_L4736, job, mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, pageStatus, PRINTER_A, respond, SHEET_TYPE, status, type Call } from "../test-api";
 
 vi.setConfig({ testTimeout: 15_000 });
 
@@ -22,8 +23,9 @@ afterAll(() => configure({ asyncUtilTimeout: defaultAsyncTimeout }));
 afterEach(() => vi.unstubAllGlobals());
 
 const P = PAGE_PRINTER.id;
-const BASE = `/api/printers/${P}/calibration`;
+const BASE = `/api/v1/printers/${P}/calibration`;
 const JOB = "dddddddd-0000-4000-8000-000000000001";
+const RETRY = "dddddddd-0000-4000-8000-000000000002";
 const READ_SESSION = { ...SIGNED_IN, scope: "read" as const };
 const PRINT_SESSION = { ...SIGNED_IN, scope: "print" as const };
 
@@ -47,15 +49,15 @@ const disabledPrinter = { ...PAGE_PRINTER, id: "55555555-5555-4555-8555-55555555
 
 function routes(extra: Record<string, unknown> = {}) {
   return {
-    "GET /api/printers": [PAGE_PRINTER, secondPrinter, PRINTER_A, disabledPrinter],
-    [`GET /api/printers/${P}/status`]: pageStatus(P),
-    [`GET /api/printers/${secondPrinter.id}/status`]: pageStatus(secondPrinter.id),
-    [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
-    [`GET /api/printers/${P}/capabilities`]: PAGE_CAPABILITIES,
-    [`GET /api/printers/${secondPrinter.id}/capabilities`]: PAGE_CAPABILITIES,
+    "GET /api/v1/printers": [PAGE_PRINTER, secondPrinter, PRINTER_A, disabledPrinter],
+    [`GET /api/v1/printers/${P}/status`]: pageStatus(P),
+    [`GET /api/v1/printers/${secondPrinter.id}/status`]: pageStatus(secondPrinter.id),
+    [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
+    [`GET /api/v1/printers/${P}/capabilities`]: PAGE_CAPABILITIES,
+    [`GET /api/v1/printers/${secondPrinter.id}/capabilities`]: PAGE_CAPABILITIES,
     [`GET ${BASE}`]: [stored, none],
-    [`GET /api/printers/${secondPrinter.id}/calibration`]: [{ ...none, tray: "main" }],
-    "GET /api/sheet-types": [SHEET_TYPE, oneColumn],
+    [`GET /api/v1/printers/${secondPrinter.id}/calibration`]: [{ ...none, tray: "main" }],
+    "GET /api/v1/sheet-types": [SHEET_TYPE, oneColumn],
     ...extra,
   };
 }
@@ -166,7 +168,7 @@ describe("the page and its preselection (C10)", () => {
   });
 
   it("with no page printer it says what to do, and offers nothing to print", async () => {
-    mockApi({ "GET /api/printers": [PRINTER_A], [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id), "GET /api/sheet-types": [SHEET_TYPE] });
+    mockApi({ "GET /api/v1/printers": [PRINTER_A], [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id), "GET /api/v1/sheet-types": [SHEET_TYPE] });
     await renderApp({ path: "/calibration" });
     expect(await screen.findByText("There is no page printer yet. Add one under Settings › Printers.")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Print calibration page" })).toBeNull();
@@ -225,7 +227,7 @@ describe("step 1: the calibration page", () => {
   it("prints the calibration page without correction and links to the job", async () => {
     const { calls } = await open({ [`POST ${BASE}/main/page`]: respond(202, { job_id: JOB }) });
     await userEvent.click(await button("Print calibration page"));
-    expect(await screen.findByText("The calibration page is queued.")).toBeVisible();
+    expect(await within(await screen.findByRole("status", { name: "Calibration page status" })).findByText("Queued")).toBeVisible();
     expect(body(only(calls, "POST", "/page")[0])).toEqual({ type: "L4736REV", version: 1, corrected: false });
     expect(screen.getByRole("link", { name: "Show the job" })).toHaveAttribute("href", `/jobs/${JOB}`);
   });
@@ -237,7 +239,18 @@ describe("step 1: the calibration page", () => {
     });
     await userEvent.click(await button("Print calibration page"));
     expect(await screen.findByText("The print queue does not know this printer yet. Try again in a moment.")).toBeVisible();
-    expect(screen.queryByText("The calibration page is queued.")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Show the job" })).toBeNull();
+  });
+
+  it("says in words when the printer is held after a device swap (printer-identity-mismatch)", async () => {
+    await open({
+      [`POST ${BASE}/main/page`]: () =>
+        respond(409, { detail: { type: "printer-identity-mismatch", title: "Held", status: 409, detail: "The printer is held" } }),
+    });
+    await userEvent.click(await button("Print calibration page"));
+    expect(
+      await screen.findByText("This printer may be a different device now. An admin has to confirm it on the printer's page first."),
+    ).toBeVisible();
   });
 
   it("says in words when the sheet type has no crossings", async () => {
@@ -497,14 +510,58 @@ describe("readings: row identity", () => {
   });
 
   it("a sheet with two columns has no readings helper and says to enter the values directly", async () => {
-    await open({ "GET /api/sheet-types": [twoColumns] });
+    await open({ "GET /api/v1/sheet-types": [twoColumns] });
     expect(await screen.findByText("On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly.")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Fit" })).toBeNull();
   });
 });
 
+describe("the chosen sheet type lives in the address (#238)", () => {
+  const two = { "GET /api/v1/sheet-types": [SHEET_TYPE, typeB] };
+  const typeBox = () => screen.findByRole("combobox", { name: /Sheet type/ });
+  async function chooseB() {
+    await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /OTHERTYPE/ }));
+  }
+
+  it("type survives a tray change", async () => {
+    const { router } = await open(two);
+    await chooseB();
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ type: "OTHERTYPE" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Tray$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Bypass" }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ tray: "bypass", type: "OTHERTYPE" }));
+    expect(((await typeBox()) as HTMLInputElement).value).toContain("OTHERTYPE");
+  });
+
+  it("type survives a printer change", async () => {
+    const { router } = await open(two);
+    await chooseB();
+    await userEvent.click(await screen.findByRole("button", { name: /Printer$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Second laser" }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ printer: secondPrinter.id, type: "OTHERTYPE" }));
+    expect(((await typeBox()) as HTMLInputElement).value).toContain("OTHERTYPE");
+  });
+
+  it("opens on the type the address names (what a reload does)", async () => {
+    await open(two, SIGNED_IN, `/calibration?printer=${P}&tray=main&type=OTHERTYPE`);
+    expect(((await typeBox()) as HTMLInputElement).value).toContain("OTHERTYPE");
+  });
+
+  it("an unknown or overlong type falls back to the default type", async () => {
+    await open(two, SIGNED_IN, `/calibration?printer=${P}&tray=main&type=gone`);
+    expect(((await typeBox()) as HTMLInputElement).value).toContain("L4736REV");
+  });
+
+  it("an overlong type is dropped from the address", async () => {
+    const { router } = await open(two, SIGNED_IN, `/calibration?printer=${P}&tray=main&type=${"x".repeat(65)}`);
+    await typeBox();
+    expect(router.state.location.search.type).toBeUndefined();
+  });
+});
+
 describe("which type the values were measured on", () => {
-  const two = { "GET /api/sheet-types": [SHEET_TYPE, typeB], [`PUT ${BASE}/main`]: stored, [`POST ${BASE}/main/fit`]: FIT };
+  const two = { "GET /api/v1/sheet-types": [SHEET_TYPE, typeB], [`PUT ${BASE}/main`]: stored, [`POST ${BASE}/main/fit`]: FIT };
   async function chooseB() {
     await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
     await userEvent.click(await screen.findByRole("option", { name: /OTHERTYPE/ }));
@@ -598,7 +655,7 @@ describe("step 3: check print with correction", () => {
   it("prints the page with the stored correction", async () => {
     const { calls } = await open({ [`POST ${BASE}/main/page`]: respond(202, { job_id: JOB }) });
     await userEvent.click(await button("Check print with correction"));
-    expect(await screen.findByText("The check page is queued.")).toBeVisible();
+    expect(await within(await screen.findByRole("status", { name: "Check page status" })).findByText("Queued")).toBeVisible();
     expect(body(only(calls, "POST", "/page")[0])).toEqual({ type: "L4736REV", version: 1, corrected: true });
     expect(screen.getByText(/within 0\.5 mm/)).toBeVisible();
   });
@@ -618,6 +675,211 @@ describe("step 3: check print with correction", () => {
   it("is not offered while the tray has no correction", async () => {
     await open({}, SIGNED_IN, `/calibration?printer=${P}&tray=bypass`);
     expect(await button("Check print with correction")).toBeDisabled();
+  });
+});
+
+describe("the live print status line (#239)", () => {
+  const event = (to: string, extra: Record<string, unknown> = {}) =>
+    act(() => recordJobEvent({ job_id: JOB, from_state: "queued", to_state: to, queue_depth: 1, error_code: null, ...extra }));
+  const lineOf = (name: string) => screen.getByRole("status", { name });
+  const printed = async (routesExtra: Record<string, unknown> = {}) => {
+    const api = await open({ [`POST ${BASE}/main/page`]: respond(202, { job_id: JOB }), ...routesExtra });
+    await userEvent.click(await button("Print calibration page"));
+    await within(lineOf("Calibration page status")).findByText("Queued");
+    return api;
+  };
+  // The status element holds only the sentence; the link and Retry sit beside it, in the same line block.
+  const around = (line: HTMLElement) => within(line.parentElement!);
+  // A real calibration page job, as the hub stores it.
+  const PAGE_JOB = { template_key: null, payload: { kind: "calibration_page", tray: "main", detail: { type_key: "L4736REV", version: 1 } } };
+  const stack = () => within(screen.getByRole("region", { name: "Print status" }));
+  beforeEach(() => resetPrintWatch());
+
+  it("result does not sit in the button row", async () => {
+    await printed();
+    const line = lineOf("Calibration page status");
+    const row = screen.getByRole("link", { name: "Download PDF" }).parentElement!;
+    expect(row.contains(line)).toBe(false);
+    expect(row.contains(screen.getByRole("link", { name: "Show the job" }))).toBe(false);
+    // Below the row, in document order, and in the same step section.
+    expect(row.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(row.closest("section")!.contains(line)).toBe(true);
+  });
+
+  it("the line is there before the first print, empty, so nothing is added to the page later", async () => {
+    await open();
+    const line = await screen.findByRole("status", { name: "Calibration page status" });
+    expect(line).toHaveAttribute("aria-live", "polite");
+    expect(line.textContent).toBe("");
+  });
+
+  it("status follows job events queued -> printing -> done", async () => {
+    await printed();
+    const line = lineOf("Calibration page status");
+    expect(around(line).getByRole("link", { name: "Show the job" })).toHaveAttribute("href", `/jobs/${JOB}`);
+    event("printing");
+    expect(within(line).getByText("Printing")).toBeVisible();
+    event("printing", { at_printer: "stopped" });
+    expect(within(line).getByText("Stopped at the printer")).toBeVisible();
+    event("completed");
+    expect(within(line).getByText("Done")).toBeVisible();
+    expect(within(line).getByText(/measure the crossings/)).toBeVisible();
+    // The stack agrees with the line: both read the same job state.
+    expect(within(screen.getByRole("region", { name: "Print status" })).getByText("Done")).toBeVisible();
+  });
+
+  it("failed shows the localised error and a Retry that the line follows", async () => {
+    const { calls } = await printed({
+      [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "printer_offline: down" }),
+      [`POST /api/v1/jobs/${JOB}/retry`]: job(RETRY, P, "queued", PAGE_JOB),
+    });
+    event("failed", { error_code: "printer_offline" });
+    const line = lineOf("Calibration page status");
+    expect(within(line).getByText("Failed")).toBeVisible();
+    expect(within(line).getByText(/The printer could not be reached/)).toBeVisible();
+    fireEvent.click(await around(line).findByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(within(line).getByText("Queued")).toBeVisible());
+    expect(calls.some((c) => c.method === "POST" && c.path === `/api/v1/jobs/${JOB}/retry`)).toBe(true);
+    expect(around(line).getByRole("link", { name: "Show the job" })).toHaveAttribute("href", `/jobs/${RETRY}`);
+    act(() => recordJobEvent({ job_id: RETRY, from_state: "queued", to_state: "completed", queue_depth: 0, error_code: null }));
+    expect(within(line).getByText("Done")).toBeVisible();
+  });
+
+  it("Retry follows the hub's job record, not the event: a record that does not say failed yet offers none", async () => {
+    // A real calibration page job is retryable once it failed; here the record still says "done" while the event
+    // already said "failed" (the two disagree for a moment), and the hub's record decides.
+    const { calls } = await printed({ [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "done", PAGE_JOB) });
+    event("failed", { error_code: "interrupted" });
+    const line = lineOf("Calibration page status");
+    expect(await within(line).findByText(/interrupted while it was printing/)).toBeVisible();
+    await waitFor(() => expect(calls.some((c) => c.path === `/api/v1/jobs/${JOB}`)).toBe(true));
+    expect(around(line).queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("a refused retry says why, in words", async () => {
+    await printed({
+      [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }),
+      [`POST /api/v1/jobs/${JOB}/retry`]: respond(409, apiErrorBody("printer_disabled", "off")),
+    });
+    event("failed", { error_code: "ipp_aborted" });
+    const line = lineOf("Calibration page status");
+    fireEvent.click(await around(line).findByRole("button", { name: "Retry" }));
+    expect(await around(line).findByText("The printer is switched off. Switch it on in the settings, then retry.")).toBeVisible();
+  });
+
+  it("announces once: the line is live, the stack shows the card without a live region of its own", async () => {
+    await printed({ [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }) });
+    // The card is there from the first moment, and in no live region (the line announces it).
+    expect(stack().getByText("Queued").closest("[aria-live]")).toBeNull();
+    event("failed", { error_code: "ipp_aborted" });
+    const line = lineOf("Calibration page status");
+    expect(stack().getByText("Failed").closest("[aria-live]")).toBeNull();
+    expect(line).toHaveAttribute("aria-live", "polite");
+    // The live element holds only the sentence: the controls are beside it, so a state change does not re-read them.
+    expect(within(line).queryByRole("link")).toBeNull();
+    expect(within(line).queryByRole("button")).toBeNull();
+    expect(await around(line).findByRole("button", { name: "Retry" })).toBeVisible();
+  });
+
+  it("the stack announces the card again once the page line is gone", async () => {
+    await printed({ [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }) });
+    event("failed", { error_code: "ipp_aborted" });
+    expect(stack().getByText("Failed").closest("[aria-live]")).toBeNull();
+    await userEvent.click(screen.getAllByRole("link", { name: "Jobs" })[0]!);
+    await waitFor(() => expect(stack().getByText("Failed").closest("[aria-live]")?.getAttribute("aria-live")).toBe("assertive"));
+  });
+
+  it("Retry pressed in the line and in the stack before the first answer clones the job once", async () => {
+    let answer: (() => void) | undefined;
+    const { calls } = await printed({
+      [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }),
+      [`POST /api/v1/jobs/${JOB}/retry`]: () => new Promise((resolve) => (answer = () => resolve(job(RETRY, P, "queued", PAGE_JOB)))),
+    });
+    event("failed", { error_code: "ipp_aborted" });
+    const line = lineOf("Calibration page status");
+    fireEvent.click(await around(line).findByRole("button", { name: "Retry" }));
+    fireEvent.click(await stack().findByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST" && c.path.endsWith("/retry"))).toHaveLength(1));
+    act(() => answer?.());
+    await waitFor(() => expect(within(line).getByText("Queued")).toBeVisible());
+    expect(around(line).getByRole("link", { name: "Show the job" })).toHaveAttribute("href", `/jobs/${RETRY}`);
+    expect(calls.filter((c) => c.method === "POST" && c.path.endsWith("/retry"))).toHaveLength(1);
+    // One card, following the new job.
+    expect(stack().getAllByText("Queued")).toHaveLength(1);
+  });
+
+  it("leaving the page before the POST answers does not leave the card unannounced", async () => {
+    let answer: (() => void) | undefined;
+    await open({
+      [`POST ${BASE}/main/page`]: () => new Promise((resolve) => (answer = () => resolve(respond(202, { job_id: JOB })))),
+      [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }),
+    });
+    await userEvent.click(await button("Print calibration page"));
+    await waitFor(() => expect(answer).toBeDefined());
+    // Away from the calibration page: the line is gone before the hub answered.
+    await userEvent.click(screen.getAllByRole("link", { name: "Jobs" })[0]!);
+    await screen.findByRole("heading", { level: 1, name: "Jobs" });
+    await act(async () => answer?.());
+    expect(await stack().findByText("Queued")).toBeVisible();
+    // Nobody claimed it: it is in a live region, and a later failure is announced assertively.
+    expect(stack().getByText("Queued").closest("[aria-live]")?.getAttribute("aria-live")).toBe("polite");
+    event("failed", { error_code: "ipp_aborted" });
+    expect(stack().getByText("Failed").closest("[aria-live]")?.getAttribute("aria-live")).toBe("assertive");
+  });
+
+  it("after a Retry pressed in the stack the new job's card is still in the quiet list", async () => {
+    // The window itself (claim handed over, no moment unclaimed) is pinned by the printWatch unit test
+    // "a retry hands the claim over"; here the end state through the real components.
+    await printed({
+      [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }),
+      [`POST /api/v1/jobs/${JOB}/retry`]: job(RETRY, P, "queued", PAGE_JOB),
+    });
+    event("failed", { error_code: "ipp_aborted" });
+    const line = lineOf("Calibration page status");
+    fireEvent.click(await stack().findByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(around(line).getByRole("link", { name: "Show the job" })).toHaveAttribute("href", `/jobs/${RETRY}`));
+    expect(stack().getByText("Queued").closest("[aria-live]")).toBeNull();
+    act(() => recordJobEvent({ job_id: RETRY, from_state: "queued", to_state: "failed", queue_depth: 0, error_code: "ipp_aborted" }));
+    expect(stack().getByText("Failed").closest("[aria-live]")).toBeNull();
+  });
+
+  it("a Retry pressed in the stack moves the line to the new job", async () => {
+    const { calls } = await printed({
+      [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }),
+      [`POST /api/v1/jobs/${JOB}/retry`]: job(RETRY, P, "queued", PAGE_JOB),
+    });
+    event("failed", { error_code: "ipp_aborted" });
+    const line = lineOf("Calibration page status");
+    fireEvent.click(await stack().findByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(within(line).getByText("Queued")).toBeVisible());
+    expect(around(line).getByRole("link", { name: "Show the job" })).toHaveAttribute("href", `/jobs/${RETRY}`);
+    expect(calls.filter((c) => c.method === "POST" && c.path.endsWith("/retry"))).toHaveLength(1);
+    act(() => recordJobEvent({ job_id: RETRY, from_state: "queued", to_state: "completed", queue_depth: 0, error_code: null }));
+    expect(within(line).getByText("Done")).toBeVisible();
+  });
+
+  it("the check page has its own line under its own button", async () => {
+    await open({ [`POST ${BASE}/main/page`]: respond(202, { job_id: JOB }) });
+    await userEvent.click(await button("Check print with correction"));
+    const line = await screen.findByRole("status", { name: "Check page status" });
+    await within(line).findByText("Queued");
+    event("completed");
+    expect(within(line).getByText(/within 0\.5 mm/)).toBeVisible();
+    expect(lineOf("Calibration page status").textContent).toBe("");
+    const row = screen.getByRole("button", { name: "Check print with correction" }).parentElement!;
+    expect(row.contains(line)).toBe(false);
+  });
+
+  it("a refusal because the printer is held after a device swap stays in the page", async () => {
+    await open({
+      [`POST ${BASE}/main/page`]: () =>
+        respond(409, { detail: { type: "printer-identity-mismatch", title: "Held", status: 409, detail: "held" } }),
+    });
+    await userEvent.click(await button("Print calibration page"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("This printer may be a different device now.");
+    const row = screen.getByRole("link", { name: "Download PDF" }).parentElement!;
+    expect(row.contains(alert)).toBe(false);
   });
 });
 

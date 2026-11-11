@@ -104,7 +104,7 @@ test.describe.serial("scan", () => {
     await printer.click();
     await expect(page).toHaveURL(/\/printers\/[0-9a-f-]{36}$/);
 
-    const jobs = (await (await page.request.get("/api/jobs?limit=50")).json()) as Array<{ id: string }>;
+    const jobs = (await (await page.request.get("/api/v1/jobs?limit=50")).json()) as Array<{ id: string }>;
     expect(jobs.length).toBeGreaterThan(0);
     const id = jobs[0]!.id;
     await page.keyboard.press("/");
@@ -128,8 +128,8 @@ test.describe.serial("scan", () => {
       const registration = await navigator.serviceWorker.ready;
       const scope = registration.scope;
       // Touch the API from the page, then look at everything the worker has stored.
-      await fetch("/api/info");
-      await fetch("/api/jobs?limit=5");
+      await fetch("/api/v1/info");
+      await fetch("/api/v1/jobs?limit=5");
       const urls: string[] = [];
       for (const name of await caches.keys()) for (const request of await (await caches.open(name)).keys()) urls.push(new URL(request.url).pathname);
       return { scope, urls };

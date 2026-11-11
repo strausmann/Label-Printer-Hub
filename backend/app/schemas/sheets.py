@@ -81,6 +81,9 @@ class SheetTypeRead(BaseModel):
     origin: Literal["seed", "custom", "imported"]
     source_name: str | None
     source_url: str | None
+    source_url_shipped: bool = Field(
+        description="True only for a seed type whose source URL is the one shipped with the hub."
+    )
     notes: str | None
     archived_at: datetime | None
     created_at: datetime
@@ -256,7 +259,7 @@ class SheetRead(SheetSummary):
 
 
 class SheetCreated(SheetRead):
-    """The response of ``POST /api/sheets``: the sheet, and the ID-only job of a ``cell`` sheet."""
+    """The response of ``POST /api/v1/sheets``: the sheet and the ID-only job of a cell sheet."""
 
     job_id: UUID | None = Field(
         description="The queued ID-only job (`id_placement` `cell`); otherwise `null`."

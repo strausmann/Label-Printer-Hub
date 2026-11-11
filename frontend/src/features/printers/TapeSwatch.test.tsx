@@ -15,14 +15,16 @@ const ui = (props: Parameters<typeof TapeSwatch>[0]) => (
 
 describe("TapeSwatch", () => {
   it("does not claim an empty printer before the first probe", () => {
-    render(ui({ tapeLoaded: null, probed: false }));
+    render(ui({ widthMm: null, colour: null, probed: false }));
     expect(screen.getByText("Tape not known yet")).toBeVisible();
   });
-  it("names an unknown colour without a swatch and says when none is reported", () => {
-    const { unmount } = render(ui({ tapeLoaded: "9mm laminated clear/black" }));
+  it("shows no colour line without a colour", () => {
+    render(ui({ widthMm: 12, colour: null }));
+    expect(screen.getByText("12 mm")).toBeVisible();
+    expect(screen.queryByText(/colour/i)).toBeNull();
+  });
+  it("names a colour next to its swatch", () => {
+    render(ui({ widthMm: 12, colour: "clear" }));
     expect(screen.getByText("Clear")).toBeVisible();
-    unmount();
-    render(ui({ tapeLoaded: "12mm" }));
-    expect(screen.getByText("Colour not reported")).toBeVisible();
   });
 });

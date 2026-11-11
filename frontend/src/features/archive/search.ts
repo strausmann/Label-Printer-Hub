@@ -12,7 +12,7 @@ export interface ArchiveSearch {
   type?: string | undefined;
 }
 
-/** What the API accepts (`GET /api/sheet-types`): longer values answer 422. */
+/** What the API accepts (`GET /api/v1/sheet-types`): longer values answer 422. */
 export const MAX_QUERY = 100;
 export const MAX_VENDOR = 200;
 

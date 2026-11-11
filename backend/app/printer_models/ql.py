@@ -22,6 +22,7 @@ from app.models.tape import TapeSpec
 from app.printer_backends.base import PrinterBackend
 from app.printer_models.base import PrinterModel
 from app.printer_models.registry import ModelRegistry
+from app.schemas.label_layout import LabelOrientation
 from app.services.producers.tape_description import TapeDescription
 from app.services.status_block import MediaType, StatusBlock
 
@@ -210,13 +211,21 @@ class _QLQueuePrinter:
         self.id: UUID = printer_id
 
     async def print_image(self, image: Image.Image, *, tape_mm: int, **options: Any) -> None:
+        """Print one image. ``half_cut`` is never forwarded: QL has none (full cut only).
+
+        ``orientation`` (#258) comes from the job options as ``"across"``/``"along"`` (or is
+        missing for jobs queued before #258) and decides the backend's rotation.
+        """
         media_type = options.pop("media_type", self._default_media_type)
         tape_spec = self._tape_registry.lookup_ql(tape_mm, media_type)
-        await self._backend.print_image(
+        # The PrinterBackend protocol has no ``orientation``; the QL backend does.
+        backend: Any = self._backend
+        await backend.print_image(
             image,
             tape_spec,
             auto_cut=bool(options.pop("auto_cut", True)),
             high_resolution=bool(options.pop("high_resolution", False)),
+            orientation=_orientation(options.pop("orientation", None)),
         )
 
     async def print_images(
@@ -235,15 +244,42 @@ class _QLQueuePrinter:
         media_type — analog zu _PTPQueuePrinter.print_images. Nur mit tape_mm
         würfe lookup_ql einen TypeError.
         """
+        from app.printer_backends.exceptions import PrintFailedError, refused_before_sending
+        from app.services.tape_registry import UnknownTapeError
+
         media_type = options.pop("media_type", self._default_media_type)
-        tape_spec = self._tape_registry.lookup_ql(tape_mm, media_type)
-        await self._backend.print_images(
+        try:
+            tape_spec = self._tape_registry.lookup_ql(tape_mm, media_type)
+        except UnknownTapeError as exc:
+            # #277: no tape spec: refused before anything was sent, the labels did not print.
+            raise refused_before_sending(PrintFailedError(str(exc))) from exc
+        backend: Any = self._backend  # protocol lacks ``orientation`` (#258), see print_image
+        await backend.print_images(
             images,
             tape_spec,
             auto_cut=bool(options.pop("auto_cut", True)),
             high_resolution=bool(options.pop("high_resolution", False)),
             half_cut=False,  # QL-Series erzwingt half_cut=False
+            orientation=_orientation(options.pop("orientation", None)),
         )
+
+    async def check_status(self) -> None:
+        """#277: the status check after each group of a tape run: the SNMP preflight.
+
+        Not verified on hardware whether the QL-820NWB sets ``noPaper`` when a DK roll ends;
+        the brother_ql network backend reads nothing back while printing. Without that bit
+        the check catches only an unreachable printer (``PrinterOfflineError``) and an open
+        cover.
+        """
+        backend: Any = self._backend  # the PrinterBackend protocol has no preflight_check
+        await backend.preflight_check()
+
+
+def _orientation(value: object) -> LabelOrientation | None:
+    """Job option -> ``LabelOrientation``; ``None`` (pre-#258 job) keeps the heuristic."""
+    if value is None:
+        return None
+    return LabelOrientation(str(value))
 
 
 # Module-level registration so any import path triggers it.

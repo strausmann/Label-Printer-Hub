@@ -44,7 +44,7 @@ async def test_key_with_no_restriction_allows_all_printers(api_client_with_seed)
     plaintext = await _insert_restricted_key(factory, allowed_printer_ids=[], scopes=["read"])
 
     resp = await api_client_with_seed.get(
-        "/api/printers",
+        "/api/v1/printers",
         headers={"X-Label-Hub-Key": plaintext},
     )
     assert resp.status_code == 200
@@ -79,7 +79,7 @@ async def test_key_restricted_to_printer_a_blocked_on_printer_b(api_client_with_
 
     # Trying to pause printer B should fail
     resp = await api_client_with_seed.post(
-        f"/api/printers/{printer_b_id}/pause",
+        f"/api/v1/printers/{printer_b_id}/pause",
         headers={"X-Label-Hub-Key": plaintext},
     )
     assert resp.status_code == 403, (
@@ -110,7 +110,7 @@ async def test_key_restricted_to_printer_a_allowed_on_printer_a(api_client_with_
     )
 
     resp = await api_client_with_seed.post(
-        f"/api/printers/{printer_a_id}/pause",
+        f"/api/v1/printers/{printer_a_id}/pause",
         headers={"X-Label-Hub-Key": plaintext},
     )
     # 204 = success, or 404 if printer not found after test setup — either is fine
@@ -123,7 +123,7 @@ async def test_key_restricted_to_printer_a_allowed_on_printer_a(api_client_with_
 async def test_get_printer_detail_restricted_to_printer_a_blocked_on_printer_b(
     api_client_with_seed,
 ):
-    """2026-08-14 follow-up: GET /api/printers/{id} (single-printer detail)
+    """2026-08-14 follow-up: GET /api/v1/printers/{id} (single-printer detail)
     now requires auth but was missing the per-printer ACL check that every
     sibling endpoint (get_printer_status/pause_printer/resume_printer/
     clear_printer_queue) enforces via check_printer_access(). A read-key
@@ -162,7 +162,7 @@ async def test_get_printer_detail_restricted_to_printer_a_blocked_on_printer_b(
     )
 
     resp = await api_client_with_seed.get(
-        f"/api/printers/{printer_b.id}",
+        f"/api/v1/printers/{printer_b.id}",
         headers={"X-Label-Hub-Key": plaintext},
     )
     assert resp.status_code == 403, (

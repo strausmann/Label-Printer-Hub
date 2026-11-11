@@ -7,7 +7,7 @@ import { PANEL, SECTION_HEADING } from "../ui";
 import type { Job } from "./api";
 import { pageInfoOf } from "./model";
 import { usePageJobStatus } from "./pageJobText";
-import { useTypeLabel } from "./useJobTitle";
+import { useTrayLabel, useTypeLabel } from "./useJobTitle";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -56,27 +56,36 @@ export function PageJobInfo({ job, cancelRequested, printer }: { job: Job; cance
   const page = pageInfoOf(job);
   const status = usePageJobStatus(job);
   const typeLabel = useTypeLabel(page?.kind === "calibration_page" ? page.typeKey : null);
+  const trayLabel = useTrayLabel(job.printer_id, page?.kind === "test_page" ? page.tray : null);
   const code = page?.kind === "sheet_page" ? page.sheetCode : null;
   const sheet = useSheet(code !== null && SETTLED_BY_HAND.has(job.state) ? code : "");
   if (!page) return null;
   const unconfirmed = (sheet.data?.cells ?? []).filter((c) => c.state === "unconfirmed" && c.job_id === job.id).map((c) => c.cell);
   const discarded = sheet.data?.state === "discarded";
   const calibration = page.kind === "calibration_page";
+  const testPage = page.kind === "test_page";
 
   return (
     <section aria-labelledby="page-h" className={`${PANEL} flex flex-col gap-3`}>
       <h2 id="page-h" className={SECTION_HEADING}>
-        {calibration ? t`Calibration page` : t`Sheet page`}
+        {calibration ? t`Calibration page` : testPage ? t`Test page` : t`Sheet page`}
       </h2>
       {(status || cancelRequested) && (
         <div role="status" className="flex flex-col gap-1">
           {status && <p className={`font-bold ${status.stopped ? "text-bad" : ""}`}>{status.text}</p>}
-          {cancelRequested && <p className="text-ink-2">{t`Asked the printer to cancel. The cells are settled when it reports.`}</p>}
+          {cancelRequested && (
+            <p className="text-ink-2">{testPage ? t`Asked the printer to cancel.` : t`Asked the printer to cancel. The cells are settled when it reports.`}</p>
+          )}
         </div>
       )}
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
         <Row label={t`Printer`}>{printer}</Row>
-        {calibration ? (
+        {testPage ? (
+          <>
+            <Row label={t`Tray`}>{trayLabel ?? page.tray ?? "—"}</Row>
+            <Row label={t`Paper size`}>{page.media ?? "—"}</Row>
+          </>
+        ) : calibration ? (
           <Row label={t`Sheet type`}>{page.typeKey ? `${typeLabel ?? page.typeKey}${page.version === null ? "" : ` v${page.version}`}` : "—"}</Row>
         ) : (
           <>

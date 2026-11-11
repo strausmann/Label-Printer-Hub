@@ -1,6 +1,7 @@
 # 0013 — Browse + cart + bulk-print UI pattern
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-11-10, see "Amendment" at the end)
+- **Amended:** 2026-11-09 (#226) — every API route now lives under `/api/v1/`; the paths quoted below are the original ones, the decision is unchanged
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
@@ -161,3 +162,7 @@ CREATE TABLE cart_sessions (
 - Issue [#16](https://github.com/strausmann/label-printer-hub/issues/16) — AppLookupService (gets new listing endpoints)
 - Issue [#17](https://github.com/strausmann/label-printer-hub/issues/17) — visual layout editor
 - Related: ADR 0005 (queue — batch is one job to it), ADR 0010 (PWA — cart is mobile-first), ADR 0012 (layout selection in detail view)
+
+## Amendment — 2026-11-10 (#252)
+
+The cart and bulk print exist and stay as decided. The browse grid was never built (#26 was closed). The direction for finding an item is free-text search (#242), not a browsable grid. Read the browse parts of this ADR as not implemented; the decision text above is left as written.

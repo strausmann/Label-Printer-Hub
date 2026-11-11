@@ -1,16 +1,16 @@
 """Unit tests for app.api.routes.jobs — 6 endpoints (Phase 6a Task 3).
 
 Test mapping:
-    1.  GET  /api/jobs              → test_list_jobs_unfiltered_returns_all
-    2.  GET  /api/jobs?state=queued → test_list_jobs_filter_by_state
-    3.  GET  /api/jobs?printer_id=X → test_list_jobs_filter_by_printer_id
-    4a. GET  /api/jobs/{id}         → test_get_job_by_id_happy_path
-    4b. GET  /api/jobs/{id}         → test_get_job_by_id_not_found_returns_404
-    5.  POST /api/jobs/{id}/cancel  → test_cancel_queued_job_succeeds
-    6.  POST /api/jobs/{id}/cancel  → test_cancel_printing_job_returns_409
-    7.  POST /api/jobs/{id}/pause   → test_pause_returns_501
-    8.  POST /api/jobs/{id}/resume  → test_resume_returns_501
-    9.  POST /api/jobs/{id}/retry   → test_retry_clones_failed_job
+    1.  GET  /api/v1/jobs              → test_list_jobs_unfiltered_returns_all
+    2.  GET  /api/v1/jobs?state=queued → test_list_jobs_filter_by_state
+    3.  GET  /api/v1/jobs?printer_id=X → test_list_jobs_filter_by_printer_id
+    4a. GET  /api/v1/jobs/{id}         → test_get_job_by_id_happy_path
+    4b. GET  /api/v1/jobs/{id}         → test_get_job_by_id_not_found_returns_404
+    5.  POST /api/v1/jobs/{id}/cancel  → test_cancel_queued_job_succeeds
+    6.  POST /api/v1/jobs/{id}/cancel  → test_cancel_printing_job_returns_409
+    7.  POST /api/v1/jobs/{id}/pause   → test_pause_returns_501
+    8.  POST /api/v1/jobs/{id}/resume  → test_resume_returns_501
+    9.  POST /api/v1/jobs/{id}/retry   → test_retry_clones_failed_job
 """
 
 from __future__ import annotations
@@ -128,7 +128,7 @@ async def _make_job(
 
 
 # ---------------------------------------------------------------------------
-# Test 1: GET /api/jobs — unfiltered, returns all jobs
+# Test 1: GET /api/v1/jobs — unfiltered, returns all jobs
 # ---------------------------------------------------------------------------
 
 
@@ -142,7 +142,7 @@ async def test_list_jobs_unfiltered_returns_all(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get("/api/jobs")
+    r = client.get("/api/v1/jobs")
 
     assert r.status_code == 200
     body = r.json()
@@ -161,7 +161,7 @@ async def test_list_jobs_unfiltered_returns_all(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 2: GET /api/jobs?state=queued — filter by state
+# Test 2: GET /api/v1/jobs?state=queued — filter by state
 # ---------------------------------------------------------------------------
 
 
@@ -175,7 +175,7 @@ async def test_list_jobs_filter_by_state_returns_only_matching(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get("/api/jobs?state=queued")
+    r = client.get("/api/v1/jobs?state=queued")
 
     assert r.status_code == 200
     body = r.json()
@@ -185,7 +185,7 @@ async def test_list_jobs_filter_by_state_returns_only_matching(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 3: GET /api/jobs?printer_id=X — filter by printer
+# Test 3: GET /api/v1/jobs?printer_id=X — filter by printer
 # ---------------------------------------------------------------------------
 
 
@@ -200,7 +200,7 @@ async def test_list_jobs_filter_by_printer_id(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/jobs?printer_id={printer_a.id}")
+    r = client.get(f"/api/v1/jobs?printer_id={printer_a.id}")
 
     assert r.status_code == 200
     body = r.json()
@@ -210,7 +210,7 @@ async def test_list_jobs_filter_by_printer_id(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 4a: GET /api/jobs/{id} — happy path
+# Test 4a: GET /api/v1/jobs/{id} — happy path
 # ---------------------------------------------------------------------------
 
 
@@ -222,7 +222,7 @@ async def test_get_job_by_id_happy_path(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/jobs/{job.id}")
+    r = client.get(f"/api/v1/jobs/{job.id}")
 
     assert r.status_code == 200
     body = r.json()
@@ -235,7 +235,7 @@ async def test_get_job_by_id_happy_path(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 4b: GET /api/jobs/{id} — not found returns 404
+# Test 4b: GET /api/v1/jobs/{id} — not found returns 404
 # ---------------------------------------------------------------------------
 
 
@@ -244,13 +244,13 @@ async def test_get_job_by_id_not_found_returns_404(session) -> None:
     """get_job returns 404 for an unknown UUID."""
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/jobs/{uuid4()}")
+    r = client.get(f"/api/v1/jobs/{uuid4()}")
 
     assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
-# Test 5: POST /api/jobs/{id}/cancel — QUEUED succeeds
+# Test 5: POST /api/v1/jobs/{id}/cancel — QUEUED succeeds
 # ---------------------------------------------------------------------------
 
 
@@ -262,7 +262,7 @@ async def test_cancel_queued_job_succeeds(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/jobs/{job.id}/cancel")
+    r = client.post(f"/api/v1/jobs/{job.id}/cancel")
 
     assert r.status_code == 200
     body = r.json()
@@ -272,7 +272,7 @@ async def test_cancel_queued_job_succeeds(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 6: POST /api/jobs/{id}/cancel — PRINTING returns 409 ProblemDetail
+# Test 6: POST /api/v1/jobs/{id}/cancel — PRINTING returns 409 ProblemDetail
 # ---------------------------------------------------------------------------
 
 
@@ -284,7 +284,7 @@ async def test_cancel_printing_job_returns_409(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/jobs/{job.id}/cancel")
+    r = client.post(f"/api/v1/jobs/{job.id}/cancel")
 
     assert r.status_code == 409
     body = r.json()
@@ -297,7 +297,7 @@ async def test_cancel_printing_job_returns_409(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 7: POST /api/jobs/{id}/pause — returns 501 ProblemDetail
+# Test 7: POST /api/v1/jobs/{id}/pause — returns 501 ProblemDetail
 # ---------------------------------------------------------------------------
 
 
@@ -309,7 +309,7 @@ async def test_pause_returns_501(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/jobs/{job.id}/pause")
+    r = client.post(f"/api/v1/jobs/{job.id}/pause")
 
     assert r.status_code == 501
     body = r.json()
@@ -318,7 +318,7 @@ async def test_pause_returns_501(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 8: POST /api/jobs/{id}/resume — returns 501 ProblemDetail
+# Test 8: POST /api/v1/jobs/{id}/resume — returns 501 ProblemDetail
 # ---------------------------------------------------------------------------
 
 
@@ -330,7 +330,7 @@ async def test_resume_returns_501(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/jobs/{job.id}/resume")
+    r = client.post(f"/api/v1/jobs/{job.id}/resume")
 
     assert r.status_code == 501
     body = r.json()
@@ -339,7 +339,7 @@ async def test_resume_returns_501(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 9: POST /api/jobs/{id}/retry — clones FAILED into fresh QUEUED
+# Test 9: POST /api/v1/jobs/{id}/retry — clones FAILED into fresh QUEUED
 # ---------------------------------------------------------------------------
 
 
@@ -351,7 +351,7 @@ async def test_retry_clones_failed_job(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/jobs/{original.id}/retry")
+    r = client.post(f"/api/v1/jobs/{original.id}/retry")
 
     assert r.status_code == 201
     body = r.json()
@@ -376,7 +376,7 @@ async def test_retry_clones_failed_job(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 10: POST /api/jobs/{id}/retry — QUEUED job returns 409 ProblemDetail
+# Test 10: POST /api/v1/jobs/{id}/retry — QUEUED job returns 409 ProblemDetail
 # ---------------------------------------------------------------------------
 
 
@@ -392,7 +392,7 @@ async def test_retry_queued_job_returns_409(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/jobs/{job.id}/retry")
+    r = client.post(f"/api/v1/jobs/{job.id}/retry")
 
     assert r.status_code == 409
     body = r.json()
@@ -403,7 +403,7 @@ async def test_retry_queued_job_returns_409(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 11: POST /api/jobs/{id}/retry — PRINTING job returns 409 ProblemDetail
+# Test 11: POST /api/v1/jobs/{id}/retry — PRINTING job returns 409 ProblemDetail
 # ---------------------------------------------------------------------------
 
 
@@ -419,7 +419,7 @@ async def test_retry_printing_job_returns_409(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/jobs/{job.id}/retry")
+    r = client.post(f"/api/v1/jobs/{job.id}/retry")
 
     assert r.status_code == 409
     detail = r.json().get("detail", r.json())
@@ -427,7 +427,7 @@ async def test_retry_printing_job_returns_409(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 12: POST /api/jobs/{id}/retry — CANCELLED job creates new QUEUED clone
+# Test 12: POST /api/v1/jobs/{id}/retry — CANCELLED job creates new QUEUED clone
 # ---------------------------------------------------------------------------
 
 
@@ -443,7 +443,7 @@ async def test_retry_cancelled_job_creates_queued_clone(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/jobs/{original.id}/retry")
+    r = client.post(f"/api/v1/jobs/{original.id}/retry")
 
     assert r.status_code == 201
     body = r.json()
@@ -452,7 +452,7 @@ async def test_retry_cancelled_job_creates_queued_clone(session) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 13: POST /api/jobs/{id}/retry — unknown UUID returns 404
+# Test 13: POST /api/v1/jobs/{id}/retry — unknown UUID returns 404
 # ---------------------------------------------------------------------------
 
 
@@ -464,13 +464,13 @@ async def test_retry_unknown_job_returns_404(session) -> None:
     """
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.post(f"/api/jobs/{uuid4()}/retry")
+    r = client.post(f"/api/v1/jobs/{uuid4()}/retry")
 
     assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
-# Test 14: GET /api/jobs?since= — filter by since datetime
+# Test 14: GET /api/v1/jobs?since= — filter by since datetime
 # ---------------------------------------------------------------------------
 
 
@@ -574,7 +574,7 @@ async def test_list_jobs_filter_by_since(session) -> None:
 
     app = _build_app(session)
     client = TestClient(app, raise_server_exceptions=True)
-    r = client.get(f"/api/jobs?since={since_ts}")
+    r = client.get(f"/api/v1/jobs?since={since_ts}")
 
     assert r.status_code == 200
     body = r.json()

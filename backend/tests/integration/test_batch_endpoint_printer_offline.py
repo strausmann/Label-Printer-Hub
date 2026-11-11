@@ -76,7 +76,7 @@ async def test_batch_rejects_when_printer_offline(
 
     # Phase 1k.2: dispatch_batch now calls submit_batch_job (not submit_print_job).
     # Patch submit_batch_job to raise PrinterOfflineError.
-    async def _raise(self, requests, *, half_cut):
+    async def _raise(self, requests, *, half_cut, **_kw):
         raise PrinterOfflineError("printer is offline")
 
     monkeypatch.setattr(PrintService, "submit_batch_job", _raise)
@@ -90,7 +90,7 @@ async def test_batch_rejects_when_printer_offline(
         ]
     }
     resp = await client.post(
-        f"/api/print/{printer_slug}/batch", json=body, headers=offline_auth_headers
+        f"/api/v1/print/{printer_slug}/batch", json=body, headers=offline_auth_headers
     )
     # R2-2: PrinterOfflineError → 503 (network/server issue, retry later)
     # was 409 before R2-2 fix; consistent with print.py behaviour.

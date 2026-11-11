@@ -49,6 +49,9 @@
   --tape-green: #5FAE5A;
   --tape-blue: #3D78C9;
   --tape-red: #D2473B;
+  --tape-black: #1F1D1A;
+  /* clear tape has no colour: the swatch shows the surface through a dashed edge (see TapeSwatch) */
+  --tape-clear: transparent;
 
   /* radii */
   --r-1: 6px;

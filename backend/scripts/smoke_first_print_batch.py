@@ -43,7 +43,7 @@ def main() -> None:
         ],
     }
     resp = httpx.post(
-        f"{HUB_URL}/api/print/brother-p750w/batch",
+        f"{HUB_URL}/api/v1/print/brother-p750w/batch",
         json=body,
         headers={"X-Label-Hub-Key": API_KEY},
         timeout=30.0,

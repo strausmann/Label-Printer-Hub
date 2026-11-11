@@ -1,4 +1,4 @@
-"""SNMP query helpers — discovery (PJL string) + live status + preflight.
+"""SNMP query helpers — discovery (PJL string) + preflight.
 
 Uses pysnmp's asyncio API; the call is fully non-blocking, no thread
 dispatch needed. SNMPv2c with a configurable community (default 'public').
@@ -10,12 +10,13 @@ __init__; use ``await UdpTransportTarget.create((host, port), ...)`` instead.
 from __future__ import annotations
 
 __all__ = [
-    "LiveStatus",
+    "ObservedIdentity",
     "PreflightStatus",
     "SnmpQueryError",
     "decode_error_flags",
+    "format_mac",
     "parse_loaded_tape_mm",
-    "query_live_status",
+    "query_identity",
     "query_loaded_tape_mm",
     "query_model_pjl",
     "query_preflight",
@@ -36,6 +37,7 @@ from pysnmp.hlapi.v3arch.asyncio import (
     UdpTransportTarget,
     get_cmd,
 )
+from pysnmp.proto import rfc1902
 
 from app.printer_backends.exceptions import SnmpDiscoveryError, SnmpQueryError
 
@@ -80,6 +82,8 @@ BROTHER_PJL_OID = "1.3.6.1.4.1.2435.2.3.9.1.1.7.0"
 HR_PRINTER_STATUS_OID = "1.3.6.1.2.1.25.3.5.1.1.1"
 HR_PRINTER_DETECTED_ERROR_STATE_OID = "1.3.6.1.2.1.25.3.5.1.2.1"
 PRT_INPUT_MEDIA_TYPE_OID = "1.3.6.1.2.1.43.8.2.1.12.1.1"
+PRT_GENERAL_SERIAL_NUMBER_OID = "1.3.6.1.2.1.43.5.1.1.17.1"
+IF_PHYS_ADDRESS_OID = "1.3.6.1.2.1.2.2.1.6.1"
 
 _PRINTER_STATUS_MAP: dict[int, Literal["other", "unknown", "idle", "printing", "warmup"]] = {
     1: "other",
@@ -117,14 +121,6 @@ def decode_error_flags(blob: bytes) -> list[str]:
     return out
 
 
-@dataclass(frozen=True)
-class LiveStatus:
-    """Live phase + error flags read from SNMP during a print."""
-
-    hr_printer_status: Literal["other", "unknown", "idle", "printing", "warmup"]
-    error_flags: list[str] = field(default_factory=list)
-
-
 _TAPE_MM_RE = re.compile(r"^\s*(\d+)\s*mm", re.IGNORECASE)
 
 
@@ -148,6 +144,66 @@ class PreflightStatus:
     hr_printer_status: Literal["other", "unknown", "idle", "printing", "warmup"]
     loaded_tape_mm: int | None
     error_flags: list[str] = field(default_factory=list)
+    # Trimmed ``prtInputMediaName`` text as the printer reported it; ``None`` when blank.
+    media_raw: str | None = None
+
+
+@dataclass(frozen=True)
+class ObservedIdentity:
+    """Every hardware identity candidate one probe saw; ``None`` where the device said nothing.
+
+    Raw as read; ``services.hardware_identity.normalise`` cleans it. Never log its values.
+    """
+
+    serial: str | None = None
+    ipp_uuid: str | None = None
+    mac: str | None = None
+
+
+def format_mac(raw: bytes) -> str | None:
+    """Six bytes as ``aa:bb:cc:dd:ee:ff``; ``None`` for any other length."""
+    if len(raw) != 6:
+        return None
+    return ":".join(f"{b:02x}" for b in raw)
+
+
+def _octets(value: object) -> bytes | None:
+    """The bytes of an SNMP OCTET STRING; ``None`` for anything else (noSuchObject, ...)."""
+    if isinstance(value, rfc1902.OctetString):
+        return bytes(value)
+    return None
+
+
+async def query_identity(
+    host: str, *, community: str = "public", timeout_s: float = 3.0
+) -> ObservedIdentity:
+    """Read ``prtGeneralSerialNumber.1`` and ``ifPhysAddress.1`` in one request (#231).
+
+    Never raises: a transport error, an ``error_status``, ``noSuchObject`` or a reply of the
+    wrong shape gives an empty ``ObservedIdentity``. The probe it accompanies is unaffected.
+    """
+    try:
+        error_indication, error_status, _, var_binds = await get_cmd(
+            _get_engine(),
+            CommunityData(community, mpModel=1),
+            await UdpTransportTarget.create((host, 161), timeout=timeout_s, retries=0),
+            ContextData(),
+            ObjectType(ObjectIdentity(PRT_GENERAL_SERIAL_NUMBER_OID)),
+            ObjectType(ObjectIdentity(IF_PHYS_ADDRESS_OID)),
+        )
+        if error_indication or error_status or len(var_binds) < 2:
+            return ObservedIdentity()
+        serial_raw = _octets(var_binds[0][1])
+        mac_raw = _octets(var_binds[1][1])
+        serial = serial_raw.decode("utf-8", errors="replace") if serial_raw is not None else None
+        return ObservedIdentity(
+            serial=serial, mac=format_mac(mac_raw) if mac_raw is not None else None
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        _logger.debug("identity query failed (%s)", type(exc).__name__)
+        return ObservedIdentity()
 
 
 async def query_loaded_tape_mm(
@@ -202,6 +258,7 @@ async def query_preflight(
         hr_printer_status=_PRINTER_STATUS_MAP.get(raw_status, "other"),
         loaded_tape_mm=parse_loaded_tape_mm(raw_media_text),
         error_flags=decode_error_flags(raw_error_blob),
+        media_raw=raw_media_text.strip() or None,
     )
 
 
@@ -232,39 +289,3 @@ async def query_model_pjl(host: str, *, community: str = "public", timeout_s: fl
     if not var_binds:
         raise SnmpDiscoveryError("Empty SNMP reply for PJL OID")
     return str(var_binds[0][1])
-
-
-async def query_live_status(
-    host: str, *, community: str = "public", timeout_s: float = 3.0
-) -> LiveStatus:
-    """Read hrPrinterStatus + hrPrinterDetectedErrorState in one round trip.
-
-    Raises SnmpQueryError on any failure; this is non-fatal at request time
-    (the live block is omitted from the /jobs/{id} response).
-    """
-    transport = await UdpTransportTarget.create(
-        (host, 161),
-        timeout=timeout_s,
-        retries=0,
-    )
-    error_indication, error_status, _, var_binds = await get_cmd(
-        _get_engine(),
-        CommunityData(community, mpModel=1),
-        transport,
-        ContextData(),
-        ObjectType(ObjectIdentity(HR_PRINTER_STATUS_OID)),
-        ObjectType(ObjectIdentity(HR_PRINTER_DETECTED_ERROR_STATE_OID)),
-    )
-    if error_indication:
-        raise SnmpQueryError(f"SNMP live-status timed out / failed: {error_indication}")
-    if error_status:
-        raise SnmpQueryError(f"SNMP returned error status: {error_status}")
-    if len(var_binds) < 2:
-        raise SnmpQueryError("Incomplete SNMP reply")
-
-    raw_status = int(var_binds[0][1])
-    raw_error_blob = bytes(var_binds[1][1])
-    return LiveStatus(
-        hr_printer_status=_PRINTER_STATUS_MAP.get(raw_status, "other"),
-        error_flags=decode_error_flags(raw_error_blob),
-    )

@@ -29,12 +29,14 @@ from app.printer_backends.exceptions import (
     PrinterOfflineError,
     PrintFailedError,
     TapeEmptyError,
+    refused_before_sending,
 )
 from app.printer_backends.snmp_helper import (
     PreflightStatus,
     SnmpQueryError,
     query_preflight,
 )
+from app.schemas.label_layout import LabelOrientation
 from app.services.status_block import StatusBlock
 
 _logger = logging.getLogger(__name__)
@@ -52,20 +54,29 @@ _TAPE_MM_TO_QL_LABEL: dict[int, str] = {
 }
 
 
-def _fit_to_printable_width(image: Image.Image, ql_label: str, *, dpi_600: bool) -> Image.Image:
-    """Prepare *image* so ``brother_ql.convert`` never has to resize it (issue #254).
+def _fit_to_printable_width(
+    image: Image.Image,
+    ql_label: str,
+    *,
+    dpi_600: bool,
+    orientation: LabelOrientation | None = None,
+) -> Image.Image:
+    """Prepare *image* so ``brother_ql.convert`` never has to resize it (issues #254, #258).
 
     ``convert`` wants, for endless labels, an image whose *width* equals the label's
     ``dots_printable[0]`` (rows span the tape; the image grows along the feed direction).
-    The LayoutEngine renders landscape in the PT convention instead (height = band across
-    the tape, width = label length), and its band height is not always the QL printable
-    width (12 mm renders 70 px high, the QL label has 106). So:
 
-    1. An image whose height does not exceed the printable width is a LayoutEngine band
-       (the band may be shorter than the tape, and a short label may be narrower than it is
-       tall) and is rotated 90 degrees clockwise: the left edge (start of text) becomes
-       row 0 and is printed first. An image whose width already equals the printable width
-       is taken as ready-made and not rotated.
+    1. Orientation (#258): the renderer says how the image is laid out.
+       - ``across``: the image is already in convert's orientation (rows span the tape) and
+         is never rotated.
+       - ``along``: the image is a landscape band (PT convention: height = band across the
+         tape, width = label length) and is always rotated 90 degrees clockwise, so the left
+         edge (start of text) becomes row 0 and is printed first.
+       - no flag (an image from a caller that predates #258): the 1.4.1 size heuristic stays
+         as a safety net. An image whose height does not exceed the printable width is taken
+         as a band and rotated; one whose width already equals the printable width is taken
+         as ready-made. The heuristic is ambiguous for images narrower than the tape (a
+         500x300 across image on 62 mm would be rotated by mistake), hence the flag.
     2. An image narrower than the printable width is centred on white padding, never
        stretched.
     3. With ``dpi_600`` convert halves the width again before checking it, so the 300 dpi
@@ -81,7 +92,11 @@ def _fit_to_printable_width(image: Image.Image, ql_label: str, *, dpi_600: bool)
 
     if image.mode not in ("1", "L", "RGB", "RGBA"):
         image = image.convert("RGB")
-    if image.height <= printable and image.width != printable:
+    if orientation is None:
+        rotate = image.height <= printable and image.width != printable
+    else:
+        rotate = orientation is LabelOrientation.ALONG
+    if rotate:
         image = image.transpose(Image.Transpose.ROTATE_270)
     if image.width < printable:
         padded = Image.new(image.mode, (printable, image.height), (255,) * len(image.mode))
@@ -119,6 +134,7 @@ class BrotherQLBackend:
         high_resolution: bool = False,
         half_cut: bool = False,
         last_page: bool = True,  # noqa: ARG002
+        orientation: LabelOrientation | None = None,
     ) -> None:
         """Convert *image* to QL raster data and send to the printer.
 
@@ -128,6 +144,8 @@ class BrotherQLBackend:
         ``last_page`` is accepted for protocol compatibility but has no effect
         on the QL wire format (cut is controlled by the ``cut`` kwarg in
         ``convert``).
+        ``orientation`` (#258) decides the rotation: ``along`` rotates, ``across`` never
+        does, ``None`` falls back to the 1.4.1 size heuristic.
         """
         if half_cut:
             _logger.warning(
@@ -139,16 +157,21 @@ class BrotherQLBackend:
         try:
             ql_label = _TAPE_MM_TO_QL_LABEL[tape_spec.width_mm]
         except KeyError as exc:
-            raise PrintFailedError(
-                f"No QL label mapping for {tape_spec.width_mm}mm — "
-                f"supported widths: {sorted(_TAPE_MM_TO_QL_LABEL)}"
+            # #277: refused before anything was sent: the label did not print.
+            raise refused_before_sending(
+                PrintFailedError(
+                    f"No QL label mapping for {tape_spec.width_mm}mm — "
+                    f"supported widths: {sorted(_TAPE_MM_TO_QL_LABEL)}"
+                )
             ) from exc
 
         # Build raster instructions. convert() populates qlr.data.
         # M6-Fix: red=False for monochrome; two_color capable models (QL-820NWB)
         # accept this without error — they only require red=False not to raise.
         qlr = BrotherQLRaster(self._model_id)
-        image = _fit_to_printable_width(image, ql_label, dpi_600=high_resolution)
+        image = _fit_to_printable_width(
+            image, ql_label, dpi_600=high_resolution, orientation=orientation
+        )
         convert(
             qlr,
             [image],
@@ -175,6 +198,7 @@ class BrotherQLBackend:
         auto_cut: bool = True,
         high_resolution: bool = False,
         half_cut: bool = True,  # noqa: ARG002
+        orientation: LabelOrientation | None = None,
     ) -> None:
         """Batch-print N images via per-item Loop.
 
@@ -182,6 +206,7 @@ class BrotherQLBackend:
         kein Half-Cut-Konzept zwischen Labels (jedes Label wird vom Druckkopf
         ausgegeben und manuell abgeschnitten). Delegiert an
         default_print_images_loop mit half_cut=False (QL ignoriert das Argument).
+        ``orientation`` (#258) applies to every image of the batch.
         """
         # QL-Series: half_cut existiert nicht. Backend-Capability-Flag erzwingt False.
         await default_print_images_loop(
@@ -191,6 +216,7 @@ class BrotherQLBackend:
             auto_cut=auto_cut,
             high_resolution=high_resolution,
             half_cut=False,
+            orientation=orientation,
         )
 
     async def preflight_check(

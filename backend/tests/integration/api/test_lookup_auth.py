@@ -50,7 +50,7 @@ async def test_lookup_without_credentials_is_401(api_client_with_seed):
     with patch(
         "app.api.routes.lookup._lookup_service.lookup", new=AsyncMock(return_value=_LABEL)
     ) as svc:
-        resp = await api_client_with_seed.get("/api/lookup/snipeit/ASSET-001")
+        resp = await api_client_with_seed.get("/api/v1/lookup/snipeit/ASSET-001")
     assert resp.status_code == 401
     svc.assert_not_called()  # nothing reached the integration
 
@@ -60,7 +60,7 @@ async def test_lookup_with_a_read_key_is_200(api_client_with_seed):
     key = await _insert_key(["read"])
     with patch("app.api.routes.lookup._lookup_service.lookup", new=AsyncMock(return_value=_LABEL)):
         resp = await api_client_with_seed.get(
-            "/api/lookup/snipeit/ASSET-001", headers={"X-Label-Hub-Key": key}
+            "/api/v1/lookup/snipeit/ASSET-001", headers={"X-Label-Hub-Key": key}
         )
     assert resp.status_code == 200, resp.text
     assert resp.json()["name"] == "ThinkPad X1 Carbon"

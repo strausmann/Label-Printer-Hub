@@ -26,6 +26,8 @@ describe("sheet error words", () => {
     ["ipp_unreachable", "The printer could not be reached."],
     ["ipp_rejected", "The printer did not accept the ID label."],
     ["ipp_bad_response", "The printer did not accept the ID label."],
+    // The held refusal arrives as the sheet envelope (print) and as a problem type (calibration page).
+    ["printer-identity-mismatch", "This printer may be a different device now. An admin has to confirm it on the printer's page first."],
   ])("%s", async (code, words) => {
     expect(await textFor(api(code))).toBe(words);
   });

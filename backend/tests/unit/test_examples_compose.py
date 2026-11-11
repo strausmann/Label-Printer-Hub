@@ -271,3 +271,70 @@ def test_image_ships_third_party_notices() -> None:
     notices = (REPO / "THIRD_PARTY_NOTICES.md").read_text()
     for needle in ("cryptography", "greenlet", "OFL-1.1", "zxing"):
         assert needle in notices
+
+
+def test_webhook_bypass_routes_use_the_versioned_path() -> None:
+    """The SSO-bypass route must match the real webhook path (/api/v1/webhook/, #226)."""
+    for name in ("compose.traefik.yml", "compose.pangolin.yml"):
+        text = (EXAMPLES / name).read_text()
+        assert "/api/v1/webhook/" in text, name
+        assert "/api/webhook/" not in text, name
+
+
+@pytest.mark.parametrize("path", COMPOSE_FILES, ids=lambda p: p.name)
+def test_forwarded_allow_ips_is_never_a_wildcard(path: Path) -> None:
+    """``*`` trusts every peer, so any client could forge X-Forwarded-For (issue #160)."""
+    for line in path.read_text().splitlines():
+        if "FORWARDED_ALLOW_IPS" in line and not line.lstrip().startswith("#"):
+            assert "*" not in line, f"{path.name}: wildcard FORWARDED_ALLOW_IPS: {line.strip()}"
+
+
+def test_env_example_has_no_wildcard_forwarded_ips() -> None:
+    for line in (EXAMPLES / ".env.example").read_text().splitlines():
+        if "FORWARDED_ALLOW_IPS=" in line:
+            assert "*" not in line.split("=", 1)[1], line
+
+
+PROXY_EXAMPLES = ["compose.traefik.yml", "compose.caddy.yml", "compose.pangolin.yml"]
+
+
+def _forwarded_value(path: Path) -> str:
+    env = _load(path)["services"]["backend"]["environment"]
+    values = [e.split("=", 1)[1] for e in env if str(e).startswith("FORWARDED_ALLOW_IPS=")]
+    assert len(values) == 1, f"{path.name}: FORWARDED_ALLOW_IPS must be set exactly once"
+    return values[0]
+
+
+@pytest.mark.parametrize("name", PROXY_EXAMPLES)
+def test_proxy_examples_trust_exactly_one_fixed_proxy_address(name: str) -> None:
+    """Behind the proxy every client shares its address unless that one peer is trusted (#160).
+
+    The proxy network is external, so the address cannot be declared here; it comes from a
+    required PROXY_IP. No wildcard, no loopback, no list, no subnet, no optional default.
+    """
+    value = _forwarded_value(EXAMPLES / name)
+    assert re.fullmatch(r"\$\{PROXY_IP:\?[^}:]+\}", value), f"{name}: {value!r}"
+    assert "*" not in value and "127.0.0.1" not in value and "," not in value and "/" not in value
+
+
+@pytest.mark.parametrize("name", PROXY_EXAMPLES)
+def test_proxy_examples_compose_config_needs_a_single_proxy_ip(name: str) -> None:
+    import shutil
+    import subprocess
+
+    if shutil.which("docker") is None:
+        pytest.skip("docker not installed")
+    base = {
+        "PRINTER_HUB_SECRET_KEY": "x" * 43,
+        "PRINTER_HUB_PUBLIC_URL": "https://printerhub.example.invalid",
+        "PRINTERHUB_HOST": "printerhub.example.invalid",
+        "PRINTER_HUB_SSO_TRUST_TOKEN": "t" * 64,
+        "PATH": __import__("os").environ["PATH"],
+    }
+    cmd = ["docker", "compose", "-f", str(EXAMPLES / name), "config"]
+    ok = subprocess.run(
+        [*cmd, "--quiet"], env={**base, "PROXY_IP": "192.0.2.10"}, capture_output=True, timeout=60
+    )
+    assert ok.returncode == 0, ok.stderr.decode()
+    missing = subprocess.run(cmd, env=base, capture_output=True, timeout=60)
+    assert missing.returncode != 0 and b"PROXY_IP" in missing.stderr

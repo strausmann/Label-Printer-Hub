@@ -1,4 +1,4 @@
-"""Schemas for ``GET /api/info`` and ``GET /api/v1/system/logs``."""
+"""Schemas for ``GET /api/v1/info`` and ``GET /api/v1/system/logs``."""
 
 from __future__ import annotations
 

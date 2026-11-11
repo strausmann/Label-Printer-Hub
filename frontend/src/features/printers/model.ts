@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { BadgeState } from "../../shell/StatusBadge";
 import type { Job, Printer, PrinterStatus } from "./api";
 
-export type PrinterKind = "paused" | "offline" | "error" | "stopped" | "printing" | "ready" | "unknown";
+export type PrinterKind = "paused" | "stale" | "not_polled" | "offline" | "error" | "stopped" | "printing" | "ready" | "unknown";
 
 export interface PrinterView {
   kind: PrinterKind;
@@ -42,12 +42,21 @@ export function printerStopReasons(status: PrinterStatus | undefined): string[] 
   return (status?.state_reasons ?? []).filter((r) => r.blocking).map((r) => r.keyword);
 }
 
+/** The status is not a reading of the printer now: nobody polls it, or the last probe is too old. */
+export const unknownKind = (status: PrinterStatus | undefined): "not_polled" | "stale" | null =>
+  status?.polled === false ? "not_polled" : status?.stale === true ? "stale" : null;
+
+export const statusIsUnknown = (status: PrinterStatus | undefined): boolean => unknownKind(status) !== null;
+
 /**
  * What the operator can act on wins: a paused printer says Paused even when it is also
  * offline. The reason for a pause comes from `printer.pause` (see PauseReason).
  */
 export function describePrinter(printer: Printer, status: PrinterStatus | undefined, printing: boolean): PrinterView {
   if (printer.paused) return { kind: "paused", badge: "warn", detail: null, reasons: [] };
+  // Before any `online` branch: a status nobody refreshes says nothing about the printer (#227).
+  const unknown = unknownKind(status);
+  if (unknown) return { kind: unknown, badge: "idle", detail: null, reasons: [] };
   if (status?.online === false) {
     return { kind: "offline", badge: "bad", detail: status.last_error ?? status.error_state ?? null, reasons: [] };
   }
@@ -78,6 +87,8 @@ export function useKindLabel(): Record<PrinterKind, string> {
   const { t } = useLingui();
   return {
     paused: t`Paused`,
+    stale: t`Status unknown`,
+    not_polled: t`Not monitored`,
     offline: t`Offline`,
     error: t`Problem`,
     stopped: t`Stopped`,
@@ -113,34 +124,22 @@ export const isFailed = (job: Job) => job.state === "failed" || job.state === "f
 
 /* ---- tape ------------------------------------------------------------------------------ */
 
-export const TAPE_COLOURS = ["white", "yellow", "green", "blue", "red"] as const;
+/** The colours an operator can give a roll; the printer reports none of them over the network. */
+export const TAPE_COLOURS = ["white", "yellow", "green", "blue", "red", "black", "clear"] as const;
 export type TapeColour = (typeof TAPE_COLOURS)[number];
 
-export interface TapeInfo {
-  widthMm: number | null;
-  /** Colour word as reported (`blue`), or null when the API does not say. */
-  colourName: string | null;
-  /** The colour when it is one of the five swatches we can draw. */
-  colour: TapeColour | null;
-}
-
 /**
- * `tape_loaded` is free text: `12mm` today, `12mm laminated blue/white` in the documented
- * form (tape colour before the slash, text colour after it). Anything not found stays null.
+ * The loaded width in mm: the reported number, else the leading `12mm` of the free text
+ * (`tape_loaded`). Null when none is known; a colour is never read from the text any more.
  */
-export function parseTape(tapeLoaded: string | null | undefined): TapeInfo | null {
-  if (!tapeLoaded || tapeLoaded.trim() === "") return null;
-  const width = /(\d+(?:[.,]\d+)?)\s*mm/i.exec(tapeLoaded);
-  const colour = /([a-z]+)\s*\/\s*[a-z]+/i.exec(tapeLoaded);
-  const colourName = colour?.[1]?.toLowerCase() ?? null;
-  return {
-    widthMm: width ? Number(width[1]!.replace(",", ".")) : null,
-    colourName,
-    colour: TAPE_COLOURS.find((c) => c === colourName) ?? null,
-  };
+export function tapeWidthOf(status: Pick<PrinterStatus, "tape_loaded" | "tape_width_mm"> | undefined): number | null {
+  if (!status) return null;
+  if (typeof status.tape_width_mm === "number") return status.tape_width_mm;
+  const match = /(\d+(?:[.,]\d+)?)\s*mm/i.exec(status.tape_loaded ?? "");
+  return match ? Number(match[1]!.replace(",", ".")) : null;
 }
 
 export function useColourNames(): Record<TapeColour, string> {
   const { t } = useLingui();
-  return { white: t`White`, yellow: t`Yellow`, green: t`Green`, blue: t`Blue`, red: t`Red` };
+  return { white: t`White`, yellow: t`Yellow`, green: t`Green`, blue: t`Blue`, red: t`Red`, black: t`Black`, clear: t({ message: "Clear", context: "tape colour" }) };
 }

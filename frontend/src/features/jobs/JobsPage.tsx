@@ -6,6 +6,7 @@ import { StatusBadge } from "../../shell/StatusBadge";
 import { usePrinters } from "../printers/api";
 import { useJobStateBadge } from "../printers/model";
 import { useJobs, type Job } from "./api";
+import { HeldRuns } from "./HeldRuns";
 import { formatTime, JOB_FILTERS, type JobFilter } from "./model";
 import { usePageJobStatus } from "./pageJobText";
 import { useJobTitle } from "./useJobTitle";
@@ -31,6 +32,7 @@ export function JobsPage() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-title font-bold">{t`Jobs`}</h1>
+      <HeldRuns />
       <ToggleButtonGroup
         aria-label={t`Filter by state`}
         selectionMode="single"

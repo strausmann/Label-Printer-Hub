@@ -95,7 +95,7 @@ function BootstrapScreen() {
     <BootstrapKeyCreated
       onCreate={async () =>
         (
-          await apiFetch<components["schemas"]["ApiKeyCreateResponse"]>("/api/admin/api-keys", {
+          await apiFetch<components["schemas"]["ApiKeyCreateResponse"]>("/api/v1/admin/api-keys", {
             method: "POST",
             json: { name: "First admin key", scopes: ["admin"] },
           })
@@ -145,6 +145,10 @@ const page = <P extends string>(path: P, component: () => React.JSX.Element) =>
   createRoute({ getParentRoute: () => rootRoute, path, component });
 
 const text = (value: unknown): string | undefined => (typeof value === "string" && value !== "" ? value : undefined);
+const sheetTypeKey = (value: unknown): string | undefined => {
+  const key = text(value);
+  return key !== undefined && key.length <= 64 ? key : undefined;
+};
 
 // The search parameters other pages link with (`<Link to="/cart" search={{ sheet }}>`), declared
 // here so the typed links compile; the pages read them. A value that is not a sheet code is dropped.
@@ -178,9 +182,11 @@ const calibrationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/calibration",
   component: CalibrationPage,
-  validateSearch: (search: Record<string, unknown>): { printer?: string | undefined; tray?: string | undefined } => ({
+  validateSearch: (search: Record<string, unknown>): { printer?: string | undefined; tray?: string | undefined; type?: string | undefined } => ({
     printer: text(search.printer),
     tray: text(search.tray),
+    // A sheet type key is at most 64 characters (the print request's limit); anything longer is not one.
+    type: sheetTypeKey(search.type),
   }),
 });
 

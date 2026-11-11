@@ -1,7 +1,9 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
+import { queuedJobs } from "../../api/errorDetail";
 import { queryString } from "../../api/queryString";
 import type { components } from "../../api/schema.gen";
+import { watchPrint } from "../jobs/printWatch";
 import {
   marginCheckKey,
   nextCodeKey,
@@ -51,14 +53,14 @@ const encode = encodeURIComponent;
 export const useSheets = (filters: SheetFilters = {}, enabled = true) =>
   useQuery({
     queryKey: sheetsKey(filters),
-    queryFn: () => apiFetch<SheetSummary[]>(`/api/sheets${queryString({ ...filters })}`),
+    queryFn: () => apiFetch<SheetSummary[]>(`/api/v1/sheets${queryString({ ...filters })}`),
     enabled,
   });
 
 export const useSheet = (code: string) =>
   useQuery({
     queryKey: sheetKey(code),
-    queryFn: () => apiFetch<SheetRead>(`/api/sheets/${encode(code)}`),
+    queryFn: () => apiFetch<SheetRead>(`/api/v1/sheets/${encode(code)}`),
     enabled: !!code,
   });
 
@@ -66,7 +68,7 @@ export const useSheet = (code: string) =>
 export const useNextCode = (typeKey: string | null) =>
   useQuery({
     queryKey: nextCodeKey(typeKey ?? ""),
-    queryFn: () => apiFetch<NextCode>(`/api/sheets/next-code${queryString({ type: typeKey })}`),
+    queryFn: () => apiFetch<NextCode>(`/api/v1/sheets/next-code${queryString({ type: typeKey })}`),
     enabled: !!typeKey,
   });
 
@@ -74,7 +76,7 @@ export const useNextCode = (typeKey: string | null) =>
 export const useMarginCheck = (typeKey: string | null, printer: string | null, tray: string | null) =>
   useQuery({
     queryKey: marginCheckKey(typeKey ?? "", printer ?? "", tray),
-    queryFn: () => apiFetch<MarginCheck>(`/api/sheets/margin-check${queryString({ type: typeKey, printer, tray })}`),
+    queryFn: () => apiFetch<MarginCheck>(`/api/v1/sheets/margin-check${queryString({ type: typeKey, printer, tray })}`),
     enabled: !!typeKey && !!printer,
   });
 
@@ -90,7 +92,7 @@ function refreshAfterWrite(client: QueryClient) {
 export function useCreateSheet() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (body: SheetCreate) => post<SheetCreated>("/api/sheets", body),
+    mutationFn: (body: SheetCreate) => post<SheetCreated>("/api/v1/sheets", body),
     onSettled: () => {
       refreshAfterWrite(client);
       void client.invalidateQueries({ queryKey: ["jobs"] });
@@ -101,7 +103,7 @@ export function useCreateSheet() {
 export function useDiscardSheet() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (code: string) => post<SheetRead>(`/api/sheets/${encode(code)}/discard`),
+    mutationFn: (code: string) => post<SheetRead>(`/api/v1/sheets/${encode(code)}/discard`),
     onSuccess: (sheet, code) => client.setQueryData(sheetKey(code), sheet),
     onSettled: () => refreshAfterWrite(client),
   });
@@ -111,7 +113,7 @@ export function useDiscardSheet() {
 function useCellsWrite<V extends { code: string }>(action: string, body: (v: V) => unknown) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (v: V) => post<SheetRead>(`/api/sheets/${encode(v.code)}/cells/${action}`, body(v)),
+    mutationFn: (v: V) => post<SheetRead>(`/api/v1/sheets/${encode(v.code)}/cells/${action}`, body(v)),
     onSuccess: (sheet, v) => client.setQueryData(sheetKey(v.code), sheet),
     onSettled: () => refreshAfterWrite(client),
   });
@@ -133,7 +135,7 @@ export const useResolveCells = () =>
 export const useSheetPreview = (printerId: string, request: SheetPrintRequest, enabled = true) =>
   useQuery({
     queryKey: sheetPreviewKey(printerId, request),
-    queryFn: () => post<SheetPreview>(`/api/print/${encode(printerId)}/sheet/preview`, request),
+    queryFn: () => post<SheetPreview>(`/api/v1/print/${encode(printerId)}/sheet/preview`, request),
     enabled,
     retry: false,
     refetchOnWindowFocus: false,
@@ -144,8 +146,14 @@ export const useSheetPreview = (printerId: string, request: SheetPrintRequest, e
 export function usePrintSheets(printerId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (request: SheetPrintRequest) => post<SheetPrintResponse>(`/api/print/${encode(printerId)}/sheet`, request),
-    // A partial print (`print_interrupted`) also queued pages, so this runs on failure too.
+    mutationFn: (request: SheetPrintRequest) => post<SheetPrintResponse>(`/api/v1/print/${encode(printerId)}/sheet`, request),
+    onSuccess: (response) => void watchPrint({ kind: "sheet", printerId, jobIds: response.pages.map((p) => p.job_id) }),
+    // A partial print (`print_interrupted`, or the failing page's own error) queued pages that keep printing: they get an entry too.
+    onError: (error) => {
+      const queued = queuedJobs(error);
+      if (queued) watchPrint({ kind: "sheet", printerId, jobIds: queued });
+    },
+    // A partial print also queued pages, so this runs on failure too.
     onSettled: () => {
       refreshAfterWrite(client);
       void client.invalidateQueries({ queryKey: [SHEET_PREVIEW_KEY] });

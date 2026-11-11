@@ -7,11 +7,9 @@ from app.printer_backends.snmp_helper import (
     HR_PRINTER_DETECTED_ERROR_STATE_OID,
     HR_PRINTER_STATUS_OID,
     PRT_INPUT_MEDIA_TYPE_OID,
-    LiveStatus,
     PreflightStatus,
     decode_error_flags,
     parse_loaded_tape_mm,
-    query_live_status,
     query_loaded_tape_mm,
     query_model_pjl,
     query_preflight,
@@ -95,41 +93,6 @@ async def test_query_model_pjl_timeout_raises(monkeypatch: pytest.MonkeyPatch) -
         await query_model_pjl("192.0.2.10", community="public", timeout_s=1.0)
 
 
-async def test_query_live_status_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pysnmp.proto import rfc1902
-
-    async def fake_get_cmd(*args, **_kwargs):
-        # args[4] = first OT (status), args[5] = second OT (error state)
-        first_oid = args[4]
-        second_oid = args[5]
-        return (
-            None,
-            None,
-            0,
-            [
-                (first_oid, rfc1902.Integer(4)),  # printing
-                (second_oid, rfc1902.OctetString(b"\x40\x00")),  # noPaper bit
-            ],
-        )
-
-    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
-    ls = await query_live_status("192.0.2.10", community="public", timeout_s=1.0)
-    assert isinstance(ls, LiveStatus)
-    assert ls.hr_printer_status == "printing"
-    assert "noPaper" in ls.error_flags
-
-
-async def test_query_live_status_failure_is_separate_exception(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def fake_get_cmd(*_a, **_kw):
-        return ("requestTimedOut", None, 0, [])
-
-    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
-    with pytest.raises(SnmpQueryError):
-        await query_live_status("192.0.2.10", community="public", timeout_s=1.0)
-
-
 def test_prt_input_media_type_oid_constant() -> None:
     assert PRT_INPUT_MEDIA_TYPE_OID == "1.3.6.1.2.1.43.8.2.1.12.1.1"
 
@@ -177,7 +140,6 @@ async def test_query_loaded_tape_mm_no_tape(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 async def test_query_loaded_tape_mm_timeout_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.printer_backends.exceptions import SnmpQueryError
 
     async def fake_get_cmd(*_a, **_kw):
         return ("requestTimedOut", None, 0, [])

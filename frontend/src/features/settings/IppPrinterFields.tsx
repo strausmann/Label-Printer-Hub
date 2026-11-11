@@ -136,9 +136,6 @@ export function useIppDraft(printer: AdminPrinter | null) {
     probe,
     problem,
     verified,
-    /** The address or the certificate setting differs from what is stored: it applies after a restart. */
-    connectionChanged: printer !== null && !unchanged,
-    enabledChanged: printer !== null && enabled !== printer.enabled,
     runProbe: () => {
       if (problem !== null) return;
       probe.mutate(

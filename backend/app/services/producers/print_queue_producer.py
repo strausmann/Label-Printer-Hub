@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from uuid import UUID
 
 from app.services.event_bus import BusEvent, EventBus
 from app.services.job_lifecycle import Job, JobState
@@ -69,3 +70,23 @@ class PrintQueueProducer:
             self._bus.publish(channel, event)
         except Exception:
             _log.exception("PrintQueueProducer.handle_transition failed for job=%s", job.id)
+
+    def handle_run_change(self, run_id: UUID, printer_id: UUID, state: str) -> None:
+        """Publish a ``run.state_changed`` event: a tape run entered or left the held list (#277).
+
+        ``state`` is the run's state (``awaiting_confirmation``, ``stopped``, ``printing``) or
+        ``discarded`` / ``finished`` when the run is gone. The data carries ids and the state
+        only, no label content. Must not raise.
+        """
+        channel = f"printer:{printer_id}:queue"
+        try:
+            event = BusEvent(
+                channel=channel,
+                event_id=self._bus.next_event_id(channel),
+                event_type="run.state_changed",
+                timestamp=datetime.now(UTC),
+                data={"run_id": str(run_id), "printer_id": str(printer_id), "state": state},
+            )
+            self._bus.publish(channel, event)
+        except Exception:
+            _log.exception("PrintQueueProducer.handle_run_change failed for run=%s", run_id)

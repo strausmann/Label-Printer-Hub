@@ -64,7 +64,7 @@ describe("Integrations", () => {
   it("test connection sends unsaved values", async () => {
     const { calls } = mockApi({
       "GET /api/v1/settings": settingsList(),
-      "GET /api/admin/api-keys": [KEY_ADMIN],
+      "GET /api/v1/admin/api-keys": [KEY_ADMIN],
       "POST /api/v1/settings/integrations/grocy/test": { ok: true, status: 200, detail: "Grocy 4.2 answered" },
     });
     await renderApp({ path: "/settings/integrations" });
@@ -84,7 +84,7 @@ describe("Integrations", () => {
   it("shows a failed test as a problem", async () => {
     mockApi({
       "GET /api/v1/settings": settingsList(),
-      "GET /api/admin/api-keys": [],
+      "GET /api/v1/admin/api-keys": [],
       "POST /api/v1/settings/integrations/spoolman/test": { ok: false, status: null, detail: "connection refused" },
     });
     await renderApp({ path: "/settings/integrations" });
@@ -97,7 +97,7 @@ describe("Integrations", () => {
   it("a changed URL makes the saved secret required in the same save", async () => {
     const { calls } = mockApi({
       "GET /api/v1/settings": settingsList(),
-      "GET /api/admin/api-keys": [],
+      "GET /api/v1/admin/api-keys": [],
       "PUT /api/v1/settings": settingsList(),
     });
     await renderApp({ path: "/settings/integrations" });
@@ -121,7 +121,7 @@ describe("Integrations", () => {
   it("explains a secret_required_for_new_url answer", async () => {
     mockApi({
       "GET /api/v1/settings": settingsList(),
-      "GET /api/admin/api-keys": [],
+      "GET /api/v1/admin/api-keys": [],
       "PUT /api/v1/settings": () => respond(422, { detail: { error_code: "secret_required_for_new_url", error_message: "x", keys: [] } }),
     });
     await renderApp({ path: "/settings/integrations" });
@@ -132,7 +132,7 @@ describe("Integrations", () => {
   });
 
   it("lists the clients by their API keys, with scope and last use", async () => {
-    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/admin/api-keys": [KEY_ADMIN, KEY_KEPT] });
+    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/v1/admin/api-keys": [KEY_ADMIN, KEY_KEPT] });
     await renderApp({ path: "/settings/integrations" });
     const clients = await screen.findByRole("region", { name: "Clients" });
     expect(await within(clients).findByText("Kept")).toBeVisible();
@@ -217,8 +217,8 @@ describe("AccessKeys", () => {
     let keys = [KEY_ADMIN];
     const { calls } = mockApi({
       "GET /api/v1/settings": settingsList(),
-      "GET /api/admin/api-keys": () => keys,
-      "POST /api/admin/api-keys": () => {
+      "GET /api/v1/admin/api-keys": () => keys,
+      "POST /api/v1/admin/api-keys": () => {
         keys = [...keys, KEY_KEPT];
         return { key_id: KEY_KEPT.id, name: "Kept", plaintext: "lph_fake-plaintext-for-tests", prefix: "lph_kept", scopes: ["print"] };
       },
@@ -230,7 +230,7 @@ describe("AccessKeys", () => {
     await userEvent.click(screen.getByRole("button", { name: "Create key" }));
     const dialog = await screen.findByRole("dialog", { name: "Your new key" });
     expect(within(dialog).getByLabelText("Key")).toHaveValue("lph_fake-plaintext-for-tests");
-    expect(lastBody(calls, "POST", "/api/admin/api-keys")).toMatchObject({ name: "Kept", scopes: ["print"] });
+    expect(lastBody(calls, "POST", "/api/v1/admin/api-keys")).toMatchObject({ name: "Kept", scopes: ["print"] });
     await userEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.body.innerHTML).not.toContain("lph_fake-plaintext-for-tests");
@@ -241,8 +241,8 @@ describe("AccessKeys", () => {
   it("revokes a key after a confirmation", async () => {
     const { calls } = mockApi({
       "GET /api/v1/settings": settingsList(),
-      "GET /api/admin/api-keys": [KEY_ADMIN, KEY_KEPT],
-      [`DELETE /api/admin/api-keys/${KEY_KEPT.id}`]: null,
+      "GET /api/v1/admin/api-keys": [KEY_ADMIN, KEY_KEPT],
+      [`DELETE /api/v1/admin/api-keys/${KEY_KEPT.id}`]: null,
     });
     await renderApp({ path: "/settings/access" });
     await userEvent.click(await screen.findByRole("button", { name: "Revoke Kept" }));
@@ -253,14 +253,14 @@ describe("AccessKeys", () => {
   });
 
   it("shows the SSO state read-only and the webhook key as a secret", async () => {
-    mockApi({ "GET /api/v1/settings": settingsList({ "access.webhook_api_key": { is_set: true } }), "GET /api/admin/api-keys": [KEY_ADMIN] });
+    mockApi({ "GET /api/v1/settings": settingsList({ "access.webhook_api_key": { is_set: true } }), "GET /api/v1/admin/api-keys": [KEY_ADMIN] });
     await renderApp({ path: "/settings/access", info: { auth: { sso_configured: true, bootstrap_open: false } } });
     expect(await screen.findByText(/Sign-in through a reverse proxy is configured/)).toBeVisible();
     expect(screen.getByLabelText("Webhook key")).toHaveValue("");
   });
 
   it("warns that a short webhook key is rejected before sending", async () => {
-    const { calls } = mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/admin/api-keys": [] });
+    const { calls } = mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/v1/admin/api-keys": [] });
     await renderApp({ path: "/settings/access" });
     await userEvent.type(await screen.findByLabelText("Webhook key"), "short");
     expect(screen.getByText(/at least 32 characters/)).toBeVisible();
@@ -313,7 +313,7 @@ describe("fix round 1", () => {
   };
 
   it("the new-key dialog survives Escape and only closes with Done", async () => {
-    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/admin/api-keys": [KEY_ADMIN], "POST /api/admin/api-keys": created });
+    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/v1/admin/api-keys": [KEY_ADMIN], "POST /api/v1/admin/api-keys": created });
     await renderApp({ path: "/settings/access" });
     await createKey({} as never);
     const dialog = await screen.findByRole("dialog", { name: "Your new key" });
@@ -326,7 +326,7 @@ describe("fix round 1", () => {
   it("a generated webhook key disappears from the page once saved", async () => {
     mockApi({
       "GET /api/v1/settings": settingsList(),
-      "GET /api/admin/api-keys": [],
+      "GET /api/v1/admin/api-keys": [],
       "PUT /api/v1/settings": settingsList({ "access.webhook_api_key": { is_set: true } }),
     });
     await renderApp({ path: "/settings/access" });
@@ -338,8 +338,8 @@ describe("fix round 1", () => {
     expect(screen.queryByText(/^[0-9a-f]{48}$/)).toBeNull();
   });
 
-  it("the integration card takes its state from /api/info, like the sidebar", async () => {
-    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/admin/api-keys": [] });
+  it("the integration card takes its state from /api/v1/info, like the sidebar", async () => {
+    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/v1/admin/api-keys": [] });
     await renderApp({
       path: "/settings/integrations",
       info: { integrations: [{ name: "snipeit", configured: false }, { name: "grocy", configured: true }, { name: "spoolman", configured: true }] },
@@ -357,7 +357,7 @@ describe("fix round 1", () => {
   it("an undecryptable secret makes the card say so as well", async () => {
     mockApi({
       "GET /api/v1/settings": settingsList({ "integrations.snipeit.api_key": { is_set: true, state: "undecryptable" } }),
-      "GET /api/admin/api-keys": [],
+      "GET /api/v1/admin/api-keys": [],
     });
     await renderApp({ path: "/settings/integrations", info: { integrations: [{ name: "snipeit", configured: false }] } });
     const snipe = await screen.findByRole("group", { name: "Snipe-IT" });

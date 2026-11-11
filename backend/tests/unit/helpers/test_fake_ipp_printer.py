@@ -335,3 +335,12 @@ def test_production_code_never_imports_the_test_helpers() -> None:
                 names = [node.module]
             offenders += [f"{path}: {n}" for n in names if n == "tests" or n.startswith("tests.")]
     assert offenders == []
+
+
+async def test_media_default_is_reported_only_when_set() -> None:
+    async with _client(FakeIppPrinter()) as client:
+        assert "media-default" not in await client.get_printer_attributes(["all"])
+    fake = FakeIppPrinter(media_default="iso_a4_210x297mm")
+    async with _client(fake) as client:
+        attrs = await client.get_printer_attributes(["all"])
+    assert attrs["media-default"] == ["iso_a4_210x297mm"]

@@ -8,7 +8,7 @@ GET /spool/{entity_id}   - Spoolman filament spool
 GET /product/{entity_id} - Grocy product
 
 The server no longer renders HTML. Each path answers with the web app shell
-and the app reads the item through ``GET /api/lookup/{app}/{entity_id}``. The
+and the app reads the item through ``GET /api/v1/lookup/{app}/{entity_id}``. The
 paths are public by design: they are printed on physical labels and the shell
 carries no data. The lookup endpoint behind them requires sign-in (read scope), as does every
 client route of the web app. When no web app is mounted (API-only mode) they return a

@@ -12,7 +12,7 @@ import { applyTheme, readTheme } from "./shell/theme";
 
 async function serverDefaultLanguage(): Promise<string | undefined> {
   try {
-    const response = await fetch("/api/info", { credentials: "same-origin" });
+    const response = await fetch("/api/v1/info", { credentials: "same-origin" });
     if (!response.ok) return undefined;
     return ((await response.json()) as { default_language?: string }).default_language;
   } catch {

@@ -276,8 +276,15 @@ class _PTPQueuePrinter:
         **options: Any,
     ) -> None:
         """Phase 1k.2: Adapter-Methode für Queue-BatchJob → backend.print_images."""
+        from app.printer_backends.exceptions import PrintFailedError, refused_before_sending
+        from app.services.tape_registry import UnknownTapeError
+
         media_type = options.pop("media_type", self._default_media_type)
-        tape_spec = self._tape_registry.lookup_pt(tape_mm, media_type)
+        try:
+            tape_spec = self._tape_registry.lookup_pt(tape_mm, media_type)
+        except UnknownTapeError as exc:
+            # #277: no tape spec: refused before anything was sent, the labels did not print.
+            raise refused_before_sending(PrintFailedError(str(exc))) from exc
         await self._backend.print_images(
             images,
             tape_spec,
@@ -285,6 +292,15 @@ class _PTPQueuePrinter:
             high_resolution=bool(options.pop("high_resolution", False)),
             half_cut=bool(options.pop("half_cut", True)),
         )
+
+    async def check_status(self) -> None:
+        """#277: the status check after each group of a tape run: the SNMP preflight.
+
+        Raises ``TapeEmptyError`` (``noPaper``), ``PrinterCoverOpenError`` or
+        ``PrinterOfflineError``; the queue then stops the run.
+        """
+        backend: Any = self._backend  # the PrinterBackend protocol has no preflight_check
+        await backend.preflight_check()
 
 
 # Module-level registration so any import path triggers it.

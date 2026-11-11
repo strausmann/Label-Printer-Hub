@@ -129,6 +129,9 @@ importers:
       workbox-window:
         specifier: 7.4.1
         version: 7.4.1
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
 packages:
 

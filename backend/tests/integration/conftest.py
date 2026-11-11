@@ -193,17 +193,29 @@ def _mock_backend_env(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     get_settings.cache_clear()
-    # Reset registry state so each test gets a clean discovery cycle.
+    # Reset registry state so each test gets a clean discovery cycle, and restore it after.
+    # The registries are process-wide; drivers that register as an import side effect (the
+    # QL driver: it has no entry point) never come back from a re-discovery, so clearing
+    # them on teardown broke every later test in the same process that relied on the
+    # import (tests/unit/services/test_printer_runtime.py::test_describe_tape_for_uses_
+    # model_driver, when any integration test ran first).
+    saved_factories = dict(BackendRegistry._factories)
+    saved_backends_discovered = BackendRegistry._discovered
+    saved_models = list(ModelRegistry._models)
+    saved_models_discovered = ModelRegistry._discovered
     BackendRegistry._factories.clear()
     BackendRegistry._discovered = False
     ModelRegistry._models.clear()
     ModelRegistry._discovered = False
-    yield
-    get_settings.cache_clear()
-    BackendRegistry._factories.clear()
-    BackendRegistry._discovered = False
-    ModelRegistry._models.clear()
-    ModelRegistry._discovered = False
+    try:
+        yield
+    finally:
+        get_settings.cache_clear()
+        BackendRegistry._factories.clear()
+        BackendRegistry._factories.update(saved_factories)
+        BackendRegistry._discovered = saved_backends_discovered
+        ModelRegistry._models[:] = saved_models
+        ModelRegistry._discovered = saved_models_discovered
 
 
 @pytest_asyncio.fixture

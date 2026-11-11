@@ -18,6 +18,7 @@ from app.printer_backends.exceptions import (
     PrinterOfflineError,
     TapeEmptyError,
     TapeMismatchError,
+    refused_before_sending,
 )
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.services.status_block import (
@@ -85,6 +86,7 @@ class MockPrinterBackend:
         tape_empty: bool = False,
         cover_open: bool = False,
         offline: bool = False,
+        tape_runs_out_after: int | None = None,
     ) -> None:
         self.host = host
         self._loaded_tape_mm = loaded_tape_mm
@@ -92,6 +94,9 @@ class MockPrinterBackend:
         self._tape_empty = tape_empty
         self._cover_open = cover_open
         self._offline = offline
+        # #277: the tape ends after this many printed labels; afterwards every print and every
+        # preflight says the tape is empty (the SNMP ``noPaper`` bit).
+        self.tape_runs_out_after = tape_runs_out_after
         self.printed_images: list[Image.Image] = []
         self.status_query_count: int = 0
 
@@ -140,17 +145,25 @@ class MockPrinterBackend:
         half_cut: bool = False,  # noqa: ARG002
         last_page: bool = True,  # noqa: ARG002
     ) -> None:
+        # Like the PT backend's preflight: a refusal here means nothing was sent (#277).
         status = await self.query_status()
         if status.tape_empty:
-            raise TapeEmptyError()
+            raise refused_before_sending(TapeEmptyError())
         if status.cover_open:
-            raise PrinterCoverOpenError()
+            raise refused_before_sending(PrinterCoverOpenError())
         if status.loaded_tape_mm != tape_spec.width_mm:
-            raise TapeMismatchError(
-                expected_mm=tape_spec.width_mm,
-                loaded_mm=status.loaded_tape_mm,
+            raise refused_before_sending(
+                TapeMismatchError(
+                    expected_mm=tape_spec.width_mm,
+                    loaded_mm=status.loaded_tape_mm,
+                )
             )
         self.printed_images.append(image.copy())
+        if (
+            self.tape_runs_out_after is not None
+            and len(self.printed_images) >= self.tape_runs_out_after
+        ):
+            self._tape_empty = True
 
     async def print_images(
         self,

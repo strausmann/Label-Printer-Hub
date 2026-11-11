@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Amended by:** [0020](0020-backend-kinds-ipp-page-printers.md) — for IPP page printers a job that is printing can be cancelled (Cancel-Job) and may end `cancelled`; the rule below stays for TCP/9100 streams
+- **Amended:** 2026-11-09 (#226) — every API route now lives under `/api/v1/`; the paths quoted below are the original ones, the decision is unchanged
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
@@ -21,6 +22,13 @@ The hub may receive concurrent print requests (multiple webhook deliveries from 
 The hub maintains a **per-printer asyncio queue** plus a **per-printer worker coroutine** that owns the single TCP/9100 connection. Jobs are submitted to the queue by API handlers, picked up by the worker, and processed serially.
 
 Jobs are persisted in **SQLite** before being placed on the in-memory queue. After a hub restart, jobs in `queued` or `printing` state are marked `failed_restart` so the user can decide whether to retry.
+
+> **Update (1.5.0):** The decision (persist first, then queue) stands; the restart behaviour is narrower than the
+> sentence above. On start, recovery re-enqueues `queued` tape jobs, so they print without user action
+> (`PrintQueue._recover_printer`). Only a tape job that was `printing` at the restart becomes `failed_restart`
+> (`printer_interrupted`), because the printer may or may not have printed it. A label of a tape run that waited
+> for the user's confirmation fails with `tape_run_interrupted`, since that confirmation is not kept across a restart.
+> `printing` page jobs stay as they are: the IPP printer still holds them, and the queue resumes or settles them.
 
 **Job state machine:**
 

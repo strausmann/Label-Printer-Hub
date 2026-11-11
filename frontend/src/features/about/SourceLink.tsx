@@ -6,7 +6,7 @@ export const SOURCE_LINK_CLASS =
 
 /**
  * Link to the source of the running build (AGPL section 13, D20). Renders nothing until
- * `/api/info` has answered, so there is never a link with an empty target.
+ * `/api/v1/info` has answered, so there is never a link with an empty target.
  */
 export function SourceLink({ className = SOURCE_LINK_CLASS }: { className?: string }) {
   const { t } = useLingui();

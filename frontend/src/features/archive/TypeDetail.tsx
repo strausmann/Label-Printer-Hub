@@ -12,6 +12,7 @@ import { SECTION_HEADING, SECONDARY_BUTTON } from "../ui";
 import { exportTypeUrl, useArchiveType, useDeleteType, useSheetType, type SheetTypeDetail } from "./api";
 import { useArchiveErrorText } from "./errors";
 import { Badge } from "./fields";
+import { FeedbackLinks } from "./FeedbackLinks";
 import { TypeForm } from "./TypeForm";
 import { httpUrl } from "./search";
 
@@ -190,6 +191,8 @@ export function TypeDetail({ typeKey, admin, onLeave }: { typeKey: string; admin
               {type.notes ? <p className="whitespace-pre-wrap text-ink-2 [overflow-wrap:anywhere]">{type.notes}</p> : null}
             </section>
           ) : null}
+
+          <FeedbackLinks type={type} admin={admin} />
         </>
       )}
 

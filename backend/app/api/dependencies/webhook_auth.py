@@ -1,14 +1,14 @@
 """Webhook API-key authentication dependency.
 
-Protects the webhook routes (``/api/webhook/spoolman``,
-``/api/webhook/grocy``) behind a shared-secret header check.
+Protects the webhook routes (``/api/v1/webhook/spoolman``,
+``/api/v1/webhook/grocy``) behind a shared-secret header check.
 
 Usage::
 
     from fastapi import Depends
     from app.api.dependencies.webhook_auth import require_webhook_key
 
-    @router.post("/api/webhook/spoolman", dependencies=[Depends(require_webhook_key)])
+    @router.post("/api/v1/webhook/spoolman", dependencies=[Depends(require_webhook_key)])
     async def spoolman_webhook(...) -> ...:
         ...
 

@@ -14,17 +14,27 @@ submit_batch_job preserved for Phase 1k.2 (batch print endpoint).
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, cast
 from uuid import UUID, uuid4
 
 from PIL import Image
 
 from app.models.job import Job
-from app.printer_backends.exceptions import NoTapeLoadedError, PrinterDisabledError
+from app.printer_backends.exceptions import (
+    ConflictingOrientationError,
+    NoTapeLoadedError,
+    PrinterDisabledError,
+)
+from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
-from app.schemas.print_request import PrintRequest
+from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
+from app.schemas.print_request import PrintOptions, PrintRequest, RawLabelData
 from app.services.layout_engine import LayoutEngine
+from app.services.print_queue import MAX_LABELS_PER_TAPE_JOB
+from app.services.ql_layout import resolve_layout
 
 _log = logging.getLogger(__name__)
 
@@ -43,6 +53,7 @@ class PrintService:
         store: Any,  # JobStore protocol
         engine: LayoutEngine,
         lookup_service: Any = None,  # optional LookupService protocol
+        layout_defaults: Mapping[int, LayoutDefault] | None = None,
     ) -> None:
         self._printer_id = printer_id
         self._printer_slug = printer_slug
@@ -52,6 +63,31 @@ class PrintService:
         self._store = store
         self._engine = engine
         self._lookup_service = lookup_service
+        self._layout_defaults: dict[int, LayoutDefault] = dict(layout_defaults or {})
+
+    @property
+    def layout_defaults(self) -> dict[int, LayoutDefault]:
+        """The stored layout default per tape width (a copy)."""
+        return dict(self._layout_defaults)
+
+    def set_layout_defaults(self, defaults: Mapping[int, LayoutDefault]) -> None:
+        """Replace the printer's stored layout defaults per tape width (#258).
+
+        The runtime calls this when an admin edit changes only the defaults, which needs
+        no re-wire; the next job uses them.
+        """
+        self._layout_defaults = dict(defaults)
+
+    def _resolve_layout(
+        self, tape_mm: int, options: PrintOptions
+    ) -> tuple[LabelOrientation, QlLayoutPreset | None]:
+        """Request option, then the stored default for the loaded tape, then the tape default."""
+        return resolve_layout(
+            tape_mm,
+            options.orientation,
+            options.layout_preset,
+            self._layout_defaults.get(tape_mm),
+        )
 
     async def submit_print_job(self, request: PrintRequest) -> UUID:
         """Submit a print job: preflight → render → persist → queue.
@@ -62,35 +98,91 @@ class PrintService:
             UnsupportedTapeError (409): tape_mm not in TAPE_GEOMETRY.
             ContentTypeDataMismatchError (422): data missing required fields.
         """
+
+        async def resolve(_tape_mm: int) -> LabelData:
+            return await self._resolve_label_data(request)
+
+        return await self._submit_label(
+            resolve,
+            content_type=request.content_type,
+            options=request.options,
+            template_key=None,
+        )
+
+    async def submit_test_label(self, build: Callable[[int], RawLabelData]) -> UUID:
+        """Submit the test label (#228): the same path as ``submit_print_job``.
+
+        One preflight decides the tape; ``build`` gets its width and returns the label data.
+        The job is stored with ``template_key="test_label"`` and content type
+        ``QR_THREE_LINES``, one copy.
+
+        Raises: as ``submit_print_job``, plus ``PrinterOfflineError`` from the preflight.
+        """
+
+        async def resolve(tape_mm: int) -> LabelData:
+            raw = build(tape_mm)
+            return LabelData(
+                source_app="manual",
+                title=raw.title,
+                primary_id=raw.primary_id,
+                qr_payload=raw.qr_payload,
+                secondary=raw.secondary,
+                items=raw.items,
+            )
+
+        return await self._submit_label(
+            resolve,
+            content_type=ContentType.QR_THREE_LINES,
+            options=PrintOptions(),
+            template_key="test_label",
+        )
+
+    async def _submit_label(
+        self,
+        resolve: Callable[[int], Awaitable[LabelData]],
+        *,
+        content_type: ContentType,
+        options: PrintOptions,
+        template_key: str | None,
+    ) -> UUID:
+        """enabled check → one preflight → label data → render → persist → queue."""
         if not self._printer_enabled:
             raise PrinterDisabledError(self._printer_id, self._printer_slug)
 
         preflight = await self._backend.preflight_check()
         if preflight.loaded_tape_mm is None:
             raise NoTapeLoadedError()
+        tape_mm = preflight.loaded_tape_mm
+        orientation, preset = self._resolve_layout(tape_mm, options)
+        # The job stores what was actually rendered, so a restart re-renders the same label.
+        options = options.model_copy(update={"orientation": orientation, "layout_preset": preset})
 
-        label_data = await self._resolve_label_data(request)
+        label_data = await resolve(tape_mm)
         # asyncio.to_thread: render() is CPU-bound (QR generation + font rendering).
         # Offloading keeps the event loop responsive for concurrent requests.
         # Matches the pattern already used in submit_batch_job._prepare_one.
         image = await asyncio.to_thread(
-            self._engine.render,
-            preflight.loaded_tape_mm,
-            request.content_type,
-            label_data,
+            functools.partial(
+                self._engine.render,
+                tape_mm,
+                content_type,
+                label_data,
+                orientation=orientation,
+                preset=preset,
+            )
         )
 
         job_id = uuid4()
         job = Job(
             id=job_id,
             printer_id=self._printer_id,
-            template_key=None,
+            template_key=template_key,
             payload={
                 "label_data": label_data.model_dump(),
-                "content_type": str(request.content_type),
-                "rendered_tape_mm": preflight.loaded_tape_mm,
-                "tape_mm": preflight.loaded_tape_mm,
-                "options": request.options.model_dump(),
+                "content_type": str(content_type),
+                "rendered_tape_mm": tape_mm,
+                "tape_mm": tape_mm,
+                "options": options.model_dump(mode="json"),
             },
             api_key_id=None,
             source_ip=None,
@@ -100,11 +192,13 @@ class PrintService:
             job_id,
             self._printer_id,
             image,
-            tape_mm=preflight.loaded_tape_mm,
-            auto_cut=request.options.auto_cut,
-            high_resolution=request.options.high_resolution,
-            half_cut=request.options.half_cut,
-            last_page=request.options.last_page,
+            tape_mm=tape_mm,
+            auto_cut=options.auto_cut,
+            high_resolution=options.high_resolution,
+            half_cut=options.half_cut,
+            last_page=options.last_page,
+            # The QL backend rotates on this flag only (#258); PT adapters ignore it.
+            orientation=str(orientation),
         )
         return job_id
 
@@ -137,10 +231,14 @@ class PrintService:
         requests: list[PrintRequest],
         *,
         half_cut: bool,
+        run_id: UUID | None = None,
+        label_ids: list[UUID] | None = None,
     ) -> list[UUID]:
-        """Phase 1k.2: Render N items, submit ONE BatchJob to PrintQueue.
+        """Render N items and submit them to the queue as one tape run (#277).
 
-        Atomic: alle job_ids werden gemeinsam als completed/failed markiert.
+        The queue splits the run into sub-jobs of ``MAX_LABELS_PER_TAPE_JOB`` and sends groups
+        of ``TAPE_GROUP_SIZE``. *run_id* names the run (the batch id of the API). *label_ids*,
+        when given, receives the job id of every label (copies included) in print order.
         Preflight wird 1x am Anfang für alle Items geprüft.
 
         NOTE: Diese Methode verwendet noch direkte LayoutEngine-Render-Aufrufe
@@ -155,21 +253,47 @@ class PrintService:
             raise NoTapeLoadedError()
 
         tape_mm = preflight.loaded_tape_mm
+        # #258: one orientation for the whole batch; the backend rotates every image on that
+        # one flag. Items without an orientation follow the one an item names explicitly;
+        # different explicit orientations are refused instead of silently overridden.
+        explicit = sorted({str(r.options.orientation) for r in requests if r.options.orientation})
+        if len(explicit) > 1:
+            raise ConflictingOrientationError(tuple(explicit))
+        named = next((r.options for r in requests if r.options.orientation), requests[0].options)
+        orientation, _ = self._resolve_layout(tape_mm, named)
+        resolved_options = [
+            req.options.model_copy(
+                update={
+                    "orientation": orientation,
+                    "layout_preset": self._resolve_layout(
+                        tape_mm,
+                        req.options.model_copy(update={"orientation": orientation}),
+                    )[1],
+                }
+            )
+            for req in requests
+        ]
 
         # 2. Resolve LabelData ONCE per item, then render via LayoutEngine
         async def _prepare_one(
-            req: PrintRequest,
+            req: PrintRequest, opts: PrintOptions
         ) -> tuple[Image.Image, dict[str, Any]]:
             label_data = await self._resolve_label_data(req)
             image = await asyncio.to_thread(
-                self._engine.render,
-                tape_mm,
-                req.content_type,
-                label_data,
+                functools.partial(
+                    self._engine.render,
+                    tape_mm,
+                    req.content_type,
+                    label_data,
+                    orientation=opts.orientation,
+                    preset=opts.layout_preset,
+                )
             )
             return image, label_data.model_dump()
 
-        prepared = await asyncio.gather(*[_prepare_one(r) for r in requests])
+        prepared = await asyncio.gather(
+            *[_prepare_one(r, o) for r, o in zip(requests, resolved_options, strict=True)]
+        )
 
         # 3. Pre-allocate job UUIDs + persist in JobStore
         # Bug 2026-06-14 Round 2: PR #115 hatte das Image N-mal mit DERSELBEN
@@ -188,7 +312,7 @@ class PrintService:
         job_ids: list[UUID] = []  # master IDs, 1 pro request — Hangar-API
         all_job_ids: list[UUID] = []  # alle inkl. Copies — für enqueue_batch
         images: list[Image.Image] = []
-        for request, (img, ld_dump) in zip(requests, prepared, strict=True):
+        for request, opts, (img, ld_dump) in zip(requests, resolved_options, prepared, strict=True):
             n = max(1, int(request.options.copies))
             master_id = uuid4()
             job_ids.append(master_id)
@@ -202,11 +326,17 @@ class PrintService:
                         "tape_mm": tape_mm,
                         "content_type": str(request.content_type),
                         "rendered_tape_mm": tape_mm,
-                        "options": request.options.model_dump(),
+                        "options": opts.model_dump(mode="json"),
                         "label_data": ld_dump,
                         "copy_index": copy_idx,
                         "copy_total": n,
                         "copy_master_id": str(master_id),
+                        # #277: a label past the first sub-job prints only after a confirmation;
+                        # a restart that finds it still queued fails it instead of printing it.
+                        "tape_run": {
+                            "run_id": None if run_id is None else str(run_id),
+                            "awaits_confirmation": len(all_job_ids) >= MAX_LABELS_PER_TAPE_JOB,
+                        },
                     },
                     api_key_id=None,
                     source_ip=None,
@@ -226,7 +356,11 @@ class PrintService:
                 "auto_cut": first_options.auto_cut,
                 "high_resolution": first_options.high_resolution,
                 "half_cut": half_cut,
+                "orientation": str(orientation),
             },
+            run_id=run_id,
         )
+        if label_ids is not None:
+            label_ids.extend(all_job_ids)
 
         return job_ids

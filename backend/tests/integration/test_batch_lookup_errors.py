@@ -1,4 +1,4 @@
-"""POST /api/print/{printer}/batch with ``lookup`` items: real route, real PrintService and
+"""POST /api/v1/print/{printer}/batch with ``lookup`` items: real route, real PrintService and
 AppLookupService, fake integration plugins.
 
 Covers what the e2e cannot: the integration failing. Each outcome must answer with its own
@@ -122,7 +122,7 @@ def _body(app_name: str = "snipeit", identifier: str = "42") -> dict[str, Any]:
 
 
 async def _post(client: AsyncClient, app_name: str = "snipeit") -> Any:
-    return await client.post("/api/print/p/batch", json=_body(app_name))
+    return await client.post("/api/v1/print/p/batch", json=_body(app_name))
 
 
 @pytest.mark.asyncio
@@ -167,6 +167,45 @@ async def test_failing_integration_answers_502_with_a_fixed_message(batch_env) -
     # The plugin's text wraps upstream details; none of it may reach the client.
     assert "internal.example" not in response.text
     assert "abc123" not in response.text
+    queue.enqueue_batch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_qr_payload_too_long_for_the_62mm_qr_is_422(batch_env) -> None:
+    """#258: the fixed QR of a 62 mm label refuses a long payload with its own code."""
+    client, queue, app = batch_env
+    app.state.backend_router.get("p").preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=62, error_flags=[]
+    )
+    item = {
+        "content_type": "qr_only",
+        "data": {"qr_payload": "https://example.invalid/" + "a" * 200},
+    }
+    response = await client.post("/api/v1/print/p/batch", json={"items": [item]})
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["error_code"] == "qr_payload_too_long"
+    assert detail["error_detail"]["max_bytes"] == 122  # version 7-M at 4 px modules
+    queue.enqueue_batch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_conflicting_explicit_orientations_are_422(batch_env) -> None:
+    """Review M3: a batch prints with one orientation; conflicting requests are refused."""
+    client, queue, app = batch_env
+    app.state.backend_router.get("p").preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=62, error_flags=[]
+    )
+    data = {"qr_payload": "https://example.invalid/1"}
+    items = [
+        {"content_type": "qr_only", "data": data, "options": {"orientation": "across"}},
+        {"content_type": "qr_only", "data": data, "options": {"orientation": "along"}},
+    ]
+    response = await client.post("/api/v1/print/p/batch", json={"items": items})
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["error_code"] == "conflicting_orientation"
+    assert detail["error_detail"]["orientations"] == ["across", "along"]
     queue.enqueue_batch.assert_not_awaited()
 
 

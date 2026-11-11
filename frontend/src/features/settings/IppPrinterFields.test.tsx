@@ -192,7 +192,7 @@ describe("IPP page printer form", () => {
     expect(within(form).getByText("Every tray needs a label.")).toBeVisible();
   });
 
-  it("creates the printer with the trays and says it is ready after a restart", async () => {
+  it("creates the printer with the trays and asks for no restart (it is wired at once, #224)", async () => {
     let printers: unknown[] = [];
     const { calls } = mockApi({
       "GET /api/v1/admin/printers": () => printers,
@@ -223,8 +223,8 @@ describe("IPP page printer form", () => {
       { key: "tray-2", label: "tray-2", load_hint: null, enabled: true, is_default: true },
       { key: "auto", label: "auto", load_hint: null, enabled: true, is_default: false },
     ]);
-    expect(await screen.findByText("The printer is ready after the hub restarts.")).toBeVisible();
     expect(await screen.findByText("Office laser")).toBeVisible();
+    expect(screen.queryByText(/restart/i)).toBeNull();
   });
 
   it("a printer that reports no trays offers the automatic choice only", async () => {
@@ -302,7 +302,6 @@ describe("IPP page printer form", () => {
     const alert = await within(form).findByRole("alert");
     expect(alert).toHaveTextContent(words);
     expect(alert).not.toHaveTextContent(code);
-    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
   });
 
   it("the save error ipp_rejected names the IPP status", async () => {
@@ -356,11 +355,9 @@ describe("editing an IPP page printer", () => {
         { key: "auto", label: "Automatic", load_hint: null, enabled: true, is_default: false },
       ],
     });
-    // Nothing that needs a restart changed.
-    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
   });
 
-  it("a changed address needs a new probe and then says it applies after a restart", async () => {
+  it("a changed address needs a new probe, then saves and closes without a restart note", async () => {
     const { calls } = mockApi({
       "GET /api/v1/admin/printers": [IPP_ADMIN],
       "POST /api/v1/admin/printers/ipp/probe": PROBE,
@@ -375,17 +372,19 @@ describe("editing an IPP page printer", () => {
     expect(within(within(form).getByRole("group", { name: "main-tray" })).getByRole("textbox", { name: "Load hint" })).toHaveValue("face down");
     await userEvent.click(within(form).getByRole("button", { name: "Save printer" }));
     await waitFor(() => expect(lastBody(calls, "PUT", "/api/v1/admin/printers/office-laser")).toBeDefined());
-    expect(await screen.findByText("The printer is ready after the hub restarts.")).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole("form")).toBeNull());
+    expect(screen.queryByText(/restart/i)).toBeNull();
   });
 
-  it("switching the printer off or on says the same", async () => {
-    mockApi({
+  it("switching the printer off takes effect without a restart note", async () => {
+    const { calls } = mockApi({
       "GET /api/v1/admin/printers": [IPP_ADMIN],
       "POST /api/v1/admin/printers/office-laser/disable": { ...IPP_ADMIN, enabled: false },
     });
     await renderApp({ path: "/settings/printers" });
     await userEvent.click(await screen.findByRole("button", { name: "Disable Office laser" }));
-    expect(await screen.findByText("The printer is ready after the hub restarts.")).toBeVisible();
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/v1/admin/printers/office-laser/disable")).toBe(true));
+    expect(screen.queryByText(/restart/i)).toBeNull();
   });
 
   it("lists the address of a page printer instead of host and port", async () => {
@@ -471,52 +470,6 @@ describe("review fixes", () => {
     expect(within(form).getByRole("group", { name: "tray-2" })).toBeVisible();
   });
 
-  it("the restart note clears when the form for a new printer is opened", async () => {
-    let printers: unknown[] = [];
-    mockApi({
-      "GET /api/v1/admin/printers": () => printers,
-      "POST /api/v1/admin/printers/ipp/probe": PROBE,
-      "POST /api/v1/admin/printers": () => {
-        printers = [IPP_ADMIN, ADMIN_PRINTER];
-        return IPP_ADMIN;
-      },
-    });
-    const form = await openNewPagePrinter();
-    await fillAndRead(form);
-    await within(form).findByRole("region", { name: "What the printer reports" });
-    await userEvent.click(within(form).getByRole("button", { name: "Create printer" }));
-    expect(await screen.findByText("The printer is ready after the hub restarts.")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "Add printer" }));
-    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
-  });
-
-  it("the restart note is gone after a tape printer was saved", async () => {
-    mockApi({
-      "GET /api/v1/admin/printers": [IPP_ADMIN, ADMIN_PRINTER],
-      "POST /api/v1/admin/printers/office-laser/disable": { ...IPP_ADMIN, enabled: false },
-      "PUT /api/v1/admin/printers/workshop-pt": ADMIN_PRINTER,
-    });
-    await renderApp({ path: "/settings/printers" });
-    await userEvent.click(await screen.findByRole("button", { name: "Disable Office laser" }));
-    expect(await screen.findByText("The printer is ready after the hub restarts.")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "Edit Workshop PT-P750W" }));
-    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
-    await waitFor(() => expect(screen.queryByRole("form")).toBeNull());
-    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
-  });
-
-  it("the restart note clears when the form is cancelled", async () => {
-    mockApi({ "GET /api/v1/admin/printers": [IPP_ADMIN], "POST /api/v1/admin/printers/office-laser/disable": { ...IPP_ADMIN, enabled: false } });
-    await renderApp({ path: "/settings/printers" });
-    await userEvent.click(await screen.findByRole("button", { name: "Disable Office laser" }));
-    expect(await screen.findByText("The printer is ready after the hub restarts.")).toBeVisible();
-    // Opening the form clears it; cancelling after a later note does too.
-    await userEvent.click(screen.getByRole("button", { name: "Edit Office laser" }));
-    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
-  });
-
   it("editing a page printer that has no stored trays shows the automatic tray", async () => {
     const { calls } = mockApi({
       "GET /api/v1/admin/printers": [{ ...IPP_ADMIN, trays: [] }],
@@ -553,7 +506,6 @@ describe("review fixes", () => {
     const alert = await within(form).findByRole("alert");
     expect(alert).toHaveTextContent(words);
     expect(alert).not.toHaveTextContent(code);
-    expect(screen.queryByText("The printer is ready after the hub restarts.")).toBeNull();
   });
 
   it("the edit save reports a network error", async () => {

@@ -32,15 +32,15 @@ function sheetsRoute(rows: ReturnType<typeof sheetSummary>[], calls: () => Call[
 function setup(rows = ALL, extra: Record<string, unknown> = {}) {
   let calls: Call[] = [];
   const api = mockApi({
-    "GET /api/sheets": sheetsRoute(rows, () => calls),
-    "GET /api/sheet-types": [SHEET_TYPE],
+    "GET /api/v1/sheets": sheetsRoute(rows, () => calls),
+    "GET /api/v1/sheet-types": [SHEET_TYPE],
     ...extra,
   });
   calls = api.calls;
   return api;
 }
 
-const sheetCalls = (calls: Call[]) => calls.filter((c) => c.method === "GET" && c.path === "/api/sheets");
+const sheetCalls = (calls: Call[]) => calls.filter((c) => c.method === "GET" && c.path === "/api/v1/sheets");
 const rowOf = (code: string) => screen.getByRole("link", { name: code }).closest("[role=row]") as HTMLElement;
 
 describe("the sheet list", () => {
@@ -133,7 +133,7 @@ describe("the sheet list", () => {
   });
 
   it("says so when the list cannot be loaded", async () => {
-    mockApi({ "GET /api/sheets": () => respond(403, { detail: "no" }), "GET /api/sheet-types": [SHEET_TYPE] });
+    mockApi({ "GET /api/v1/sheets": () => respond(403, { detail: "no" }), "GET /api/v1/sheet-types": [SHEET_TYPE] });
     await renderApp({ path: "/sheets", session: PRINT_SESSION });
     expect(await screen.findByText("The sheets could not be loaded.")).toBeVisible();
   });
@@ -199,7 +199,7 @@ describe("the hidden-sheets hint", () => {
 describe("discarding a sheet", () => {
   it("asks first with the mockup's words and posts only after the answer", async () => {
     const { calls } = setup(ALL, {
-      "POST /api/sheets/L4736-0001/discard": sheetRead("L4736-0001", { used: [1] }, { state: "discarded" }),
+      "POST /api/v1/sheets/L4736-0001/discard": sheetRead("L4736-0001", { used: [1] }, { state: "discarded" }),
     });
     await renderApp({ path: "/sheets", session: PRINT_SESSION });
     await userEvent.click(await screen.findByRole("button", { name: "Discard L4736-0001" }));
@@ -217,7 +217,7 @@ describe("discarding a sheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Discard L4736-0001" }));
     await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Discard sheet" }));
-    await waitFor(() => expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/api/sheets/L4736-0001/discard"]));
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/api/v1/sheets/L4736-0001/discard"]));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
   });
 
@@ -242,7 +242,7 @@ describe("discarding a sheet", () => {
 
   it("shows sheet_busy as words and keeps the question open", async () => {
     setup(ALL, {
-      "POST /api/sheets/L4736-0001/discard": () => respond(409, apiErrorBody("sheet_busy", "Sheet is in use by a running job.")),
+      "POST /api/v1/sheets/L4736-0001/discard": () => respond(409, apiErrorBody("sheet_busy", "Sheet is in use by a running job.")),
     });
     await renderApp({ path: "/sheets", session: PRINT_SESSION });
     await userEvent.click(await screen.findByRole("button", { name: "Discard L4736-0001" }));

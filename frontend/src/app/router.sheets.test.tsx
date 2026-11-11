@@ -28,12 +28,12 @@ beforeEach(() => {
 
 describe("sheet routes", () => {
   it.each(["/sheets/L4736-0002", "/sheet/L4736-0002"])("%s opens the sheet page for that code", async (path) => {
-    const { calls } = mockApi({ "GET /api/sheets/L4736-0002": sheetRead("L4736-0002", { used: [1, 2, 3, 4, 5] }) });
+    const { calls } = mockApi({ "GET /api/v1/sheets/L4736-0002": sheetRead("L4736-0002", { used: [1, 2, 3, 4, 5] }) });
     await mountAt(path);
     // Loaded data, not just the title: the not-found state shows the code in a heading too.
     expect(await screen.findByText("5 of 48 used")).toBeVisible();
     expect(screen.getByRole("heading", { level: 1, name: "L4736-0002" })).toBeVisible();
-    expect(calls.filter((c) => c.path === "/api/sheets/L4736-0002")).not.toHaveLength(0);
+    expect(calls.filter((c) => c.path === "/api/v1/sheets/L4736-0002")).not.toHaveLength(0);
   });
 
   it("/sheets/archive stays the archive page, not a sheet called archive", async () => {

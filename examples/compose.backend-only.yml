@@ -16,7 +16,7 @@
 #
 # Then:
 #   curl http://localhost:8090/healthz
-#   curl http://localhost:8090/api/info
+#   curl http://localhost:8090/api/v1/info
 #
 # Add printers through the API (POST /api/v1/admin/printers with an admin key); create
 # the first key with:
@@ -42,8 +42,8 @@ services:
     environment:
       # Container-internal port. Must match the `EXPOSE` in the Dockerfile.
       PORT: "8000"
-      # Trust the docker bridge as the client source for /healthz etc.
-      FORWARDED_ALLOW_IPS: "*"
+      # FORWARDED_ALLOW_IPS is left at the image default (127.0.0.1): never "*", which would let
+      # any client forge X-Forwarded-For. See #160 for the trusted-proxy design.
       # Required since the settings rework; a missing value is a compose-time error.
       PRINTER_HUB_SECRET_KEY: "${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
       PRINTER_HUB_PUBLIC_URL: "${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. http://localhost:8090}"

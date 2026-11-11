@@ -22,9 +22,9 @@ afterEach(() => {
 });
 
 const routes = (extra: Record<string, unknown> = {}) => ({
-  "GET /api/printers": [PRINTER_A],
-  [`POST /api/print/${PRINTER_A.id}/batch`]: { batch_id: BATCH, printer_id: PRINTER_A.id, queued_at: "x", job_ids: ["a", "b", "c"] },
-  [`GET /api/batches/${BATCH}`]: { id: BATCH, printer_id: PRINTER_A.id, created_by: null, created_at: "x", jobs: [], summary: { total: 3, queued: 3, printing: 0, done: 0, failed: 0, cancelled: 0, all_terminal: false } },
+  "GET /api/v1/printers": [PRINTER_A],
+  [`POST /api/v1/print/${PRINTER_A.id}/batch`]: { batch_id: BATCH, printer_id: PRINTER_A.id, queued_at: "x", job_ids: ["a", "b", "c"] },
+  [`GET /api/v1/batches/${BATCH}`]: { id: BATCH, printer_id: PRINTER_A.id, created_by: null, created_at: "x", jobs: [], summary: { total: 3, queued: 3, printing: 0, done: 0, failed: 0, cancelled: 0, all_terminal: false } },
   ...extra,
 });
 
@@ -38,6 +38,13 @@ describe("CartPage", () => {
     expect(screen.getByRole("button", { name: "Print 3 labels" })).toBeEnabled();
   });
 
+  it("asks for no printer status while no printer is selected", async () => {
+    const { calls } = mockApi(routes({ "GET /api/v1/printers": [] }));
+    await renderApp({ path: "/cart" });
+    await screen.findByRole("list", { name: "Cart" });
+    expect(calls.filter((c) => /\/printers\/\/status/.test(c.path))).toEqual([]);
+  });
+
   it("prints everything as one batch and empties the cart", async () => {
     const { calls } = mockApi(routes());
     await renderApp({ path: "/cart" });
@@ -49,7 +56,7 @@ describe("CartPage", () => {
   });
 
   it("keeps the cart and says why when the batch is rejected", async () => {
-    mockApi(routes({ [`POST /api/print/${PRINTER_A.id}/batch`]: respond(409, { detail: { error_code: "no_tape_loaded", error_message: "No tape is loaded." } }) }));
+    mockApi(routes({ [`POST /api/v1/print/${PRINTER_A.id}/batch`]: respond(409, { detail: { error_code: "no_tape_loaded", error_message: "No tape is loaded." } }) }));
     await renderApp({ path: "/cart" });
     await userEvent.click(await screen.findByRole("button", { name: "Print 3 labels" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("No tape is loaded.");

@@ -6,13 +6,14 @@ import { Button } from "react-aria-components";
 import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { Badge } from "../archive/fields";
-import { ModalDialog, SelectField, SwitchField, TextInput } from "../settings/controls";
+import { ModalDialog, SwitchField, TextInput } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { useSheetTypes } from "../archive/api";
 import { AddSheetDialog } from "./AddSheetDialog";
 import { formatMm } from "./cellState";
 import { useSheetErrorText } from "./errors";
 import { MAX_CODE_SEARCH, parseSheetsSearch, type SheetsSearch } from "./search";
+import { SheetTypeCombobox } from "./SheetTypeCombobox";
 import { typeLabelWithKey } from "./typeLabel";
 import { useDiscardSheet, useSheets, type SheetSummary } from "./api";
 
@@ -247,8 +248,6 @@ export function SheetsPage() {
   // the page hides the used-up sheets itself. Discarded sheets are asked for only when wanted.
   const list = useSheets({ type: search.type, q: search.q, state: search.discarded ? "all" : "active" });
   const types = useSheetTypes();
-  const typeOptions = [{ id: ANY, label: t`Any sheet type` }, ...(types.data ?? []).map((x) => ({ id: x.key, label: typeLabelWithKey(x) }))];
-  if (search.type && !typeOptions.some((o) => o.id === search.type)) typeOptions.push({ id: search.type, label: search.type });
 
   const hideUsedUp = search.full !== true;
   const rows = (list.data ?? []).filter((s) => !(hideUsedUp && isUsedUp(s)));
@@ -292,10 +291,12 @@ export function SheetsPage() {
           className={`${PANEL} ${filtersOpen ? "grid" : "hidden"} gap-4 md:grid md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] lg:items-end`}
         >
           <TextInput label={t`Search by code`} value={q} onChange={setQ} placeholder="L4736-0004" mono maxLength={MAX_CODE_SEARCH} />
-          <SelectField
+          <SheetTypeCombobox
             label={t`Sheet type`}
+            types={types.data ?? []}
             value={search.type ?? ANY}
-            options={typeOptions}
+            noneOption={{ id: ANY, label: t`Any sheet type` }}
+            labelFor={typeLabelWithKey}
             onChange={(id) => commit({ type: id === ANY ? undefined : id })}
           />
           <SwitchField label={t`Hide used-up sheets`} isSelected={hideUsedUp} onChange={(on) => commit({ full: on ? undefined : true })} />

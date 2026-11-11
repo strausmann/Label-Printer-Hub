@@ -167,6 +167,14 @@ lists the cell numbers touched and `state` is the sheet's state. Sheets carry no
 restriction (OC-11), so every stream receives this channel regardless of
 `allowed_printer_ids` and of a `printer_id` filter. A client reacts by reading the sheet.
 
+`run.state_changed` (channel `printer:{id}:queue`) is published when a tape run (#277) enters or
+leaves the held list, which no job event tells a client: it starts waiting for a confirmation,
+stops, is confirmed, reprinted or discarded. Its `data` is
+`{"run_id": str, "printer_id": str, "state": str}`, where `state` is the run's state
+(`awaiting_confirmation`, `stopped`, `printing`) or `discarded` / `finished` once the run is gone.
+It is sent after the state is set, so a client that reads the run on the event sees it. It carries
+no label content. A client reacts by reading the held runs again.
+
 `hub.printers_changed` (channel `hub`) is published by the admin printer API with
 `{"printer_id": str, "change": "created" | "updated" | "disabled" | "enabled"}`.
 

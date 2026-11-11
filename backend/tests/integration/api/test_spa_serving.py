@@ -1,24 +1,21 @@
 """The backend serves the web UI (web UI foundation, Task 7).
 
 Every test builds the full app against a temporary ``dist`` directory (or none),
-so the routing order, the content negotiation of the legacy job route and the
-security headers are checked end to end.
+so the routing order and the security headers are checked end to end.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 import app.models  # noqa: F401
 import pytest
-import pytest_asyncio
-from app.config import get_settings
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 
-INDEX_HTML = "<!doctype html><html><body>hub-app-shell</body></html>"
+from tests.integration.api.conftest import INDEX_HTML
+
 CSP = (
     "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
     "img-src 'self' data: blob:; connect-src 'self'; "
@@ -26,52 +23,6 @@ CSP = (
     "'sha256-gYiS/BvZvRcK27JIXTuwhZ3hs2+VJ1X+2gUlE+farlg='; "
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
-
-
-@pytest.fixture
-def dist(tmp_path: Path) -> Path:
-    root = tmp_path / "dist"
-    (root / "assets").mkdir(parents=True)
-    (root / "index.html").write_text(INDEX_HTML)
-    (root / "assets" / "app.js").write_text("console.log('x')")
-    (root / "favicon.svg").write_text("<svg/>")
-    (root / "scalar").mkdir()
-    (root / "scalar" / "standalone.js").write_text("/* scalar */")
-    return root
-
-
-async def _client_for(dist_dir: Path, monkeypatch: pytest.MonkeyPatch):
-    import app.db.engine as _engine_module
-    import app.db.session as _session_module
-    from app.integrations import (  # type: ignore[attr-defined]
-        IntegrationRegistry,
-        _discover_plugins,
-    )
-    from app.main import create_app
-
-    monkeypatch.setenv("PRINTER_HUB_WEB_DIST_DIR", str(dist_dir))
-    get_settings.cache_clear()
-    _session_module.async_session = _engine_module.async_session
-    if not IntegrationRegistry.names():
-        _discover_plugins()
-    return create_app()
-
-
-@pytest_asyncio.fixture
-async def spa(dist: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[AsyncClient]:
-    app = await _client_for(dist, monkeypatch)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        c.app = app  # type: ignore[attr-defined]
-        yield c
-    get_settings.cache_clear()
-
-
-@pytest_asyncio.fixture
-async def no_spa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[AsyncClient]:
-    app = await _client_for(tmp_path / "missing", monkeypatch)
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        yield c
-    get_settings.cache_clear()
 
 
 async def test_root_serves_index(spa: AsyncClient) -> None:
@@ -119,48 +70,6 @@ async def test_path_traversal_never_leaves_dist(spa: AsyncClient, dist: Path) ->
     for path in ("/..%2Fsecret.txt", "/assets/..%2F..%2Fsecret.txt", "/%2e%2e/secret.txt"):
         resp = await spa.get(path)
         assert "outside" not in resp.text
-
-
-async def test_legacy_job_route_html_for_browser_json_for_client(spa: AsyncClient) -> None:
-    from app.auth.dependencies import AuthContext
-    from app.auth.scope_deps import require_read
-
-    fake = AuthContext(source="api-key", scope="admin", api_key_id=None, ip="192.0.2.1")
-    spa.app._app.dependency_overrides[require_read] = lambda: fake  # type: ignore[attr-defined]
-    try:
-        browser = await spa.get("/jobs/some-job", headers={"Accept": "text/html,*/*;q=0.8"})
-        assert browser.status_code == 200
-        assert browser.text == INDEX_HTML
-        client = await spa.get("/jobs/some-job", headers={"Accept": "application/json"})
-        assert client.status_code == 404
-        assert client.headers["content-type"].startswith("application/json")
-        assert "some-job" in client.json()["detail"]
-        default = await spa.get("/jobs/some-job")  # httpx sends Accept: */*
-        assert default.headers["content-type"].startswith("application/json")
-    finally:
-        spa.app._app.dependency_overrides.clear()  # type: ignore[attr-defined]
-
-
-async def test_unauthenticated_browser_gets_app_for_job_link(spa: AsyncClient) -> None:
-    """A browser without a session opening /jobs/<id> gets the app (it shows sign-in),
-    not the JSON 401 of the legacy route; API clients keep the JSON route incl. auth."""
-    job = "7f9c1c2e-1d0a-4c55-9a53-2f0f6c4f9a11"
-    browser = await spa.get(f"/jobs/{job}", headers={"Accept": "text/html,*/*;q=0.8"})
-    assert browser.status_code == 200
-    assert browser.text == INDEX_HTML
-    assert browser.headers["content-security-policy"] == CSP
-    client = await spa.get(f"/jobs/{job}", headers={"Accept": "application/json"})
-    assert client.status_code == 401
-    assert client.headers["content-type"].startswith("application/json")
-    default = await spa.get(f"/jobs/{job}")  # httpx sends Accept: */*
-    assert default.status_code == 401
-
-
-async def test_html_negotiation_never_applies_to_other_methods(spa: AsyncClient) -> None:
-    # Only a GET navigation is handed the app; a POST stays on its JSON route (and its auth).
-    resp = await spa.post("/jobs/abc/resume", headers={"Accept": "text/html"})
-    assert resp.status_code == 401
-    assert resp.headers["content-type"].startswith("application/json")
 
 
 @pytest.mark.parametrize("prefix", ["loc", "asset", "spool", "product"])

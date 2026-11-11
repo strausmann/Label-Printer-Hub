@@ -176,7 +176,7 @@ def test_webhooks_require_api_key(openapi_schema: dict[str, Any]) -> None:
     ``_: None = Depends(require_webhook_key)`` as a positional parameter
     so FastAPI can surface the header in the schema.
     """
-    webhook_paths = ("/api/webhook/spoolman", "/api/webhook/grocy")
+    webhook_paths = ("/api/v1/webhook/spoolman", "/api/v1/webhook/grocy")
     for path in webhook_paths:
         assert path in openapi_schema["paths"], (
             f"{path} not found in OpenAPI schema — is the webhooks router mounted?"
@@ -243,36 +243,36 @@ def test_problem_detail_schema_in_components(openapi_schema: dict[str, Any]) -> 
 # check that Plan 3 added and the probe under its versioned admin path (acceptance 19).
 SHEET_ARCHIVE_ENDPOINTS: frozenset[tuple[str, str]] = frozenset(
     {
-        ("get", "/api/sheet-types"),
-        ("post", "/api/sheet-types"),
-        ("get", "/api/sheet-types/{key}"),
-        ("patch", "/api/sheet-types/{key}"),
-        ("delete", "/api/sheet-types/{key}"),
-        ("get", "/api/sheet-types/{key}/versions/{n}"),
-        ("post", "/api/sheet-types/{key}/versions"),
-        ("post", "/api/sheet-types/{key}/archive"),
-        ("post", "/api/sheet-types/{key}/unarchive"),
-        ("get", "/api/sheet-types/{key}/export"),
-        ("post", "/api/sheet-types/import"),
-        ("get", "/api/sheets"),
-        ("get", "/api/sheets/next-code"),
-        ("get", "/api/sheets/margin-check"),
-        ("get", "/api/sheets/{code}"),
-        ("post", "/api/sheets"),
-        ("post", "/api/sheets/{code}/discard"),
-        ("post", "/api/sheets/{code}/cells/mark"),
-        ("post", "/api/sheets/{code}/cells/unmark"),
-        ("post", "/api/sheets/{code}/cells/resolve"),
-        ("get", "/api/sheet-cells"),
-        ("post", "/api/print/{printer_key}/sheet/preview"),
-        ("post", "/api/print/{printer_key}/sheet"),
-        ("get", "/api/printers/{printer_id}/capabilities"),
-        ("get", "/api/printers/{printer_id}/calibration"),
-        ("put", "/api/printers/{printer_id}/calibration/{tray}"),
-        ("delete", "/api/printers/{printer_id}/calibration/{tray}"),
-        ("post", "/api/printers/{printer_id}/calibration/{tray}/fit"),
-        ("post", "/api/printers/{printer_id}/calibration/{tray}/page"),
-        ("get", "/api/printers/{printer_id}/calibration/{tray}/page/pdf"),
+        ("get", "/api/v1/sheet-types"),
+        ("post", "/api/v1/sheet-types"),
+        ("get", "/api/v1/sheet-types/{key}"),
+        ("patch", "/api/v1/sheet-types/{key}"),
+        ("delete", "/api/v1/sheet-types/{key}"),
+        ("get", "/api/v1/sheet-types/{key}/versions/{n}"),
+        ("post", "/api/v1/sheet-types/{key}/versions"),
+        ("post", "/api/v1/sheet-types/{key}/archive"),
+        ("post", "/api/v1/sheet-types/{key}/unarchive"),
+        ("get", "/api/v1/sheet-types/{key}/export"),
+        ("post", "/api/v1/sheet-types/import"),
+        ("get", "/api/v1/sheets"),
+        ("get", "/api/v1/sheets/next-code"),
+        ("get", "/api/v1/sheets/margin-check"),
+        ("get", "/api/v1/sheets/{code}"),
+        ("post", "/api/v1/sheets"),
+        ("post", "/api/v1/sheets/{code}/discard"),
+        ("post", "/api/v1/sheets/{code}/cells/mark"),
+        ("post", "/api/v1/sheets/{code}/cells/unmark"),
+        ("post", "/api/v1/sheets/{code}/cells/resolve"),
+        ("get", "/api/v1/sheet-cells"),
+        ("post", "/api/v1/print/{printer_key}/sheet/preview"),
+        ("post", "/api/v1/print/{printer_key}/sheet"),
+        ("get", "/api/v1/printers/{printer_id}/capabilities"),
+        ("get", "/api/v1/printers/{printer_id}/calibration"),
+        ("put", "/api/v1/printers/{printer_id}/calibration/{tray}"),
+        ("delete", "/api/v1/printers/{printer_id}/calibration/{tray}"),
+        ("post", "/api/v1/printers/{printer_id}/calibration/{tray}/fit"),
+        ("post", "/api/v1/printers/{printer_id}/calibration/{tray}/page"),
+        ("get", "/api/v1/printers/{printer_id}/calibration/{tray}/page/pdf"),
         ("post", "/api/v1/admin/printers/ipp/probe"),
     }
 )

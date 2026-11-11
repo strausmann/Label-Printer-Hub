@@ -32,8 +32,8 @@ describe("apiFetch", () => {
 
   it("sends same-origin credentials and parses JSON", async () => {
     fetchMock.mockResolvedValue(respond(200, { ok: true }));
-    await expect(apiFetch<{ ok: boolean }>("/api/info")).resolves.toEqual({ ok: true });
-    expect(fetchMock.mock.calls[0]![0]).toBe("/api/info");
+    await expect(apiFetch<{ ok: boolean }>("/api/v1/info")).resolves.toEqual({ ok: true });
+    expect(fetchMock.mock.calls[0]![0]).toBe("/api/v1/info");
     expect(lastInit().credentials).toBe("same-origin");
   });
 
@@ -83,11 +83,23 @@ describe("apiFetch", () => {
     });
   });
 
+  it("reads the error envelope returned directly, not wrapped in `detail` (the label preview's 422)", async () => {
+    fetchMock.mockResolvedValue(
+      respond(422, { error_code: "qr_payload_too_long", error_message: "Too long.", error_detail: { length: 144, max_bytes: 122 } }),
+    );
+    await expect(apiFetch("/api/v1/render/preview", { method: "POST" })).rejects.toMatchObject({
+      status: 422,
+      code: "qr_payload_too_long",
+      detail: "Too long.",
+      errorDetail: { length: 144, max_bytes: 122 },
+    });
+  });
+
   it("reads a problem object that FastAPI wrapped in `detail` (the calibration page's printer-unavailable)", async () => {
     fetchMock.mockResolvedValue(
       respond(409, { detail: { type: "printer-unavailable", title: "Printer is not available to the print queue", status: 409, detail: "Printer x is not known" } }),
     );
-    await expect(apiFetch("/api/x", { method: "POST" })).rejects.toMatchObject({
+    await expect(apiFetch("/api/v1/x", { method: "POST" })).rejects.toMatchObject({
       status: 409,
       code: "printer-unavailable",
       detail: "Printer x is not known",
@@ -96,7 +108,7 @@ describe("apiFetch", () => {
 
   it("an about:blank problem inside `detail` has no code", async () => {
     fetchMock.mockResolvedValue(respond(409, { detail: { type: "about:blank", title: "Conflict", status: 409 } }));
-    await expect(apiFetch("/api/x", { method: "POST" })).rejects.toMatchObject({ status: 409, code: null, detail: "Conflict" });
+    await expect(apiFetch("/api/v1/x", { method: "POST" })).rejects.toMatchObject({ status: 409, code: null, detail: "Conflict" });
   });
 
   it("falls back to a string detail, then to the status text", async () => {
@@ -125,7 +137,7 @@ describe("apiFetch", () => {
 
   it("network failure rejects with ApiError status 0", async () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
-    const err = await apiFetch("/api/info").catch((e: unknown) => e);
+    const err = await apiFetch("/api/v1/info").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status: 0, code: "network_error" });
   });
@@ -135,7 +147,7 @@ describe("apiFetch", () => {
       fetchMock.mockResolvedValue(
         respond(409, { detail: { error_code: "insufficient_cells", error_message: "Short.", error_detail: { needed: 5, shortfall: 2 } } }),
       );
-      const err = await apiFetch("/api/sheets").catch((e: unknown) => e);
+      const err = await apiFetch("/api/v1/sheets").catch((e: unknown) => e);
       expect(err).toMatchObject({ status: 409, code: "insufficient_cells", errorDetail: { needed: 5, shortfall: 2 } });
     });
 
@@ -143,7 +155,7 @@ describe("apiFetch", () => {
       fetchMock.mockResolvedValue(
         respond(503, { type: "printer-unavailable", title: "Printer unavailable", extensions: { printer: "p1" } }),
       );
-      const err = await apiFetch("/api/x").catch((e: unknown) => e);
+      const err = await apiFetch("/api/v1/x").catch((e: unknown) => e);
       expect(err).toMatchObject({ code: "printer-unavailable", errorDetail: { printer: "p1" } });
     });
 

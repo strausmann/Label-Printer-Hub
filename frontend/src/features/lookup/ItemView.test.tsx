@@ -23,11 +23,11 @@ const item = (app: string, id: string, over: Record<string, unknown> = {}) => ({
 
 function routes(app = "snipeit", id = "42", extra: Record<string, unknown> = {}) {
   return {
-    [`GET /api/lookup/${app}/${id}`]: item(app, id),
-    "GET /api/printers": [PRINTER_A, PRINTER_B],
-    [`GET /api/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
-    "POST /api/render/preview": () => pngResponse(),
-    [`POST /api/print/${PRINTER_A.id}/batch`]: { batch_id: BATCH, printer_id: PRINTER_A.id, queued_at: "2026-11-04T10:00:00Z", job_ids: ["jjjjjjjj-0000-4000-8000-000000000001"] },
+    [`GET /api/v1/lookup/${app}/${id}`]: item(app, id),
+    "GET /api/v1/printers": [PRINTER_A, PRINTER_B],
+    [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
+    "POST /api/v1/render/preview": () => pngResponse(),
+    [`POST /api/v1/print/${PRINTER_A.id}/batch`]: { batch_id: BATCH, printer_id: PRINTER_A.id, queued_at: "2026-11-04T10:00:00Z", job_ids: ["jjjjjjjj-0000-4000-8000-000000000001"] },
     ...extra,
   };
 }
@@ -35,7 +35,7 @@ function routes(app = "snipeit", id = "42", extra: Record<string, unknown> = {})
 describe("ItemView", () => {
   it("503 integration_not_configured links to settings", async () => {
     mockApi({
-      "GET /api/lookup/snipeit/42": respond(503, { type: "integration_not_configured", title: "Service Unavailable", detail: "Snipe-IT is not configured" }),
+      "GET /api/v1/lookup/snipeit/42": respond(503, { type: "integration_not_configured", title: "Service Unavailable", detail: "Snipe-IT is not configured" }),
     });
     await renderApp({ path: "/asset/42" });
     expect(await screen.findByText(/Snipe-IT is not set up yet/)).toBeVisible();
@@ -43,7 +43,7 @@ describe("ItemView", () => {
   });
 
   it("an unknown item reads Not found in the app, with the id in the mono font", async () => {
-    mockApi({ "GET /api/lookup/spoolman/9": respond(404, { type: "about:blank", title: "Not Found", detail: "spool 9 not found" }) });
+    mockApi({ "GET /api/v1/lookup/spoolman/9": respond(404, { type: "about:blank", title: "Not Found", detail: "spool 9 not found" }) });
     await renderApp({ path: "/spool/9" });
     expect(await screen.findByRole("heading", { level: 1, name: "Not found in Spoolman" })).toBeVisible();
     const id = screen.getByText("9");
@@ -60,7 +60,14 @@ describe("ItemView", () => {
     const { calls } = mockApi(routes(app, id));
     await renderApp({ path });
     await screen.findByRole("heading", { level: 1, name: "Cordless drill" });
-    expect(calls.some((c) => c.path === `/api/lookup/${app}/${id}`)).toBe(true);
+    expect(calls.some((c) => c.path === `/api/v1/lookup/${app}/${id}`)).toBe(true);
+  });
+
+  it("asks for no printer status while no printer is selected", async () => {
+    const { calls } = mockApi(routes("snipeit", "42", { "GET /api/v1/printers": [] }));
+    await renderApp({ path: "/asset/42" });
+    await screen.findByRole("heading", { level: 1, name: "Cordless drill" });
+    expect(calls.filter((c) => /\/printers\/\/status/.test(c.path))).toEqual([]);
   });
 
   it("shows the item, a link to its source app, the preview and the printer picker", async () => {
@@ -71,19 +78,19 @@ describe("ItemView", () => {
     expect(await screen.findByRole("img", { name: "Label preview" })).toBeVisible();
     const picker = screen.getByRole("combobox", { name: "Printer" });
     expect(within(picker).getAllByRole("option").map((o) => o.textContent)).toEqual(["Workshop PT-P750W · Tape printer · Ready", "Office QL-820NWB · Tape printer"]);
-    const preview = calls.find((c) => c.path === "/api/render/preview")!;
+    const preview = calls.find((c) => c.path === "/api/v1/render/preview")!;
     expect(JSON.parse(preview.body!)).toMatchObject({ content_type: "qr_two_lines", tape_mm: 12, data: { title: "Cordless drill", primary_id: "42" } });
   });
 
   it("does not turn a script URL from the integration into a link", async () => {
-    mockApi(routes("snipeit", "42", { "GET /api/lookup/snipeit/42": item("snipeit", "42", { url: "javascript:alert(1)" }) }));
+    mockApi(routes("snipeit", "42", { "GET /api/v1/lookup/snipeit/42": item("snipeit", "42", { url: "javascript:alert(1)" }) }));
     await renderApp({ path: "/asset/42" });
     await screen.findByRole("heading", { level: 1, name: "Cordless drill" });
     expect(screen.queryByRole("link", { name: "Open in Snipe-IT" })).toBeNull();
   });
 
   it("a failing preview does not block printing", async () => {
-    mockApi(routes("snipeit", "42", { "POST /api/render/preview": respond(409, { error_code: "unsupported_tape", error_message: "x" }) }));
+    mockApi(routes("snipeit", "42", { "POST /api/v1/render/preview": respond(409, { error_code: "unsupported_tape", error_message: "x" }) }));
     await renderApp({ path: "/asset/42" });
     expect(await screen.findByText("No preview for this tape.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Print now" })).toBeEnabled();
@@ -95,7 +102,7 @@ describe("ItemView", () => {
     await screen.findByRole("img", { name: "Label preview" });
     await userEvent.click(screen.getByRole("button", { name: "Print now" }));
     expect(await screen.findByText(/Sent to Workshop PT-P750W/)).toBeVisible();
-    const post = calls.find((c) => c.path === `/api/print/${PRINTER_A.id}/batch`)!;
+    const post = calls.find((c) => c.path === `/api/v1/print/${PRINTER_A.id}/batch`)!;
     expect(JSON.parse(post.body!)).toEqual({
       items: [{ content_type: "qr_two_lines", options: { copies: 1 }, lookup: { app: "snipeit", identifier: "42" } }],
     });
@@ -103,7 +110,7 @@ describe("ItemView", () => {
   });
 
   it("shows why printing was refused", async () => {
-    mockApi(routes("snipeit", "42", { [`POST /api/print/${PRINTER_A.id}/batch`]: respond(409, { detail: { error_code: "printer_offline", error_message: "The printer is offline." } }) }));
+    mockApi(routes("snipeit", "42", { [`POST /api/v1/print/${PRINTER_A.id}/batch`]: respond(409, { detail: { error_code: "printer_offline", error_message: "The printer is offline." } }) }));
     await renderApp({ path: "/asset/42" });
     await userEvent.click(await screen.findByRole("button", { name: "Print now" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("The printer is offline.");

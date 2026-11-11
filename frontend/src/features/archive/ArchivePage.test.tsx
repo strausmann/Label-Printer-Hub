@@ -24,12 +24,12 @@ const EXPORT_DOC = {
   version: { version: 1, geometry: GEOMETRY_L4736 },
 };
 
-const LIST = { "GET /api/sheet-types": [SHEET_TYPE, CUSTOM], "GET /api/sheet-types/L4736REV": DETAIL };
+const LIST = { "GET /api/v1/sheet-types": [SHEET_TYPE, CUSTOM], "GET /api/v1/sheet-types/L4736REV": DETAIL };
 
 afterEach(() => vi.unstubAllGlobals());
 
 const typeCalls = (calls: { method: string; path: string; search: string }[]) =>
-  calls.filter((c) => c.method === "GET" && c.path === "/api/sheet-types");
+  calls.filter((c) => c.method === "GET" && c.path === "/api/v1/sheet-types");
 
 describe("archive list and filters", () => {
   it("sends every filter of the address as the query", async () => {
@@ -68,7 +68,7 @@ describe("archive list and filters", () => {
   });
 
   it("marks types by origin, verification and archive state with words", async () => {
-    mockApi({ "GET /api/sheet-types": [SHEET_TYPE, CUSTOM, { ...SHEET_TYPE, key: "old-one", origin: "imported", archived_at: "2026-11-02T00:00:00Z" }] });
+    mockApi({ "GET /api/v1/sheet-types": [SHEET_TYPE, CUSTOM, { ...SHEET_TYPE, key: "old-one", origin: "imported", archived_at: "2026-11-02T00:00:00Z" }] });
     await renderApp({ path: "/sheets/archive?archived=true" });
     const seed = (await screen.findByRole("link", { name: /L4736REV/ })).closest("li")!;
     expect(within(seed).getByText("seed")).toBeVisible();
@@ -82,11 +82,11 @@ describe("archive list and filters", () => {
   });
 
   it("says so when nothing matches, and when the list cannot be loaded", async () => {
-    mockApi({ "GET /api/sheet-types": [] });
+    mockApi({ "GET /api/v1/sheet-types": [] });
     const first = await renderApp({ path: "/sheets/archive?q=zzz" });
     expect(await screen.findByText("No sheet type matches.")).toBeVisible();
     first.unmount();
-    mockApi({ "GET /api/sheet-types": () => respond(403, { detail: "no" }) });
+    mockApi({ "GET /api/v1/sheet-types": () => respond(403, { detail: "no" }) });
     await renderApp({ path: "/sheets/archive" });
     expect(await screen.findByText("The sheet types could not be loaded.")).toBeVisible();
   });
@@ -96,7 +96,7 @@ describe("type detail", () => {
   it("shows diagram, geometry, versions with sheet counts and QR permission", async () => {
     mockApi({
       ...LIST,
-      "GET /api/sheet-types/L4736REV": {
+      "GET /api/v1/sheet-types/L4736REV": {
         ...DETAIL,
         current_version: 2,
         versions: [
@@ -112,11 +112,11 @@ describe("type detail", () => {
     expect(within(versions).getByText("Measured again")).toBeVisible();
     expect(within(versions).getByText("3")).toBeVisible();
     expect(screen.getByText(/QR codes on labels: allowed/)).toBeVisible();
-    expect(screen.getByRole("link", { name: "Export" })).toHaveAttribute("href", "/api/sheet-types/L4736REV/export");
+    expect(screen.getByRole("link", { name: "Export" })).toHaveAttribute("href", "/api/v1/sheet-types/L4736REV/export");
   });
 
   it("links an http(s) source with rel=noopener noreferrer and shows anything else as plain text", async () => {
-    mockApi({ ...LIST, "GET /api/sheet-types/L4736REV": { ...DETAIL, source_name: "Vendor datasheet", source_url: "https://example.invalid/sheet.pdf" } });
+    mockApi({ ...LIST, "GET /api/v1/sheet-types/L4736REV": { ...DETAIL, source_name: "Vendor datasheet", source_url: "https://example.invalid/sheet.pdf" } });
     const first = await renderApp({ path: "/sheets/archive?type=L4736REV" });
     const link = await screen.findByRole("link", { name: "Vendor datasheet" });
     expect(link).toHaveAttribute("href", "https://example.invalid/sheet.pdf");
@@ -124,7 +124,7 @@ describe("type detail", () => {
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
     first.unmount();
 
-    mockApi({ ...LIST, "GET /api/sheet-types/L4736REV": { ...DETAIL, source_name: "Vendor datasheet", source_url: "javascript:alert(1)" } });
+    mockApi({ ...LIST, "GET /api/v1/sheet-types/L4736REV": { ...DETAIL, source_name: "Vendor datasheet", source_url: "javascript:alert(1)" } });
     await renderApp({ path: "/sheets/archive?type=L4736REV" });
     expect(await screen.findByText(/Vendor datasheet/)).toBeVisible();
     expect(screen.queryByRole("link", { name: "Vendor datasheet" })).toBeNull();
@@ -132,7 +132,7 @@ describe("type detail", () => {
   });
 
   it("offers delete only for a custom type without sheets", async () => {
-    mockApi({ ...LIST, "GET /api/sheet-types/L4736REV": DETAIL, "GET /api/sheet-types/my-custom": { ...CUSTOM, versions: [VERSION] } });
+    mockApi({ ...LIST, "GET /api/v1/sheet-types/L4736REV": DETAIL, "GET /api/v1/sheet-types/my-custom": { ...CUSTOM, versions: [VERSION] } });
     const first = await renderApp({ path: "/sheets/archive?type=L4736REV" });
     await screen.findByRole("heading", { name: "L4736REV" });
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
@@ -143,7 +143,7 @@ describe("type detail", () => {
   });
 
   it("deleting asks first, then deletes and leaves the type", async () => {
-    const { calls } = mockApi({ ...LIST, "GET /api/sheet-types/my-custom": { ...CUSTOM, versions: [VERSION] }, "DELETE /api/sheet-types/my-custom": null });
+    const { calls } = mockApi({ ...LIST, "GET /api/v1/sheet-types/my-custom": { ...CUSTOM, versions: [VERSION] }, "DELETE /api/v1/sheet-types/my-custom": null });
     const { router } = await renderApp({ path: "/sheets/archive?type=my-custom" });
     await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
     const dialog = await screen.findByRole("alertdialog");
@@ -155,8 +155,8 @@ describe("type detail", () => {
   it("archives, and an archived type can be brought back", async () => {
     const { calls } = mockApi({
       ...LIST,
-      "POST /api/sheet-types/L4736REV/archive": SHEET_TYPE,
-      "POST /api/sheet-types/L4736REV/unarchive": SHEET_TYPE,
+      "POST /api/v1/sheet-types/L4736REV/archive": SHEET_TYPE,
+      "POST /api/v1/sheet-types/L4736REV/unarchive": SHEET_TYPE,
     });
     const first = await renderApp({ path: "/sheets/archive?type=L4736REV" });
     await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
@@ -165,8 +165,8 @@ describe("type detail", () => {
 
     mockApi({
       ...LIST,
-      "GET /api/sheet-types/L4736REV": { ...DETAIL, archived_at: "2026-11-02T00:00:00Z" },
-      "POST /api/sheet-types/L4736REV/unarchive": SHEET_TYPE,
+      "GET /api/v1/sheet-types/L4736REV": { ...DETAIL, archived_at: "2026-11-02T00:00:00Z" },
+      "POST /api/v1/sheet-types/L4736REV/unarchive": SHEET_TYPE,
     });
     await renderApp({ path: "/sheets/archive?type=L4736REV" });
     expect(await screen.findByRole("button", { name: "Unarchive" })).toBeVisible();
@@ -174,7 +174,7 @@ describe("type detail", () => {
   });
 
   it("says when the type does not exist", async () => {
-    mockApi({ ...LIST, "GET /api/sheet-types/gone": () => respond(404, apiErrorBody("sheet_type_not_found", "Sheet type not found.")) });
+    mockApi({ ...LIST, "GET /api/v1/sheet-types/gone": () => respond(404, apiErrorBody("sheet_type_not_found", "Sheet type not found.")) });
     await renderApp({ path: "/sheets/archive?type=gone" });
     expect(await screen.findByText("That sheet type does not exist.")).toBeVisible();
   });
@@ -189,20 +189,20 @@ describe("edit geometry", () => {
   });
 
   it("does not warn when no sheet uses the current version, and says one sheet in the singular", async () => {
-    mockApi({ ...LIST, "GET /api/sheet-types/L4736REV": { ...DETAIL, versions: [{ ...VERSION, sheets: 0 }] } });
+    mockApi({ ...LIST, "GET /api/v1/sheet-types/L4736REV": { ...DETAIL, versions: [{ ...VERSION, sheets: 0 }] } });
     const first = await renderApp({ path: "/sheets/archive?type=L4736REV" });
     await userEvent.click(await screen.findByRole("button", { name: "Edit geometry" }));
     await screen.findByRole("textbox", { name: "What changed" });
     expect(screen.queryByText(/keep version/)).toBeNull();
     first.unmount();
-    mockApi({ ...LIST, "GET /api/sheet-types/L4736REV": { ...DETAIL, versions: [{ ...VERSION, sheets: 1 }] } });
+    mockApi({ ...LIST, "GET /api/v1/sheet-types/L4736REV": { ...DETAIL, versions: [{ ...VERSION, sheets: 1 }] } });
     await renderApp({ path: "/sheets/archive?type=L4736REV" });
     await userEvent.click(await screen.findByRole("button", { name: "Edit geometry" }));
     expect(await screen.findByText("1 sheet keeps version 1")).toBeVisible();
   });
 
   it("saves a new version with the change note", async () => {
-    const { calls } = mockApi({ ...LIST, "POST /api/sheet-types/L4736REV/versions": { ...VERSION, version: 2 } });
+    const { calls } = mockApi({ ...LIST, "POST /api/v1/sheet-types/L4736REV/versions": { ...VERSION, version: 2 } });
     await renderApp({ path: "/sheets/archive?type=L4736REV" });
     await userEvent.click(await screen.findByRole("button", { name: "Edit geometry" }));
     const top = screen.getByRole("textbox", { name: "Top margin (mm)" });
@@ -234,7 +234,7 @@ describe("edit geometry", () => {
   const refuseGeometry = (field: string, reason: string) =>
     mockApi({
       ...LIST,
-      "POST /api/sheet-types/L4736REV/versions": () => respond(422, apiErrorBody("invalid_geometry", "Invalid geometry", { field, reason })),
+      "POST /api/v1/sheet-types/L4736REV/versions": () => respond(422, apiErrorBody("invalid_geometry", "Invalid geometry", { field, reason })),
     });
   const saveWithNote = async () => {
     await userEvent.click(await screen.findByRole("button", { name: "Edit geometry" }));
@@ -280,7 +280,7 @@ describe("edit geometry", () => {
 
 describe("edit details and create", () => {
   it("patches only what changed", async () => {
-    const { calls } = mockApi({ ...LIST, "PATCH /api/sheet-types/L4736REV": SHEET_TYPE });
+    const { calls } = mockApi({ ...LIST, "PATCH /api/v1/sheet-types/L4736REV": SHEET_TYPE });
     await renderApp({ path: "/sheets/archive?type=L4736REV" });
     await userEvent.click(await screen.findByRole("button", { name: "Edit details" }));
     const vendor = screen.getByRole("textbox", { name: "Vendor" });
@@ -299,7 +299,7 @@ describe("edit details and create", () => {
   });
 
   it("creates a type from key, prefix and measurements", async () => {
-    const { calls } = mockApi({ ...LIST, "POST /api/sheet-types": CUSTOM });
+    const { calls } = mockApi({ ...LIST, "POST /api/v1/sheet-types": CUSTOM });
     await renderApp({ path: "/sheets/archive" });
     await userEvent.click(await screen.findByRole("button", { name: "New type" }));
     await userEvent.type(screen.getByRole("textbox", { name: "Key" }), "my-custom");
@@ -328,7 +328,7 @@ describe("edit details and create", () => {
   it("refuses a key or prefix of the wrong shape, and shows a taken key in words", async () => {
     const { calls } = mockApi({
       ...LIST,
-      "POST /api/sheet-types": () => respond(409, apiErrorBody("type_exists", "A sheet type with this key already exists.")),
+      "POST /api/v1/sheet-types": () => respond(409, apiErrorBody("type_exists", "A sheet type with this key already exists.")),
     });
     await renderApp({ path: "/sheets/archive" });
     await userEvent.click(await screen.findByRole("button", { name: "New type" }));
@@ -355,7 +355,7 @@ describe("import", () => {
     ["version_added", "Added version 2 to L4736REV."],
     ["created_as_new_key", "Created the type L4736REV as a new key."],
   ])("reports the outcome %s", async (outcome, words) => {
-    mockApi({ ...LIST, "POST /api/sheet-types/import": respond(201, { key: "L4736REV", version: outcome === "version_added" ? 2 : 1, outcome }) });
+    mockApi({ ...LIST, "POST /api/v1/sheet-types/import": respond(201, { key: "L4736REV", version: outcome === "version_added" ? 2 : 1, outcome }) });
     await renderApp({ path: "/sheets/archive" });
     await paste(JSON.stringify(EXPORT_DOC));
     await submit();
@@ -367,7 +367,7 @@ describe("import", () => {
       respond(409, apiErrorBody("type_exists", "A sheet type with this key already exists.")),
       respond(201, { key: "copy-key", version: 1, outcome: "created_as_new_key" }),
     ];
-    const { calls } = mockApi({ ...LIST, "POST /api/sheet-types/import": () => answers.shift() });
+    const { calls } = mockApi({ ...LIST, "POST /api/v1/sheet-types/import": () => answers.shift() });
     await renderApp({ path: "/sheets/archive" });
     await paste(JSON.stringify(EXPORT_DOC));
     await submit();
@@ -389,7 +389,7 @@ describe("import", () => {
       respond(409, apiErrorBody("type_exists", "exists")),
       respond(201, { key: "L4736REV", version: 2, outcome: "version_added" }),
     ];
-    const { calls } = mockApi({ ...LIST, "POST /api/sheet-types/import": () => answers.shift() });
+    const { calls } = mockApi({ ...LIST, "POST /api/v1/sheet-types/import": () => answers.shift() });
     await renderApp({ path: "/sheets/archive" });
     await paste(JSON.stringify(EXPORT_DOC));
     await submit();
@@ -405,7 +405,7 @@ describe("import", () => {
       respond(409, apiErrorBody("prefix_taken", "taken", { reason: "prefix_in_use" })),
       respond(201, { key: "copy-key", version: 1, outcome: "created_as_new_key" }),
     ];
-    const { calls } = mockApi({ ...LIST, "POST /api/sheet-types/import": () => answers.shift() });
+    const { calls } = mockApi({ ...LIST, "POST /api/v1/sheet-types/import": () => answers.shift() });
     await renderApp({ path: "/sheets/archive" });
     await paste(JSON.stringify(EXPORT_DOC));
     await submit();
@@ -426,7 +426,7 @@ describe("import", () => {
       respond(422, apiErrorBody("invalid_import", "invalid", { errors: ["type.key", "version.geometry.cols"] })),
       respond(413, apiErrorBody("import_too_large", "too large")),
     ];
-    const { calls } = mockApi({ ...LIST, "POST /api/sheet-types/import": () => answers.shift() });
+    const { calls } = mockApi({ ...LIST, "POST /api/v1/sheet-types/import": () => answers.shift() });
     await renderApp({ path: "/sheets/archive" });
     await paste(JSON.stringify(EXPORT_DOC));
     await submit();
@@ -487,7 +487,7 @@ describe("import", () => {
   });
 
   it("shows a network failure in words", async () => {
-    mockApi({ ...LIST, "POST /api/sheet-types/import": () => { throw new TypeError("offline"); } });
+    mockApi({ ...LIST, "POST /api/v1/sheet-types/import": () => { throw new TypeError("offline"); } });
     await renderApp({ path: "/sheets/archive" });
     await paste(JSON.stringify(EXPORT_DOC));
     await submit();
@@ -606,7 +606,7 @@ describe("versions and imports that touch the open type", () => {
   it("lists the newest version first and marks the current one", async () => {
     mockApi({
       ...LIST,
-      "GET /api/sheet-types/L4736REV": {
+      "GET /api/v1/sheet-types/L4736REV": {
         ...DETAIL,
         current_version: 3,
         versions: [1, 3, 2].map((version) => ({ ...VERSION, version, change_note: `note ${version}` })),
@@ -623,8 +623,8 @@ describe("versions and imports that touch the open type", () => {
     let posts = 0;
     mockApi({
       ...LIST,
-      "GET /api/sheet-types/L4736REV": () => ({ ...DETAIL, current_version: versions.length, versions }),
-      "POST /api/sheet-types/import": () => {
+      "GET /api/v1/sheet-types/L4736REV": () => ({ ...DETAIL, current_version: versions.length, versions }),
+      "POST /api/v1/sheet-types/import": () => {
         if (posts++ === 0) return respond(409, apiErrorBody("type_exists", "exists"));
         versions = [{ ...VERSION, version: 2, change_note: "imported geometry" }, VERSION];
         return respond(201, { key: "L4736REV", version: 2, outcome: "version_added" });
@@ -642,7 +642,7 @@ describe("versions and imports that touch the open type", () => {
   });
 
   it("a conflict sentence never prints an object as the key", async () => {
-    mockApi({ ...LIST, "POST /api/sheet-types/import": () => respond(409, apiErrorBody("type_exists", "exists")) });
+    mockApi({ ...LIST, "POST /api/v1/sheet-types/import": () => respond(409, apiErrorBody("type_exists", "exists")) });
     await renderApp({ path: "/sheets/archive" });
     await userEvent.click(await screen.findByRole("button", { name: "Import type" }));
     await userEvent.click(await screen.findByRole("textbox", { name: "Export file contents" }));
@@ -653,7 +653,7 @@ describe("versions and imports that touch the open type", () => {
   });
 
   it("checks the new key and the new prefix before sending them", async () => {
-    const { calls } = mockApi({ ...LIST, "POST /api/sheet-types/import": () => respond(409, apiErrorBody("type_exists", "exists")) });
+    const { calls } = mockApi({ ...LIST, "POST /api/v1/sheet-types/import": () => respond(409, apiErrorBody("type_exists", "exists")) });
     await renderApp({ path: "/sheets/archive" });
     await userEvent.click(await screen.findByRole("button", { name: "Import type" }));
     await userEvent.click(await screen.findByRole("textbox", { name: "Export file contents" }));

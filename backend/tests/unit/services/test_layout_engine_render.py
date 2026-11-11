@@ -129,23 +129,29 @@ class TestRenderQRTwoLines:
         )
         assert img.height == 128
 
-    def test_62mm_renders_at_higher_dpi(self) -> None:
+    def test_62mm_spans_the_696_px_printable_width(self) -> None:
+        """#258: 62 mm defaults to across (width 696); along keeps the 696 px band height."""
         from app.schemas.content_type import ContentType
         from app.schemas.label_data import LabelData
+        from app.schemas.label_layout import LabelOrientation
         from app.services.layout_engine import LayoutEngine
 
         eng = LayoutEngine()
-        img = eng.render(
+        data = LabelData(
+            source_app="samla",
+            primary_id="HH-AK-SM01",
+            title="Samla 11L",
+            qr_payload="https://example.com/x",
+        )
+        across = eng.render(tape_mm=62, content_type=ContentType.QR_TWO_LINES, data=data)
+        along = eng.render(
             tape_mm=62,
             content_type=ContentType.QR_TWO_LINES,
-            data=LabelData(
-                source_app="samla",
-                primary_id="HH-AK-SM01",
-                title="Samla 11L",
-                qr_payload="https://example.com/x",
-            ),
+            data=data,
+            orientation=LabelOrientation.ALONG,
         )
-        assert img.height == 696
+        assert across.width == 696
+        assert along.height == 696
 
 
 class TestRenderQRThreeLines:

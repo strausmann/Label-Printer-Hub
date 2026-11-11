@@ -1,8 +1,9 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, QueryObserver } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emitSessionConfirmed, setOnUnauthorized, setSessionUnknown } from "./client";
+import { resetPrintWatch, useWatchedPrints, watchPrint } from "../features/jobs/printWatch";
 import { useHubEvents } from "./events";
 
 class FakeEventSource {
@@ -50,6 +51,7 @@ function setup(client = new QueryClient()) {
 const keys = (spy: ReturnType<typeof setup>["invalidate"]) => spy.mock.calls.map((c) => c[0]?.queryKey);
 
 beforeEach(() => {
+  resetPrintWatch();
   vi.useFakeTimers();
   FakeEventSource.instances = [];
   vi.stubGlobal("EventSource", FakeEventSource);
@@ -88,6 +90,27 @@ describe("useHubEvents", () => {
     const { invalidate } = setup();
     act(() => last().emit("printer.tape_changed", "p1"));
     expect(keys(invalidate)).toEqual([["printers", "p1"]]);
+  });
+
+  it("printer.roll_changed invalidates the status and the roll of the printer", () => {
+    const { invalidate } = setup();
+    act(() => last().emit("printer.roll_changed", "p1"));
+    expect(keys(invalidate)).toEqual([
+      ["printers", "p1", "status"],
+      ["printers", "p1", "roll"],
+    ]);
+  });
+
+  it("run.state_changed refreshes the held tape runs", () => {
+    const { invalidate } = setup();
+    act(() => last().emit("run.state_changed", "p1", { run_id: "r1", printer_id: "p1", state: "awaiting_confirmation" }));
+    expect(keys(invalidate)).toEqual([["jobs", "held-runs"]]);
+  });
+
+  it("printer.identity_mismatch invalidates the printers and the printer, status included", () => {
+    const { invalidate } = setup();
+    act(() => last().emit("printer.identity_mismatch", "p1", { mismatch: true, since: "2026-11-09T10:00:00Z" }));
+    expect(keys(invalidate)).toEqual([["printers"], ["printers", "p1"]]);
   });
 
   it("an event without a printer id only invalidates the lists", () => {
@@ -191,6 +214,173 @@ describe("useHubEvents", () => {
         reasons: [],
         summary: null,
       });
+    });
+  });
+
+  it("an event during a status query's first fetch is not lost: the status is read again after it lands", async () => {
+    // The page printer's status producer sends a change once. If it arrives while the card's very
+    // first status request is still out, that request's answer may be from before the change.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    setup(client);
+    const answers: ((v: string) => void)[] = [];
+    const queryFn = vi.fn(() => new Promise<string>((resolve) => answers.push(resolve)));
+    const observer = new QueryObserver(client, { queryKey: ["printers", "p1", "status"], queryFn });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      act(() => last().emit("printer.status", "p1"));
+      await act(async () => answers[0]!("ready (read before the change)"));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      expect(queryFn).toHaveBeenCalledTimes(2);
+      await act(async () => answers[1]!("stopped"));
+      expect(client.getQueryData(["printers", "p1", "status"])).toBe("stopped");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("a query that already has data is refetched by the invalidation itself, not again after it lands", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    setup(client);
+    client.setQueryData(["printers", "p1", "status"], "ready");
+    const answers: ((v: string) => void)[] = [];
+    const queryFn = vi.fn(() => new Promise<string>((resolve) => answers.push(resolve)));
+    const observer = new QueryObserver(client, { queryKey: ["printers", "p1", "status"], queryFn, staleTime: 0 });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      // Data present: invalidation already cancels and restarts the fetch, so nothing more is needed.
+      const before = queryFn.mock.calls.length;
+      act(() => last().emit("printer.status", "p1"));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      const afterEvent = queryFn.mock.calls.length;
+      expect(afterEvent).toBeGreaterThan(before);
+      await act(async () => answers[answers.length - 1]!("stopped"));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      expect(queryFn).toHaveBeenCalledTimes(afterEvent);
+      expect(client.getQueryData(["printers", "p1", "status"])).toBe("stopped");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  describe("first loads that an event lands on, beyond the plain key paths", () => {
+    const code = "L4736-0001";
+    const previewKey = ["sheet-preview", "p1", { items: [], placements: [{ sheet: code, cells: "first_free" }] }];
+    const client = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const flush = () => act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+
+    function pendingQuery(c: QueryClient, queryKey: readonly unknown[]) {
+      const answers: ((v: string) => void)[] = [];
+      const rejections: ((e: Error) => void)[] = [];
+      const queryFn = vi.fn(
+        () =>
+          new Promise<string>((resolve, reject) => {
+            answers.push(resolve);
+            rejections.push(reject);
+          }),
+      );
+      const unsubscribe = new QueryObserver(c, { queryKey, queryFn }).subscribe(() => {});
+      return { answers, rejections, queryFn, unsubscribe };
+    }
+
+    it("sheet.updated: a preview naming the code, still on its first render, is rendered again after it lands", async () => {
+      const c = client();
+      setup(c);
+      const q = pendingQuery(c, previewKey);
+      try {
+        expect(q.queryFn).toHaveBeenCalledTimes(1);
+        act(() => last().emit("sheet.updated", null, { code }));
+        await act(async () => q.answers[0]!("render from before the update"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+
+    it("sheet.updated: a preview that does not name the code is left alone", async () => {
+      const c = client();
+      setup(c);
+      const q = pendingQuery(c, ["sheet-preview", "p1", { items: [], placements: [{ sheet: "L4736-0002", cells: "first_free" }] }]);
+      try {
+        act(() => last().emit("sheet.updated", null, { code }));
+        await act(async () => q.answers[0]!("render"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(1);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+
+    it("the resync after an automatic reconnect reads a preview again that is still on its first render", async () => {
+      const c = client();
+      setup(c);
+      act(() => last().open());
+      act(() => last().fail());
+      act(() => void vi.advanceTimersByTime(1000));
+      const q = pendingQuery(c, previewKey);
+      try {
+        act(() => last().open());
+        await act(async () => q.answers[0]!("render from before the resync"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+
+    it("a query in error, without data, is fetched once by the invalidation and not again after it lands", async () => {
+      const c = client();
+      setup(c);
+      const q = pendingQuery(c, ["printers", "p1", "status"]);
+      try {
+        await act(async () => q.rejections[0]!(new Error("first fetch failed")));
+        await flush();
+        expect(c.getQueryState(["printers", "p1", "status"])?.status).toBe("error");
+        act(() => last().emit("printer.status", "p1"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+        await act(async () => q.answers[1]!("ready"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+
+    it("a second event before the restarted fetch of an errored query lands still gets its own follow-up", async () => {
+      const c = client();
+      setup(c);
+      const q = pendingQuery(c, ["printers", "p1", "status"]);
+      try {
+        await act(async () => q.rejections[0]!(new Error("first fetch failed")));
+        await flush();
+        act(() => last().emit("printer.status", "p1")); // event A restarts the query: fetch 2
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+        act(() => last().emit("printer.status", "p1")); // event B joins fetch 2 (no data yet)
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+        await act(async () => q.answers[1]!("answer that may predate event B"));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(3);
+      } finally {
+        q.unsubscribe();
+      }
+    });
+
+    it("a first fetch that fails is read again after the event too", async () => {
+      const c = client();
+      setup(c);
+      const q = pendingQuery(c, ["printers", "p1", "status"]);
+      try {
+        act(() => last().emit("printer.status", "p1"));
+        await act(async () => q.rejections[0]!(new Error("network down")));
+        await flush();
+        expect(q.queryFn).toHaveBeenCalledTimes(2);
+      } finally {
+        q.unsubscribe();
+      }
     });
   });
 
@@ -357,5 +547,34 @@ describe("useHubEvents", () => {
     act(() => last().emit("auth.expired", null));
     act(() => result.current.reconnect());
     expect(FakeEventSource.instances).toHaveLength(1);
+  });
+});
+
+describe("print watch feed", () => {
+  const JOB = "aaaaaaaa-0000-4000-8000-000000000001";
+  const watched = () => renderHook(() => useWatchedPrints());
+
+  it("a job.state_changed frame moves the watched print, without a reload", () => {
+    setup();
+    const { result } = watched();
+    act(() => void watchPrint({ kind: "item", printerId: "p1", jobIds: [JOB] }));
+    act(() => last().emit("job.state_changed", "p1", { job_id: JOB, from_state: "queued", to_state: "printing" }));
+    expect(result.current[0]!.phase).toBe("printing");
+  });
+
+  it("after an automatic reconnect an open watched job is read once; the first open reads nothing", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: JOB, state: "done", error: null }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    setup();
+    const { result } = watched();
+    act(() => void watchPrint({ kind: "item", printerId: "p1", jobIds: [JOB] }));
+    act(() => last().open());
+    expect(fetchMock).not.toHaveBeenCalled();
+    act(() => last().fail());
+    act(() => void vi.advanceTimersByTime(1_000));
+    await act(async () => last().open());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toContain(`/api/v1/jobs/${JOB}`);
+    expect(result.current[0]!.phase).toBe("done");
   });
 });

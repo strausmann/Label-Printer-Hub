@@ -2,9 +2,8 @@ import type { CartItem } from "../../lookup/cart";
 import type { SheetSummary } from "../api";
 import type { SheetPrintRequest } from "../keys";
 
-/** The server's limits of one sheet print (`SheetPrintRequest`). */
+/** The server's limit of one sheet print request (`SheetPrintRequest`). One run prints one sheet (#277). */
 export const MAX_ITEMS = 500;
-export const MAX_PLACEMENTS = 50;
 
 export type PlacementIn = SheetPrintRequest["placements"][number];
 export type SheetItem = SheetPrintRequest["items"][number];
@@ -54,13 +53,6 @@ export function placementFor(target: Target, typeKey: string, fill: Fill, count?
     ...(fill.skipped.length > 0 ? { skip: [...fill.skipped] } : {}),
     ...withCount,
   };
-}
-
-/** The first sheet takes `freeCount` labels (what it still has), the rest goes to `rest` (which takes whatever remains). */
-export function splitPlacements(first: Target, typeKey: string, fill: Fill, freeCount: number, rest: Target): PlacementIn[] {
-  const next = placementFor(rest, typeKey, { mode: "first_free", chosen: [], skipped: [] });
-  if (freeCount <= 0) return [next];
-  return [placementFor(first, typeKey, { ...fill, mode: "first_free" }, freeCount), next];
 }
 
 /** Whether a sheet can take labels of `typeKey`; `null` is a code the hub does not know. */

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Res
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.identity_hold import ensure_not_held
 from app.api.routes.sheet_common import actor, mapped
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_admin, require_print, require_read
@@ -30,7 +31,7 @@ from app.db.session import get_session
 from app.schemas.problem import ProblemDetail
 from app.sheets import type_service as ts
 
-router = APIRouter(prefix="/api/printers", tags=["calibration"])
+router = APIRouter(prefix="/api/v1/printers", tags=["calibration"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]
@@ -171,8 +172,9 @@ class PageJobAccepted(BaseModel):
     responses={
         status.HTTP_409_CONFLICT: {
             "description": (
-                "The printer is a tape printer (`media_kind_mismatch`) or is not known to the "
-                "print queue (`printer-unavailable`)."
+                "The printer is a tape printer (`media_kind_mismatch`), is not known to the "
+                "print queue (`printer-unavailable`), or the device behind it changed "
+                "(`printer-identity-mismatch`)."
             )
         }
     },
@@ -187,6 +189,7 @@ async def print_calibration_page(
     auth: PrintDep,
 ) -> PageJobAccepted:
     check_printer_access(auth, printer_id)
+    ensure_not_held(getattr(request.app.state, "print_queue", None), printer_id)  # #231
     with mapped():
         payload = await page.build_payload(
             session, printer_id, tray, type_key=body.type, version=body.version,

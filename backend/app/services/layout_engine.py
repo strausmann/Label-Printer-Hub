@@ -25,7 +25,12 @@ from app.printer_backends.exceptions import (
 )
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
+from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
 from app.schemas.tape_geometry import TAPE_GEOMETRY, TapeGeometry
+from app.services.ql_layout import render_across, render_along_62, resolve_layout
+
+QL62_PRINTABLE_MM: Final = 62
+"""The tape whose along layout uses the full-width QR of ``ql_layout`` (#258)."""
 
 REQUIRED_FIELDS: Final[Mapping[ContentType, tuple[str, ...]]] = {
     ContentType.QR_ONLY: ("qr_payload",),
@@ -55,15 +60,31 @@ class LayoutEngine:
         tape_mm: int,
         content_type: ContentType,
         data: LabelData,
+        *,
+        orientation: LabelOrientation | None = None,
+        preset: QlLayoutPreset | None = None,
     ) -> Image.Image:
         """Render a label for the given tape width + content type + data.
 
+        ``orientation``/``preset`` default to the tape's built-in layout (#258): 62 mm is
+        laid across the tape width with the compact preset (image 696 px wide, length =
+        height), every other width along the tape (landscape band). Callers that apply a
+        stored default resolve it with ``ql_layout.resolve_layout`` first.
+
         Raises:
-            UnsupportedTapeError (409): tape_mm not in TAPE_GEOMETRY.
+            UnsupportedTapeError (409): tape_mm not in TAPE_GEOMETRY, or ``across`` on a
+                tape without an across-width layout.
             ContentTypeDataMismatchError (422): data missing required fields.
+            QrPayloadTooLongError (422): the payload does not fit the fixed QR (62 mm).
         """
         geometry = self._lookup_geometry(tape_mm)
         self._validate_data(content_type, data)
+        chosen, chosen_preset = resolve_layout(tape_mm, orientation, preset, None)
+        if chosen is LabelOrientation.ACROSS:
+            assert chosen_preset is not None  # resolve_layout always sets it for across
+            return render_across(content_type, data, chosen_preset)
+        if tape_mm == QL62_PRINTABLE_MM:
+            return render_along_62(content_type, data)
 
         match content_type:
             case ContentType.QR_ONLY:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock
+from uuid import UUID
 
 from app.services.event_bus import BusEvent, EventBus
 from app.services.job_lifecycle import Job, JobState
@@ -142,3 +143,29 @@ def test_tape_job_event_has_no_page_fields() -> None:
 
     data = bus.publish.call_args[0][1].data
     assert "kind" not in data and "at_printer" not in data and "summary" not in data
+
+
+def test_handle_run_change_publishes_ids_and_state_only() -> None:
+    bus = MagicMock(spec=EventBus)
+    bus.next_event_id.return_value = 7
+    run_id = UUID("00000000-0000-4000-8000-000000000001")
+    printer_id = UUID("00000000-0000-4000-8000-000000000002")
+
+    PrintQueueProducer(bus=bus).handle_run_change(run_id, printer_id, "awaiting_confirmation")
+
+    channel = f"printer:{printer_id}:queue"
+    bus.publish.assert_called_once()
+    assert bus.publish.call_args.args[0] == channel
+    event: BusEvent = bus.publish.call_args.args[1]
+    assert (event.event_type, event.event_id, event.channel) == ("run.state_changed", 7, channel)
+    assert event.data == {
+        "run_id": str(run_id),
+        "printer_id": str(printer_id),
+        "state": "awaiting_confirmation",
+    }
+
+
+def test_handle_run_change_swallows_a_bus_error() -> None:
+    bus = MagicMock(spec=EventBus)
+    bus.next_event_id.side_effect = RuntimeError("bus down")
+    PrintQueueProducer(bus=bus).handle_run_change(UUID(int=1), UUID(int=2), "stopped")

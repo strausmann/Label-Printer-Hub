@@ -1,9 +1,9 @@
 """Print onto sheets (spec 12.6, 15): the read-only preview and the print.
 
-``POST /api/print/{printer_key}/sheet/preview`` needs ``read`` scope and access to the printer.
+``POST /api/v1/print/{printer_key}/sheet/preview`` needs ``read`` scope and access to the printer.
 It plans and draws; it writes nothing and takes no lock.
 
-``POST /api/print/{printer_key}/sheet`` needs ``print`` scope and access to the printer. It
+``POST /api/v1/print/{printer_key}/sheet`` needs ``print`` scope and access to the printer. It
 reserves the cells and queues one page job per planned page (202). Domain errors answer in the
 sheet API's error envelope, and validation errors name field paths only (pre-flight C19).
 """
@@ -15,6 +15,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.identity_hold import ensure_sheet_not_held
 from app.api.routes.sheet_common import actor, mapped
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print, require_read
@@ -27,7 +28,7 @@ from app.sheets import print_service
 from app.sheets.cell_render import DEFAULT_CELL_RENDERER
 from app.sheets.errors import PrinterNotFoundError, SheetPrinterDisabledError
 
-router = APIRouter(prefix="/api", tags=["sheets"])
+router = APIRouter(prefix="/api/v1", tags=["sheets"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]
@@ -63,7 +64,7 @@ _PREVIEW_ERRORS: dict[int | str, dict[str, Any]] = {
         "description": (
             "Invalid request (`invalid_request`, field paths only), an unknown or disabled tray "
             "(`tray_unknown`), an item the cell cannot show (`content_type_data_mismatch`), a "
-            "plan of more than 10 pages (`preview_too_large`), or an unknown integration "
+            "plan of more than one sheet (`preview_too_large`), or an unknown integration "
             "(`integration_unknown_app`). Item errors carry `item_index`."
         )
     },
@@ -82,7 +83,8 @@ _PREVIEW_ERRORS: dict[int | str, dict[str, Any]] = {
         "the sheet ID and the feed-direction mark are printed, and where. Also the cells left "
         "free, the plan to send back as `expected_cells`, and where lookup items were printed "
         "before. The picture is never calibrated. Only page (IPP) printers print sheets. A "
-        "plan of more than 10 pages is refused (`preview_too_large`)."
+        "run plans one sheet: a second placement is refused (`preview_too_large`), and the items "
+        "the sheet does not take are left out (`placed`, `remaining`)."
     ),
     responses=_PREVIEW_ERRORS,
 )
@@ -126,6 +128,7 @@ _PRINT_ERRORS: dict[int | str, dict[str, Any]] = {
         "description": (
             "Not a page printer (`media_kind_mismatch`), the printer is disabled "
             "(`printer_disabled`) or unknown to the print queue (`printer-unavailable`), the "
+            "device behind the printer changed (`printer-identity-mismatch`), the "
             "sheet is discarded or archived, the cells do not fit (`insufficient_cells`, "
             "`cells_taken`), or the plan differs from `expected_cells` (`plan_changed`, with the "
             "new plan)."
@@ -158,7 +161,9 @@ _PRINT_ERRORS: dict[int | str, dict[str, Any]] = {
         "turn `used` when a page has printed. Send the preview's `expected_cells` to be refused "
         "(`plan_changed`) if the plan moved since. Nothing is reserved if an item fails: a "
         "lookup, or a cell that cannot show the item (the error names `item_index`). A sheet "
-        "job has no copies. The response names the job of each page, where its sheet ID and "
+        "job has no copies. One run prints one sheet: the first items as many as it takes; the "
+        "response says how many were placed and how many remain (`placed`, `remaining`). "
+        "The response names the job of each page, where its sheet ID and "
         "feed-direction mark are printed, and one batch id for all of them."
     ),
     responses=_PRINT_ERRORS,
@@ -177,6 +182,7 @@ async def print_sheet(
     check_printer_access(auth, printer.id)
     if not printer.enabled:
         raise SheetPrinterDisabledError().to_http()
+    ensure_sheet_not_held(getattr(http.app.state, "print_queue", None), printer.id)  # #231
     language = http.app.state.settings_store.get("general.language")
     await session.commit()  # no connection held through the lookups (R10-1); see preview above
     with mapped():

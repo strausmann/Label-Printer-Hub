@@ -26,8 +26,8 @@ afterEach(() => {
 
 function batchRoutes(over: Record<string, unknown> = {}) {
   return {
-    [`POST /api/print/${PRINTER}/batch`]: { batch_id: BATCH_ID, printer_id: PRINTER, queued_at: "2026-11-04T10:00:00Z", job_ids: ["j1", "j2"] },
-    [`GET /api/batches/${BATCH_ID}`]: { id: BATCH_ID, printer_id: PRINTER, created_by: null, created_at: "2026-11-04T10:00:00Z", jobs: [], summary: { total: 2, queued: 2, printing: 0, done: 0, failed: 0, cancelled: 0, all_terminal: false } },
+    [`POST /api/v1/print/${PRINTER}/batch`]: { batch_id: BATCH_ID, printer_id: PRINTER, queued_at: "2026-11-04T10:00:00Z", job_ids: ["j1", "j2"] },
+    [`GET /api/v1/batches/${BATCH_ID}`]: { id: BATCH_ID, printer_id: PRINTER, created_by: null, created_at: "2026-11-04T10:00:00Z", jobs: [], summary: { total: 2, queued: 2, printing: 0, done: 0, failed: 0, cancelled: 0, all_terminal: false } },
     ...over,
   };
 }
@@ -196,7 +196,7 @@ describe("cart", () => {
   });
 
   it("keeps items when the batch is rejected", async () => {
-    mockApi(batchRoutes({ [`POST /api/print/${PRINTER}/batch`]: respond(409, { detail: { error_code: "printer_offline", error_message: "Printer is offline" } }) }));
+    mockApi(batchRoutes({ [`POST /api/v1/print/${PRINTER}/batch`]: respond(409, { detail: { error_code: "printer_offline", error_message: "Printer is offline" } }) }));
     const { result } = renderHook(() => useCart(), { wrapper });
     act(() => result.current.add(asset));
     act(() => result.current.add(spool));
@@ -220,7 +220,7 @@ describe("cart", () => {
   });
 
   it("clears the cart even when only the batch status cannot be read afterwards", async () => {
-    mockApi(batchRoutes({ [`GET /api/batches/${BATCH_ID}`]: respond(500, { detail: "boom" }) }));
+    mockApi(batchRoutes({ [`GET /api/v1/batches/${BATCH_ID}`]: respond(500, { detail: "boom" }) }));
     const { result } = renderHook(() => useCart(), { wrapper });
     act(() => result.current.add(asset));
     let error: unknown;

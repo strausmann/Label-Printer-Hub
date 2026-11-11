@@ -12,7 +12,7 @@ const EDGE = "L4731-0001";
 const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
 
 async function printerId(page: Page): Promise<string> {
-  const printers = (await (await page.request.get("/api/printers")).json()) as Array<{ id: string; name: string; kind?: string }>;
+  const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string; kind?: string }>;
   return printers.find((p) => p.name === "Office page printer")!.id;
 }
 

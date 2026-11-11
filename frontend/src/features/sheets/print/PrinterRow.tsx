@@ -2,7 +2,7 @@ import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { StatusBadge } from "../../../shell/StatusBadge";
 import type { Printer, PrinterStatus } from "../../printers/api";
-import { describePrinter, useKindLabel, type PrinterKind } from "../../printers/model";
+import { describePrinter, statusIsUnknown, useKindLabel, type PrinterKind } from "../../printers/model";
 import { MarkerList, noAnswerYet, ReasonLine } from "../../printers/PageStatus";
 
 /** States in which a print waits in the hub's queue instead of starting at once. */
@@ -23,7 +23,9 @@ export function PrinterRow({ printer, status }: { printer: Printer; status: Prin
         <StatusBadge state={view.badge} label={kinds[view.kind]} />
         <ReasonLine reasons={view.reasons} />
       </div>
-      {unanswered ? <span className="text-small text-ink-2">{t`No answer yet`}</span> : <MarkerList markers={status?.markers} />}
+      {statusIsUnknown(status) ? (
+        <span className="text-small text-ink-2">{t`Supplies not known`}</span>
+      ) : unanswered ? <span className="text-small text-ink-2">{t`No answer yet`}</span> : <MarkerList markers={status?.markers} />}
       {ahead > 0 && (
         <p className="text-small text-ink-2">
           {plural(ahead, { one: "# job from another computer ahead", other: "# jobs from other computers ahead" })}

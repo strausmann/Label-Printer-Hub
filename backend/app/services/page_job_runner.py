@@ -71,6 +71,7 @@ from app.services.job_lifecycle import (
 )
 from app.services.job_store import JobStore
 from app.services.page_jobs import (
+    IDENTITY_MISMATCH_CODE,
     PageJob,
     PagePrinter,
     notify_ended,
@@ -119,6 +120,7 @@ _MESSAGES = {
     "ipp_request_invalid": "The print request could not be built.",
     "interrupted": "The printer may have printed the page; its outcome is unknown.",
     "ipp_aborted": "The printer aborted the job before printing.",
+    IDENTITY_MISMATCH_CODE: "The device behind this printer changed; the job was not printed.",
 }
 
 
@@ -227,6 +229,20 @@ class PageJobRunner:
             await self._upload_and_track(page_job, active, summary, result)
         finally:
             self._release(job_id, active, printer)
+
+    async def fail_identity_mismatch(self, page_job: PageJob) -> None:
+        """End a job that never left ``queued`` because its printer's device changed (#231).
+
+        The not-started failure path: the row and the in-memory job end ``failed`` with
+        ``printer-identity-mismatch`` and ``started=False``, the event goes out, and the outcome
+        handler's ``on_ended(started=False)`` runs (a sheet page frees its cells).
+        """
+        await self._fail(
+            page_job,
+            {"phase": "ended", "started": False},
+            IDENTITY_MISMATCH_CODE,
+            started=False,
+        )
 
     async def resume(
         self, printer: PagePrinter, page_job: PageJob, *, cancel_requested: bool = False

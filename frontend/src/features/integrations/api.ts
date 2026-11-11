@@ -10,7 +10,7 @@ export interface IntegrationState {
 /** Only an admin can change the settings, so only an admin is sent there. */
 export const useIsAdmin = (): boolean => useSession().scope === "admin";
 
-/** The state of each integration as `/api/info` reports it, in the navigation's order. */
+/** The state of each integration as `/api/v1/info` reports it, in the navigation's order. */
 export function useIntegrationStates(): IntegrationState[] {
   const info = useInfo().data;
   if (!info) return [];

@@ -4,10 +4,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { renderApp } from "../../../test-utils";
 import { CART_KEY, reloadCart } from "../../lookup/cart";
 import { mockApi, PAGE_PRINTER, PRINTER_A, respond, SHEET_TYPE, pageStatus, sheetRead, type Call } from "../../test-api";
-import { BATCH, JOB, NEW_9, P, USED_17, body, conflict, pick, previewFor, previewPage, reason, routes, sheet } from "./testkit";
+import { BATCH, JOB, NEW_9, P, USED_17, body, conflict, expectType, pick, pickType, previewFor, typeBox, previewPage, reason, routes, sheet } from "./testkit";
 
-const PREVIEW = `/api/print/${P}/sheet/preview`;
-const PRINT = `/api/print/${P}/sheet`;
+const PREVIEW = `/api/v1/print/${P}/sheet/preview`;
+const PRINT = `/api/v1/print/${P}/sheet`;
 
 // The preview is requested 400 ms after the last change (PREVIEW_DEBOUNCE_MS), so every
 // findBy that waits for it starts with a 400 ms real-time wait inside the default 1 s window.
@@ -21,6 +21,13 @@ beforeAll(() => {
   });
 });
 afterAll(() => configure({ asyncUtilTimeout: defaultAsyncTimeout }));
+
+// Every test here boots the whole app (about 1 s alone before the first assertion) and each
+// click re-renders it (100-500 ms in jsdom); on its own the slowest tests take 2-2.6 s. The
+// coverage run on four shared cores is about 2.5 times slower, which put the busiest test at
+// 5.3 s, past the default 5 s per test. The per-test limit is widened for this file only, with
+// the same reasoning as the async window above; vi.setConfig is scoped to this file.
+vi.setConfig({ testTimeout: 15_000 });
 
 beforeEach(() => {
   localStorage.clear();
@@ -75,7 +82,7 @@ describe("the sheet section replaces the tape preview for page printers", () => 
     const { calls } = await itemView(routes(), 1);
     expect(screen.queryByRole("img", { name: "Label preview" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Print now" })).toBeNull();
-    expect(calls.some((c) => c.path === "/api/render/preview")).toBe(false);
+    expect(calls.some((c) => c.path === "/api/v1/render/preview")).toBe(false);
     expect(screen.getByRole("button", { name: "Add to cart" })).toBeVisible();
   });
 
@@ -148,7 +155,7 @@ describe("tray, sheet type and the sheet", () => {
   it("remembers the sheet type per printer", async () => {
     const other = { ...SHEET_TYPE, key: "other-type", product_codes: ["OT-1"], vendor: "Other" };
     await itemView(routes({ types: [SHEET_TYPE, other] }), 1);
-    await pick(/Sheet type/, /other-type/);
+    await pickType(/other-type/);
     expect(localStorage.getItem(`lph.sheetType.${P}`)).toBe("other-type");
   });
 
@@ -156,7 +163,7 @@ describe("tray, sheet type and the sheet", () => {
     const other = { ...SHEET_TYPE, key: "other-type", product_codes: ["OT-1"], vendor: "Other" };
     localStorage.setItem(`lph.sheetType.${P}`, "other-type");
     await itemView(routes({ types: [SHEET_TYPE, other] }), 1);
-    expect(await screen.findByRole("button", { name: /other-type/ })).toBeVisible();
+    await expectType(/other-type/);
   });
 
   it("lists the sheets that hold everything first, with the free count and 'too small' for the others", async () => {
@@ -184,7 +191,7 @@ describe("tray, sheet type and the sheet", () => {
     await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
     expect(body(previews(calls)[0]!).placements).toEqual([{ sheet: "L4736-0011", cells: "first_free" }]);
     expect(body(previews(calls)[0]!).items).toHaveLength(9);
-    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /L4736-0010/ }));
     await waitFor(() => expect(body(previews(calls).at(-1)!).placements[0]).toMatchObject({ sheet: "L4736-0010" }));
   });
@@ -204,11 +211,11 @@ describe("an archived sheet type", () => {
   it("stays selectable for its sheets with free cells, prints onto the existing sheet and offers no new one", async () => {
     localStorage.setItem(`lph.sheetType.${P}`, "OLDTYPE");
     const { calls } = await itemView(routes({ types: [SHEET_TYPE, OLD], sheets: [oldSheet("OLDX-0001", 17)], preview: previewFor("OLDX-0001", NEW_9, USED_17) }));
-    expect(await screen.findByRole("button", { name: /OLDTYPE.*archived/ })).toBeVisible();
+    await expectType(/OLDTYPE.*archived/);
     expect(screen.getByText(/This sheet type is archived/)).toBeVisible();
     await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
     expect(body(previews(calls).at(-1)!).placements).toEqual([{ sheet: "OLDX-0001", cells: "first_free" }]);
-    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
     expect(options).toHaveLength(1);
     expect(options.join("|")).not.toMatch(/New .* sheet/);
@@ -218,7 +225,7 @@ describe("an archived sheet type", () => {
     localStorage.setItem(`lph.sheetType.${P}`, "OLDTYPE");
     const { calls } = await itemView(routes({ types: [SHEET_TYPE, OLD], sheets: [oldSheet("OLDX-0001", 17)], preview: previewFor("OLDX-0001", NEW_9, USED_17) }));
     // The server leaves archived types out unless asked: the mock cannot, so the question itself is checked.
-    expect(calls.filter((c) => c.path === "/api/sheet-types").every((c) => c.search.includes("include_archived=true"))).toBe(true);
+    expect(calls.filter((c) => c.path === "/api/v1/sheet-types").every((c) => c.search.includes("include_archived=true"))).toBe(true);
     await pressPrint();
     await waitFor(() => expect(body(printCalls(calls).at(-1)!).placements[0]).toMatchObject({ sheet: "OLDX-0001" }));
   });
@@ -259,22 +266,22 @@ describe("an archived sheet type", () => {
       routes({
         types: [SHEET_TYPE, OLD],
         extra: {
-          "GET /api/sheets": () => [taken ? oldSheet("OLDX-0001", 48) : oldSheet("OLDX-0001", 47), sheet("L4736-0001", 17)],
+          "GET /api/v1/sheets": () => [taken ? oldSheet("OLDX-0001", 48) : oldSheet("OLDX-0001", 47), sheet("L4736-0001", 17)],
         },
       }),
       1,
     );
     // The user picks the archived type by hand: that is a typeChoice, not a default.
-    await pick(/Sheet type/, /OLDTYPE/);
-    expect(await screen.findByRole("button", { name: /OLDTYPE.*archived/ })).toBeVisible();
+    await pickType(/OLDTYPE/);
+    await expectType(/OLDTYPE.*archived/);
     await waitFor(() => expect(sources.length).toBeGreaterThan(0));
     taken = true;
     await act(async () => {
       sources.at(-1)!.emit("sheet.updated", null, { code: "OLDX-0001", free: 0, total: 48, changed: [48], state: "active" });
     });
     // The type is no longer offered, so the choice moves to an offered type ...
-    expect(await screen.findByRole("button", { name: /L4736REV/ }, { timeout: 2500 })).toBeVisible();
-    expect(screen.queryByRole("button", { name: /OLDTYPE/ })).toBeNull();
+    await expectType(/L4736REV/, 2500);
+    expect((await typeBox()).value).not.toMatch(/OLDTYPE/);
     // ... and no preview asks for a new sheet of the archived type, which the server refuses.
     await act(async () => {
       await new Promise((r) => setTimeout(r, 600));
@@ -284,7 +291,7 @@ describe("an archived sheet type", () => {
 
   it("stays hidden when no active sheet of it has a free cell", async () => {
     await itemView(routes({ types: [SHEET_TYPE, OLD], sheets: [oldSheet("OLDX-0001", 48), sheet("L4736-0001", 17)] }));
-    await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
+    await userEvent.click(await typeBox());
     const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
     expect(options.join("|")).not.toMatch(/OLDTYPE/);
   });
@@ -294,7 +301,7 @@ describe("defaults and hints", () => {
   it("with nothing remembered the type that has a sheet with room comes first", async () => {
     const empty = { ...SHEET_TYPE, key: "aaa-empty-type", product_codes: ["AAA-1"], vendor: "Aaa" };
     await itemView(routes({ types: [empty, SHEET_TYPE] }), 1);
-    expect(await screen.findByRole("button", { name: /L4736REV/ })).toBeVisible();
+    await expectType(/L4736REV/);
   });
 
   it("choosing cells on a sheet that is too small says so", async () => {
@@ -302,7 +309,9 @@ describe("defaults and hints", () => {
     await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /L4736-0001/ }));
     await userEvent.click(await screen.findByRole("radio", { name: "Choose cells" }));
-    expect(await screen.findByText(/too few free cells for this print: 4 free, 9 needed/)).toBeVisible();
+    // #277: the sheet takes what it holds; the rest goes onto the next sheet.
+    expect(await screen.findByText(/has 4 free cells: choose them for the first 4 of 9 labels/)).toBeVisible();
+    expect(screen.getByText("0 of 4 cells chosen")).toBeVisible();
   });
 
   it("the 200 % switch is hidden on a phone while the one page is the tap-size skip view", async () => {
@@ -435,12 +444,12 @@ describe("a picked target belongs to the type it was picked for", () => {
     const { calls } = await itemView(
       routes({
         types: [SHEET_TYPE, OLD],
-        extra: { "GET /api/sheets": () => [oldSheet("OLDX-0001", taken ? 48 : 47), oldSheet("OLDX-0002", taken ? 48 : 47), sheet("L4736-0001", 17)] },
+        extra: { "GET /api/v1/sheets": () => [oldSheet("OLDX-0001", taken ? 48 : 47), oldSheet("OLDX-0002", taken ? 48 : 47), sheet("L4736-0001", 17)] },
       }),
       1,
     );
-    expect(await screen.findByRole("button", { name: /OLDTYPE.*archived/ })).toBeVisible();
-    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await expectType(/OLDTYPE.*archived/);
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /OLDX-0002/ }));
     await waitFor(() => expect(lastPlacements(calls)).toEqual([{ sheet: "OLDX-0002", cells: "first_free" }]));
     await ready();
@@ -465,14 +474,14 @@ describe("a picked target belongs to the type it was picked for", () => {
       routes({
         types: [SHEET_TYPE, OLD],
         extra: {
-          "GET /api/sheets": () => [oldSheet("OLDX-0001", taken ? 48 : 47), oldSheet("OLDX-0002", taken ? 48 : 47), sheet("L4736-0001", 17)],
-          "GET /api/sheets/OLDX-0001": () => oldRead("OLDX-0001", taken ? 48 : 47),
-          "GET /api/sheets/OLDX-0002": () => oldRead("OLDX-0002", taken ? 48 : 47),
+          "GET /api/v1/sheets": () => [oldSheet("OLDX-0001", taken ? 48 : 47), oldSheet("OLDX-0002", taken ? 48 : 47), sheet("L4736-0001", 17)],
+          "GET /api/v1/sheets/OLDX-0001": () => oldRead("OLDX-0001", taken ? 48 : 47),
+          "GET /api/v1/sheets/OLDX-0002": () => oldRead("OLDX-0002", taken ? 48 : 47),
         },
       }),
     );
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Sheet" })).toHaveValue("OLDX-0001"));
-    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /OLDX-0002/ }));
     await waitFor(() => expect(lastPlacements(calls)).toEqual([{ sheet: "OLDX-0002", cells: "first_free" }]));
     await ready();
@@ -489,8 +498,8 @@ describe("a picked target belongs to the type it was picked for", () => {
   it("a picked new sheet on a type that is not archived stays the target while the type does not change", async () => {
     const { stream, ready } = fakeStream();
     let used = 17;
-    const { calls } = await itemView(routes({ extra: { "GET /api/sheets": () => [sheet("L4736-0001", used)] } }), 1);
-    await userEvent.click(screen.getByRole("combobox", { name: "Sheet" }));
+    const { calls } = await itemView(routes({ extra: { "GET /api/v1/sheets": () => [sheet("L4736-0001", used)] } }), 1);
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /New .* sheet/ }));
     await waitFor(() => expect(lastPlacements(calls)).toEqual([{ new_sheet: { type: "L4736REV", id_placement: "margin" }, cells: "first_free" }]));
     await ready();
@@ -603,10 +612,10 @@ describe("a scanned code", () => {
   });
 
   it.each([
-    ["another type", "sheet:L4736-0020", { "GET /api/sheets/L4736-0020": { ...sheet("L4736-0020", 3), type_key: "other-type", type_label: "Other" } }, /not a sheet of this type/],
-    ["a discarded sheet", "sheet:L4736-0021", { "GET /api/sheets/L4736-0021": { ...sheet("L4736-0021", 3), state: "discarded" } }, /is discarded/],
-    ["a full sheet", "sheet:L4736-0022", { "GET /api/sheets/L4736-0022": sheet("L4736-0022", 48) }, /no free cell/],
-    ["an unknown code", "sheet:L4736-0023", { "GET /api/sheets/L4736-0023": respond(404, { detail: { error_code: "sheet_not_found", error_message: "no" } }) }, /does not know/],
+    ["another type", "sheet:L4736-0020", { "GET /api/v1/sheets/L4736-0020": { ...sheet("L4736-0020", 3), type_key: "other-type", type_label: "Other" } }, /not a sheet of this type/],
+    ["a discarded sheet", "sheet:L4736-0021", { "GET /api/v1/sheets/L4736-0021": { ...sheet("L4736-0021", 3), state: "discarded" } }, /is discarded/],
+    ["a full sheet", "sheet:L4736-0022", { "GET /api/v1/sheets/L4736-0022": sheet("L4736-0022", 48) }, /no free cell/],
+    ["an unknown code", "sheet:L4736-0023", { "GET /api/v1/sheets/L4736-0023": respond(404, { detail: { error_code: "sheet_not_found", error_message: "no" } }) }, /does not know/],
   ])("explains why %s cannot be used and keeps the selection", async (_n, text, extra, words) => {
     const { calls } = await scan(text, extra);
     const note = await screen.findByRole("alert");
@@ -647,60 +656,27 @@ describe("not enough free cells", () => {
   }
   const range9 = (from: number) => Array.from({ length: 9 }, (_, i) => from + i);
 
-  it("offers the three ways on, and each builds its placements", async () => {
+  it("says the sheet is too small and offers no split: one run prints one sheet (#277)", async () => {
     const { calls } = await overflow();
     await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /L4736-0001/ }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("only 9 free cells");
     expect(alert).toHaveTextContent("needs 10");
-    await userEvent.click(within(alert).getByRole("button", { name: "Put the rest onto L4736-0010" }));
-    await waitFor(() =>
-      expect(body(previews(calls).at(-1)!).placements).toEqual([
-        { sheet: "L4736-0001", cells: "first_free", count: 9 },
-        { sheet: "L4736-0010", cells: "first_free" },
-      ]),
-    );
-  });
-
-  it("reads free_cells as one count per placement: with several placements the target's own count counts", async () => {
-    const split = previewFor("L4736-0001", range9(40), USED_17);
-    const { calls } = await itemView(
-      routes({
-        sheets: [sheet("L4736-0001", 39), sheet("L4736-0010", 20)],
-        preview: (init: RequestInit) => {
-          const request = JSON.parse(String(init.body)) as { placements: unknown[] };
-          return request.placements.length === 1 ? conflict(409, "insufficient_cells", "Not enough.", { free_cells: [9, 3], needed: 10, shortfall: 1 }) : split;
-        },
-      }),
-      10,
-    );
-    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
-    await userEvent.click(await screen.findByRole("option", { name: /L4736-0001/ }));
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("only 9 free cells");
-    await userEvent.click(within(alert).getByRole("button", { name: "Put the rest onto a new sheet" }));
-    await waitFor(() => expect(body(previews(calls).at(-1)!).placements[0]).toEqual({ sheet: "L4736-0001", cells: "first_free", count: 9 }));
-  });
-
-  it("the rest can go onto a new sheet, or the whole print onto a sheet with room", async () => {
-    const { calls } = await overflow();
-    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
-    await userEvent.click(await screen.findByRole("option", { name: /L4736-0001/ }));
-    await userEvent.click(await screen.findByRole("button", { name: "Put the rest onto a new sheet" }));
-    await waitFor(() =>
-      expect(body(previews(calls).at(-1)!).placements).toEqual([
-        { sheet: "L4736-0001", cells: "first_free", count: 9 },
-        { new_sheet: { type: "L4736REV", id_placement: "margin" }, cells: "first_free" },
-      ]),
-    );
+    expect(within(alert).queryByRole("button", { name: /Put the rest/ })).toBeNull();
+    expect(previews(calls).every((c) => body(c).placements.length === 1)).toBe(true);
   });
 
   it("a sheet with enough room takes the whole print", async () => {
     const { calls } = await overflow();
     await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
     await userEvent.click(await screen.findByRole("option", { name: /L4736-0001/ }));
+    const sheetBox = screen.getByRole("combobox", { name: "Sheet" }) as HTMLInputElement;
+    expect(sheetBox.value).toMatch(/L4736-0001/);
     await userEvent.click(await screen.findByRole("button", { name: "Use L4736-0010 instead (28 free)" }));
+    // The best fitting sheet is L4736-0010 from the start, so the last preview alone cannot tell
+    // whether the button did anything: the field must have moved off L4736-0001 again.
+    await waitFor(() => expect(sheetBox.value).toMatch(/L4736-0010/));
     await waitFor(() => expect(body(previews(calls).at(-1)!).placements).toEqual([{ sheet: "L4736-0010", cells: "first_free" }]));
   });
 });
@@ -954,7 +930,7 @@ describe("failures are words", () => {
 
 describe("the cart", () => {
   it("makes one label per copy and clears the cart only after the hub accepted it", async () => {
-    const { calls } = await cartView("/cart?sheet=L4736-0001", [LINE("7", 2), LINE("9", 3)], routes({ extra: { "GET /api/lookup/grocy/9": { ...{ app: "grocy", id: "9", name: "Item 9", url: "https://g.example.invalid/9", extra: {} } } } }));
+    const { calls } = await cartView("/cart?sheet=L4736-0001", [LINE("7", 2), LINE("9", 3)], routes({ extra: { "GET /api/v1/lookup/grocy/9": { ...{ app: "grocy", id: "9", name: "Item 9", url: "https://g.example.invalid/9", extra: {} } } } }));
     await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
     const request = body(previews(calls)[0]!);
     expect(request.items).toHaveLength(5);
@@ -1002,14 +978,6 @@ describe("the cart", () => {
     expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(1);
   });
 
-  it("refuses more than 500 labels in words and asks nothing of the server", async () => {
-    const lines = Array.from({ length: 51 }, (_, i) => LINE(String(i + 100), 10));
-    const { calls } = await cartView("/cart", lines);
-    expect(await screen.findByText(/510 labels.*at most 500/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "Print onto sheet" })).toBeDisabled();
-    expect(calls.some((c) => c.path === PREVIEW)).toBe(false);
-  });
-
   it("/cart?sheet=<code> preselects that sheet and its type", async () => {
     const { calls } = await cartView("/cart?sheet=L4736-0001", [LINE("7", 1)], routes({ sheets: [sheet("L4736-0001", 17), sheet("L4736-0002", 3)] }));
     await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
@@ -1033,5 +1001,42 @@ describe("the cart", () => {
     await cartView("/cart", [LINE("7", 2)], routes({ printers: [PRINTER_A] }));
     expect(await screen.findByRole("button", { name: "Print 2 labels" })).toBeEnabled();
     expect(screen.queryByRole("heading", { name: "Print onto a sheet" })).toBeNull();
+  });
+});
+
+describe("one sheet per print run (#277)", () => {
+  const SIX = [18, 19, 20, 21, 22, 23];
+  const sixOfNine = previewFor("L4736-0001", SIX, USED_17, { placed: 6, remaining: 3 });
+  const page = { job_id: JOB, sheet_code: "L4736-0001", cells: SIX, id_cell: null, margin_id: false, margin_band: null, id_not_printed: false, feed_mark: false };
+  const printedSix = { batch_id: BATCH, pages: [page], placed: 6, remaining: 3 };
+
+  it("the preview says how many labels fit on the sheet and that the rest stays in the cart", async () => {
+    await cartView("/cart", [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")], routes({ preview: sixOfNine }));
+    expect(await screen.findByText("6 of 9 labels fit on this sheet. The rest stays in the cart.")).toBeVisible();
+  });
+
+  it("after the print only the placed labels leave the cart; the rest stays for the next run", async () => {
+    const { calls } = await cartView("/cart", [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")], routes({ preview: sixOfNine, print: printedSix }));
+    await pressPrint();
+    expect(await screen.findByRole("status", { name: "Sent to the print queue" })).toBeVisible();
+    // The first six items in cart order printed: all five flour and one sugar.
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([LINE("9", 3, "Sugar")]));
+    expect(body(printCalls(calls).at(-1)!).items).toHaveLength(9);
+  });
+
+  it("without a cart the next preview plans the labels that did not fit", async () => {
+    const printed = { ...printedSix, placed: 4, remaining: 5, pages: [{ ...printedSix.pages[0], cells: [18, 19, 20, 21] }] };
+    const { calls } = await itemView(routes({ preview: previewFor("L4736-0001", [18, 19, 20, 21], USED_17, { placed: 4, remaining: 5 }), print: printed }), 9);
+    await pressPrint();
+    await screen.findByRole("status", { name: "Sent to the print queue" });
+    await waitFor(() => expect(body(previews(calls).at(-1)!).items).toHaveLength(5));
+  });
+
+  it("the cart is not limited: more labels than one request holds send the first 500", async () => {
+    const lines = Array.from({ length: 51 }, (_, i) => LINE(String(100 + i), 10, `Item ${i}`));
+    const { calls } = await cartView("/cart", lines, routes({ preview: previewFor(null, Array.from({ length: 48 }, (_, i) => i + 1), [], { placed: 48, remaining: 452 }) }));
+    await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
+    expect(body(previews(calls).at(-1)!).items).toHaveLength(500);
+    expect(screen.queryByText(/too many for one sheet print/)).toBeNull();
   });
 });

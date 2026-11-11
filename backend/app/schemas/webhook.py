@@ -3,7 +3,7 @@
 Spoolman and Grocy both push event payloads when their data changes.  The hub
 receives those events, resolves the label data via the appropriate integration
 plugin, and enqueues a print job — returning a ``WebhookAcceptedResponse`` with
-the new job's UUID so callers can poll for completion via ``GET /api/jobs/{id}``.
+the new job's UUID so callers can poll for completion via ``GET /api/v1/jobs/{id}``.
 
 Payload designs follow each upstream's documented webhook format:
 
@@ -70,5 +70,5 @@ class WebhookAcceptedResponse(BaseModel):
     """202 Accepted response body for both webhook endpoints."""
 
     job_id: UUID = Field(
-        description="UUID of the newly-created print job; poll GET /api/jobs/{job_id} for status",
+        description="UUID of the new print job; poll GET /api/v1/jobs/{job_id} for status",
     )

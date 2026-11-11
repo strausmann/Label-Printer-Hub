@@ -31,6 +31,7 @@ export function TabBar() {
   return (
     <nav
       aria-label={t`Tabs`}
+      data-tabbar=""
       className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
       <Tab to="/" icon={<OverviewIcon />} label={labels.entry.overview!} />

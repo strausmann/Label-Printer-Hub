@@ -22,7 +22,7 @@ After the container reports healthy:
 |----------|-----|----------|
 | Web UI | http://localhost:8000/ | Sign-in page |
 | Health | http://localhost:8000/healthz | `200` |
-| API info | http://localhost:8000/api/info | JSON with version and feature flags |
+| API info | http://localhost:8000/api/v1/info | JSON with version and feature flags |
 | API docs | http://localhost:8000/docs | Swagger UI |
 
 The smoke stack reads `PRINTER_HUB_SECRET_KEY` from your shell and sets a fake one-time

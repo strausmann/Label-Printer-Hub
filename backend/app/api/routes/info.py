@@ -1,6 +1,6 @@
 """Public shell info and the admin system-log view.
 
-``GET /api/info`` is public by design: the web shell and the sign-in screen need
+``GET /api/v1/info`` is public by design: the web shell and the sign-in screen need
 version, default language and auth hints before anyone is signed in. It returns
 build info and booleans only, never a secret.
 """
@@ -54,7 +54,7 @@ def _integration_status() -> list[InfoIntegration]:
     ]
 
 
-@router.get("/api/info", response_model=Info)
+@router.get("/api/v1/info", response_model=Info)
 async def get_info(request: Request, db: SessionDep) -> Info:
     # Imported lazily: app.main imports this module.
     from app.main import HUB_BUILD_DATE, HUB_REPO_URL, HUB_REVISION, HUB_VERSION

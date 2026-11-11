@@ -28,13 +28,14 @@ from app.schemas.sheets import (
     VersionCreate,
     VersionRead,
 )
+from app.seed.sheet_seed import shipped_source_urls
 from app.sheets import exchange
 from app.sheets import type_service as ts
 from app.sheets.errors import ImportTooLargeError, SheetTypeVersionNotFoundError
 from app.sheets.geometry import normalise, validate_geometry
 from app.sheets.naming import KEY_PATTERN
 
-router = APIRouter(prefix="/api/sheet-types", tags=["sheet-types"])
+router = APIRouter(prefix="/api/v1/sheet-types", tags=["sheet-types"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]
@@ -86,6 +87,11 @@ async def _type_read(
         origin=t.origin,  # type: ignore[arg-type]
         source_name=t.source_name,
         source_url=t.source_url,
+        source_url_shipped=(
+            t.origin == "seed"
+            and t.source_url is not None
+            and t.source_url == shipped_source_urls().get(t.key)
+        ),
         notes=t.notes,
         archived_at=t.archived_at,
         created_at=t.created_at,

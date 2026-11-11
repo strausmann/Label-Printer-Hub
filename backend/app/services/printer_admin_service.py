@@ -17,9 +17,9 @@ Flattening-Helpers (top-level Funktionen fuer einfaches Unit-Testing):
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -31,6 +31,7 @@ from sqlmodel import col
 
 from app.models.printer import Printer, PrinterAudit
 from app.models.printer_calibration import PrinterCalibration
+from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import PRINTER_ATTRS, ProbeSummary, summarise
 from app.printer_backends.ipp.client import IppClient, to_http_url
@@ -40,6 +41,9 @@ from app.printer_backends.ipp.errors import (
     IppTransportError,
     IppUnreachableError,
 )
+from app.repositories import printer_identity as identity_repo
+from app.repositories import printers as printers_repo
+from app.schemas.label_layout import LayoutDefault
 from app.schemas.printer_admin import (
     IppConnection,
     PrinterConnection,
@@ -57,6 +61,7 @@ from app.sheets.errors import (
     TrayUnknownError,
 )
 from app.sheets.text import log_value
+from app.sheets.type_service import write_transaction
 
 _log = logging.getLogger(__name__)
 
@@ -106,6 +111,18 @@ class PrinterNotFoundBySlugError(Exception):
     def __init__(self, slug: str) -> None:
         self.slug = slug
         super().__init__(f"Drucker {slug!r} nicht gefunden")
+
+
+class PrinterNotFoundError(Exception):
+    """No printer with this id."""
+
+
+class NoIdentityMismatchError(Exception):
+    """The printer has no pending device-swap flag, so there is nothing to resolve."""
+
+
+class IdentityChangedError(Exception):
+    """The flagged device is no longer the one the caller reviewed."""
 
 
 class ConnectionKindMismatchError(Exception):
@@ -247,6 +264,9 @@ def _payload_to_row(
         "cut_defaults_half_cut": (
             False if payload.backend == IPP_BACKEND else payload.cut_defaults.half_cut
         ),
+        "layout_defaults": (
+            {} if payload.backend == IPP_BACKEND else _layout_json(payload.layout_defaults)
+        ),
         "enabled": payload.enabled,
         "created_at": created_at_utc,
         "updated_at": created_at_utc,
@@ -272,9 +292,16 @@ def _apply_update_patch(
         changes["queue_timeout_s"] = patch.queue.timeout_s
     if patch.cut_defaults is not None:
         changes["cut_defaults_half_cut"] = patch.cut_defaults.half_cut
+    if patch.layout_defaults is not None:
+        changes["layout_defaults"] = _layout_json(patch.layout_defaults)
     if patch.enabled is not None:
         changes["enabled"] = patch.enabled
     return changes
+
+
+def _layout_json(defaults: Mapping[int, LayoutDefault]) -> dict[str, Any]:
+    """``{62: LayoutDefault}`` as the JSON column stores it: ``{"62": {...}}``."""
+    return {str(width): d.model_dump(mode="json") for width, d in sorted(defaults.items())}
 
 
 def _row_to_audit_view(
@@ -295,6 +322,7 @@ def _row_to_audit_view(
         "connection": row.get("connection"),
         "queue": {"timeout_s": row.get("queue_timeout_s")},
         "cut_defaults": {"half_cut": row.get("cut_defaults_half_cut")},
+        "layout_defaults": row.get("layout_defaults") or {},
         "enabled": row.get("enabled"),
     }
     if trays is not None:
@@ -318,6 +346,7 @@ def _printer_to_row_dict(printer: Printer) -> dict[str, Any]:
         "connection": printer.connection,
         "queue_timeout_s": printer.queue_timeout_s,
         "cut_defaults_half_cut": printer.cut_defaults_half_cut,
+        "layout_defaults": dict(printer.layout_defaults or {}),
         "enabled": printer.enabled,
     }
 
@@ -477,6 +506,7 @@ class PrinterAdminService:
         changes = _apply_update_patch(_printer_to_row_dict(printer), patch)
         if is_ipp:
             changes.pop("cut_defaults_half_cut", None)  # does not apply to page printers
+            changes.pop("layout_defaults", None)  # nor do tape layouts (#258)
             changes.update(await self._ipp_update_checks(printer, patch, stored_trays))
 
         for key, value in changes.items():
@@ -592,6 +622,74 @@ class PrinterAdminService:
         await self._session.commit()
         await self._session.refresh(printer)
         return printer
+
+    async def get_identity(self, printer_id: UUID) -> PrinterIdentity | None:
+        """The stored hardware identity row of a printer (admin views only)."""
+        return await identity_repo.get(self._session, printer_id)
+
+    async def get_identities(self, printer_ids: Sequence[UUID]) -> dict[UUID, PrinterIdentity]:
+        """The stored identities of several printers in one query."""
+        return await identity_repo.get_many(self._session, printer_ids)
+
+    async def resolve_identity(
+        self,
+        printer_id: UUID,
+        resolution: Literal["same_device", "replaced"],
+        *,
+        expected_observed_id: str,
+        expected_observed_kind: str,
+    ) -> Printer:
+        """End a flagged device swap (#231): keep the calibration or reset it.
+
+        Bound to the device the admin reviewed: it only applies while the observed device still
+        is ``(expected_observed_kind, expected_observed_id)``. One transaction: the observed
+        device becomes the stored one and the mismatch ends (this is also the check, so a 409
+        deletes nothing), then ``replaced`` deletes every calibration row of the printer (the rows
+        found, not every configured tray), then one audit row (no identity value), then one
+        commit. Any failure rolls everything back. Releasing the queue hold and the events belong
+        to the caller and happen only after this returns.
+        """
+        printer = await printers_repo.get(self._session, printer_id)
+        if printer is None:
+            raise PrinterNotFoundError
+        removed = 0
+        async with write_transaction(self._session):
+            if not await identity_repo.adopt_observed(
+                self._session,
+                printer_id,
+                expected_id=expected_observed_id,
+                expected_kind=expected_observed_kind,
+                now=datetime.now(UTC),
+            ):
+                current = await identity_repo.get(self._session, printer_id)
+                if current is None or current.mismatch_since is None:
+                    raise NoIdentityMismatchError
+                raise IdentityChangedError
+            if resolution == "replaced":
+                rows = (
+                    await self._session.execute(
+                        select(PrinterCalibration).where(
+                            col(PrinterCalibration.printer_id) == printer_id
+                        )
+                    )
+                ).scalars()
+                for row in list(rows):
+                    await self._session.delete(row)
+                    removed += 1
+                await self._session.flush()
+            await self._record_audit(
+                printer_id=printer_id,
+                slug=printer.slug,
+                action="identity_resolved",
+                before=None,
+                after=(
+                    {"resolution": resolution, "calibrations_removed": removed}
+                    if resolution == "replaced"
+                    else {"resolution": resolution}
+                ),
+            )
+            await self._session.commit()
+        return printer  # nothing on the row changed; no refresh that could fail after the commit
 
     async def _record_audit(
         self,

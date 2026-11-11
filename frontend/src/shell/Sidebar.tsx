@@ -15,7 +15,7 @@ export function Sidebar() {
   const labels = useNavLabels();
   const integrations = useConfiguredIntegrations();
   const shown = visibleGroups((feature) => info.data?.features[feature] ?? false);
-  // The integrations come from `/api/info`, not from `NAV_GROUPS`: the group exists as soon as one is visible.
+  // The integrations come from `/api/v1/info`, not from `NAV_GROUPS`: the group exists as soon as one is visible.
   const groups = NAV_GROUPS.flatMap((g): NavGroup[] => {
     const entry = shown.find((v) => v.id === g.id);
     if (entry) return [entry];

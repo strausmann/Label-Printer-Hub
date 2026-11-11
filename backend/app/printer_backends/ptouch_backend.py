@@ -18,11 +18,13 @@ from PIL import Image
 from app.models.tape import TapeSpec
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
+    PrinterError,
     PrinterOfflineError,
     PrintFailedError,
     SnmpQueryError,
     TapeEmptyError,
     TapeMismatchError,
+    refused_before_sending,
 )
 from app.printer_backends.snmp_helper import PreflightStatus, query_preflight
 from app.printer_backends.status_query import query_status_over_socket
@@ -163,6 +165,12 @@ def _ptouch_print_multi(  # pragma: no cover - real-hardware-only, tests monkeyp
                 printer.print(label, auto_cut=auto_cut, high_resolution=high_resolution)
 
 
+def _require_tape_class(tape_mm: int) -> None:
+    """The check ``_ptouch_print_multi`` would fail on, made before anything is sent (#277)."""
+    if tape_mm not in _PTOUCH_TAPE_CLASSES:
+        raise PrintFailedError(f"No ptouch tape class for {tape_mm}mm")
+
+
 class PTouchBackend:
     """PrinterBackend backed by the ptouch library."""
 
@@ -271,12 +279,16 @@ class PTouchBackend:
         # SNMP preflight — replaces the broken ESC i S query_status path for
         # PT-Series. preflight_check raises TapeEmptyError / PrinterCoverOpenError
         # / PrinterOfflineError on detected issues.
-        preflight = await self.preflight_check()
-        if preflight.loaded_tape_mm != tape_spec.width_mm:
-            raise TapeMismatchError(
-                expected_mm=tape_spec.width_mm,
-                loaded_mm=preflight.loaded_tape_mm,
-            )
+        try:
+            preflight = await self.preflight_check()
+            if preflight.loaded_tape_mm != tape_spec.width_mm:
+                raise TapeMismatchError(
+                    expected_mm=tape_spec.width_mm,
+                    loaded_mm=preflight.loaded_tape_mm,
+                )
+        except PrinterError as exc:
+            refused_before_sending(exc)  # #277: the preflight refused, nothing was sent
+            raise
 
         try:
             await asyncio.to_thread(
@@ -322,12 +334,19 @@ class PTouchBackend:
         if not images:
             raise ValueError("print_images requires at least one image")
 
-        preflight = await self.preflight_check()
-        if preflight.loaded_tape_mm != tape_spec.width_mm:
-            raise TapeMismatchError(
-                expected_mm=tape_spec.width_mm,
-                loaded_mm=preflight.loaded_tape_mm,
-            )
+        try:
+            _require_tape_class(tape_spec.width_mm)
+            preflight = await self.preflight_check()
+            if preflight.loaded_tape_mm != tape_spec.width_mm:
+                raise TapeMismatchError(
+                    expected_mm=tape_spec.width_mm,
+                    loaded_mm=preflight.loaded_tape_mm,
+                )
+        except PrinterError as exc:
+            # #277: refused before sending (no tape class, or the preflight said no): nothing
+            # was sent, the labels did not print.
+            refused_before_sending(exc)
+            raise
 
         try:
             await asyncio.to_thread(

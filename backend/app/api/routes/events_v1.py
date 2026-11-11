@@ -51,6 +51,7 @@ from app.sheets.events import SHEETS_CHANNEL
 
 if TYPE_CHECKING:
     from app.services.print_queue import PrintQueue
+    from app.services.printer_runtime import PrinterRuntime
 
 _log = logging.getLogger(__name__)
 
@@ -190,6 +191,7 @@ async def _event_stream(
     allowed: list[str],
 ) -> AsyncGenerator[str, None]:
     queue: PrintQueue | None = getattr(request.app.state, "print_queue", None)
+    runtime: PrinterRuntime | None = getattr(request.app.state, "printer_runtime", None)
     sse_connections_total.labels(printer_id=only_printer or "all").inc()
     sse_active_subscribers.inc()
     _log.info("SSE v1 connect: subscriber=%s printers=%d", subscriber_id, len(printer_ids))
@@ -204,7 +206,9 @@ async def _event_stream(
         snapshot: list[dict[str, Any]] = []
         async with db_engine.async_session() as db:
             for pid in printer_ids:
-                snapshot.extend(await build_snapshot(db, uuid.UUID(pid), queue=queue))
+                snapshot.extend(
+                    await build_snapshot(db, uuid.UUID(pid), queue=queue, runtime=runtime)
+                )
         for item in snapshot:
             yield _snapshot_frame(item)
 
@@ -263,7 +267,7 @@ async def _event_stream(
                 if event.event_type == PRINTERS_CHANGED:
                     if not _hub_event_visible(event, only_printer, allowed):
                         continue
-                    async for frame in _follow_printer_change(subs, event, allowed, queue):
+                    async for frame in _follow_printer_change(subs, event, allowed, queue, runtime):
                         yield frame
                 yield _event_frame(event)
     finally:
@@ -273,7 +277,11 @@ async def _event_stream(
 
 
 async def _follow_printer_change(
-    subs: _Subscriptions, event: BusEvent, allowed: list[str], queue: PrintQueue | None = None
+    subs: _Subscriptions,
+    event: BusEvent,
+    allowed: list[str],
+    queue: PrintQueue | None = None,
+    runtime: PrinterRuntime | None = None,
 ) -> AsyncGenerator[str, None]:
     """Make the printer's subscriptions match its persisted ``enabled`` state.
 
@@ -296,7 +304,7 @@ async def _follow_printer_change(
         if newly_subscribed:
             # Subscribe before the snapshot, as at connect, so nothing in between is lost.
             subs.add(printer_channels(pid))
-            items = await build_snapshot(db, printer_uuid, queue=queue)
+            items = await build_snapshot(db, printer_uuid, queue=queue, runtime=runtime)
     if not enabled:
         subs.drop(printer_channels(pid))
     for item in items:
