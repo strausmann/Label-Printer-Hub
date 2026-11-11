@@ -248,6 +248,10 @@ Why the change:
 
 If you run a modified version for others, set `HUB_REPO_URL` to where its source is published — the About page links there. Unmodified releases link to the exact tag of the running version.
 
+## Supply chain: SBOM and provenance
+
+The container images carry a software bill of materials and a build provenance attestation in the registry, and the About page lists the licence of every third-party package the image ships. How to read them without pulling the image, what the web bundle's CycloneDX document (`frontend.cdx.json`) covers and the policy behind the lists: [docs/supply-chain.md](docs/supply-chain.md).
+
 ## Acknowledgements
 
 - [`pklaus/brother_ql`](https://github.com/pklaus/brother_ql) — QL-Series Python library

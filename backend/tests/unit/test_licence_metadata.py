@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SPDX = "AGPL-3.0-or-later"
 # The verbatim https://www.gnu.org/licenses/agpl-3.0.txt, 661 lines.
 AGPL_TEXT_SHA256 = "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
+SUPPLY_CHAIN_DOC = "docs/supply-chain.md"
 
 
 def _read(relative: str) -> str:
@@ -82,3 +83,23 @@ def test_notices_name_copyleft_dependencies() -> None:
     assert packages, "no runtime packages found in the Dockerfile"
     for package in packages:
         assert f"`{package}`" in notices, package
+
+
+def test_supply_chain_doc() -> None:
+    doc = _read(SUPPLY_CHAIN_DOC)
+    for needle in (
+        "imagetools inspect",
+        "{{ json .SBOM.SPDX }}",
+        "{{ json .Provenance }}",
+        "--select-catalogers +sbom-cataloger",
+        "frontend.cdx.json",
+        ".cdx.json",
+        "licence-policy.yml",
+        "/usr/share/doc",
+    ):
+        assert needle in doc, needle
+    # The README only points here; it does not repeat the text.
+    readme = _read("README.md")
+    assert f"]({SUPPLY_CHAIN_DOC})" in readme
+    assert "## Supply chain: SBOM and provenance" in readme
+    assert readme.index("## License") < readme.index("## Supply chain: SBOM and provenance")
