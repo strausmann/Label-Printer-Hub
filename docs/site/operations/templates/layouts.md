@@ -1,7 +1,7 @@
 # Label Template Layouts
 
 Diese Seite zeigt die aktuellen Phase-3.5/4-Templates als Vektor-SVG. Sie ist die
-Diskussions-Grundlage für [Phase 7e #81](https://github.com/strausmann/label-printer-hub/issues/81)
+Diskussions-Grundlage für [Phase 7e #81](https://github.com/strausmann/labelyard/issues/81)
 (Template Layout System v2).
 
 Erzeugt durch `make docs-svg-samples`.

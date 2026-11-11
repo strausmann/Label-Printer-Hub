@@ -1,6 +1,6 @@
 # Third-party notices
 
-Label Printer Hub is licensed under AGPL-3.0-or-later (see [LICENSE](LICENSE)). This file lists the runtime
+Labelyard is licensed under AGPL-3.0-or-later (see [LICENSE](LICENSE)). This file lists the runtime
 dependencies added by the single-container web UI release and the licence each one carries.
 The image ships it as `/opt/app/THIRD_PARTY_NOTICES.md`; the licence texts that must travel
 with the web app's fonts and barcode reader are in the web app's `licenses/` folder

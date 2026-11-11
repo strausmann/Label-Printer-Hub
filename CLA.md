@@ -1,6 +1,6 @@
 # Contributor License Agreement (CLA)
 
-Thank you for your interest in contributing to **Label-Printer-Hub** ("the
+Thank you for your interest in contributing to **Labelyard** ("the
 Project"). In order to clarify the intellectual property license granted with
 Contributions from any person or entity, **Björn Strausmann** (the
 "Maintainer") must have a Contributor License Agreement ("CLA") on file that

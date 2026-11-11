@@ -13,7 +13,7 @@ This project is in early development. Only the latest released version receives 
 
 **Please do not open public GitHub Issues for security vulnerabilities.**
 
-Instead, report them privately via GitHub's [Security Advisory feature](https://github.com/strausmann/label-printer-hub/security/advisories/new) or by email to **strausmannservices@googlemail.com**.
+Instead, report them privately via GitHub's [Security Advisory feature](https://github.com/strausmann/labelyard/security/advisories/new) or by email to **strausmannservices@googlemail.com**.
 
 Include:
 - Description of the vulnerability

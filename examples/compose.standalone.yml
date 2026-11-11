@@ -1,16 +1,16 @@
 # ============================================================================
-# Label Printer Hub — standalone (no reverse proxy)
+# Labelyard — standalone (no reverse proxy)
 # One container: the backend serves the API and the web UI (ADR 0015).
 # Printers are added in the UI (Settings > Printers); no printer variables.
-# Use only on a trusted LAN. First admin access: set PRINTER_HUB_BOOTSTRAP_ADMIN_KEY
+# Use only on a trusted LAN. First admin access: set LABELYARD_BOOTSTRAP_ADMIN_KEY
 # (32+ characters) for the first sign-in, or create a key inside the container:
-#   docker compose exec backend printer-hub admin create-key --scope admin --name first-admin
+#   docker compose exec labelyard labelyard admin create-key --scope admin --name first-admin
 # ============================================================================
 
 services:
-  backend:
-    image: ghcr.io/strausmann/label-printer-hub-backend:${HUB_VERSION:-latest}
-    container_name: label-printer-hub-backend
+  labelyard:
+    image: ghcr.io/strausmann/labelyard:${HUB_VERSION:-1.6.0}
+    container_name: labelyard
     user: "1000:1000"
     ports:
       - "${HUB_PORT:-8000}:${BACKEND_PORT:-8000}"
@@ -18,11 +18,11 @@ services:
       - PORT=${BACKEND_PORT:-8000}
       # Directly exposed: trust forwarded headers from nobody unless you put a proxy in front.
       - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
-      - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
-      - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. http://printerhub.example.invalid:8000}"
-      - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
-      - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY:-}
-      - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
+      - "LABELYARD_SECRET_KEY=${LABELYARD_SECRET_KEY:?set LABELYARD_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      - "LABELYARD_PUBLIC_URL=${LABELYARD_PUBLIC_URL:?set LABELYARD_PUBLIC_URL, e.g. http://labelyard.example.invalid:8000}"
+      - LABELYARD_DATABASE_URL=${LABELYARD_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
+      - LABELYARD_WEBHOOK_API_KEY=${LABELYARD_WEBHOOK_API_KEY:-}
+      - LABELYARD_LOG_LEVEL=${LABELYARD_LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data
     restart: unless-stopped

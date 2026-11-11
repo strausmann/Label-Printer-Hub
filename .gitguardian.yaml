@@ -1,6 +1,6 @@
 version: 2
 detectors:
-  - name: "Label-Hub PAT"
+  - name: "Labelyard PAT"
     pattern: 'lh_pat_[A-Za-z0-9_-]{43}'
     severity: high
 paths-ignore:

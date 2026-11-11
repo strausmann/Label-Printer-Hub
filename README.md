@@ -1,19 +1,30 @@
-# Label Printer Hub
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/labelyard/lockup-dark.svg">
+    <img src="docs/brand/labelyard/lockup.svg" alt="Labelyard" width="420">
+  </picture>
+</p>
 
-[![CI](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/ci.yml/badge.svg)](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/codeql.yml/badge.svg)](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/codeql.yml)
-[![codecov](https://codecov.io/github/strausmann/Label-Printer-Hub/graph/badge.svg)](https://codecov.io/github/strausmann/Label-Printer-Hub)
-[![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/Label-Printer-Hub)](https://cla-assistant.io/strausmann/Label-Printer-Hub)
+# Labelyard
+
+**The self-hosted Label Printer Hub for all your labels.** Labelyard was formerly called *Label Printer Hub*. The new name changes no data and no API path; see the [migration guide](docs/migration/labelyard.md).
+
+Website: <https://labelyard.app>
+
+[![CI](https://github.com/strausmann/labelyard/actions/workflows/ci.yml/badge.svg)](https://github.com/strausmann/labelyard/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/strausmann/labelyard/actions/workflows/codeql.yml/badge.svg)](https://github.com/strausmann/labelyard/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/github/strausmann/labelyard/graph/badge.svg)](https://codecov.io/github/strausmann/labelyard)
+[![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/labelyard)](https://cla-assistant.io/strausmann/labelyard)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
-[![GitHub Issues](https://img.shields.io/github/issues/strausmann/label-printer-hub)](https://github.com/strausmann/label-printer-hub/issues)
+[![GitHub Issues](https://img.shields.io/github/issues/strausmann/labelyard)](https://github.com/strausmann/labelyard/issues)
 
 > Self-hosted multi-printer hub for Brother PT-Series and QL-Series label printers. Pull-mode (user scans barcode) and push-mode (Spoolman/Grocy webhooks). Integrates with Snipe-IT, Grocy, Spoolman. Plugin-based architecture for additional printer models. PWA-ready for smartphone use.
 
 ## Status
 
-**Early development.** See [open issues](https://github.com/strausmann/label-printer-hub/issues) for progress and the [master tracking issue #22](https://github.com/strausmann/label-printer-hub/issues/22) for the phase roadmap.
+**Early development.** See [open issues](https://github.com/strausmann/labelyard/issues) for progress and the [master tracking issue #22](https://github.com/strausmann/labelyard/issues/22) for the phase roadmap.
 
 This project is being designed against the [Brother PT-E550W/P750W/P710BT Raster Command Reference v1.02](https://download.brother.com/welcome/docp100064/cv_pte550wp750wp710bt_eng_raster_102.pdf) and [QL-800/810W/820NWB Raster Command Reference](https://download.brother.com/welcome/docp100278/cv_ql800_eng_raster_101.pdf). Hardware tested: Brother PT-P750W (verified). Brother QL-820NWBc (in progress).
 
@@ -38,7 +49,7 @@ Not built yet: job priorities in the queue.
 
 **One container:** a single backend process serves the REST API, the live event stream and the web UI ([ADR 0015](docs/decisions/0015-single-process-deployment.md)). Printers are added in the UI (Settings > Printers), not through environment variables.
 
-- **Backend** (`label-printer-hub-backend`, the only image): Python 3.12+, FastAPI, SQLModel (SQLite), asyncio
+- **Backend** (`labelyard`, the only image): Python 3.12+, FastAPI, SQLModel (SQLite), asyncio
 - **Printer protocols**: `nbuchwitz/ptouch` (PT-Series), `pklaus/brother_ql` (QL-Series), `pysnmp` for status polling; an own IPP client over `httpx` for page printers ([ADR 0020](docs/decisions/0020-backend-kinds-ipp-page-printers.md)), with `reportlab` drawing the PDF pages
 - **Web UI** (built into the backend image from `frontend/`): React + TypeScript, Vite, PWA (manifest + service worker + camera scanning) — [ADR 0016](docs/decisions/0016-react-typescript-web-ui.md)
 - **Container**: Docker (multi-stage, one image), GHCR + Docker Hub publishing, multi-arch (amd64 + arm64)
@@ -64,11 +75,11 @@ Both registries receive identical multi-arch images (`linux/amd64`, `linux/arm64
 See [`examples/README.md`](examples/README.md) for sample compose files (standalone / Traefik / Pangolin / Caddy). Upgrading from the two-container release: [migration notes](docs/migration/v-next-single-container.md).
 
 ```bash
-git clone https://github.com/strausmann/Label-Printer-Hub.git
-cd Label-Printer-Hub/examples
+git clone https://github.com/strausmann/labelyard.git
+cd labelyard/examples
 cp .env.example .env
-# Required: PRINTER_HUB_SECRET_KEY (openssl rand -base64 32 | tr '+/' '-_')
-#           PRINTER_HUB_PUBLIC_URL (the address you open the hub at; a local
+# Required: LABELYARD_SECRET_KEY (openssl rand -base64 32 | tr '+/' '-_')
+#           LABELYARD_PUBLIC_URL (the address you open the hub at; a local
 #           address such as http://localhost:8000 is fine)
 $EDITOR .env
 docker compose -f compose.standalone.yml up -d
@@ -76,15 +87,15 @@ docker compose -f compose.standalone.yml up -d
 curl http://localhost:8000/healthz
 curl http://localhost:8000/api/v1/info
 # Open http://localhost:8000/ and sign in. A fresh install has no admin key:
-# either set PRINTER_HUB_BOOTSTRAP_ADMIN_KEY (one-time key, 32+ characters) or run
-docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
+# either set LABELYARD_BOOTSTRAP_ADMIN_KEY (one-time key, 32+ characters) or run
+docker exec labelyard labelyard admin create-key --scope admin --name first-admin
 # then add your printers under Settings > Printers.
 ```
 
 To build and run the hub from source without any printer hardware, use the smoke-test compose file (throw-away keys, one container, built from the local tree):
 
 ```bash
-export PRINTER_HUB_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
+export LABELYARD_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
 docker compose -f dev/docker-compose.smoke.yml up --build
 # UI and API on http://localhost:8000
 curl http://localhost:8000/healthz
@@ -184,23 +195,23 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 
 | Variable | Default | Purpose |
 |---|---|---|
-| **`PRINTER_HUB_SECRET_KEY`** | _required_ | Master key for secrets stored in the database (base64url of 32 random bytes; `openssl rand -base64 32 \| tr '+/' '-_'`) |
-| **`PRINTER_HUB_PUBLIC_URL`** | _required_ | Any `http(s)` URL, local ones included (`http://localhost:8000`, `http://printer-hub:8000`, a LAN IP). Set it to the address people open the UI at if you use the browser UI; decides cookie security (`Secure` and `__Host-` prefix when `https`) and the allowed `Origin` |
-| `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` | _empty_ | One-time key (32+ characters) that signs you in while no admin key exists; empty disables it |
-| `PRINTER_HUB_DATABASE_URL` | `sqlite+aiosqlite:////data/printer-hub.db` | Database |
-| `PRINTER_HUB_SSO_TRUST_TOKEN` | _empty_ | Shared secret the proxy sends as `X-Pangolin-Token`; without it `Remote-User` is ignored |
-| `PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER` | `false` | Opt in to the legacy `X-Pangolin-User` header |
-| `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS` | `false` | Opt in to the `Authorization: Basic` bypass credential |
-| `PRINTER_HUB_WEBHOOK_API_KEY` | _empty_ | Bearer for inbound integration webhooks (≥ 32 chars; generate with `openssl rand -hex 32`) |
-| `PRINTER_HUB_SNIPEIT_URL` | _empty_ | Snipe-IT base URL |
-| `PRINTER_HUB_SNIPEIT_API_KEY` | _empty_ | Snipe-IT bearer token |
-| `PRINTER_HUB_GROCY_URL` | _empty_ | Grocy base URL |
-| `PRINTER_HUB_GROCY_API_KEY` | _empty_ | Grocy API key |
-| `PRINTER_HUB_SPOOLMAN_URL` | _empty_ | Spoolman base URL (no auth) |
-| `PRINTER_HUB_SERVER_PORT` | `8090` | Internal port (overridden to `8000` in the container — see Dockerfile) |
-| `PRINTER_HUB_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+| **`LABELYARD_SECRET_KEY`** | _required_ | Master key for secrets stored in the database (base64url of 32 random bytes; `openssl rand -base64 32 \| tr '+/' '-_'`) |
+| **`LABELYARD_PUBLIC_URL`** | _required_ | Any `http(s)` URL, local ones included (`http://localhost:8000`, `http://labelyard:8000`, a LAN IP). Set it to the address people open the UI at if you use the browser UI; decides cookie security (`Secure` and `__Host-` prefix when `https`) and the allowed `Origin` |
+| `LABELYARD_BOOTSTRAP_ADMIN_KEY` | _empty_ | One-time key (32+ characters) that signs you in while no admin key exists; empty disables it |
+| `LABELYARD_DATABASE_URL` | `sqlite+aiosqlite:////data/printer-hub.db` | Database |
+| `LABELYARD_SSO_TRUST_TOKEN` | _empty_ | Shared secret the proxy sends as `X-Pangolin-Token`; without it `Remote-User` is ignored |
+| `LABELYARD_TRUST_LEGACY_PANGOLIN_USER` | `false` | Opt in to the legacy `X-Pangolin-User` header |
+| `LABELYARD_TRUST_PANGOLIN_BASIC_BYPASS` | `false` | Opt in to the `Authorization: Basic` bypass credential |
+| `LABELYARD_WEBHOOK_API_KEY` | _empty_ | Bearer for inbound integration webhooks (≥ 32 chars; generate with `openssl rand -hex 32`) |
+| `LABELYARD_SNIPEIT_URL` | _empty_ | Snipe-IT base URL |
+| `LABELYARD_SNIPEIT_API_KEY` | _empty_ | Snipe-IT bearer token |
+| `LABELYARD_GROCY_URL` | _empty_ | Grocy base URL |
+| `LABELYARD_GROCY_API_KEY` | _empty_ | Grocy API key |
+| `LABELYARD_SPOOLMAN_URL` | _empty_ | Spoolman base URL (no auth) |
+| `LABELYARD_SERVER_PORT` | `8090` | Internal port (overridden to `8000` in the container — see Dockerfile) |
+| `LABELYARD_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 
-All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`. A variable set in the environment wins over the stored value and locks the field in the UI (D4). Printers have no variables: they are managed in Settings > Printers.
+All variables share the `LABELYARD_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`. The prefix of earlier releases is still read as a deprecated fallback, and a `LABELYARD_` variable always wins; see [Environment variables](docs/migration/labelyard.md#environment-variables) in the migration guide. A variable set in the environment wins over the stored value and locks the field in the UI (D4). Printers have no variables: they are managed in Settings > Printers.
 
 ## Documentation
 
@@ -214,12 +225,12 @@ All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` mode
 
 **On the wiki (tutorials and platform recipes — community-friendly):**
 
-- [Getting started](https://github.com/strausmann/label-printer-hub/wiki/Getting-Started)
-- [Snipe-IT integration](https://github.com/strausmann/label-printer-hub/wiki/Snipe-IT-Integration)
-- [Grocy integration](https://github.com/strausmann/label-printer-hub/wiki/Grocy-Integration)
-- [Spoolman integration](https://github.com/strausmann/label-printer-hub/wiki/Spoolman-Integration)
-- [Install as PWA](https://github.com/strausmann/label-printer-hub/wiki/Install-as-PWA) (TBD)
-- [Troubleshooting](https://github.com/strausmann/label-printer-hub/wiki/Troubleshooting) (TBD)
+- [Getting started](https://github.com/strausmann/labelyard/wiki/Getting-Started)
+- [Snipe-IT integration](https://github.com/strausmann/labelyard/wiki/Snipe-IT-Integration)
+- [Grocy integration](https://github.com/strausmann/labelyard/wiki/Grocy-Integration)
+- [Spoolman integration](https://github.com/strausmann/labelyard/wiki/Spoolman-Integration)
+- [Install as PWA](https://github.com/strausmann/labelyard/wiki/Install-as-PWA) (TBD)
+- [Troubleshooting](https://github.com/strausmann/labelyard/wiki/Troubleshooting) (TBD)
 
 **Live API reference** (when running): `/openapi.json` and `/docs` (interactive reference, Scalar, served by the hub itself) — see [ADR 0011](docs/decisions/0011-openapi-as-api-contract.md).
 
@@ -237,7 +248,7 @@ Contributions are welcome — especially **printer model plugins**. See [CONTRIB
 
 ## License
 
-Label Printer Hub is licensed under the **GNU Affero General Public License, version 3 or later** (`AGPL-3.0-or-later`) — see [LICENSE](LICENSE).
+Labelyard is licensed under the **GNU Affero General Public License, version 3 or later** (`AGPL-3.0-or-later`) — see [LICENSE](LICENSE).
 
 Releases up to and including 1.0.3 are MIT; from 1.1.0 on AGPL-3.0-or-later. Anyone who received an earlier release keeps the MIT terms for that release.
 

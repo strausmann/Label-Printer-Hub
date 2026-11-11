@@ -1,6 +1,6 @@
 # API Key Management
 
-Label Printer Hub Phase 7c introduces app-side API key authentication.
+Labelyard Phase 7c introduces app-side API key authentication.
 All external callers (Plex, SnipeIT, Hangar, curl scripts) should use
 a dedicated `X-Label-Hub-Key` header instead of the Pangolin `claude-automation`
 Basic-Auth bypass.
@@ -22,7 +22,7 @@ Basic-Auth bypass.
 3. Set name, scopes, and rate limit
 4. Copy the plaintext key shown after creation — **it will not be shown again**
 
-The key starts with `lh_` (Label Hub prefix, ~43 URL-safe chars).
+The key starts with `lh_` (prefix kept from the former project name, ~43 URL-safe chars).
 
 ## Using a Key
 
@@ -59,12 +59,12 @@ An empty list means all printers are allowed.
 ## Transition from Pangolin Bypass
 
 The Pangolin `Authorization: Basic` bypass is **off by default**. It only
-authenticates when `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS=true` is set, and its
-state-changing requests need an `Origin` equal to `PRINTER_HUB_PUBLIC_URL`. While it
+authenticates when `LABELYARD_TRUST_PANGOLIN_BASIC_BYPASS=true` is set, and its
+state-changing requests need an `Origin` equal to `LABELYARD_PUBLIC_URL`. While it
 is enabled, limit it to `read` scope with:
 
 ```env
-PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE=true
+LABELYARD_PANGOLIN_BYPASS_SCOPE_DOWNGRADE=true
 ```
 
 Prefer dedicated API keys for every caller and leave the bypass disabled.
@@ -74,16 +74,16 @@ Prefer dedicated API keys for every caller and leave the bypass disabled.
 A fresh install has no API key. The migrations create none and print none.
 
 1. Set a one-time key of at least 32 characters, for example
-   `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY=$(openssl rand -hex 32)`, and start the hub.
+   `LABELYARD_BOOTSTRAP_ADMIN_KEY=$(openssl rand -hex 32)`, and start the hub.
 2. Sign in to the web UI with that key. The bootstrap session can only create
    the first real admin key, and the key is shown once.
-3. Sign in with the new admin key and remove `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY`.
+3. Sign in with the new admin key and remove `LABELYARD_BOOTSTRAP_ADMIN_KEY`.
    Once any enabled admin key exists, the bootstrap key is rejected.
 
 Without the web UI, create the first key inside the container instead:
 
 ```bash
-docker compose exec backend printer-hub admin create-key --scope admin --name first-admin
+docker compose exec labelyard labelyard admin create-key --scope admin --name first-admin
 ```
 
 ## Recovery
@@ -92,7 +92,7 @@ If every admin key is lost, create a new one with the same command inside the
 container. It prints the plaintext key once on stdout:
 
 ```bash
-docker compose exec backend printer-hub admin create-key --scope admin --name recovery
+docker compose exec labelyard labelyard admin create-key --scope admin --name recovery
 ```
 
 Whoever can run commands in the container already controls the hub, so this adds

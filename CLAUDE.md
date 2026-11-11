@@ -43,7 +43,7 @@ If you're about to make a non-trivial change without having read those first, st
 |---|---|
 | Architectural decision (with rationale) | New ADR under [`docs/decisions/`](docs/decisions/) |
 | Engineering doc (reference) | [`docs/`](docs/) |
-| User-facing tutorial / FAQ / integration recipe | [Wiki](https://github.com/strausmann/label-printer-hub/wiki) |
+| User-facing tutorial / FAQ / integration recipe | [Wiki](https://github.com/strausmann/labelyard/wiki) |
 | Sample compose file | [`examples/`](examples/) |
 | Brother spec extracts / research | [`docs/research/`](docs/research/) |
 | Ongoing bugfix or feature | Issue + branch + PR |

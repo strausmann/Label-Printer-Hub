@@ -72,14 +72,14 @@ openfoodfacts = "label_hub_openfoodfacts.plugin:OpenFoodFactsPlugin"
 ```
 
 After `pip install label-hub-openfoodfacts` the plugin is registered
-the same way bundled plugins are — no Label-Hub repo change needed.
+the same way bundled plugins are — no Labelyard repo change needed.
 
 Third-party plugins cannot add fields to the core `app.config.Settings`
 class — it uses `extra="ignore"`, and pip-installed packages cannot
 modify the host application's source. External plugins should manage
 their own configuration: read environment variables directly (with
 `os.environ` or a local `pydantic_settings.BaseSettings` subclass),
-or accept a dedicated env-var prefix (e.g. `LABEL_HUB_OPENFOODFACTS_*`)
+or accept a dedicated env-var prefix (e.g. `LABELYARD_OPENFOODFACTS_*`)
 that does not collide with the core `LABELYARD_*` namespace.
 
 Bundled plugins read the runtime settings store; third-party plugins

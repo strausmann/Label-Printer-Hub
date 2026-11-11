@@ -1,8 +1,8 @@
 """The shipped ``examples/compose*.yml`` files must start a hub that boots.
 
-Since Task 1 the backend refuses to start without ``PRINTER_HUB_SECRET_KEY`` and
-``PRINTER_HUB_PUBLIC_URL``; since Task 4 proxy headers only count with
-``PRINTER_HUB_SSO_TRUST_TOKEN`` (D10). A compose example missing one of them
+Since Task 1 the backend refuses to start without ``LABELYARD_SECRET_KEY`` and
+``LABELYARD_PUBLIC_URL``; since Task 4 proxy headers only count with
+``LABELYARD_SSO_TRUST_TOKEN`` (D10). A compose example missing one of them
 is a crash-looping container for whoever copies it. Task 16 extends this file.
 
 This reads YAML text and checks declarations. It cannot prove that compose
@@ -40,7 +40,7 @@ def _env_names(service: dict) -> set[str]:
 
 def _backend_env(path: Path) -> set[str]:
     data = yaml.safe_load(path.read_text())
-    return _env_names(data["services"]["backend"])
+    return _env_names(data["services"]["labelyard"])
 
 
 def test_examples_are_found() -> None:
@@ -55,7 +55,7 @@ def test_examples_are_found() -> None:
 
 
 @pytest.mark.parametrize("path", COMPOSE_FILES, ids=lambda p: p.name)
-@pytest.mark.parametrize("name", ["PRINTER_HUB_SECRET_KEY", "PRINTER_HUB_PUBLIC_URL"])
+@pytest.mark.parametrize("name", ["LABELYARD_SECRET_KEY", "LABELYARD_PUBLIC_URL"])
 def test_backend_sets_required_settings(path: Path, name: str) -> None:
     assert name in _backend_env(path), f"{path.name}: backend does not set {name}"
 
@@ -63,28 +63,28 @@ def test_backend_sets_required_settings(path: Path, name: str) -> None:
 @pytest.mark.parametrize("path", COMPOSE_FILES, ids=lambda p: p.name)
 def test_required_settings_fail_at_compose_time_when_unset(path: Path) -> None:
     text = path.read_text()
-    for name in ("PRINTER_HUB_SECRET_KEY", "PRINTER_HUB_PUBLIC_URL"):
+    for name in ("LABELYARD_SECRET_KEY", "LABELYARD_PUBLIC_URL"):
         assert "${" + name + ":?" in text, f"{path.name}: {name} must use the ':?' form"
 
 
 def test_pangolin_example_passes_the_sso_trust_token() -> None:
     path = EXAMPLES / "compose.pangolin.yml"
-    assert "PRINTER_HUB_SSO_TRUST_TOKEN" in _backend_env(path)
+    assert "LABELYARD_SSO_TRUST_TOKEN" in _backend_env(path)
     text = path.read_text()
-    assert "${PRINTER_HUB_SSO_TRUST_TOKEN:?" in text
+    assert "${LABELYARD_SSO_TRUST_TOKEN:?" in text
     assert "X-Pangolin-Token" in text
     # ``headers`` is a deprecated alias of ``request-headers`` in Pangolin's blueprint schema.
     assert ".request-headers[0].name=X-Pangolin-Token" in text
-    assert ".request-headers[0].value=${PRINTER_HUB_SSO_TRUST_TOKEN}" in text
+    assert ".request-headers[0].value=${LABELYARD_SSO_TRUST_TOKEN}" in text
     assert ".headers[" not in text.replace(".request-headers[", "")
-    assert "PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER" in text
-    assert "PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS" in text
+    assert "LABELYARD_TRUST_LEGACY_PANGOLIN_USER" in text
+    assert "LABELYARD_TRUST_PANGOLIN_BASIC_BYPASS" in text
 
 
 def test_env_example_lists_required_settings() -> None:
     lines = (EXAMPLES / ".env.example").read_text().splitlines()
     names = {line.split("=", 1)[0] for line in lines if "=" in line and not line.startswith("#")}
-    assert {"PRINTER_HUB_SECRET_KEY", "PRINTER_HUB_PUBLIC_URL"} <= names
+    assert {"LABELYARD_SECRET_KEY", "LABELYARD_PUBLIC_URL"} <= names
 
 
 @pytest.mark.parametrize("path", COMPOSE_FILES, ids=lambda p: p.name)
@@ -129,7 +129,7 @@ def test_examples_have_no_frontend_service(path: Path) -> None:
     assert "frontend" not in services, f"{path.name}: the hub is one container (D1)"
     for name, service in services.items():
         image = str(service.get("image", ""))
-        assert "label-printer-hub-frontend" not in image, (
+        assert "-frontend" not in image, (
             f"{path.name}: {name} uses the frontend image"
         )
         build = service.get("build")
@@ -153,7 +153,7 @@ def test_example_variables_carry_the_settings_prefix(path: Path) -> None:
     # Unprefixed names (DATABASE_URL, WEBHOOK_API_KEY, ...) are ignored by the backend.
     allowed = {"PORT", "FORWARDED_ALLOW_IPS"}
     for name in _backend_env(path):
-        assert name in allowed or name.startswith("PRINTER_HUB_"), (
+        assert name in allowed or name.startswith("LABELYARD_"), (
             f"{path.name}: {name} is not read"
         )
 
@@ -173,7 +173,7 @@ def test_proxy_examples_target_the_backend_on_8000(name: str) -> None:
 
 
 def test_standalone_publishes_the_backend_port() -> None:
-    backend = _load(EXAMPLES / "compose.standalone.yml")["services"]["backend"]
+    backend = _load(EXAMPLES / "compose.standalone.yml")["services"]["labelyard"]
     assert any(
         str(p).endswith(":8000") or ":" + "${BACKEND_PORT:-8000}" in str(p)
         for p in backend["ports"]
@@ -184,34 +184,41 @@ def test_smoke_compose_boots_one_container_with_required_settings() -> None:
     data = _load(SMOKE)
     assert list(data["services"]) == ["backend"]
     env = _env_names(data["services"]["backend"])
-    assert {"PRINTER_HUB_SECRET_KEY", "PRINTER_HUB_PUBLIC_URL"} <= env
+    assert {"LABELYARD_SECRET_KEY", "LABELYARD_PUBLIC_URL"} <= env
 
 
 def test_examples_readme_describes_one_container() -> None:
     text = (EXAMPLES / "README.md").read_text()
-    assert "label-printer-hub-frontend" not in text
+    assert "-frontend" not in text
     assert "Two-container" not in text and "two containers" not in text.lower()
 
 
 def test_readme_has_no_removed_printer_variables() -> None:
     text = (REPO / "README.md").read_text()
     for name in REMOVED_VARIABLES:
-        assert not re.search(rf"PRINTER_HUB_{name}\b", text), f"README.md: removed variable {name}"
-    assert "PRINTER_HUB_SECRET_KEY" in text and "PRINTER_HUB_PUBLIC_URL" in text
+        assert not re.search(rf"LABELYARD_{name}\b", text), f"README.md: removed variable {name}"
+    assert "LABELYARD_SECRET_KEY" in text and "LABELYARD_PUBLIC_URL" in text
+
+
+# The two-container migration note is dated history and keeps the names of its time. The
+# fragments are split so this file names no old identifier (scripts/brand_guard.py).
+_OLD_PREFIX = "PRINTER_HU" + "B_"
+_OLD_COMMAND = "printer-" + "hub admin create-key"
+_OLD_IMAGE = "label-printer-" + "hub-backend"
 
 
 def test_migration_note_covers_the_breaking_changes() -> None:
     text = (REPO / "docs" / "migration" / "v-next-single-container.md").read_text()
     for needle in (
-        "PRINTER_HUB_SECRET_KEY",
-        "PRINTER_HUB_PUBLIC_URL",
-        "PRINTER_HUB_SSO_TRUST_TOKEN",
-        "PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER",
-        "PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS",
-        "PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE",
-        "printer-hub admin create-key",
+        _OLD_PREFIX + "SECRET_KEY",
+        _OLD_PREFIX + "PUBLIC_URL",
+        _OLD_PREFIX + "SSO_TRUST_TOKEN",
+        _OLD_PREFIX + "TRUST_LEGACY_PANGOLIN_USER",
+        _OLD_PREFIX + "TRUST_PANGOLIN_BASIC_BYPASS",
+        _OLD_PREFIX + "PANGOLIN_BYPASS_SCOPE_DOWNGRADE",
+        _OLD_COMMAND,
         "/api/v1/events",
-        "label-printer-hub-backend",
+        _OLD_IMAGE,
         "PRINTERS_CONFIG",
     ):
         assert needle in text, f"migration note does not mention {needle}"
@@ -260,7 +267,7 @@ def test_create_key_instructions_carry_the_required_flags_and_no_log_claim() -> 
     files.append(REPO / "docs" / "migration" / "v-next-single-container.md")
     for path in files:
         for line in path.read_text().splitlines():
-            if "printer-hub admin create-key" in line and "docker" in line:
+            if "admin create-key" in line and "docker" in line:
                 assert "--scope" in line and "--name" in line, f"{path.name}: {line.strip()}"
             assert "printed in the container log" not in line, f"{path.name}: false log claim"
 
@@ -299,7 +306,7 @@ PROXY_EXAMPLES = ["compose.traefik.yml", "compose.caddy.yml", "compose.pangolin.
 
 
 def _forwarded_value(path: Path) -> str:
-    env = _load(path)["services"]["backend"]["environment"]
+    env = _load(path)["services"]["labelyard"]["environment"]
     values = [e.split("=", 1)[1] for e in env if str(e).startswith("FORWARDED_ALLOW_IPS=")]
     assert len(values) == 1, f"{path.name}: FORWARDED_ALLOW_IPS must be set exactly once"
     return values[0]
@@ -325,10 +332,10 @@ def test_proxy_examples_compose_config_needs_a_single_proxy_ip(name: str) -> Non
     if shutil.which("docker") is None:
         pytest.skip("docker not installed")
     base = {
-        "PRINTER_HUB_SECRET_KEY": "x" * 43,
-        "PRINTER_HUB_PUBLIC_URL": "https://printerhub.example.invalid",
-        "PRINTERHUB_HOST": "printerhub.example.invalid",
-        "PRINTER_HUB_SSO_TRUST_TOKEN": "t" * 64,
+        "LABELYARD_SECRET_KEY": "x" * 43,
+        "LABELYARD_PUBLIC_URL": "https://labelyard.example.invalid",
+        "LABELYARD_HOST": "labelyard.example.invalid",
+        "LABELYARD_SSO_TRUST_TOKEN": "t" * 64,
         "PATH": __import__("os").environ["PATH"],
     }
     cmd = ["docker", "compose", "-f", str(EXAMPLES / name), "config"]

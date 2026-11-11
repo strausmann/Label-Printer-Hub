@@ -2,6 +2,7 @@
 
 - **Status:** Accepted (amended by ADR-0015: a single image `label-printer-hub-backend` is published; the frontend image no longer exists)
 - **Date:** 2026-05-10
+- **Amended:** 2026-11-11 by [ADR 0025](0025-rename-to-labelyard.md): the single image is now published as `labelyard`; the tag scheme below is unchanged
 - **Deciders:** maintainer
 
 ## Context

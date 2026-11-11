@@ -19,10 +19,10 @@ work in real time.
 
 **Why does idle-timeout matter?**
 The backend closes idle SSE connections after 300 seconds (configurable via
-`PRINTER_HUB_SSE_IDLE_TIMEOUT_S`). If the reverse proxy has a shorter
+`LABELYARD_SSE_IDLE_TIMEOUT_S`). If the reverse proxy has a shorter
 read-timeout on idle connections it will close the connection first, causing
 the browser's EventSource to reconnect. Set any proxy read-timeout to at least
-`PRINTER_HUB_SSE_IDLE_TIMEOUT_S + 60` seconds to avoid spurious reconnects.
+`LABELYARD_SSE_IDLE_TIMEOUT_S + 60` seconds to avoid spurious reconnects.
 
 ---
 
@@ -36,8 +36,8 @@ a dedicated middleware:
 ```yaml
 # In Docker Compose labels or a static Traefik middleware file
 traefik.http.middlewares.sse-flush.headers.customResponseHeaders.X-Accel-Buffering=no
-traefik.http.routers.printer-hub-sse.rule=PathPrefix(`/api/v1/events`)
-traefik.http.routers.printer-hub-sse.middlewares=sse-flush@docker
+traefik.http.routers.labelyard-sse.rule=PathPrefix(`/api/v1/events`)
+traefik.http.routers.labelyard-sse.middlewares=sse-flush@docker
 ```
 
 The `customResponseHeaders` middleware overrides the header on the downstream
@@ -102,7 +102,7 @@ Pangolin + Traefik v3 stack. The header passes through the Pangolin newt client
 
 SSE works without extra Pangolin configuration while `X-Accel-Buffering: no` is
 set on the response. Set the Pangolin idle timeout above
-`PRINTER_HUB_SSE_IDLE_TIMEOUT_S`.
+`LABELYARD_SSE_IDLE_TIMEOUT_S`.
 
 ---
 
@@ -149,7 +149,7 @@ cookie of a signed-in browser is enough. The proxy settings above apply unchange
 | `: connected` | subscriptions are in place |
 | `id: 0` + snapshot events | current state per visible printer (`printer.status`, `printer.tape_changed`, active `job.state_changed`) |
 | `id: N` / `event: <type>` / `data: <json>` | live event; `N` counts per channel |
-| `: keepalive` | every `PRINTER_HUB_SSE_HEARTBEAT_S` seconds |
+| `: keepalive` | every `LABELYARD_SSE_HEARTBEAT_S` seconds |
 | `event: auth.expired` | the session or key is no longer valid (or its printer restriction changed); the stream closes |
 
 `data` is always `{"channel": str, "printer_id": str | null, "type": str, "ts": ISO-8601, "data": {...}}`.
@@ -179,6 +179,6 @@ no label content. A client reacts by reading the held runs again.
 `{"printer_id": str, "change": "created" | "updated" | "disabled" | "enabled"}`.
 
 On every heartbeat the stream re-checks its credentials in a short database session (it holds
-none for its lifetime). The cap `PRINTER_HUB_SSE_MAX_SUBSCRIBERS` applies to the number of open
+none for its lifetime). The cap `LABELYARD_SSE_MAX_SUBSCRIBERS` applies to the number of open
 event streams; one more gets `429`. Replay via `Last-Event-ID` is not implemented: after a
 reconnect the client gets a fresh snapshot.

@@ -1,4 +1,4 @@
-# Contributing to Label Printer Hub
+# Contributing to Labelyard
 
 Thanks for your interest in contributing! This document explains how to participate effectively.
 
@@ -22,8 +22,8 @@ This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By particip
 ### 1. Fork & clone
 
 ```bash
-gh repo fork strausmann/label-printer-hub --clone
-cd label-printer-hub
+gh repo fork strausmann/labelyard --clone
+cd labelyard
 ```
 
 ### 2. Set up your environment

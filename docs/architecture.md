@@ -16,9 +16,9 @@ Big-picture overview. For the **why** behind every decision, see [`decisions/`](
 ```
 
 One container (ADR [0015](decisions/0015-single-process-deployment.md), which supersedes ADR [0001](decisions/0001-two-container-architecture.md)):
-- `label-printer-hub-backend` — Python/FastAPI; talks to printers, owns the print queue, exposes the JSON API, the JSON event stream and the static web UI (with a fallback to `index.html` for client routes)
+- `labelyard` — Python/FastAPI; talks to printers, owns the print queue, exposes the JSON API, the JSON event stream and the static web UI (with a fallback to `index.html` for client routes)
 
-The web UI is built from `frontend/` at image build time (multi-stage Dockerfile, build context = repository root) and copied into the image; there is no separate frontend process or image. The deployer's reverse proxy (Traefik / Pangolin / Caddy / standalone — see [`../examples/`](../examples/)) points straight at the hub on port 8000. Printers, integrations and keys are managed in the UI and stored in the database (ADR [0017](decisions/0017-settings-in-database-env-locks-encrypted-secrets.md)); secrets are encrypted with `PRINTER_HUB_SECRET_KEY`.
+The web UI is built from `frontend/` at image build time (multi-stage Dockerfile, build context = repository root) and copied into the image; there is no separate frontend process or image. The deployer's reverse proxy (Traefik / Pangolin / Caddy / standalone — see [`../examples/`](../examples/)) points straight at the hub on port 8000. Printers, integrations and keys are managed in the UI and stored in the database (ADR [0017](decisions/0017-settings-in-database-env-locks-encrypted-secrets.md)); secrets are encrypted with `LABELYARD_SECRET_KEY`.
 
 ## Component map
 
@@ -67,7 +67,7 @@ Browsers sign in with an API key (or proxy SSO) and receive a session cookie wit
 
 ### Pull mode — user scans a barcode in the UI
 
-1. User opens `https://printerhub.example.com/` (served by the hub)
+1. User opens `https://labelyard.example.com/` (served by the hub)
 2. Selects a printer tab (e.g. `pt750w`) and an app (e.g. Snipe-IT)
 3. Scans a barcode or opens a label link (`/asset/<id>`) → the UI calls `GET /api/v1/lookup/snipeit/<id>`
 4. Backend fetches asset data from Snipe-IT, returns `LabelData`
@@ -82,7 +82,7 @@ Browsers sign in with an API key (or proxy SSO) and receive a session cookie wit
 
 Among the three integrations, only **Grocy** can post webhooks to the hub (and only when `FEATURE_FLAG_LABEL_PRINTING=true` is set in Grocy's `data/config.php`). Snipe-IT and Spoolman do not have webhook-out functionality at the time of this document, so they're pull-only via the hub UI.
 
-1. Grocy posts to `https://printerhub.example.com/api/v1/webhook/grocy`
+1. Grocy posts to `https://labelyard.example.com/api/v1/webhook/grocy`
 2. Reverse proxy routes the webhook subroute **without SSO** to the hub
 3. Backend validates `X-API-Key`, picks the default layout for `(grocy, default_tape)` (or a `layout_id` override if the payload includes one), fetches label data, renders, enqueues job
 4. Returns `202` with job ID; webhook caller doesn't wait for print completion
@@ -150,8 +150,8 @@ The hub listens on port `8000` inside its container and serves the UI and the AP
 
 For Pangolin specifically, the **Two-Resources pattern** is used:
 
-1. Main UI: SSO-protected, full domain; the resource injects the trust token header the hub requires (`PRINTER_HUB_SSO_TRUST_TOKEN`)
-2. Webhook subroute (`/api/v1/webhook/`): SSO bypass, authenticated by `PRINTER_HUB_WEBHOOK_API_KEY`
+1. Main UI: SSO-protected, full domain; the resource injects the trust token header the hub requires (`LABELYARD_SSO_TRUST_TOKEN`)
+2. Webhook subroute (`/api/v1/webhook/`): SSO bypass, authenticated by `LABELYARD_WEBHOOK_API_KEY`
 
 Upgrading from the two-container release: [`migration/v-next-single-container.md`](migration/v-next-single-container.md).
 

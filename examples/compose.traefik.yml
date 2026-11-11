@@ -1,15 +1,15 @@
 # ============================================================================
-# Label Printer Hub — Traefik
+# Labelyard — Traefik
 # One container: the backend serves the API and the web UI (ADR 0015), so
-# Traefik routes straight to backend:8000. Printers are added in the UI.
+# Traefik routes straight to labelyard:8000. Printers are added in the UI.
 # Assumes a Traefik instance with HTTPS and a "letsencrypt" certresolver
 # is already running, attached to a docker network called "traefik".
 # ============================================================================
 
 services:
-  backend:
-    image: ghcr.io/strausmann/label-printer-hub-backend:${HUB_VERSION:-latest}
-    container_name: label-printer-hub-backend
+  labelyard:
+    image: ghcr.io/strausmann/labelyard:${HUB_VERSION:-1.6.0}
+    container_name: labelyard
     user: "1000:1000"
     networks:
       - traefik
@@ -24,11 +24,11 @@ services:
       # uvicorn takes the right-most X-Forwarded-For entry that is not trusted. Traefik appends the peer address to X-Forwarded-For by default (notAppendXForwardedFor=false)
       # and drops it from untrusted sources (forwardedHeaders.trustedIPs unset), so the right-most entry is the real client.
       - "FORWARDED_ALLOW_IPS=${PROXY_IP:?set PROXY_IP to the fixed address of your reverse proxy on this network - e.g. 192.0.2.10}"
-      - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
-      - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. https://printerhub.example.invalid}"
-      - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
-      - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY:-}
-      - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
+      - "LABELYARD_SECRET_KEY=${LABELYARD_SECRET_KEY:?set LABELYARD_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      - "LABELYARD_PUBLIC_URL=${LABELYARD_PUBLIC_URL:?set LABELYARD_PUBLIC_URL, e.g. https://labelyard.example.invalid}"
+      - LABELYARD_DATABASE_URL=${LABELYARD_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
+      - LABELYARD_WEBHOOK_API_KEY=${LABELYARD_WEBHOOK_API_KEY:-}
+      - LABELYARD_LOG_LEVEL=${LABELYARD_LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -43,23 +43,23 @@ services:
       - "traefik.docker.network=traefik"
 
       # Main UI (you may add a forward-auth middleware like Authelia here)
-      - "traefik.http.routers.printerhub.rule=Host(`${PRINTERHUB_HOST}`)"
-      - "traefik.http.routers.printerhub.entrypoints=websecure"
-      - "traefik.http.routers.printerhub.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.printerhub.service=printerhub"
+      - "traefik.http.routers.labelyard.rule=Host(`${LABELYARD_HOST}`)"
+      - "traefik.http.routers.labelyard.entrypoints=websecure"
+      - "traefik.http.routers.labelyard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.labelyard.service=labelyard"
       # Optional: enable an existing forward-auth middleware
-      # - "traefik.http.routers.printerhub.middlewares=authelia@docker"
+      # - "traefik.http.routers.labelyard.middlewares=authelia@docker"
 
-      # Webhook subroute (no SSO/auth — uses PRINTER_HUB_WEBHOOK_API_KEY)
-      - "traefik.http.routers.printerhub-webhooks.rule=Host(`${PRINTERHUB_HOST}`) && PathPrefix(`/api/v1/webhook/`)"
-      - "traefik.http.routers.printerhub-webhooks.entrypoints=websecure"
-      - "traefik.http.routers.printerhub-webhooks.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.printerhub-webhooks.priority=20"
-      - "traefik.http.routers.printerhub-webhooks.service=printerhub"
+      # Webhook subroute (no SSO/auth — uses LABELYARD_WEBHOOK_API_KEY)
+      - "traefik.http.routers.labelyard-webhooks.rule=Host(`${LABELYARD_HOST}`) && PathPrefix(`/api/v1/webhook/`)"
+      - "traefik.http.routers.labelyard-webhooks.entrypoints=websecure"
+      - "traefik.http.routers.labelyard-webhooks.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.labelyard-webhooks.priority=20"
+      - "traefik.http.routers.labelyard-webhooks.service=labelyard"
 
-      - "traefik.http.services.printerhub.loadbalancer.server.port=${BACKEND_PORT:-8000}"
+      - "traefik.http.services.labelyard.loadbalancer.server.port=${BACKEND_PORT:-8000}"
       # SSE: disable buffering for the live event stream (/api/v1/events)
-      - "traefik.http.services.printerhub.loadbalancer.responseforwarding.flushinterval=100ms"
+      - "traefik.http.services.labelyard.loadbalancer.responseforwarding.flushinterval=100ms"
 
 networks:
   traefik:

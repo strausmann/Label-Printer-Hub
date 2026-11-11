@@ -12,7 +12,7 @@ tree. No GHCR pull, no external services, no printer: add printers in the UI.
 
 ```bash
 # From the repo root (generate a throw-away secret key first):
-export PRINTER_HUB_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
+export LABELYARD_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
 docker compose -f dev/docker-compose.smoke.yml up --build
 ```
 
@@ -25,8 +25,8 @@ After the container reports healthy:
 | API info | http://localhost:8000/api/v1/info | JSON with version and feature flags |
 | API docs | http://localhost:8000/docs | Swagger UI |
 
-The smoke stack reads `PRINTER_HUB_SECRET_KEY` from your shell and sets a fake one-time
-`PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` (see the compose file) — sign in with the
+The smoke stack reads `LABELYARD_SECRET_KEY` from your shell and sets a fake one-time
+`LABELYARD_BOOTSTRAP_ADMIN_KEY` (see the compose file) — sign in with the
 bootstrap key, create a real admin key, then add a printer under
 Settings > Printers. Do not reuse these values anywhere else.
 
@@ -40,7 +40,7 @@ docker compose -f dev/docker-compose.smoke.yml down -v
 
 - Backend startup including Alembic migrations from the runtime image
 - The web UI built into the image and served by the backend
-- Settings validation (try shortening `PRINTER_HUB_WEBHOOK_API_KEY` to see the
+- Settings validation (try shortening `LABELYARD_WEBHOOK_API_KEY` to see the
   EX_CONFIG-friendly error from F3)
 
 ### What this does NOT cover
