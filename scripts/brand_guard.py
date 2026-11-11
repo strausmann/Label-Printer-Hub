@@ -59,6 +59,7 @@ EXCLUDED: tuple[str, ...] = (
     "docs/glossary.toml",
     ".vale.ini",  # names the files that may mention the old name
     ".vale/styles/**/OldName.yml",
+    ".vale/styles/**/Label.yml",  # generated: the exempt strings include the old display name
     ".vale/styles/config/vocabularies/*/reject.txt",
     "scripts/fixtures/vale/",
 )

@@ -137,7 +137,8 @@ class RenderTests(unittest.TestCase):
     def test_reject_list_written(self) -> None:
         reject = glossary.render(self.terms, "reject-de")
         entries = [ln for ln in reject.splitlines() if ln and not ln.startswith("#")]
-        self.assertEqual(entries, ["Job", "Druckjob", "Label"])
+        # "Label" has exemptions: it is enforced by the line-aware rule, not by reject.txt.
+        self.assertEqual(entries, ["Job", "Druckjob"])
         self.assertIn(HEADER, reject)
         self.assertEqual(
             [
@@ -147,6 +148,15 @@ class RenderTests(unittest.TestCase):
             ],
             [],
         )
+
+    def test_term_with_exemptions_gets_a_line_aware_rule(self) -> None:
+        rule = glossary.render(self.terms, "vale-exempt-de")
+        self.assertIn("extends: script", rule)
+        self.assertIn("level: error", rule)
+        self.assertIn(glossary.GENERATED, rule)
+        self.assertIn("(?:Label)", rule)
+        self.assertIn('"X-Label-Hub-Key"', rule)
+        self.assertNotIn('"Job"', rule)  # terms without exemptions stay in reject.txt
 
     def test_accept_list_has_the_canonical_terms(self) -> None:
         accept = glossary.render(self.terms, "accept-de")

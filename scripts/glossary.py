@@ -33,6 +33,7 @@ Target = Literal[
     "glossary-de",
     "vale-terms-en",
     "vale-terms-de",
+    "vale-exempt-de",
     "accept-en",
     "reject-en",
     "accept-de",
@@ -45,6 +46,7 @@ OUTPUTS: dict[str, str] = {
     "glossary-de": "website/src/content/docs/de/using/glossary.md",
     "vale-terms-en": ".vale/styles/Labelyard/Terms.yml",
     "vale-terms-de": ".vale/styles/Labelyard-de/Terms.yml",
+    "vale-exempt-de": ".vale/styles/Labelyard-de/Label.yml",
     "accept-en": ".vale/styles/config/vocabularies/Labelyard-en/accept.txt",
     "reject-en": ".vale/styles/config/vocabularies/Labelyard-en/reject.txt",
     "accept-de": ".vale/styles/config/vocabularies/Labelyard-de/accept.txt",
@@ -141,15 +143,73 @@ def _vocab_lines(terms: list[Term], lang: str, kind: str) -> list[str]:
     for term in terms:
         if kind == "accept":
             # Vale treats each entry as a regular expression and lets an accepted word cancel a
-            # rejected one that contains it (a rejected "printer-x" would be hidden by "printer"); anchoring the
-            # entry keeps it to the whole word.
+            # rejected one that contains it (a rejected "printer-x" would be hidden by "printer");
+            # anchoring the entry keeps it to the whole word.
             values = ["^" + _escape(term.canonical(lang)) + "$"]
+        elif term.exempt:
+            # Enforced by the line-aware rule (vale-exempt): reject.txt cannot skip a line.
+            values = []
         else:
             values = list(term.rejected(lang))
         for value in values:
             if value not in lines:
                 lines.append(value)
     return lines
+
+
+def _render_vale_exempt(terms: list[Term], lang: str) -> str:
+    """A script rule for rejected terms that may appear inside an exempt string.
+
+    Vale.Avoid (reject.txt) cannot skip a line, so a rejected word such as "Label" would hit
+    inside the product subtitle. This rule works like OldName: line by line over the raw file,
+    skipping fenced and inline code and every line that contains an exempt string.
+    """
+    tokens: list[str] = []
+    exempt: list[str] = []
+    for term in terms:
+        if term.exempt and term.rejected(lang):
+            tokens += [t for t in term.rejected(lang) if t not in tokens]
+            exempt += [e for e in term.exempt if e not in exempt]
+    quote = lambda items: ", ".join(f'"{i}"' for i in items)  # noqa: E731
+    pattern = r"\\b(?:" + "|".join(_escape(t) for t in tokens) + r")\\b"
+    return f"""# {GENERATED}
+# Rejected terms that Vale.Avoid cannot enforce because they occur inside an exempt string (the
+# product subtitle, a header name). Like OldName: a script over the raw file, line by line, skipping
+# fenced and inline code and every line that contains an exempt string.
+extends: script
+message: "„%s“ ist ein abgelehnter Begriff. Nimm den Glossarbegriff."
+level: error
+scope: raw
+script: |
+  text := import("text")
+  exempt := [{quote(exempt)}]
+  matches := []
+  in_fence := false
+  offset := 0
+  for line in text.split(scope, "\\n") {{
+    trimmed := text.trim_space(line)
+    skip := false
+    for e in exempt {{
+      if text.contains(line, e) {{ skip = true }}
+    }}
+    if text.has_prefix(trimmed, "```") || text.has_prefix(trimmed, "~~~") {{
+      in_fence = !in_fence
+    }} else if !in_fence && !skip {{
+      found := text.re_find("{pattern}", line)
+      if found != undefined {{
+        for group in found {{
+          for m in group {{
+            ticks := len(text.split(line[:m.begin], "`")) - 1
+            if ticks % 2 == 0 {{
+              matches = append(matches, {{begin: offset + m.begin, end: offset + m.end}})
+            }}
+          }}
+        }}
+      }}
+    }}
+    offset += len(line) + 1
+  }}
+"""
 
 
 def _yaml_key(value: str) -> str:
@@ -253,6 +313,8 @@ def render(terms: list[Term], target: Target) -> str:
     kind, _, lang = target.rpartition("-")
     if kind == "glossary":
         return _render_glossary(terms, lang)
+    if kind == "vale-exempt":
+        return _render_vale_exempt(terms, lang)
     if kind == "vale-terms":
         return _render_vale_terms(terms, lang)
     header = f"# {GENERATED}\n"

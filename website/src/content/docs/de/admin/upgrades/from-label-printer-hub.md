@@ -57,7 +57,7 @@ Das ändert nur die Datei `.env`. Compose-Dateien, die die Variablen selbst nenn
 
 ## Reverse Proxy und Pangolin
 
-Behalte deinen bisherigen Ressourcenschlüssel (Traefik-Routername, Pangolin `public-resources.<key>`, Caddy-Label). Ein neuer Schlüssel legt eine neue Ressource neben der alten an, mit neuem Zertifikat und neuen Zugriffsregeln. Die Beispiele nutzen jetzt den Schlüssel `labelyard`; das betrifft nur neue Installationen.
+Behalte deinen bisherigen Ressourcenschlüssel (Traefik-Routername, Pangolin `public-resources.<key>`, das `label` für Caddy). Ein neuer Schlüssel legt eine neue Ressource neben der alten an, mit neuem Zertifikat und neuen Zugriffsregeln. Die Beispiele nutzen jetzt den Schlüssel `labelyard`; das betrifft nur neue Installationen.
 
 Die Hostname-Variable der Beispiele heißt `LABELYARD_HOST`; deine eigene Proxy-Konfiguration darf jeden Namen nutzen.
 

@@ -2,6 +2,10 @@
 #   * the glossary pages of the website (using/glossary, en and de),
 #   * the Vale prose rules and vocabularies (.vale/),
 #   * the check of the UI message catalogues (scripts/glossary.py check-catalog).
+# Vale: reject_* become errors (Vale.Avoid, or the line-aware Labelyard-de.Label rule for a term
+# with `exempt`) and warnings (Terms). The accept.txt vocabularies only document the canonical
+# terms: Vale.Terms and Vale.Spelling are off, so nothing is enforced from them.
+#
 # After a change run `python3 scripts/glossary.py write`; CI fails on generated files that
 # are out of date.
 #

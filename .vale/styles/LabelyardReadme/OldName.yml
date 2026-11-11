@@ -1,0 +1,38 @@
+# README.md only (own section in .vale.ini; the general OldName rule is off there). Like OldName,
+# and in addition the README's tagline line and its "Formerly *...*." sentence may name the former
+# product, as in the brand guard. Only that sentence: the rest of a "Formerly" line is checked.
+extends: script
+message: "'%s' is the former product name. Write Labelyard."
+level: error
+scope: raw
+script: |
+  text := import("text")
+  old := "Label Printer Hub"
+  matches := []
+  in_fence := false
+  offset := 0
+  for line in text.split(scope, "\n") {
+    trimmed := text.trim_space(line)
+    formerly := "Formerly *" + old + "*."
+    tagline := "**The self-hosted " + old + " for all your labels.**"
+    first := 0
+    if trimmed == tagline { first = len(line) }
+    if text.has_prefix(trimmed, formerly) { first = text.index(line, formerly) + len(formerly) }
+    if text.has_prefix(trimmed, "```") || text.has_prefix(trimmed, "~~~") {
+      in_fence = !in_fence
+    } else if !in_fence && !text.contains(line, "Labelyard") {
+      start := first
+      for {
+        if start >= len(line) { break }
+        rel := text.index(line[start:], old)
+        if rel < 0 { break }
+        begin := start + rel
+        ticks := len(text.split(line[:begin], "`")) - 1
+        if ticks % 2 == 0 {
+          matches = append(matches, {begin: offset + begin, end: offset + begin + len(old)})
+        }
+        start = begin + len(old)
+      }
+    }
+    offset += len(line) + 1
+  }
