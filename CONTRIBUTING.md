@@ -271,6 +271,8 @@ For a patch milestone `x.y.x` use version `x.y.x`: the workflow builds `x.y.<nex
 
 Both use [`scripts/release_impact.py`](scripts/release_impact.py) (tests: `python3 -m unittest discover -s scripts -p 'test_*.py'`).
 
+To see which version semantic-release would compute for a commit message, without publishing anything, run `scripts/release_dry_run.sh "fix: x"` (after `npm ci --ignore-scripts` in `.github/release-tools`); `scripts/release_dry_run.sh --all` replays every sample message of the impact tests and compares the result with `release_impact.py`.
+
 ## Releases
 
 Releases are **scheduled, not on every merge.** Merging to `main` does NOT publish a release — it only bundles changes for the next scheduled release window. Releases are made from `main` only; which changes may reach `main` is described in [Milestones, branches and releases](#milestones-branches-and-releases).

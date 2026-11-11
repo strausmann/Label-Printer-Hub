@@ -44,55 +44,77 @@ class ReleaseRulesTest(unittest.TestCase):
         self.assertIn({"breaking": True, "release": "major"}, RULES)
 
 
+TYPE_CASES: dict[str, str | None] = {
+    "feat: add x": "minor",
+    "feat(ui): add x": "minor",
+    "fix: repair x": "patch",
+    "fix(api): repair x (#12)": "patch",
+    "perf: faster": "patch",
+    "refactor: move": None,
+    "docs: words": None,
+    "chore: tidy": None,
+    "ci: pipeline": None,
+    "test: more": None,
+    "style: format": None,
+    "build: image": None,
+    "chore(release): 1.4.1\n\n[skip ci]": None,
+    "Merge pull request #7 from owner/milestone/1.5.0": None,
+    "Merge branch 'main' into milestone/1.5.0": None,
+    "update readme": None,
+    "": None,
+}
+BREAKING_BANGS = ("feat!: x", "fix(api)!: x", "docs!: x", "chore(deps)!: x")
+BREAKING_FOOTERS = (
+    "BREAKING CHANGE: gone",
+    "BREAKING-CHANGE: gone",
+    "breaking change: gone",
+    "* BREAKING CHANGE: gone",
+)
+NON_BREAKING_BODIES = (
+    "chore: x\n\nThis is not a BREAKING CHANGE: inline",
+    "chore: x\n\nBREAKING CHANGES: plural is not a keyword",
+)
+DEFAULT_RULE_CASES = (
+    "FEAT: shout",
+    'Revert "feat: a"\n\nThis reverts commit abc123.',
+    "Feat: capitalised type matches no rule",
+)
+
+
+def sample_messages() -> list[str]:
+    """Every commit message the impact tests use; scripts/release_dry_run.sh --all replays them."""
+    footers = [f"fix: small\n\n{footer}" for footer in BREAKING_FOOTERS]
+    messages = [*TYPE_CASES, *BREAKING_BANGS, *footers, *NON_BREAKING_BODIES, *DEFAULT_RULE_CASES]
+    return list(dict.fromkeys(messages))
+
+
 class CommitImpactTest(unittest.TestCase):
     def test_types(self) -> None:
-        cases = {
-            "feat: add x": "minor",
-            "feat(ui): add x": "minor",
-            "fix: repair x": "patch",
-            "fix(api): repair x (#12)": "patch",
-            "perf: faster": "patch",
-            "refactor: move": None,
-            "docs: words": None,
-            "chore: tidy": None,
-            "ci: pipeline": None,
-            "test: more": None,
-            "style: format": None,
-            "build: image": None,
-            "chore(release): 1.4.1\n\n[skip ci]": None,
-            "Merge pull request #7 from owner/milestone/1.5.0": None,
-            "Merge branch 'main' into milestone/1.5.0": None,
-            "update readme": None,
-            "": None,
-        }
-        for message, expected in cases.items():
+        for message, expected in TYPE_CASES.items():
             with self.subTest(message=message):
                 self.assertEqual(impact(message), expected)
 
     def test_breaking_bang_is_major_for_every_type(self) -> None:
-        for message in ("feat!: x", "fix(api)!: x", "docs!: x", "chore(deps)!: x"):
+        for message in BREAKING_BANGS:
             with self.subTest(message=message):
                 self.assertEqual(impact(message), "major")
 
     def test_breaking_footers(self) -> None:
-        for footer in (
-            "BREAKING CHANGE: gone",
-            "BREAKING-CHANGE: gone",
-            "breaking change: gone",
-            "* BREAKING CHANGE: gone",
-        ):
+        for footer in BREAKING_FOOTERS:
             with self.subTest(footer=footer):
                 self.assertEqual(impact(f"fix: small\n\n{footer}"), "major")
 
     def test_breaking_word_inside_a_sentence_is_not_a_footer(self) -> None:
-        self.assertIsNone(impact("chore: x\n\nThis is not a BREAKING CHANGE: inline"))
-        self.assertIsNone(impact("chore: x\n\nBREAKING CHANGES: plural is not a keyword"))
+        for message in NON_BREAKING_BODIES:
+            with self.subTest(message=message):
+                self.assertIsNone(impact(message))
 
     def test_default_rules_apply_when_no_custom_rule_matches(self) -> None:
         # commit-analyzer falls back to its default rules (uppercase JSHint types, reverts).
-        self.assertEqual(impact("FEAT: shout"), "minor")
-        self.assertEqual(impact('Revert "feat: a"\n\nThis reverts commit abc123.'), "patch")
-        self.assertIsNone(impact("Feat: capitalised type matches no rule"))
+        shout, revert, capitalised = DEFAULT_RULE_CASES
+        self.assertEqual(impact(shout), "minor")
+        self.assertEqual(impact(revert), "patch")
+        self.assertIsNone(impact(capitalised))
 
     def test_reverted_pair_is_dropped(self) -> None:
         original = ri.parse_commit("feat: a", "abc1234000")
