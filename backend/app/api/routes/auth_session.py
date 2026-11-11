@@ -16,6 +16,7 @@ data beyond the caller's own sign-in state.
 from __future__ import annotations
 
 import hmac
+import ipaddress
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -60,6 +61,14 @@ def _info(row: UiSession) -> SessionInfo:
     )
 
 
+def _limiter_key(host: str | None) -> str:
+    """Normalise the client address; anything that is not an IP shares one bucket."""
+    try:
+        return str(ipaddress.ip_address((host or "").strip()))
+    except ValueError:
+        return "unknown"
+
+
 def _unauthorized(code: str, message: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -88,8 +97,9 @@ async def sign_in(
     body: SignInRequest, request: Request, response: Response, db: SessionDep
 ) -> None:
     settings = get_settings()
-    # Limitation: keyed by the direct peer; behind a reverse proxy all users share one bucket.
-    client_ip = request.client.host if request.client else "unknown"
+    # Keyed by the peer address (behind a trusted proxy: the forwarded client, see issue #160).
+    # A value that is not an IP address must not mint its own bucket: it shares "unknown".
+    client_ip = _limiter_key(request.client.host if request.client else None)
     allowed, retry_after = _sign_in_rate_limiter.check_and_consume_with_retry_after(
         client_ip, limit_per_minute=settings.sign_in_limit_per_minute
     )

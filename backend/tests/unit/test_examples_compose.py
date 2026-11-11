@@ -279,3 +279,17 @@ def test_webhook_bypass_routes_use_the_versioned_path() -> None:
         text = (EXAMPLES / name).read_text()
         assert "/api/v1/webhook/" in text, name
         assert "/api/webhook/" not in text, name
+
+
+@pytest.mark.parametrize("path", COMPOSE_FILES, ids=lambda p: p.name)
+def test_forwarded_allow_ips_is_never_a_wildcard(path: Path) -> None:
+    """``*`` trusts every peer, so any client could forge X-Forwarded-For (issue #160)."""
+    for line in path.read_text().splitlines():
+        if "FORWARDED_ALLOW_IPS" in line and not line.lstrip().startswith("#"):
+            assert "*" not in line, f"{path.name}: wildcard FORWARDED_ALLOW_IPS: {line.strip()}"
+
+
+def test_env_example_has_no_wildcard_forwarded_ips() -> None:
+    for line in (EXAMPLES / ".env.example").read_text().splitlines():
+        if "FORWARDED_ALLOW_IPS=" in line:
+            assert "*" not in line.split("=", 1)[1], line

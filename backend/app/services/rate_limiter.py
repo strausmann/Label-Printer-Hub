@@ -12,7 +12,11 @@ Algorithm: token bucket
 from __future__ import annotations
 
 import time
+from collections import OrderedDict
 from collections.abc import Hashable
+
+MAX_BUCKETS = 10_000
+IDLE_TTL_SECONDS = 600.0
 
 
 class _TokenBucket:
@@ -34,14 +38,36 @@ class _TokenBucket:
 class RateLimiter:
     """Global in-memory rate limiter — one token bucket per key (API-key id, client IP)."""
 
-    def __init__(self) -> None:
-        self._buckets: dict[Hashable, _TokenBucket] = {}
+    def __init__(
+        self, *, max_buckets: int = MAX_BUCKETS, idle_ttl_seconds: float = IDLE_TTL_SECONDS
+    ) -> None:
+        # Least recently used first. Bounded: keys can come from the network.
+        self._buckets: OrderedDict[Hashable, _TokenBucket] = OrderedDict()
+        self._max_buckets = max_buckets
+        self._idle_ttl = idle_ttl_seconds
+
+    def _evict(self) -> None:
+        """Drop idle buckets (a full bucket is indistinguishable from a new one), then LRU."""
+        now = time.monotonic()
+        while self._buckets:
+            oldest = next(iter(self._buckets.values()))
+            if now - oldest.last_refill <= self._idle_ttl:
+                break
+            self._buckets.popitem(last=False)
+        while len(self._buckets) > self._max_buckets:
+            self._buckets.popitem(last=False)
 
     def _get_bucket(self, key_id: Hashable, limit_per_minute: int) -> _TokenBucket:
-        """Return (and lazily create) the bucket for this key."""
-        if key_id not in self._buckets:
-            self._buckets[key_id] = _TokenBucket(limit_per_minute)
-        return self._buckets[key_id]
+        """Return (and lazily create) the bucket for this key; mark it most recently used."""
+        self._evict()
+        bucket = self._buckets.get(key_id)
+        if bucket is None:
+            bucket = _TokenBucket(limit_per_minute)
+            self._buckets[key_id] = bucket
+            self._evict()  # room for the new entry (at most max_buckets afterwards)
+        else:
+            self._buckets.move_to_end(key_id)
+        return bucket
 
     def check_and_consume(self, key_id: Hashable, *, limit_per_minute: int) -> bool:
         """Check if the key is within its rate limit and consume one token.
