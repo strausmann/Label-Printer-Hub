@@ -45,6 +45,30 @@ test.describe.serial("about", () => {
     await shot(page, "about-en-desktop.png");
   });
 
+  test("desktop: the third-party list names react and brother-ql, and the text opens on demand", async () => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/about");
+    const table = page.getByRole("table");
+    await expect(table.getByRole("row", { name: /^react 19/ })).toBeVisible();
+    const row = table.getByRole("row", { name: /brother-ql/ });
+    await expect(row).toBeVisible();
+    await expect(page.getByText("GNU GENERAL PUBLIC LICENSE")).toHaveCount(0);
+    await row.getByRole("button", { name: "Show licence text" }).click();
+    await expect(page.getByText("GNU GENERAL PUBLIC LICENSE")).toBeVisible();
+    // A package that ships no text links its licence id to the SPDX text instead.
+    await expect(table.getByRole("row", { name: /fastapi/ }).getByRole("link", { name: "MIT: licence text at SPDX" })).toHaveAttribute("href", "https://spdx.org/licenses/MIT.html");
+    await shot(page, "about-en-desktop-licences.png");
+  });
+
+  test("desktop: the filter narrows the list", async () => {
+    await page.setViewportSize({ width: 1280, height: 500 });
+    await page.goto("/about");
+    const filter = page.getByRole("textbox", { name: "Filter packages" });
+    await filter.fill("brother");
+    await expect(page.getByRole("table").getByRole("row")).toHaveCount(2); // header + brother-ql
+    await expect(filter).toBeInViewport();
+  });
+
   test("phone: the top bar link opens the about page", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");
@@ -53,5 +77,21 @@ test.describe.serial("about", () => {
     await expect(page.getByRole("heading", { level: 1, name: "About" })).toBeVisible();
     expect(await noSideScroll(page)).toBe(true);
     await shot(page, "about-en-phone.png");
+  });
+
+  test("phone: the list stays inside the screen, also with the text open and the keyboard's height", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/about");
+    const row = page.getByRole("table").getByRole("row", { name: /brother-ql/ });
+    await row.getByRole("button", { name: "Show licence text" }).click();
+    await expect(page.getByText("GNU GENERAL PUBLIC LICENSE")).toBeVisible();
+    expect(await noSideScroll(page)).toBe(true);
+    await shot(page, "about-en-phone-licences.png");
+    await page.setViewportSize({ width: 390, height: 400 });
+    const filter = page.getByRole("textbox", { name: "Filter packages" });
+    await filter.fill("react");
+    await expect(filter).toBeInViewport();
+    await expect(page.getByRole("table").getByRole("row", { name: /^react/ }).first()).toBeInViewport();
+    expect(await noSideScroll(page)).toBe(true);
   });
 });

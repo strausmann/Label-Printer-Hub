@@ -7,7 +7,7 @@ import { createViteLicensePlugin } from "rollup-license-plugin";
 import { VitePWA } from "vite-plugin-pwa";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
-import { EXTRA_RECORDS, extraPackagePaths, isUnacceptableLicence, loadPolicy, projectName, toCycloneDx, toLicenceList } from "./src/licences/build";
+import { EXTRA_RECORDS, extraPackagePaths, checkLicences, loadPolicy, projectName, toCycloneDx, toLicenceList } from "./src/licences/build";
 import { pwaOptions } from "./pwa.config";
 
 // Licence texts that must travel with the files they cover (OFL-1.1 for the fonts, Apache-2.0 for the
@@ -57,9 +57,13 @@ function licenceLists(): Plugin {
     outputFilename: false,
     includePackages: extraPackagePaths,
     excludedPackageTest: (packageName) => packageName === name,
-    unacceptableLicenseTest: (licence) => isUnacceptableLicence(licence, policy),
+    // Judged in checkLicences (name and version known, so a purl exception applies); the plugin sees the string only.
+    unacceptableLicenseTest: () => false,
     additionalFiles: {
-      "licenses/frontend.json": (packages) => toLicenceList(packages, EXTRA_RECORDS),
+      "licenses/frontend.json": (packages) => {
+        checkLicences(packages, EXTRA_RECORDS, policy);
+        return toLicenceList(packages, EXTRA_RECORDS);
+      },
       "frontend.cdx.json": (packages) => toCycloneDx(packages, EXTRA_RECORDS, process.env.HUB_VERSION ?? "0.0.0-dev", name),
     },
   });

@@ -3,6 +3,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   EXTRA_RECORDS,
+  checkLicences,
   expressionAllowed,
   extraPackagePaths,
   isUnacceptableLicence,
@@ -211,5 +212,33 @@ describe("extraPackagePaths", () => {
     expect(new Set(paths).size).toBe(paths.length);
     // Development tools are not part of what ships.
     for (const tool of ["vite", "vitest", "typescript", "eslint", "rollup-license-plugin", "@playwright/test"]) expect(names).not.toContain(tool);
+  });
+});
+
+describe("checkLicences", () => {
+  const declared = "AFL-2.1 AND AFL-3.0 AND BSD-3-Clause";
+
+  it("test_exception_applies_to_the_package_it_names", () => {
+    // Without the purl the declared licence is refused; the exception for pkg:npm/json-schema@0.4.0 lets it pass.
+    expect(() => checkLicences([pkg({ name: "json-schema", version: "0.4.0", license: declared })], [], policy)).not.toThrow();
+  });
+
+  it("test_exception_does_not_cover_another_version_or_name", () => {
+    expect(() => checkLicences([pkg({ name: "json-schema", version: "0.4.1", license: declared })], [], policy)).toThrow(/json-schema@0\.4\.1/);
+    expect(() => checkLicences([pkg({ name: "other", version: "0.4.0", license: declared })], [], policy)).toThrow(/other@0\.4\.0/);
+  });
+
+  it("test_scoped_package_exception_uses_the_escaped_purl", () => {
+    const scoped = { allowed: new Set(["MIT"]), exceptions: new Map([["pkg:npm/%40a/b@1.0.0", "MIT"]]) };
+    expect(() => checkLicences([pkg({ name: "@a/b", version: "1.0.0", license: "GPL-2.0-only" })], [], scoped)).not.toThrow();
+  });
+
+  it("test_names_every_offender", () => {
+    const bad = [pkg({ name: "x", version: "1.0.0", license: "GPL-2.0-only" }), pkg({ name: "y", version: "2.0.0", license: "SSPL-1.0" })];
+    expect(() => checkLicences(bad, [], policy)).toThrow(/x@1\.0\.0[\s\S]*y@2\.0\.0/);
+  });
+
+  it("test_allowed_packages_and_extra_records_pass", () => {
+    expect(() => checkLicences([pkg({ name: "react", version: "19.3.1" })], EXTRA_RECORDS, policy)).not.toThrow();
   });
 });

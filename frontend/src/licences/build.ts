@@ -134,6 +134,21 @@ export function isUnacceptableLicence(id: string, policy: Policy, purl?: string)
   return !expressionAllowed(reviewed ?? id, policy.allowed);
 }
 
+/** The purl an exception in `x-licence-exceptions` is keyed by (npm packages; the extra records are judged by their own licence). */
+const exceptionPurl = (record: PluginPackage) => npmPurl(record.name, record.version);
+
+/**
+ * Fails the build for every package whose licence the policy refuses. `rollup-license-plugin` hands its
+ * `unacceptableLicenseTest` the licence string only, so an exception keyed by purl could never apply there; the
+ * judgement is made here instead, where name and version are known.
+ */
+export function checkLicences(packages: readonly PluginPackage[], extra: readonly PluginPackage[], policy: Policy): void {
+  const refused = merged(packages, extra)
+    .filter(({ record, isExtra }) => isUnacceptableLicence(record.license, policy, isExtra ? undefined : exceptionPurl(record)))
+    .map(({ record }) => `"${record.license}" for ${record.name}@${record.version}`);
+  if (refused.length > 0) throw new Error(`Found unacceptable license ${refused.join(", ")}`);
+}
+
 // ---- the lists --------------------------------------------------------------------------------------
 
 /** `name` of `frontend/package.json`: the project itself is not one of its own dependencies. */

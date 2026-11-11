@@ -38,7 +38,8 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `pnpm build && ${serve(MAIN.port, MAIN.keyFile)}`,
+      // The backend list is written by the image build, not by `pnpm build`: a three-record fixture stands in for it.
+      command: `pnpm build && cp e2e/fixtures/backend-licences.json dist/licenses/backend.json && ${serve(MAIN.port, MAIN.keyFile)}`,
       url: `${MAIN.url}/healthz`,
       reuseExistingServer: false,
       timeout: 240_000,

@@ -30,6 +30,11 @@ msgstr "{0, plural, one {# Spalte} other {# Spalten}}"
 msgid "{0, plural, one {# label} other {# labels}}"
 msgstr "{0, plural, one {# Etikett} other {# Etiketten}}"
 
+#. placeholder {0}: shown.length
+#: src/features/about/DependencyLicences.tsx
+msgid "{0, plural, one {# package} other {# packages}}"
+msgstr "{0, plural, one {# Paket} other {# Pakete}}"
+
 #. placeholder {0}: codes.length
 #: src/features/archive/TypeDetail.tsx
 msgid "{0, plural, one {# product code} other {# product codes}}"
@@ -266,6 +271,10 @@ msgstr "{sentLabels, plural, one {# Etikett gesendet an} other {# Etiketten gese
 #: src/features/jobs/JobDetail.tsx
 msgid "{tapeMm} mm"
 msgstr "{tapeMm} mm"
+
+#: src/features/about/DependencyLicences.tsx
+msgid "{token}: licence text at SPDX"
+msgstr "{token}: Lizenztext bei SPDX"
 
 #: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -1369,9 +1378,18 @@ msgstr "Fehlgeschlagen"
 msgid "Feed mark printed"
 msgstr "Einzugsmarke gedruckt"
 
+#: src/features/about/DependencyLicences.tsx
+msgid "Filter by package or licence"
+msgstr "Nach Paket oder Lizenz filtern"
+
 #: src/features/jobs/JobsPage.tsx
 msgid "Filter by state"
 msgstr "Nach Status filtern"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "field label"
+msgid "Filter packages"
+msgstr "Pakete filtern"
 
 #: src/features/archive/ArchivePage.tsx
 msgid "Filter the sheet types"
@@ -1500,6 +1518,11 @@ msgstr "Zustand"
 #: src/features/settings/System.tsx
 msgid "Healthy"
 msgstr "Gesund"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Hide licence text"
+msgstr "Lizenztext ausblenden"
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Hide used-up sheets"
@@ -1767,6 +1790,11 @@ msgstr "Legende"
 msgid "Level"
 msgstr "Stufe"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Licence"
+msgstr "Lizenz"
+
 #: src/features/about/AboutPage.tsx
 msgctxt "field label"
 msgid "Licence"
@@ -1776,6 +1804,11 @@ msgstr "Lizenz"
 msgctxt "heading"
 msgid "Licence"
 msgstr "Lizenz"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Licence text"
+msgstr "Lizenztext"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
@@ -1790,6 +1823,7 @@ msgid "Load hint"
 msgstr "Einlegehinweis"
 
 #: src/app/router.tsx
+#: src/features/about/DependencyLicences.tsx
 #: src/features/archive/ArchivePage.tsx
 #: src/features/archive/TypeDetail.tsx
 #: src/features/calibration/CalibrationPage.tsx
@@ -2038,6 +2072,10 @@ msgstr "Keine Aufträge."
 #: src/features/sheets/print/CapacityAlert.tsx
 msgid "No other sheet of this type has a free cell."
 msgstr "Kein anderer Bogen dieses Typs hat eine freie Zelle."
+
+#: src/features/about/DependencyLicences.tsx
+msgid "No package matches the filter."
+msgstr "Kein Paket passt zum Filter."
 
 #: src/features/lookup/CartPage.tsx
 msgid "No preview available."
@@ -2349,6 +2387,10 @@ msgstr "Auftrag öffnen"
 msgid "Open the sheet"
 msgstr "Bogen öffnen"
 
+#: src/features/about/DependencyLicences.tsx
+msgid "Operating system packages of the image are listed in its SBOM; their licence texts are in /usr/share/doc inside the image."
+msgstr "Die Betriebssystempakete des Images stehen in seiner SBOM; ihre Lizenztexte liegen im Image unter /usr/share/doc."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Optional. It checks where the ID can go, and it is needed to print the ID label."
 msgstr "Optional. Damit wird geprüft, wohin die ID passt; zum Drucken des ID-Etiketts ist er nötig."
@@ -2369,6 +2411,11 @@ msgstr "Andere Apps, die über diesen Hub drucken. Sie werden am Namen ihres API
 #: src/shell/labels.ts
 msgid "Overview"
 msgstr "Übersicht"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Package"
+msgstr "Paket"
 
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Page"
@@ -2416,6 +2463,11 @@ msgstr "Papierformat"
 #: src/shell/labels.ts
 msgid "Paperless ASN"
 msgstr "Paperless-ASN"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Part"
+msgstr "Teil"
 
 #: src/features/jobs/RunControls.tsx
 msgid "Part {done} of {parts} is done. Check the tape, then continue."
@@ -3058,6 +3110,11 @@ msgstr "Mehrere mit Kommas trennen."
 msgid "Serial number"
 msgstr "Seriennummer"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "part of the hub"
+msgid "Server"
+msgstr "Server"
+
 #: src/shell/Sidebar.tsx
 msgid "Server unreachable"
 msgstr "Server nicht erreichbar"
@@ -3218,6 +3275,11 @@ msgstr "Verworfene Bögen anzeigen"
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Show fewer"
 msgstr "Weniger anzeigen"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Show licence text"
+msgstr "Lizenztext anzeigen"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Show the ID label job"
@@ -3891,6 +3953,14 @@ msgstr "Der linke und der rechte Rand unterscheiden sich ({0} und {1}). Miss den
 msgid "The left margin"
 msgstr "Der linke Rand"
 
+#: src/features/about/DependencyLicences.tsx
+msgid "The licence list of the server is not included in this build."
+msgstr "Die Lizenzliste des Servers ist in diesem Build nicht enthalten."
+
+#: src/features/about/DependencyLicences.tsx
+msgid "The licence list of the web app is not included in this build."
+msgstr "Die Lizenzliste der Web-App ist in diesem Build nicht enthalten."
+
 #: src/features/lookup/LabelPreview.tsx
 msgid "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
 msgstr "Der Link im QR-Code ist {length} Bytes lang, dieses Layout fasst aber höchstens {max} Bytes. Wähle eine andere Anordnung oder einen kürzeren Link."
@@ -4316,6 +4386,11 @@ msgstr "Diese Etiketten gingen an den Drucker, aber niemand hat das Ergebnis bes
 msgid "These readings cannot be fitted. Check them and add crossings that are further apart."
 msgstr "Aus diesen Messwerten lässt sich nichts berechnen. Prüfen Sie sie und fügen Sie weiter auseinander liegende Kreuzungen hinzu."
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "heading"
+msgid "Third-party software"
+msgstr "Software von Dritten"
+
 #: src/features/scan/CameraScanner.tsx
 msgid "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
 msgstr "Der Browser hat die Kamera für diese Seite gesperrt. Erlaube sie in den Website-Einstellungen (Symbol neben der Adresse, dann Kamera) und versuche es erneut."
@@ -4645,6 +4720,11 @@ msgstr "Zertifikat des Druckers prüfen"
 msgid "Version"
 msgstr "Version"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Version"
+msgstr "Version"
+
 #: src/features/archive/TypeDetail.tsx
 msgid "Versions"
 msgstr "Versionen"
@@ -4682,6 +4762,11 @@ msgstr "Warnung"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Warning: the certificate is not checked. Anyone on the network path could pose as the printer."
 msgstr "Achtung: Das Zertifikat wird nicht geprüft. Jeder auf dem Netzwerkweg könnte sich als der Drucker ausgeben."
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "part of the hub"
+msgid "Web"
+msgstr "Web"
 
 #: src/features/settings/AccessKeys.tsx
 msgid "Webhook key"
