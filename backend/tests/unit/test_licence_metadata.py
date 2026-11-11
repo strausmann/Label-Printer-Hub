@@ -56,3 +56,29 @@ def test_readme_states_licence_history() -> None:
     for name, text in (("README.md", readme), ("trademarks.md", trademarks)):
         assert "fair use" not in text.lower(), name
         assert "MIT license" not in text, name
+
+
+def test_notices_name_copyleft_dependencies() -> None:
+    notices = _read("THIRD_PARTY_NOTICES.md")
+    for needle in (
+        "brother_ql",
+        "GPL-3.0-or-later",
+        "ptouch",
+        "LGPL-2.1-or-later",
+        "/licenses/backend.json",
+        "/licenses/frontend.json",
+        "/frontend.cdx.json",
+        "/opt/app/LICENSE",
+        "/usr/share/doc",
+    ):
+        assert needle in notices, needle
+    # The generated lists replaced the promise of a future list.
+    assert "is tracked in" not in notices
+    # Every operating system package the runtime stage installs is named.
+    dockerfile = _read("backend/Dockerfile")
+    runtime = dockerfile.split("# Minimal runtime deps:", 1)[1]
+    install = runtime.split("apt-get install -y --no-install-recommends", 1)[1].split("&&", 1)[0]
+    packages = install.replace("\\", " ").split()
+    assert packages, "no runtime packages found in the Dockerfile"
+    for package in packages:
+        assert f"`{package}`" in notices, package
