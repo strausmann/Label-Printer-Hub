@@ -114,7 +114,9 @@ class ScopeTest(unittest.TestCase):
 
     def test_wrong_argument_count_fails(self) -> None:
         result = subprocess.run(
-            [str(SCRIPTS / "release_tools_scope.sh"), "only-one"], capture_output=True, text=True
+            [str(SCRIPTS / "release_tools_scope.sh"), "only-one"],
+            capture_output=True,
+            text=True,
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("usage", result.stderr)
@@ -147,7 +149,14 @@ class DryRunEnvironmentTest(unittest.TestCase):
         bin_dir.mkdir(parents=True)
         fake = bin_dir / "semantic-release"
         fake.write_text(
-            '#!/usr/bin/env bash\nenv > "$SR_ENV_DUMP"\n'
+            "#!/usr/bin/env bash\nset -euo pipefail\n"
+            'env > "$SR_ENV_DUMP"\n'
+            # semantic-release fetches the remote's HEAD first; a bare remote whose HEAD
+            # points at a branch that was never pushed makes that fail (seen on CI, where
+            # init.defaultBranch is not set).
+            "url=$(python3 -c \"import json;print(json.load(open('.releaserc.json'))"
+            "['repositoryUrl'])\")\n"
+            'git fetch --tags -- "$url"\n'
             'echo "[semantic-release] The next release version is 1.0.1"\n',
             encoding="utf-8",
         )
@@ -159,6 +168,10 @@ class DryRunEnvironmentTest(unittest.TestCase):
             **GIT_ENV,
             **self.SECRETS,
             "SR_ENV_DUMP": str(self.dump),
+            # A git without init.defaultBranch, like a CI runner: new repositories get `master`.
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "init.defaultBranch",
+            "GIT_CONFIG_VALUE_0": "master",
             "TMPDIR": str(self.scratch),
         }
         return subprocess.run(
@@ -176,6 +189,10 @@ class DryRunEnvironmentTest(unittest.TestCase):
         self.assertIn("SR_ENV_DUMP", seen)  # the dump is the real environment, not empty
         for name in self.SECRETS:
             self.assertNotIn(name, seen, f"{name} reached semantic-release")
+
+    def test_remote_head_follows_the_pushed_branch(self) -> None:
+        result = self._run("fix: x")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_temp_dir_is_removed_on_success(self) -> None:
         self.assertEqual(self._run("fix: x").returncode, 0)

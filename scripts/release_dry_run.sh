@@ -37,7 +37,7 @@ dry_run() {
   (
     set -euo pipefail
     cd "$tmp"
-    git init -q --bare remote.git
+    git init -q --bare -b main remote.git
     git init -q -b main work
     cd work
     git config user.name "Dry Run"
