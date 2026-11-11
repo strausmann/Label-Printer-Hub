@@ -13,17 +13,17 @@ Renaming has a cost that is easy to underestimate. Some old names live outside o
 
 ## Decision
 
-We call the project **Labelyard**, with the subtitle "the self-hosted Label Printer Hub for all your labels". The old display name survives only as that subtitle and in the sentence "Formerly Label Printer Hub".
+We call the project **Labelyard**, with the subtitle "the self-hosted Label Printer Hub for all your labels". The old display name survives only as that subtitle and in the sentence "Formerly *Label Printer Hub*." in the README.
 
 We change everything we own and keep everything that users' data or clients depend on. The compatibility table is binding:
 
 | Surface | New | Old | Compatibility |
 |---|---|---|---|
-| Image | `ghcr.io/strausmann/labelyard`, `docker.io/<user>/labelyard` | `<old-name>-backend` (the former project name in lower case with hyphens) | Old images are not updated. Users change `image:` once |
-| Repository | `strausmann/labelyard` | `strausmann/<old-name>` | GitHub redirects the old address |
+| Image | `ghcr.io/strausmann/labelyard`, `docker.io/<user>/labelyard` | `ghcr.io/strausmann/label-printer-hub-backend`, `docker.io/<user>/label-printer-hub-backend` | Old images are not updated. Users change `image:` once |
+| Repository | `strausmann/labelyard` | `strausmann/Label-Printer-Hub` | GitHub redirects the old address |
 | Environment prefix | `LABELYARD_` | `PRINTER_HUB_` | Old prefix still read as a fallback; the new one wins; empty values are ignored on both; one startup warning lists the names; kept until at least 2.0.0 |
 | PDF font variable | `LABELYARD_PDF_FONT` | `PRINTHUB_PDF_FONT` | Same rules as the prefix |
-| Command | `labelyard` | the former command (listed in the migration guide) | The old command stays as an alias |
+| Command | `labelyard` | the former command (see the migration guide) | The old command stays as an alias |
 | API key header | `X-Label-Hub-Key` | — | Unchanged: it is a client-facing identifier |
 | Key prefix | `lh_` | — | Unchanged |
 | Database file name | `printer-hub.db` | — | Unchanged, so existing installs find their data |

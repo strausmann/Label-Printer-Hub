@@ -83,8 +83,10 @@ A fresh install has no API key. The migrations create none and print none.
 Without the web UI, create the first key inside the container instead:
 
 ```bash
-docker compose exec labelyard labelyard admin create-key --scope admin --name first-admin
+docker compose exec <service> labelyard admin create-key --scope admin --name first-admin
 ```
+
+`<service>` is the name of the hub service in your own compose file; it stays whatever you called it (the examples use `labelyard`).
 
 ## Recovery
 
@@ -92,7 +94,7 @@ If every admin key is lost, create a new one with the same command inside the
 container. It prints the plaintext key once on stdout:
 
 ```bash
-docker compose exec labelyard labelyard admin create-key --scope admin --name recovery
+docker compose exec <service> labelyard admin create-key --scope admin --name recovery
 ```
 
 Whoever can run commands in the container already controls the hub, so this adds

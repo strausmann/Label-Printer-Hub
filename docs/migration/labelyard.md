@@ -6,15 +6,13 @@ Label Printer Hub is now **Labelyard** (release 1.6.0). This is a rename, not a 
 
 | Before | After |
 |---|---|
-| Image `ghcr.io/strausmann/<old-name>-backend` | `ghcr.io/strausmann/labelyard` |
-| Image `docker.io/<user>/<old-name>-backend` | `docker.io/<user>/labelyard` |
+| Image `ghcr.io/strausmann/label-printer-hub-backend` | `ghcr.io/strausmann/labelyard` |
+| Image `docker.io/<user>/label-printer-hub-backend` | `docker.io/<user>/labelyard` |
 | Command `printer-hub` | `labelyard` (the old command stays as an alias) |
 | Environment prefix `PRINTER_HUB_` | `LABELYARD_` (the old prefix is still read, see [Environment variables](#environment-variables)) |
 | PDF font override `PRINTHUB_PDF_FONT` | `LABELYARD_PDF_FONT` (the old name is still read) |
-| Repository `strausmann/<old-name>` | `strausmann/labelyard` (GitHub redirects the old address) |
+| Repository `strausmann/Label-Printer-Hub` | `strausmann/labelyard` (GitHub redirects the old address) |
 | Example variables `PRINTERHUB_HOST`, `LABEL_HUB_URL`, `LABEL_HUB_KEY` | `LABELYARD_HOST`, `LABELYARD_URL`, `LABELYARD_KEY` |
-
-`<old-name>` stands for the former project name in lower case with hyphens, followed by nothing (repository) or `-backend` (image): the name your current `image:` line shows.
 
 The website is <https://labelyard.app>.
 
@@ -42,15 +40,17 @@ Renaming is optional for now. The hub reads `LABELYARD_*`; the former `PRINTER_H
 
 - A `LABELYARD_` variable always wins over its `PRINTER_HUB_` twin.
 - Empty values are ignored on both prefixes, so a compose line such as `PRINTER_HUB_X=${PRINTER_HUB_X:-}` never overrides anything.
-- If any `PRINTER_HUB_` variable takes effect, the hub logs one deprecation warning at startup. It lists the variable **names** to rename, never the values.
+- At startup the hub logs one warning line listing the old names that take effect, so you know what to rename. If an old name is overridden by a `LABELYARD_` twin, a second line lists those ignored names. Both lines carry **names** only, never values.
 - The old names are read until at least 2.0.0.
 - The PDF font override follows the same pattern: `LABELYARD_PDF_FONT` is read first, the old `PRINTHUB_PDF_FONT` when the new one is unset or empty, with a warning that names the variable.
 
-To finish the rename, replace the prefix in your `.env` and compose files and restart:
+To finish the rename in a `.env` file, replace the prefix and restart:
 
 ```bash
 sed -i 's/^PRINTER_HUB_/LABELYARD_/' .env
 ```
+
+This only touches the `.env` file. Compose files that name the variables themselves (for example `PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?...}`) must be changed by hand, on both sides of each line, or compose still asks for the old name.
 
 ## Reverse proxy and Pangolin
 
@@ -60,4 +60,4 @@ The hostname variable of the examples is `LABELYARD_HOST`; your own proxy config
 
 ## Old images
 
-The old images (the `<old-name>-backend` images) receive no updates. Watchtower, Renovate or Dependabot rules pinned to them will never offer 1.6.0: change the image name by hand once, as in the three steps above.
+The old images (`label-printer-hub-backend` on both registries) receive no updates. Watchtower, Renovate or Dependabot rules pinned to them will never offer 1.6.0: change the image name by hand once, as in the three steps above.
