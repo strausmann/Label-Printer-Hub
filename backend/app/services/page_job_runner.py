@@ -369,6 +369,7 @@ class PageJobRunner:
         client = active.printer.client
         delay = self._poll_interval_s
         unusable = 0
+        unknown_state_logged = False
         while True:
             await self._sleep(delay)
             if active.cancel_pending() and active.identity_verified:
@@ -402,18 +403,11 @@ class PageJobRunner:
                 _log.warning("Page job %s: the printer's job %s is not ours", job_id, ipp_job_id)
                 await self._fail(page_job, result, "interrupted", started=result["started"])
                 return
-            if not _PENDING <= info.state <= _COMPLETED:
-                # RFC 8011 job-state is 3..9: anything else is not an answer about the job.
-                unusable += 1
-                _log.debug("Page job %s: job-state %s is out of range", job_id, info.state)
-                if unusable >= MAX_CONSECUTIVE_POLL_ERRORS:
-                    _log.warning(
-                        "Page job %s: %d unusable answers in a row; giving up", job_id, unusable
-                    )
-                    await self._fail(page_job, result, "interrupted", started=result["started"])
-                    return
-                delay = self._backoff(delay)
-                continue
+            if not _PENDING <= info.state <= _COMPLETED and not unknown_state_logged:
+                # RFC 8011 job-state is 3..9. Anything else is shown as waiting and never ends
+                # the job: the printer, not the hub, owns it. Logged once per job, no payload.
+                unknown_state_logged = True
+                _log.warning("job %s: unknown job-state %r", job_id, info.state)
             if not active.identity_verified:
                 active.identity_verified = True
                 if active.cancel_pending():

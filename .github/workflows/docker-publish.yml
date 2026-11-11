@@ -22,7 +22,10 @@ name: Docker — publish to GHCR + Docker Hub
 
 on:
   push:
-    branches: ['**']
+    # Only main publishes (rolling `dev` tag). Feature branches are built
+    # without pushing by ci.yml on their pull request; branch tags in GHCR
+    # were never kept and only had to be cleaned up (ghcr-cleanup.yml).
+    branches: [main]
     # Only rebuild when something that affects an image actually changes —
     # avoids tying up runners on docs-only pushes.
     paths:
@@ -39,6 +42,13 @@ on:
         description: "Release version to build, e.g. 1.1.0 (a leading v is accepted)."
         type: string
         required: true
+      ref:
+        description: >-
+          Commit to build instead of the release tag. Used by preview-image.yml
+          for pre-release previews (e.g. 1.5.0-rc.1), which have no git tag.
+        type: string
+        required: false
+        default: ""
     secrets:
       DOCKERHUB_USERNAME:
         required: false
@@ -115,7 +125,7 @@ jobs:
           # Release builds check out the tag itself, so the image is built
           # from the released commit rather than whatever the calling
           # workflow ran on. Empty = the event's default ref.
-          ref: ${{ inputs.tag && (startsWith(inputs.tag, 'v') && format('refs/tags/{0}', inputs.tag) || format('refs/tags/v{0}', inputs.tag)) || '' }}
+          ref: ${{ inputs.ref || (inputs.tag && (startsWith(inputs.tag, 'v') && format('refs/tags/{0}', inputs.tag) || format('refs/tags/v{0}', inputs.tag))) || '' }}
           persist-credentials: false
 
       # The commit that is actually built. For a release this is the tag's
@@ -294,7 +304,7 @@ jobs:
           # Release builds check out the tag itself, so the image is built
           # from the released commit rather than whatever the calling
           # workflow ran on. Empty = the event's default ref.
-          ref: ${{ inputs.tag && (startsWith(inputs.tag, 'v') && format('refs/tags/{0}', inputs.tag) || format('refs/tags/v{0}', inputs.tag)) || '' }}
+          ref: ${{ inputs.ref || (inputs.tag && (startsWith(inputs.tag, 'v') && format('refs/tags/{0}', inputs.tag) || format('refs/tags/v{0}', inputs.tag))) || '' }}
           persist-credentials: false
 
       # The commit that is actually built. For a release this is the tag's

@@ -553,6 +553,44 @@ async def test_update_new_uri_refused_keeps_the_row(hub: Hub) -> None:
     assert row.connection["uri"] == URI
 
 
+async def _break_stored_connection(slug: str) -> UUID:
+    async with _factory()() as s:
+        row = (await s.execute(select(Printer).where(Printer.slug == slug))).scalar_one()
+        row.connection = {"uri": 5}
+        await s.commit()
+        return row.id
+
+
+@pytest.mark.asyncio
+async def test_update_with_invalid_stored_connection_is_409(hub: Hub) -> None:
+    """A stored connection that no longer validates answers 409, not 500 (265-02)."""
+    headers = await _created(hub)
+    printer_id = await _break_stored_connection("office-laser")
+    resp = await hub.client.put(
+        f"{ADMIN}/office-laser", json={"name": "Renamed laser"}, headers=headers
+    )
+    assert resp.status_code == 409, resp.text
+    detail = _error(resp)
+    assert detail["error_code"] == "stored_connection_invalid"
+    assert str(printer_id) in detail["error_message"]
+    assert "uri" not in detail["error_message"].lower()  # the broken value is not echoed
+    assert hub.ops() == []
+
+
+@pytest.mark.asyncio
+async def test_invalid_stored_connection_can_be_replaced_by_a_new_one(hub: Hub) -> None:
+    """The 409 is not a dead end: a PUT that carries a connection repairs the row."""
+    headers = await _created(hub)
+    await _break_stored_connection("office-laser")
+    resp = await hub.client.put(
+        f"{ADMIN}/office-laser", json={"connection": {"uri": URI_2}}, headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    row = await _db_printer("office-laser")
+    assert row is not None
+    assert row.connection == {"uri": URI_2, "tls_verify": True}
+
+
 @pytest.mark.asyncio
 async def test_update_connection_validated_by_row_backend(hub: Hub) -> None:
     headers = await _created(hub)
@@ -700,6 +738,27 @@ async def test_create_duplicate_slug_is_409_not_500(hub: Hub) -> None:
     row = await _db_printer("office-laser")
     assert row is not None
     assert len(await _db_trays(row.id)) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("over", "code"),
+    [
+        ({"name": "Other"}, "duplicate_slug"),
+        ({"slug": "other-slug"}, "duplicate_name"),
+    ],
+)
+async def test_duplicate_create_makes_no_probe(hub: Hub, over: dict[str, Any], code: str) -> None:
+    """A duplicate slug or name is refused before the printer is contacted (265-03)."""
+    headers = await _key(["admin"])
+    first = await hub.client.post(ADMIN, json=_ipp_payload(), headers=headers)
+    assert first.status_code == 201, first.text
+    hub.clear()
+    again = await hub.client.post(ADMIN, json=_ipp_payload(**over), headers=headers)
+    assert again.status_code == 409, again.text
+    assert _error(again)["error_code"] == code
+    assert hub.ops() == []  # no probe
+    assert hub.uris == []
 
 
 # ---------------------------------------------------------------------------- calibration vs trays

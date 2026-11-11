@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
+from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +59,7 @@ from app.sheets.errors import (
     IppPdfUnsupportedError,
     IppRejectedError,
     IppUnreachableApiError,
+    StoredConnectionInvalidError,
     TrayUnknownError,
 )
 from app.sheets.text import log_value
@@ -421,6 +423,10 @@ class PrinterAdminService:
         result = await self._session.execute(stmt)
         return list(result.scalars())
 
+    async def _exists(self, column: Any, value: str) -> bool:
+        result = await self._session.execute(select(col(column)).where(col(column) == value))
+        return result.first() is not None
+
     async def create_printer(self, payload: PrinterCreatePayload) -> Printer:
         """Legt einen neuen Drucker an und schreibt einen create-Audit-Eintrag.
 
@@ -428,6 +434,12 @@ class PrinterAdminService:
             DuplicateSlugError: wenn der Slug bereits vergeben ist.
             DuplicateNameError: wenn der Name bereits vergeben ist.
         """
+        # Before the probe: a duplicate must not cost a request to the printer (the unique
+        # constraint below stays as the guard against a race).
+        if await self._exists(Printer.slug, payload.slug):
+            raise DuplicateSlugError(payload.slug)
+        if await self._exists(Printer.name, payload.name):
+            raise DuplicateNameError(payload.name)
         trays: list[TrayIn] | None = None
         if isinstance(payload.connection, IppConnection):
             trays = list(payload.trays or [])
@@ -542,9 +554,17 @@ class PrinterAdminService:
         Relabelling, re-ordering defaults or toggling known trays, and switching TLS
         verification on the same URI, need no live call.
         """
-        stored = IppConnection.model_validate(printer.connection or {})
+        try:
+            stored: IppConnection | None = IppConnection.model_validate(printer.connection or {})
+        except ValidationError:
+            # An old or hand-edited row. A new connection in this very request replaces it;
+            # without one the printer id is all the answer names (never the stored value).
+            if not isinstance(patch.connection, IppConnection):
+                raise StoredConnectionInvalidError(printer.id) from None
+            stored = None
         new_conn = patch.connection if isinstance(patch.connection, IppConnection) else stored
-        uri_changed = new_conn.uri != stored.uri
+        assert new_conn is not None  # stored is None only when the patch carries a connection
+        uri_changed = stored is None or new_conn.uri != stored.uri
         tray_keys = (
             [t.key for t in patch.trays]
             if patch.trays is not None

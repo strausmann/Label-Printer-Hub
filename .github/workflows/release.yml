@@ -11,6 +11,19 @@ name: Release
 #   - workflow_dispatch: manual trigger from the Actions tab when a
 #     release should happen ahead of schedule.
 #
+# Release guard: before anything is written, tagged or published,
+# semantic-release's verifyRelease step runs `scripts/release_impact.py guard`
+# (verifyReleaseCmd in .releaserc.json). The computed version must be the next
+# patch of the last release or the title of an OPEN GitHub milestone; anything
+# else aborts the run and opens an issue "release blocked: computed <v>" (no
+# issue in a dry run). A patch milestone is titled `X.Y.x` and covers every
+# X.Y.Z with Z >= 1. A release that contains a milestone merge also needs that
+# milestone to have no open issue, except issues labelled
+# `release:waived-by-maintainer`; a release without a milestone merge (a
+# Dependabot or single fix) never looks at a milestone. It is the last safety
+# net behind the release-impact PR check, e.g. against a direct push to main. See CONTRIBUTING.md, "Milestones,
+# branches and releases".
+#
 # When a scheduled run skips publishing:
 #   semantic-release evaluates the ENTIRE history since the last tag, not
 #   just commits made since the previous run. A scheduled release only
@@ -47,7 +60,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: write       # create tags + GitHub Releases
-      issues: write         # post comments on closed issues
+      issues: write         # post comments on closed issues; release guard opens a blocking issue
       pull-requests: write  # comment on PRs
     outputs:
       new-release-published: ${{ steps.semantic.outputs.version != '' }}

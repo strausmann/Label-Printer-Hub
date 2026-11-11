@@ -1,0 +1,88 @@
+name: Milestone sync
+
+# Keeps every milestone integration branch up to date with main.
+#
+# Fixes go to main directly and ship as nightly patch releases. After main
+# moves, main has to be merged into every open `milestone/*` branch, so the
+# milestone later merges cleanly and already contains the fixes. For each
+# remote `milestone/x.y.z` or patch milestone `milestone/x.y.x` branch that
+# does not contain main, this opens a PR
+# `main` -> `milestone/x.y.z` titled `chore: sync main into milestone/x.y.z`,
+# unless one is already open.
+#
+# Merge sync PRs with a MERGE COMMIT, never squash or rebase: only a merge
+# commit makes main an ancestor of the milestone branch.
+#
+# CI on sync PRs: PRs opened with GITHUB_TOKEN do NOT start other workflows
+# (GitHub's rule against recursive runs), so a sync PR shows no checks at
+# first. Start them by hand: close and reopen the PR (button in the UI, or
+# `gh pr close <n> && gh pr reopen <n>`); the `reopened` event comes from a
+# person and runs CI, commitlint and the other PR checks.
+#
+# Creating PRs with GITHUB_TOKEN needs the repository setting
+# "Allow GitHub Actions to create and approve pull requests".
+#
+# The schedule catches main moving through the nightly release commit, which
+# carries [skip ci] and therefore starts no push workflow.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '30 5 * * *'   # daily 05:30 UTC, after the 04:00 release
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: milestone-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Open sync PRs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Open a sync PR for each milestone branch behind main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mapfile -t branches < <(git for-each-ref --format='%(refname:strip=3)' 'refs/remotes/origin/milestone/')
+          echo "## Milestone sync" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${#branches[@]}" -eq 0 ]; then
+            echo "No milestone branches." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          for branch in "${branches[@]}"; do
+            if ! [[ "$branch" =~ ^milestone/(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*|x)$ ]]; then
+              echo "- skipped: branch name is not milestone/x.y.z or milestone/x.y.x" | tee -a "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            if git merge-base --is-ancestor origin/main "origin/$branch"; then
+              echo "- $branch: up to date" | tee -a "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            open=$(gh pr list --repo "$REPO" --base "$branch" --head main --state open --json number --jq 'length')
+            if [ "$open" != "0" ]; then
+              echo "- $branch: sync PR already open" | tee -a "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            url=$(gh pr create --repo "$REPO" --base "$branch" --head main \
+              --title "chore: sync main into $branch" \
+              --body "Merges main into \`$branch\` so the milestone carries every fix released from main.
+
+          Merge with a **merge commit** (not squash, not rebase). This PR was opened by the Milestone sync workflow with GITHUB_TOKEN, so CI does not start on its own: close and reopen the PR to run the checks. See CONTRIBUTING.md, \"Milestones, branches and releases\".")
+            echo "- $branch: opened $url" | tee -a "$GITHUB_STEP_SUMMARY"
+          done

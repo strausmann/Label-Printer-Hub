@@ -7,6 +7,7 @@ is bounded by ``asyncio.timeout`` (no pytest-timeout plugin).
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID, uuid4
@@ -187,27 +188,35 @@ async def test_terminal_state_is_persisted_before_it_is_published(
 
 
 @pytest.mark.parametrize("bad_state", [0, 2, 10, 99, -1])
-async def test_out_of_range_job_state_is_an_unusable_answer(
+async def test_out_of_range_job_state_is_waiting_not_a_failure(
     handler: RecordingHandler, bad_state: int
 ) -> None:
-    """A printer that keeps answering with a job-state outside 3..9 must not hold the queue."""
-    env = _Env(FakeIppPrinter(job_script=[bad_state]))
-    pj = await env.job()
-    await env.run(pj)  # bounded by the env timeout
-    assert pj.job.state == JobState.FAILED
-    assert env.ops("Get-Job-Attributes") == MAX_CONSECUTIVE_POLL_ERRORS
-    assert pj.job.error_code == "interrupted"
-    assert handler.names(UUID(pj.job.id)) == ["ended"]  # never started, never completed
+    """A job-state outside 3..9 is shown as waiting; the printer, not the hub, owns the job.
 
-
-async def test_a_valid_answer_resets_the_unusable_count(handler: RecordingHandler) -> None:
-    script = (
-        [99] * (MAX_CONSECUTIVE_POLL_ERRORS - 1) + [3] + [99] * (MAX_CONSECUTIVE_POLL_ERRORS - 1)
-    )
-    env = _Env(FakeIppPrinter(job_script=[*script, 9]))
+    It never ends the job by itself (265-08): the poll goes on until the printer says
+    something usable, however many unusable states came before.
+    """
+    script = [bad_state] * (MAX_CONSECUTIVE_POLL_ERRORS + 2) + [9]
+    env = _Env(FakeIppPrinter(job_script=script))
     pj = await env.job()
     await env.run(pj)
     assert pj.job.state == JobState.COMPLETED
+    assert env.ops("Get-Job-Attributes") == len(script)
+    assert (JobState.PRINTING, JobState.PRINTING, "waiting") in env.events
+
+
+async def test_unknown_job_state_logged_once(
+    handler: RecordingHandler, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Two polls with the same unknown state give one WARNING per job, without payload."""
+    env = _Env(FakeIppPrinter(job_script=[99, 99, 9]))
+    pj = await env.job()
+    with caplog.at_level(logging.WARNING, logger="app.services.page_job_runner"):
+        await env.run(pj)
+    unknown = [r for r in caplog.records if "unknown job-state" in r.getMessage()]
+    assert len(unknown) == 1
+    assert unknown[0].levelno == logging.WARNING
+    assert f"job {pj.job.id}: unknown job-state 99" in unknown[0].getMessage()
 
 
 async def test_completed_flow(handler: RecordingHandler) -> None:

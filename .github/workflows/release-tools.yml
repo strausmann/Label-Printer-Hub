@@ -1,0 +1,72 @@
+name: Release tools
+
+# Proves that an update of the release tooling (semantic-release, its plugins, the
+# conventional-commits preset: .github/release-tools, usually a Dependabot PR) still
+# computes versions and release notes the way release_impact.py expects, BEFORE the
+# Dependabot auto-merge can merge it.
+#
+# No `paths:` filter on purpose. A required status check that a paths filter skips never
+# reports and blocks every unrelated PR. So the job always runs and always reports; the
+# first step decides (scripts/release_tools_scope.sh) whether the expensive steps are
+# needed, and a change outside the listed paths passes in seconds.
+#
+# The dry run itself is scripts/release_dry_run.sh: throw-away repository, local bare
+# remote, no token, no network. This job has no secrets and `contents: read` only.
+
+on:
+  pull_request:
+    branches: [main, 'milestone/**']
+  push:
+    branches: [main, 'milestone/**']
+
+permissions: {}
+
+concurrency:
+  group: release-tools-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dry-run:
+    name: release-tools dry run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Full history: the scope check diffs base...head.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check whether the release tooling is touched
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: echo "touched=$(scripts/release_tools_scope.sh "$BASE_SHA" "$HEAD_SHA")" >> "$GITHUB_OUTPUT"
+
+      # Same Node selector as the release workflow.
+      - name: Set up Node
+        if: steps.scope.outputs.touched == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "lts/*"
+
+      - name: Install semantic-release (locked, no scripts)
+        if: steps.scope.outputs.touched == 'true'
+        working-directory: .github/release-tools
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # 0 differences between semantic-release and release_impact.py over every sample
+      # commit message (exit 1 otherwise).
+      - name: Versions agree with release_impact.py
+        if: steps.scope.outputs.touched == 'true'
+        run: scripts/release_dry_run.sh --all
+
+      - name: Release notes still render the Features section
+        if: steps.scope.outputs.touched == 'true'
+        run: |
+          notes="$(scripts/release_dry_run.sh --notes 'feat(ui): add a thing')"
+          printf '%s\n' "$notes"
+          grep -qx '### Features' <<< "$notes"

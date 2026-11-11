@@ -124,8 +124,8 @@ def test_toner_empty_blocks() -> None:
         ("media-low", "media-low", "warning", False),
         ("developer-low", "developer-low", "warning", False),
         ("some-unknown-thing", "some-unknown-thing", "error", True),
-        ("media-empty-warning", "media-empty", "warning", True),
-        ("cover-open-report", "cover-open", "report", True),
+        ("media-empty-warning", "media-empty", "warning", False),
+        ("cover-open-report", "cover-open", "report", False),
         ("sleep-mode-report", "sleep-mode", "report", False),
         ("spool-area-full-warning", "spool-area-full", "warning", False),
         ("fuser-over-temp-error", "fuser-over-temp", "error", True),
@@ -145,10 +145,30 @@ def test_reason_without_suffix_is_error(
 @pytest.mark.parametrize(
     "base", ["media-empty", "media-jam", "door-open", "cover-open", "toner-empty", "paused"]
 )
-def test_every_blocking_base_blocks_with_any_suffix(base: str) -> None:
-    for suffix in ("", "-report", "-warning", "-error"):
+def test_every_blocking_base_blocks_bare_and_with_error(base: str) -> None:
+    for suffix in ("", "-error"):
         rec = map_status(_base(printer_state_reasons=[base + suffix]))
         assert rec.blocking_reason == base, base + suffix
+
+
+@pytest.mark.parametrize(
+    "reason", ["media-empty-warning", "cover-open-report", "door-open-warning"]
+)
+def test_warning_and_report_severities_never_block(reason: str) -> None:
+    """RFC 8011 4.4.12: ``-warning`` and ``-report`` do not stop the printer, so they must not
+    keep a job queued (#265, 265-01)."""
+    rec = map_status(_base(printer_state_reasons=[reason]))
+    (r,) = rec.reasons
+    assert r.blocking is False
+    assert rec.blocking_reason is None
+
+
+@pytest.mark.parametrize("reason", ["media-empty-error", "media-empty"])
+def test_error_severity_and_bare_keyword_block(reason: str) -> None:
+    rec = map_status(_base(printer_state_reasons=[reason]))
+    (r,) = rec.reasons
+    assert (r.keyword, r.blocking) == ("media-empty", True)
+    assert rec.blocking_reason == "media-empty"
 
 
 def test_first_blocking_reason_is_reported_and_none_is_ignored() -> None:
