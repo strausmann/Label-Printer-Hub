@@ -59,14 +59,14 @@ test.describe.serial("about", () => {
   test("desktop: brother-ql is listed by the filter and its text opens on demand", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/about");
-    await page.getByRole("textbox", { name: "Filter packages" }).fill("brother");
+    await page.getByRole("searchbox", { name: "Filter packages" }).fill("brother");
     const table = page.getByRole("table");
     const row = table.getByRole("row", { name: /brother-ql/ });
     await expect(row).toBeVisible();
     await expect(page.getByText("GNU GENERAL PUBLIC LICENSE")).toHaveCount(0);
     await row.getByRole("button", { name: "Show licence text of brother-ql" }).click();
     await expect(page.getByText("GNU GENERAL PUBLIC LICENSE")).toBeVisible();
-    await page.getByRole("textbox", { name: "Filter packages" }).fill("fastapi");
+    await page.getByRole("searchbox", { name: "Filter packages" }).fill("fastapi");
     // A package that ships no text links its licence id to the SPDX text instead.
     await expect(table.getByRole("row", { name: /fastapi/ }).getByRole("link", { name: "MIT: licence text at SPDX" })).toHaveAttribute("href", "https://spdx.org/licenses/MIT.html");
   });
@@ -74,7 +74,7 @@ test.describe.serial("about", () => {
   test("the focus ring of the expand button is not cut off by the table", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/about");
-    await page.getByRole("textbox", { name: "Filter packages" }).fill("brother");
+    await page.getByRole("searchbox", { name: "Filter packages" }).fill("brother");
     const button = page.getByRole("button", { name: "Show licence text of brother-ql" });
     await button.focus();
     await page.keyboard.press("Tab");
@@ -97,7 +97,7 @@ test.describe.serial("about", () => {
   test("desktop: the filter narrows the list", async () => {
     await page.setViewportSize({ width: 1280, height: 500 });
     await page.goto("/about");
-    const filter = page.getByRole("textbox", { name: "Filter packages" });
+    const filter = page.getByRole("searchbox", { name: "Filter packages" });
     await filter.fill("brother");
     await expect(page.getByRole("table").getByRole("row")).toHaveCount(2); // header + brother-ql
     await expect(filter).toBeInViewport();
@@ -116,33 +116,55 @@ test.describe.serial("about", () => {
   test("phone: the list stays inside the screen, also with the text open and the keyboard's height", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/about");
-    await page.getByRole("textbox", { name: "Filter packages" }).fill("brother");
+    await page.getByRole("searchbox", { name: "Filter packages" }).fill("brother");
     const row = page.getByRole("table").getByRole("row", { name: /brother-ql/ });
     await row.getByRole("button", { name: "Show licence text of brother-ql" }).click();
     await expect(page.getByText("GNU GENERAL PUBLIC LICENSE")).toBeVisible();
     expect(await noSideScroll(page)).toBe(true);
     await shot(page, "about-en-phone-licences.png");
     await page.setViewportSize({ width: 390, height: 400 });
-    const filter = page.getByRole("textbox", { name: "Filter packages" });
+    const filter = page.getByRole("searchbox", { name: "Filter packages" });
     await filter.fill("react");
     await expect(filter).toBeInViewport();
-    // Scrolled into the list, the field sticks under the top bar (nothing covers it) and rows pass beneath it.
-    const state = await page.evaluate(() => {
-      const input = document.querySelector('input[placeholder="Filter by package or licence"]') as HTMLInputElement;
-      const rows = [...document.querySelectorAll("tbody tr")];
-      rows[Math.min(6, rows.length - 1)]!.scrollIntoView({ block: "center" });
-      const box = input.getBoundingClientRect();
-      const field = input.closest(".sticky")!.getBoundingClientRect();
-      const covered = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) !== input;
-      const bottomBar = [...document.querySelectorAll("nav")].map((n) => n.getBoundingClientRect().top).filter((top) => top > 100);
-      const limit = Math.min(window.innerHeight, ...bottomBar);
-      const rowsBelow = rows.filter((r) => r.getBoundingClientRect().top >= field.bottom && r.getBoundingClientRect().bottom <= limit).length;
-      return { covered, rowsBelow };
-    });
-    expect(state.covered).toBe(false);
-    expect(state.rowsBelow).toBeGreaterThan(0);
+    // On a short screen the filter bar is not pinned (it would be a third of the height); a rest of rows is in view.
+    const position = await filter.evaluate((el) => getComputedStyle(el.closest(".sticky")!).position);
+    expect(position).toBe("static");
     expect(await noSideScroll(page)).toBe(true);
   });
+
+  // WCAG 2.4.11: a button reached by Tab is never covered by the top bar, the pinned filter bar or the tab bar.
+  for (const height of [844, 600, 400]) {
+    test(`phone ${height}: Tab never hides the focused row button under a bar`, async () => {
+      await page.setViewportSize({ width: 390, height });
+      await page.goto("/about");
+      const filter = page.getByRole("searchbox", { name: "Filter packages" });
+      await filter.fill("a");
+      await filter.focus();
+      let seen = 0;
+      const covered: string[] = [];
+      for (let i = 0; i < 16; i += 1) {
+        await page.keyboard.press("Tab");
+        const state = await page.evaluate(() => {
+          const el = document.activeElement as HTMLElement | null;
+          if (!el || !/licence text of/.test(el.getAttribute("aria-label") ?? "")) return null;
+          const box = el.getBoundingClientRect();
+          const header = document.querySelector("header")!.getBoundingClientRect().bottom;
+          const bar = document.querySelector('input[type="search"]')!.closest(".sticky")!;
+          const barBottom = getComputedStyle(bar).position === "sticky" ? bar.getBoundingClientRect().bottom : 0;
+          const tabs = document.querySelector('nav[aria-label="Tabs"]') as HTMLElement | null;
+          const tabsTop = tabs && getComputedStyle(tabs).display !== "none" ? tabs.getBoundingClientRect().top : window.innerHeight;
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          const free = box.top >= Math.max(header, barBottom) - 0.5 && box.bottom <= tabsTop + 0.5 && (hit === el || el.contains(hit));
+          return { free, label: el.getAttribute("aria-label"), top: Math.round(box.top), bottom: Math.round(box.bottom), header, barBottom, tabsTop };
+        });
+        if (state === null) continue;
+        seen += 1;
+        if (!state.free) covered.push(JSON.stringify(state));
+      }
+      expect(seen).toBeGreaterThanOrEqual(8);
+      expect(covered).toEqual([]);
+    });
+  }
 
   // Artefacts for the look at the list: the viewport at the list, light and dark, both layouts (E2E_SHOTS_DIR only).
   for (const scheme of ["light", "dark"] as const) {
@@ -155,7 +177,7 @@ test.describe.serial("about", () => {
         await page.getByRole("heading", { name: "Third-party software" }).scrollIntoViewIfNeeded();
         await page.getByRole("heading", { name: "Third-party software" }).evaluate((el) => el.scrollIntoView());
         await shot(page, `about-licences-${name}-${scheme}.png`, false);
-        await page.getByRole("textbox", { name: "Filter packages" }).fill("brother");
+        await page.getByRole("searchbox", { name: "Filter packages" }).fill("brother");
         await page.getByRole("button", { name: "Show licence text of brother-ql" }).click();
         await page.getByRole("button", { name: "Hide licence text of brother-ql" }).focus();
         await page.keyboard.press("Tab");
@@ -165,4 +187,17 @@ test.describe.serial("about", () => {
       });
     }
   }
+
+  test("phone: the pinned filter bar (390x600) and the unpinned one with the keyboard's height (390x400)", async () => {
+    test.skip(!SHOTS, "artefacts only");
+    for (const height of [600, 400]) {
+      await page.setViewportSize({ width: 390, height });
+      await page.goto("/about");
+      await page.getByRole("heading", { name: "Third-party software" }).evaluate((el) => el.scrollIntoView());
+      await page.getByRole("searchbox", { name: "Filter packages" }).fill("a");
+      await page.getByRole("searchbox", { name: "Filter packages" }).focus();
+      for (let i = 0; i < 6; i += 1) await page.keyboard.press("Tab");
+      await shot(page, `about-licences-phone-h${height}-tab-focus.png`, false);
+    }
+  });
 });

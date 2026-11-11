@@ -1,15 +1,20 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { Fragment, useDeferredValue, useMemo, useState } from "react";
-import { Button } from "react-aria-components";
+import { Button, Input, Label, SearchField } from "react-aria-components";
 import { Section } from "../settings/sections";
-import { TextInput } from "../settings/controls";
+import { FIELD } from "../../shell/SignIn";
 import { SECONDARY_BUTTON } from "../ui";
 import { useLicenceLists, type LicenceEntry } from "./licences";
 
 const SPDX_URL = "https://spdx.org/licenses/";
 const KEYWORDS = new Set(["AND", "OR", "WITH"]);
 const SPDX_ID = /^[A-Za-z0-9][A-Za-z0-9.+-]*$/;
+/**
+ * A button reached by Tab must not end up under the top bar (4 rem), the pinned filter bar (about 6.5 rem) or the tab bar
+ * on phones (4 rem): scroll margins as tall as those bars. On short screens the filter bar is not pinned.
+ */
+const SCROLL_CLEAR = "scroll-mt-44 scroll-mb-24 [@media(max-height:500px)]:scroll-mt-20";
 const BREAK = "[overflow-wrap:anywhere]";
 const CELL = "px-1.5 py-2 align-top sm:px-3";
 /** The list starts with this many rows; the rest is one button away (the filter always searches all). */
@@ -104,7 +109,7 @@ function Rows({ rows }: { rows: Keyed[] }) {
                         ? t({ message: `Hide licence text of ${entry.name}`, context: "action" })
                         : t({ message: `Show licence text of ${entry.name}`, context: "action" })
                     }
-                    className={`press inline-flex h-11 w-10 items-center justify-center rounded-r2 text-ink-2 transition-colors duration-150 hover:text-ink ${FOCUS} data-[focus-visible]:outline-offset-[-3px]`}
+                    className={`press inline-flex h-11 w-10 items-center justify-center rounded-r2 text-ink-2 transition-colors duration-150 hover:text-ink ${FOCUS} data-[focus-visible]:outline-offset-[-3px] ${SCROLL_CLEAR}`}
                   >
                     <Chevron open={expanded} />
                   </Button>
@@ -159,10 +164,29 @@ export function DependencyLicences() {
 
       {entries.length > 0 ? (
         <>
-          {/* Stays under the top bar while the rows scroll, so field and results are in view together, also with the keyboard up. */}
-          <div className="sticky top-16 z-[5] -mx-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 bg-bg px-1 py-2">
+          {/* Stays under the top bar while the rows scroll, so field and results are in view together. Not on short screens (keyboard up): there it would be a third of the height. */}
+          <div className="sticky top-16 z-[5] [@media(max-height:500px)]:static -mx-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 bg-bg px-1 py-2">
             <div className="w-full max-w-sm">
-              <TextInput label={t({ message: "Filter packages", context: "field label" })} hideLabel placeholder={t`Filter by package or licence`} value={filter} onChange={setFilter} inputMode="text" />
+              <SearchField value={filter} onChange={setFilter} className="relative block">
+                <Label className="sr-only">{t({ message: "Filter packages", context: "field label" })}</Label>
+                <Input
+                  placeholder={t`Filter by package or licence`}
+                  enterKeyHint="search"
+                  spellCheck={false}
+                  autoCapitalize="none"
+                  className={`${FIELD} pr-11 [&::-webkit-search-cancel-button]:hidden`}
+                />
+                {filter === "" ? null : (
+                  <Button
+                    aria-label={t({ message: "Clear filter", context: "action" })}
+                    className={`press absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center rounded-r2 text-ink-2 hover:text-ink ${FOCUS}`}
+                  >
+                    <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" className="fill-none stroke-current stroke-2">
+                      <path d="m2 2 8 8m0-8-8 8" />
+                    </svg>
+                  </Button>
+                )}
+              </SearchField>
             </div>
             <p aria-live="polite" className="text-small text-ink-2">
               {shown.length < matches.length
@@ -192,7 +216,7 @@ export function DependencyLicences() {
               </div>
               {shown.length < matches.length ? (
                 <div>
-                  <Button onPress={() => setAll(true)} className={`${SECONDARY_BUTTON}`}>
+                  <Button onPress={() => setAll(true)} className={`${SECONDARY_BUTTON} ${SCROLL_CLEAR}`}>
                     {t({ message: `Show all ${matches.length} packages`, context: "action" })}
                   </Button>
                 </div>

@@ -885,6 +885,11 @@ msgctxt "tape colour"
 msgid "Clear"
 msgstr "Transparent"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Clear filter"
+msgstr "Filter leeren"
+
 #: src/features/archive/ArchivePage.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Clear filters"

@@ -111,7 +111,7 @@ describe("DependencyLicences", () => {
     await show();
     await screen.findByRole("table");
     const user = userEvent.setup();
-    const filter = screen.getByRole("textbox", { name: "Filter packages" });
+    const filter = screen.getByRole("searchbox", { name: "Filter packages" });
     await user.type(filter, "gpl");
     expect(await screen.findByText("1 package")).toBeInTheDocument();
     expect(screen.getByRole("row", { name: /brother-ql/ })).toBeInTheDocument();
@@ -200,7 +200,7 @@ describe("DependencyLicences", () => {
     await show();
     await screen.findByText("50 of 300 packages");
     const user = userEvent.setup();
-    await user.type(screen.getByRole("textbox", { name: "Filter packages" }), "isc");
+    await user.type(screen.getByRole("searchbox", { name: "Filter packages" }), "isc");
     expect(await screen.findByText("1 package")).toBeInTheDocument();
     expect(screen.getByRole("row", { name: /pkg-299/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull();
@@ -236,5 +236,20 @@ describe("DependencyLicences", () => {
     await screen.findByRole("table");
     expect(container.querySelector("img")).toBeNull();
     expect(screen.getAllByText(bad).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("has a search field with a clear button that empties the filter (and none while it is empty)", async () => {
+    await show();
+    await screen.findByRole("table");
+    const user = userEvent.setup();
+    const field = screen.getByRole("searchbox", { name: "Filter packages" });
+    expect(field).toHaveAttribute("type", "search");
+    expect(screen.queryByRole("button", { name: "Clear filter" })).toBeNull();
+    await user.type(field, "gpl");
+    expect(await screen.findByText("1 package")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear filter" }));
+    expect(field).toHaveValue("");
+    expect(await screen.findByText("4 packages")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear filter" })).toBeNull();
   });
 });
