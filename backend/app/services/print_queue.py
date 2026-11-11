@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import logging
 import time
 import uuid
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -311,6 +312,21 @@ MAX_HELD_RUNS_PER_PRINTER = 5
 discards the oldest (its waiting labels are cancelled with ``run_discarded``)."""
 
 
+_TERMINAL_JOB_STATES = frozenset({JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED})
+_BATCH_OPTION_KEYS = ("auto_cut", "high_resolution", "half_cut", "orientation")
+
+
+def _recovered_run_id(payload: Mapping[str, Any]) -> UUID | None:
+    """The run a stored row belongs to (``tape_run.run_id``), or ``None`` (single label)."""
+    tape_run = payload.get("tape_run")
+    if not isinstance(tape_run, dict):
+        return None
+    try:
+        return UUID(str(tape_run["run_id"]))
+    except (KeyError, ValueError):
+        return None
+
+
 def _split(start: int, end: int) -> list[tuple[int, int]]:
     """``[start, end)`` in sub-jobs of at most ``MAX_LABELS_PER_TAPE_JOB``."""
     return [
@@ -383,9 +399,9 @@ class PrintQueue:
         # All resume events start "set" so a never-paused worker doesn't block.
         for ev in self._worker_resume_events.values():
             ev.set()
-        # TODO(phase5): _jobs grows unbounded over the service lifetime; evict
-        #               terminal jobs older than a configurable window once
-        #               persistence lands.
+        # Jobs this process tracks. A terminal job leaves it an hour after it finished
+        # (``forget_job``, driven by ``job_retention.evict_finished`` from the cleanup task);
+        # its row stays in the store, which is where the API reads it afterwards.
         self._jobs: dict[str, Job] = {}
         self._workers: dict[UUID, asyncio.Task[None]] = {}
         self._running: bool = False
@@ -436,11 +452,14 @@ class PrintQueue:
             return
         # I-1: Race-Guard — sofort setzen bevor erster await, damit ein zweiter
         # gleichzeitiger start()-Aufruf am Guard oben scheitert.
-        self._running = True
         ids = list(self._queues)
+        # An add cannot be running for a printer of this snapshot: ``_add`` only registers an id
+        # that is not known yet, and start() takes the snapshot without an await in between.
+        assert not (set(ids) & self._adds.keys()), "start() found a printer that is being added"
+        self._running = True
         # Each printer of the snapshot counts as "being added" until its worker exists: a
         # remove that lands during the recovery below waits instead of purging under it.
-        starting = {pid: asyncio.Event() for pid in ids if pid not in self._adds}
+        starting = {pid: asyncio.Event() for pid in ids}
         self._adds.update(starting)
         try:
             for paused_id, since in (initially_paused or {}).items():
@@ -551,6 +570,9 @@ class PrintQueue:
         self._workers[printer_id] = asyncio.create_task(
             self._worker_for(printer_id), name=f"printer-worker-{printer_id}"
         )
+        # One turn of the loop: the worker runs up to its first wait before this add ends (and
+        # before a concurrent add of the same printer, which waits for ``_adds``, returns).
+        await asyncio.sleep(0)
         logger.info("Printer %s added to the running queue", printer_id)
 
     async def remove_printer(self, printer_id: UUID, timeout_s: float) -> None:
@@ -599,7 +621,7 @@ class PrintQueue:
 
     async def _end_removed_in_flight(self, printer_id: UUID) -> None:
         """End what the cancelled worker left PRINTING, as ``stop()`` and a restart do."""
-        interrupted = False
+        interrupted: list[Job] = []
         for job in list(self._jobs.values()):
             if job.printer_id != printer_id or job.state != JobState.PRINTING:
                 continue
@@ -610,9 +632,18 @@ class PrintQueue:
             job.error_msg = job.error_message
             with contextlib.suppress(InvalidStateTransitionError):
                 JobStateMachine.transition(job, JobState.FAILED)
-            interrupted = True
+            interrupted.append(job)
         if interrupted:
             await self._store.mark_interrupted(printer_id)
+            # The timeout can have cut the worker off before it took the row (``mark_printing``):
+            # the job is failed in memory, so its row must be terminal too. A row left ``queued``
+            # would be skipped by a later recovery (the id is known) and never end (263-11).
+            for job in interrupted:
+                row = await self._store.get(UUID(job.id))
+                if row is not None and row.state == DbJobState.QUEUED.value:
+                    await self._store.mark_failed_code(
+                        UUID(job.id), "interrupted", job.error_message or "interrupted", None
+                    )
 
     def _purge(self, printer_id: UUID) -> None:
         """Forget every per-printer entry; waiting jobs stay persisted as ``queued``."""
@@ -685,6 +716,11 @@ class PrintQueue:
         if printer_id in self._page_printers:  # D18: page jobs render at send time
             await self._recover_page_jobs(printer_id, pending_db_jobs)
             return
+        # Queue entries in the original order. The rows of one run (``tape_run.run_id``) share
+        # the entry of their first row and print as ONE batch (one pre-roll, 263-15/263-65);
+        # a row without a run stays a single job.
+        plan: list[Job | UUID] = []
+        runs: dict[UUID, list[Job]] = {}
         for db_job in pending_db_jobs:
             # S-1: StrEnum-Konsistenz — DbJobState.QUEUED.value statt String-Literal
             if db_job.state != DbJobState.QUEUED.value:
@@ -752,12 +788,51 @@ class PrintQueue:
                 options=db_job.payload.get("options", {}),
             )
             self._jobs[str(db_job.id)] = wrapper
-            await self._queues[printer_id].put(wrapper)
+            run_id = _recovered_run_id(db_job.payload)
+            if run_id is None:
+                plan.append(wrapper)
+            else:
+                if run_id not in runs:
+                    runs[run_id] = []
+                    plan.append(run_id)
+                runs[run_id].append(wrapper)
             logger.info(
                 "Recovery: QUEUED-Job %s auf Drucker %s re-enqueued",
                 db_job.id,
                 printer_id,
             )
+        for entry in plan:
+            if isinstance(entry, UUID):
+                await self._queues[printer_id].put(self._recovered_batch(printer_id, entry, runs))
+            else:
+                await self._queues[printer_id].put(entry)
+
+    def _recovered_batch(
+        self, printer_id: UUID, run_id: UUID, runs: Mapping[UUID, Sequence[Job]]
+    ) -> Job | BatchJob:
+        """The queue entry of a recovered run: a batch, or the plain job when it has one label.
+
+        Options are the four a batch print takes (as ``PrintService`` passes them), read from
+        the first row: the rows of a run share them. Not a continuable run: the labels that
+        waited for a confirmation failed in the loop above, so no sub-job follows.
+        """
+        members = runs[run_id]
+        if len(members) == 1:
+            return members[0]
+        first = members[0]
+        options = {
+            key: first.options[key]
+            for key in _BATCH_OPTION_KEYS
+            if first.options.get(key) is not None
+        }
+        return BatchJob(
+            batch_id=run_id,
+            printer_id=printer_id,
+            image_payloads=[m.image_payload or b"" for m in members],
+            job_ids=[UUID(m.id) for m in members],
+            tape_mm=first.tape_mm or 0,
+            options=options,
+        )
 
     async def _recover_page_jobs(self, printer_id: UUID, pending: list[DbJob]) -> None:
         """Restart recovery of one page printer's jobs.
@@ -1467,6 +1542,29 @@ class PrintQueue:
 
     # --- per-job control ---------------------------------------------------
 
+    def finished_jobs(self) -> list[tuple[UUID, datetime]]:
+        """Terminal jobs the queue still tracks, with the time they finished."""
+        return [
+            (UUID(job.id), job.finished_at or job.submitted_at)
+            for job in self._jobs.values()
+            if job.state in _TERMINAL_JOB_STATES
+        ]
+
+    def forget_job(self, job_id: UUID) -> bool:
+        """Drop a terminal job (and its image) from memory; its row in the store stays.
+
+        ``False`` for an unknown job, one that is not terminal, and one that belongs to a tape
+        run the queue still holds (a stopped run reprints from its labels).
+        """
+        key = str(job_id)
+        job = self._jobs.get(key)
+        if job is None or job.state not in _TERMINAL_JOB_STATES:
+            return False
+        if any(key in run.job_ids for run in self._runs.values()):
+            return False
+        del self._jobs[key]
+        return True
+
     def has_job(self, job_id: str | UUID) -> bool:
         """True if the queue tracks *job_id* in memory (any state)."""
         return str(job_id) in self._jobs
@@ -1526,29 +1624,6 @@ class PrintQueue:
             job,
             JobState.QUEUED,
             JobState.PAUSED,
-            queue_depth=self._queue_depth(job.printer_id),
-        )
-        return True
-
-    async def resume_job(self, job_id: str) -> bool:
-        """Re-enqueue a paused job at the tail of the queue (FIFO preserved).
-
-        Note: the job's original reference remains in the asyncio.Queue from
-        when it was first submitted. After resume, a new reference is appended
-        at the tail. The worker filters by state on pop, so the stale reference
-        drains cleanly (state != QUEUED on the second pop). asyncio.Queue.qsize()
-        will be +1 high until that drain happens — use list_queue() for accurate
-        active-job counts.
-        """
-        job = self._jobs[job_id]
-        if job.state != JobState.PAUSED:
-            return False
-        JobStateMachine.transition(job, JobState.QUEUED)
-        await self._queues[job.printer_id].put(job)
-        self._notify_state_change(
-            job,
-            JobState.PAUSED,
-            JobState.QUEUED,
             queue_depth=self._queue_depth(job.printer_id),
         )
         return True
@@ -1849,6 +1924,8 @@ class PrintQueue:
                 return
             if self._removing(printer_id):
                 # #224: taken, not started: the job (or batch) stays ``queued`` in the store.
+                # (A single job is also guarded below; the batch dispatch right after this needs
+                # this check, so it stays for single jobs too.)
                 return
 
             # Phase 1k.2: BatchJob vs Job — dispatch per isinstance
@@ -1866,7 +1943,7 @@ class PrintQueue:
             while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
                 if self._stopping or self._removing(printer_id):
                     return
-                await self._worker_resume_events[printer_id].wait()
+                await self._wait_for_resume(printer_id)
             if self._removing(printer_id):
                 return  # resumed and removed at once
 
@@ -1907,7 +1984,11 @@ class PrintQueue:
                 await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
                 _from = job.state
                 JobStateMachine.transition(job, JobState.COMPLETED)
-                await self._store.mark_done(UUID(job.id))  # Phase 2: DB-State persistieren
+                # Phase 2: DB-State persistieren. The label printed: a removal timeout must not
+                # cut the write short (the row would be reported ``failed_restart``).
+                await self._persist_through_cancel(
+                    functools.partial(self._store.mark_done, UUID(job.id))
+                )
                 self._notify_state_change(
                     job,
                     _from,
@@ -2004,7 +2085,7 @@ class PrintQueue:
             while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
                 if self._stopping or self._removing(printer_id):
                     return
-                await self._worker_resume_events[printer_id].wait()
+                await self._wait_for_resume(printer_id)
             if self._stopping or self._removing(printer_id):
                 return
             if item.job.state != JobState.QUEUED:
@@ -2206,8 +2287,25 @@ class PrintQueue:
             if self._stopping or self._removing(printer_id):
                 return False
             waited = True
-            await self._worker_resume_events[printer_id].wait()
+            await self._wait_for_resume(printer_id)
         return not (waited and self._removing(printer_id))
+
+    async def _wait_for_resume(self, printer_id: UUID) -> None:
+        """One wait of a pause loop.
+
+        The resume event can be set while the printer is still paused (a removal or a stop wakes
+        the worker; the caller's loop then leaves). Any other wake-up with the state still paused
+        clears the event, or the loop would turn without ever yielding.
+        """
+        event = self._worker_resume_events[printer_id]
+        await event.wait()
+        if (
+            self._worker_resume_events.get(printer_id) is event
+            and self._worker_states.get(printer_id) == PrinterWorkerState.PAUSED
+            and not self._stopping
+            and not self._removing(printer_id)
+        ):
+            event.clear()
 
     async def _take_group(
         self, printer_id: UUID, batch: BatchJob, group: range
@@ -2252,16 +2350,13 @@ class PrintQueue:
         return active_jobs, payloads
 
     async def _complete_group(self, printer_id: UUID, batch: BatchJob, active: list[Job]) -> None:
+        # Every printed label is completed in memory first (no await), then the rows are written
+        # as one step that a removal timeout cannot cut short: the rest of the group printed
+        # too and must not be reported ``failed_restart`` (263-64).
+        completed: list[Job] = []
         for job in active:
             try:
                 JobStateMachine.transition(job, JobState.COMPLETED)
-                self._notify_state_change(
-                    job,
-                    JobState.PRINTING,
-                    JobState.COMPLETED,
-                    queue_depth=self._queue_depth(printer_id),
-                )
-                await self._store.mark_done(UUID(job.id))
             except InvalidStateTransitionError:
                 logger.warning(
                     "Batch %s: success-transition of %s failed (state=%s)",
@@ -2269,6 +2364,34 @@ class PrintQueue:
                     job.id,
                     job.state,
                 )
+                continue
+            self._notify_state_change(
+                job,
+                JobState.PRINTING,
+                JobState.COMPLETED,
+                queue_depth=self._queue_depth(printer_id),
+            )
+            completed.append(job)
+        await self._persist_through_cancel(lambda: self._mark_done_all(completed))
+
+    async def _mark_done_all(self, pending: list[Job]) -> None:
+        """Write the rows of *pending* done; a label leaves the list once its row is written."""
+        while pending:
+            await self._store.mark_done(UUID(pending[0].id))
+            pending.pop(0)
+
+    async def _persist_through_cancel(self, write: Callable[[], Awaitable[None]]) -> None:
+        """Run a store write that records a print that happened; if the worker is cancelled
+        meanwhile (the removal timeout), write again to the end and re-raise the cancel.
+
+        *write* must be safe to repeat (``mark_done`` is: a row that is not ``printing`` is left).
+        """
+        try:
+            await write()
+        except asyncio.CancelledError:
+            with contextlib.suppress(Exception):
+                await asyncio.shield(write())
+            raise
 
     async def _stop_run(
         self,

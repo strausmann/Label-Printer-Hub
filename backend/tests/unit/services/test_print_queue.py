@@ -51,7 +51,7 @@ async def test_queue_serial_per_printer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_queue_pause_and_resume_job() -> None:
+async def test_queue_pause_job() -> None:
     fake_printer = MagicMock()
     fake_printer.id = _PT750W_ID
     fake_printer.print_image = AsyncMock()
@@ -61,8 +61,6 @@ async def test_queue_pause_and_resume_job() -> None:
     job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
     assert (await queue.pause_job(job_id)) is True
     assert (await queue.get(job_id)).state == JobState.PAUSED
-    assert (await queue.resume_job(job_id)) is True
-    assert (await queue.get(job_id)).state == JobState.QUEUED
 
 
 @pytest.mark.asyncio
@@ -300,7 +298,7 @@ async def test_submit_does_not_fire_on_state_change_callback() -> None:
 
     Real transitions (QUEUED→PRINTING, PRINTING→COMPLETED/FAILED,
     QUEUED→CANCELLED, etc.) still fire the callback from the worker loop and
-    from cancel()/pause_job()/resume_job()/clear_queue().
+    from cancel()/pause_job()/clear_queue().
     """
     transitions: list[tuple[str, str]] = []
 
@@ -341,30 +339,6 @@ async def test_pause_job_fires_on_state_change_callback() -> None:
     assert result is True
     assert any(to == "paused" for _, to in transitions), (
         f"expected a PAUSED transition callback from pause_job(), got: {transitions}"
-    )
-
-
-@pytest.mark.asyncio
-async def test_resume_job_fires_on_state_change_callback() -> None:
-    """resume_job() must fire the on_state_change callback for QUEUED transition."""
-    transitions: list[tuple[str, str]] = []
-
-    def _cb(job, from_state, to_state, queue_depth=0):
-        transitions.append((from_state.value, to_state.value))
-
-    fake_printer = MagicMock()
-    fake_printer.id = _PT750W_ID
-    queue = PrintQueue([fake_printer], on_state_change=_cb)
-
-    img = Image.new("1", (300, 76))
-    job_id = await queue.submit(_PT750W_ID, img, tape_mm=12)
-    await queue.pause_job(job_id)
-    transitions.clear()  # ignore previous callbacks
-
-    result = await queue.resume_job(job_id)
-    assert result is True
-    assert any(to == "queued" for _, to in transitions), (
-        f"expected a QUEUED transition callback from resume_job(), got: {transitions}"
     )
 
 

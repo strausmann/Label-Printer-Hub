@@ -66,3 +66,25 @@ async def test_cleanup_session_purge_failure_does_not_stop_job_eviction() -> Non
     await task.stop(timeout_s=1.0)
     store.evict_terminal_older_than.assert_awaited()
     purge.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_drops_finished_jobs_from_the_queue_each_cycle() -> None:
+    """Each cycle also evicts finished jobs from the queue's memory (263-70)."""
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    from app.services.job_lifecycle import Job, JobState
+    from app.services.print_queue import PrintQueue
+
+    queue = PrintQueue([])
+    old = Job(id=str(uuid4()), printer_id=uuid4(), state=JobState.COMPLETED)
+    old.finished_at = datetime(2020, 1, 1, tzinfo=UTC)
+    waiting = Job(id=str(uuid4()), printer_id=old.printer_id)
+    queue._jobs = {old.id: old, waiting.id: waiting}
+    store = AsyncMock()
+    store.evict_terminal_older_than.return_value = 0
+    task = CleanupTask(store=store, retention_days=30, interval=timedelta(seconds=99), queue=queue)
+    await task.start()
+    await task.stop(timeout_s=1.0)
+    assert set(queue._jobs) == {waiting.id}

@@ -309,16 +309,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 'async_session' ist die async_sessionmaker aus app.db.engine (R2-M5)
     job_store = SQLiteJobStore(async_session)
 
-    # Browser sessions: purge those expired for more than a day on every cleanup run.
-    cleanup_task = CleanupTask(
-        store=job_store,
-        retention_days=lambda: int(settings_store.get("jobs.retention_days")),
-        session_purge=lambda: purge_expired_sessions(async_session),
-    )
-    # Started after the orphan sweep below: its first eviction must not delete a job row the
-    # sweep still has to read (T5-1).
-    app.state.cleanup_task = cleanup_task
-
     # --- SSE EventBus ---
     event_bus = EventBus(queue_size=settings.sse_queue_size)
     app.state.event_bus = event_bus
@@ -341,6 +331,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         on_run_change=pq_producer.handle_run_change,
     )
     app.state.print_queue = queue
+
+    # Browser sessions: purge those expired for more than a day on every cleanup run.
+    cleanup_task = CleanupTask(
+        store=job_store,
+        retention_days=lambda: int(settings_store.get("jobs.retention_days")),
+        session_purge=lambda: purge_expired_sessions(async_session),
+        queue=queue,  # finished jobs also leave the queue's memory
+    )
+    # Started after the orphan sweep below: its first eviction must not delete a job row the
+    # sweep still has to read (T5-1).
+    app.state.cleanup_task = cleanup_task
 
     # #224: every printer is wired by the runtime, at startup and on an admin change. The
     # queue is not running yet, so an attach only registers the printer and builds its

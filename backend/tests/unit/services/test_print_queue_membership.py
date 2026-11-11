@@ -25,7 +25,7 @@ from app.services.job_store import JobStore, MemoryJobStore
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.page_job_runner import PageJobRunner
 from app.services.page_jobs import IppPagePrinter
-from app.services.print_queue import PrintQueue
+from app.services.print_queue import PrinterWorkerState, PrintQueue
 from app.services.producers.ipp_status_producer import IppPrinterState
 from PIL import Image
 
@@ -127,6 +127,35 @@ async def _until(predicate: Callable[[], Any]) -> None:
 async def _settle() -> None:
     for _ in range(10):
         await asyncio.sleep(0)
+
+
+class _WatchedEvent(asyncio.Event):
+    """A resume event that reports every wait: ``waiting`` is set when the worker first waits.
+
+    After ``spin_guard`` waits it clears itself, so a worker that spins on an event which is set
+    cannot starve the test loop; the test then fails on the count, not on a hang.
+    """
+
+    def __init__(self, spin_guard: int = 25) -> None:
+        super().__init__()
+        self.waits = 0
+        self.waiting = asyncio.Event()
+        self._spin_guard = spin_guard
+
+    async def wait(self) -> bool:
+        self.waits += 1
+        self.waiting.set()
+        if self.waits >= self._spin_guard:
+            self.clear()
+        return await super().wait()
+
+
+def _watch_resume_event(queue: PrintQueue, *, set_: bool) -> _WatchedEvent:
+    watched = _WatchedEvent()
+    if set_:
+        watched.set()
+    queue._worker_resume_events[_TAPE_ID] = watched
+    return watched
 
 
 async def _state(store: JobStore, job_id: UUID) -> str:
@@ -304,8 +333,10 @@ async def test_remove_while_paused_exits() -> None:
     await queue.start()
     try:
         await queue.pause_printer(_TAPE_ID, reason="user", source="user")
+        watched = _watch_resume_event(queue, set_=False)
         jid = await _submit(queue, store, "j1")
-        await _settle()  # the worker took the job and waits in the pause loop
+        # the worker took the job and waits in the pause loop
+        await asyncio.wait_for(watched.waiting.wait(), 2)
         async with asyncio.timeout(1):
             await queue.remove_printer(_TAPE_ID, timeout_s=TEST_TIMEOUT_S)
         assert fake.printed == []
@@ -604,5 +635,213 @@ async def test_batch_of_rows_recovery_claimed_prints_once_and_completes() -> Non
             assert await _state(store, jid) == DbJobState.DONE.value
         await _settle()
         assert len(fake.printed) + sum(fake.batches) == 2  # each label exactly once
+    finally:
+        await queue.stop(timeout_s=2)
+
+
+# ---------------------------------------------------------------------------- order and races
+
+
+async def test_add_pauses_before_recovery() -> None:
+    """A recovered job must never print on a printer the user stopped: the pause comes first."""
+    store = MemoryJobStore()
+    queue = PrintQueue([], store=store)
+    calls: list[str] = []
+    real_pause = queue.pause_printer
+    real_recover = queue._recover_printer
+
+    async def pause_spy(*args: Any, **kwargs: Any) -> None:
+        calls.append("pause")
+        await real_pause(*args, **kwargs)
+
+    async def recover_spy(printer_id: UUID) -> None:
+        calls.append("recover")
+        await real_recover(printer_id)
+
+    queue.pause_printer = pause_spy  # type: ignore[method-assign]
+    queue._recover_printer = recover_spy  # type: ignore[method-assign]
+    await queue.start()
+    try:
+        await queue.add_printer(_TapePrinter(), paused_since=datetime(2026, 11, 1, tzinfo=UTC))
+        assert calls == ["pause", "recover"]
+    finally:
+        await queue.stop(timeout_s=2)
+
+
+async def test_concurrent_add_returns_after_worker_runs() -> None:
+    """Both callers of a concurrent add of the same printer get control back once its worker
+    runs, not only once the worker task exists."""
+    store = _GatedPendingStore()
+    queue = PrintQueue([], store=store)
+    started: list[str] = []
+    real_worker = queue._worker
+
+    async def worker_spy(printer_id: UUID) -> None:
+        started.append("worker")
+        await real_worker(printer_id)
+
+    queue._worker = worker_spy  # type: ignore[method-assign]
+    await queue.start()
+    try:
+        fake = _TapePrinter()
+        seen: dict[str, bool] = {}
+
+        async def add(name: str) -> None:
+            await queue.add_printer(fake)
+            seen[name] = bool(started)  # read at once: no turn of the loop since the return
+
+        first = asyncio.create_task(add("first"))
+        await asyncio.wait_for(store.reached.wait(), TEST_TIMEOUT_S)
+        second = asyncio.create_task(add("second"))
+        await _settle()
+        assert not second.done()  # waits for the add that is running
+        store.gate.set()
+        await asyncio.wait_for(asyncio.gather(first, second), TEST_TIMEOUT_S)
+        assert seen == {"first": True, "second": True}
+        assert set(queue._workers) == {_TAPE_ID}
+    finally:
+        await queue.stop(timeout_s=2)
+
+
+@pytest.mark.parametrize("kind", ["single", "batch"])
+async def test_pause_loop_does_not_spin(kind: str) -> None:
+    """A worker that finds the printer still paused while the resume event is set clears the
+    event before it waits again: it wakes at most twice, instead of once per loop turn."""
+    store = MemoryJobStore()
+    fake = _TapePrinter()
+    queue = PrintQueue([fake], store=store)
+    await queue.start()
+    try:
+        watched = _watch_resume_event(queue, set_=True)
+        queue._worker_states[_TAPE_ID] = PrinterWorkerState.PAUSED  # paused, event still set
+        if kind == "single":
+            await _submit(queue, store, "j1")
+        else:
+            ids = [await _save_renderable(store, f"b{i}") for i in range(2)]
+            await queue.enqueue_batch(
+                printer_id=_TAPE_ID,
+                images=[Image.new("1", (300, 76)) for _ in ids],
+                job_ids=ids,
+                tape_mm=24,
+                options={},
+            )
+        await asyncio.wait_for(watched.waiting.wait(), TEST_TIMEOUT_S)
+        await asyncio.sleep(0.05)  # a spinning worker would count a wake-up per turn
+        assert watched.waits <= 2
+        assert fake.printed == [] and fake.batches == []
+        await queue.resume_printer(_TAPE_ID)  # the cleared event still wakes the worker
+        await _until(lambda: fake.printed or fake.batches)
+    finally:
+        await queue.stop(timeout_s=2)
+
+
+async def test_start_refuses_a_printer_that_is_being_added() -> None:
+    """``start()`` claims every printer of its snapshot; none of them can be mid-add."""
+    queue = PrintQueue([_TapePrinter()], store=MemoryJobStore())
+    queue._adds[_TAPE_ID] = asyncio.Event()  # impossible state: an add of a snapshot printer
+    with pytest.raises(AssertionError):
+        await queue.start()
+    assert queue._running is False  # a failed start can be retried
+
+
+# ---------------------------------------------------------------------------- removal timeout
+
+
+class _CallGatedStore(MemoryJobStore):
+    """One store call waits for ``gate`` (cancellable): a removal timeout lands inside it."""
+
+    def __init__(self, gated: str) -> None:
+        super().__init__()
+        self._gated = gated
+        self.reached = asyncio.Event()
+        self.gate = asyncio.Event()
+        self.calls = 0
+
+    async def _maybe_wait(self, name: str) -> None:
+        if name == self._gated:
+            self.calls += 1
+            self.reached.set()
+            await self.gate.wait()
+
+    async def mark_printing(self, job_id: UUID) -> bool:
+        await self._maybe_wait("mark_printing")
+        return await super().mark_printing(job_id)
+
+    async def mark_done(self, job_id: UUID) -> None:
+        await self._maybe_wait("mark_done")
+        await super().mark_done(job_id)
+
+
+async def _remove_with_timeout_then_release(queue: PrintQueue, store: _CallGatedStore) -> None:
+    """Remove with a zero timeout (the worker is cancelled), then open the gate once the
+    cancel has been delivered, as a database call that finishes late would."""
+    worker = queue._workers[_TAPE_ID]
+    removal = asyncio.create_task(queue.remove_printer(_TAPE_ID, timeout_s=0))
+    await _until(lambda: worker.cancelling() > 0 or worker.done())
+    store.gate.set()
+    await asyncio.wait_for(removal, TEST_TIMEOUT_S)
+
+
+async def test_timeout_cancel_of_terminal_job_keeps_terminal_row() -> None:
+    """The job the removal timeout cancelled before its row was taken ends ``failed`` in memory;
+    its row must end terminal too, not stay ``queued`` for a recovery that skips the known id."""
+    store = _CallGatedStore("mark_printing")
+    fake = _TapePrinter()
+    queue = PrintQueue([fake], store=store)
+    await queue.start()
+    try:
+        jid = await _submit(queue, store, "j1")
+        await asyncio.wait_for(store.reached.wait(), TEST_TIMEOUT_S)
+        await _remove_with_timeout_then_release(queue, store)
+        job = await queue.wait_for_job(str(jid), timeout_s=1)
+        assert job.state == JobState.FAILED
+        assert fake.printed == []  # it never reached the printer
+        assert await _state(store, jid) == DbJobState.FAILED.value
+    finally:
+        await queue.stop(timeout_s=2)
+
+
+async def test_timeout_cancel_after_print_marks_single_job_done() -> None:
+    """The label printed; the timeout hits while the row is being marked done. The row ends done,
+    not ``failed_restart`` (the printer did print it)."""
+    store = _CallGatedStore("mark_done")
+    fake = _TapePrinter()
+    queue = PrintQueue([fake], store=store)
+    await queue.start()
+    try:
+        jid = await _submit(queue, store, "j1")
+        await asyncio.wait_for(store.reached.wait(), TEST_TIMEOUT_S)
+        await _remove_with_timeout_then_release(queue, store)
+        job = await queue.wait_for_job(str(jid), timeout_s=1)
+        assert job.state == JobState.COMPLETED
+        assert fake.printed == ["j1"]
+        assert await _state(store, jid) == DbJobState.DONE.value
+    finally:
+        await queue.stop(timeout_s=2)
+
+
+async def test_removal_timeout_after_print_marks_group_done() -> None:
+    """A group that printed is marked done label by label. A removal timeout in the middle of it
+    must not report the rest of the group ``failed_restart``: every label of it printed."""
+    store = _CallGatedStore("mark_done")
+    fake = _TapePrinter()
+    queue = PrintQueue([fake], store=store)
+    await queue.start()
+    try:
+        ids = [await _save_renderable(store, f"b{i}") for i in range(3)]
+        await queue.enqueue_batch(
+            printer_id=_TAPE_ID,
+            images=[Image.new("1", (300, 76)) for _ in ids],
+            job_ids=ids,
+            tape_mm=24,
+            options={},
+        )
+        await asyncio.wait_for(store.reached.wait(), TEST_TIMEOUT_S)
+        assert fake.batches == [3]  # the whole group printed
+        await _remove_with_timeout_then_release(queue, store)
+        for jid in ids:
+            job = await queue.wait_for_job(str(jid), timeout_s=1)
+            assert job.state == JobState.COMPLETED
+            assert await _state(store, jid) == DbJobState.DONE.value
     finally:
         await queue.stop(timeout_s=2)

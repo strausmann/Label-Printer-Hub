@@ -5,9 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
+from app.services.job_retention import KEEP_FINISHED_S, evict_finished
 from app.services.job_store import JobStore
+
+if TYPE_CHECKING:
+    from app.services.print_queue import PrintQueue
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +42,7 @@ class CleanupTask:
         retention_days: int | Callable[[], int],
         interval: timedelta = _DEFAULT_INTERVAL,
         session_purge: Callable[[], Awaitable[int]] | None = None,
+        queue: PrintQueue | None = None,
     ) -> None:
         if isinstance(retention_days, int):
             if retention_days < 1:
@@ -50,6 +56,8 @@ class CleanupTask:
         self._interval = interval
         # Browser sessions expired for more than a day are purged on the same schedule.
         self._session_purge = session_purge
+        # Finished jobs also leave the queue's memory each cycle (``job_retention``).
+        self._queue = queue
         self._task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
 
@@ -103,6 +111,11 @@ class CleanupTask:
                 )
         except Exception:
             logger.exception("CleanupTask: _run_once fehlgeschlagen")
+        if self._queue is not None:
+            try:
+                evict_finished(self._queue, now=datetime.now(UTC), keep_s=KEEP_FINISHED_S)
+            except Exception:
+                logger.exception("CleanupTask: dropping finished jobs from memory failed")
         if self._session_purge is not None:
             try:
                 purged = await self._session_purge()
