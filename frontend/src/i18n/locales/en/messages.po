@@ -1256,6 +1256,10 @@ msgstr "Download settings"
 msgid "Drawing the label…"
 msgstr "Drawing the label…"
 
+#: src/features/jobs/jobErrorText.ts
+msgid "Drawing the page took too long."
+msgstr "Drawing the page took too long."
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Drawing the sheet…"
 msgstr "Drawing the sheet…"
@@ -3454,6 +3458,7 @@ msgstr "Tape is empty"
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterCard.tsx
 #: src/features/printers/PrinterDetail.tsx
+#: src/features/printers/TapeSwatch.tsx
 msgid "Tape not known"
 msgstr "Tape not known"
 
@@ -3987,6 +3992,10 @@ msgstr "The port must be between 1 and 65535."
 #: src/features/archive/TypeForm.tsx
 msgid "The prefix is fixed once sheets of this type exist."
 msgstr "The prefix is fixed once sheets of this type exist."
+
+#: src/features/sheets/print/errors.ts
+msgid "The preview took too long. Try again."
+msgstr "The preview took too long. Try again."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The print failed (error code {code})."

@@ -8,7 +8,8 @@ at the printer). The sequence:
    raises ``Deferred``; the job never left ``queued`` (there is no ``PRINTING -> QUEUED``
    edge) and the queue holds it and pauses the printer.
 2. ``mark_printing`` and ``result = {"phase": "uploading", "started": false}``.
-3. Render the page from the payload (in a thread). A render error ends ``failed/render_failed``.
+3. Render the page from the payload (in a thread). A render error ends ``failed/render_failed``,
+   a render past ``PRINTER_HUB_RENDER_TIMEOUT_S`` ends ``failed/render_timeout`` (#293).
 4. Print-Job. The error contract is in ``app.printer_backends.ipp.errors``: nothing sent or a
    refusal ends ``failed`` with ``started=False`` (``ipp_unreachable``, ``ipp_busy``,
    ``ipp_rejected``); an exchange that broke after the document went out, or an unusable
@@ -63,6 +64,7 @@ from app.printer_backends.ipp.errors import (
     IppUnreachableError,
 )
 from app.printer_backends.ipp.job_attrs import is_own_job, print_job_attributes, wire_job_name
+from app.services import render_slots
 from app.services.job_lifecycle import (
     InvalidStateTransitionError,
     Job,
@@ -114,6 +116,7 @@ _UNUSABLE: tuple[type[IppError], ...] = (
 
 _MESSAGES = {
     "render_failed": "The page could not be drawn.",
+    "render_timeout": "The page took too long to draw.",
     "ipp_unreachable": "The printer could not be reached.",
     "ipp_busy": "The printer was busy and did not take the job.",
     "ipp_rejected": "The printer refused the document.",
@@ -164,8 +167,10 @@ class PageJobRunner:
         poll_interval_s: float = 2.0,
         max_backoff_s: float = 10.0,
         sleep: Sleep = asyncio.sleep,
+        render_timeout_s: float | None = None,
     ) -> None:
         self._store = store
+        self._render_timeout_s = render_timeout_s  # None: ``PRINTER_HUB_RENDER_TIMEOUT_S``
         self._notify = notify
         self._poll_interval_s = poll_interval_s
         self._max_backoff_s = max_backoff_s
@@ -309,7 +314,16 @@ class PageJobRunner:
         job, payload = page_job.job, page_job.payload
         job_id = UUID(job.id)
         try:
-            pdf = await asyncio.to_thread(render_page, payload)
+            pdf = await render_slots.render_bounded(
+                render_page,
+                payload,
+                label=f"page job {job_id} ({payload.kind})",
+                timeout_s=self._render_timeout_s,
+            )
+        except render_slots.RenderTimeoutError:
+            # #293: the thread draws on and keeps its slot (``render_slots``); the job is over.
+            await self._fail(page_job, result, "render_timeout", started=False)
+            return
         except Exception as exc:
             _log.warning("Page job %s: rendering failed (%s)", job_id, type(exc).__name__)
             await self._fail(page_job, result, "render_failed", started=False)

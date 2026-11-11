@@ -5397,6 +5397,15 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
+            /** @description A page took longer than `PRINTER_HUB_RENDER_TIMEOUT_S` to draw (`render-timeout`). The key may preview again at once. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
         };
     };
     resume_printer_api_v1_printer_resume_post: {

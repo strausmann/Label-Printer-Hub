@@ -140,6 +140,8 @@ The backend exposes two HTTP probes with different semantics:
 
 `/readiness` returns HTTP 200 with `status` of `ready` (all checks ok) or `degraded` (non-critical checks failing — still routable), and HTTP 503 with `not-ready` when a critical check (database, alembic, template_seed) fails.
 
+The check `render_slots` counts page renders (sheet previews, page jobs) that ran past `PRINTER_HUB_RENDER_TIMEOUT_S` (default 60 s) and whose drawing thread has not ended (`metric.stuck` of `metric.slots`). A thread cannot be stopped, so such a render keeps its slot until it ends; with every slot stuck the check fails and the hub reports `degraded`. `/healthz` does not look at it, so the container healthcheck never restarts the hub for it: restart the hub by hand.
+
 Pangolin's `targets[0].healthcheck.path` can use `/readiness` for deep checks instead of `/healthz`; Docker container healthchecks should stay on `/healthz` to avoid restart loops on transient DB failures.
 
 See `docs/superpowers/specs/2026-05-17-phase-7b-foundation-design.md` for the full check list and rationale.

@@ -1256,6 +1256,10 @@ msgstr "Einstellungen herunterladen"
 msgid "Drawing the label…"
 msgstr "Etikett wird gezeichnet …"
 
+#: src/features/jobs/jobErrorText.ts
+msgid "Drawing the page took too long."
+msgstr "Das Rendern der Seite hat zu lange gedauert."
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Drawing the sheet…"
 msgstr "Der Bogen wird gezeichnet …"
@@ -3454,6 +3458,7 @@ msgstr "Das Band ist leer"
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterCard.tsx
 #: src/features/printers/PrinterDetail.tsx
+#: src/features/printers/TapeSwatch.tsx
 msgid "Tape not known"
 msgstr "Band unbekannt"
 
@@ -3987,6 +3992,10 @@ msgstr "Der Port muss zwischen 1 und 65535 liegen."
 #: src/features/archive/TypeForm.tsx
 msgid "The prefix is fixed once sheets of this type exist."
 msgstr "Das Präfix ist fest, sobald es Bögen dieses Typs gibt."
+
+#: src/features/sheets/print/errors.ts
+msgid "The preview took too long. Try again."
+msgstr "Die Vorschau hat zu lange gedauert. Versuch es noch einmal."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The print failed (error code {code})."

@@ -75,6 +75,13 @@ answers 404. Browser sessions, SSO users and admin keys may act on all runs.
 A sheet preview (`POST /api/v1/print/{printer}/sheet/preview`) runs once per key at a
 time; a second one answers 429 `too-many-previews`.
 
+At most two pages are drawn at once in the hub (sheet previews and page jobs together). A
+page that takes longer than `PRINTER_HUB_RENDER_TIMEOUT_S` (default 60 seconds) to draw
+ends the preview with `HTTP 504` `render-timeout` (the key may preview again at once) and
+fails a page job with `render_timeout`. Its drawing thread cannot be stopped and keeps its
+slot until it ends; `GET /readiness` shows such stuck renders in the check `render_slots`
+(failing when every slot is stuck). `/healthz` does not, so restart the hub by hand then.
+
 All callers without a key (browser sessions, SSO users) count as **one** key for the
 held-run limits: one UI user's held run lets every UI user pass the held-places check, and
 a UI user's further held run can discard another UI user's oldest one. For previews they

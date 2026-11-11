@@ -13,6 +13,9 @@ export function usePrintDialogErrorText(itemName: (index: number) => string): (e
   const sheetText = useSheetErrorText();
   return (error) => {
     if (error instanceof ApiError) {
+      if (error.code === "render-timeout") {
+        return t`The preview took too long. Try again.`;
+      }
       if (error.code === "preview_too_large") {
         const pages = Number(error.errorDetail?.pages ?? 0);
         const max = Number(error.errorDetail?.max ?? 10);

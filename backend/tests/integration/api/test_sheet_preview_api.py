@@ -559,3 +559,72 @@ async def test_preview_cap_per_key(api_client_with_seed: httpx.AsyncClient) -> N
     assert (await api_client_with_seed.post(_url(pid), json=bad, headers=mine)).status_code == 422
     after = await api_client_with_seed.post(_url(pid), json=_body(code), headers=mine)
     assert after.status_code == 200, after.text
+
+
+async def test_a_preview_past_the_render_limit_is_504_and_the_hub_shows_it_stuck(
+    api_client_with_seed: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#293: a hung page render answers 504 ``render-timeout`` in the route's error shape; the
+    key may preview again at once, and readiness counts the stuck render until it ends."""
+    import asyncio
+    import threading
+
+    from app.services import render_slots
+    from app.sheets import print_service
+
+    headers = {"X-Label-Hub-Key": await _insert_key(["read"])}
+    pid, _ = await _printer()
+    code = await _sheet()
+    real_draw = print_service._draw_page
+    release = threading.Event()
+
+    def hung(*args: Any) -> Any:
+        release.wait(10.0)
+        return real_draw(*args)
+
+    monkeypatch.setattr(render_slots, "default_timeout_s", lambda: 0.05)
+    monkeypatch.setattr(print_service, "_draw_page", hung)
+    try:
+        resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
+        assert resp.status_code == 504, resp.text
+        detail = resp.json()["detail"]
+        assert set(detail) == {"error_code", "error_message", "error_detail"}
+        assert detail["error_code"] == "render-timeout"
+        assert SENTINEL not in resp.text
+
+        ready = await api_client_with_seed.get("/readiness", headers=headers)
+        assert ready.status_code == 200, ready.text
+        check = ready.json()["checks"]["render_slots"]
+        assert check["metric"] == {"stuck": 1, "slots": render_slots.MAX_CONCURRENT_RENDERS}
+
+        # The key was answered: the next preview runs on the free slot.
+        monkeypatch.setattr(print_service, "_draw_page", real_draw)
+        monkeypatch.setattr(render_slots, "default_timeout_s", lambda: 30.0)
+        again = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
+        assert again.status_code == 200, again.text
+    finally:
+        release.set()
+    async with asyncio.timeout(10):
+        while render_slots.stuck_renders():
+            await asyncio.sleep(0.01)
+
+
+async def test_a_real_preview_draws_with_a_single_render_slot(
+    api_client_with_seed: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deadlock guard (#293): the preview takes one render slot per page and none inside it;
+    with only one slot it still answers."""
+    import asyncio
+
+    from app.services import render_slots
+
+    headers = {"X-Label-Hub-Key": await _insert_key(["read"])}
+    pid, _ = await _printer()
+    code = await _sheet()
+    await api_client_with_seed.get("/healthz")
+    slots = render_slots._current()
+    monkeypatch.setattr(slots, "gate", asyncio.Semaphore(1))
+    async with asyncio.timeout(20):
+        resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert slots.gate._value == 1

@@ -79,6 +79,12 @@ _PREVIEW_ONLY_ERRORS: dict[int | str, dict[str, Any]] = {
             "a time. The body has the rate limit's shape (`retry_after_seconds`)."
         )
     },
+    504: {
+        "description": (
+            "A page took longer than `PRINTER_HUB_RENDER_TIMEOUT_S` to draw (`render-timeout`). "
+            "The key may preview again at once."
+        )
+    },
 }
 _PREVIEW_RETRY_AFTER_S = 1
 

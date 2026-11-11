@@ -64,6 +64,7 @@ from app.schemas.sheet_print import (
     SheetPrintRequest,
     SheetPrintResponse,
 )
+from app.services import render_slots
 from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
 from app.services.lookup_service import AppLookupService, LookupFailedError, UnknownAppError
 from app.services.page_jobs import PagePayload, snapshot_to_deviation
@@ -151,6 +152,7 @@ __all__ = [
     "MAX_PREVIEW_PAGES",
     "NO_MARGIN_BAND_REASON",
     "MarginCheck",
+    "RenderTimeoutApiError",
     "ResolvedItem",
     "TooManyPreviewsError",
     "create_sheet_with_id_label",
@@ -172,7 +174,7 @@ logger = logging.getLogger(__name__)
 
 LOOKUP_CONCURRENCY: Final = 8
 MAX_QR_PAYLOAD: Final = QR_PAYLOAD_MAX  # request-level cap on a cell's QR payload
-MAX_CONCURRENT_RENDERS: Final = 2  # preview renders at once, process-wide (spec 18, CPU)
+MAX_CONCURRENT_RENDERS: Final = render_slots.MAX_CONCURRENT_RENDERS  # renders at once (spec 18)
 # #277: one sheet print run prints one sheet; the items that do not fit stay in the cart. Also the
 # preview bound (spec 18, CPU): a plan has one page per placement.
 MAX_SHEETS_PER_RUN: Final = 1
@@ -662,44 +664,59 @@ def _draw_page(
 
 # ---------------------------------------------------------------------------- preview
 
-_render_gate: asyncio.Semaphore | None = None
-_render_gate_loop: asyncio.AbstractEventLoop | None = None
-
 
 def _gate() -> asyncio.Semaphore:
-    """The process-wide cap on preview renders; rebuilt if the event loop changed (tests)."""
-    global _render_gate, _render_gate_loop
-    loop = asyncio.get_running_loop()
-    if _render_gate is None or _render_gate_loop is not loop:
-        _render_gate, _render_gate_loop = asyncio.Semaphore(MAX_CONCURRENT_RENDERS), loop
-    return _render_gate
+    """The process-wide cap on renders (``render_slots``), shared with the page-job render."""
+    return render_slots.gate()
 
 
-async def draw_page_bounded(*args: Any) -> Any:
-    """``_draw_page`` in a thread, at most ``MAX_CONCURRENT_RENDERS`` at once in the process.
+class RenderTimeoutApiError(SheetApiError):
+    """#293: a preview page took longer than ``PRINTER_HUB_RENDER_TIMEOUT_S`` to draw."""
+
+    status = 504
+    error_code = "render-timeout"
+    message = "The preview took too long to draw. Try again, or with fewer or shorter labels."
+
+
+async def draw_page_bounded(*args: Any, timeout_s: float | None = None) -> Any:
+    """``_draw_page`` in a thread under a render slot (``render_slots.render_bounded``).
 
     266-07: the slot is held until the thread has finished, not until the caller stops
     waiting: a cancelled request (the client went away) leaves its thread drawing, and a slot
     freed at the cancel would let the next request start one more thread than the cap.
+    #293: past the time limit the caller gets ``RenderTimeoutApiError`` (504
+    ``render-timeout``) and its preview slot is free (the key may try again); the render slot
+    stays with the stuck thread, so the threads stay bounded by the cap.
     """
-    gate = _gate()
-    await gate.acquire()
-    # No await from the acquire to the callback: the slots are always given back by the task.
-    # The caller's preview slot (``preview_slot``) stays taken with the render slot (F3).
+    # The caller's preview slot (``preview_slot``) stays taken with the render (F3).
     owner = _preview_owner.get()
-    if owner is not None:
-        _previews_in_progress[owner] = _previews_in_progress.get(owner, 0) + 1
-    task = asyncio.ensure_future(asyncio.to_thread(_draw_page, *args))
-    task.add_done_callback(lambda done: _end_render(gate, owner, done))
-    return await asyncio.shield(task)
+    held = False
 
+    def take_owner() -> None:
+        nonlocal held
+        if owner is not None:
+            held = True
+            _previews_in_progress[owner] = _previews_in_progress.get(owner, 0) + 1
 
-def _end_render(gate: asyncio.Semaphore, owner: Hashable | None, done: asyncio.Future[Any]) -> None:
-    gate.release()
-    if owner is not None:
-        _release_preview(owner)
-    if not done.cancelled():
-        done.exception()  # retrieved: a render nobody waits for any more is not logged twice
+    def release_owner() -> None:
+        nonlocal held
+        if held:
+            held = False
+            assert owner is not None
+            _release_preview(owner)
+
+    try:
+        return await render_slots.render_bounded(
+            _draw_page,
+            *args,
+            label="sheet preview page",
+            timeout_s=timeout_s,
+            on_start=take_owner,
+            on_end=release_owner,
+            on_timeout=release_owner,
+        )
+    except render_slots.RenderTimeoutError:
+        raise RenderTimeoutApiError() from None
 
 
 class TooManyPreviewsError(Exception):

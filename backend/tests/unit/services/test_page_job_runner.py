@@ -44,6 +44,7 @@ class _Env:
         poll_interval_s: float = 0.0,
         max_backoff_s: float = 0.0,
         sleep: Callable[[float], Any] | None = None,
+        render_timeout_s: float | None = None,
     ) -> None:
         self.fake = fake
         self.store = MemoryJobStore()
@@ -59,6 +60,7 @@ class _Env:
             notify=self._notify,
             poll_interval_s=poll_interval_s,
             max_backoff_s=max_backoff_s,
+            render_timeout_s=render_timeout_s,
             **kwargs,
         )
 
@@ -600,6 +602,63 @@ async def test_render_error_fails_cleanly(handler: RecordingHandler) -> None:
         "started": False,
         "error_code": "render_failed",
     }
+
+
+async def test_a_render_past_its_limit_fails_render_timeout(
+    handler: RecordingHandler, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#293: the job ends ``failed/render_timeout`` and nothing is sent; the log names the job
+    by id and kind only. The thread keeps its render slot until it ends, then frees it."""
+    import threading
+
+    from app.services import render_slots
+
+    release = threading.Event()
+
+    def hung(_p: PagePayload) -> bytes:
+        release.wait(TEST_TIMEOUT_S)
+        return b"%PDF-"
+
+    caplog.set_level(logging.WARNING)
+    try:
+        with registered(handler, render=hung):
+            env = _Env(FakeIppPrinter(), render_timeout_s=0.05)
+            pj = await env.job()
+            await env.run(pj)
+        row = await env.row(pj)
+        assert row.state == DbJobState.FAILED.value
+        assert row.error is not None and row.error.startswith("render_timeout: ")
+        assert env.ops("Print-Job") == 0
+        assert handler.ended(UUID(pj.job.id)) == {
+            "state": "failed",
+            "started": False,
+            "error_code": "render_timeout",
+        }
+        assert render_slots.stuck_renders() == 1
+        warned = [r.getMessage() for r in caplog.records if "exceeded" in r.getMessage()]
+        assert warned == [
+            f"Render page job {pj.job.id} ({pj.payload.kind}) exceeded 0.05s; its thread keeps "
+            f"a render slot until it ends (1 of {render_slots.MAX_CONCURRENT_RENDERS} slots stuck)"
+        ]
+    finally:
+        release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
+async def test_a_page_job_prints_with_a_single_render_slot(
+    handler: RecordingHandler, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deadlock guard (#293): the runner takes one render slot per page and none inside it;
+    with only one slot the job still prints."""
+    from app.services import render_slots
+
+    slots = render_slots._current()
+    monkeypatch.setattr(slots, "gate", asyncio.Semaphore(1))
+    env = _Env(FakeIppPrinter(job_script=[9]))
+    pj = await env.job()
+    await env.run(pj)
+    assert (await env.row(pj)).state == DbJobState.DONE.value
+    assert slots.gate._value == 1
 
 
 async def test_handler_error_does_not_break_the_runner(handler: RecordingHandler) -> None:

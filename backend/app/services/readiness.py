@@ -1,4 +1,4 @@
-"""Phase 7b Cluster 1e — readiness aggregator (7 checks).
+"""Phase 7b Cluster 1e — readiness aggregator (8 checks).
 
 Checks implemented:
   database         — SELECT 1 latency (critical)
@@ -8,6 +8,7 @@ Checks implemented:
   snmp_discovery   — PrinterStatusCache recency (non-critical)
   print_queue      — print_queue in app.state (non-critical)
   sse_bus          — subscriber capacity (non-critical)
+  render_slots     — renders stuck past their time limit (non-critical, #293)
 
 Phase 1k.1a Task 24: template_seed check removed (templates table dropped).
 F4 wires the FastAPI route + HTTP status mapping.
@@ -26,6 +27,7 @@ from app.config import Settings
 from app.models.printer import Printer
 from app.models.printer_status_cache import PrinterStatusCache
 from app.schemas.readiness import CheckStatus, ReadinessResponse
+from app.services import render_slots
 
 _CRITICAL_CHECKS = ("database", "alembic")
 
@@ -162,6 +164,29 @@ def _check_sse_bus(app_state: Any, settings: Settings) -> CheckStatus:
     return CheckStatus(status="ok", metric=metric)
 
 
+def _check_render_slots() -> CheckStatus:
+    """#293: renders past ``PRINTER_HUB_RENDER_TIMEOUT_S`` whose thread still holds its slot.
+
+    A thread cannot be stopped; only a restart frees a slot whose render never ends. With
+    every slot stuck no sheet preview or page job can draw any more: ``fail`` (the hub is
+    ``degraded``, tape printing still works).
+    """
+    stuck = render_slots.stuck_renders()
+    slots = render_slots.MAX_CONCURRENT_RENDERS
+    metric: dict[str, Any] = {"stuck": stuck, "slots": slots}
+    if stuck >= slots:
+        return CheckStatus(
+            status="fail",
+            detail="every render slot is held by a stuck render; restart the hub",
+            metric=metric,
+        )
+    if stuck:
+        return CheckStatus(
+            status="ok", detail=f"{stuck} of {slots} render slots stuck", metric=metric
+        )
+    return CheckStatus(status="ok", metric=metric)
+
+
 def _aggregate(checks: dict[str, CheckStatus]) -> Literal["ready", "degraded", "not-ready"]:
     if any(checks[name].status == "fail" for name in _CRITICAL_CHECKS if name in checks):
         return "not-ready"
@@ -178,7 +203,7 @@ async def build_readiness_response(
     version: str,
     revision: str,
 ) -> ReadinessResponse:
-    """Run all 8 readiness checks and aggregate the result."""
+    """Run all readiness checks and aggregate the result."""
     checks: dict[str, CheckStatus] = {
         "database": await _check_database(session),
         "alembic": await _check_alembic(settings),
@@ -187,6 +212,7 @@ async def build_readiness_response(
         "snmp_discovery": await _check_snmp_discovery(session, app_state),
         "print_queue": _check_print_queue(app_state),
         "sse_bus": _check_sse_bus(app_state, settings),
+        "render_slots": _check_render_slots(),
     }
     return ReadinessResponse(
         status=_aggregate(checks),
