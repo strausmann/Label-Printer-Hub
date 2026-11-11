@@ -70,8 +70,8 @@ without a held run there is refused with 429; smaller batches are always taken.
 
 Only the key that submitted a batch may `continue`, `reprint` or `discard` its run, and
 `GET /api/v1/batches/runs/held` shows a key only its own runs. For any other key the batch
-answers 404, and `GET /api/v1/batches/{id}` shows its `run` as `null`. Browser sessions,
-SSO users and admin keys may act on all runs.
+answers 404, also on `GET /api/v1/batches/{id}`. Browser sessions, SSO users and admin
+keys may see and act on all runs.
 
 A sheet preview (`POST /api/v1/print/{printer}/sheet/preview`) runs once per key at a
 time; a second one answers 429 `too-many-previews`.
@@ -110,6 +110,10 @@ jobs only:
 - `GET /api/v1/jobs` lists only the jobs the key submitted.
 - `GET /api/v1/jobs/{id}`, `POST …/cancel`, `…/retry`, `…/pause` and `…/resume` answer
   404 for a job another key submitted, with the same body as for a job that does not exist.
+- `GET /api/v1/printers/{id}/queue` lists only the key's own active jobs, and
+  `POST /api/v1/printers/{id}/queue/clear` cancels only the key's own queued jobs; the
+  jobs of other keys and of browser or SSO users stay queued.
+- `GET /api/v1/batches/{id}` answers 404 for a batch another key submitted.
 - The event stream `GET /api/v1/events` delivers `job.state_changed` and
   `run.state_changed` only for the key's own jobs and tape runs, live and in the snapshot.
   Printer events (`printer.status`, `printer.tape_changed`, …) still reach every key of the

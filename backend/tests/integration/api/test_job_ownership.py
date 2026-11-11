@@ -252,3 +252,34 @@ async def test_an_sso_user_keeps_full_access(api_client_with_seed, world, monkey
             assert (await c.get(f"/api/v1/jobs/{world[job]}", headers=sso)).status_code == 200
     finally:
         get_settings.cache_clear()
+
+
+async def test_the_printer_queue_of_a_key_shows_its_own_jobs_only(
+    api_client_with_seed, world
+) -> None:
+    """GET /printers/{id}/queue lists payloads: a plain key sees only its own active jobs."""
+    url = f"/api/v1/printers/{world['printer']}/queue"
+    mine = await api_client_with_seed.get(url, headers=world["owner"])
+    assert mine.status_code == 200, mine.text
+    assert {j["id"] for j in mine.json()} == {str(world["own_queued"])}
+    every = await api_client_with_seed.get(url, headers=world["admin"])
+    assert {j["id"] for j in every.json()} == {
+        str(world[k]) for k in ("own_queued", "foreign_queued", "orphan_queued")
+    }
+
+
+async def test_a_key_clears_only_its_own_queued_jobs(api_client_with_seed, world) -> None:
+    url = f"/api/v1/printers/{world['printer']}/queue/clear"
+    resp = await api_client_with_seed.post(url, headers=world["owner"])
+    assert resp.status_code == 204, resp.text
+    assert await _state(world["own_queued"]) == JobState.CANCELLED.value
+    assert await _state(world["foreign_queued"]) == JobState.QUEUED.value
+    assert await _state(world["orphan_queued"]) == JobState.QUEUED.value
+
+
+async def test_an_admin_key_clears_every_queued_job(api_client_with_seed, world) -> None:
+    url = f"/api/v1/printers/{world['printer']}/queue/clear"
+    resp = await api_client_with_seed.post(url, headers=world["admin"])
+    assert resp.status_code == 204, resp.text
+    for job in ("own_queued", "foreign_queued", "orphan_queued"):
+        assert await _state(world[job]) == JobState.CANCELLED.value

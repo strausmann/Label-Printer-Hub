@@ -37,6 +37,7 @@ from sqlmodel import col
 from app.api.dependencies.printer_runtime import get_printer_runtime
 from app.api.routes.pause_view import pause_view
 from app.auth.dependencies import AuthContext, check_printer_access
+from app.auth.ownership import may_see, owner_only
 from app.auth.scope_deps import require_print, require_read
 from app.config import get_settings
 from app.db.session import get_session
@@ -556,7 +557,8 @@ async def get_printer_tape(
     summary="Get the active job queue for a printer",
     description=(
         "Returns all jobs in ``queued`` or ``printing`` state for this "
-        "printer, ordered by creation time."
+        "printer, ordered by creation time.  An API key without ``admin`` scope sees "
+        "only the jobs it submitted."
     ),
 )
 async def get_printer_queue(
@@ -570,7 +572,10 @@ async def get_printer_queue(
         check_printer_access(_auth, printer_id)
 
     active_jobs = await jobs_repo.list_active(session)
-    printer_jobs = [j for j in active_jobs if j.printer_id == printer_id]
+    # #294: a plain API key sees its own jobs only.
+    printer_jobs = [
+        j for j in active_jobs if j.printer_id == printer_id and may_see(_auth, j.api_key_id)
+    ]
 
     return [
         {
@@ -659,6 +664,29 @@ async def resume_printer(
 # ---------------------------------------------------------------------------
 
 
+async def _clear_own_queued_jobs(
+    session: AsyncSession, queue: Any, printer_id: UUID, auth: AuthContext
+) -> None:
+    """Cancel the QUEUED jobs of ``auth``'s key on ``printer_id``; leave every other job."""
+    active_jobs = await jobs_repo.list_active(session)
+    for job in active_jobs:
+        if (
+            job.printer_id != printer_id
+            or job.state != JobState.QUEUED.value
+            or not may_see(auth, job.api_key_id)
+        ):
+            continue
+        if queue is not None and queue.has_job(job.id):
+            # The in-memory state decides, as for a single cancel: a job the worker already
+            # took (or a page job at the printer) is left alone, like the full clear does.
+            with contextlib.suppress(KeyError):  # evicted meanwhile: nothing left to cancel
+                live = await queue.get(job.id)
+                if live.state.value == JobState.QUEUED.value:
+                    await queue.cancel(str(job.id))
+            continue
+        await jobs_repo.mark_cancelled(session, job.id)
+
+
 @router.post(
     "/{printer_id}/queue/clear",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -671,6 +699,8 @@ async def resume_printer(
         "a mid-print abort is unsafe over TCP/9100 because the raster data is "
         "already on the wire; a page job the IPP printer already holds is left to "
         "finish as well (cancel it with ``POST /api/v1/jobs/{id}/cancel``).  "
+        "An API key without ``admin`` scope cancels only the queued jobs it submitted; "
+        "the jobs of other keys and of browser or SSO users stay queued.  "
         "Returns 204 even when there are no queued jobs."
     ),
 )
@@ -685,9 +715,14 @@ async def clear_printer_queue(
     if _auth is not None:
         check_printer_access(_auth, printer_id)
 
+    queue = getattr(request.app.state, "print_queue", None)
+    if owner_only(_auth):
+        # #294: a plain API key clears only its own queued jobs, never another key's.
+        await _clear_own_queued_jobs(session, queue, printer_id, _auth)
+        return
+
     # The queue worker gates on its in-memory job state, so cancel there first
     # (this also persists the cancellation); a DB-only update would still print.
-    queue = getattr(request.app.state, "print_queue", None)
     if queue is not None:
         # KeyError: printer not known to the queue (e.g. added after start)
         with contextlib.suppress(KeyError):

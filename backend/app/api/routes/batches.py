@@ -60,7 +60,8 @@ def _queue(http: Request) -> PrintQueue | None:
 
 
 async def _visible_batch(session: AsyncSession, batch_id: UUID, auth: AuthContext) -> PrintBatch:
-    """The batch, or 404 when it does not exist or belongs to a printer the caller may not use."""
+    """The batch, or 404 when it does not exist, belongs to a printer the caller may not use,
+    or (for a plain API key) another key or no key submitted it (#294)."""
     batch = await batches_repo.get(session, batch_id)
     # Per-printer ACL: a batch of a foreign printer is indistinguishable from a
     # missing one (404).  Empty allowed list = all printers.
@@ -70,6 +71,10 @@ async def _visible_batch(session: AsyncSession, batch_id: UUID, auth: AuthContex
         and auth.allowed_printer_ids
         and str(batch.printer_id) not in auth.allowed_printer_ids
     ):
+        batch = None
+    # Only the key that submitted the batch sees it; for any other plain key the batch does
+    # not exist (the same 404, no hint that it does).
+    if batch is not None and not may_see(auth, batch.created_by):
         batch = None
     if batch is None:
         raise HTTPException(status_code=404, detail="Batch not found")
@@ -120,11 +125,7 @@ async def get_batch(
         created_at=batch.created_at,
         jobs=[JobRead.model_validate(j) for j in ordered],
         summary=summary,
-        run=(
-            None
-            if queue is None or not may_see(_auth, batch.created_by)
-            else _run_read(queue.run_info(batch.id))
-        ),
+        run=None if queue is None else _run_read(queue.run_info(batch.id)),
     )
 
 
@@ -192,10 +193,6 @@ async def _run_batch(
 ) -> tuple[PrintQueue, PrintBatch]:
     batch = await _visible_batch(session, batch_id, auth)
     check_printer_access(auth, batch.printer_id)
-    # Only the key that submitted the batch may continue, reprint or discard its run; for any
-    # other plain key the batch does not exist (404, no hint that it does).
-    if not may_see(auth, batch.created_by):
-        raise HTTPException(status_code=404, detail="Batch not found")
     queue = _queue(http)
     if queue is None:
         raise _no_run()

@@ -187,15 +187,18 @@ async def test_a_print_key_of_the_printer_lists_and_discards(held: dict[str, Any
     assert again.status_code == 404
 
 
-async def test_the_batch_shows_its_run_to_the_owner_only(held: dict[str, Any]) -> None:
-    """#294 (Task 9 review): GET /batches/{id} names the run to the key that submitted it;
-    another key of the printer gets ``run: null``. Admin keys and sessions see it."""
+async def test_another_key_gets_the_missing_batch_answer_on_read(held: dict[str, Any]) -> None:
+    """#294 (security review of Task 9c): GET /batches/{id} shows a batch, its jobs and its
+    summary to the key that submitted it only; another key of the printer gets the same 404
+    as for a missing batch. Admin keys see it."""
     url = f"/api/v1/batches/{held['run']}"
     other = _key(await _insert_key(["print"], [str(held["a"])]))
     resp = await held["client"].get(url, headers=other)
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["run"] is None
+    missing = await held["client"].get(f"/api/v1/batches/{uuid4()}", headers=other)
+    assert resp.status_code == 404, resp.text
+    assert resp.content == missing.content == b'{"detail":"Batch not found"}'
     mine = await held["client"].get(url, headers=held["owner"])
+    assert mine.status_code == 200, mine.text
     assert mine.json()["run"]["batch_id"] == held["run"]
     admin = _key(await _insert_key(["admin"]))
     assert (await held["client"].get(url, headers=admin)).json()["run"]["batch_id"] == held["run"]
