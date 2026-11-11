@@ -51,6 +51,35 @@ When exceeded, the response is `HTTP 429` with a `Retry-After` header and body:
 }
 ```
 
+## Batch and preview limits
+
+Tape batches (`POST /api/v1/print/{printer}/batch`) are limited per printer and per key:
+
+| Limit | Default | Setting |
+|---|---|---|
+| Tape runs a printer has queued or printing | 5 (at least 5) | `PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER` |
+| Tape runs of one key, over all printers, held runs included | 20 | `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` |
+| Held runs per printer (stopped, or waiting for `/continue`) | 5 | fixed |
+| Held runs of one key on one printer | 2 | fixed |
+
+Over a queued-run limit the batch answers `HTTP 429` with `error_code`
+`too-many-queued-runs`, in the shape shown above. A key's third held run on a printer
+discards that key's own oldest held run (`run_discarded_limit`), never another key's.
+While a printer's five held places are taken, a batch of more than 50 labels from a key
+without a held run there is refused with 429; smaller batches are always taken.
+
+Only the key that submitted a batch may `continue`, `reprint` or `discard` its run, and
+`GET /api/v1/batches/runs/held` shows a key only its own runs. For any other key the batch
+answers 404. Browser sessions, SSO users and admin keys may act on all runs.
+
+A sheet preview (`POST /api/v1/print/{printer}/sheet/preview`) runs once per key at a
+time; a second one answers 429 `too-many-previews`.
+
+All callers without a key (browser sessions, SSO users) count as **one** key for the
+held-run limits: one UI user's held run lets every UI user pass the held-places check, and
+a UI user's further held run can discard another UI user's oldest one. For previews they
+are told apart by source, user and address.
+
 ## Printer ACL
 
 A key can be restricted to specific printers via `allowed_printer_ids`.

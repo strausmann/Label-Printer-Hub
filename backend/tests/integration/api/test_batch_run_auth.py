@@ -12,9 +12,11 @@ from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID, uuid4
 
+import bcrypt
 import httpx
 import pytest
 import pytest_asyncio
+from app.models.api_key import ApiKey
 from app.models.job import Job as DbJob
 from app.models.print_batch import PrintBatch
 from app.models.printer import Printer
@@ -29,6 +31,25 @@ from tests.unit.services.test_print_queue_tape_runs import TapeRoll
 pytestmark = pytest.mark.asyncio
 
 ACTIONS = (("continue", None), ("reprint", {"from_label": 11}), ("discard", None))
+
+
+async def _key_with_id(scopes: list[str], printers: list[str] | None = None) -> tuple[str, UUID]:
+    """A real API key: its plaintext and its id (the owner recorded on a batch)."""
+    plaintext = f"lh_pat_{uuid4().hex}"
+    hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode()
+    async with _factory()() as s:
+        key = ApiKey(
+            name=f"run-owner-{uuid4().hex[:6]}",
+            key_hash=hashed,
+            key_prefix=plaintext[:16],
+            scopes=scopes,
+            allowed_printer_ids=printers or [],
+            enabled=True,
+            rate_limit_per_minute=6000,
+        )
+        s.add(key)
+        await s.commit()
+        return plaintext, key.id
 
 
 @pytest_asyncio.fixture
@@ -51,9 +72,18 @@ async def held(api_client_with_seed: httpx.AsyncClient) -> AsyncIterator[dict[st
     await queue.start()
     run_id = uuid4()
     ids = [uuid4() for _ in range(25)]
+    owner_plain, owner_id = await _key_with_id(["print"], [str(a_id)])
     async with _factory()() as s:
-        s.add(PrintBatch(id=run_id, printer_id=a_id, job_ids=[str(j) for j in ids], created_by="t"))
+        s.add(
+            PrintBatch(
+                id=run_id,
+                printer_id=a_id,
+                job_ids=[str(j) for j in ids],
+                created_by=str(owner_id),  # what POST /print/{printer}/batch records
+            )
+        )
         await s.commit()
+    slot = queue.claim_run_slot(a_id, owner_id, per_printer=5, per_key=20)
     for i, jid in enumerate(ids):
         await store.save_queued(DbJob(id=jid, printer_id=a_id, payload={"n": i}))
     await queue.enqueue_batch(
@@ -63,6 +93,7 @@ async def held(api_client_with_seed: httpx.AsyncClient) -> AsyncIterator[dict[st
         tape_mm=12,
         options={},
         run_id=run_id,
+        slot=slot,
     )
     async with asyncio.timeout(5):
         while (info := queue.run_info(run_id)) is None or info.state != "stopped":
@@ -71,7 +102,14 @@ async def held(api_client_with_seed: httpx.AsyncClient) -> AsyncIterator[dict[st
     original = inner.state.print_queue
     inner.state.print_queue = queue
     try:
-        yield {"client": client, "run": str(run_id), "a": a_id, "b": b_id, "queue": queue}
+        yield {
+            "client": client,
+            "run": str(run_id),
+            "a": a_id,
+            "b": b_id,
+            "queue": queue,
+            "owner": _key(owner_plain),
+        }
     finally:
         inner.state.print_queue = original
         await queue.stop(timeout_s=2.0)
@@ -104,8 +142,38 @@ async def test_a_key_of_another_printer_sees_no_batch(held: dict[str, Any]) -> N
     assert held["queue"].run_info(UUID(held["run"])).state == "stopped"
 
 
+async def test_another_print_key_of_the_printer_gets_404_and_an_empty_list(
+    held: dict[str, Any],
+) -> None:
+    """Security review: only the key that submitted the batch acts on its run; for another
+    key of the same printer the batch does not exist, and the held list does not show it."""
+    other = _key(await _insert_key(["print"], [str(held["a"])]))
+    for action, body in ACTIONS:
+        resp = await _post(held, action, body, other)
+        assert resp.status_code == 404, (action, resp.text)
+        assert resp.json() == {"detail": "Batch not found"}  # the same answer as a missing one
+    listed = await held["client"].get("/api/v1/batches/runs/held", headers=other)
+    assert listed.status_code == 200 and listed.json() == []
+    assert held["queue"].run_info(UUID(held["run"])).state == "stopped"
+
+
+async def test_an_admin_key_lists_and_may_act_on_any_run(held: dict[str, Any]) -> None:
+    admin = _key(await _insert_key(["admin"]))
+    listed = await held["client"].get("/api/v1/batches/runs/held", headers=admin)
+    assert [r["batch_id"] for r in listed.json()] == [held["run"]]
+    gone = await _post(held, "discard", None, admin)
+    assert gone.status_code == 204, gone.text
+
+
+async def test_the_owner_may_continue_and_reprint(held: dict[str, Any]) -> None:
+    resp = await _post(held, "continue", None, held["owner"])
+    assert resp.status_code == 409, resp.text  # reached the run: it is stopped, not waiting
+    resp = await _post(held, "reprint", {"from_label": 11}, held["owner"])
+    assert resp.status_code == 200, resp.text
+
+
 async def test_a_print_key_of_the_printer_lists_and_discards(held: dict[str, Any]) -> None:
-    mine = _key(await _insert_key(["print"], [str(held["a"])]))
+    mine = held["owner"]
     listed = await held["client"].get("/api/v1/batches/runs/held", headers=mine)
     assert listed.status_code == 200
     (run,) = listed.json()

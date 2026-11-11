@@ -58,6 +58,11 @@ def _queue(http: Request) -> PrintQueue | None:
     return getattr(http.app.state, "print_queue", None)
 
 
+def _owner_only(auth: AuthContext | None) -> bool:
+    """A plain API key acts on its own runs only; browser sessions, SSO and admin keys on all."""
+    return auth is not None and auth.source == "api-key" and auth.scope != "admin"
+
+
 async def _visible_batch(session: AsyncSession, batch_id: UUID, auth: AuthContext) -> PrintBatch:
     """The batch, or 404 when it does not exist or belongs to a printer the caller may not use."""
     batch = await batches_repo.get(session, batch_id)
@@ -129,8 +134,10 @@ async def get_batch(
     summary="Tape batches that wait for an action",
     description=(
         "The tape runs (#277) that wait for a confirmation or stopped, oldest first, for the "
-        "printers the caller may use; `printer_id` narrows it to one printer. Their actions are "
-        "`continue`, `reprint` and `discard` on the batch."
+        "printers the caller may use; `printer_id` narrows it to one printer. An API key without "
+        "`admin` scope sees only the runs it submitted; browser sessions, SSO and admin keys see "
+        "all. Their actions are `continue`, `reprint` and `discard` on the batch, allowed to the "
+        "same callers (another key gets 404)."
     ),
 )
 async def held_runs(
@@ -141,9 +148,12 @@ async def held_runs(
         return []
     allowed = set(auth.allowed_printer_ids or []) if auth is not None else set()
     out: list[TapeRunRead] = []
+    owner_only = _owner_only(auth)
     for info in queue.held_runs(printer_id):
         if allowed and str(info.printer_id) not in allowed:
             continue
+        if owner_only and (auth.api_key_id is None or info.api_key_id != auth.api_key_id):
+            continue  # another key's run: not listed (security review: run ownership)
         run = _run_read(info)
         if run is not None:
             out.append(run)
@@ -183,6 +193,10 @@ async def _run_batch(
 ) -> tuple[PrintQueue, PrintBatch]:
     batch = await _visible_batch(session, batch_id, auth)
     check_printer_access(auth, batch.printer_id)
+    # Only the key that submitted the batch may continue, reprint or discard its run; for any
+    # other plain key the batch does not exist (404, no hint that it does).
+    if _owner_only(auth) and (auth.api_key_id is None or batch.created_by != str(auth.api_key_id)):
+        raise HTTPException(status_code=404, detail="Batch not found")
     queue = _queue(http)
     if queue is None:
         raise _no_run()
@@ -196,9 +210,11 @@ _HELD_NOTE = (
     "held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, "
     "not against the printer's cap: over it a new batch of that key answers 429 "
     "`too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At "
-    "most five runs per printer are held: a sixth of the same key discards that key's oldest "
-    "(`run_discarded_limit`), never another key's; a key without a held run of its own gets "
-    "429 `too-many-queued-runs` while the five places are taken."
+    "most five runs per printer are held, at most two of one key: a further held run discards "
+    "that key's own oldest (`run_discarded_limit`), never another key's. While the five places "
+    "are taken, a batch of more than 50 labels from a key without a held run there gets 429 "
+    "`too-many-queued-runs`; smaller batches are always taken. All callers without a key "
+    "(browser sessions, SSO) count as one key."
 )
 
 
