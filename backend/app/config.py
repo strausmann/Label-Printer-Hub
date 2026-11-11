@@ -37,10 +37,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
+MAX_HELD_RUNS_PER_PRINTER = 5
+"""#277: held tape runs (stopped, or waiting for a confirmation) one printer keeps; a sixth
+discards the oldest. Defined here so the settings can check the queued-run cap against it."""
 
 
 class Settings(BaseSettings):
@@ -127,10 +132,22 @@ class Settings(BaseSettings):
     """SNMP probe interval for StatusProbeProducer (seconds). Must be > 0."""
 
     # 263-76: tape runs (batches) a printer and an API key may have in the queue at once. A run
-    # counts from the request until it is over, also while it waits for ``/continue`` or a
-    # reprint. Over the cap the batch answers 429 ``too-many-queued-runs``.
+    # counts from the request until it is over; a held run (waiting for ``/continue`` or a
+    # reprint) counts against its key only. Over a cap the batch answers 429
+    # ``too-many-queued-runs``.
     max_queued_runs_per_printer: int = Field(default=5, gt=0)
     max_queued_runs_per_key: int = Field(default=20, gt=0)
+
+    @model_validator(mode="after")
+    def _queued_runs_cover_held_runs(self) -> Settings:
+        """The printer's queued-run cap must not be below the runs it may hold (#277)."""
+        if self.max_queued_runs_per_printer < MAX_HELD_RUNS_PER_PRINTER:
+            raise ValueError(
+                "PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER must be at least "
+                f"{MAX_HELD_RUNS_PER_PRINTER} (the held runs a printer keeps), "
+                f"got {self.max_queued_runs_per_printer}"
+            )
+        return self
 
     # D10: proxy headers are trusted only with the SSO trust token. The two legacy
     # paths below are opt-in (default off) and never mint a browser session.

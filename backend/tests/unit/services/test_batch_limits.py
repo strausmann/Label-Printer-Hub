@@ -34,6 +34,7 @@ from app.services.job_lifecycle import JobState
 from app.services.job_store import MemoryJobStore
 from app.services.layout_engine import LayoutEngine
 from app.services.print_queue import (
+    MAX_HELD_RUNS_PER_PRINTER,
     MAX_LABELS_PER_TAPE_JOB,
     WAITING_RUN_PICTURES_TTL_S,
     PrintQueue,
@@ -95,10 +96,10 @@ def test_the_limits_are_settings_with_the_agreed_defaults(monkeypatch: pytest.Mo
     s = Settings()
     assert s.max_queued_runs_per_printer == 5
     assert s.max_queued_runs_per_key == 20
-    monkeypatch.setenv("PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER", "3")
+    monkeypatch.setenv("PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER", "6")
     monkeypatch.setenv("PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY", "7")
     s = Settings()
-    assert (s.max_queued_runs_per_printer, s.max_queued_runs_per_key) == (3, 7)
+    assert (s.max_queued_runs_per_printer, s.max_queued_runs_per_key) == (6, 7)
     assert WAITING_RUN_PICTURES_TTL_S == 15 * 60
     assert MAX_BATCH_LOOKUPS == 8
 
@@ -201,32 +202,103 @@ async def test_a_cancelled_run_frees_the_cap() -> None:
         await queue.stop(timeout_s=2.0)
 
 
-async def test_a_held_run_counts_until_it_is_discarded() -> None:
+async def _held_run(queue: PrintQueue, printer_id: UUID, key: UUID | None) -> UUID:
+    """A run of *key* that waits for the confirmation of its second sub-job."""
+    slot = _claim(queue, printer_id, key, per_printer=100, per_key=100)
+    ids = [uuid4() for _ in range(MAX_LABELS_PER_TAPE_JOB + 1)]
+    run_id = await queue.enqueue_batch(
+        printer_id=printer_id,
+        images=[_img() for _ in ids],
+        job_ids=ids,
+        tape_mm=12,
+        options={},
+        slot=slot,
+    )
+    queue.release_run_slot(slot)
+    await _until(
+        lambda: (
+            queue.run_info(run_id) is not None
+            and queue.run_info(run_id).state == "awaiting_confirmation"
+        )  # type: ignore[union-attr]
+    )
+    return run_id
+
+
+async def test_a_held_run_counts_against_its_key_until_it_is_discarded() -> None:
     printer = TapeRoll()
-    queue, run_id, _ids, _store = await _run(printer, MAX_LABELS_PER_TAPE_JOB + 5)
+    queue = await _queue(printer)
+    key = uuid4()
     try:
-        await _until(lambda: queue.run_info(run_id).state == "awaiting_confirmation")  # type: ignore[union-attr]
-        with pytest.raises(TooManyQueuedRunsError):
-            _claim(queue, printer.id, None, per_printer=1)
+        run_id = await _held_run(queue, printer.id, key)
+        with pytest.raises(TooManyQueuedRunsError) as exc:
+            _claim(queue, printer.id, key, per_key=1)
+        assert exc.value.scope == "key"
+        # Security review: a held run does not use the printer; another key may queue.
+        queue.release_run_slot(_claim(queue, printer.id, uuid4(), per_printer=1))
         await queue.discard_run(run_id)
-        _claim(queue, printer.id, None, per_printer=1)
+        _claim(queue, printer.id, key, per_key=1)
     finally:
         await queue.stop(timeout_s=2.0)
 
 
-async def test_a_stopped_run_counts_until_it_is_discarded() -> None:
+async def test_a_stopped_run_counts_against_its_key_until_it_is_discarded() -> None:
     printer = TapeRoll(5)  # the tape ends in the first group: the run stops (fails)
-    queue, run_id, _ids, _store = await _run(printer, 12)
+    queue = await _queue(printer)
+    key = uuid4()
     try:
+        slot = _claim(queue, printer.id, key)
+        ids = [uuid4() for _ in range(12)]
+        run_id = await queue.enqueue_batch(
+            printer_id=printer.id,
+            images=[_img() for _ in ids],
+            job_ids=ids,
+            tape_mm=12,
+            options={},
+            slot=slot,
+        )
+        queue.release_run_slot(slot)
         await _until(
             lambda: queue.run_info(run_id) is not None and queue.run_info(run_id).state == "stopped"  # type: ignore[union-attr]
         )
         with pytest.raises(TooManyQueuedRunsError):
-            _claim(queue, printer.id, None, per_printer=1)
+            _claim(queue, printer.id, key, per_key=1)
+        queue.release_run_slot(_claim(queue, printer.id, uuid4(), per_printer=1))
         await queue.discard_run(run_id)
-        _claim(queue, printer.id, None, per_printer=1)
+        _claim(queue, printer.id, key, per_key=1)
     finally:
         await queue.stop(timeout_s=2.0)
+
+
+async def test_held_runs_of_one_key_do_not_block_the_printer() -> None:
+    """Security review "held runs block printer": key A holds runs up to the held limit; key B
+    still queues, and a further held run of A discards A's oldest (``run_discarded_limit``)."""
+    printer = TapeRoll()
+    queue = await _queue(printer)
+    a, b = uuid4(), uuid4()
+    try:
+        held = [await _held_run(queue, printer.id, a) for _ in range(MAX_HELD_RUNS_PER_PRINTER)]
+        slot = _claim(queue, printer.id, b, per_printer=MAX_HELD_RUNS_PER_PRINTER)
+        run_b, _jid = await _one_label_run(queue, printer.id, slot=slot)
+        queue.release_run_slot(slot)
+        await _until(lambda: queue.run_info(run_b) is None)
+        extra = await _held_run(queue, printer.id, a)
+        assert [i.run_id for i in queue.held_runs(printer.id)] == [*held[1:], extra]
+        first_waiting = queue._runs.get(held[0])
+        assert first_waiting is None  # discarded: the oldest held run went
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+def test_the_printer_cap_must_cover_the_held_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    from pydantic import ValidationError
+
+    monkeypatch.setenv(
+        "PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER", str(MAX_HELD_RUNS_PER_PRINTER - 1)
+    )
+    with pytest.raises(ValidationError, match="PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER"):
+        Settings()
+    monkeypatch.setenv("PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER", str(MAX_HELD_RUNS_PER_PRINTER))
+    assert Settings().max_queued_runs_per_printer == MAX_HELD_RUNS_PER_PRINTER
 
 
 async def test_an_unpersisted_run_counts_until_its_end_is_written() -> None:

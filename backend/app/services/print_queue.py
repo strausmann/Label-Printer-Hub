@@ -36,6 +36,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.config import MAX_HELD_RUNS_PER_PRINTER as _MAX_HELD_RUNS_PER_PRINTER
 from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.models.printer_state import PrinterState
@@ -315,7 +316,7 @@ class ReprintResult:
     all_confirmed_job_ids: list[UUID] = field(default_factory=list)
 
 
-MAX_HELD_RUNS_PER_PRINTER = 5
+MAX_HELD_RUNS_PER_PRINTER = _MAX_HELD_RUNS_PER_PRINTER
 """#277: at most this many runs of one printer wait (stopped, or for a confirmation); a sixth
 discards the oldest (its waiting labels are cancelled with ``run_discarded``)."""
 
@@ -1603,9 +1604,10 @@ class PrintQueue:
         Synchronous (no await): two concurrent claims cannot both take the last place. The
         claim counts at once, while the batch is still looked up and drawn; ``enqueue_batch``
         hands it to the run, ``release_run_slot`` gives it back when the submit failed. A run
-        counts until it is really over: while it is held (stopped, or waiting for a
-        confirmation), while any of its labels is not terminal, and while the end of a label
-        could not be written. A key of ``None`` is limited by the printer's cap only.
+        counts until it is really over: while any of its labels is not terminal and while the
+        end of a label could not be written; a held run (stopped, or waiting for a
+        confirmation) counts against its key only (security review: one key must not lock the
+        printer). A key of ``None`` is limited by the printer's cap only.
 
         Raises:
             TooManyQueuedRunsError: the printer or the key has no place left.
@@ -1613,11 +1615,13 @@ class PrintQueue:
         by_printer = 0
         by_key = 0
         for key, slot in list(self._run_slots.items()):
-            if not self._slot_counts(slot):
+            weight = self._slot_weight(slot)
+            if weight is None:
                 del self._run_slots[key]
                 continue
-            by_printer += slot.printer_id == printer_id
-            by_key += api_key_id is not None and slot.api_key_id == api_key_id
+            on_printer, on_key = weight
+            by_printer += on_printer and slot.printer_id == printer_id
+            by_key += on_key and api_key_id is not None and slot.api_key_id == api_key_id
         if by_printer >= per_printer:
             raise TooManyQueuedRunsError("printer", per_printer)
         if api_key_id is not None and by_key >= per_key:
@@ -1634,19 +1638,26 @@ class PrintQueue:
         if slot is not None and slot.pending:
             del self._run_slots[token]
 
-    def _slot_counts(self, slot: _RunSlot) -> bool:
+    def _slot_weight(self, slot: _RunSlot) -> tuple[bool, bool] | None:
+        """Which caps *slot* counts against: ``(printer, key)``; ``None`` when it is over.
+
+        A held run (stopped, waiting for a confirmation, being reprinted) counts against its
+        key only: it does not use the printer, and one key holding runs must not lock the
+        printer for every other key. ``MAX_HELD_RUNS_PER_PRINTER`` bounds the held runs of a
+        printer instead (the oldest is discarded).
+        """
         if slot.pending:
-            return True
+            return True, True
         run = slot.run
         if run is not None and self._runs.get(run.run_id) is run and run.state != "printing":
-            return True  # held: it waits for a confirmation, a reprint or a discard
+            return False, True
         for key in run.job_ids if run is not None else slot.job_ids:
             if key in self._unpersisted:
-                return True
+                return True, True
             job = self._jobs.get(key)
             if job is not None and job.state not in _TERMINAL_JOB_STATES:
-                return True
-        return False
+                return True, True
+        return None
 
     def drop_waiting_pictures(
         self, *, now: float | None = None, max_age_s: float = WAITING_RUN_PICTURES_TTL_S

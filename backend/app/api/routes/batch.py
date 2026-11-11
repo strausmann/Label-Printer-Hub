@@ -72,9 +72,9 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
         "with the appropriate 4xx status code. A page printer (IPP) answers "
         "409 media_kind_mismatch. A printer holds at most "
         "`PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) runs and a key at most "
-        "`PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over, "
-        "also while it waits for `/continue` or a reprint. Over the cap the batch answers "
-        "429 too-many-queued-runs."
+        "`PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over. "
+        "A run that waits for `/continue` or a reprint counts against its key only. Over a "
+        "cap the batch answers 429 too-many-queued-runs."
     ),
 )
 async def create_batch(

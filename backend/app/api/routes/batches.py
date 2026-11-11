@@ -193,8 +193,8 @@ _HELD_NOTE = (
     " Held runs live in memory: a hub restart fails every label that waited for a "
     "confirmation (`tape_run_interrupted`), also a part that was continued but had not started, "
     "and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A "
-    "held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) and "
-    "`PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20): over them a new batch answers 429 "
+    "held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, "
+    "not against the printer's cap: over it a new batch of that key answers 429 "
     "`too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At "
     "most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`)."
 )
