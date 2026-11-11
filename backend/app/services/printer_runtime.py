@@ -37,7 +37,7 @@ import contextlib
 import hashlib
 import json
 import logging
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -211,7 +211,7 @@ class _Wiring:
     page_client: IppClient | None = None
     state: IppPrinterState | None = None
     # Builds a fresh status producer (with its own client); set for page printers only.
-    make_producer: Callable[[], IppStatusProducer] | None = None
+    make_producer: Callable[[], Awaitable[IppStatusProducer]] | None = None
 
 
 class PrinterRuntime:
@@ -557,29 +557,37 @@ class PrinterRuntime:
         state = IppPrinterState()
         probe_timeout = min(5.0, queue_timeout)
 
-        def make_producer() -> IppStatusProducer:
-            return IppStatusProducer(
-                bus=self._app.state.event_bus,
-                printer_id=printer.id,
-                client=IppClient(
-                    uri,
-                    tls_verify=tls_verify,
-                    query_timeout_s=probe_timeout,
-                    upload_timeout_s=probe_timeout,
-                    transport=factory(uri) if factory else None,
-                ),
-                session_factory=self._sessions(),
-                state=state,
-                pause_control=self._queue(),
-                interval_s=self._settings.sse_probe_interval_s,
-                limiter=self._ipp_limiter,
-                log_name=printer.slug,
-                identity_sink=self._identity_sink,
+        async def make_producer() -> IppStatusProducer:
+            client = IppClient(
+                uri,
+                tls_verify=tls_verify,
+                query_timeout_s=probe_timeout,
+                upload_timeout_s=probe_timeout,
+                transport=factory(uri) if factory else None,
             )
+            try:
+                return IppStatusProducer(
+                    bus=self._app.state.event_bus,
+                    printer_id=printer.id,
+                    client=client,
+                    session_factory=self._sessions(),
+                    state=state,
+                    pause_control=self._queue(),
+                    interval_s=self._settings.sse_probe_interval_s,
+                    limiter=self._ipp_limiter,
+                    log_name=printer.slug,
+                    identity_sink=self._identity_sink,
+                )
+            except BaseException:
+                # L2: the producer owns the client only once it exists; a retry loop must not
+                # leak one client per failed build.
+                with contextlib.suppress(Exception):
+                    await client.aclose()
+                raise
 
         producer: IppStatusProducer | None
         try:
-            producer = make_producer()
+            producer = await make_producer()
         except Exception as exc:
             _log.warning(
                 "Degraded: IPP status producer for slug=%s not built (%s)",
@@ -770,6 +778,8 @@ class PrinterRuntime:
                     type(exc).__name__,
                 )
                 wiring.producer = None
+                if wiring.make_producer is not None:  # a page printer: hold it first (L1)
+                    await self._pause_status_unavailable(wiring)
                 await self._stop_producer_quietly(producer, wiring.slug)
         if wiring.make_producer is not None:  # a page printer: held until a producer runs
             await self._pause_status_unavailable(wiring)
@@ -778,8 +788,11 @@ class PrinterRuntime:
     async def _pause_status_unavailable(self, wiring: _Wiring) -> None:
         """Hold a page printer whose status producer is not running (265-06).
 
-        The existing pause with a reason; a user's pause stays what it is. No await lies between
-        ``add_page_printer`` returning and this call at attach, so no worker runs a job first.
+        The existing pause with a reason; a user's pause stays what it is. When the producer
+        could not be built, no await lies between ``add_page_printer`` returning and this call,
+        so no worker runs a job first. When its start failed, the pause is the first thing after
+        the failed call (``start`` only creates the probe task), before the broken producer is
+        stopped; an await inside the failing call itself is the only gap.
         """
         try:
             await self._queue().pause_printer(
@@ -852,7 +865,7 @@ class PrinterRuntime:
                     return
                 producer: IppStatusProducer | None = None
                 try:
-                    producer = wiring.make_producer()
+                    producer = await wiring.make_producer()
                     await producer.start()
                 except Exception as exc:
                     failures += 1

@@ -959,7 +959,7 @@ async def test_failed_attach_leaves_no_worker(env: Env) -> None:
     assert not env.queue.is_page_printer(printer.id)
     assert env.queue.pause_info(printer.id) is None
     assert printer.id not in env.app.state.ipp_printer_states
-    assert all(t.closed for t in env.transports)  # the client and the producer's client
+    assert env.transports == []  # the tray keys are read before any client is built
 
 
 async def test_failed_attach_after_the_add_removes_the_printer(env: Env) -> None:
@@ -1080,3 +1080,189 @@ async def test_wiring_keeps_only_a_digest_of_its_key(
     assert "secret-host" not in repr(vars(wiring).get("key_digest"))
     assert not any(isinstance(v, tuple) for v in vars(wiring).values())
     assert all("secret-host" not in r.getMessage() for r in caplog.records)
+
+
+# --- the producer retry task under concurrency (M1) ---------------------------------------
+
+
+class _GatedStart:
+    """``IppStatusProducer.start``: the first call raises; later calls park at ``gate`` first.
+
+    The parked call runs inside the retry's critical section (the printer lock is held).
+    """
+
+    def __init__(self) -> None:
+        self.gate = asyncio.Event()
+        self.entered = asyncio.Event()
+        self.started: list[Any] = []
+        self._calls = 0
+
+    def patch(self) -> Any:
+        from app.services.producers.ipp_status_producer import IppStatusProducer
+
+        real_start = IppStatusProducer.start
+        outer = self
+
+        async def _start(self: IppStatusProducer) -> None:
+            outer._calls += 1
+            if outer._calls == 1:
+                raise RuntimeError("start failed")
+            outer.started.append(self)
+            outer.entered.set()
+            await outer.gate.wait()
+            await real_start(self)
+
+        return patch.object(IppStatusProducer, "start", _start)
+
+
+async def _retry_env(factory: async_sessionmaker[AsyncSession]) -> Env:
+    return await _make_env(factory, interval_s=0.05)
+
+
+def _running(producers: list[Any]) -> list[Any]:
+    return [p for p in producers if p._task is not None and not p._task.done()]
+
+
+async def test_detach_waits_for_a_retry_that_holds_the_lock(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """(a) A detach during the retry's start waits for it, then stops what the retry started."""
+    e = await _retry_env(async_session_factory)
+    gated = _GatedStart()
+    try:
+        await _start(e)
+        printer = _ipp()
+        with gated.patch():
+            await e.runtime.attach(printer)
+            async with asyncio.timeout(TEST_TIMEOUT_S):
+                await gated.entered.wait()  # the retry is inside its critical section
+            detach = asyncio.create_task(e.runtime.detach(printer.id))
+            try:
+                await asyncio.sleep(0.1)
+                assert not detach.done()  # waits for the lock
+            finally:
+                gated.gate.set()
+                async with asyncio.timeout(TEST_TIMEOUT_S):
+                    await detach
+        assert printer.id not in e.runtime._wired
+        assert not e.queue.is_page_printer(printer.id)
+        assert _running(gated.started) == []  # no producer left for the removed wiring
+        assert e.runtime._retries == {}
+        assert all(t.closed for t in e.transports[1:])
+    finally:
+        await e.runtime.stop()
+
+
+async def test_reconcile_rewiring_while_a_retry_waits_leaves_one_producer(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """(b) The retry waits for the lock a reconcile holds; the reconcile re-wires. The waiting
+    retry does not start a second producer or lift the new wiring's state."""
+    e = await _retry_env(async_session_factory)
+    gated = _GatedStart()
+    gated.gate.set()  # later starts run through
+    try:
+        await _start(e)
+        printer = _ipp()
+        await _store_row(e.factory, printer)
+        hold = asyncio.Event()
+        real_trays = e.runtime._tray_keys
+
+        async def _trays(pid: UUID) -> list[str]:
+            await hold.wait()  # reconcile holds the lock here
+            return await real_trays(pid)
+
+        with gated.patch():
+            await e.runtime.attach(printer)  # the first start fails: degraded, retry armed
+            assert e.runtime._retries.get(printer.id) is not None
+            with patch.object(e.runtime, "_tray_keys", _trays):
+                reconcile = asyncio.create_task(e.runtime.reconcile(printer.id))
+                await asyncio.sleep(0.2)  # the retry's delay has passed: it waits for the lock
+                hold.set()
+                async with asyncio.timeout(TEST_TIMEOUT_S):
+                    await reconcile
+            await asyncio.sleep(0.2)
+        assert len(gated.started) == 1  # the re-wire's producer; the retry started none
+        assert len(_running(gated.started)) == 1
+        assert e.runtime.is_polled(printer.id)
+        assert e.queue.pause_info(printer.id) is None
+        assert e.runtime._retries == {}
+    finally:
+        await e.runtime.stop()
+
+
+async def test_stop_waits_for_a_retry_that_holds_the_lock(
+    async_session_factory: async_sessionmaker[AsyncSession], caplog: pytest.LogCaptureFixture
+) -> None:
+    """(c) ``stop()`` during the retry's start waits for it, then stops its producer and closes
+    every client; no task is destroyed pending."""
+    import gc
+
+    e = await _retry_env(async_session_factory)
+    gated = _GatedStart()
+    await _start(e)
+    printer = _ipp()
+    with gated.patch(), caplog.at_level(logging.ERROR, logger="asyncio"):
+        await e.runtime.attach(printer)
+        async with asyncio.timeout(TEST_TIMEOUT_S):
+            await gated.entered.wait()
+        stop = asyncio.create_task(e.runtime.stop())
+        try:
+            await asyncio.sleep(0.1)
+            assert not stop.done()
+        finally:
+            gated.gate.set()
+            async with asyncio.timeout(TEST_TIMEOUT_S):
+                await stop
+        gc.collect()
+    assert _running(gated.started) == []
+    assert e.runtime._retries == {}
+    assert all(t.closed for t in e.transports)
+    assert not [r for r in caplog.records if "destroyed" in r.getMessage()]
+
+
+# --- L1 / L2 ------------------------------------------------------------------------------
+
+
+async def test_degraded_page_printer_holds_a_queued_job_until_the_producer_runs(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """L1: a job submitted to a printer with a dead status producer waits; it prints once the
+    retry has started the producer."""
+    e = await _retry_env(async_session_factory)
+    try:
+        with registered(RecordingHandler()):
+            await _start(e)
+            printer = _ipp()
+            await _store_row(e.factory, printer)
+            gated = _GatedStart()
+            with gated.patch():
+                await e.runtime.attach(printer)
+                jid = await e.queue.submit_page_job(
+                    printer.id, payload(), api_key_id=None, source_ip=None
+                )
+                await asyncio.sleep(0.05)  # before the retry fires
+                assert [r.operation for r in e.fake.received].count("Print-Job") == 0
+                async with e.factory() as s:
+                    row = await s.get(DbJob, jid)
+                    assert row is not None and row.state == DbJobState.QUEUED.value
+                gated.gate.set()
+                await _until(
+                    lambda: _async([r.operation for r in e.fake.received].count("Print-Job") == 1),
+                    timeout_s=8.0,
+                )
+    finally:
+        await e.runtime.stop()
+
+
+async def test_failed_producer_build_closes_its_client(env: Env) -> None:
+    """L2: an ``IppStatusProducer`` constructor that raises must not leak the client it was
+    given (the retry would leak one per round)."""
+    from app.services.producers import ipp_status_producer
+
+    await _start(env)
+    printer = _ipp()
+    with patch.object(ipp_status_producer.IppStatusProducer, "__init__", _raising_init):
+        await env.runtime.attach(printer)
+    assert len(env.transports) == 2  # the page client's and the producer's
+    assert [t.closed for t in env.transports] == [False, True]

@@ -4670,6 +4670,10 @@ msgstr "View the job"
 msgid "Waiting at the printer"
 msgstr "Waiting at the printer"
 
+#: src/features/printers/PauseReason.tsx
+msgid "Waiting for the printer's status check"
+msgstr "Waiting for the printer's status check"
+
 #: src/features/jobs/HeldRuns.tsx
 #: src/shell/PrintToasts.tsx
 msgid "Waiting for you"
