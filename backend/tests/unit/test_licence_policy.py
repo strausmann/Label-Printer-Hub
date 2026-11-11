@@ -58,6 +58,15 @@ def test_policy_is_json() -> None:
     assert isinstance(_policy(), dict)
 
 
+# SPDX licence-list data used by rollup-license-plugin at build time. The CC-BY-3.0 data
+# licence is deliberately not in allow-licenses: each package is excepted by purl and
+# version, and the built web licence list must not contain it (see the web build test).
+BUILD_TIME_ONLY = {
+    "pkg:npm/spdx-exceptions@2.5.0": "CC-BY-3.0",
+    "pkg:npm/spdx-expression-validate@2.0.0": "CC-BY-3.0 AND MIT",
+}
+
+
 def test_policy_contents() -> None:
     policy = _policy()
     allowed = policy["allow-licenses"]
@@ -72,7 +81,7 @@ def test_policy_contents() -> None:
 def test_every_allowed_purl_has_reason() -> None:
     policy = _policy()
     purls = policy["allow-dependencies-licenses"]
-    assert purls == ["pkg:npm/json-schema@0.4.0"]
+    assert purls == ["pkg:npm/json-schema@0.4.0", *sorted(BUILD_TIME_ONLY)]
     exceptions = {normalise_purl(e["purl"]): e for e in policy["x-licence-exceptions"]}
     for purl in purls:
         assert exceptions[normalise_purl(purl)]["reason"].strip()
@@ -101,4 +110,9 @@ def test_exception_entries_are_complete() -> None:
 def test_exception_licences_are_allowed() -> None:
     allowed = frozenset(_policy()["allow-licenses"])
     for entry in _policy()["x-licence-exceptions"]:
+        if entry["purl"] in BUILD_TIME_ONLY:
+            # Not shipped; judged by the dependency review only, never allowed globally.
+            assert not expression_allowed(entry["licence"], allowed), entry
+            assert BUILD_TIME_ONLY[entry["purl"]] == entry["licence"]
+            continue
         assert expression_allowed(entry["licence"], allowed), entry

@@ -32,7 +32,9 @@
     "Zlib"
   ],
   "allow-dependencies-licenses": [
-    "pkg:npm/json-schema@0.4.0"
+    "pkg:npm/json-schema@0.4.0",
+    "pkg:npm/spdx-exceptions@2.5.0",
+    "pkg:npm/spdx-expression-validate@2.0.0"
   ],
   "fail-on-scopes": [
     "runtime",
@@ -41,6 +43,16 @@
   "license-check": true,
   "vulnerability-check": false,
   "x-licence-exceptions": [
+    {
+      "purl": "pkg:npm/spdx-exceptions@2.5.0",
+      "licence": "CC-BY-3.0",
+      "reason": "SPDX licence-list data, build time only (dependency of rollup-license-plugin, not in the shipped web bundle), attribution kept."
+    },
+    {
+      "purl": "pkg:npm/spdx-expression-validate@2.0.0",
+      "licence": "CC-BY-3.0 AND MIT",
+      "reason": "SPDX licence-list data, build time only (dependency of rollup-license-plugin, not in the shipped web bundle), attribution kept."
+    },
     {
       "purl": "pkg:npm/json-schema@0.4.0",
       "licence": "AFL-2.1 OR BSD-3-Clause",

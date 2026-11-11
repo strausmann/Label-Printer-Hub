@@ -91,7 +91,7 @@ describe.skipIf(!required && !existsSync(dist))("built output", () => {
     // Every production dependency ships, including the two font packages whose CSS the bundler inlines.
     for (const name of Object.keys(pkg.dependencies)) expect(byName.has(name), `${name} is a dependency but missing from frontend.json`).toBe(true);
     // `yaml` is left out of this list on purpose: Scalar's standalone bundle contains it, so it ships.
-    for (const tool of ["vite", "vitest", "typescript", "eslint", "@playwright/test", "rollup-license-plugin", pkg.name]) {
+    for (const tool of ["vite", "vitest", "typescript", "eslint", "@playwright/test", "rollup-license-plugin", "spdx-exceptions", "spdx-expression-validate", pkg.name]) {
       expect(byName.has(tool), `${tool} must not be listed`).toBe(false);
     }
   });
