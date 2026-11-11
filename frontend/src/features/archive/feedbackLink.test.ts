@@ -175,7 +175,7 @@ describe("buildFeedbackUrl", () => {
     // receives (sheet type, version, geometry), so a builder that serialises any of them wholesale leaks.
     const page = {
       location: { host: "hub.corp.internal:8443", href: "https://hub.corp.internal:8443/sheets/archive" },
-      printer: { uri: "ipp://10.9.8.7:631/ipp/print", serial: "BRN-SERIAL-123", api_key: "lph_secret_key_value" },
+      printer: { uri: "ipp://192.0.2.7:631/ipp/print", serial: "BRN-SERIAL-123", api_key: "lph_secret_key_value" },
       integration: { url: "https://snipe.corp.internal/api" },
       user: "alice",
       sheet: { code: "L4736-0001" },
