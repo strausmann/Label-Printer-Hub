@@ -96,7 +96,7 @@ for message in t.sample_messages():
     expected = ri.bump("1.0.0", impact) or "none"
     got = subprocess.run(
         [str(root / "scripts" / "release_dry_run.sh"), message],
-        check=True, capture_output=True, text=True,
+        check=True, stdout=subprocess.PIPE, text=True,
     ).stdout.strip()
     ran += 1
     if got != expected:
