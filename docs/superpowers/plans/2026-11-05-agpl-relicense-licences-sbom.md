@@ -527,6 +527,8 @@ JSON
 
 ## Part B — Release 1.2.0
 
+> Superseded for release 1.6.0 by `docs/superpowers/plans/2026-11-11-licence-part-b.md`; this part stays as history and is not executed.
+
 ### Task B1: Backend licence list in the image, `licenses/` misses are 404
 
 **Files:**
