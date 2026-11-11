@@ -285,9 +285,12 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await prepare(mode);
         const { box, frame, list } = await listOpenAtTop();
         await box.fill("4731");
-        await page.locator('[role="option"]').first().click();
-        // The chosen type changes the form (grid, margin check); the frame moves right after the click.
-        await frame.evaluate((el) => (el.scrollTop += 20));
+        await expect(page.locator('[role="option"]').first()).toBeVisible();
+        // The chosen type changes the form (grid, margin check); the frame moves in the same breath as the click.
+        await frame.evaluate((el) => {
+          document.querySelector<HTMLElement>('[role="option"]')!.click();
+          el.scrollTop += 20;
+        });
         await page.waitForTimeout(700);
         await expect(list).toHaveCount(0);
         await expect(box).toHaveValue(/4731/);
