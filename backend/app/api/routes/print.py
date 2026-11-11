@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import AuthContext
+from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
 from app.printer_backends.exceptions import (
@@ -43,6 +43,13 @@ router = APIRouter()
 # `router` spells the full path in each decorator (/api/v1/print, /api/v1/printer/resume);
 # `render_router` carries the prefix for POST /api/v1/render/preview.
 render_router = APIRouter(prefix="/api/v1")
+
+
+def _check_default_printer(http: Request, auth: AuthContext) -> None:
+    """403 when the key may not use the default printer these routes act on."""
+    printer_id = getattr(http.app.state, "printer_id", None)
+    if printer_id is not None:
+        check_printer_access(auth, UUID(str(printer_id)))
 
 
 class _PrinterResumeResponse(BaseModel):
@@ -100,6 +107,7 @@ async def create_print_job(
     http: Request,
     _auth: Annotated[AuthContext, Depends(require_print)],
 ) -> Any:
+    _check_default_printer(http, _auth)
     service = http.app.state.print_service
     if service is None:
         # No tape printer is wired (fresh install, or only IPP page printers): nothing can
@@ -172,6 +180,7 @@ async def resume_printer(
     printer_id = getattr(http.app.state, "printer_id", None)
     if printer_id is None:
         raise HTTPException(status_code=404, detail="no printer configured")
+    check_printer_access(_auth, UUID(str(printer_id)))
     # Same effect as POST /api/v1/printers/{id}/resume: clear the persisted flag too.
     await printer_state_repo.set_paused(session, printer_id, False)
     try:
