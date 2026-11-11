@@ -22,6 +22,41 @@ ROOT = Path(__file__).resolve().parent.parent
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 
+try:  # Python >= 3.11
+    from re import _constants as _sre_constants
+    from re import _parser as _sre_parse
+except ImportError:  # pragma: no cover
+    import sre_constants as _sre_constants  # type: ignore[no-redef]
+    import sre_parse as _sre_parse  # type: ignore[no-redef]
+
+# The pinned cleanup action rejects patterns with safe-regex2's defaults:
+# star height above 1 (every repetition counts, also `?` and `{m,n}`) and more
+# than 25 repetitions.
+SAFE_REGEX_STAR_LIMIT = 1
+SAFE_REGEX_REPETITION_LIMIT = 25
+
+
+def _walk(items, height: int) -> tuple[int, int]:
+    """Return (max star height, repetition count) of a parsed pattern."""
+    max_height, count = height, 0
+    for op, av in items:
+        if op in (_sre_constants.MAX_REPEAT, _sre_constants.MIN_REPEAT):
+            h, c = _walk(av[2], height + 1)
+            max_height, count = max(max_height, h), count + c + 1
+        elif op is _sre_constants.SUBPATTERN:
+            h, c = _walk(av[-1], height)
+            max_height, count = max(max_height, h), count + c
+        elif op is _sre_constants.BRANCH:
+            for branch in av[1]:
+                h, c = _walk(branch, height)
+                max_height, count = max(max_height, h), count + c
+    return max_height, count
+
+
+def safe_regex_metrics(pattern: str) -> tuple[int, int]:
+    return _walk(_sre_parse.parse(pattern), 0)
+
+
 def kept(tag: str, tags: list[str] | None = None) -> bool:
     return re.match(g.keep_regex(tags or [tag]), tag) is not None
 
@@ -48,6 +83,31 @@ class KeepRegexTest(unittest.TestCase):
     def test_open_preview_kept_until_release_exists(self) -> None:
         self.assertTrue(kept("1.5.1-rc.1", ["1.5.1-rc.1"]))
         self.assertFalse(kept("1.5.1-rc.1", ["1.5.1-rc.1", "1.5.1"]))
+
+    def test_regex_passes_the_actions_regex_validator(self) -> None:
+        """The cleanup action runs safe-regex2 over exclude-tags and aborts on
+        a rejected pattern. Nested repetitions (`(...)?` or `{0,2}` around
+        `[0-9]*`) are rejected, so the pattern must stay flat. Checked with a
+        Python model of the star-height and repetition-count rules."""
+        pattern = g.keep_regex(["1.5.1-rc.1", "1.6.0-rc.2"])
+        height, count = safe_regex_metrics(pattern)
+        self.assertLessEqual(height, SAFE_REGEX_STAR_LIMIT, pattern)
+        self.assertLessEqual(count, SAFE_REGEX_REPETITION_LIMIT, pattern)
+
+    def test_flat_regex_matches_the_documented_rule(self) -> None:
+        """Equivalence with the original nested rule, over generated tags."""
+        original = re.compile(
+            r"^(dev|latest|1|1\.([4-9]|[1-9][0-9]+)(\.(0|[1-9][0-9]*))?"
+            r"|([2-9]|[1-9][0-9]+)(\.(0|[1-9][0-9]*)){0,2})$"
+        )
+        rule = re.compile(g.keep_regex([]))
+        numbers = ["0", "1", "3", "4", "9", "10", "04", "11", "100"]
+        tags = {f"{a}.{b}.{c}" for a in numbers for b in numbers for c in ("0", "7", "10")}
+        tags |= {f"{a}.{b}" for a in numbers for b in numbers} | set(numbers)
+        tags |= {"dev", "latest", "1.2.3.4", "1.4.0.1", "", "x", "1.5.1-rc.1", "v1.4.0"}
+        for tag in sorted(tags):
+            with self.subTest(tag=tag):
+                self.assertEqual(bool(rule.match(tag)), bool(original.match(tag)))
 
     def test_preview_dots_are_escaped(self) -> None:
         self.assertFalse(re.match(g.keep_regex(["1.5.1-rc.1"]), "1x5x1-rc.1"))

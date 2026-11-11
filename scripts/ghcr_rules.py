@@ -27,9 +27,26 @@ from collections.abc import Callable
 from typing import Any
 
 # dev, latest, releases >= 1.4.0 with their floating tags (x.y and x).
-BASE_KEEP = (
-    r"dev|latest|1|1\.([4-9]|[1-9][0-9]+)(\.(0|[1-9][0-9]*))?"
-    r"|([2-9]|[1-9][0-9]+)(\.(0|[1-9][0-9]*)){0,2}"
+#
+# The pattern is kept flat on purpose: the cleanup action validates
+# exclude-tags with safe-regex2, which rejects a repetition nested in another
+# one (`(\.(0|[1-9][0-9]*))?`, `(...){0,2}`). Optional parts are therefore
+# spelled out as alternatives. Equivalence with the nested form is tested.
+_MINOR = r"[1-9][0-9]+"  # >= 10
+_PATCH = r"(0|[1-9][0-9]*)"
+_MAJOR = r"([2-9]|[1-9][0-9]+)"  # >= 2
+_MINOR_FROM_4 = rf"1\.([4-9]|{_MINOR})"
+BASE_KEEP = "|".join(
+    [
+        "dev",
+        "latest",
+        "1",
+        _MINOR_FROM_4,
+        rf"{_MINOR_FROM_4}\.{_PATCH}",
+        _MAJOR,
+        rf"{_MAJOR}\.{_PATCH}",
+        rf"{_MAJOR}\.{_PATCH}\.{_PATCH}",
+    ]
 )
 
 _NUM = r"(?:0|[1-9][0-9]*)"
