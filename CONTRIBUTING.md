@@ -271,7 +271,7 @@ For a patch milestone `x.y.x` use version `x.y.x`: the workflow builds `x.y.<nex
 
 Both use [`scripts/release_impact.py`](scripts/release_impact.py) (tests: `python3 -m unittest discover -s scripts -p 'test_*.py'`).
 
-To see which version semantic-release would compute for a commit message, without publishing anything, run `scripts/release_dry_run.sh "fix: x"` (after `npm ci --ignore-scripts` in `.github/release-tools`); `scripts/release_dry_run.sh --all` replays every sample message of the impact tests and compares the result with `release_impact.py`.
+To see which version semantic-release would compute for a commit message, without publishing anything, run `scripts/release_dry_run.sh "fix: x"` (after `npm ci --ignore-scripts` in `.github/release-tools`); `scripts/release_dry_run.sh --all` replays every sample message of the impact tests and compares the result with `release_impact.py`. The **Release tools** workflow (check `release-tools dry run`) runs `--all` and `--notes` on every PR and push to `main` or `milestone/**`; it does the work only when `.github/release-tools`, `.releaserc.json` or the release scripts changed and otherwise passes at once, so it can be a required check without blocking unrelated PRs.
 
 ## Releases
 

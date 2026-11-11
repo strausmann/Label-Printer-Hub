@@ -21,12 +21,18 @@ if [[ ! -x "$SR" ]]; then
   exit 2
 fi
 
+# The temp dir goes away on every exit path, including errors and signals.
+TMP_DIR=""
+trap '[[ -z "$TMP_DIR" ]] || rm -rf "$TMP_DIR"' EXIT
+trap 'exit 130' INT TERM
+
 # Run one dry run. $1 = mode (version|notes), $2 = commit message.
 dry_run() {
   local mode="$1" message="$2" tmp
   tmp="$(mktemp -d)"
+  TMP_DIR="$tmp"
   # Never inherit CI or token variables: this must not be able to publish.
-  local -a clean_env=(env -u GITHUB_TOKEN -u GH_TOKEN -u GITHUB_REPOSITORY -u GITHUB_ACTIONS -u CI
+  local -a clean_env=(env -u GITHUB_TOKEN -u GH_TOKEN -u NPM_TOKEN -u GITHUB_REPOSITORY -u GITHUB_ACTIONS -u CI
     GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null)
   (
     set -euo pipefail
@@ -56,7 +62,7 @@ cfg["branches"] = ["main"]
 json.dump(cfg, sys.stdout, indent=2)
 PY
     "${clean_env[@]}" "$SR" --dry-run --no-ci 2>&1
-  ) > "$tmp/out.log" || { cat "$tmp/out.log" >&2; rm -rf "$tmp"; return 1; }
+  ) > "$tmp/out.log" || { cat "$tmp/out.log" >&2; return 1; }
   if [[ "$mode" == "notes" ]]; then
     sed -n '/Release note for version/,$p' "$tmp/out.log"
   elif grep -q 'The next release version is' "$tmp/out.log"; then
@@ -64,7 +70,6 @@ PY
   else
     echo none
   fi
-  rm -rf "$tmp"
 }
 
 if [[ $# -eq 0 ]]; then
