@@ -13,6 +13,7 @@ from uuid import UUID
 
 from app.config import get_settings
 from app.schemas.print_request import PrintRequest
+from app.services.print_queue import MAX_LABELS_PER_TAPE_JOB
 
 if TYPE_CHECKING:
     from app.services.print_queue import PrintQueue
@@ -59,11 +60,14 @@ async def dispatch_batch(
             items, half_cut=half_cut, run_id=run_id, label_ids=label_ids
         )
     settings = get_settings()
+    labels = sum(max(1, int(item.options.copies)) for item in items)
     slot = queue.claim_run_slot(
         printer_id,
         api_key_id,
         per_printer=settings.max_queued_runs_per_printer,
         per_key=settings.max_queued_runs_per_key,
+        # Only a run of more than one sub-job waits for a confirmation (#277).
+        may_hold=labels > MAX_LABELS_PER_TAPE_JOB,
     )
     try:
         return await service.submit_batch_job(

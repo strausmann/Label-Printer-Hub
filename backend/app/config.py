@@ -47,6 +47,11 @@ MAX_HELD_RUNS_PER_PRINTER = 5
 """#277: held tape runs (stopped, or waiting for a confirmation) one printer keeps; a sixth
 discards the oldest. Defined here so the settings can check the queued-run cap against it."""
 
+MAX_HELD_RUNS_PER_KEY_PER_PRINTER = 2
+"""Security review 3: held tape runs one API key keeps on one printer (its share of
+``MAX_HELD_RUNS_PER_PRINTER``); a third discards that key's oldest. All callers without a key
+(browser sessions, SSO) count as one key."""
+
 
 class Settings(BaseSettings):
     """Application-wide runtime configuration.

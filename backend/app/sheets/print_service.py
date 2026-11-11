@@ -25,6 +25,7 @@ import logging
 import traceback
 from collections.abc import Callable, Hashable, Iterator, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from typing import Any, Final, Literal, Protocol
 from uuid import UUID, uuid4
@@ -683,14 +684,20 @@ async def draw_page_bounded(*args: Any) -> Any:
     """
     gate = _gate()
     await gate.acquire()
-    # No await from the acquire to the callback: the slot is always given back by the task.
+    # No await from the acquire to the callback: the slots are always given back by the task.
+    # The caller's preview slot (``preview_slot``) stays taken with the render slot (F3).
+    owner = _preview_owner.get()
+    if owner is not None:
+        _previews_in_progress[owner] = _previews_in_progress.get(owner, 0) + 1
     task = asyncio.ensure_future(asyncio.to_thread(_draw_page, *args))
-    task.add_done_callback(lambda done: _end_render(gate, done))
+    task.add_done_callback(lambda done: _end_render(gate, owner, done))
     return await asyncio.shield(task)
 
 
-def _end_render(gate: asyncio.Semaphore, done: asyncio.Future[Any]) -> None:
+def _end_render(gate: asyncio.Semaphore, owner: Hashable | None, done: asyncio.Future[Any]) -> None:
     gate.release()
+    if owner is not None:
+        _release_preview(owner)
     if not done.cancelled():
         done.exception()  # retrieved: a render nobody waits for any more is not logged twice
 
@@ -699,23 +706,37 @@ class TooManyPreviewsError(Exception):
     """266-07: the caller has a preview in progress already (one per key at a time)."""
 
 
-_previews_in_progress: set[Hashable] = set()
+# Per owner: the open ``preview_slot`` plus its renders still drawing in a thread.
+_previews_in_progress: dict[Hashable, int] = {}
+_preview_owner: ContextVar[Hashable | None] = ContextVar("_preview_owner", default=None)
+
+
+def _release_preview(owner: Hashable) -> None:
+    left = _previews_in_progress.get(owner, 0) - 1
+    if left > 0:
+        _previews_in_progress[owner] = left
+    else:
+        _previews_in_progress.pop(owner, None)
 
 
 @contextmanager
 def preview_slot(owner: Hashable) -> Iterator[None]:
     """One preview per *owner* (API key) at a time; a second one raises at once.
 
-    Synchronous check and claim (no await between them), freed when the block ends however it
-    ends.
+    Synchronous check and claim (no await between them). The slot is free once the block has
+    ended AND every render it started has finished: a cancelled request whose picture is still
+    drawing in a thread keeps it, so one key cannot take both render slots (F3). All callers
+    without a key are grouped by source, user and address (see the route).
     """
     if owner in _previews_in_progress:
         raise TooManyPreviewsError()
-    _previews_in_progress.add(owner)
+    _previews_in_progress[owner] = 1
+    token = _preview_owner.set(owner)
     try:
         yield
     finally:
-        _previews_in_progress.discard(owner)
+        _preview_owner.reset(token)
+        _release_preview(owner)
 
 
 def _margin_payload(

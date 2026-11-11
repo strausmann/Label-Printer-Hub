@@ -36,6 +36,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.config import MAX_HELD_RUNS_PER_KEY_PER_PRINTER as _MAX_HELD_RUNS_PER_KEY_PER_PRINTER
 from app.config import MAX_HELD_RUNS_PER_PRINTER as _MAX_HELD_RUNS_PER_PRINTER
 from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
@@ -298,6 +299,8 @@ class RunInfo:
     stop_kind: Literal["unknown", "refused"] | None
     reprint_from: int | None
     reprint_to: int | None
+    # The key that submitted the run (``None``: no key), for the owner check of the API.
+    api_key_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -320,6 +323,7 @@ class ReprintResult:
 
 
 MAX_HELD_RUNS_PER_PRINTER = _MAX_HELD_RUNS_PER_PRINTER
+MAX_HELD_RUNS_PER_KEY_PER_PRINTER = _MAX_HELD_RUNS_PER_KEY_PER_PRINTER
 """#277: at most this many runs of one printer wait (stopped, or for a confirmation); a sixth
 discards the oldest (its waiting labels are cancelled with ``run_discarded``)."""
 
@@ -1343,6 +1347,7 @@ class PrintQueue:
             stop_kind=run.stop_kind if run.state == "stopped" else None,
             reprint_from=None if reprint is None else reprint[0] + 1,
             reprint_to=None if reprint is None else reprint[1] + 1,
+            api_key_id=run.api_key_id,
         )
 
     def _notify_run_change(self, run: TapeRun, state: str) -> None:
@@ -1590,7 +1595,8 @@ class PrintQueue:
         return [info for r in held if (info := self.run_info(r.run_id)) is not None]
 
     async def _bound_held_runs(self, run: TapeRun) -> None:
-        """Keep at most ``MAX_HELD_RUNS_PER_PRINTER`` waiting runs per printer (I3).
+        """Keep at most ``MAX_HELD_RUNS_PER_PRINTER`` waiting runs per printer (I3), and at most
+        ``MAX_HELD_RUNS_PER_KEY_PER_PRINTER`` of one key.
 
         *run* has just become held. Over the limit, the oldest held runs of *run*'s own key
         (``None`` counts as one key of its own) are discarded, never the runs of another key
@@ -1600,9 +1606,6 @@ class PrintQueue:
         so the excess is at most the runs that were printing when the printer filled up.
         """
         held = self.held_runs(run.printer_id)
-        excess = len(held) - MAX_HELD_RUNS_PER_PRINTER
-        if excess <= 0:
-            return
         own = [
             info
             for info in held
@@ -1610,6 +1613,14 @@ class PrintQueue:
             and (other := self._runs.get(info.run_id)) is not None
             and other.api_key_id == run.api_key_id
         ]
+        # Security review 3: a key keeps at most MAX_HELD_RUNS_PER_KEY_PER_PRINTER held runs on
+        # a printer (its share of the five), so it cannot take every held place.
+        excess = max(
+            len(held) - MAX_HELD_RUNS_PER_PRINTER,
+            len(own) + 1 - MAX_HELD_RUNS_PER_KEY_PER_PRINTER,
+        )
+        if excess <= 0:
+            return
         for info in own[:excess]:
             with contextlib.suppress(KeyError, RunStateError):
                 await self.discard_run(info.run_id, code="run_discarded_limit")
@@ -1624,7 +1635,13 @@ class PrintQueue:
     # --- queued-run caps and waiting pictures (263-76) -----------------------
 
     def claim_run_slot(
-        self, printer_id: UUID, api_key_id: UUID | None, *, per_printer: int, per_key: int
+        self,
+        printer_id: UUID,
+        api_key_id: UUID | None,
+        *,
+        per_printer: int,
+        per_key: int,
+        may_hold: bool = True,
     ) -> UUID:
         """Claim a place for one more tape run of *printer_id* and *api_key_id*.
 
@@ -1635,6 +1652,13 @@ class PrintQueue:
         end of a label could not be written; a held run (stopped, or waiting for a
         confirmation) counts against its key only (security review: one key must not lock the
         printer). A key of ``None`` is limited by the printer's cap only.
+
+        *may_hold*: the batch has more than ``MAX_LABELS_PER_TAPE_JOB`` labels (copies included),
+        so it waits for a confirmation after its first sub-job. Only such a batch is refused for
+        the printer's full held places; a smaller one is always let through (a smaller run is
+        held only when it stops on an error). All callers without a key (browser sessions, SSO)
+        are ONE key here (``None``): they share the per-key held share and may give up each
+        other's oldest held run.
 
         Raises:
             TooManyQueuedRunsError: the printer or the key has no place left.
@@ -1659,8 +1683,10 @@ class PrintQueue:
             for r in self._runs.values()
             if r.printer_id == printer_id and r.state in ("awaiting_confirmation", "stopped")
         ]
-        if len(held_here) >= MAX_HELD_RUNS_PER_PRINTER and not any(
-            r.api_key_id == api_key_id for r in held_here
+        if (
+            may_hold
+            and len(held_here) >= MAX_HELD_RUNS_PER_PRINTER
+            and not any(r.api_key_id == api_key_id for r in held_here)
         ):
             raise TooManyQueuedRunsError("printer", per_printer)
         if api_key_id is not None and by_key >= per_key:

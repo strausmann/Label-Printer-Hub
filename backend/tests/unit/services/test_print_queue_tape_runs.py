@@ -27,7 +27,6 @@ from app.printer_backends.exceptions import (
 from app.services.job_lifecycle import JobState
 from app.services.job_store import MemoryJobStore
 from app.services.print_queue import (
-    MAX_HELD_RUNS_PER_PRINTER,
     MAX_LABELS_PER_TAPE_JOB,
     TAPE_GROUP_SIZE,
     PrintQueue,
@@ -710,21 +709,28 @@ async def test_discard_frees_a_stopped_run_and_refuses_a_printing_one() -> None:
 
 
 async def test_at_most_five_runs_wait_per_printer_the_oldest_is_discarded() -> None:
-    """I3: a sixth held run discards the oldest, with ``run_discarded_limit``."""
+    """I3: a sixth held run discards the oldest of its own key, with ``run_discarded_limit``.
+
+    Three keys with two held runs each (a key keeps at most two on one printer): the sixth,
+    of the third key, discards that key's first run.
+    """
     printer = TapeRoll()
     store = MemoryJobStore()
     queue = PrintQueue([printer], store=store)
     await queue.start()
+    keys = [k for k in (uuid4(), uuid4(), uuid4()) for _ in range(2)]
     try:
         runs: list[tuple[UUID, list[UUID]]] = []
-        for _ in range(MAX_HELD_RUNS_PER_PRINTER + 1):
+        for key in keys:
             ids = [uuid4() for _ in range(51)]
+            slot = queue.claim_run_slot(printer.id, key, per_printer=100, per_key=100)
             run_id = await queue.enqueue_batch(
                 printer_id=printer.id,
                 images=[_img() for _ in ids],
                 job_ids=ids,
                 tape_mm=12,
                 options={},
+                slot=slot,
             )
             runs.append((run_id, ids))
             await _until(
@@ -734,8 +740,8 @@ async def test_at_most_five_runs_wait_per_printer_the_oldest_is_discarded() -> N
                 )
             )  # type: ignore[misc,union-attr]
         held = [info.run_id for info in queue.held_runs(printer.id)]
-        assert held == [r for r, _ in runs[1:]]  # oldest first, the first one gone
-        oldest_label = runs[0][1][50]
+        assert held == [r for r, _ in [*runs[:4], runs[5]]]  # the third key's first run gone
+        oldest_label = runs[4][1][50]
         assert (await queue.get(oldest_label)).error_code == "run_discarded_limit"
     finally:
         await queue.stop(timeout_s=2.0)
