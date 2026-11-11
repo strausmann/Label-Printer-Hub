@@ -236,7 +236,14 @@ async def cancel_job(
             raise _cancel_conflict(live.state.value)
         await session.refresh(job)
         read = JobRead.model_validate(job, from_attributes=True)
-        if job.state == JobState.PRINTING.value:  # requested at the printer, not yet final
+        # Requested at the printer, not yet final. The row may still say ``queued``: the worker
+        # moved the page job to PRINTING in memory and has not written it yet (265-07).
+        requested = job.state == JobState.PRINTING.value or (
+            queue.is_page_job(job_id)
+            and (await queue.get(job_id)).state.value == JobState.PRINTING.value
+        )
+        if requested:
+            read = read.model_copy(update={"state": JobState.PRINTING.value})
             return JSONResponse(
                 status_code=status.HTTP_202_ACCEPTED, content=jsonable_encoder(read)
             )

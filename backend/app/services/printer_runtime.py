@@ -674,14 +674,26 @@ class PrinterRuntime:
                 self._locks.pop(printer_id, None)
 
     async def _identity_sink(self, printer_id: UUID, observed: ObservedIdentity) -> IdentityOutcome:
-        """The sink both status producers call after a successful probe (#231)."""
-        return await record_identity(
+        """The sink both status producers call after a successful probe (#231).
+
+        A ``seen`` reading while the queue still holds the printer means the hold outlived its
+        mismatch: a clear whose re-read failed keeps the hold (fail closed), and no later probe
+        would announce a clear again. Re-sync it from the database then (263-48); the re-read
+        only runs while a hold is set, and releases it only when verified.
+        """
+        outcome = await record_identity(
             printer_id,
             observed,
             datetime.now(UTC),
             session_factory=self._sessions(),
             on_mismatch=self._mismatch_changed,
         )
+        if outcome in ("seen", "kind_upgraded") and self._queue().is_identity_held(printer_id):
+            try:
+                await self._mismatch_changed(printer_id, None)
+            except Exception as exc:  # as ``record_identity``'s own hook call: never raises
+                _log.warning("identity hold re-sync failed (%s)", type(exc).__name__)
+        return outcome
 
     async def _mismatch_changed(self, printer_id: UUID, since: datetime | None) -> None:
         """A mismatch started or ended: hold or release, and tell the SSE readers.

@@ -139,6 +139,7 @@ from app.services.readiness import build_readiness_response
 from app.settings_store import SettingsStore
 from app.sheets.outcome import SheetCellsOutcome, sweep_orphan_reservations
 from app.sheets.sheet_page import render_sheet_page
+from app.sheets.sweep import SheetReservationSweep
 from app.web.api_docs import mount_api_docs
 from app.web.spa import add_security_headers, mount_spa
 
@@ -250,12 +251,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     5. Register the sheet outcome handler, start the queue (manual pauses first), sweep
        orphan sheet reservations, start the cleanup task.
     6. ``PrinterRuntime.start()``: the status producers, each probing once at start.
+    7. The periodic sheet reservation sweep (``SheetReservationSweep``, 266-04).
 
     Shutdown sequence
     -----------------
-    ``PrinterRuntime.stop()`` stops the producers, then ``queue.stop()`` once (it drains
-    in-flight jobs up to the longest attached queue timeout, then cancels the rest), then
-    closes the page clients.
+    The reservation sweep stops first. ``PrinterRuntime.stop()`` stops the producers, then
+    ``queue.stop()`` once (it drains in-flight jobs up to the longest attached queue timeout,
+    then cancels the rest), then closes the page clients.
     """
     settings = get_settings()
     warn_if_insecure_cookies(settings)
@@ -367,13 +369,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await cleanup_task.start()
     if _initially_paused:
         _log.info("Restored %d manual printer pause(s) from the database", len(_initially_paused))
+    # 266-04: cells of jobs that end while the hub runs, but whose outcome call is lost.
+    reservation_sweep = SheetReservationSweep(async_session, queue, event_bus)
+    app.state.sheet_reservation_sweep = reservation_sweep
     try:
         # Producers last: each probes once at start (no awaited probe at startup). Inside the
         # ``try`` so a failing start still reaches ``runtime.stop()`` (265-04).
         await runtime.start()
+        await reservation_sweep.start()
         yield
     finally:
-        # Producers, then the queue (once, longest attached timeout), then the page clients.
+        # The sweep first: it asks the queue, which the runtime stops. Then the producers, the
+        # queue (once, longest attached timeout), then the page clients.
+        await reservation_sweep.stop()
         await runtime.stop()
         await cleanup_task.stop()
         unregister_outcome_handler("sheet_page", sheet_outcome)

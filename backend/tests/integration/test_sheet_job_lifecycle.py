@@ -461,3 +461,80 @@ async def test_mark_language_fixed_at_reservation(monkeypatch: pytest.MonkeyPatc
     (doc,) = [r.document for r in fake.received if r.operation == "Print-Job"]
     assert "▲ Oben \u2013 diese Kante zuerst" in pi.texts(doc)
     assert "▲ Top \u2013 this edge first" not in pi.texts(doc)
+
+
+# ---------------------------------------------------------------------------- 266-09, 266-13
+
+
+async def test_print_interrupted_logs_cause_type(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The page's row is committed, then its save raises: the request answers 502
+    ``print_interrupted``, the row ends ``failed`` (no restart prints it), the cells are free,
+    and the cause is logged by type and batch, never with the error text (it may carry the
+    payload: a database error quotes its parameters)."""
+    import logging
+
+    from tests.integration.api.test_sheet_print_api import _body, _cells, _sheet, running
+
+    qr = "https://r.example.invalid/0"
+    async with running() as rig:
+        store = rig.app.state.print_queue._store
+        real = store.save_queued
+
+        async def saved_then_raises(job: Any) -> None:
+            await real(job)
+            raise RuntimeError(f"database is locked [parameters: {qr}]")
+
+        monkeypatch.setattr(store, "save_queued", saved_then_raises)
+        code = await _sheet()
+        caplog.set_level(logging.INFO)
+        resp = await rig.print(_body(code, 3))
+
+        assert resp.status_code == 502, resp.text
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "print_interrupted"
+        batch_id = detail["error_detail"]["batch_id"]
+        (job_id,) = detail["error_detail"]["job_ids"]
+        row = await _row(UUID(job_id))
+        assert row.state == "failed" and (row.error or "").startswith("print_interrupted:")
+        await _until(lambda: _no_cells(_cells))
+    records = [r for r in caplog.records if batch_id in r.getMessage()]
+    assert records, caplog.text
+    assert any("RuntimeError" in r.getMessage() for r in records)
+    assert qr not in caplog.text
+
+
+async def _no_cells(cells: Callable[[], Awaitable[list[Any]]]) -> bool:
+    return await cells() == []
+
+
+async def test_reservation_sweep_starts_after_the_runtime_and_stops_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """266-04: the periodic sweep runs while the printers are live, and is the first thing
+    stopped, before the producers and the queue it asks."""
+    from app.services.printer_runtime import PrinterRuntime
+    from app.sheets.sweep import SheetReservationSweep
+
+    order: list[str] = []
+
+    def recording(cls: Any, name: str, label: str) -> None:
+        real = getattr(cls, name)
+
+        async def wrapper(self: Any, *a: Any, **k: Any) -> Any:
+            order.append(label)
+            return await real(self, *a, **k)
+
+        monkeypatch.setattr(cls, name, wrapper)
+
+    recording(PrinterRuntime, "start", "runtime.start")
+    recording(PrinterRuntime, "stop", "runtime.stop")
+    recording(SheetReservationSweep, "start", "sweep.start")
+    recording(SheetReservationSweep, "stop", "sweep.stop")
+    app = _app(FakeIppPrinter())
+    async with app.router.lifespan_context(app):
+        assert isinstance(app.state.sheet_reservation_sweep, SheetReservationSweep)
+        assert app.state.sheet_reservation_sweep._queue is app.state.print_queue
+
+    assert order == ["runtime.start", "sweep.start", "sweep.stop", "runtime.stop"]

@@ -814,3 +814,42 @@ async def test_a_failing_run_callback_does_not_break_the_run() -> None:
         await _until(lambda: queue.run_info(run_id) is None)
     finally:
         await queue.stop(timeout_s=2.0)
+
+
+async def test_cancel_during_reprint_registration_survives_restart() -> None:
+    """263-75: a clone is registered in memory before its row is saved. A cancel in between
+    finds no row to persist; the save then writes ``queued``. The reprint must persist the
+    cancel, or a restart would print the label the user cancelled."""
+    store = GatedStore()
+    printer = TapeRoll(15)
+    queue, run_id, ids, _ = await _run(printer, 30, store=store)
+    restarted: PrintQueue | None = None
+    try:
+        await _until(_stopped(queue, run_id))
+        printer.k = None
+        store.gate = asyncio.Event()
+        reprint = asyncio.create_task(queue.reprint_from(run_id, 11))
+        await store.entered.wait()
+        known = {str(j) for j in ids}
+        (clone,) = [j for j in queue._jobs if j not in known]  # the first clone, being saved
+        assert await queue.cancel(clone)
+        store.gate.set()
+        store.gate = None
+        result = await reprint
+        assert str(result.new_job_ids[0]) == clone
+
+        row = await store.get(UUID(clone))
+        assert row is not None and row.state == DbJobState.CANCELLED.value
+        await _until(lambda: queue.run_info(run_id) is None)
+        printed = printer.printed
+        await queue.stop(timeout_s=2.0)
+
+        restarted = PrintQueue([printer], store=store)
+        await restarted.start()
+        await asyncio.sleep(0.1)
+        assert printer.printed == printed  # nothing was resurrected
+        assert [r for r in store._jobs.values() if r.state == DbJobState.QUEUED.value] == []
+    finally:
+        await queue.stop(timeout_s=2.0)
+        if restarted is not None:
+            await restarted.stop(timeout_s=2.0)

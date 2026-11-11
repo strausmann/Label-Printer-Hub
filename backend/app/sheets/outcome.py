@@ -26,7 +26,7 @@ page that may have printed, and a second label would be printed on top of it (C4
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -61,7 +61,13 @@ live request owns a job-less row; age is merely a belt. A periodic sweep must no
 age alone (a slow ``submit_page_job`` under load would lose its reservation while the job
 prints): it has to ask the in-memory queue (``queue.has_job``) as well."""
 
-__all__ = ["SWEEP_GRACE", "SheetCellsOutcome", "SweepReport", "sweep_orphan_reservations"]
+__all__ = [
+    "SWEEP_GRACE",
+    "SheetCellsOutcome",
+    "SweepReport",
+    "sweep_orphan_reservations",
+    "sweep_reservations",
+]
 
 
 # ---------------------------------------------------------------------------- shared core
@@ -231,6 +237,26 @@ async def sweep_orphan_reservations(
     committed has no job row yet, and the job is saved after the commit, so re-reading under
     the lock cannot tell the two apart; only age can (C26).
     """
+    return await sweep_reservations(session_factory, bus=bus, grace=grace)
+
+
+async def sweep_reservations(
+    session_factory: SessionFactory,
+    *,
+    bus: EventBus | None = None,
+    grace: timedelta = SWEEP_GRACE,
+    keep: Callable[[Job], bool] | None = None,
+    settle_jobless: bool = True,
+    name: str = "orphan sweep",
+) -> SweepReport:
+    """The selection and settling of ``sweep_orphan_reservations``, with two narrowings for a
+    sweep that runs while the hub serves requests (``SheetReservationSweep``).
+
+    ``keep(job)`` is asked for a job whose stored state is over; ``True`` leaves its cells to
+    the job (it still runs in memory, or ended a moment ago). It is called after every read, under
+    the write lock, so a job taken up after the cells were read is still asked about.
+    ``settle_jobless=False`` leaves cells without a ``jobs`` row alone (counted ``spared``).
+    """
     report = SweepReport()
     async with session_factory() as session, write_transaction(session):
         reserved = await repo.all_reserved_cells(session)
@@ -240,7 +266,7 @@ async def sweep_orphan_reservations(
         for row in reserved:
             job = jobs.get(row.job_id) if row.job_id is not None else None
             if job is None:
-                if _aware(row.updated_at) > cutoff:
+                if not settle_jobless or _aware(row.updated_at) > cutoff:
                     report.spared += 1
                 else:
                     # T5-1: the row may have been purged by retention after the page printed,
@@ -248,7 +274,7 @@ async def sweep_orphan_reservations(
                     decisions.append((row, "unconfirmed"))
                 continue
             outcome = _decide(job)
-            if outcome is None:
+            if outcome is None or (keep is not None and keep(job)):
                 report.untouched += 1
             else:
                 decisions.append((row, outcome))
@@ -262,9 +288,10 @@ async def sweep_orphan_reservations(
         else:
             report.freed += 1
     publish_touched(bus, touched)
-    if decisions or report.spared:
+    if decisions or (report.spared and settle_jobless):
         logger.info(
-            "orphan sweep: %d used, %d unconfirmed, %d freed, %d untouched, %d spared",
+            "%s: %d used, %d unconfirmed, %d freed, %d untouched, %d spared",
+            name,
             report.used,
             report.unconfirmed,
             report.freed,

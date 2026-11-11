@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import traceback
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from typing import Any, Final, Literal, Protocol
@@ -1213,6 +1214,14 @@ async def _undo_partial_print(
     if isinstance(exc, SheetApiError):
         exc.detail = {**(exc.detail or {}), "batch_id": str(batch_id), "job_ids": ids}
         return
+    # The cause by type and where it was raised (266-13). Not the message: a database error
+    # quotes its parameters, and those are the page payload (item titles, QR content).
+    logger.error(
+        "print interrupted for batch %s (%s)\n%s",
+        batch_id,
+        type(exc).__name__,
+        "".join(traceback.format_tb(exc.__traceback__)),
+    )
     raise PrintInterruptedError(str(batch_id), ids) from exc
 
 
