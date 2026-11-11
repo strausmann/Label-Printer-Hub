@@ -36,45 +36,23 @@ export function subscribeViewport(listener: () => void, win: Win = window): () =
   };
 }
 
-/** Is `el` a field the on-screen keyboard types into? */
-export function isTextField(el: Element | null): el is HTMLElement {
-  if (!(el instanceof HTMLElement)) return false;
-  if (el.isContentEditable) return true;
-  if (el instanceof HTMLTextAreaElement) return true;
-  if (el instanceof HTMLInputElement) return !["button", "checkbox", "radio", "range", "file", "submit", "reset", "image", "color"].includes(el.type);
-  return false;
-}
-
 /**
- * Publishes the visible area as `--vvh` (height) and `--vv-top` (offset) on `root` and, when it changes
- * while a text field has the focus, scrolls that field into view (the keyboard just took its place).
+ * Publishes the visible area as `--vvh` (height) and `--vv-top` (offset) on `root` and keeps them current.
  * Returns the function that takes it all down again.
+ *
+ * It does not scroll the focused field into view: the browsers do that themselves when the keyboard opens, and a second
+ * scroll from here moves pages that a person (or a screenshot tool resizing the window) did not ask to move.
  */
 export function trackVisibleViewport(root: HTMLElement = document.documentElement, win: Win = window): () => void {
-  let frame = 0;
-  let lastHeight = readViewport(win).height;
   const publish = () => {
     const { height, offsetTop } = readViewport(win);
     root.style.setProperty("--vvh", `${height}px`);
     root.style.setProperty("--vv-top", `${offsetTop}px`);
-    return height;
-  };
-  const reveal = () => {
-    frame = 0;
-    const active = root.ownerDocument.activeElement;
-    if (isTextField(active) && typeof active.scrollIntoView === "function") active.scrollIntoView({ block: "nearest", inline: "nearest" });
-  };
-  const onChange = () => {
-    const height = publish();
-    // Only a change of the height (the keyboard) moves the field; a scroll of the visual viewport does not.
-    if (height !== lastHeight && !frame) frame = requestAnimationFrame(reveal);
-    lastHeight = height;
   };
   publish();
-  const stop = subscribeViewport(onChange, win);
+  const stop = subscribeViewport(publish, win);
   return () => {
     stop();
-    if (frame) cancelAnimationFrame(frame);
     root.style.removeProperty("--vvh");
     root.style.removeProperty("--vv-top");
   };

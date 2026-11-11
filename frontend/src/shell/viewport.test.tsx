@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isTextField, listRoom, readViewport, subscribeViewport, trackVisibleViewport, useVisibleViewport } from "./viewport";
+import { listRoom, readViewport, subscribeViewport, trackVisibleViewport, useVisibleViewport } from "./viewport";
 
 /** A stand-in for `window.visualViewport` that a test can resize like a keyboard would. */
 class FakeViewport extends EventTarget {
@@ -18,22 +18,14 @@ function install(value: FakeViewport | null) {
   vv = value;
   Object.defineProperty(window, "visualViewport", { configurable: true, value });
 }
-const frames: FrameRequestCallback[] = [];
 
 beforeEach(() => {
-  frames.length = 0;
-  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => frames.push(cb));
-  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
-    frames[id - 1] = () => {};
-  });
   install(new FakeViewport());
 });
 afterEach(() => {
-  vi.unstubAllGlobals();
   document.documentElement.removeAttribute("style");
   document.body.innerHTML = "";
 });
-const runFrames = () => frames.splice(0).forEach((cb) => cb(0));
 const listeners = (target: EventTarget) => vi.spyOn(target, "addEventListener");
 
 describe("readViewport", () => {
@@ -95,59 +87,6 @@ describe("trackVisibleViewport", () => {
     const stop = trackVisibleViewport();
     expect(document.documentElement.style.getPropertyValue("--vvh")).toBe(`${window.innerHeight}px`);
     stop();
-  });
-  it("scrolls a focused text field into view when the height changes", () => {
-    const input = document.createElement("input");
-    input.scrollIntoView = vi.fn();
-    document.body.append(input);
-    input.focus();
-    const stop = trackVisibleViewport();
-    vv!.set(400);
-    runFrames();
-    expect(input.scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" });
-    stop();
-  });
-  it("does not scroll for a pan of the visual viewport, a button or no focus", () => {
-    const input = document.createElement("input");
-    input.scrollIntoView = vi.fn();
-    const button = document.createElement("button");
-    button.scrollIntoView = vi.fn();
-    document.body.append(input, button);
-    const stop = trackVisibleViewport();
-    input.focus();
-    vv!.set(800, 40, "scroll"); // same height: only panned
-    runFrames();
-    button.focus();
-    vv!.set(400);
-    runFrames();
-    expect(input.scrollIntoView).not.toHaveBeenCalled();
-    expect(button.scrollIntoView).not.toHaveBeenCalled();
-    stop();
-  });
-  it("cancels a pending scroll when stopped", () => {
-    const input = document.createElement("input");
-    input.scrollIntoView = vi.fn();
-    document.body.append(input);
-    input.focus();
-    const stop = trackVisibleViewport();
-    vv!.set(400);
-    stop();
-    runFrames();
-    expect(input.scrollIntoView).not.toHaveBeenCalled();
-  });
-});
-
-describe("isTextField", () => {
-  it("accepts text inputs and textareas, not buttons, checkboxes or null", () => {
-    const make = (html: string) => {
-      document.body.innerHTML = html;
-      return document.body.firstElementChild;
-    };
-    expect(isTextField(make('<input type="search">'))).toBe(true);
-    expect(isTextField(make("<textarea></textarea>"))).toBe(true);
-    expect(isTextField(make('<input type="checkbox">'))).toBe(false);
-    expect(isTextField(make("<button></button>"))).toBe(false);
-    expect(isTextField(null)).toBe(false);
   });
 });
 
