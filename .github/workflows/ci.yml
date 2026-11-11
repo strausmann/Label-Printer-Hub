@@ -176,7 +176,7 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Built output has no external font URLs
+      - name: Built output checks (external font URLs, licence gate)
         env:
           REQUIRE_DIST: "1"
         run: pnpm exec vitest run src/build.test.ts src/licences/build-gate.test.ts
