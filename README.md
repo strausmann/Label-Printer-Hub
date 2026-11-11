@@ -68,7 +68,8 @@ git clone https://github.com/strausmann/Label-Printer-Hub.git
 cd Label-Printer-Hub/examples
 cp .env.example .env
 # Required: PRINTER_HUB_SECRET_KEY (openssl rand -base64 32 | tr '+/' '-_')
-#           PRINTER_HUB_PUBLIC_URL (the address you open the hub at)
+#           PRINTER_HUB_PUBLIC_URL (the address you open the hub at; a local
+#           address such as http://localhost:8000 is fine)
 $EDITOR .env
 docker compose -f compose.standalone.yml up -d
 
@@ -184,7 +185,7 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 | Variable | Default | Purpose |
 |---|---|---|
 | **`PRINTER_HUB_SECRET_KEY`** | _required_ | Master key for secrets stored in the database (base64url of 32 random bytes; `openssl rand -base64 32 \| tr '+/' '-_'`) |
-| **`PRINTER_HUB_PUBLIC_URL`** | _required_ | The address people open the UI at; decides cookie security (`Secure` and `__Host-` prefix when `https`) and the allowed `Origin` |
+| **`PRINTER_HUB_PUBLIC_URL`** | _required_ | Any `http(s)` URL, local ones included (`http://localhost:8000`, `http://printer-hub:8000`, a LAN IP). Set it to the address people open the UI at if you use the browser UI; decides cookie security (`Secure` and `__Host-` prefix when `https`) and the allowed `Origin` |
 | `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` | _empty_ | One-time key (32+ characters) that signs you in while no admin key exists; empty disables it |
 | `PRINTER_HUB_DATABASE_URL` | `sqlite+aiosqlite:////data/printer-hub.db` | Database |
 | `PRINTER_HUB_SSO_TRUST_TOKEN` | _empty_ | Shared secret the proxy sends as `X-Pangolin-Token`; without it `Remote-User` is ignored |
