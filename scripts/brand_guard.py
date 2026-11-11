@@ -63,9 +63,17 @@ EXCLUDED: tuple[str, ...] = (
 )
 RENAME_ADR_SUFFIX = "-rename-to-labelyard.md"
 
+# The website's upgrade guide for people coming from the old name, in English and German. Its
+# slug carries the old name on purpose (the URL says what the page is about).
+_GUIDE_SLUG = "from-label-printer-hu" + "b"
+WEBSITE_UPGRADE_GUIDE: tuple[str, ...] = (
+    f"website/src/content/docs/admin/upgrades/{_GUIDE_SLUG}.md",
+    f"website/src/content/docs/de/admin/upgrades/{_GUIDE_SLUG}.md",
+)
+
 # Files that may keep the old environment prefixes: the compatibility layer
-# that still reads them, its tests, the migration guide, the rename ADR (glob)
-# and the guard files that name them.
+# that still reads them, its tests, the migration guide (in the repo and on the
+# website, both languages), the rename ADR (glob) and the guard files that name them.
 LEGACY_ENV_FILES: tuple[str, ...] = (
     "backend/app/config_legacy.py",
     "backend/app/page_render/pdf.py",
@@ -75,6 +83,7 @@ LEGACY_ENV_FILES: tuple[str, ...] = (
     "docs/decisions/*-rename-to-labelyard.md",
     "scripts/brand_guard.py",
     "scripts/test_brand_guard.py",
+    *WEBSITE_UPGRADE_GUIDE,
 )
 
 # Files that may keep the old command name (it stays as an alias of `labelyard`).
@@ -84,14 +93,19 @@ LEGACY_CLI_FILES: tuple[str, ...] = (
     "docs/migration/labelyard.md",
     "scripts/brand_guard.py",
     "scripts/test_brand_guard.py",
+    *WEBSITE_UPGRADE_GUIDE,
 )
 
 
 # Files that must show the old image and repository names so users can recognise their own
-# ``image:`` line: the migration guide and the rename ADR, nothing else.
+# ``image:`` line: the migration guide (repo and website) and the rename ADR, plus the
+# website's upgrades overview, which links to the guide by its slug. Nothing else.
 LEGACY_SLUG_FILES: tuple[str, ...] = (
     "docs/migration/labelyard.md",
     "docs/decisions/*-rename-to-labelyard.md",
+    *WEBSITE_UPGRADE_GUIDE,
+    "website/src/content/docs/admin/upgrades/index.md",
+    "website/src/content/docs/de/admin/upgrades/index.md",
 )
 
 

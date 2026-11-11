@@ -28,6 +28,7 @@ If you're about to make a non-trivial change without having read those first, st
 | **Brother trademark fair use only** | [`docs/policies/trademarks.md`](docs/policies/trademarks.md) |
 | **Type hints + mypy --strict** in Python | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **Use `httpx` not `requests`**, `pysnmp` v6+ asyncio API, `logging` not `print()` | — |
+| **Website in English and German together** — every page under `website/src/content/docs/` changes in both languages in the same PR | [CONTRIBUTING.md](CONTRIBUTING.md#website) |
 
 ## Things you should propose, not do silently
 

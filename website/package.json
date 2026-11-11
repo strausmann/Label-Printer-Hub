@@ -1,0 +1,27 @@
+{
+  "name": "labelyard-website",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "build": "node scripts/export-openapi.mjs && ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "build:site": "ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
+    "check:openapi": "node scripts/export-openapi.mjs --check",
+    "check:parity": "node scripts/check-locale-parity.mjs",
+    "test": "node --test scripts/*.test.mjs"
+  },
+  "dependencies": {
+    "@astrojs/markdown-satteri": "0.4.6",
+    "@astrojs/starlight": "0.42.10",
+    "@fontsource/atkinson-hyperlegible": "5.3.0",
+    "@fontsource/atkinson-hyperlegible-mono": "5.3.0",
+    "astro": "7.4.7",
+    "starlight-links-validator": "0.27.0",
+    "starlight-openapi": "0.27.0"
+  }
+}

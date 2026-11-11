@@ -1,0 +1,63 @@
+---
+title: Labelyard
+description: Labelyard, der selbst gehostete Label Printer Hub für all deine Etiketten. Band- und Etikettendrucker, Seitendrucker mit Etikettenbögen, eine Warteschlange, vom Handy oder aus deinen Apps.
+template: splash
+---
+
+<div class="ly-home">
+
+<section class="ly-hero" aria-labelledby="ly-title">
+<h1 id="ly-title">Labelyard</h1> <p class="ly-tagline">Der selbst gehostete Label Printer Hub für all deine Etiketten</p>
+<p class="ly-pitch">Labelyard läuft in einem Container neben deinen Druckern und gibt jedem Etikett einen Ort, von dem es kommt. Scanne einen Code mit dem Handy, drucke aus Snipe-IT, Grocy oder Spoolman oder schick einen Auftrag aus jeder App, die HTTP spricht. Band- und Etikettendrucker, Bürodrucker mit Etikettenbögen und eine Warteschlange, die dir sagt, was passiert ist.</p>
+<div class="ly-actions">
+<a class="ly-button ly-button-primary" href="/de/install/">Installieren</a>
+<a class="ly-button ly-button-secondary" href="/de/try/">Was es kann</a>
+</div>
+</section>
+
+<section class="ly-section" aria-labelledby="ly-what">
+<h2 id="ly-what">Was es druckt, und woher</h2>
+<dl class="ly-features">
+<div><dt>Band- und Etikettendrucker</dt><dd>Drucker der Brother PT-Serie und QL-Serie in deinem Netz. Der Hub liest das eingelegte Band selbst aus, damit ein Etikett zu dem passt, was im Drucker liegt.</dd></div>
+<div><dt>Bürodrucker und Bögen</dt><dd>IPP-Seitendrucker bedrucken Etikettenbögen. Der Hub merkt sich, welche Felder eines Bogens belegt sind, damit ein angebrochener Bogen zurück ins Fach kann.</dd></div>
+<div><dt>Scannen und drucken</dt><dd>Installier die Web-App auf dem Handy, scanne einen Barcode oder ein gedrucktes Etikett und druck es noch einmal oder das daneben.</dd></div>
+<div><dt>Eine Warteschlange für alles</dt><dd>Anhalten, fortsetzen, abbrechen und wiederholen je Drucker und je Auftrag. Live-Statusseiten zeigen jeden Drucker, ohne neu zu laden.</dd></div>
+<div><dt>API-Schlüssel und Webhooks</dt><dd>Eine versionierte API unter /api/v1 mit eigenen Schlüsseln je Aufrufer und Webhooks, die drucken, wenn sich in einer anderen App etwas ändert.</dd></div>
+<div><dt>Snipe-IT, Grocy, Spoolman</dt><dd>Plugins schlagen Assets, Produkte und Spulen über ihre ID nach und drucken sie. Paperless und Kept drucken über die API.</dd></div>
+</dl>
+</section>
+
+<section class="ly-start" aria-labelledby="ly-start">
+<div>
+<h2 id="ly-start">In zwei Minuten am Laufen</h2>
+<p>Labelyard braucht zwei Werte: einen geheimen Schlüssel für das, was es speichert, und die Adresse, unter der du es öffnest. Alles andere, auch die Drucker, richtest du im Browser ein. Heb <code>labelyard.env</code> auf: Ohne den Schlüssel lassen sich gespeicherte Geheimnisse nicht lesen.</p>
+<p><a href="/de/install/">Die vollständige Installationsanleitung</a> erklärt Reverse Proxys, HTTPS und die erste Anmeldung.</p>
+</div>
+<div>
+
+```bash
+echo "LABELYARD_SECRET_KEY=$(openssl rand -base64 32 | tr '+/' '-_')" > labelyard.env
+docker run -d --name labelyard -p 8000:8000 \
+  --env-file labelyard.env \
+  -e LABELYARD_PUBLIC_URL=http://localhost:8000 \
+  -v labelyard-data:/data \
+  ghcr.io/strausmann/labelyard:1.6.0
+```
+
+</div>
+</section>
+
+<section class="ly-section" aria-labelledby="ly-docs">
+<h2 id="ly-docs">Hier findest du dich zurecht</h2>
+<ul class="ly-groups">
+<li><a href="/de/install/">Installieren</a><p>Compose, Reverse Proxys, HTTPS und Drucker anschließen.</p></li>
+<li><a href="/de/using/printers/">Benutzen</a><p>Drucker, Bögen, die Warteschlange, Scannen und der Warenkorb.</p></li>
+<li><a href="/de/admin/api-keys/">Verwalten</a><p>Schlüssel, Anmeldung, Sicherungen, Aktualisierungen und Sicherheit.</p></li>
+<li><a href="/de/integrations/">Integrationen</a><p>Snipe-IT, Grocy, Spoolman, Paperless, Kept und Webhooks.</p></li>
+<li><a href="/de/developers/">Entwickeln</a><p>Die API-Referenz und wie du mitmachst.</p></li>
+<li><a href="/de/reference/configuration/">Referenz</a><p>Jede Umgebungsvariable.</p></li>
+</ul>
+<p class="ly-elsewhere">Quellcode auf <a href="https://github.com/strausmann/labelyard">GitHub</a>, Images in der <a href="https://github.com/strausmann/labelyard/pkgs/container/labelyard">GitHub Container Registry</a> und auf <a href="https://hub.docker.com/r/strausmann/labelyard">Docker Hub</a>. Du kommst von einer früheren Version? Lies <a href="/de/admin/upgrades/">Aktualisieren</a>.</p>
+</section>
+
+</div>

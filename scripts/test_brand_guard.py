@@ -103,6 +103,27 @@ class BrandGuardTest(unittest.TestCase):
         hits = {h.path for h in brand_guard.find_hits(self.root)}
         self.assertEqual(hits, {"docs/migration/other.md", "docs/site/guide.md", "README.md"})
 
+    def test_website_upgrade_guide_may_name_the_old_names(self) -> None:
+        # The site's upgrade guide (both languages) must show the old image, command and prefix,
+        # and the upgrades overview links to the guide, whose slug carries the old name.
+        for lang in ("", "de/"):
+            base = f"website/src/content/docs/{lang}admin/upgrades/"
+            self.add(
+                base + "from-" + SLUG + ".md",
+                f"image {SLUG}-backend, command `{CLI}`, prefix `{ENV_PREFIX}`, `{ENV_OTHER}X`\n",
+            )
+            self.add(base + "index.md", f"[guide](/{lang}admin/upgrades/from-{SLUG}/)\n")
+        self.assertEqual(self.rules(), [])
+
+    def test_website_allowance_is_limited_to_the_upgrade_pages(self) -> None:
+        # counter-test: the old names stay hits on every other site page
+        self.add("website/src/content/docs/admin/backups.md", f"{SLUG} {CLI} {ENV_PREFIX}X\n")
+        self.add(
+            "website/src/content/docs/admin/upgrades/index.md", f"`{CLI}` and `{ENV_PREFIX}X`\n"
+        )
+        rules = sorted(self.rules())
+        self.assertEqual(rules, ["cli", "cli", "env-prefix", "env-prefix", "slug"])
+
     def test_slug_not_reported_twice(self) -> None:
         self.add("README.md", f"{SLUG}-backend\n")
         self.assertEqual(self.rules(), ["slug"])

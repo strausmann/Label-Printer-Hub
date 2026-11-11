@@ -34,6 +34,8 @@ Before suggesting code, skim [`docs/learnings/code-review-patterns.md`](../docs/
 
 7. **No mid-print cancel.** Brother spec forbids commands during print. Pause/cancel only from `queued` or `paused` states.
 
+8. **Website in English and German together.** A page under `website/src/content/docs/` changes in English and in German (`de/`, same slug) in the same pull request; the `website / locale parity` check fails otherwise.
+
 ## Trademark and privacy
 
 - **Brother, P-touch, PT-Series, QL-Series** are trademarks of **Brother Industries, Ltd.** This project is **not affiliated** with them.

@@ -45,6 +45,28 @@ updates:
           - patch
         applies-to: version-updates
 
+  # The Labelyard website (Astro Starlight)
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - javascript
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      website-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        applies-to: version-updates
+
   # Pinned semantic-release toolchain used by the release workflow
   - package-ecosystem: npm
     directory: /.github/release-tools

@@ -194,6 +194,18 @@ If you want to bypass a gate locally during exploration, use `mypy --no-strict-o
 
 PRs that fail any check won't be reviewed until green.
 
+## Website
+
+The project website <https://labelyard.app> lives in [`website/`](website/) (Astro Starlight). It is the user documentation: install, using, admin, integrations, developers and the configuration reference.
+
+```bash
+pnpm -C website install && pnpm -C website dev
+```
+
+`pnpm -C website build` exports the API document from the backend first, so install the backend in the active Python (`pip install -e ./backend`) or set `PYTHON` to an interpreter that has it. The configuration reference is generated: edit `website/src/config-descriptions.yml` and run `website/scripts/gen-config-reference.py`.
+
+The website is maintained in English and German together. A change to any page under `website/src/content/docs/` is complete only when the English and the German page change in the same pull request. The `website / locale parity` check fails when a page exists in one language only.
+
 ## Dependencies and licences
 
 Every dependency that ships in the container image has to carry a licence the project can redistribute. One file decides: [`licence-policy.yml`](licence-policy.yml) (JSON, which is valid YAML). It holds the allow list (`allow-licenses`) and the reviewed exceptions (`x-licence-exceptions`). Every check reads this file.

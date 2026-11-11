@@ -68,3 +68,10 @@ secrets/
 backend/.venv/
 # The pinned release toolchain is installed with `npm ci`, so its lockfile is committed.
 !.github/release-tools/package-lock.json
+
+# Website (website/): build output, Astro cache, package caches
+website/.astro/
+website/.npm-cache/
+# The OpenAPI document is generated at build time from the backend; it is committed from the
+# website's freshness job on (Task 7, second part), when the backend is renamed.
+website/openapi/labelyard.json
