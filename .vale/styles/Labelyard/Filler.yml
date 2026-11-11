@@ -1,0 +1,10 @@
+extends: existence
+message: "Cut the filler word '%s'."
+level: warning
+ignorecase: true
+tokens:
+    - simply
+    - just
+    - basically
+    - obviously
+    - easily

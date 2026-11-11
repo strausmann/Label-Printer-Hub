@@ -65,6 +65,7 @@ export default defineConfig({
           { slug: "using/queue" },
           { slug: "using/scanning" },
           { slug: "using/cart" },
+          { slug: "using/glossary" },
         ]),
         group("Admin", [
           { slug: "admin/api-keys" },
@@ -83,7 +84,7 @@ export default defineConfig({
           { slug: "integrations/kept" },
           { slug: "integrations/webhooks" },
         ]),
-        group("Developers", [{ slug: "developers" }, { slug: "developers/contributing" }, apiEn, apiDe]),
+        group("Developers", [{ slug: "developers" }, { slug: "developers/contributing" }, { slug: "developers/writing-docs" }, apiEn, apiDe]),
         group("Reference", [{ slug: "reference/configuration" }]),
       ],
       plugins: [

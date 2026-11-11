@@ -1,0 +1,9 @@
+extends: existence
+message: "Streiche das Füllwort „%s“."
+level: warning
+ignorecase: true
+tokens:
+    - einfach
+    - eigentlich
+    - halt
+    - natürlich

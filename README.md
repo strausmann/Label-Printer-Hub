@@ -65,7 +65,7 @@ Every stable release publishes to **GitHub Container Registry (GHCR)** and **Doc
 |---|---|---|
 | `1.0.0` | exact version | You want full reproducibility |
 | `1.0` | latest patch in 1.0.x | Auto-update bug fixes |
-| `1` | latest minor.patch in 1.x.x | Stay on major version, get features |
+| `1` | latest 1.x release | Stay on major version, get features |
 | `latest` | most recent stable | You're fine with anything new |
 
 Pre-releases (`1.0.0-rc.1` etc.) publish **only the full version tag** — never `latest`, `<major>`, or `<major>.<minor>` — so a pre-release can never silently become the default.

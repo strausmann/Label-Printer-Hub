@@ -206,6 +206,14 @@ pnpm -C website install && pnpm -C website dev
 
 The website is maintained in English and German together. A change to any page under `website/src/content/docs/` is complete only when the English and the German page change in the same pull request. The `website / locale parity` check fails when a page exists in one language only.
 
+## Writing
+
+Write for the reader: what they want to do, then how. Short sentences, one idea each. German is written natively, not translated word for word, and addresses the reader as „du“. Use the glossary term for every concept, in both languages. A change to the docs is complete only with English and German in the same pull request.
+
+- The terms live in [`docs/glossary.toml`](docs/glossary.toml). Edit it, then run `python3 scripts/glossary.py write`; the website glossary, the Vale rules and the check of the interface texts are generated from it.
+- The `prose` check runs [Vale](https://vale.sh/) on the docs. A rejected term or the former product name is an error and fails the check; filler words and long sentences are warnings that are only reported. Run it locally with `scripts/vale_setup.sh`, then `python3 scripts/vale_scope.py | xargs .vale/bin/vale`.
+- Details and the reasons: [Writing docs](https://labelyard.app/developers/writing-docs/).
+
 ## Dependencies and licences
 
 Every dependency that ships in the container image has to carry a licence the project can redistribute. One file decides: [`licence-policy.yml`](licence-policy.yml) (JSON, which is valid YAML). It holds the allow list (`allow-licenses`) and the reviewed exceptions (`x-licence-exceptions`). Every check reads this file.

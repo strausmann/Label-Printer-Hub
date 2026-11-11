@@ -29,6 +29,7 @@ If you're about to make a non-trivial change without having read those first, st
 | **Type hints + mypy --strict** in Python | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **Use `httpx` not `requests`**, `pysnmp` v6+ asyncio API, `logging` not `print()` | — |
 | **Website in English and German together** — every page under `website/src/content/docs/` changes in both languages in the same PR | [CONTRIBUTING.md](CONTRIBUTING.md#website) |
+| **Write for the reader** — goal first, short sentences, glossary terms (`docs/glossary.toml`), German natively with „du“, English and German in the same PR | [CONTRIBUTING.md](CONTRIBUTING.md#writing) |
 
 ## Things you should propose, not do silently
 

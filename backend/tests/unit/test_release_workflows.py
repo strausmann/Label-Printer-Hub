@@ -134,6 +134,7 @@ def test_actions_are_pinned_to_full_commit_shas() -> None:
         "licence-gate.yml",
         "licence-backend.yml",
         "website.yml",
+        "prose.yml",
     ):
         for job_name, job in _load(name)["jobs"].items():
             for step in job.get("steps", []):

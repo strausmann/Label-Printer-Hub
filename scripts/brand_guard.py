@@ -57,6 +57,7 @@ EXCLUDED: tuple[str, ...] = (
     "frontend/pnpm-lock.yaml",  # generated
     # Files that must name the old names in order to reject them:
     "docs/glossary.toml",
+    ".vale.ini",  # names the files that may mention the old name
     ".vale/styles/**/OldName.yml",
     ".vale/styles/config/vocabularies/*/reject.txt",
     "scripts/fixtures/vale/",

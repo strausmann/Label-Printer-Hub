@@ -1,0 +1,146 @@
+# One entry per concept. This file feeds three things, so they cannot drift apart:
+#   * the glossary pages of the website (using/glossary, en and de),
+#   * the Vale prose rules and vocabularies (.vale/),
+#   * the check of the UI message catalogues (scripts/glossary.py check-catalog).
+# After a change run `python3 scripts/glossary.py write`; CI fails on generated files that
+# are out of date.
+#
+# Fields: id, en, de, definition_en, definition_de.
+#   reject_en / reject_de  spellings that are errors (Vale.Avoid) and fail the catalogue check
+#   old_names              rejected unless the line also names the product (OldName rule)
+#   exempt                 strings that contain a rejected word legitimately
+#   product                the product-name entry (kept out of the pages and the catalogue check)
+
+[[term]]
+id = "product"
+product = true
+en = "Labelyard"
+de = "Labelyard"
+definition_en = "The name of the product. The subtitle “the self-hosted Label Printer Hub for all your labels” may follow it."
+definition_de = "Der Name des Produkts. Der Untertitel „der selbst gehostete Label Printer Hub für all deine Etiketten“ darf darauf folgen."
+reject_en = ["printer-hub", "Print-Hub", "PrintHub"]
+reject_de = ["printer-hub", "Print-Hub", "PrintHub"]
+old_names = ["Label Printer Hub"]
+
+[[term]]
+id = "sheet"
+en = "sheet"
+de = "Bogen"
+definition_en = "One page of self-adhesive labels, cut into cells."
+definition_de = "Eine Seite mit selbstklebenden Etiketten, in Zellen aufgeteilt."
+
+[[term]]
+id = "cell"
+en = "cell"
+de = "Zelle"
+definition_en = "One label position on a sheet."
+definition_de = "Eine Etikettenposition auf einem Bogen."
+
+[[term]]
+id = "sheet-type"
+en = "sheet type"
+de = "Bogentyp"
+definition_en = "The layout of a kind of sheet: size, grid and where each cell sits."
+definition_de = "Das Raster einer Bogenart: Größe, Aufteilung und Lage jeder Zelle."
+
+[[term]]
+id = "inbox"
+en = "print inbox"
+de = "Druckeingang"
+definition_en = "The place where prints from other systems wait until someone releases them."
+definition_de = "Der Ort, an dem Drucke aus anderen Systemen warten, bis jemand sie freigibt."
+reject_de = ["Inbox", "Posteingang"]
+
+[[term]]
+id = "tape"
+en = "tape"
+de = "Band"
+definition_en = "The cassette that a tape printer prints on."
+definition_de = "Die Kassette, auf die ein Banddrucker druckt."
+reject_de = ["Schriftband"]
+
+[[term]]
+id = "roll"
+en = "roll"
+de = "Rolle"
+definition_en = "Continuous label stock on a roll, as a page printer takes it."
+definition_de = "Etikettenmaterial auf einer Rolle, wie ein Etikettendrucker es einzieht."
+
+[[term]]
+id = "template"
+en = "template"
+de = "Vorlage"
+definition_en = "A saved design that a label is printed from."
+definition_de = "Ein gespeichertes Design, aus dem ein Etikett gedruckt wird."
+reject_de = ["Template"]
+
+[[term]]
+id = "printer"
+en = "printer"
+de = "Drucker"
+definition_en = "A device Labelyard prints on."
+definition_de = "Ein Gerät, auf dem Labelyard druckt."
+
+[[term]]
+id = "tray"
+en = "tray"
+de = "Fach"
+definition_en = "A paper tray of a page printer that holds sheets."
+definition_de = "Ein Papierfach eines Seitendruckers, in dem Bögen liegen."
+reject_de = ["Schacht"]
+
+[[term]]
+id = "calibration"
+en = "calibration"
+de = "Kalibrierung"
+definition_en = "The correction that makes a print land exactly on the cells of a tray."
+definition_de = "Die Korrektur, damit ein Druck genau auf die Zellen eines Fachs trifft."
+
+[[term]]
+id = "preview"
+en = "preview"
+de = "Vorschau"
+definition_en = "The picture of a label as it will print."
+definition_de = "Das Bild eines Etiketts, so wie es gedruckt wird."
+
+[[term]]
+id = "job"
+en = "print job"
+de = "Auftrag"
+definition_en = "One request to print, tracked from the queue to the result."
+definition_de = "Eine Anfrage zu drucken, von der Warteschlange bis zum Ergebnis verfolgt."
+reject_de = ["Job", "Druckjob"]
+
+[[term]]
+id = "batch"
+en = "batch"
+de = "Stapel"
+definition_en = "Several labels printed together in one go."
+definition_de = "Mehrere Etiketten, die zusammen in einem Zug gedruckt werden."
+reject_de = ["Batch"]
+
+[[term]]
+id = "queue"
+en = "queue"
+de = "Warteschlange"
+definition_en = "The line of print jobs of one printer. Nothing prints past it."
+definition_de = "Die Reihe der Aufträge eines Druckers. Nichts druckt an ihr vorbei."
+reject_de = ["Queue"]
+
+[[term]]
+id = "label"
+en = "label"
+de = "Etikett"
+definition_en = "The thing that gets printed and stuck on."
+definition_de = "Das, was gedruckt und aufgeklebt wird."
+reject_de = ["Label"]
+exempt = ["Label Printer Hub", "X-Label-Hub-Key"]
+
+[[term]]
+id = "api-key"
+en = "API key"
+de = "API-Schlüssel"
+definition_en = "The secret that lets a program call the API."
+definition_de = "Das Geheimnis, mit dem ein Programm die API aufruft."
+reject_en = ["API-Key"]
+reject_de = ["API-Key"]

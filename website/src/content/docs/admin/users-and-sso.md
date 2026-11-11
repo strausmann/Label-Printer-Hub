@@ -5,7 +5,7 @@ sidebar:
   label: Users and SSO
 ---
 
-Labelyard has no user accounts and no passwords of its own. A person signs in in one of two ways.
+Labelyard has no user accounts and no passwords of its own. A person signs in one of two ways.
 
 ## With an API key
 

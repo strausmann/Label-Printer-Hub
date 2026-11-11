@@ -1,0 +1,6 @@
+extends: occurrence
+message: "Teile diesen Satz: Er hat mehr als 25 Wörter."
+level: warning
+scope: sentence
+max: 25
+token: '\b(\w+)\b'

@@ -36,6 +36,8 @@ Before suggesting code, skim [`docs/learnings/code-review-patterns.md`](../docs/
 
 8. **Website in English and German together.** A page under `website/src/content/docs/` changes in English and in German (`de/`, same slug) in the same pull request; the `website / locale parity` check fails otherwise.
 
+9. **Write for the reader.** Goal first, then how; short sentences, one idea each. German is written natively (not word for word) and says „du“. Use the term from `docs/glossary.toml` for every concept, in both languages; the `prose` check (Vale) fails on the former product name and on rejected terms. See [CONTRIBUTING.md](../CONTRIBUTING.md#writing).
+
 ## Trademark and privacy
 
 - **Brother, P-touch, PT-Series, QL-Series** are trademarks of **Brother Industries, Ltd.** This project is **not affiliated** with them.
