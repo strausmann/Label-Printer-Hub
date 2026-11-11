@@ -33,6 +33,8 @@ export interface SheetTypeComboboxProps {
 /** The tallest the list gets (px) and the gap it keeps to the screen edge and the tab bar. */
 const LIST_MAX = 384;
 const LIST_GAP = 12;
+/** What a field sits in when it is in a dialog. */
+const DIALOG = '[role="dialog"], [role="alertdialog"]';
 
 /** The label with the part that matched the query marked. Folding drops spaces (around "×"), so the match is mapped back to the label's own offsets. */
 function Highlighted({ text, query }: { text: string; query: string }) {
@@ -91,7 +93,7 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
     if (!field.current) return;
     // The tab bar of a phone limits the list, but not inside a dialog: the dialog covers it, and with the keyboard open
     // the bar sits right above the keyboard, so counting it would take a strip of the room off for nothing.
-    const bar = field.current.closest('[role="dialog"], [role="alertdialog"]') ? null : document.querySelector("[data-tabbar]");
+    const bar = field.current.closest(DIALOG) ? null : document.querySelector("[data-tabbar]");
     const lowest = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().top : undefined;
     const next = listRoom(field.current.getBoundingClientRect(), readViewport(), { lowest, gap: LIST_GAP, max: LIST_MAX, option: 44 });
     setRoom((prev) => (sameRoom(prev, next) ? prev : next));
@@ -113,6 +115,8 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
     };
   }, []);
   const reopenAfterScroll = () => {
+    // Only in a dialog: on a page a scroll that closes the list is the expected behaviour (the field moved away).
+    if (!field.current?.closest(DIALOG)) return;
     const closedAt = performance.now();
     window.clearTimeout(reopen.current);
     reopen.current = window.setTimeout(() => {
