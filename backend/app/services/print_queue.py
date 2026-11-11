@@ -274,6 +274,9 @@ class TapeRun:
     # When the run started to wait (stopped or awaiting confirmation): the oldest held run of a
     # printer is discarded first (``MAX_HELD_RUNS_PER_PRINTER``).
     held_since: float | None = None
+    # The API key that submitted the run (``None``: no key, or not known). A held run is only
+    # ever discarded for the held limit by a newer held run of the same key.
+    api_key_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -1287,10 +1290,9 @@ class PrintQueue:
         self._runs[batch_id] = run
         # No await from here: the claim becomes the run's place under the caps (263-76).
         claim = self._run_slots.pop(slot, None) if slot is not None else None
+        run.api_key_id = claim.api_key_id if claim is not None else None
         self._run_slots[batch_id] = _RunSlot(
-            printer_id=printer_id,
-            api_key_id=claim.api_key_id if claim is not None else None,
-            run=run,
+            printer_id=printer_id, api_key_id=run.api_key_id, run=run
         )
         self._queues[printer_id].put_nowait(self._sub_job(run))
         logger.info(
@@ -1587,12 +1589,37 @@ class PrintQueue:
         held.sort(key=lambda r: r.held_since or 0.0)
         return [info for r in held if (info := self.run_info(r.run_id)) is not None]
 
-    async def _bound_held_runs(self, printer_id: UUID) -> None:
-        """Keep at most ``MAX_HELD_RUNS_PER_PRINTER`` waiting runs: the oldest goes (I3)."""
-        held = self.held_runs(printer_id)
-        for info in held[: max(0, len(held) - MAX_HELD_RUNS_PER_PRINTER)]:
+    async def _bound_held_runs(self, run: TapeRun) -> None:
+        """Keep at most ``MAX_HELD_RUNS_PER_PRINTER`` waiting runs per printer (I3).
+
+        *run* has just become held. Over the limit, the oldest held runs of *run*'s own key
+        (``None`` counts as one key of its own) are discarded, never the runs of another key
+        (security review 2: one key must not destroy another key's waiting work). With no
+        older run of its own to give up, the printer stays over the limit; ``claim_run_slot``
+        refuses a new batch of a key without a held run of its own while the printer is full,
+        so the excess is at most the runs that were printing when the printer filled up.
+        """
+        held = self.held_runs(run.printer_id)
+        excess = len(held) - MAX_HELD_RUNS_PER_PRINTER
+        if excess <= 0:
+            return
+        own = [
+            info
+            for info in held
+            if info.run_id != run.run_id
+            and (other := self._runs.get(info.run_id)) is not None
+            and other.api_key_id == run.api_key_id
+        ]
+        for info in own[:excess]:
             with contextlib.suppress(KeyError, RunStateError):
                 await self.discard_run(info.run_id, code="run_discarded_limit")
+        if len(own) < excess:
+            logger.warning(
+                "Printer %s holds %d runs (limit %d): no older run of the same key to discard",
+                run.printer_id,
+                len(held) - len(own[:excess]),
+                MAX_HELD_RUNS_PER_PRINTER,
+            )
 
     # --- queued-run caps and waiting pictures (263-76) -----------------------
 
@@ -1623,6 +1650,18 @@ class PrintQueue:
             by_printer += on_printer and slot.printer_id == printer_id
             by_key += on_key and api_key_id is not None and slot.api_key_id == api_key_id
         if by_printer >= per_printer:
+            raise TooManyQueuedRunsError("printer", per_printer)
+        # Security review 2: a full set of held runs is only made room in by discarding the
+        # submitting key's own oldest one. A key without one there would have to push out
+        # another key's run: refused instead.
+        held_here = [
+            r
+            for r in self._runs.values()
+            if r.printer_id == printer_id and r.state in ("awaiting_confirmation", "stopped")
+        ]
+        if len(held_here) >= MAX_HELD_RUNS_PER_PRINTER and not any(
+            r.api_key_id == api_key_id for r in held_here
+        ):
             raise TooManyQueuedRunsError("printer", per_printer)
         if api_key_id is not None and by_key >= per_key:
             raise TooManyQueuedRunsError("key", per_key)
@@ -2840,7 +2879,7 @@ class PrintQueue:
             exc_info=exc,
         )
         if run is not None and run.state == "stopped":
-            await self._bound_held_runs(run.printer_id)
+            await self._bound_held_runs(run)
 
     async def _advance_run(self, run: TapeRun | None) -> None:
         """After a sub-job: wait for the confirmation of the next one, or forget a finished run."""
@@ -2859,7 +2898,7 @@ class PrintQueue:
                 # No job event follows this state: the jobs page learns of the waiting run here.
                 self._notify_run_change(run, "awaiting_confirmation")
                 logger.info("Run %s: sub-job %d waits for a confirmation", run.run_id, nxt + 1)
-                await self._bound_held_runs(run.printer_id)
+                await self._bound_held_runs(run)
                 return
             nxt += 1
         del self._runs[run.run_id]

@@ -196,7 +196,9 @@ _HELD_NOTE = (
     "held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, "
     "not against the printer's cap: over it a new batch of that key answers 429 "
     "`too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At "
-    "most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`)."
+    "most five runs per printer are held: a sixth of the same key discards that key's oldest "
+    "(`run_discarded_limit`), never another key's; a key without a held run of its own gets "
+    "429 `too-many-queued-runs` while the five places are taken."
 )
 
 

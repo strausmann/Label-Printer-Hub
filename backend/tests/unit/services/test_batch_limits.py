@@ -270,21 +270,111 @@ async def test_a_stopped_run_counts_against_its_key_until_it_is_discarded() -> N
 
 
 async def test_held_runs_of_one_key_do_not_block_the_printer() -> None:
-    """Security review "held runs block printer": key A holds runs up to the held limit; key B
-    still queues, and a further held run of A discards A's oldest (``run_discarded_limit``)."""
+    """Security review "held runs block printer": key A holds runs up to the held limit; a
+    further held run of A discards A's oldest (``run_discarded_limit``), and a run of key B
+    that does not wait (one sub-job) still prints."""
+    printer = TapeRoll()
+    queue = await _queue(printer)
+    a = uuid4()
+    try:
+        held = [await _held_run(queue, printer.id, a) for _ in range(MAX_HELD_RUNS_PER_PRINTER)]
+        extra = await _held_run(queue, printer.id, a)
+        assert [i.run_id for i in queue.held_runs(printer.id)] == [*held[1:], extra]
+        assert queue._runs.get(held[0]) is None  # discarded: A's oldest held run went
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_a_full_printer_refuses_a_key_without_held_runs_and_keeps_the_others() -> None:
+    """Security review 2 "cross-key held eviction": key A holds the printer's five held runs;
+    key B is refused with 429 (scope printer) and none of A's runs is discarded."""
     printer = TapeRoll()
     queue = await _queue(printer)
     a, b = uuid4(), uuid4()
     try:
         held = [await _held_run(queue, printer.id, a) for _ in range(MAX_HELD_RUNS_PER_PRINTER)]
-        slot = _claim(queue, printer.id, b, per_printer=MAX_HELD_RUNS_PER_PRINTER)
-        run_b, _jid = await _one_label_run(queue, printer.id, slot=slot)
-        queue.release_run_slot(slot)
-        await _until(lambda: queue.run_info(run_b) is None)
-        extra = await _held_run(queue, printer.id, a)
-        assert [i.run_id for i in queue.held_runs(printer.id)] == [*held[1:], extra]
-        first_waiting = queue._runs.get(held[0])
-        assert first_waiting is None  # discarded: the oldest held run went
+        with pytest.raises(TooManyQueuedRunsError) as exc:
+            _claim(queue, printer.id, b)
+        assert exc.value.scope == "printer"
+        with pytest.raises(TooManyQueuedRunsError):
+            _claim(queue, printer.id, None)  # no key: no held run of its own either
+        assert [i.run_id for i in queue.held_runs(printer.id)] == held
+        queue.release_run_slot(_claim(queue, printer.id, a))  # A may: it gives up its own
+        await queue.discard_run(held[0])
+        queue.release_run_slot(_claim(queue, printer.id, b))  # a held place is free again
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_the_held_limit_discards_only_the_submitting_keys_runs() -> None:
+    """Key A at the limit submits again: A's oldest goes, B's older held run stays."""
+    printer = TapeRoll()
+    queue = await _queue(printer)
+    a, b = uuid4(), uuid4()
+    try:
+        b_run = await _held_run(queue, printer.id, b)  # the oldest held run of the printer
+        a_runs = [
+            await _held_run(queue, printer.id, a) for _ in range(MAX_HELD_RUNS_PER_PRINTER - 1)
+        ]
+        a_new = await _held_run(queue, printer.id, a)
+        held = [i.run_id for i in queue.held_runs(printer.id)]
+        assert held == [b_run, *a_runs[1:], a_new]
+        assert queue._runs.get(a_runs[0]) is None
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_held_runs_without_a_key_are_not_displaced_by_a_key() -> None:
+    printer = TapeRoll()
+    queue = await _queue(printer)
+    a = uuid4()
+    try:
+        keyless = [await _held_run(queue, printer.id, None) for _ in range(2)]
+        a_runs = [
+            await _held_run(queue, printer.id, a) for _ in range(MAX_HELD_RUNS_PER_PRINTER - 2)
+        ]
+        a_new = await _held_run(queue, printer.id, a)  # over the limit: A's oldest goes
+        held = [i.run_id for i in queue.held_runs(printer.id)]
+        assert held[:2] == keyless
+        assert held[2:] == [*a_runs[1:], a_new]
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_a_run_of_a_key_without_older_runs_stays_over_the_limit() -> None:
+    """B was admitted while a held place was free; A filled the printer meanwhile. When B's
+    run then waits, no run of A is discarded and B keeps its own: the printer is over the
+    limit by the runs that were already printing."""
+    printer = TapeRoll()
+    queue = await _queue(printer)
+    a, b = uuid4(), uuid4()
+    try:
+        a_runs = [
+            await _held_run(queue, printer.id, a) for _ in range(MAX_HELD_RUNS_PER_PRINTER - 1)
+        ]
+        printer.gate = asyncio.Event()  # hold the next sub-jobs in the printer
+        printer.started.clear()
+
+        async def submit(key: UUID) -> UUID:
+            slot = _claim(queue, printer.id, key)  # admitted: four held, one place free
+            ids = [uuid4() for _ in range(MAX_LABELS_PER_TAPE_JOB + 1)]
+            run_id = await queue.enqueue_batch(
+                printer_id=printer.id,
+                images=[_img() for _ in ids],
+                job_ids=ids,
+                tape_mm=12,
+                options={},
+                slot=slot,
+            )
+            queue.release_run_slot(slot)
+            return run_id
+
+        a_last = await submit(a)
+        b_run = await submit(b)
+        printer.gate.set()
+        await _until(lambda: len(queue.held_runs(printer.id)) == MAX_HELD_RUNS_PER_PRINTER + 1)
+        held = [i.run_id for i in queue.held_runs(printer.id)]
+        assert held == [*a_runs, a_last, b_run]
     finally:
         await queue.stop(timeout_s=2.0)
 
