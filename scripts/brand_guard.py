@@ -1,0 +1,250 @@
+#!/usr/bin/env python3
+"""Brand guard: list every remaining old project name outside an allow-list.
+
+The project was renamed to Labelyard. Some old identifiers must stay (they live
+in users' data, configuration or clients), and history is never rewritten. This
+script finds every other occurrence so the rename can be finished and kept
+finished.
+
+Usage: python3 scripts/brand_guard.py [--root .]
+Exit code: 0 = clean, 1 = hits. Each hit is printed as ``path:line: rule: text``.
+Files come from ``git ls-files``; stdlib only.
+
+The patterns below spell the last letter of each old name as ``[b]``: the
+character class matches the name, but the pattern text itself does not, so this
+file is not a hit of its own rules.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Callable, NamedTuple
+
+
+class Hit(NamedTuple):
+    path: str
+    line: int
+    rule: str
+    text: str
+
+
+class Rule(NamedTuple):
+    name: str
+    pattern: re.Pattern[str]
+    # allowed(path, line, match) -> True when this match is an accepted survivor
+    allowed: Callable[[str, str, re.Match[str]], bool]
+
+
+# --- Allow-lists ------------------------------------------------------------
+
+# History is never rewritten and is never scanned. Entries ending in "/" are
+# directory prefixes, the rest are globs ("*" stays inside a path segment).
+EXCLUDED: tuple[str, ...] = (
+    "CHANGELOG.md",  # released notes name the old product
+    "docs/superpowers/",  # plans and specs are a dated record
+    "docs/plans/",
+    "docs/designs/",
+    "docs/research/",
+    # Old ADRs are decided history. The rename ADR itself is scanned, see
+    # RENAME_ADR_SUFFIX: matching by name, not number, because other ADRs may
+    # be added before the rename ADR gets its number.
+    "docs/decisions/[0-9][0-9][0-9][0-9]-*.md",
+    "docs/migration/v-next-single-container.md",
+    "frontend/pnpm-lock.yaml",  # generated
+    # Files that must name the old names in order to reject them:
+    "docs/glossary.toml",
+    ".vale/styles/**/OldName.yml",
+    ".vale/styles/config/vocabularies/*/reject.txt",
+    "scripts/fixtures/vale/",
+)
+RENAME_ADR_SUFFIX = "-rename-to-labelyard.md"
+
+# Files that may keep the old environment prefixes: the compatibility layer
+# that still reads them, its tests, the migration guide, the rename ADR (glob)
+# and the guard files that name them.
+LEGACY_ENV_FILES: tuple[str, ...] = (
+    "backend/app/config_legacy.py",
+    "backend/app/page_render/pdf.py",
+    "backend/tests/unit/test_config_legacy_prefix.py",
+    "backend/tests/unit/test_pdf_font_env.py",
+    "docs/migration/labelyard.md",
+    "docs/decisions/*-rename-to-labelyard.md",
+    "scripts/brand_guard.py",
+    "scripts/test_brand_guard.py",
+)
+
+# Files that may keep the old command name (it stays as an alias of `labelyard`).
+LEGACY_CLI_FILES: tuple[str, ...] = (
+    "backend/pyproject.toml",
+    "backend/tests/unit/test_brand_identity.py",
+    "docs/migration/labelyard.md",
+    "scripts/brand_guard.py",
+    "scripts/test_brand_guard.py",
+)
+
+
+def _glob_to_regex(glob: str) -> re.Pattern[str]:
+    """Translate a path glob: ``**`` crosses directories, ``*`` and ``?`` do not."""
+    out: list[str] = []
+    i = 0
+    while i < len(glob):
+        ch = glob[i]
+        if glob.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+            continue
+        if glob.startswith("**", i):
+            out.append(".*")
+            i += 2
+            continue
+        if ch == "*":
+            out.append("[^/]*")
+        elif ch == "?":
+            out.append("[^/]")
+        elif ch == "[":
+            end = glob.index("]", i)
+            out.append(glob[i : end + 1])
+            i = end
+        else:
+            out.append(re.escape(ch))
+        i += 1
+    return re.compile("".join(out) + r"\Z")
+
+
+def _matches_any(path: str, globs: tuple[str, ...]) -> bool:
+    for glob in globs:
+        if glob.endswith("/"):
+            if path.startswith(glob):
+                return True
+        elif _glob_to_regex(glob).match(path):
+            return True
+    return False
+
+
+def is_excluded(path: str) -> bool:
+    if path.endswith(RENAME_ADR_SUFFIX) and path.startswith("docs/decisions/"):
+        return False
+    return _matches_any(path, EXCLUDED)
+
+
+# --- Rules --------------------------------------------------------------------
+
+
+def _never(_path: str, _line: str, _m: re.Match[str]) -> bool:
+    return False
+
+
+def _slug_allowed(_path: str, line: str, m: re.Match[str]) -> bool:
+    # `<slug>.sheet-type` is the file format's registered name; it is stored in
+    # users' exported files and stays.
+    return line.startswith(".sheet-type", m.end())
+
+
+def _in_legacy_env_file(path: str, _line: str, _m: re.Match[str]) -> bool:
+    return _matches_any(path, LEGACY_ENV_FILES)
+
+
+def _in_legacy_cli_file(path: str, _line: str, _m: re.Match[str]) -> bool:
+    return _matches_any(path, LEGACY_CLI_FILES)
+
+
+def _nickname_allowed(_path: str, line: str, m: re.Match[str]) -> bool:
+    # The API key header `X-Label-Hub-Key` is a client-facing identifier and
+    # stays; a match inside that token is not a nickname.
+    token = "X-Label-Hub-Key"
+    start = line.find(token)
+    while start != -1:
+        if start <= m.start() and m.end() <= start + len(token):
+            return True
+        start = line.find(token, start + 1)
+    return False
+
+
+def _display_allowed(_path: str, line: str, _m: re.Match[str]) -> bool:
+    # The old display name survives only as the subtitle next to the new name.
+    return "Labelyard" in line
+
+
+RULES: tuple[Rule, ...] = (
+    # Old image/repository slug; only the `.sheet-type` format name stays.
+    Rule("slug", re.compile(r"label-printer-hu[b]", re.IGNORECASE), _slug_allowed),
+    # Old canonical environment prefix; read only by the compatibility layer.
+    Rule("env-prefix", re.compile(r"PRINTER_HU[B]_"), _in_legacy_env_file),
+    # Other historic environment prefixes.
+    Rule("env-other", re.compile(r"PRINTHU[B]_|PRINTERHU[B]_|LABEL_HU[B]_"), _in_legacy_env_file),
+    # Old command name, kept as an alias. The lookbehind leaves the slug (and so
+    # the `.sheet-type` format) to the slug rule; the lookahead keeps the
+    # database file name `<cli>.db`, which stays so existing installs find it.
+    Rule(
+        "cli",
+        re.compile(r"(?<!(?i:label-))printer-hu[b](?!\.db)"),
+        _in_legacy_cli_file,
+    ),
+    # Informal short names that were never the product name.
+    Rule(
+        "nickname",
+        re.compile(r"Print-Hu[b]|PrintHu[b]|printerhu[b]|Label Hu[b]"),
+        _nickname_allowed,
+    ),
+    # The descriptive old name is allowed only as the subtitle beside Labelyard.
+    Rule("display", re.compile(r"Label Printer Hu[b]"), _display_allowed),
+)
+
+_MAX_TEXT = 200
+
+
+# --- Scan -------------------------------------------------------------------
+
+
+def _tracked_files(root: Path) -> list[str]:
+    out = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    ).stdout
+    return [p for p in out.decode("utf-8", "surrogateescape").split("\0") if p]
+
+
+def _scan_text(path: str, text: str) -> list[Hit]:
+    hits: list[Hit] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        for rule in RULES:
+            # One hit per line and rule, so the inventory counts lines.
+            if any(not rule.allowed(path, line, m) for m in rule.pattern.finditer(line)):
+                hits.append(Hit(path, number, rule.name, line.strip()[:_MAX_TEXT]))
+    return hits
+
+
+def find_hits(root: Path) -> list[Hit]:
+    root = Path(root)
+    hits: list[Hit] = []
+    for rel in _tracked_files(root):
+        if is_excluded(rel):
+            continue
+        full = root / rel
+        if full.is_symlink() or not full.is_file():
+            continue
+        data = full.read_bytes()
+        if b"\0" in data[:8192]:  # binary
+            continue
+        hits.extend(_scan_text(rel, data.decode("utf-8", "replace")))
+    return hits
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("--root", default=".", help="repository root (default: .)")
+    args = parser.parse_args(argv)
+    hits = find_hits(Path(args.root))
+    for hit in hits:
+        print(f"{hit.path}:{hit.line}: {hit.rule}: {hit.text}")
+    return 1 if hits else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
