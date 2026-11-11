@@ -33,11 +33,11 @@ export interface SheetTypeComboboxProps {
 /** The tallest the list gets (px) and the gap it keeps to the screen edge and the tab bar. */
 const LIST_MAX = 384;
 const LIST_GAP = 12;
-/** What a field sits in when it is in a dialog. */
 /** How long the dialog frame must have stopped scrolling before a list that its scroll closed is opened again (ms). */
 const QUIET = 150;
 /** A close this soon after Escape, a choice or a press on the arrow is the person's, not a scroll's (ms). */
 const PERSON = 300;
+/** What a field sits in when it is in a dialog. */
 const DIALOG = '[role="dialog"], [role="alertdialog"]';
 
 /** The label with the part that matched the query marked. Folding drops spaces (around "×"), so the match is mapped back to the label's own offsets. */
@@ -148,13 +148,14 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
   };
   const listClosed = () => {
     const state = scroll.current;
-    if (performance.now() - state.person < PERSON) return;
     // Only in a dialog: on a page a scroll that closes the list is the expected behaviour (the field moved away).
     if (state.reopened || !field.current?.closest(DIALOG)) return;
     const closedAt = performance.now();
     // React Aria closes inside the scroll event; ours may come a moment later, so look back a little and ahead a little.
     window.clearTimeout(state.check);
     state.check = window.setTimeout(() => {
+      // The person's mark may come a moment after the close (a press handler runs after the one that closes the list).
+      if (state.person >= closedAt - PERSON) return;
       if (state.last < closedAt - 50) return;
       state.armed = true;
       settle();
@@ -279,7 +280,11 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
           ) : null}
           <Button
             ref={trigger}
-            onPress={closedByPerson}
+            // Only a press that closes an open list is the person's doing; one that opens it brings up the keyboard, and the
+            // scroll that follows must still be undone.
+            onPressStart={() => {
+              if (field.current?.querySelector("input")?.getAttribute("aria-expanded") === "true") closedByPerson();
+            }}
             aria-label={t`Show all sheet types`}
             className="press flex size-11 items-center justify-center rounded-r2 text-ink-2 data-[focus-visible]:outline-3 data-[focus-visible]:outline-link"
           >

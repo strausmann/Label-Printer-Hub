@@ -296,6 +296,64 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await expect(box).toHaveValue(/4731/);
       });
 
+      const ARROW = '[role="dialog"] button[aria-label="Show all sheet types"]';
+
+      test("New sheet: Enter on the first match closes the list for good, even while the frame is still scrolling", async () => {
+        await prepare(mode);
+        const { box, frame, list } = await listOpenAtTop();
+        await box.fill("4731");
+        await expect(page.locator('[role="option"]').first()).toBeVisible();
+        await frame.evaluate((el) => {
+          el.scrollTop += 20;
+          document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+        });
+        await page.waitForTimeout(700);
+        await expect(list).toHaveCount(0);
+        await expect(box).toHaveValue(/4731/);
+      });
+
+      test("New sheet: the arrow that closes the list closes it for good, even while the frame is still scrolling", async () => {
+        await prepare(mode);
+        const { frame, list } = await listOpenAtTop();
+        await frame.evaluate((el, arrow) => {
+          document.querySelector<HTMLElement>(arrow)!.click();
+          el.scrollTop += 20;
+        }, ARROW);
+        await page.waitForTimeout(700);
+        await expect(list).toHaveCount(0);
+      });
+
+      test("New sheet: the arrow that opens the list does not keep a scroll from being undone (the keyboard comes up)", async () => {
+        await prepare(mode);
+        const { box, frame, list } = await listOpenAtTop();
+        await box.press("Escape");
+        await expect(list).toHaveCount(0);
+        await page.waitForTimeout(400); // past the window in which the Escape counts
+        await frame.evaluate(async (el, arrow) => {
+          document.querySelector<HTMLElement>(arrow)!.click();
+          // The keyboard is up a moment after the press and the browser scrolls the frame to the field.
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          el.scrollTop += 30;
+        }, ARROW);
+        await expect(list).toBeVisible();
+      });
+
+      test("New sheet: a frame that moves 100 ms after a choice does not bring the list back", async () => {
+        await prepare(mode);
+        const { box, frame, list } = await listOpenAtTop();
+        await box.fill("4731");
+        await expect(page.locator('[role="option"]').first()).toBeVisible();
+        // The form grows under the chosen type and the frame follows, a little after the click.
+        await frame.evaluate(async (el) => {
+          document.querySelector<HTMLElement>('[role="option"]')!.click();
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          el.scrollTop += 20;
+        });
+        await page.waitForTimeout(700);
+        await expect(list).toHaveCount(0);
+        await expect(box).toHaveValue(/4731/);
+      });
+
       test("New sheet: a scroll that goes on opens the list once, after it has stopped, and once per focus", async () => {
         await prepare(mode);
         const { frame, list } = await listOpenAtTop();
