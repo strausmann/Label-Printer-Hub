@@ -45,7 +45,7 @@ Branch naming follows Conventional Commits prefix:
 
 | Prefix | Use for |
 |---|---|
-| `milestone/x.y.0` | Integration branch of a milestone (maintainers create it); feature PRs target it |
+| `milestone/x.y.0`, `milestone/x.y.x` | Integration branch of a minor/major milestone, or of a patch milestone `x.y.x` (maintainers create it); its PRs target it |
 | `feat/` | New feature |
 | `fix/` | Bug fix |
 | `docs/` | Documentation only |
@@ -241,11 +241,16 @@ Patch releases come from `main`. Minor and major releases come from a **mileston
 | Bug or security fix (`fix`, `perf`) | `main` | `main` | squash | next nightly patch release |
 | Docs, CI, chore, refactor, tests | `main` (or the milestone if it belongs to one) | same | squash | not released on its own |
 | Milestone | — | `milestone/x.y.0` → `main` | **merge commit** | exactly `x.y.0` |
+| Patch milestone | — | `milestone/x.y.x` → `main` | **merge commit** | next free patch `x.y.Z` |
 | Sync after a fix | — | `main` → `milestone/x.y.0` | **merge commit** | — |
 
 **Starting a milestone.** A maintainer opens the GitHub milestone `x.y.0` and creates `milestone/x.y.0` from `main`. CI, commitlint, CodeQL and the licence checks run for pull requests into `milestone/**` just as for `main`. Major versions only come through a milestone `x.0.0`.
 
 **Shipping a milestone.** Open one PR `milestone/x.y.0` → `main` and merge it with a **merge commit**, never squash or rebase. A merge commit keeps every feature commit, so semantic-release computes exactly `x.y.0` at the next release run and the changelog lists each entry. After the release, close the GitHub milestone.
+
+**Patch milestones `x.y.x`.** A group of fixes and hardening for a release line is collected in a patch milestone titled `x.y.x` (branch `milestone/x.y.x`). The title covers every patch `x.y.Z` with `Z >= 1`: the milestone PR gets the next free patch number when it is merged, because Dependabot updates and single fixes may already have released `x.y.1`, `x.y.2` on the way. Such a milestone takes only `fix`, `perf`, `refactor`, `test`, `docs`, `ci`, `chore` and `build` commits; a `feat`, `!` or `BREAKING CHANGE:` belongs in a minor milestone `x.y.0` and fails the `release-impact` check here. Dependabot PRs and single fixes go to `main` at any time, no pauses. Only a `fix` or `perf` commit causes a release (Dependabot commits are `chore(deps)` / `ci(deps)` and do not). After every patch release from `main`, merge `main` back into the milestone branch (the sync PR below).
+
+**A release that merges a milestone closes it.** When a release contains the merge of `milestone/<title>`, that GitHub milestone must have no open issue at release time. Close the issues, move them to another milestone, or have a **maintainer** label an issue `release:waived-by-maintainer` to accept that it stays open; the label is never set by a bot or by the author of the change, and every waived issue is named in the release log (`::warning::release proceeds with waived issues: #…`) and the job summary. Open pull requests in the milestone do not count. A release **without** a milestone merge (Dependabot, a single fix) never looks at a milestone. After the release, close the GitHub milestone.
 
 **Fixes while a milestone is open.** Fixes go to `main` and ship as nightly patch releases. When `main` moves, the [Milestone sync](.github/workflows/milestone-sync.yml) workflow opens a PR `main` → `milestone/x.y.0` (`chore: sync main into milestone/x.y.0`) for every milestone branch that does not contain `main` yet. Merge it with a merge commit. The workflow opens these PRs with `GITHUB_TOKEN`, and GitHub does not start other workflows for them: close and reopen the PR to run the checks.
 
@@ -261,8 +266,8 @@ For a patch milestone `x.y.x` use version `x.y.x`: the workflow builds `x.y.<nex
 
 **Two guards keep the numbering honest.**
 
-1. The **`release-impact`** check runs on every pull request into `main`. It classifies the PR title (used by a squash merge) and every commit (kept by a merge commit) with the release rules of `.releaserc.json`. From any branch other than `milestone/*` only patch-level or non-releasing changes pass; a `feat`, `!` or `BREAKING CHANGE:` fails and names the milestone branch to target instead. From `milestone/x.y.z` the last release plus the highest impact must equal `x.y.z`, and the GitHub milestone `x.y.z` must be open. The job summary lists each commit with its impact.
-2. The **release guard** runs inside the release itself (`verifyReleaseCmd` in `.releaserc.json`), before anything is tagged or published. The version semantic-release computed must be the next patch of the last release or the title of an open GitHub milestone. Otherwise the run stops, nothing is released, and an issue `release blocked: computed <version>` is opened. For a minor or major version the guard also checks provenance: the releasing range must contain the merge `Merge pull request #<n> from <owner>/milestone/<version>` on the first-parent line of `main`, and every `feat`, breaking or other above-patch commit must have come in through that merge (a `feat` pushed to `main` and then synced into the milestone does not count). This catches what the PR check cannot see, such as a direct push to `main`.
+1. The **`release-impact`** check runs on every pull request into `main`. It classifies the PR title (used by a squash merge) and every commit (kept by a merge commit) with the release rules of `.releaserc.json`. From any branch other than `milestone/*` only patch-level or non-releasing changes pass; a `feat`, `!` or `BREAKING CHANGE:` fails and names the milestone branch to target instead. From `milestone/x.y.z` the last release plus the highest impact must equal `x.y.z`, and the GitHub milestone `x.y.z` must be open; from `milestone/x.y.x` it must be a patch `x.y.Z` (a minor or major change fails) and the milestone `x.y.x` must be open. The job summary lists each commit with its impact.
+2. The **release guard** runs inside the release itself (`verifyReleaseCmd` in `.releaserc.json`), before anything is tagged or published. The version semantic-release computed must be the next patch of the last release or covered by the title of an open GitHub milestone (`x.y.0` covers itself, `x.y.x` every patch `x.y.Z`, `Z >= 1`). Otherwise the run stops, nothing is released, and an issue `release blocked: computed <version>` is opened. For a minor or major version the guard also checks provenance: the releasing range must contain the merge `Merge pull request #<n> from <owner>/milestone/<version>` on the first-parent line of `main`, and every `feat`, breaking or other above-patch commit must have come in through that merge (a `feat` pushed to `main` and then synced into the milestone does not count). This catches what the PR check cannot see, such as a direct push to `main`. If the releasing range contains a milestone merge (`Merge pull request #<n> from <owner>/milestone/<title>` on the first-parent line), the title must cover the computed version and the milestone must have no open issue except `release:waived-by-maintainer` ones (see above); an API error blocks the release rather than letting it through.
 
 Both use [`scripts/release_impact.py`](scripts/release_impact.py) (tests: `python3 -m unittest discover -s scripts -p 'test_*.py'`).
 

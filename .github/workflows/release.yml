@@ -16,7 +16,11 @@ name: Release
 # (verifyReleaseCmd in .releaserc.json). The computed version must be the next
 # patch of the last release or the title of an OPEN GitHub milestone; anything
 # else aborts the run and opens an issue "release blocked: computed <v>" (no
-# issue in a dry run). It is the last safety net behind the release-impact PR
+# issue in a dry run). A patch milestone is titled `X.Y.x` and covers every
+# X.Y.Z with Z >= 1. A release that contains a milestone merge also needs that
+# milestone to have no open issue, except issues labelled
+# `release:waived-by-maintainer`; a release without a milestone merge (a
+# Dependabot or single fix) never looks at a milestone. It is the last safety net behind the release-impact PR
 # check, e.g. against a direct push to main. See CONTRIBUTING.md, "Milestones,
 # branches and releases".
 #

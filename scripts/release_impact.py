@@ -18,13 +18,16 @@ Two modes:
       major change;
     * for ``milestone/x.y.z``: fails unless the last release on ``main`` bumped
       by the highest impact is ``x.y.z`` and a GitHub milestone titled
-      ``x.y.z`` is open.
+      ``x.y.z`` is open (a patch milestone ``x.y.x`` takes any ``x.y.Z`` with
+      ``Z >= 1`` and fails on a minor or major change).
 
 ``guard``
     Runs inside semantic-release as the ``verifyRelease`` step
     (``@semantic-release/exec`` ``verifyReleaseCmd``), before anything is
     written or published. The computed version must be the next patch of the
-    last release or the title of an open GitHub milestone. Otherwise the
+    last release or covered by the title of an open GitHub milestone. If the
+    release contains the merge of a milestone, that milestone may have no open
+    issue except those labelled ``release:waived-by-maintainer``. Otherwise the
     release is aborted and an issue "release blocked: computed <v>" is opened.
 
 Only the Python standard library is used. Text that comes from commits or PR
@@ -44,7 +47,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -91,7 +94,10 @@ REVERT_RE = re.compile(r'^(?:Revert|revert:)\s"?([\s\S]+?)"?\s*This reverts comm
 
 VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 TAG_RE = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-MILESTONE_BRANCH_RE = re.compile(r"^milestone/((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$")
+# A milestone is titled X.Y.Z (minor/major, or a single patch) or X.Y.x (every patch of a minor).
+MILESTONE_BRANCH_RE = re.compile(r"^milestone/((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*|x))$")
+PATCH_MILESTONE_RE = re.compile(r"^((?:0|[1-9]\d*)\.(?:0|[1-9]\d*))\.x$")
+WAIVER_LABEL = "release:waived-by-maintainer"
 
 
 # --------------------------------------------------------------------------- parsing
@@ -236,6 +242,20 @@ def parse_version(value: str) -> tuple[int, int, int]:
     return int(match.group(1)), int(match.group(2)), int(match.group(3))
 
 
+def milestone_matches(title: str, version: str) -> bool:
+    """Whether a milestone titled ``title`` covers release ``version``.
+
+    ``X.Y.x`` covers ``X.Y.Z`` for every ``Z >= 1``; ``X.Y.Z`` covers only itself.
+    """
+    if not VERSION_RE.match(version):
+        return False
+    wildcard = PATCH_MILESTONE_RE.match(title)
+    if wildcard:
+        major, minor, patch = parse_version(version)
+        return f"{major}.{minor}" == wildcard.group(1) and patch >= 1
+    return VERSION_RE.match(title) is not None and title == version
+
+
 def bump(last: str | None, impact: str | None) -> str | None:
     """Next version as semantic-release computes it; the first release is 1.0.0."""
     if impact is None:
@@ -266,8 +286,8 @@ def last_release_from_tags(tags: Iterable[str]) -> str | None:
 # --------------------------------------------------------------------------- git + API
 
 
-def git(*args: str) -> str:
-    return subprocess.run(["git", *args], cwd=REPO_ROOT, check=True, capture_output=True, text=True).stdout
+def git(*args: str, cwd: Path | None = None) -> str:
+    return subprocess.run(["git", *args], cwd=cwd or REPO_ROOT, check=True, capture_output=True, text=True).stdout
 
 
 def git_last_release(ref: str) -> str | None:
@@ -320,6 +340,49 @@ def open_milestones(repo: str, get: HttpGet | None = None) -> set[str]:
         if len(batch) < 100:
             return titles
         page += 1
+
+
+@dataclass(frozen=True)
+class MilestoneIssues:
+    """Open issues of a milestone: ``open`` blocks a release, ``waived`` carries WAIVER_LABEL."""
+
+    open: list[int]
+    waived: list[int]
+
+
+def _all_pages(get: HttpGet, path: str, **query: str | int) -> list[Any]:
+    rows: list[Any] = []
+    page = 1
+    while True:
+        batch = get(api_url(path, **query, per_page=100, page=page))
+        if not batch:
+            return rows
+        rows.extend(batch)
+        if len(batch) < 100:
+            return rows
+        page += 1
+
+
+def milestone_issues(repo: str, title: str, get: HttpGet | None = None) -> MilestoneIssues | None:
+    """Open issues of the milestone titled ``title`` (any state), or None if there is no such milestone.
+
+    Pull requests are not issues for this purpose and are dropped.
+    """
+    get = get or (lambda url: _request("GET", url))
+    number = next(
+        (m.get("number") for m in _all_pages(get, f"/repos/{repo}/milestones", state="all") if m.get("title") == title),
+        None,
+    )
+    if number is None:
+        return None
+    blocking: list[int] = []
+    waived: list[int] = []
+    for row in _all_pages(get, f"/repos/{repo}/issues", milestone=number, state="open"):
+        if "pull_request" in row:
+            continue
+        labels = {str(label.get("name", "")) for label in row.get("labels") or []}
+        (waived if WAIVER_LABEL in labels else blocking).append(int(row["number"]))
+    return MilestoneIssues(sorted(blocking), sorted(waived))
 
 
 # --------------------------------------------------------------------------- output
@@ -409,12 +472,19 @@ def evaluate_pr(
             f"milestone/{expected} contains no releasable change (feat, fix, perf or breaking); "
             f"merging it would not release {expected}."
         )
-    elif computed != expected:
-        errors.append(
-            f"the commits compute version {computed} (last release "
-            f"{last_release or 'none'} + {total}), but the branch is milestone/{expected}. "
-            f"Rename the branch and milestone to {computed} or change the commits."
-        )
+    elif not milestone_matches(expected, computed):
+        if PATCH_MILESTONE_RE.match(expected) and total in ("minor", "major"):
+            errors.append(
+                f"milestone/{expected} is a patch milestone, but the commits contain a {total} change "
+                f"(version {computed}, last release {last_release or 'none'}). Move it to a "
+                f"milestone/{computed} branch or change the commits."
+            )
+        else:
+            errors.append(
+                f"the commits compute version {computed} (last release "
+                f"{last_release or 'none'} + {total}), but the branch is milestone/{expected}. "
+                f"Rename the branch and milestone to {computed} or change the commits."
+            )
     if expected not in milestones():
         errors.append(f"no open GitHub milestone titled '{expected}' exists.")
     result.ok = not errors
@@ -471,10 +541,76 @@ def guard_allows(next_version: str, last: str | None, milestones: Callable[[], s
     parse_version(next_version)
     if last and next_version == bump(last, "patch"):
         return True
-    return next_version in milestones()
+    return any(milestone_matches(title, next_version) for title in milestones())
 
 
-MILESTONE_MERGE_RE = re.compile(r"^Merge pull request #\d+ from ([^/\s]+)/milestone/(\d+\.\d+\.\d+)$")
+_MILESTONE_TITLE = r"(\d+\.\d+\.(?:\d+|x))"
+MILESTONE_MERGE_RE = re.compile(rf"^Merge pull request #\d+ from ([^/\s]+)/milestone/{_MILESTONE_TITLE}$")
+MILESTONE_LOCAL_MERGE_RE = re.compile(rf"^Merge branch 'milestone/{_MILESTONE_TITLE}'$")
+
+
+def milestone_merges(rev_range: str, cwd: Path | None = None) -> list[str]:
+    """Milestone titles merged on the first-parent line of ``rev_range``.
+
+    Only GitHub's merge-commit subject and git's own ``Merge branch 'milestone/<title>'``
+    count; anything else (``Merge remote-tracking branch ...``, a squash) does not.
+    Merges inside the milestone branch are not on the first-parent line of main.
+    """
+    titles: list[str] = []
+    for subject in git("log", "--first-parent", "--merges", "--format=%s", rev_range, cwd=cwd).splitlines():
+        found = MILESTONE_MERGE_RE.match(subject)
+        if found:
+            titles.append(found.group(2))
+            continue
+        local = MILESTONE_LOCAL_MERGE_RE.match(subject)
+        if local:
+            titles.append(local.group(1))
+    return titles
+
+
+def guard_decision(
+    next_version: str,
+    last: str | None,
+    merged_titles: Iterable[str],
+    milestones: set[str],
+    issues: Mapping[str, MilestoneIssues | None],
+) -> tuple[bool, list[str], list[str]]:
+    """Version rule and milestone-empty rule: (allowed, errors, warnings).
+
+    The next patch is always allowed; a minor or major needs an open milestone titled for it.
+    Only a release that contains a milestone merge looks at a milestone: the merged title
+    must cover ``next_version`` and the milestone may hold no open issue except waived ones.
+    """
+    if not guard_allows(next_version, last, lambda: milestones):
+        return (
+            False,
+            [
+                f"release blocked: computed {next_version} (last {last or 'none'}) is neither the next "
+                "patch nor an open milestone"
+            ],
+            [],
+        )
+    errors: list[str] = []
+    warnings: list[str] = []
+    for title in sorted(set(merged_titles)):
+        if not milestone_matches(title, next_version):
+            errors.append(
+                f"release blocked: merged milestone {title} does not match the computed version {next_version}"
+            )
+            continue
+        found = issues.get(title)
+        if found is None:
+            errors.append(f"release blocked: milestone {title} not found, could not decide")
+            continue
+        if found.open:
+            errors.append(f"release blocked: milestone {title} has open issues: {_numbers(found.open)}")
+        elif found.waived:
+            warnings.append(f"release proceeds with waived issues: {_numbers(found.waived)}")
+    return not errors, errors, warnings
+
+
+def _numbers(values: Iterable[int]) -> str:
+    return ", ".join(f"#{n}" for n in sorted(values))
 ABOVE_PATCH = ("major", "premajor", "minor", "preminor")
 
 
@@ -513,7 +649,7 @@ def provenance_violation(
         sha, _, subject = line.partition(" ")
         found = MILESTONE_MERGE_RE.match(subject)
         # The merge must come from this repository's own milestone branch, not a fork's.
-        if found and found.group(2) == next_version and (owner is None or found.group(1) == owner):
+        if found and milestone_matches(found.group(2), next_version) and (owner is None or found.group(1) == owner):
             merges.append(sha)
     out = run("log", "--format=%H%x1f%B%x1e", rev_range)
     commits = []
@@ -546,6 +682,7 @@ def open_block_issue(
     last: str | None,
     request: Callable[..., Any] | None = None,
     provenance: str | None = None,
+    milestone_errors: list[str] | None = None,
 ) -> None:
     request = request or _request
     title = f"release blocked: computed {version}"
@@ -553,6 +690,19 @@ def open_block_issue(
         if issue.get("title") == title and "pull_request" not in issue:
             print(f"  issue already open: #{issue.get('number')}")
             return
+    if milestone_errors:
+        body = (
+            f"The release run computed version `{version}` (last release `{last or 'none'}`) and the release "
+            "contains the merge of a milestone, but the milestone is not ready, so the release guard stopped "
+            "semantic-release before anything was tagged or published.\n\n"
+            + "\n".join(f"- {_clean(e)}" for e in milestone_errors)
+            + "\n\nClose or move the open issues, or have a maintainer label an issue "
+            f"`{WAIVER_LABEL}` to accept that it stays open in this release, then re-run the release.\n\n"
+            'See CONTRIBUTING.md, section "Milestones, branches and releases".'
+        )
+        created = request("POST", api_url(f"/repos/{repo}/issues"), {"title": title, "body": body})
+        print(f"  opened issue #{(created or {}).get('number')}")
+        return
     if provenance:
         body = (
             f"The release run computed version `{version}` (last release `{last or 'none'}`), and an open "
@@ -584,10 +734,12 @@ def open_block_issue(
 def run_guard(args: argparse.Namespace) -> int:
     last = args.last or None
     try:
-        allowed = guard_allows(args.next, last, lambda: open_milestones(args.repo))
+        titles = open_milestones(args.repo)
+        allowed = guard_allows(args.next, last, lambda: titles)
     except (ValueError, urllib.error.URLError) as exc:
         print(annotation("error", f"release guard could not decide, refusing to release: {exc}"))
         return 1
+    dry_run = os.environ.get("DRY_RUN") == "true"
     if allowed:
         try:
             violation = provenance_violation(args.next, last, owner=args.repo.split("/")[0])
@@ -596,11 +748,35 @@ def run_guard(args: argparse.Namespace) -> int:
             return 1
         if violation:
             print(annotation("error", f"release blocked: {args.next} does not come from its milestone: {violation}"))
-            if os.environ.get("DRY_RUN") == "true":
+            if dry_run:
                 print("  dry run: no issue opened")
             else:
                 try:
                     open_block_issue(args.repo, args.next, last, provenance=violation)
+                except urllib.error.URLError as exc:
+                    print(annotation("warning", f"could not open the blocking issue: {exc}"))
+            return 1
+        try:
+            merged = milestone_merges(f"v{last}..HEAD" if last else "HEAD")
+            found = {t: milestone_issues(args.repo, t) for t in set(merged) if milestone_matches(t, args.next)}
+        except (subprocess.CalledProcessError, OSError, ValueError, urllib.error.URLError) as exc:
+            print(annotation("error", f"release guard could not read the milestone, refusing to release: {exc}"))
+            return 1
+        ok, errors, warnings = guard_decision(args.next, last, merged, titles, found)
+        for warning in warnings:
+            print(annotation("warning", warning))
+        summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if warnings and summary:
+            with open(summary, "a", encoding="utf-8") as fh:
+                fh.write("## Release guard\n\n" + "".join(f"- {md_cell(w)}\n" for w in warnings))
+        if not ok:
+            for error in errors:
+                print(annotation("error", error))
+            if dry_run:
+                print("  dry run: no issue opened")
+            else:
+                try:
+                    open_block_issue(args.repo, args.next, last, milestone_errors=errors)
                 except urllib.error.URLError as exc:
                     print(annotation("warning", f"could not open the blocking issue: {exc}"))
             return 1
@@ -613,7 +789,7 @@ def run_guard(args: argparse.Namespace) -> int:
             "patch nor an open milestone",
         )
     )
-    if os.environ.get("DRY_RUN") == "true":
+    if dry_run:
         print("  dry run: no issue opened")
     else:
         try:

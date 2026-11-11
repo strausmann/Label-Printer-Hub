@@ -219,6 +219,80 @@ class EvaluatePrTest(unittest.TestCase):
         )
         self.assertTrue(result.ok, result.errors)
 
+    def test_patch_milestone_title_matches_any_patch(self) -> None:
+        self.assertTrue(ri.milestone_matches("1.5.x", "1.5.1"))
+        self.assertTrue(ri.milestone_matches("1.5.x", "1.5.7"))
+        self.assertFalse(ri.milestone_matches("1.5.x", "1.5.0"))
+        self.assertFalse(ri.milestone_matches("1.5.x", "1.6.0"))
+        self.assertTrue(ri.milestone_matches("1.6.0", "1.6.0"))
+        self.assertFalse(ri.milestone_matches("1.6.0", "1.6.1"))
+        for bad in ("1.x.x", "1.5", "x", "1.5.x-rc.1"):
+            self.assertFalse(ri.milestone_matches(bad, "1.5.1"), bad)
+        self.assertFalse(ri.milestone_matches("1.5.x", "1.5.1-rc.1"))
+
+    def test_patch_milestone_branch_with_patch_passes(self) -> None:
+        result = self.evaluate(
+            title="fix: a",
+            head_ref="milestone/1.5.x",
+            commits=commits("fix: a"),
+            last_release="1.5.0",
+            milestones=milestones("1.5.x"),
+        )
+        self.assertTrue(result.ok, result.errors)
+        self.assertEqual(result.computed, "1.5.1")
+
+    def test_patch_milestone_branch_after_dependabot_release_passes(self) -> None:
+        result = self.evaluate(
+            title="fix: a",
+            head_ref="milestone/1.5.x",
+            commits=commits("fix: a"),
+            last_release="1.5.2",
+            milestones=milestones("1.5.x"),
+        )
+        self.assertTrue(result.ok, result.errors)
+        self.assertEqual(result.computed, "1.5.3")
+
+    def test_patch_milestone_branch_with_feat_fails(self) -> None:
+        result = self.evaluate(
+            title="fix: a",
+            head_ref="milestone/1.5.x",
+            commits=commits("fix: a", "feat: b"),
+            last_release="1.5.0",
+            milestones=milestones("1.5.x"),
+        )
+        self.assertFalse(result.ok)
+        self.assertIn("minor", result.errors[0])
+        self.assertIn("milestone/1.5.x", result.errors[0])
+
+    def test_patch_milestone_branch_with_breaking_change_fails(self) -> None:
+        result = self.evaluate(
+            title="fix: a",
+            head_ref="milestone/1.5.x",
+            commits=commits("fix!: b"),
+            last_release="1.5.0",
+            milestones=milestones("1.5.x"),
+        )
+        self.assertFalse(result.ok)
+        self.assertIn("major", result.errors[0])
+
+    def test_patch_milestone_without_open_github_milestone_fails(self) -> None:
+        result = self.evaluate(
+            head_ref="milestone/1.5.x", commits=commits("fix: a"), last_release="1.5.0", milestones=milestones("1.6.0")
+        )
+        self.assertFalse(result.ok)
+        self.assertIn("no open GitHub milestone titled '1.5.x'", result.errors[-1])
+
+    def test_minor_milestone_branch_with_feat_passes(self) -> None:
+        result = self.evaluate(
+            title="feat: a",
+            head_ref="milestone/1.6.0",
+            commits=commits("feat: a"),
+            last_release="1.5.3",
+            milestones=milestones("1.6.0"),
+        )
+        self.assertTrue(result.ok, result.errors)
+        self.assertEqual(result.computed, "1.6.0")
+
     def test_first_release(self) -> None:
         result = self.evaluate(
             title="feat: a",
@@ -288,6 +362,7 @@ class GuardTest(unittest.TestCase):
         with (
             mock.patch.object(ri, "_request", fake_request),
             mock.patch.object(ri, "provenance_violation", lambda *a, **k: None),
+            mock.patch.object(ri, "milestone_merges", lambda *a, **k: []),
             mock.patch.dict(os.environ, env, clear=False),
             redirect_stdout(out),
         ):
@@ -335,6 +410,7 @@ class GuardTest(unittest.TestCase):
         with (
             mock.patch.object(ri, "_request", fake_request),
             mock.patch.object(ri, "provenance_violation", violation),
+            mock.patch.object(ri, "milestone_merges", lambda *a, **k: []),
             mock.patch.dict(os.environ, env, clear=False),
             redirect_stdout(out),
         ):
@@ -388,8 +464,8 @@ class GuardTest(unittest.TestCase):
         self.assertIn("refusing to release", out.getvalue())
 
 
-class ProvenanceTest(unittest.TestCase):
-    """The guard needs a real history: milestone merges are a property of the graph."""
+class TempRepoCase(unittest.TestCase):
+    """A throw-away git repository: milestone merges are a property of the graph."""
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -416,6 +492,8 @@ class ProvenanceTest(unittest.TestCase):
             "merge", "-q", "--no-ff", f"milestone/{version}", "-m", f"Merge pull request #{number} from o/milestone/{version}"
         )
 
+
+class ProvenanceTest(TempRepoCase):
     def violation(self, next_version: str = "1.5.0") -> str | None:
         return ri.provenance_violation(next_version, "1.4.1", RULES, cwd=self.repo)
 
@@ -478,6 +556,290 @@ class ProvenanceTest(unittest.TestCase):
     def test_patch_release_needs_no_milestone_merge(self) -> None:
         self.commit("fix: a")
         self.assertIsNone(ri.provenance_violation("1.4.2", "1.4.1", RULES, cwd=self.repo))
+
+
+class MilestoneMergesTest(TempRepoCase):
+    def merges(self) -> list[str]:
+        return ri.milestone_merges("v1.5.0..HEAD", cwd=self.repo)
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.git("tag", "-d", "v1.4.1")
+        self.git("tag", "v1.5.0")
+
+    def test_merges_inside_the_milestone_are_not_milestone_merges(self) -> None:
+        self.git("switch", "-q", "-c", "milestone/1.5.x")
+        # a feature PR merged into the milestone, and an R1 sync of main
+        self.git("switch", "-q", "-c", "ci/topic")
+        self.commit("fix: topic")
+        self.git("switch", "-q", "milestone/1.5.x")
+        self.git("merge", "-q", "--no-ff", "ci/topic", "-m", "Merge pull request #269 from o/ci/topic")
+        self.git("switch", "-q", "main")
+        self.commit("fix: released from main")
+        self.git("switch", "-q", "milestone/1.5.x")
+        self.git("merge", "-q", "--no-ff", "main", "-m", "Merge branch 'main' into milestone/1.5.x")
+        self.git("switch", "-q", "main")
+        self.assertEqual(self.merges(), [])
+        self.merge_milestone("1.5.x", number=300)
+        self.assertEqual(self.merges(), ["1.5.x"])
+
+    def test_milestone_merge_on_a_side_branch_is_not_on_the_first_parent_line(self) -> None:
+        # The merge subject matches, but it sits on a topic branch that main later merged.
+        self.git("switch", "-q", "-c", "milestone/1.5.x")
+        self.commit("fix: inside")
+        self.git("switch", "-q", "main")
+        self.git("switch", "-q", "-c", "side")
+        self.git("merge", "-q", "--no-ff", "milestone/1.5.x", "-m", "Merge pull request #9 from o/milestone/1.5.x")
+        self.git("switch", "-q", "main")
+        self.commit("fix: on main")
+        self.git("merge", "-q", "--no-ff", "side", "-m", "Merge pull request #10 from o/side")
+        self.assertEqual(self.merges(), [])
+
+    def test_unmatched_merge_subject_is_not_a_milestone_merge(self) -> None:
+        self.git("switch", "-q", "-c", "milestone/1.5.x")
+        self.commit("fix: inside")
+        self.git("switch", "-q", "main")
+        self.git(
+            "merge", "-q", "--no-ff", "milestone/1.5.x", "-m", "Merge remote-tracking branch 'origin/milestone/1.5.x'"
+        )
+        self.assertEqual(self.merges(), [])
+
+    def test_local_merge_subject_is_a_milestone_merge(self) -> None:
+        self.git("switch", "-q", "-c", "milestone/1.6.0")
+        self.commit("fix: inside")
+        self.git("switch", "-q", "main")
+        self.git("merge", "-q", "--no-ff", "milestone/1.6.0", "-m", "Merge branch 'milestone/1.6.0'")
+        self.assertEqual(self.merges(), ["1.6.0"])
+
+    def test_rebased_or_squashed_milestone_has_no_merge(self) -> None:
+        self.commit("fix: squashed milestone (#300)")
+        self.assertEqual(self.merges(), [])
+
+
+def issue(number: int, *labels: str, pr: bool = False) -> dict[str, Any]:
+    row: dict[str, Any] = {"number": number, "labels": [{"name": n} for n in labels]}
+    if pr:
+        row["pull_request"] = {"url": "x"}
+    return row
+
+
+class MilestoneIssuesTest(unittest.TestCase):
+    def getter(self, rows: list[dict[str, Any]], milestone: str = "1.5.x") -> Any:
+        urls: list[str] = []
+
+        def get(url: str) -> Any:
+            urls.append(url)
+            if "/milestones" in url:
+                return [{"title": "1.4.0", "number": 3}, {"title": milestone, "number": 12}]
+            page = int(url.rsplit("page=", 1)[1])
+            return rows[(page - 1) * 100 : page * 100]
+
+        get.urls = urls  # type: ignore[attr-defined]
+        return get
+
+    def test_open_pull_request_in_milestone_is_ignored(self) -> None:
+        found = ri.milestone_issues("o/r", "1.5.x", get=self.getter([issue(4, pr=True), issue(5)]))
+        assert found is not None
+        self.assertEqual(found.open, [5])
+
+    def test_issue_pages_are_read(self) -> None:
+        rows = [issue(n) for n in range(1, 102)]
+        get = self.getter(rows)
+        found = ri.milestone_issues("o/r", "1.5.x", get=get)
+        assert found is not None
+        self.assertIn(101, found.open)
+        self.assertEqual(len(found.open), 101)
+        self.assertTrue(any("milestone=12" in u and "state=open" in u for u in get.urls))
+
+    def test_waived_issues_are_separated_and_sorted(self) -> None:
+        found = ri.milestone_issues(
+            "o/r", "1.5.x", get=self.getter([issue(9), issue(150, ri.WAIVER_LABEL), issue(3, "bug", ri.WAIVER_LABEL)])
+        )
+        self.assertEqual(found, ri.MilestoneIssues(open=[9], waived=[3, 150]))
+
+    def test_unknown_milestone_is_none(self) -> None:
+        self.assertIsNone(ri.milestone_issues("o/r", "9.9.x", get=self.getter([issue(1)])))
+
+    def test_closed_milestone_is_found(self) -> None:
+        get = self.getter([])
+        ri.milestone_issues("o/r", "1.5.x", get=get)
+        self.assertIn("state=all", get.urls[0])
+
+
+class GuardDecisionTest(unittest.TestCase):
+    def test_no_merge_needs_no_milestone(self) -> None:
+        self.assertEqual(ri.guard_decision("1.5.1", "1.5.0", [], set(), {}), (True, [], []))
+
+    def test_open_issues_block_in_ascending_order(self) -> None:
+        issues = {"1.5.x": ri.MilestoneIssues(open=[3, 7], waived=[])}
+        allowed, errors, warnings = ri.guard_decision("1.5.1", "1.5.0", ["1.5.x"], {"1.5.x"}, issues)
+        self.assertFalse(allowed)
+        self.assertEqual(errors, ["release blocked: milestone 1.5.x has open issues: #3, #7"])
+        self.assertEqual(warnings, [])
+
+    def test_waived_only_allows_with_warning(self) -> None:
+        issues = {"1.5.x": ri.MilestoneIssues(open=[], waived=[150])}
+        self.assertEqual(
+            ri.guard_decision("1.5.1", "1.5.0", ["1.5.x"], {"1.5.x"}, issues),
+            (True, [], ["release proceeds with waived issues: #150"]),
+        )
+
+    def test_waived_and_unwaived_lists_only_the_unwaived_as_blocking(self) -> None:
+        issues = {"1.5.x": ri.MilestoneIssues(open=[9], waived=[150])}
+        allowed, errors, _ = ri.guard_decision("1.5.1", "1.5.0", ["1.5.x"], {"1.5.x"}, issues)
+        self.assertFalse(allowed)
+        self.assertIn("#9", errors[0])
+        self.assertNotIn("#150", errors[0])
+
+    def test_merged_title_must_match_version(self) -> None:
+        issues = {"1.5.x": ri.MilestoneIssues(open=[], waived=[])}
+        allowed, errors, _ = ri.guard_decision("1.6.0", "1.5.3", ["1.5.x"], {"1.6.0"}, issues)
+        self.assertFalse(allowed)
+        self.assertIn("1.5.x", errors[0])
+        self.assertIn("1.6.0", errors[0])
+
+    def test_missing_milestone_blocks(self) -> None:
+        allowed, errors, _ = ri.guard_decision("1.5.1", "1.5.0", ["1.5.x"], {"1.5.x"}, {"1.5.x": None})
+        self.assertFalse(allowed)
+        self.assertIn("1.5.x", errors[0])
+
+    def test_neither_patch_nor_open_milestone_blocks(self) -> None:
+        allowed, errors, _ = ri.guard_decision("1.6.0", "1.5.3", [], set(), {})
+        self.assertFalse(allowed)
+        self.assertIn("neither the next patch nor an open milestone", errors[0])
+
+    def test_patch_milestone_title_opens_its_patch_releases(self) -> None:
+        self.assertTrue(ri.guard_allows("1.5.4", "1.5.0", milestones("1.5.x")))
+        self.assertFalse(ri.guard_allows("1.6.0", "1.5.0", milestones("1.5.x")))
+
+
+class MilestoneRuleGuardTest(unittest.TestCase):
+    """run_guard end to end with a faked API, as ``test_blocked_release_opens_issue`` does."""
+
+    def run_guard(
+        self,
+        merged: list[str],
+        rows: list[dict[str, Any]],
+        *,
+        next_version: str = "1.5.1",
+        last: str = "1.5.0",
+        env: dict[str, str] | None = None,
+        broken_issues: bool = False,
+    ) -> tuple[int, str, list[Any], str]:
+        calls: list[Any] = []
+
+        def fake_request(method: str, url: str, body: Any = None) -> Any:
+            calls.append((method, url, body))
+            if "/milestones" in url:
+                return [{"title": "1.5.x", "number": 12}, {"title": "1.6.0", "number": 13}]
+            if method == "GET" and "milestone=" in url:
+                if broken_issues:
+                    raise ri.urllib.error.URLError("down")
+                page = int(url.rsplit("page=", 1)[1])
+                return rows[(page - 1) * 100 : page * 100]
+            return [] if method == "GET" else {"number": 99}
+
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = Path(tmp) / "summary.md"
+            summary.write_text("")
+            with (
+                mock.patch.object(ri, "_request", fake_request),
+                mock.patch.object(ri, "provenance_violation", lambda *a, **k: None),
+                mock.patch.object(ri, "milestone_merges", lambda *a, **k: merged),
+                mock.patch.dict(os.environ, {"DRY_RUN": "false", "GITHUB_STEP_SUMMARY": str(summary), **(env or {})}),
+                redirect_stdout(out),
+            ):
+                code = ri.main(["guard", "--repo", "o/r", "--next", next_version, "--last", last])
+            text = summary.read_text()
+        return code, out.getvalue(), calls, text
+
+    def test_fix_only_release_ignores_open_milestone(self) -> None:
+        # The range holds a Dependabot commit and a fix, but no milestone merge.
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            for args in (
+                ["init", "-q", "-b", "main"],
+                ["config", "user.name", "T"],
+                ["config", "user.email", "t@example.invalid"],
+                ["config", "commit.gpgsign", "false"],
+                ["commit", "-q", "--allow-empty", "-m", "chore: seed"],
+                ["tag", "v1.5.0"],
+                ["commit", "-q", "--allow-empty", "-m", "chore(deps): bump x"],
+                ["commit", "-q", "--allow-empty", "-m", "fix: y"],
+            ):
+                subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
+            calls: list[Any] = []
+
+            def fake_request(method: str, url: str, body: Any = None) -> Any:
+                calls.append(url)
+                return [{"title": "1.5.x", "number": 12}] if "/milestones" in url else []
+
+            out = io.StringIO()
+            with (
+                mock.patch.object(ri, "_request", fake_request),
+                mock.patch.object(ri, "provenance_violation", lambda *a, **k: None),
+                mock.patch.object(ri, "REPO_ROOT", repo),
+                redirect_stdout(out),
+            ):
+                code = ri.main(["guard", "--repo", "o/r", "--next", "1.5.1", "--last", "1.5.0"])
+        self.assertEqual(code, 0, out.getvalue())
+        self.assertFalse([u for u in calls if "milestone=" in u], calls)
+
+    def test_milestone_merge_with_open_issue_blocks(self) -> None:
+        code, out, calls, _ = self.run_guard(["1.5.x"], [issue(7), issue(3)])
+        self.assertEqual(code, 1)
+        self.assertIn("#3, #7", out)
+        posts = [c for c in calls if c[0] == "POST"]
+        self.assertEqual(len(posts), 1)
+        self.assertIn("#3, #7", posts[0][2]["body"])
+
+    def test_milestone_merge_with_open_issue_dry_run_opens_no_issue(self) -> None:
+        code, _, calls, _ = self.run_guard(["1.5.x"], [issue(7)], env={"DRY_RUN": "true"})
+        self.assertEqual(code, 1)
+        self.assertFalse([c for c in calls if c[0] == "POST"])
+
+    def test_milestone_merge_with_empty_milestone_allows(self) -> None:
+        code, _, calls, _ = self.run_guard(["1.5.x"], [])
+        self.assertEqual(code, 0)
+        self.assertFalse([c for c in calls if c[0] == "POST"])
+
+    def test_milestone_merge_with_waived_issue_allows_with_warning(self) -> None:
+        code, out, _, summary = self.run_guard(["1.5.x"], [issue(150, ri.WAIVER_LABEL)])
+        self.assertEqual(code, 0)
+        self.assertIn("::warning::release proceeds with waived issues: #150", out)
+        self.assertIn("#150", summary)
+
+    def test_waived_and_unwaived_blocks(self) -> None:
+        code, out, _, _ = self.run_guard(["1.5.x"], [issue(150, ri.WAIVER_LABEL), issue(9)])
+        self.assertEqual(code, 1)
+        self.assertIn("#9", out)
+        self.assertNotIn("#150", out)
+
+    def test_merged_milestone_title_must_match_version(self) -> None:
+        code, out, _, _ = self.run_guard(["1.5.x"], [], next_version="1.6.0", last="1.5.3")
+        self.assertEqual(code, 1)
+        self.assertIn("1.5.x", out)
+
+    def test_api_error_blocks_release(self) -> None:
+        code, out, _, _ = self.run_guard(["1.5.x"], [], broken_issues=True)
+        self.assertEqual(code, 1)
+        self.assertIn("refusing to release", out)
+
+    def test_git_error_reading_milestone_merges_blocks_release(self) -> None:
+        def broken(*a: Any, **k: Any) -> list[str]:
+            raise subprocess.CalledProcessError(128, ["git", "log"])
+
+        out = io.StringIO()
+        with (
+            mock.patch.object(ri, "_request", lambda *a, **k: [{"title": "1.5.x", "number": 12}]),
+            mock.patch.object(ri, "provenance_violation", lambda *a, **k: None),
+            mock.patch.object(ri, "milestone_merges", broken),
+            redirect_stdout(out),
+        ):
+            code = ri.main(["guard", "--repo", "o/r", "--next", "1.5.1", "--last", "1.5.0"])
+        self.assertEqual(code, 1)
+        self.assertIn("refusing to release", out.getvalue())
 
 
 class MilestonePaginationTest(unittest.TestCase):
