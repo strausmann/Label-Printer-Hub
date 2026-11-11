@@ -173,9 +173,23 @@ def _nickname_allowed(_path: str, line: str, m: re.Match[str]) -> bool:
     return False
 
 
-def _display_allowed(_path: str, line: str, _m: re.Match[str]) -> bool:
+# The README hero states the subtitle and the former name on lines of their own. Matching the
+# line text (not "the line below the H1") is the sturdier choice: it does not depend on layout,
+# and any edit of these sentences, or the same text in another file, is a hit again. The
+# former-name sentence is matched by its start so the link after it may change.
+_OLD_DISPLAY = "Label Printer " + "Hub"
+README_HERO_TAGLINE = f"**The self-hosted {_OLD_DISPLAY} for all your labels.**"
+README_HERO_FORMERLY = f"Formerly *{_OLD_DISPLAY}*."
+
+
+def _display_allowed(path: str, line: str, _m: re.Match[str]) -> bool:
     # The old display name survives only as the subtitle next to the new name.
-    return "Labelyard" in line
+    if "Labelyard" in line:
+        return True
+    if path == "README.md":
+        text = line.strip()
+        return text == README_HERO_TAGLINE or text.startswith(README_HERO_FORMERLY)
+    return False
 
 
 RULES: tuple[Rule, ...] = (

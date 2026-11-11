@@ -73,6 +73,22 @@ class BrandGuardTest(unittest.TestCase):
         self.add("docs/formats.md", f"{SLUG}.sheet and {SLUG}-backend\n")
         self.assertEqual(self.rules(), ["slug"])
 
+    def test_readme_hero_lines_allowed(self) -> None:
+        self.add(
+            "README.md",
+            f"**The self-hosted {DISPLAY} for all your labels.**\n\n"
+            f"Formerly *{DISPLAY}*. See the [guide](docs/migration/labelyard.md).\n",
+        )
+        self.assertEqual(self.rules(), [])
+
+    def test_readme_hero_text_elsewhere_or_changed_still_hit(self) -> None:
+        # counter-test: same text in another file, or an edited sentence in the README
+        self.add("docs/site/a.md", f"**The self-hosted {DISPLAY} for all your labels.**\n")
+        self.add("docs/site/b.md", f"Formerly *{DISPLAY}*.\n")
+        self.add("README.md", f"The self-hosted {DISPLAY} for all your labels, and more.\n")
+        hits = sorted(h.path for h in brand_guard.find_hits(self.root))
+        self.assertEqual(hits, ["README.md", "docs/site/a.md", "docs/site/b.md"])
+
     def test_slug_allowed_in_migration_guide_and_rename_adr(self) -> None:
         self.add("docs/migration/labelyard.md", f"image: ghcr.io/strausmann/{SLUG}-backend\n")
         self.add("docs/decisions/0099-rename-to-labelyard.md", f"repo strausmann/{SLUG}\n")

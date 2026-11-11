@@ -7,8 +7,9 @@
 
 # Labelyard
 
-**The self-hosted Label Printer Hub for all your labels.** That is Labelyard.
-Labelyard. Formerly *Label Printer Hub*. The new name changes no data and no API path; see the [migration guide](docs/migration/labelyard.md).
+**The self-hosted Label Printer Hub for all your labels.**
+
+Formerly *Label Printer Hub*. The new name changes no data and no API path; see the [migration guide](docs/migration/labelyard.md).
 
 Website: <https://labelyard.app>
 
