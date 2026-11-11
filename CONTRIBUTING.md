@@ -257,6 +257,8 @@ docker pull ghcr.io/strausmann/label-printer-hub-backend:1.5.0-rc.1
 
 A preview is not a release: it gets no Git tag, no GitHub Release, no changelog entry, no `latest` / `x.y` / `x` tags and nothing on Docker Hub. Previews are removed from GHCR once their release exists.
 
+For a patch milestone `x.y.x` use version `x.y.x`: the workflow builds `x.y.<next free patch>-rc.N`. A weekly **GHCR cleanup** run prunes the package to the releases from 1.4.0, their floating tags, `dev` and open previews, and never touches anything younger than a day. It only deletes when the repository variable `GHCR_CLEANUP_ENABLED` is `true`; a manual run defaults to dry-run. Cleanup and preview runs share one concurrency group, so they never overlap, and a newer queued run replaces an older *pending* one: a skipped cleanup or preview run is expected, so re-dispatch it if needed. The rules live in `scripts/ghcr_rules.py` (tests: `scripts/test_ghcr_rules.py`).
+
 **Two guards keep the numbering honest.**
 
 1. The **`release-impact`** check runs on every pull request into `main`. It classifies the PR title (used by a squash merge) and every commit (kept by a merge commit) with the release rules of `.releaserc.json`. From any branch other than `milestone/*` only patch-level or non-releasing changes pass; a `feat`, `!` or `BREAKING CHANGE:` fails and names the milestone branch to target instead. From `milestone/x.y.z` the last release plus the highest impact must equal `x.y.z`, and the GitHub milestone `x.y.z` must be open. The job summary lists each commit with its impact.

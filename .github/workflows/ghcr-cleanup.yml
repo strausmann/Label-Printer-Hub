@@ -30,7 +30,10 @@ on:
 permissions: {}
 
 concurrency:
-  group: ghcr-cleanup
+  # One group with preview-image.yml: a cleanup never runs while a preview is
+  # being published, and the keep rule is never built from a stale tag list.
+  # A newer queued run replaces an older *pending* one; re-dispatch if needed.
+  group: ghcr-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:
@@ -39,10 +42,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
+      contents: read
       packages: write
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+
       # Previews (x.y.z-rc.N) are kept until x.y.z is released. The registry
       # tag list decides which ones are still open; they join the keep rule.
+      # A package that does not exist yet has an empty tag list (the script
+      # treats 403/404 on the tag list that way; any other error fails).
       - name: Build the keep rule
         id: keep
         env:
@@ -51,20 +62,10 @@ jobs:
           IMAGE_PATH: ${{ github.repository_owner }}/label-printer-hub-backend
         run: |
           set -euo pipefail
-          image="${IMAGE_PATH,,}"
-          registry_token=$(printf 'user = "%s:%s"\n' "$ACTOR" "$GHCR_TOKEN" \
-            | curl -fsS -K - "https://ghcr.io/token?scope=repository:${image}:pull" | jq -r .token)
-          tags=$(printf 'header = "Authorization: Bearer %s"\n' "$registry_token" \
-            | curl -fsS -K - "https://ghcr.io/v2/${image}/tags/list?n=10000" | jq -r '.tags[]?')
-          base='dev|latest|1|1\.([4-9]|[1-9][0-9]+)(\.(0|[1-9][0-9]*))?|([2-9]|[1-9][0-9]+)(\.(0|[1-9][0-9]*)){0,2}'
-          open_previews=""
-          while IFS= read -r t; do
-            [[ "$t" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-rc\.[0-9]+$ ]] || continue
-            grep -qxF "${BASH_REMATCH[1]}" <<<"$tags" && continue
-            open_previews+="|${t//./\\.}"
-          done <<<"$tags"
-          echo "regex=^(${base}${open_previews})\$" >> "$GITHUB_OUTPUT"
-          echo "Open previews kept: ${open_previews:-none}" >> "$GITHUB_STEP_SUMMARY"
+          python3 scripts/ghcr_rules.py fetch-tags > tags.txt
+          regex=$(python3 scripts/ghcr_rules.py keep-regex < tags.txt)
+          echo "regex=$regex" >> "$GITHUB_OUTPUT"
+          echo "Keep rule: \`$regex\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Prune label-printer-hub-backend
         uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
@@ -80,5 +81,8 @@ jobs:
           delete-untagged: true
           delete-orphaned-images: true
           delete-ghost-images: true
+          # Nothing younger than a day is a candidate: a publish in flight
+          # (platform manifests pushed, tag not set yet) is never deleted.
+          older-than: 1 day
           validate: true
           dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
