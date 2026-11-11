@@ -196,7 +196,7 @@ PRs that fail any check won't be reviewed until green.
 
 ## Website
 
-The project website <https://labelyard.app> lives in [`website/`](website/) (Astro Starlight). It is the user documentation: install, using, admin, integrations, developers and the configuration reference.
+The project website <https://labelyard.app> lives in [`website/`](website/) (Astro Starlight). It is the user documentation: install, using, admin, integrations, developers and the configuration reference. Merged changes go live on <https://labelyard.app> from `main`; pull requests only build.
 
 ```bash
 pnpm -C website install && pnpm -C website dev

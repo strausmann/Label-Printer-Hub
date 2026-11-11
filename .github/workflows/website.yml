@@ -1,9 +1,11 @@
 name: website
 
-# Builds the Labelyard site (website/, Astro Starlight) and checks it. No deploy here; the
-# deploy job comes with GitHub Pages. The built site is uploaded as an artifact for review.
+# Builds the Labelyard site (website/, Astro Starlight) and checks it. The built site is
+# uploaded as an artifact for review. Only a push to main (or a manual run on main) deploys it
+# to GitHub Pages; milestone pushes and pull requests build and check, never deploy.
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "website/**"
@@ -22,13 +24,14 @@ on:
       - "frontend/src/design/**"
       - ".github/workflows/website.yml"
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   parity:
     name: locale parity
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -44,6 +47,8 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -94,10 +99,20 @@ jobs:
           path: website/dist
           retention-days: 7
 
+      # The Pages artifact is built on main only. The site sits at the domain root with a fixed
+      # `site` in astro.config.mjs, so there is no configure-pages step.
+      - name: Upload the Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: website/dist
+
   links:
     name: external links
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -116,3 +131,24 @@ jobs:
             --exclude '^https://github\.com/strausmann/labelyard'
             'website/dist/**/*.html'
           fail: true
+
+  # The external link job is not a gate: a third-party site being down must not stop a docs
+  # deploy. The environment `github-pages` additionally allows main only (a second layer).
+  deploy:
+    name: deploy
+    needs: [parity, build]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
