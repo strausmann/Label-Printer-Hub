@@ -158,10 +158,19 @@ test.describe.serial("calibration", () => {
     await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 390, height: 800 });
     expect(await noSideScroll(page)).toBe(true);
-    await page.getByRole("heading", { level: 2, name: "Step 1: Print the calibration page" }).scrollIntoViewIfNeeded();
+    // Bring the field itself into view first, and let the scroll settle. The heading above it is already visible at 390 px, so
+    // scrolling to the heading does nothing, and the click then scrolls the page to reach the field (it sits below the fold, behind
+    // the tab bar). A scroll closes the non-modal list (React Aria), and its event arrives after the click opened the list:
+    // on a slow runner the list was gone before it could be measured. A person taps a field that is already on screen.
+    await box.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    const scrolledTo = await page.evaluate(() => window.scrollY);
     await box.click();
-    await page.waitForTimeout(300);
-    const list = (await page.getByRole("listbox").boundingBox())!;
+    await page.waitForTimeout(300); // the list scales in for 140 ms
+    expect(await page.evaluate(() => window.scrollY), "the click must not scroll the page").toBe(scrolledTo);
+    const listbox = page.getByRole("listbox");
+    await expect(listbox).toBeVisible();
+    const list = (await listbox.boundingBox())!;
     const bar = (await page.locator("[data-tabbar]").boundingBox())!;
     expect(list.y + list.height).toBeLessThanOrEqual(bar.y);
   });
