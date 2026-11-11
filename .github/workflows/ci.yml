@@ -179,7 +179,7 @@ jobs:
       - name: Built output has no external font URLs
         env:
           REQUIRE_DIST: "1"
-        run: pnpm exec vitest run src/build.test.ts
+        run: pnpm exec vitest run src/build.test.ts src/licences/build-gate.test.ts
 
       # Browser tests against the real backend serving the build (backend/tests/e2e_app.py).
       - name: Install the browser
