@@ -329,12 +329,20 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await box.press("Escape");
         await expect(list).toHaveCount(0);
         await page.waitForTimeout(400); // past the window in which the Escape counts
-        await frame.evaluate(async (el, arrow) => {
-          document.querySelector<HTMLElement>(arrow)!.click();
-          // The keyboard is up a moment after the press and the browser scrolls the frame to the field.
-          await new Promise((resolve) => setTimeout(resolve, 60));
-          el.scrollTop += 30;
-        }, ARROW);
+        await page.evaluate(() => {
+          const w = window as unknown as { __opens: number };
+          w.__opens = 0;
+          new MutationObserver((records) => {
+            for (const r of records)
+              for (const n of r.addedNodes) if (n instanceof Element && (n.matches('[role="listbox"]') || n.querySelector('[role="listbox"]'))) w.__opens++;
+          }).observe(document.body, { childList: true, subtree: true });
+        });
+        await page.locator(ARROW).click();
+        await expect(list).toBeVisible();
+        // The keyboard is up a moment after the press and the browser scrolls the frame to the field.
+        await frame.evaluate((el) => (el.scrollTop += 30));
+        // Opened by the arrow, closed by the scroll, opened again once it was over: two openings, and it ends open.
+        await expect.poll(() => page.evaluate(() => (window as unknown as { __opens: number }).__opens)).toBe(2);
         await expect(list).toBeVisible();
       });
 
