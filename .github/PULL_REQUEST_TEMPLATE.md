@@ -20,6 +20,14 @@ included here.
 Closes #
 <!-- or Refs # if it's a partial fix -->
 
+## Target branch
+
+<!-- Mark one. See CONTRIBUTING.md, "Milestones, branches and releases". The release-impact check enforces it. -->
+
+- [ ] `main` — patch-level or non-releasing changes only (`fix`, `perf`, `docs`, `ci`, `chore`, …; no `feat`, `!` or `BREAKING CHANGE:`)
+- [ ] `milestone/x.y.0` — feature work for that milestone
+- [ ] Milestone release `milestone/x.y.0` → `main` — merge with a **merge commit**, not squash
+
 ## Type of change
 
 <!-- Mark with x. Multiple OK. -->
