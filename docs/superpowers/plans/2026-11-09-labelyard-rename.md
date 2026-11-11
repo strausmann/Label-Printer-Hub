@@ -439,7 +439,7 @@ Pinned versions (exact, no ranges; checked on npm 2026-11-09):
 | `starlight-links-validator` | `0.27.0` (peer `@astrojs/starlight >=0.42.0`) | 2026-10-09 |
 | `@astrojs/markdown-satteri` | latest satisfying `>=0.3.2`, pinned exactly at implementation | — |
 
-Node: `website/.nvmrc` = `22` (same as `frontend/.nvmrc`), `engines.node: ">=22"`, `packageManager: "pnpm@9.15.9"` (same as `frontend/package.json`).
+Node: `website/.nvmrc` = `22` (same as `frontend/.nvmrc`), `engines.node: ">=22.23.4"` (the minimum of `astro` 7.4.7), `packageManager: "pnpm@9.15.9"` (same as `frontend/package.json`).
 
 #### Files
 
@@ -464,6 +464,8 @@ Landing page (`index.mdx`, `template: splash`, both languages): lockup, H1 `Labe
 - [ ] **Step 2:** Write the parity tests, `node --test website/scripts` → FAIL; implement `check-locale-parity.mjs` → PASS. Scaffold `package.json`, config, locales, sidebar labels and one page per group in both languages; spike (≤ 30 min): does the second `starlightOpenAPI` entry render `/de/developers/api/…` with German Starlight chrome? Record the answer in the PR; `pnpm -C website build` → expect a failure from the links validator for sidebar entries whose pages do not exist yet (proves the validator runs).
 - [ ] **Step 3:** Move/write the pages per the sidebar table, every page in English and German in the same commit; brand files copied from `docs/brand/labelyard/`.
 - [ ] **Step 4:** `pnpm -C website build` exit 0. Counter-tests: delete `de/using/printers.md` → `locale parity` fails with `missing de: using/printers` (an English-only new page fails the same way); a link to `/using/missing/` → build fails; (second part only) add a field to `Settings` without regenerating → freshness job red; drop the German label of one group → build fails. Each copied brand file is byte-identical to its source (`cmp` step in the `build` job, so it runs from the first part on). `python3 scripts/brand_guard.py | grep '^website/'` empty (the site is scanned like any live file; the whole guard reaches exit 0 only in order Step 20). Extend `test_actions_are_pinned_to_full_commit_shas` to `website.yml`. Landing page and one page per group checked at 1280 × 800 and 390 × 844, light and dark, after loading `taste-skill:design-taste-frontend`, `emil-design-eng` and `mobile-native` (report a missing skill). `pnpm -C website preview` and walk every sidebar group in English and German; the language menu switches to the same page on every page, including the API reference; the API reference lists the `/api/v1` operations.
+- [ ] **Second part (order Step 19), in addition to the move:** commit the OpenAPI document — remove the `website/openapi/labelyard.json` line from `.gitignore` and commit the generated file with the freshness job.
+- [ ] **Second part (order Step 19):** turn the old user docs into one-line pointers to their site pages — `docs/site/operations/api-keys.md`, `docs/site/operations/templates/*`, `examples/README.md` walkthroughs, the README configuration table, `docs/migration/labelyard.md` (keep the guard's `LEGACY_*` entries in step) — after diffing each old file against its site page so nothing only the old file says is lost.
 - [ ] **Step 5:** Commit `docs: add the Labelyard site with audience-grouped user docs` (first part, order Step 8); the second part (order Step 19: #20 move, freshness job, German screenshots, test updates from the table above) commits `docs: move the project docs into the Labelyard site`.
 
 ### Task 8: Glossary, house style and Vale

@@ -34,6 +34,7 @@ Setz es als `LABELYARD_WEBHOOK_API_KEY` (oder unter Einstellungen > Zugang und S
 | `202` | Angenommen; der Auftrag ist eingereiht |
 | `401` | Der Header `X-API-Key` fehlt oder ist falsch |
 | `422` | Ein Pflichtfeld im Inhalt fehlt |
+| `502` | Das Plugin konnte den Eintrag in seiner App nicht nachschlagen |
 | `503` | Kein Webhook-Schlüssel gesetzt oder kein Banddrucker eingeschaltet |
 
 ## Hinter einem Proxy mit SSO

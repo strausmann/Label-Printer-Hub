@@ -34,6 +34,7 @@ Set it as `LABELYARD_WEBHOOK_API_KEY` (or in Settings > Access and keys) and con
 | `202` | Accepted; the job is queued |
 | `401` | The `X-API-Key` header is missing or wrong |
 | `422` | A required field of the body is missing |
+| `502` | The plugin could not look the item up in its app |
 | `503` | No webhook key is set, or no tape printer is enabled |
 
 ## Behind a proxy with SSO

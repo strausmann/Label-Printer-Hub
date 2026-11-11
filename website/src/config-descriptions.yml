@@ -53,8 +53,8 @@ spoolman_timeout:
   en: 'Seconds to wait for Spoolman.'
   de: 'Sekunden, die auf Spoolman gewartet wird.'
 server_port:
-  en: 'Port of the process when it runs outside the image. The image listens on `PORT` (8000) instead.'
-  de: 'Port des Prozesses, wenn er außerhalb des Images läuft. Das Image hört stattdessen auf `PORT` (8000).'
+  en: 'Currently has no effect: the application does not read it. In the container the port comes from the `PORT` variable (default `8000`), which the start command passes to uvicorn as `--port`.'
+  de: 'Derzeit ohne Wirkung: Die Anwendung liest sie nicht. Im Container kommt der Port aus der Variablen `PORT` (Standard `8000`), die der Startbefehl als `--port` an uvicorn übergibt.'
 log_level:
   en: 'One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Any other value stops the start with an error.'
   de: 'Einer der Werte `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Jeder andere Wert bricht den Start mit einem Fehler ab.'

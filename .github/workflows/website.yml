@@ -9,6 +9,8 @@ on:
       - "website/**"
       - "docs/brand/labelyard/**"
       - "backend/app/**"
+      - "backend/scripts/export_openapi.py"
+      - "frontend/src/design/**"
       - ".github/workflows/website.yml"
   push:
     branches: [main, "milestone/**"]
@@ -16,6 +18,8 @@ on:
       - "website/**"
       - "docs/brand/labelyard/**"
       - "backend/app/**"
+      - "backend/scripts/export_openapi.py"
+      - "frontend/src/design/**"
       - ".github/workflows/website.yml"
 
 permissions:
@@ -76,7 +80,13 @@ jobs:
         run: pnpm -C website install --frozen-lockfile
       # starlight-links-validator fails the build on a broken internal link or anchor.
       - name: Build
-        run: pnpm -C website build
+        run: |
+          set -o pipefail
+          pnpm -C website build 2>&1 | tee website-build.log
+      # A build that never reaches the validator (a hook that crashed after the pages were
+      # written) can still exit 0; only the validator's own success line proves it ran.
+      - name: The links validator ran
+        run: grep -q "All internal links are valid" website-build.log
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:

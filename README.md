@@ -210,7 +210,7 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 | `LABELYARD_GROCY_URL` | _empty_ | Grocy base URL |
 | `LABELYARD_GROCY_API_KEY` | _empty_ | Grocy API key |
 | `LABELYARD_SPOOLMAN_URL` | _empty_ | Spoolman base URL (no auth) |
-| `LABELYARD_SERVER_PORT` | `8090` | Internal port (overridden to `8000` in the container — see Dockerfile) |
+| `LABELYARD_SERVER_PORT` | `8090` | Currently has no effect: the application does not read it. The container listens on `PORT` (default `8000`), which the start command passes to uvicorn as `--port` |
 | `LABELYARD_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 
 All variables share the `LABELYARD_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`. The prefix of earlier releases is still read as a deprecated fallback, and a `LABELYARD_` variable always wins; see [Environment variables](docs/migration/labelyard.md#environment-variables) in the migration guide. A variable set in the environment wins over the stored value and locks the field in the UI (D4). Printers have no variables: they are managed in Settings > Printers.

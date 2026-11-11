@@ -157,7 +157,7 @@ Also set in the web UI; a value set here wins and locks the field there.
 
 Default: `8090`
 
-Port of the process when it runs outside the image. The image listens on `PORT` (8000) instead.
+Currently has no effect: the application does not read it. In the container the port comes from the `PORT` variable (default `8000`), which the start command passes to uvicorn as `--port`.
 
 ### `LABELYARD_LOG_LEVEL`
 

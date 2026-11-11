@@ -15,7 +15,7 @@ Labelyard ships as one image, `ghcr.io/strausmann/labelyard` (also on Docker Hub
 
 ## The compose file
 
-This is the standalone variant without a reverse proxy, for a trusted LAN. The repository has the same file and the proxy variants under `examples/`.
+This is the standalone variant without a reverse proxy, for a trusted LAN, cut down to what a first start needs. `examples/compose.standalone.yml` in the repository is the fuller version with more variables (port, trusted proxies, database, log level); the proxy variants are next to it.
 
 ```yaml
 services:

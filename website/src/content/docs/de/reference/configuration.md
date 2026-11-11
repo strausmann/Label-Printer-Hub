@@ -157,7 +157,7 @@ Auch in der Weboberfläche einstellbar; ein hier gesetzter Wert gewinnt und sper
 
 Standard: `8090`
 
-Port des Prozesses, wenn er außerhalb des Images läuft. Das Image hört stattdessen auf `PORT` (8000).
+Derzeit ohne Wirkung: Die Anwendung liest sie nicht. Im Container kommt der Port aus der Variablen `PORT` (Standard `8000`), die der Startbefehl als `--port` an uvicorn übergibt.
 
 ### `LABELYARD_LOG_LEVEL`
 
