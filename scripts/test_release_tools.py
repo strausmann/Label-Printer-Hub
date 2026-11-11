@@ -112,6 +112,25 @@ class ScopeTest(unittest.TestCase):
                 result = self._scope(base, head)
                 self.assertEqual((result.returncode, result.stdout.strip()), (0, "true"))
 
+    def test_diff_failure_counts_as_touched(self) -> None:
+        # Resolvable base, unresolvable head: git diff fails; the check must not pass silently.
+        result = self._scope(self.base, "f" * 40)
+        self.assertEqual((result.returncode, result.stdout.strip()), (0, "true"))
+
+    def test_no_merge_base_counts_as_touched(self) -> None:
+        _git(self.repo, "checkout", "-q", "--orphan", "other")
+        head = self._commit({"docs/a.md": "a\n"})
+        result = self._scope(self.base, head)
+        self.assertEqual((result.returncode, result.stdout.strip()), (0, "true"))
+
+    def test_rename_away_from_a_listed_path_is_touched(self) -> None:
+        self.base = self._commit({"scripts/release_impact.py": "x = 1\n" * 20})
+        (self.repo / "docs").mkdir()
+        _git(self.repo, "mv", "scripts/release_impact.py", "docs/moved.py")
+        _git(self.repo, "commit", "-q", "-m", "move")
+        head = _git(self.repo, "rev-parse", "HEAD")
+        self.assertEqual(self._scope(self.base, head).stdout.strip(), "true")
+
     def test_wrong_argument_count_fails(self) -> None:
         result = subprocess.run(
             [str(SCRIPTS / "release_tools_scope.sh"), "only-one"],

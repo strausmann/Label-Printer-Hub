@@ -284,5 +284,9 @@ def test_release_tools_steps_gate_on_the_scope_check() -> None:
     node = next(s for s in heavy if str(s.get("uses", "")).startswith("actions/setup-node"))
     assert (
         node["with"]["node-version"]
-        == _load("release.yml")["jobs"]["release"]["steps"][1]["with"]["node-version"]
+        == next(
+            st
+            for st in _load("release.yml")["jobs"]["release"]["steps"]
+            if str(st.get("uses", "")).startswith("actions/setup-node")
+        )["with"]["node-version"]
     )

@@ -21,6 +21,14 @@ if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2
   exit 0
 fi
 
+# Read the diff into a variable first: a failing `git diff` inside a process substitution
+# would not stop the script and would end as "not touched" (fail open). Any error means
+# "touched", so the dry run runs.
+if ! files="$(git diff --name-only --no-renames "${base}...${head}" 2> /dev/null)"; then
+  echo true
+  exit 0
+fi
+
 while IFS= read -r file; do
   case "$file" in
     .github/release-tools/* | .github/workflows/release-tools.yml | .releaserc.json | \
@@ -30,5 +38,5 @@ while IFS= read -r file; do
       exit 0
       ;;
   esac
-done < <(git diff --name-only "${base}...${head}")
+done <<< "$files"
 echo false
