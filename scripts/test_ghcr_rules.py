@@ -125,6 +125,12 @@ class KeepRegexTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cleanup action accepts"):
             g.keep_regex(tags)
 
+    def test_repetition_count_does_not_grow_with_open_versions(self) -> None:
+        few = safe_regex_metrics(g.keep_regex(["1.5.1-rc.1"]))
+        many = safe_regex_metrics(g.keep_regex([f"1.{i}.0-rc.1" for i in range(10, 40)]))
+        self.assertEqual(few, many)
+        self.assertLessEqual(many[1], SAFE_REGEX_REPETITION_LIMIT)
+
     def test_pattern_with_several_open_versions_passes_the_validator_model(self) -> None:
         tags = ["1.5.1-rc.1", "1.5.1-rc.2", "1.6.0-rc.1", "2.0.0-rc.4"]
         height, count = safe_regex_metrics(g.keep_regex(tags))
@@ -217,7 +223,7 @@ class CliTest(unittest.TestCase):
     def test_keep_regex(self) -> None:
         code, out = self.run_cli(["keep-regex"], "1.5.1-rc.1\n1.4.0\n")
         self.assertEqual(code, 0)
-        self.assertIn(r"1\.5\.1-rc\.[0-9]+", out)
+        self.assertIn(r"(1\.5\.1)-rc\.[0-9]+", out)
 
     def test_next_preview_reads_released_from_tags(self) -> None:
         code, out = self.run_cli(["next-preview", "1.5.x"], "1.5.0\n1.5.1\n")

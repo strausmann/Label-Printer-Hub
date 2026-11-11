@@ -68,7 +68,7 @@ def keep_regex(tags: list[str]) -> str:
     """Return the exclude-tags regex: base rule plus every open preview.
 
     A preview x.y.z-rc.N is open while the release x.y.z is not among the tags.
-    Previews are matched per open version (``x\\.y\\.z-rc\\.[0-9]+``), not per
+    Previews are matched per open version (``(x.y.z|...)-rc.N`` with one shared suffix), not per
     tag, so the pattern grows with the number of open versions, not with the
     number of preview builds. Raises ValueError if it still exceeds the length
     the cleanup action accepts, so the job fails here with a clear message.
@@ -80,7 +80,12 @@ def keep_regex(tags: list[str]) -> str:
         if match is None or match.group(1) in present or match.group(1) in open_versions:
             continue
         open_versions.append(match.group(1))
-    suffix = "".join(f"|{re.escape(v)}-rc\\.[0-9]+" for v in sorted(open_versions))
+    # One shared "-rc.N" suffix: the validator caps the number of repetitions
+    # (25), so a repetition per open version would fail after a few of them.
+    suffix = ""
+    if open_versions:
+        alternatives = "|".join(re.escape(v) for v in sorted(open_versions))
+        suffix = f"|({alternatives})-rc\\.[0-9]+"
     pattern = f"^({BASE_KEEP}{suffix})$"
     if len(pattern) > MAX_REGEX_LENGTH:
         raise ValueError(
