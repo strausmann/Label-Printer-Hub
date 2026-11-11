@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -228,6 +230,21 @@ class EvaluatePrTest(unittest.TestCase):
         self.assertTrue(result.ok, result.errors)
 
 
+    def test_milestone_pr_title_is_ignored(self) -> None:
+        # Milestone PRs are merged with a merge commit, never squashed: the title
+        # never reaches main, so only the commits decide the impact.
+        result = self.evaluate(title="feat: x", head_ref="milestone/1.5.0", commits=commits("docs: a"))
+        self.assertFalse(result.ok)
+        self.assertIn("no releasable change", result.errors[0])
+        self.assertNotIn("PR title", [e.label for e in result.entries])
+
+    def test_non_milestone_pr_title_counts(self) -> None:
+        # Other branches are squash-merged: the title becomes the commit on main.
+        result = self.evaluate(title="feat: x", head_ref="fix/x", commits=commits("docs: a"))
+        self.assertFalse(result.ok)
+        self.assertIn("PR title", result.errors[0])
+
+
 class GuardTest(unittest.TestCase):
     def test_next_patch_is_allowed_without_milestone(self) -> None:
         self.assertTrue(ri.guard_allows("1.4.2", "1.4.1", milestones()))
@@ -263,6 +280,7 @@ class GuardTest(unittest.TestCase):
         out = io.StringIO()
         with (
             mock.patch.object(ri, "_request", fake_request),
+            mock.patch.object(ri, "provenance_violation", lambda *a, **k: None),
             mock.patch.dict(os.environ, env, clear=False),
             redirect_stdout(out),
         ):
@@ -297,6 +315,19 @@ class GuardTest(unittest.TestCase):
             ri.open_block_issue("o/r", "1.5.0", "1.4.1", request=fake_request)
         self.assertIn("#5", out.getvalue())
 
+    def test_provenance_violation_blocks_an_allowed_version(self) -> None:
+        out = io.StringIO()
+        with (
+            mock.patch.object(ri, "_request", lambda *a, **k: [{"title": "1.6.0"}]),
+            mock.patch.object(
+                ri, "provenance_violation", lambda *a, **k: "minor/major commits outside the milestone merge: abc1234"
+            ),
+            redirect_stdout(out),
+        ):
+            code = ri.main(["guard", "--repo", "o/r", "--next", "1.6.0", "--last", "1.4.1"])
+        self.assertEqual(code, 1)
+        self.assertIn("abc1234", out.getvalue())
+
     def test_api_failure_refuses_to_release(self) -> None:
         def broken(method: str, url: str, body: Any = None) -> Any:
             raise ri.urllib.error.URLError("down")
@@ -306,6 +337,84 @@ class GuardTest(unittest.TestCase):
             code = ri.main(["guard", "--repo", "o/r", "--next", "1.5.0", "--last", "1.4.1"])
         self.assertEqual(code, 1)
         self.assertIn("refusing to release", out.getvalue())
+
+
+class ProvenanceTest(unittest.TestCase):
+    """The guard needs a real history: milestone merges are a property of the graph."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.repo = Path(self._tmp.name)
+        self.git("init", "-q", "-b", "main")
+        self.git("config", "user.name", "Test")
+        self.git("config", "user.email", "test@example.invalid")
+        self.git("config", "commit.gpgsign", "false")
+        self.commit("chore: seed")
+        self.git("tag", "v1.4.1")
+
+    def git(self, *args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=self.repo, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    def commit(self, message: str) -> str:
+        self.git("commit", "-q", "--allow-empty", "-m", message)
+        return self.git("rev-parse", "HEAD")
+
+    def merge_milestone(self, version: str, number: int = 7) -> None:
+        self.git(
+            "merge", "-q", "--no-ff", f"milestone/{version}", "-m", f"Merge pull request #{number} from o/milestone/{version}"
+        )
+
+    def violation(self, next_version: str = "1.5.0") -> str | None:
+        return ri.provenance_violation(next_version, "1.4.1", RULES, cwd=self.repo)
+
+    def test_feat_pushed_to_main_with_open_milestone_blocks(self) -> None:
+        sha = self.commit("feat: sneaked in")
+        message = self.violation()
+        assert message is not None
+        self.assertIn("minor/major commits outside the milestone merge", message)
+        self.assertIn(sha[:7], message)
+
+    def test_feat_inside_milestone_merge_allows(self) -> None:
+        self.git("switch", "-q", "-c", "milestone/1.5.0")
+        self.commit("feat: inside")
+        self.git("switch", "-q", "main")
+        self.commit("fix: on main meanwhile")
+        self.merge_milestone("1.5.0")
+        self.assertIsNone(self.violation())
+
+    def test_release_without_milestone_merge_blocks(self) -> None:
+        self.commit("fix: a")
+        message = self.violation()
+        assert message is not None
+        self.assertIn("no merge of milestone/1.5.0", message)
+
+    def test_feat_on_main_synced_into_milestone_blocks(self) -> None:
+        self.git("switch", "-q", "-c", "milestone/1.5.0")
+        inside = self.commit("feat: inside")
+        self.git("switch", "-q", "main")
+        outside = self.commit("feat: pushed to main")
+        self.git("switch", "-q", "milestone/1.5.0")
+        self.git("merge", "-q", "--no-ff", "main", "-m", "Merge branch 'main' into milestone/1.5.0")
+        self.git("switch", "-q", "main")
+        self.merge_milestone("1.5.0")
+        message = self.violation()
+        assert message is not None
+        self.assertIn(outside[:7], message)
+        self.assertNotIn(inside[:7], message)
+
+    def test_merge_of_another_milestone_does_not_count(self) -> None:
+        self.git("switch", "-q", "-c", "milestone/1.6.0")
+        self.commit("feat: other")
+        self.git("switch", "-q", "main")
+        self.merge_milestone("1.6.0")
+        self.assertIsNotNone(self.violation("1.5.0"))
+
+    def test_patch_release_needs_no_milestone_merge(self) -> None:
+        self.commit("fix: a")
+        self.assertIsNone(ri.provenance_violation("1.4.2", "1.4.1", RULES, cwd=self.repo))
 
 
 class MilestonePaginationTest(unittest.TestCase):

@@ -22,7 +22,7 @@ We develop each minor and major version on an integration branch `milestone/x.y.
 Two guards enforce the rule, both implemented in `scripts/release_impact.py`, which classifies commits with the same release rules as `.releaserc.json`:
 
 1. The PR check `release-impact` (`release-impact.yml`) on every PR into `main`: from a non-milestone branch, the PR title and all commits may only be patch or none; from `milestone/x.y.z`, the last release bumped by the highest impact must equal `x.y.z`, and the GitHub milestone `x.y.z` must be open.
-2. The release guard, wired as `verifyReleaseCmd` of `@semantic-release/exec`, runs before anything is tagged or published: the computed version must be the next patch of the last release or the title of an open GitHub milestone. Otherwise the run aborts and opens an issue `release blocked: computed <v>`. It covers what a PR check cannot see, such as a direct push by an admin.
+2. The release guard, wired as `verifyReleaseCmd` of `@semantic-release/exec`, runs before anything is tagged or published: the computed version must be the next patch of the last release or the title of an open GitHub milestone. Otherwise the run aborts and opens an issue `release blocked: computed <v>`. For a minor or major version it also requires provenance: the milestone merge (`Merge pull request #<n> from <owner>/milestone/<v>`) on the first-parent line, with every above-patch commit reachable through its second parent and not already on its first parent. It covers what a PR check cannot see, such as a direct push by an admin.
 
 ## Options considered
 

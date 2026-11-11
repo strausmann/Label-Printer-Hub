@@ -378,13 +378,17 @@ def evaluate_pr(
     rules: list[dict[str, Any]],
 ) -> CheckResult:
     """Decide whether a pull request to main respects the milestone model."""
-    entries = [Entry("PR title", title, commit_impact(parse_commit(title), rules))]
+    branch = MILESTONE_BRANCH_RE.match(head_ref) if same_repo else None
+    entries: list[Entry] = []
+    # A milestone PR is merged with a merge commit, never squashed: its title does
+    # not reach main. Every other PR is squash-merged, so its title becomes a commit.
+    if not (same_repo and head_ref.startswith("milestone/")):
+        entries.append(Entry("PR title", title, commit_impact(parse_commit(title), rules)))
     for c in filter_reverted(commits):
         entries.append(Entry(c.hash[:7] or "commit", c.header, commit_impact(c, rules)))
     pr_impact = max_impact(e.impact for e in entries)
     errors: list[str] = []
 
-    branch = MILESTONE_BRANCH_RE.match(head_ref) if same_repo else None
     if branch is None:
         for e in entries:
             if e.impact in ("minor", "major"):
@@ -470,6 +474,70 @@ def guard_allows(next_version: str, last: str | None, milestones: Callable[[], s
     return next_version in milestones()
 
 
+MILESTONE_MERGE_RE = re.compile(r"^Merge pull request #\d+ from [^/\s]+/milestone/(\d+\.\d+\.\d+)$")
+ABOVE_PATCH = ("major", "premajor", "minor", "preminor")
+
+
+def _is_ancestor(cwd: Path, commit: str, descendant: str) -> bool:
+    result = subprocess.run(["git", "merge-base", "--is-ancestor", commit, descendant], cwd=cwd, check=False)
+    return result.returncode == 0
+
+
+def provenance_violation(
+    next_version: str,
+    last: str | None,
+    rules: list[dict[str, Any]] | None = None,
+    cwd: Path = REPO_ROOT,
+) -> str | None:
+    """Why a non-patch release does not come from its milestone merge, or None.
+
+    A minor or major release must contain, on the first-parent line of HEAD, the
+    merge ``Merge pull request #<n> from <owner>/milestone/<next>``. Every commit
+    with an impact above patch must come in through that merge: an ancestor of its
+    second parent and not an ancestor of its first parent. The second condition
+    closes the bypass where a ``feat`` is pushed to main and then synced into the
+    milestone: it is an ancestor of the second parent too, but it was already on
+    main before the merge.
+    """
+    if last and next_version == bump(last, "patch"):
+        return None
+    rules = rules if rules is not None else load_release_rules()
+
+    def run(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout
+
+    rev_range = f"v{last}..HEAD" if last else "HEAD"
+    merges: list[str] = []
+    for line in run("log", "--first-parent", "--merges", "--format=%H %s", rev_range).splitlines():
+        sha, _, subject = line.partition(" ")
+        found = MILESTONE_MERGE_RE.match(subject)
+        if found and found.group(1) == next_version:
+            merges.append(sha)
+    out = run("log", "--format=%H%x1f%B%x1e", rev_range)
+    commits = []
+    for record in out.split("\x1e"):
+        record = record.strip("\n")
+        if record:
+            sha, _, body = record.partition("\x1f")
+            commits.append(parse_commit(body, sha))
+    above = [c for c in filter_reverted(commits) if commit_impact(c, rules) in ABOVE_PATCH]
+    if not merges:
+        shas = ", ".join(c.hash[:7] for c in above)
+        return f"no merge of milestone/{next_version} on the first-parent line since v{last or 'start'}" + (
+            f"; minor/major commits outside the milestone merge: {shas}" if shas else ""
+        )
+    outside = [
+        c.hash[:7]
+        for c in above
+        if not any(
+            _is_ancestor(cwd, c.hash, f"{m}^2") and not _is_ancestor(cwd, c.hash, f"{m}^1") for m in merges
+        )
+    ]
+    if outside:
+        return f"minor/major commits outside the milestone merge: {', '.join(outside)}"
+    return None
+
+
 def open_block_issue(repo: str, version: str, last: str | None, request: Callable[..., Any] | None = None) -> None:
     request = request or _request
     title = f"release blocked: computed {version}"
@@ -499,6 +567,14 @@ def run_guard(args: argparse.Namespace) -> int:
         print(annotation("error", f"release guard could not decide, refusing to release: {exc}"))
         return 1
     if allowed:
+        try:
+            violation = provenance_violation(args.next, last)
+        except (subprocess.CalledProcessError, OSError, ValueError) as exc:
+            print(annotation("error", f"release guard could not read the history, refusing to release: {exc}"))
+            return 1
+        if violation:
+            print(annotation("error", f"release blocked: {args.next} does not come from its milestone: {violation}"))
+            return 1
         print(f"  release guard: {args.next} allowed (last release {last or 'none'})")
         return 0
     print(
