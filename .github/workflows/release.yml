@@ -20,8 +20,8 @@ name: Release
 # X.Y.Z with Z >= 1. A release that contains a milestone merge also needs that
 # milestone to have no open issue, except issues labelled
 # `release:waived-by-maintainer`; a release without a milestone merge (a
-# Dependabot or single fix) never looks at a milestone. It is the last safety net behind the release-impact PR
-# check, e.g. against a direct push to main. See CONTRIBUTING.md, "Milestones,
+# Dependabot or single fix) never looks at a milestone. It is the last safety
+# net behind the release-impact PR check, e.g. against a direct push to main. See CONTRIBUTING.md, "Milestones,
 # branches and releases".
 #
 # When a scheduled run skips publishing:

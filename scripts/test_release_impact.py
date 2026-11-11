@@ -303,7 +303,6 @@ class EvaluatePrTest(unittest.TestCase):
         )
         self.assertTrue(result.ok, result.errors)
 
-
     def test_milestone_pr_title_is_ignored(self) -> None:
         # Milestone PRs are merged with a merge commit, never squashed: the title
         # never reaches main, so only the commits decide the impact.
@@ -479,9 +478,7 @@ class TempRepoCase(unittest.TestCase):
         self.git("tag", "v1.4.1")
 
     def git(self, *args: str) -> str:
-        return subprocess.run(
-            ["git", *args], cwd=self.repo, check=True, capture_output=True, text=True
-        ).stdout.strip()
+        return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True, text=True).stdout.strip()
 
     def commit(self, message: str) -> str:
         self.git("commit", "-q", "--allow-empty", "-m", message)
@@ -489,7 +486,12 @@ class TempRepoCase(unittest.TestCase):
 
     def merge_milestone(self, version: str, number: int = 7) -> None:
         self.git(
-            "merge", "-q", "--no-ff", f"milestone/{version}", "-m", f"Merge pull request #{number} from o/milestone/{version}"
+            "merge",
+            "-q",
+            "--no-ff",
+            f"milestone/{version}",
+            "-m",
+            f"Merge pull request #{number} from o/milestone/{version}",
         )
 
 
@@ -543,7 +545,9 @@ class ProvenanceTest(TempRepoCase):
         self.git("switch", "-q", "-c", "milestone/1.5.0")
         self.commit("feat: inside")
         self.git("switch", "-q", "main")
-        self.git("merge", "-q", "--no-ff", "milestone/1.5.0", "-m", "Merge pull request #7 from fork-owner/milestone/1.5.0")
+        self.git(
+            "merge", "-q", "--no-ff", "milestone/1.5.0", "-m", "Merge pull request #7 from fork-owner/milestone/1.5.0"
+        )
         self.assertIsNone(ri.provenance_violation("1.5.0", "1.4.1", RULES, cwd=self.repo))
         message = ri.provenance_violation("1.5.0", "1.4.1", RULES, cwd=self.repo, owner="o")
         assert message is not None
@@ -657,6 +661,11 @@ class MilestoneIssuesTest(unittest.TestCase):
         )
         self.assertEqual(found, ri.MilestoneIssues(open=[9], waived=[3, 150]))
 
+    def test_milestone_title_with_surrounding_spaces_is_found(self) -> None:
+        found = ri.milestone_issues("o/r", "1.5.x", get=self.getter([issue(5)], milestone=" 1.5.x "))
+        assert found is not None
+        self.assertEqual(found.open, [5])
+
     def test_unknown_milestone_is_none(self) -> None:
         self.assertIsNone(ri.milestone_issues("o/r", "9.9.x", get=self.getter([issue(1)])))
 
@@ -725,6 +734,7 @@ class MilestoneRuleGuardTest(unittest.TestCase):
         last: str = "1.5.0",
         env: dict[str, str] | None = None,
         broken_issues: bool = False,
+        merges_fn: Any = None,
     ) -> tuple[int, str, list[Any], str]:
         calls: list[Any] = []
 
@@ -746,13 +756,24 @@ class MilestoneRuleGuardTest(unittest.TestCase):
             with (
                 mock.patch.object(ri, "_request", fake_request),
                 mock.patch.object(ri, "provenance_violation", lambda *a, **k: None),
-                mock.patch.object(ri, "milestone_merges", lambda *a, **k: merged),
+                mock.patch.object(ri, "milestone_merges", merges_fn or (lambda *a, **k: merged)),
                 mock.patch.dict(os.environ, {"DRY_RUN": "false", "GITHUB_STEP_SUMMARY": str(summary), **(env or {})}),
                 redirect_stdout(out),
             ):
                 code = ri.main(["guard", "--repo", "o/r", "--next", next_version, "--last", last])
             text = summary.read_text()
         return code, out.getvalue(), calls, text
+
+    def test_range_passed_to_milestone_merges(self) -> None:
+        for last, expected in (("1.5.0", "v1.5.0..HEAD"), ("", "HEAD")):
+            seen: list[str] = []
+
+            def spy(rev_range: str, *a: Any, **k: Any) -> list[str]:
+                seen.append(rev_range)
+                return []
+
+            self.run_guard(["1.5.x"], [], last=last, next_version="1.5.1" if last else "1.6.0", merges_fn=spy)
+            self.assertEqual(seen, [expected])
 
     def test_fix_only_release_ignores_open_milestone(self) -> None:
         # The range holds a Dependabot commit and a fix, but no milestone merge.

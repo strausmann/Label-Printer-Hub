@@ -370,7 +370,11 @@ def milestone_issues(repo: str, title: str, get: HttpGet | None = None) -> Miles
     """
     get = get or (lambda url: _request("GET", url))
     number = next(
-        (m.get("number") for m in _all_pages(get, f"/repos/{repo}/milestones", state="all") if m.get("title") == title),
+        (
+            m.get("number")
+            for m in _all_pages(get, f"/repos/{repo}/milestones", state="all")
+            if str(m.get("title", "")).strip() == title.strip()
+        ),
         None,
     )
     if number is None:
@@ -611,6 +615,8 @@ def guard_decision(
 
 def _numbers(values: Iterable[int]) -> str:
     return ", ".join(f"#{n}" for n in sorted(values))
+
+
 ABOVE_PATCH = ("major", "premajor", "minor", "preminor")
 
 
@@ -667,9 +673,7 @@ def provenance_violation(
     outside = [
         c.hash[:7]
         for c in above
-        if not any(
-            _is_ancestor(cwd, c.hash, f"{m}^2") and not _is_ancestor(cwd, c.hash, f"{m}^1") for m in merges
-        )
+        if not any(_is_ancestor(cwd, c.hash, f"{m}^2") and not _is_ancestor(cwd, c.hash, f"{m}^1") for m in merges)
     ]
     if outside:
         return f"minor/major commits outside the milestone merge: {', '.join(outside)}"
