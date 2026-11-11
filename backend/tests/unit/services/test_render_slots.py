@@ -212,33 +212,68 @@ async def test_callers_without_a_key_can_hang_at_most_all_but_one_slot(
     assert await render_slots.render_bounded(lambda: 5, label="t", owner=no_key) == 5
 
 
-async def test_a_caller_without_a_key_waiting_for_a_slot_is_refused_once_the_group_is_full(
+async def test_a_caller_without_a_key_waits_for_the_group_at_most_its_limit(
     hang: _Hang,
 ) -> None:
-    """The group limit is checked again once the slot is taken (it filled while waiting)."""
+    """The group's slot is held by a render that got stuck while the next caller waited: that
+    caller is refused at its limit, never handed a second slot of the group."""
     no_key = render_slots.owner_of(None)
-    other = _Hang()
-    try:
-        first = asyncio.create_task(
-            render_slots.render_bounded(hang, 1, label="t", owner=no_key, timeout_s=0.3)
-        )
-        busy = asyncio.create_task(
-            render_slots.render_bounded(other, 2, label="t", owner=uuid4(), timeout_s=WAIT_S)
-        )
-        await _until(lambda: render_slots.free_slots() == 0)
-        waiting = asyncio.create_task(
-            render_slots.render_bounded(lambda: 3, label="t", owner=no_key, timeout_s=WAIT_S)
-        )
-        with pytest.raises(render_slots.RenderTimeoutError):
-            await first
-        other.release.set()
-        with pytest.raises(render_slots.RenderUnavailableError):
-            await waiting
-        assert await busy == 2
-    finally:
-        other.release.set()
+    first = asyncio.create_task(
+        render_slots.render_bounded(hang, 1, label="t", owner=no_key, timeout_s=0.1)
+    )
+    assert await asyncio.to_thread(hang.entered.acquire, True, WAIT_S)
+    waiting = asyncio.create_task(
+        render_slots.render_bounded(lambda: 2, label="t", owner=no_key, timeout_s=0.5)
+    )
+    with pytest.raises(render_slots.RenderTimeoutError):
+        await first
+    with pytest.raises(render_slots.RenderUnavailableError):
+        await waiting
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
     hang.release.set()
     await _until(lambda: render_slots.stuck_renders() == 0)
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+
+
+async def test_two_concurrent_renders_without_a_key_never_take_every_slot(hang: _Hang) -> None:
+    """TOCTOU: two callers without a key that start at the same time, before either is stuck,
+    must not both hold a slot. The second waits for the group's slot (at most the limit) and
+    is refused; at no point are all slots taken by the group, a key always gets one."""
+    no_key = render_slots.owner_of(None)
+    first = asyncio.create_task(
+        render_slots.render_bounded(hang, 1, label="t", owner=no_key, timeout_s=WAIT_S)
+    )
+    second = asyncio.create_task(
+        render_slots.render_bounded(hang, 2, label="t", owner=no_key, timeout_s=0.2)
+    )
+    assert await asyncio.to_thread(hang.entered.acquire, True, WAIT_S)
+    with pytest.raises(render_slots.RenderUnavailableError):
+        await second
+    assert not hang.entered.acquire(False)  # the second never started a thread
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
+    assert await render_slots.render_bounded(lambda: 3, label="t", owner=uuid4()) == 3
+    hang.release.set()
+    assert await first == 1
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+    # The group's slot is free again once the thread ended.
+    assert await render_slots.render_bounded(lambda: 4, label="t", owner=no_key) == 4
+
+
+async def test_renders_without_a_key_run_one_after_another(hang: _Hang) -> None:
+    """A second caller without a key waits for the first to end, then renders."""
+    no_key = render_slots.owner_of(None)
+    first = asyncio.create_task(
+        render_slots.render_bounded(hang, 1, label="t", owner=no_key, timeout_s=WAIT_S)
+    )
+    assert await asyncio.to_thread(hang.entered.acquire, True, WAIT_S)
+    second = asyncio.create_task(
+        render_slots.render_bounded(lambda: 2, label="t", owner=no_key, timeout_s=WAIT_S)
+    )
+    await asyncio.sleep(0.05)
+    assert not second.done()
+    hang.release.set()
+    assert await first == 1
+    assert await second == 2
     assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
 
 

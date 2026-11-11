@@ -81,13 +81,16 @@ ends the preview with `HTTP 504` `render-timeout` and fails a page job with
 `render_timeout`. Its drawing thread cannot be stopped and keeps its slot until it ends;
 until then the key's next preview answers 429 `too-many-previews` and its next page job
 fails with `render_timeout` at once, so one key cannot take both slots by retrying.
-Callers without a key (browser sessions, SSO users) share one group and are not locked per
-user; each of them still previews once at a time. The group may hold at most one stuck
-render (all slots but one): past that a preview without a key answers `HTTP 503`
-`render-unavailable` and a page job without a key fails with `render_unavailable` at once,
-so one slot always stays free for the keys. Several different keys can still each hang one
-render and so take every slot; keys are issued by an admin, revoke such a key. With
-every slot stuck, a preview answers `HTTP 503` `render-unavailable` and a page job fails
+Callers without a key (browser sessions, SSO users, the hub's own page jobs) share one
+group: it draws at most one page at a time (all slots but one), running or stuck, so one
+slot always stays free for the keys. A caller of the group waits at most the time limit for
+its turn; while a render of the group is stuck, a preview without a key answers `HTTP 503`
+`render-unavailable` and a page job without a key fails with `render_unavailable` at once.
+Known limitation: the callers without a key therefore block each other (one stuck render of
+one UI user refuses every UI user until it ends or the hub restarts); signed-in UI users
+are trusted, and each of them still previews once at a time. Several different keys can
+still each hang one render and so take every slot; keys are issued by an admin, revoke such
+a key. With every slot stuck, a preview answers `HTTP 503` `render-unavailable` and a page job fails
 with `render_unavailable` at once; a caller never waits longer than the time limit for a
 slot. `GET /readiness` shows stuck renders in the check `render_slots` (failing when every
 slot is stuck). `/healthz` does not, so restart the hub by hand then.

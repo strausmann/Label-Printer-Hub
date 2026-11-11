@@ -13,9 +13,16 @@ Stuck renders are counted per API key (``owner_of``). A key with a stuck render 
 further slot (``OwnerRenderStuckError``), so one key cannot hang every slot by sending hanging
 input again. Callers without a key (``NO_KEY``: browser sessions, SSO, the hub itself) share
 one owner, so a per-owner lock would let one user lock every user out. Instead the group may
-hold at most ``NO_KEY_STUCK_LIMIT`` (all slots but one) stuck renders; past that a caller
-without a key is refused at once (``RenderUnavailableError``), and one slot is always left
-that the group cannot hang.
+hold at most ``NO_KEY_STUCK_LIMIT`` (all slots but one) renders at once, running or stuck:
+a second semaphore of that size is taken in addition to the slot and held until the thread
+ends, so two renders started together cannot both hang and one slot is always left that the
+group cannot hang. With the group's renders all stuck, a caller without a key is refused at
+once (``RenderUnavailableError``); otherwise it waits for the group at most the time limit.
+
+Known limitation (accepted): the callers without a key block each other. While one of them
+renders, the next waits; while one render of theirs is stuck, every caller without a key gets
+``RenderUnavailableError`` until it ends or the hub restarts. Signed-in UI users are trusted,
+and the keys keep their slot.
 
 Accepted risk: several *different* keys can each hang one render and so take every slot.
 Keys are issued by an admin; a key that does this is revoked, and the hub restarted.
@@ -75,6 +82,9 @@ class OwnerRenderStuckError(Exception):
 class _Slots:
     gate: asyncio.Semaphore
     loop: asyncio.AbstractEventLoop
+    no_key_gate: asyncio.Semaphore = field(
+        default_factory=lambda: asyncio.Semaphore(NO_KEY_STUCK_LIMIT)
+    )
     in_use: int = 0
     stuck: int = 0
     stuck_by_owner: dict[Hashable, int] = field(default_factory=dict)
@@ -125,6 +135,15 @@ def _refusal(slots: _Slots, owner: Hashable | None) -> Exception | None:
     return OwnerRenderStuckError() if stuck else None
 
 
+async def _acquire_until(sem: asyncio.Semaphore, deadline: float) -> None:
+    """Take ``sem`` by ``deadline`` (loop time), else ``RenderUnavailableError``."""
+    remaining = deadline - asyncio.get_running_loop().time()
+    try:
+        await asyncio.wait_for(sem.acquire(), max(remaining, 0))
+    except TimeoutError:
+        raise RenderUnavailableError() from None
+
+
 def default_timeout_s() -> float:
     return get_settings().render_timeout_s
 
@@ -142,7 +161,8 @@ async def render_bounded[T](
 
     ``label`` names the render in the log (an id and a kind, never payload data). ``owner``
     (see ``owner_of``) is refused with ``OwnerRenderStuckError`` while it has a stuck render;
-    ``NO_KEY`` with ``RenderUnavailableError`` once it holds ``NO_KEY_STUCK_LIMIT`` of them.
+    ``NO_KEY`` with ``RenderUnavailableError`` once it holds ``NO_KEY_STUCK_LIMIT`` of them,
+    and it waits for the group's own semaphore as well (within the same limit).
     With every slot stuck the call raises ``RenderUnavailableError`` at once; otherwise it
     waits at most ``timeout_s`` for a slot (then the same error). ``on_start`` runs when the
     slot is taken, ``on_end`` once the thread has ended (both on the event loop, without an
@@ -156,30 +176,40 @@ async def render_bounded[T](
         raise refused
     if slots.stuck >= MAX_CONCURRENT_RENDERS:
         raise RenderUnavailableError()
+    grouped = owner == NO_KEY
+    deadline = asyncio.get_running_loop().time() + limit
+    if grouped:
+        await _acquire_until(slots.no_key_gate, deadline)
     try:
-        await asyncio.wait_for(slots.gate.acquire(), limit)
-    except TimeoutError:
-        raise RenderUnavailableError() from None
-    # No await from the acquire to the callback: the slot is always given back by the task.
+        await _acquire_until(slots.gate, deadline)
+    except BaseException:
+        if grouped:
+            slots.no_key_gate.release()
+        raise
+    # No await from the acquire to the callback: the slots are always given back by the task.
     slots.in_use += 1
-    refused = _refusal(slots, owner)
-    if refused is not None:  # the owner got stuck, or the group full, while this call waited
+
+    def _give_back() -> None:
         slots.in_use -= 1
         slots.gate.release()
+        if grouped:
+            slots.no_key_gate.release()
+
+    refused = _refusal(slots, owner)
+    if refused is not None:  # the owner got stuck, or the group full, while this call waited
+        _give_back()
         raise refused
     state = {"stuck": False}
     try:
         if on_start is not None:
             on_start()
     except BaseException:
-        slots.in_use -= 1
-        slots.gate.release()
+        _give_back()
         raise
     task = asyncio.ensure_future(asyncio.to_thread(fn, *args))
 
     def _end(done: asyncio.Future[Any]) -> None:
-        slots.in_use -= 1
-        slots.gate.release()
+        _give_back()
         if state["stuck"]:
             slots.stuck -= 1
             if owner is not None:
