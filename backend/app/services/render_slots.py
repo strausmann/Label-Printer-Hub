@@ -8,21 +8,33 @@ a slot freed early would let the next caller start one thread more than the cap.
 thread cannot be killed, so a render that exceeds its time limit is reported to its caller as
 ``RenderTimeoutError`` while its thread keeps the slot. Such a render counts as *stuck* until
 the thread ends; the count is logged and shown by the readiness check ``render_slots``.
+
+Stuck renders are counted per owner (the API key, all callers without a key as one group,
+``owner_of``). An owner with a stuck render gets no further slot (``OwnerRenderStuckError``),
+so one key cannot hang every slot by sending hanging input again. Waiting for a slot is
+bounded too: with every slot stuck a caller is refused at once, otherwise it waits at most
+the time limit (``RenderUnavailableError``).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Hashable
+from dataclasses import dataclass, field
 from typing import Any, Final
+from uuid import UUID
 
 from app.config import get_settings
 
 __all__ = [
     "MAX_CONCURRENT_RENDERS",
+    "NO_KEY",
+    "OwnerRenderStuckError",
     "RenderTimeoutError",
+    "RenderUnavailableError",
+    "free_slots",
+    "owner_of",
     "render_bounded",
     "stuck_renders",
 ]
@@ -30,17 +42,29 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 MAX_CONCURRENT_RENDERS: Final = 2  # renders at once, process-wide (spec 18, CPU)
+NO_KEY: Final = "no-key"
+"""The owner of every render without an API key (browser sessions, SSO, the hub itself)."""
 
 
 class RenderTimeoutError(Exception):
     """The render ran longer than its time limit; its thread still holds its slot."""
 
 
+class RenderUnavailableError(Exception):
+    """No slot was free in time: every slot is stuck, or the wait reached the time limit."""
+
+
+class OwnerRenderStuckError(Exception):
+    """The owner has a stuck render already; it gets no further slot until that one ends."""
+
+
 @dataclass
 class _Slots:
     gate: asyncio.Semaphore
     loop: asyncio.AbstractEventLoop
+    in_use: int = 0
     stuck: int = 0
+    stuck_by_owner: dict[Hashable, int] = field(default_factory=dict)
 
 
 _slots: _Slots | None = None
@@ -60,10 +84,21 @@ def gate() -> asyncio.Semaphore:
     return _current().gate
 
 
+def owner_of(api_key_id: UUID | None) -> Hashable:
+    """The render owner of a caller: its API key, or ``NO_KEY`` for every caller without one."""
+    return NO_KEY if api_key_id is None else api_key_id
+
+
 def stuck_renders() -> int:
     """Renders past their time limit whose thread has not ended yet (0 without a loop)."""
     slots = _slots
     return 0 if slots is None else slots.stuck
+
+
+def free_slots() -> int:
+    """Slots no render holds right now (``MAX_CONCURRENT_RENDERS`` without a loop)."""
+    slots = _slots
+    return MAX_CONCURRENT_RENDERS if slots is None else MAX_CONCURRENT_RENDERS - slots.in_use
 
 
 def default_timeout_s() -> float:
@@ -74,32 +109,59 @@ async def render_bounded[T](
     fn: Callable[..., T],
     *args: Any,
     label: str,
+    owner: Hashable | None = None,
     timeout_s: float | None = None,
     on_start: Callable[[], None] | None = None,
     on_end: Callable[[], None] | None = None,
-    on_timeout: Callable[[], None] | None = None,
 ) -> T:
     """``fn(*args)`` in a thread under a render slot, within ``timeout_s`` seconds.
 
-    ``label`` names the render in the log (an id and a kind, never payload data). ``on_start``
-    runs when the slot is taken (not for a caller cancelled while waiting for one), ``on_end``
-    once the thread has ended, ``on_timeout`` when the caller is answered with the time limit
-    (all on the event loop, without an await in between). Raises ``RenderTimeoutError`` past
-    the limit; the thread keeps its slot until it ends.
+    ``label`` names the render in the log (an id and a kind, never payload data). ``owner``
+    (see ``owner_of``) is refused with ``OwnerRenderStuckError`` while it has a stuck render.
+    With every slot stuck the call raises ``RenderUnavailableError`` at once; otherwise it
+    waits at most ``timeout_s`` for a slot (then the same error). ``on_start`` runs when the
+    slot is taken, ``on_end`` once the thread has ended (both on the event loop, without an
+    await in between). Raises ``RenderTimeoutError`` past the limit; the thread keeps its slot
+    until it ends.
     """
     limit = default_timeout_s() if timeout_s is None else timeout_s
     slots = _current()
-    await slots.gate.acquire()
+    if owner is not None and slots.stuck_by_owner.get(owner):
+        raise OwnerRenderStuckError()
+    if slots.stuck >= MAX_CONCURRENT_RENDERS:
+        raise RenderUnavailableError()
+    try:
+        await asyncio.wait_for(slots.gate.acquire(), limit)
+    except TimeoutError:
+        raise RenderUnavailableError() from None
     # No await from the acquire to the callback: the slot is always given back by the task.
+    slots.in_use += 1
+    if owner is not None and slots.stuck_by_owner.get(owner):
+        # Got stuck while this call waited for the slot.
+        slots.in_use -= 1
+        slots.gate.release()
+        raise OwnerRenderStuckError()
     state = {"stuck": False}
-    if on_start is not None:
-        on_start()
+    try:
+        if on_start is not None:
+            on_start()
+    except BaseException:
+        slots.in_use -= 1
+        slots.gate.release()
+        raise
     task = asyncio.ensure_future(asyncio.to_thread(fn, *args))
 
     def _end(done: asyncio.Future[Any]) -> None:
+        slots.in_use -= 1
         slots.gate.release()
         if state["stuck"]:
             slots.stuck -= 1
+            if owner is not None:
+                left = slots.stuck_by_owner.get(owner, 0) - 1
+                if left > 0:
+                    slots.stuck_by_owner[owner] = left
+                else:
+                    slots.stuck_by_owner.pop(owner, None)
             logger.info(
                 "Stuck render %s ended; its slot is free (%d still stuck)", label, slots.stuck
             )
@@ -116,6 +178,8 @@ async def render_bounded[T](
             return task.result()
         state["stuck"] = True
         slots.stuck += 1
+        if owner is not None:
+            slots.stuck_by_owner[owner] = slots.stuck_by_owner.get(owner, 0) + 1
         logger.warning(
             "Render %s exceeded %ss; its thread keeps a render slot until it ends "
             "(%d of %d slots stuck)",
@@ -124,6 +188,4 @@ async def render_bounded[T](
             slots.stuck,
             MAX_CONCURRENT_RENDERS,
         )
-        if on_timeout is not None:
-            on_timeout()
         raise RenderTimeoutError() from None

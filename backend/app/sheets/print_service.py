@@ -153,6 +153,7 @@ __all__ = [
     "NO_MARGIN_BAND_REASON",
     "MarginCheck",
     "RenderTimeoutApiError",
+    "RenderUnavailableApiError",
     "ResolvedItem",
     "TooManyPreviewsError",
     "create_sheet_with_id_label",
@@ -675,7 +676,15 @@ class RenderTimeoutApiError(SheetApiError):
 
     status = 504
     error_code = "render-timeout"
-    message = "The preview took too long to draw. Try again, or with fewer or shorter labels."
+    message = "The preview took too long to draw. Try again later, or with fewer or shorter labels."
+
+
+class RenderUnavailableApiError(SheetApiError):
+    """#293: no render slot became free in time (every slot stuck, or the wait hit the limit)."""
+
+    status = 503
+    error_code = "render-unavailable"
+    message = "The hub cannot draw a preview right now. Try again later."
 
 
 async def draw_page_bounded(*args: Any, timeout_s: float | None = None) -> Any:
@@ -687,7 +696,9 @@ async def draw_page_bounded(*args: Any, timeout_s: float | None = None) -> Any:
     #293: past the time limit the caller gets ``RenderTimeoutApiError`` (504
     ``render-timeout``). The render slot and the key's preview slot stay with the stuck thread
     until it ends: a key whose render hangs gets 429 ``too-many-previews`` meanwhile, so one
-    key cannot hang every render slot by retrying.
+    key cannot hang every render slot by retrying. A key with a stuck page job gets 429 as
+    well (stuck renders count per key, ``render_slots.owner_of``). With every slot stuck, or
+    no slot free within the limit, the caller gets ``RenderUnavailableApiError`` (503).
     """
     # The caller's preview slot (``preview_slot``) stays taken with the render (F3).
     owner = _preview_owner.get()
@@ -711,12 +722,17 @@ async def draw_page_bounded(*args: Any, timeout_s: float | None = None) -> Any:
             _draw_page,
             *args,
             label="sheet preview page",
+            owner=_render_owner.get(),
             timeout_s=timeout_s,
             on_start=take_owner,
             on_end=release_owner,
         )
     except render_slots.RenderTimeoutError:
         raise RenderTimeoutApiError() from None
+    except render_slots.RenderUnavailableError:
+        raise RenderUnavailableApiError() from None
+    except render_slots.OwnerRenderStuckError:
+        raise TooManyPreviewsError() from None
 
 
 class TooManyPreviewsError(Exception):
@@ -726,6 +742,8 @@ class TooManyPreviewsError(Exception):
 # Per owner: the open ``preview_slot`` plus its renders still drawing in a thread.
 _previews_in_progress: dict[Hashable, int] = {}
 _preview_owner: ContextVar[Hashable | None] = ContextVar("_preview_owner", default=None)
+# #293: whose stuck renders count against this preview (the key, or ``render_slots.NO_KEY``).
+_render_owner: ContextVar[Hashable | None] = ContextVar("_render_owner", default=None)
 
 
 def _release_preview(owner: Hashable) -> None:
@@ -737,21 +755,25 @@ def _release_preview(owner: Hashable) -> None:
 
 
 @contextmanager
-def preview_slot(owner: Hashable) -> Iterator[None]:
+def preview_slot(owner: Hashable, render_owner: Hashable | None = None) -> Iterator[None]:
     """One preview per *owner* (API key) at a time; a second one raises at once.
 
     Synchronous check and claim (no await between them). The slot is free once the block has
     ended AND every render it started has finished: a cancelled request whose picture is still
     drawing in a thread keeps it, so one key cannot take both render slots (F3). All callers
-    without a key are grouped by source, user and address (see the route).
+    without a key are grouped by source, user and address (see the route). ``render_owner``
+    (default: ``owner``) is whom the preview's stuck renders count against (#293): the key, or
+    one group for every caller without a key, as for the page jobs.
     """
     if owner in _previews_in_progress:
         raise TooManyPreviewsError()
     _previews_in_progress[owner] = 1
     token = _preview_owner.set(owner)
+    render_token = _render_owner.set(owner if render_owner is None else render_owner)
     try:
         yield
     finally:
+        _render_owner.reset(render_token)
         _preview_owner.reset(token)
         _release_preview(owner)
 

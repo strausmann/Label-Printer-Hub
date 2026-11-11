@@ -926,7 +926,9 @@ class PrintQueue:
             if not await self._may_recover_page_job(db_job.id, payload):
                 continue
             job = self._new_page_job(db_job.id, printer_id, payload)
-            await self._queues[printer_id].put(PageJob(job=job, payload=payload))
+            await self._queues[printer_id].put(
+                PageJob(job=job, payload=payload, api_key_id=db_job.api_key_id)
+            )
             logger.info("Recovery: page job %s re-enqueued on %s", db_job.id, printer_id)
 
     async def _may_recover_page_job(self, job_id: UUID, payload: PagePayload) -> bool:
@@ -1856,7 +1858,7 @@ class PrintQueue:
             if job.state == JobState.CANCELLED:
                 await self._store.mark_cancelled(row.id)
             return row.id
-        await self._queues[printer_id].put(PageJob(job=job, payload=payload))
+        await self._queues[printer_id].put(PageJob(job=job, payload=payload, api_key_id=api_key_id))
         logger.info("Page job %s queued on %s", row.id, printer_id)
         return row.id
 

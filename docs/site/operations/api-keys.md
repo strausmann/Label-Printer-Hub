@@ -79,8 +79,11 @@ At most two pages are drawn at once in the hub (sheet previews and page jobs tog
 page that takes longer than `PRINTER_HUB_RENDER_TIMEOUT_S` (default 60 seconds) to draw
 ends the preview with `HTTP 504` `render-timeout` and fails a page job with
 `render_timeout`. Its drawing thread cannot be stopped and keeps its slot until it ends;
-until then the key's next preview answers 429 `too-many-previews`, so one key cannot take
-both slots by retrying; `GET /readiness` shows such stuck renders in the check `render_slots`
+until then the key's next preview answers 429 `too-many-previews` and its next page job
+fails with `render_timeout` at once, so one key cannot take both slots by retrying (all
+callers without a key count as one key here). With every slot stuck, a preview answers
+`HTTP 503` `render-unavailable` and a page job fails with `render_unavailable` at once; a
+caller never waits longer than the time limit for a slot; `GET /readiness` shows such stuck renders in the check `render_slots`
 (failing when every slot is stuck). `/healthz` does not, so restart the hub by hand then.
 
 All callers without a key (browser sessions, SSO users) count as **one** key for the

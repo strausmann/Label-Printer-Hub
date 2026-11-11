@@ -22,10 +22,18 @@ describe("print dialog error words", () => {
     );
   });
 
-  it("a preview past the hub's render time limit says to try again (#293), en and de", async () => {
+  it("a preview past the hub's render time limit says to try again later (#293), en and de", async () => {
     const error = new ApiError(504, "render-timeout", "server words");
-    expect(await textFor(error)).toBe("The preview took too long. Try again.");
-    expect(await textFor(error, "de")).toBe("Die Vorschau hat zu lange gedauert. Versuch es noch einmal.");
+    expect(await textFor(error)).toBe("The preview took too long. Try again later.");
+    expect(await textFor(error, "de")).toBe("Die Vorschau hat zu lange gedauert. Versuch es später noch einmal.");
+  });
+
+  it("a preview without a free render slot says to try again later (#293), en and de", async () => {
+    const error = new ApiError(503, "render-unavailable", "server words");
+    expect(await textFor(error)).toBe("The hub cannot draw a preview right now. Try again later.");
+    expect(await textFor(error, "de")).toBe(
+      "Der Hub kann gerade keine Vorschau zeichnen. Versuch es später noch einmal.",
+    );
   });
 
   it("an unknown error ends in the fallback, never in the server's words", async () => {

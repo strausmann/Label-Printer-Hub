@@ -14,7 +14,10 @@ export function usePrintDialogErrorText(itemName: (index: number) => string): (e
   return (error) => {
     if (error instanceof ApiError) {
       if (error.code === "render-timeout") {
-        return t`The preview took too long. Try again.`;
+        return t`The preview took too long. Try again later.`;
+      }
+      if (error.code === "render-unavailable") {
+        return t`The hub cannot draw a preview right now. Try again later.`;
       }
       if (error.code === "preview_too_large") {
         const pages = Number(error.errorDetail?.pages ?? 0);

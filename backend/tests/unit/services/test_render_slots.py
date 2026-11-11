@@ -53,10 +53,6 @@ def hang() -> Iterator[_Hang]:
     h.release.set()  # never leave a thread blocked behind a failed assertion
 
 
-def _free_slots() -> int:
-    return render_slots.gate()._value
-
-
 async def test_a_render_past_its_limit_raises_and_keeps_its_slot_until_the_thread_ends(
     hang: _Hang,
 ) -> None:
@@ -64,31 +60,155 @@ async def test_a_render_past_its_limit_raises_and_keeps_its_slot_until_the_threa
         await render_slots.render_bounded(hang, 1, label="t", timeout_s=SHORT_S)
     # The thread draws on: its slot stays taken and it counts as stuck.
     assert render_slots.stuck_renders() == 1
-    assert _free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
     hang.release.set()
     await _until(lambda: render_slots.stuck_renders() == 0)
     assert hang.ended == [1]
-    assert _free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
 
 
-async def test_threads_stay_bounded_by_the_slots_while_renders_are_stuck(hang: _Hang) -> None:
+async def test_with_every_slot_stuck_a_render_is_refused_at_once(hang: _Hang) -> None:
+    """F2: no thread beyond the cap, and no caller waiting for a slot that may never free."""
     for n in range(render_slots.MAX_CONCURRENT_RENDERS):
         with pytest.raises(render_slots.RenderTimeoutError):
             await render_slots.render_bounded(hang, n, label="t", timeout_s=SHORT_S)
     assert render_slots.stuck_renders() == render_slots.MAX_CONCURRENT_RENDERS
-    # A third render waits for a slot: it never starts a thread beyond the cap.
-    third = asyncio.create_task(render_slots.render_bounded(lambda: 7, label="t", timeout_s=WAIT_S))
-    await asyncio.sleep(0.05)
-    assert not third.done()
+    started: list[int] = []
+    async with asyncio.timeout(WAIT_S / 10):  # refused at once, not after the limit
+        with pytest.raises(render_slots.RenderUnavailableError):
+            await render_slots.render_bounded(
+                lambda: started.append(1), label="t", timeout_s=WAIT_S
+            )
+    assert started == []
     hang.release.set()
-    assert await third == 7
     await _until(lambda: render_slots.stuck_renders() == 0)
+    assert await render_slots.render_bounded(lambda: 7, label="t", timeout_s=WAIT_S) == 7
+
+
+async def test_waiting_for_a_slot_ends_at_the_time_limit(hang: _Hang) -> None:
+    """F2: the slots are busy, not stuck: a caller waits at most its limit for one."""
+    busy = [
+        asyncio.create_task(render_slots.render_bounded(hang, n, label="t", timeout_s=WAIT_S))
+        for n in range(render_slots.MAX_CONCURRENT_RENDERS)
+    ]
+    for _ in busy:
+        assert await asyncio.to_thread(hang.entered.acquire, True, WAIT_S)
+    assert render_slots.free_slots() == 0 and render_slots.stuck_renders() == 0
+    with pytest.raises(render_slots.RenderUnavailableError):
+        await render_slots.render_bounded(lambda: 1, label="t", timeout_s=SHORT_S)
+    hang.release.set()
+    assert await asyncio.gather(*busy) == [0, 1]
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+
+
+async def test_a_failing_on_start_gives_its_slot_back() -> None:
+    """F3: an exception between taking the slot and starting the thread leaks no slot."""
+
+    def boom() -> None:
+        raise RuntimeError("on_start")
+
+    with pytest.raises(RuntimeError, match="on_start"):
+        await render_slots.render_bounded(lambda: 1, label="t", on_start=boom)
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+    assert render_slots.gate().locked() is False
+    for _ in range(render_slots.MAX_CONCURRENT_RENDERS + 1):  # every slot can still be taken
+        assert await render_slots.render_bounded(lambda: 2, label="t") == 2
+
+
+async def test_one_owner_cannot_hang_every_slot(hang: _Hang) -> None:
+    """F1: an owner with a stuck render gets no further slot; another owner renders on."""
+    mine, theirs = uuid4(), uuid4()
+    with pytest.raises(render_slots.RenderTimeoutError):
+        await render_slots.render_bounded(hang, 1, label="t", owner=mine, timeout_s=SHORT_S)
+    started: list[int] = []
+    with pytest.raises(render_slots.OwnerRenderStuckError):
+        await render_slots.render_bounded(
+            lambda: started.append(1), label="t", owner=mine, timeout_s=WAIT_S
+        )
+    assert started == []
+    assert render_slots.free_slots() == 1  # one slot stuck, one free
+    assert await render_slots.render_bounded(lambda: 3, label="t", owner=theirs) == 3
+    hang.release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+    assert await render_slots.render_bounded(lambda: 4, label="t", owner=mine) == 4
+
+
+async def test_an_owner_with_a_stuck_render_is_refused_without_waiting_for_a_slot(
+    hang: _Hang,
+) -> None:
+    """F1: refused at once, even while the other slot is busy (not after the wait limit)."""
+    mine = uuid4()
+    with pytest.raises(render_slots.RenderTimeoutError):
+        await render_slots.render_bounded(hang, 1, label="t", owner=mine, timeout_s=SHORT_S)
+    busy = asyncio.create_task(render_slots.render_bounded(hang, 2, label="t", timeout_s=WAIT_S))
+    await _until(lambda: render_slots.free_slots() == 0)
+    async with asyncio.timeout(WAIT_S / 10):
+        with pytest.raises(render_slots.OwnerRenderStuckError):
+            await render_slots.render_bounded(lambda: 3, label="t", owner=mine, timeout_s=WAIT_S)
+    hang.release.set()
+    assert await busy == 2
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
+async def test_an_owner_that_gets_stuck_while_its_next_call_waits_is_refused(
+    hang: _Hang,
+) -> None:
+    """F1: the check is repeated once the slot is taken (the owner got stuck meanwhile)."""
+    mine = uuid4()
+    other = _Hang()  # the busy render, released on its own
+    try:
+        first = asyncio.create_task(
+            render_slots.render_bounded(hang, 1, label="t", owner=mine, timeout_s=0.3)
+        )
+        busy = asyncio.create_task(
+            render_slots.render_bounded(other, 2, label="t", timeout_s=WAIT_S)
+        )
+        await _until(lambda: render_slots.free_slots() == 0)
+        waiting = asyncio.create_task(
+            render_slots.render_bounded(lambda: 3, label="t", owner=mine, timeout_s=WAIT_S)
+        )
+        with pytest.raises(render_slots.RenderTimeoutError):
+            await first  # ``mine`` is stuck now; ``waiting`` is still in the queue
+        other.release.set()  # the busy render ends and hands its slot to ``waiting``
+        with pytest.raises(render_slots.OwnerRenderStuckError):
+            await waiting
+        assert await busy == 2
+        assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
+    finally:
+        other.release.set()
+    hang.release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+
+
+def test_callers_without_a_key_are_one_owner() -> None:
+    key = uuid4()
+    assert render_slots.owner_of(key) == key
+    assert render_slots.owner_of(None) == render_slots.owner_of(None) == render_slots.NO_KEY
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "601", "inf", "nan"])
+def test_the_render_timeout_setting_is_bounded(value: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """F4: no way to switch the limit off (``inf``) or to make it absurd."""
+    import pydantic
+
+    monkeypatch.setenv("PRINTER_HUB_RENDER_TIMEOUT_S", value)
+    with pytest.raises(pydantic.ValidationError, match="render_timeout_s"):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("value", ["0.5", "60", "600"])
+def test_the_render_timeout_setting_accepts_sane_values(
+    value: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PRINTER_HUB_RENDER_TIMEOUT_S", value)
+    assert Settings(_env_file=None).render_timeout_s == float(value)  # type: ignore[call-arg]
 
 
 async def test_a_normal_render_is_unaffected() -> None:
     assert await render_slots.render_bounded(lambda a, b: a + b, 2, 3, label="t") == 5
     assert render_slots.stuck_renders() == 0
-    assert _free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
 
 
 async def test_a_render_error_is_still_raised_and_frees_its_slot() -> None:
@@ -97,7 +217,7 @@ async def test_a_render_error_is_still_raised_and_frees_its_slot() -> None:
 
     with pytest.raises(ValueError, match="bug"):
         await render_slots.render_bounded(broken, label="t", timeout_s=WAIT_S)
-    assert _free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
 
 
 async def test_one_warning_per_stuck_render_without_payload(
@@ -163,7 +283,7 @@ async def test_a_key_with_a_stuck_render_cannot_take_the_other_slot_but_another_
     monkeypatch.setattr(sps, "_draw_page", lambda n: n * 10)
     with pytest.raises(sps.TooManyPreviewsError), sps.preview_slot(key_a):
         await sps.draw_page_bounded(2, timeout_s=WAIT_S)
-    assert _free_slots() == 1  # key A holds one slot only
+    assert render_slots.free_slots() == 1  # key A holds one slot only
     with sps.preview_slot(key_b):
         assert await sps.draw_page_bounded(3, timeout_s=WAIT_S) == 30
     hang.release.set()
@@ -216,7 +336,7 @@ async def test_a_running_page_job_does_not_starve_previews(
             async with asyncio.timeout(WAIT_S):
                 with sps.preview_slot(uuid4()):
                     assert await sps.draw_page_bounded(n, timeout_s=WAIT_S) == n
-            assert _free_slots() == 1  # the page job's slot, and only it, is taken
+            assert render_slots.free_slots() == 1  # the page job's slot, and only it, is taken
         hang.release.set()
         await job
-    assert _free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS

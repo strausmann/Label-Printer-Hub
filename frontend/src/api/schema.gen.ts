@@ -1365,7 +1365,7 @@ export interface paths {
         };
         /**
          * Readiness probe
-         * @description Deep readiness check: database connectivity, alembic migration state, printer wiring, SNMP probe recency, print-queue liveness, and SSE subscriber capacity. Returns 200 with status in {ready, degraded} when all critical checks pass; 503 with status=not-ready when any critical check (database / alembic) fails.
+         * @description Deep readiness check: database connectivity, alembic migration state, printer wiring, SNMP probe recency, print-queue liveness, SSE subscriber capacity, and stuck render slots (`render_slots`: page renders past `PRINTER_HUB_RENDER_TIMEOUT_S` whose thread still runs; fails when every slot is stuck, a hub restart frees them). Returns 200 with status in {ready, degraded} when all critical checks pass; 503 with status=not-ready when any critical check (database / alembic) fails.
          */
         get: operations["readiness_readiness_get"];
         put?: never;
@@ -5370,7 +5370,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description The key has a preview in progress already (`too-many-previews`): one per key at a time. The body has the rate limit's shape (`retry_after_seconds`). */
+            /** @description The key has a preview in progress already, or a render of the key is stuck past the time limit (`too-many-previews`): one per key at a time. The body has the rate limit's shape (`retry_after_seconds`). */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -5388,7 +5388,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description An integration is not configured (`integration_not_configured`). */
+            /** @description An integration is not configured (`integration_not_configured`), or no render slot became free in time (`render-unavailable`): every slot is held by a stuck render, or the wait reached `PRINTER_HUB_RENDER_TIMEOUT_S`. */
             503: {
                 headers: {
                     [name: string]: unknown;

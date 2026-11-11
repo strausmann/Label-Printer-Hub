@@ -228,6 +228,8 @@ class PageJob:
     resume_result: dict[str, Any] | None = None
     """Restart recovery: the stored ``result`` of a job the printer already holds (it names
     the IPP job id). ``None`` for a job that still has to be sent."""
+    api_key_id: UUID | None = None
+    """The key that submitted the job; its stuck renders count against it (#293)."""
 
 
 class PagePrinter(Protocol):

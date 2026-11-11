@@ -2023,6 +2023,10 @@ msgstr "No code found in this photo. Hold the camera closer and try again."
 msgid "No correction stored for this tray."
 msgstr "No correction stored for this tray."
 
+#: src/features/jobs/jobErrorText.ts
+msgid "No drawing slot became free in time; the page was not drawn. Try again later."
+msgstr "No drawing slot became free in time; the page was not drawn. Try again later."
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "No hardware identity — device swaps are not detected"
 msgstr "No hardware identity — device swaps are not detected"
@@ -3738,6 +3742,10 @@ msgstr "The horizontal pitch"
 msgid "The horizontal pitch must not be smaller than the label width."
 msgstr "The horizontal pitch must not be smaller than the label width."
 
+#: src/features/sheets/print/errors.ts
+msgid "The hub cannot draw a preview right now. Try again later."
+msgstr "The hub cannot draw a preview right now. Try again later."
+
 #: src/features/jobs/RetryError.tsx
 msgid "The hub could not be reached. Try again."
 msgstr "The hub could not be reached. Try again."
@@ -3994,8 +4002,8 @@ msgid "The prefix is fixed once sheets of this type exist."
 msgstr "The prefix is fixed once sheets of this type exist."
 
 #: src/features/sheets/print/errors.ts
-msgid "The preview took too long. Try again."
-msgstr "The preview took too long. Try again."
+msgid "The preview took too long. Try again later."
+msgstr "The preview took too long. Try again later."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The print failed (error code {code})."

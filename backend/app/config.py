@@ -143,11 +143,11 @@ class Settings(BaseSettings):
     max_queued_runs_per_printer: int = Field(default=5, gt=0)
     max_queued_runs_per_key: int = Field(default=20, gt=0)
 
-    render_timeout_s: float = Field(default=60.0, gt=0)
+    render_timeout_s: float = Field(default=60.0, gt=0, le=600, allow_inf_nan=False)
     """#293: seconds one page may take to draw (sheet preview page, page job). Past it the
     preview answers 504 ``render-timeout`` and the page job fails ``render_timeout``. The
     thread cannot be stopped: it keeps its render slot until it ends and counts as stuck
-    (readiness check ``render_slots``)."""
+    (readiness check ``render_slots``). At most 600; ``inf`` and ``nan`` are refused."""
 
     @model_validator(mode="after")
     def _queued_runs_cover_held_runs(self) -> Settings:

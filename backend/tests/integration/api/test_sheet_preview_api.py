@@ -634,4 +634,82 @@ async def test_a_real_preview_draws_with_a_single_render_slot(
     async with asyncio.timeout(20):
         resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
     assert resp.status_code == 200, resp.text
-    assert slots.gate._value == 1
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+
+
+async def test_a_preview_without_a_free_render_slot_is_503_at_once(
+    api_client_with_seed: httpx.AsyncClient,
+) -> None:
+    """F2 (#293): with every slot stuck the preview answers 503 ``render-unavailable`` in the
+    route's error shape at once, instead of hanging until the client gives up."""
+    import asyncio
+    import threading
+
+    from app.services import render_slots
+
+    headers = {"X-Label-Hub-Key": await _insert_key(["read"])}
+    pid, _ = await _printer()
+    code = await _sheet()
+    await api_client_with_seed.get("/healthz")
+    release = threading.Event()
+    try:
+        for _ in range(render_slots.MAX_CONCURRENT_RENDERS):
+            with pytest.raises(render_slots.RenderTimeoutError):
+                await render_slots.render_bounded(
+                    lambda: release.wait(10.0), label="t", timeout_s=0.05
+                )
+        async with asyncio.timeout(5):
+            resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
+        assert resp.status_code == 503, resp.text
+        detail = resp.json()["detail"]
+        assert set(detail) == {"error_code", "error_message", "error_detail"}
+        assert detail["error_code"] == "render-unavailable"
+    finally:
+        release.set()
+    async with asyncio.timeout(10):
+        while render_slots.stuck_renders():
+            await asyncio.sleep(0.01)
+
+
+async def test_a_key_with_a_stuck_page_job_render_gets_429_for_its_preview(
+    api_client_with_seed: httpx.AsyncClient,
+) -> None:
+    """F1 (#293): stuck renders count per key across previews and page jobs."""
+    import asyncio
+    import threading
+    from uuid import UUID
+
+    from app.services import render_slots
+
+    key = await _insert_key(["read"])
+    pid, _ = await _printer()
+    code = await _sheet()
+    await api_client_with_seed.get("/healthz")
+    async with _factory()() as s:
+        from app.models.api_key import ApiKey
+
+        key_id = (
+            await s.execute(select(ApiKey.id).where(ApiKey.key_prefix == key[:16]))
+        ).scalar_one()
+    release = threading.Event()
+    try:
+        with pytest.raises(render_slots.RenderTimeoutError):
+            await render_slots.render_bounded(
+                lambda: release.wait(10.0),
+                label="page job",
+                owner=render_slots.owner_of(UUID(str(key_id))),
+                timeout_s=0.05,
+            )
+        resp = await api_client_with_seed.post(
+            _url(pid), json=_body(code), headers={"X-Label-Hub-Key": key}
+        )
+        assert resp.status_code == 429, resp.text
+        assert resp.json()["detail"]["error_code"] == "too-many-previews"
+        other = {"X-Label-Hub-Key": await _insert_key(["read"])}
+        theirs = await api_client_with_seed.post(_url(pid), json=_body(code), headers=other)
+        assert theirs.status_code == 200, theirs.text
+    finally:
+        release.set()
+    async with asyncio.timeout(10):
+        while render_slots.stuck_renders():
+            await asyncio.sleep(0.01)

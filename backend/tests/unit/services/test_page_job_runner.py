@@ -67,11 +67,15 @@ class _Env:
     def _notify(self, job: Job, from_state: JobState, to_state: JobState, **_: Any) -> None:
         self.events.append((from_state, to_state, job.at_printer))
 
-    async def job(self, p: PagePayload | None = None) -> PageJob:
+    async def job(self, p: PagePayload | None = None, *, api_key_id: UUID | None = None) -> PageJob:
         p = p or payload()
         row = DbJob(printer_id=self.printer.id, payload=p.model_dump(mode="json"))
         await self.store.save_queued(row)
-        return PageJob(job=Job(id=str(row.id), printer_id=self.printer.id, kind=p.kind), payload=p)
+        return PageJob(
+            job=Job(id=str(row.id), printer_id=self.printer.id, kind=p.kind),
+            payload=p,
+            api_key_id=api_key_id,
+        )
 
     async def row(self, page_job: PageJob) -> DbJob:
         row = await self.store.get(UUID(page_job.job.id))
@@ -658,7 +662,81 @@ async def test_a_page_job_prints_with_a_single_render_slot(
     pj = await env.job()
     await env.run(pj)
     assert (await env.row(pj)).state == DbJobState.DONE.value
-    assert slots.gate._value == 1
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+
+
+async def test_a_key_with_a_stuck_render_cannot_hang_the_second_slot(
+    handler: RecordingHandler,
+) -> None:
+    """F1 (#293): two runs of one key with hanging input. The first job times out and keeps
+    its slot; the second fails ``render_timeout`` at once without drawing, so one slot stays
+    free and another key's job prints."""
+    import threading
+
+    from app.services import render_slots
+
+    release = threading.Event()
+    drawn: list[str] = []
+
+    def render(p: PagePayload) -> bytes:
+        drawn.append(p.detail["tag"])
+        if p.detail["tag"].startswith("hang"):
+            release.wait(TEST_TIMEOUT_S)
+        return b"%PDF-"
+
+    key, other = uuid4(), uuid4()
+    try:
+        with registered(handler, render=render):
+            env = _Env(FakeIppPrinter(job_script=[9]), render_timeout_s=0.05)
+            first = await env.job(payload(tag="hang-1"), api_key_id=key)
+            await env.run(first)
+            second = await env.job(payload(tag="hang-2"), api_key_id=key)
+            await env.run(second)
+            assert drawn == ["hang-1"]  # the second never got a thread
+            for pj in (first, second):
+                assert handler.ended(UUID(pj.job.id))["error_code"] == "render_timeout"
+            assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
+            third = await env.job(payload(tag="ok"), api_key_id=other)
+            await env.run(third)
+            assert (await env.row(third)).state == DbJobState.DONE.value
+    finally:
+        release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
+async def test_with_every_slot_stuck_a_page_job_fails_render_unavailable_at_once(
+    handler: RecordingHandler,
+) -> None:
+    """F2 (#293): no job waits in ``printing`` for a slot that may never free."""
+    import threading
+
+    from app.services import render_slots
+
+    release = threading.Event()
+
+    def hung() -> None:
+        release.wait(TEST_TIMEOUT_S)
+
+    try:
+        for _ in range(render_slots.MAX_CONCURRENT_RENDERS):
+            with pytest.raises(render_slots.RenderTimeoutError):
+                await render_slots.render_bounded(hung, label="t", timeout_s=0.05)
+        with registered(handler):
+            env = _Env(FakeIppPrinter(), render_timeout_s=TEST_TIMEOUT_S)
+            pj = await env.job()
+            async with asyncio.timeout(TEST_TIMEOUT_S / 5):  # at once, not after the limit
+                await env.run(pj)
+        row = await env.row(pj)
+        assert row.error is not None and row.error.startswith("render_unavailable: ")
+        assert env.ops("Print-Job") == 0
+        assert handler.ended(UUID(pj.job.id)) == {
+            "state": "failed",
+            "started": False,
+            "error_code": "render_unavailable",
+        }
+    finally:
+        release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
 
 
 async def test_handler_error_does_not_break_the_runner(handler: RecordingHandler) -> None:

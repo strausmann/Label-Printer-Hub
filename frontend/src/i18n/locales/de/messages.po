@@ -2023,6 +2023,10 @@ msgstr "In diesem Foto wurde kein Code gefunden. Halte die Kamera näher heran u
 msgid "No correction stored for this tray."
 msgstr "Für dieses Fach ist keine Korrektur gespeichert."
 
+#: src/features/jobs/jobErrorText.ts
+msgid "No drawing slot became free in time; the page was not drawn. Try again later."
+msgstr "Es wurde nicht rechtzeitig ein Platz zum Rendern frei, die Seite wurde nicht gerendert. Versuch es später noch einmal."
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "No hardware identity — device swaps are not detected"
 msgstr "Keine Hardware-Kennung – ein Gerätewechsel wird nicht erkannt"
@@ -3738,6 +3742,10 @@ msgstr "Der horizontale Abstand"
 msgid "The horizontal pitch must not be smaller than the label width."
 msgstr "Der horizontale Abstand darf nicht kleiner sein als die Etikettenbreite."
 
+#: src/features/sheets/print/errors.ts
+msgid "The hub cannot draw a preview right now. Try again later."
+msgstr "Der Hub kann gerade keine Vorschau zeichnen. Versuch es später noch einmal."
+
 #: src/features/jobs/RetryError.tsx
 msgid "The hub could not be reached. Try again."
 msgstr "Der Hub ist nicht erreichbar. Versuche es erneut."
@@ -3994,8 +4002,8 @@ msgid "The prefix is fixed once sheets of this type exist."
 msgstr "Das Präfix ist fest, sobald es Bögen dieses Typs gibt."
 
 #: src/features/sheets/print/errors.ts
-msgid "The preview took too long. Try again."
-msgstr "Die Vorschau hat zu lange gedauert. Versuch es noch einmal."
+msgid "The preview took too long. Try again later."
+msgstr "Die Vorschau hat zu lange gedauert. Versuch es später noch einmal."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The print failed (error code {code})."

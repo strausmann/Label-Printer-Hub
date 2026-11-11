@@ -19,6 +19,15 @@ describe("job error words", () => {
     expect(await textFor("render_timeout", "de")).toBe("Das Rendern der Seite hat zu lange gedauert.");
   });
 
+  it("a page job without a free render slot has its own words (#293), en and de", async () => {
+    expect(await textFor("render_unavailable", "en")).toBe(
+      "No drawing slot became free in time; the page was not drawn. Try again later.",
+    );
+    expect(await textFor("render_unavailable", "de")).toBe(
+      "Es wurde nicht rechtzeitig ein Platz zum Rendern frei, die Seite wurde nicht gerendert. Versuch es später noch einmal.",
+    );
+  });
+
   it("an unknown code still names the code", async () => {
     expect(await textFor("no_such_code", "en")).toBe("The print failed (error code no_such_code).");
   });

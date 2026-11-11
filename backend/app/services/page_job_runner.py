@@ -9,7 +9,9 @@ at the printer). The sequence:
    edge) and the queue holds it and pauses the printer.
 2. ``mark_printing`` and ``result = {"phase": "uploading", "started": false}``.
 3. Render the page from the payload (in a thread). A render error ends ``failed/render_failed``,
-   a render past ``PRINTER_HUB_RENDER_TIMEOUT_S`` ends ``failed/render_timeout`` (#293).
+   a render past ``PRINTER_HUB_RENDER_TIMEOUT_S`` ends ``failed/render_timeout`` (#293), as
+   does a job whose key has a stuck render already; no render slot free in time ends
+   ``failed/render_unavailable``.
 4. Print-Job. The error contract is in ``app.printer_backends.ipp.errors``: nothing sent or a
    refusal ends ``failed`` with ``started=False`` (``ipp_unreachable``, ``ipp_busy``,
    ``ipp_rejected``); an exchange that broke after the document went out, or an unusable
@@ -117,6 +119,7 @@ _UNUSABLE: tuple[type[IppError], ...] = (
 _MESSAGES = {
     "render_failed": "The page could not be drawn.",
     "render_timeout": "The page took too long to draw.",
+    "render_unavailable": "No render slot became free in time; the page was not drawn.",
     "ipp_unreachable": "The printer could not be reached.",
     "ipp_busy": "The printer was busy and did not take the job.",
     "ipp_rejected": "The printer refused the document.",
@@ -318,11 +321,16 @@ class PageJobRunner:
                 render_page,
                 payload,
                 label=f"page job {job_id} ({payload.kind})",
+                owner=render_slots.owner_of(page_job.api_key_id),
                 timeout_s=self._render_timeout_s,
             )
-        except render_slots.RenderTimeoutError:
+        except (render_slots.RenderTimeoutError, render_slots.OwnerRenderStuckError):
             # #293: the thread draws on and keeps its slot (``render_slots``); the job is over.
+            # A key with a stuck render gets no further slot: its job ends the same way at once.
             await self._fail(page_job, result, "render_timeout", started=False)
+            return
+        except render_slots.RenderUnavailableError:
+            await self._fail(page_job, result, "render_unavailable", started=False)
             return
         except Exception as exc:
             _log.warning("Page job %s: rendering failed (%s)", job_id, type(exc).__name__)

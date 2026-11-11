@@ -29,6 +29,8 @@ export function useJobErrorText(): (code: string | null) => string {
         return t`The print request could not be built.`;
       case "render_timeout":
         return t`Drawing the page took too long.`;
+      case "render_unavailable":
+        return t`No drawing slot became free in time; the page was not drawn. Try again later.`;
       case "ipp_aborted":
         return t`The printer aborted the job before printing.`;
       case "interrupted":

@@ -23,6 +23,7 @@ from app.db import engine as db_engine
 from app.db.session import get_session
 from app.repositories import printers as printers_repo
 from app.schemas.sheet_print import SheetPreview, SheetPrintRequest, SheetPrintResponse
+from app.services import render_slots
 from app.services.lookup_service import AppLookupService
 from app.sheets import print_service
 from app.sheets.cell_render import DEFAULT_CELL_RENDERER
@@ -75,8 +76,16 @@ _PREVIEW_ONLY_ERRORS: dict[int | str, dict[str, Any]] = {
     **_PREVIEW_ERRORS,
     429: {
         "description": (
-            "The key has a preview in progress already (`too-many-previews`): one per key at "
-            "a time. The body has the rate limit's shape (`retry_after_seconds`)."
+            "The key has a preview in progress already, or a render of the key is stuck past "
+            "the time limit (`too-many-previews`): one per key at a time. The body has the "
+            "rate limit's shape (`retry_after_seconds`)."
+        )
+    },
+    503: {
+        "description": (
+            "An integration is not configured (`integration_not_configured`), or no render "
+            "slot became free in time (`render-unavailable`): every slot is held by a stuck "
+            "render, or the wait reached `PRINTER_HUB_RENDER_TIMEOUT_S`."
         )
     },
     504: {
@@ -126,7 +135,7 @@ async def preview_sheet_print(
     # 266-07: one preview per key at a time (a request without a key: per caller and address).
     owner = auth.api_key_id or (auth.source, auth.user, auth.ip)
     try:
-        with print_service.preview_slot(owner), mapped():
+        with print_service.preview_slot(owner, render_slots.owner_of(auth.api_key_id)), mapped():
             return await print_service.preview(
                 db_engine.async_session,
                 printer=printer,
