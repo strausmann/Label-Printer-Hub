@@ -54,7 +54,13 @@ except ValidationError as _cfg_exc:
         for _name in ("LABELYARD_LOG_LEVEL", "PRINTER_HUB_LOG_LEVEL", "LOG_LEVEL")
     )
     if _debug:
-        raise
+        # Raise for a traceback, but never re-raise the ValidationError itself: its text
+        # carries every offending input value, and those can be secrets.
+        _detail = "\n".join(
+            f"  {'.'.join(str(_p) for _p in _e['loc'])} [{_e['type']}]: {_e['msg']}"
+            for _e in _cfg_exc.errors(include_input=False, include_url=False, include_context=False)
+        )
+        raise RuntimeError(f"Configuration error (input values omitted):\n{_detail}") from None
     _lines = ["❌  Configuration error — fix the following before starting:\n"]
     for _err in _cfg_exc.errors():
         _field = ".".join(str(_p) for _p in _err["loc"])

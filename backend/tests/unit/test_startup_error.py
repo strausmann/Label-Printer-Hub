@@ -146,3 +146,24 @@ def test_legacy_log_level_debug_reraises(tmp_path: Path) -> None:
     )
     assert result.returncode == 1, result.stderr
     assert "Traceback" in result.stderr
+
+
+# Obviously fake marker, short enough to fail validation, never a real secret.
+_MARKER = "marker-secret-must-not-print"
+
+
+def test_debug_path_never_prints_input_values(tmp_path: Path) -> None:
+    """The DEBUG re-raise gives a traceback but must not echo the offending values."""
+    result = _run_import(
+        {
+            "LABELYARD_LOG_LEVEL": "DEBUG",
+            "LABELYARD_WEBHOOK_API_KEY": _MARKER,
+            "LABELYARD_SECRET_KEY": _MARKER,
+        },
+        tmp_path,
+    )
+    assert result.returncode == 1, result.stderr
+    assert "Traceback" in result.stderr
+    assert "webhook_api_key" in result.stderr  # still tells the operator what is wrong
+    assert _MARKER not in result.stderr
+    assert _MARKER not in result.stdout
