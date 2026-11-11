@@ -23,7 +23,7 @@
 - SPDX header (maintainer decision 2026-11-11, final), in every own file in the file type's comment syntax:
   `SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors`
   `SPDX-License-Identifier: AGPL-3.0-or-later`
-  The year is the creation year and is not bumped. A contributor may add an own line `SPDX-FileCopyrightText: <year> <name>` (voluntary). The CLA stays unchanged. Every file Part B creates carries the header from its first commit. "Labelyard" in this line is the new name and therefore no brand-guard hit.
+  The year is the creation year and is not bumped. A contributor may add an own line `SPDX-FileCopyrightText: <year> <name>` (voluntary). The CLA stays unchanged. Headers are added in one sweep by B9, the last code task of the milestone; earlier tasks (Part B and rename) create files without them. "Labelyard" in this line is the new name and therefore no brand-guard hit.
 - Workflow inputs and job outputs reach `run:` only through `env:`.
 - `test_image_labels_and_licence_file` counts `licenses=AGPL-3.0-or-later` exactly twice in `docker-publish.yml`: add no further `licenses=` text there.
 - Image stays non-root UID 1000; the CSP in `backend/app/web/spa.py` and the precache globs in `frontend/pwa.config.ts` (no `json`) stay unchanged; `BUILDKIT_SBOM_SCAN_STAGE` stays off.
@@ -32,13 +32,13 @@
 
 ## Preconditions
 
-1. **Milestone 1.5.x is released and synced.** Its release `v1.5.Z` (the next free patch number when the milestone PR merges; `<V15>` below) is on `main`, `main` is merged into `milestone/1.6.0` (merge commit), before B1, B5, B6 or B9 starts. Check: `git merge-base --is-ancestor <V15> origin/milestone/1.6.0` → exit 0. Milestone 1.5.x brings, and this plan relies on:
+1. **Milestone 1.5.x is released and synced.** Its release `v1.5.Z` (the next free patch number when the milestone PR merges; `<V15>` below) is on `main`, `main` is merged into `milestone/1.6.0` (merge commit), before B1, B5 or B6 starts. Check: `git merge-base --is-ancestor <V15> origin/milestone/1.6.0` → exit 0. Milestone 1.5.x brings, and this plan relies on:
    - PR #270 (1.5.x Task 1): CI, licence gate and backend licence workflow also run on PRs into `milestone/**`; release guard `release_impact.py`; register row **D21** is taken by it.
    - PR #269 (1.5.x Task 1b): `preview-image.yml` (calls `docker-publish.yml` with `tag: x.y.z-rc.N`, `ref`, permissions `contents: read, packages: write, id-token: write`), no branch images, `ghcr-cleanup.yml` that keeps platform children and attestations of kept images.
    - 1.5.x Task 14: a path under `licenses/` is served when the file exists and answers 404 otherwise (`licenses/` in the reserved set of `_is_reserved`, file check first for this prefix; tests `test_unknown_licence_page_is_404`, `test_known_licence_file_is_served`), `licence-text-sha256` in exceptions, `Proprietary` inside a classifier join → `UNKNOWN`.
 2. Part B does not touch `spa.py`. B1 relies on 1.5.x Task 14 for the 404 and only adds a test that `licenses/backend.json` is served as `application/json`. If Task 14 has not landed, Part B waits; it does not implement the 404 a second way.
-3. **Later patch releases.** If another `1.5.Z` (or a `fix` on `main`) is released before the milestone merges, `main` is merged into `milestone/1.6.0` with a merge commit before the next task starts (1.5.x step R1, rename Task 10); the fast gates run again, and `reuse lint` names files the sync brought without a header — they get one in a `chore(license)` commit.
-4. **Which tasks wait for 1.5.x:** B1 (Task 14's `licenses/` handling and licence tooling), B5 and B6 (#269/#270 change `docker-publish.yml`, `release.yml`, `ci.yml` triggers and the preview permission ceiling), B9 (it must see the final file set, otherwise every file the sync brings needs a second pass). B2, B3, B4 and B7 may run before the sync.
+3. **Later patch releases.** If another `1.5.Z` (or a `fix` on `main`) is released before the milestone merges, `main` is merged into `milestone/1.6.0` with a merge commit before the next task starts (1.5.x step R1, rename Task 10); the fast gates run again. A sync after B9 is followed by `reuse lint`; files it brought without a header get one in a `chore(license)` commit.
+4. **Which tasks wait:** B1 (1.5.x Task 14's `licenses/` handling and licence tooling), B5 and B6 (#269/#270 change `docker-publish.yml`, `release.yml`, `ci.yml` triggers and the preview permission ceiling) wait for the 1.5.x sync. B9 waits for all other code tasks of the milestone (Part B and rename) and the last sync. B2, B3, B4 and B7 may run before the sync.
 5. **Checks on a direct commit.** With #270, `ci.yml` also runs on pushes to `milestone/**`; `Dependency review` and `licence-backend.yml` run on pull requests only, so they judge Part B's dependency changes (B2's devDependency) on the milestone → `main` PR. Each task therefore runs its gates locally before the push.
 
 ## Ordering with the rename
@@ -46,10 +46,10 @@
 **Decision: the joint order is the rename plan's table; Part B adds three constraints to it.**
 
 1. **A Part B task comes before every rename task that touches one of its files** (table below). The rename then edits on top of Part B, never the other way round, so no file is rebuilt twice and the rename's brand guard sweeps Part B's lines once, finding nothing (Global Constraints).
-2. **B1, B5, B6 and B9 wait for the 1.5.x sync** (Precondition 4); B2, B3, B4 and B7 may come earlier.
-3. **B9 comes before the first rename task**, because it adds lines 1–3 to almost every file; after it, rename tasks edit below the header. From B9 on `reuse lint` is a CI gate: every file a rename task **creates** (`scripts/brand_guard.py`, `website/**`, `docs/brand/labelyard/**`, the rename ADR, the migration guide, Vale and glossary files, new workflows) needs the header or a `REUSE.toml` entry, and every file it **renames** keeps its header (hand-off to the rename plan, which is not changed here). Command: `reuse annotate --copyright "Björn Strausmann and Labelyard contributors" --year 2026 --license AGPL-3.0-or-later <files>`.
+2. **B1, B5 and B6 wait for the 1.5.x sync** (Precondition 4); B2, B3, B4 and B7 may come earlier.
+3. **B9 is the last code task of milestone 1.6.0** (coordinator ruling 2026-11-11): after every rename task and after the last sync, directly before the gate, whole-branch review and audit. It sees the final file set, including every file the rename creates, so nothing needs a second pass and no running work conflicts with it. It is one large commit, recorded in `.git-blame-ignore-revs`.
 
-B8 runs after the last rename task and the preview `1.6.0-rc.N` (rename Task 11 Step 5), and closes #154 **before** the milestone → `main` PR, because the 1.5.x release guard refuses a milestone with open issues. Then release 1.6.0, then the post-release check (section "After the release").
+B8 runs after B9 on the preview `1.6.0-rc.N` built from the final tree (rename Task 11 Step 5), and closes #154 **before** the milestone → `main` PR, because the 1.5.x release guard refuses a milestone with open issues. Then release 1.6.0, then the post-release check (section "After the release").
 
 What ends up named `labelyard` and why no file is rebuilt twice:
 
@@ -62,7 +62,7 @@ What ends up named `labelyard` and why no file is rebuilt twice:
 | Excluded own package in the backend list | `backend/pyproject.toml` `[project].name` | rename Task 3 |
 | Local CI image tag | `env.IMAGE: labelyard:ci` in `ci.yml` `docker-build` (B5 replaces today's `label-printer-hub:ci` while it rewrites that job) | — |
 
-Files both plans touch, in this order (Part B first, rename second):
+Files both plans touch, in this order (Part B first, rename second — except the two B9 rows, where B9 comes last):
 
 | File | Part B | Rename | Agreement |
 |---|---|---|---|
@@ -75,8 +75,8 @@ Files both plans touch, in this order (Part B first, rename second):
 | `frontend/src/i18n/locales/{en,de}/messages.po` | B3 new strings | Task 5 extract/compile | rename extracts after Part B |
 | `THIRD_PARTY_NOTICES.md` | B4: second intro paragraph, two new sections, notes column of the fonts table | Task 6: first intro sentence ("… is licensed under") | Part B keeps the first sentence byte-identical |
 | `README.md`, `docs/supply-chain.md` | B7: full text in `docs/supply-chain.md`, README gets a three-line section with the link | Task 6 (hero, links, config), Task 7 (slims the README, moves user docs to the site) | the README keeps only the link, which survives the slimming; if Task 7 moves `docs/supply-chain.md` into the site (en + de), it updates the constant `SUPPLY_CHAIN_DOC` in `test_licence_metadata.py` and leaves a pointer at the old path |
-| every own file, lines 1–3 | B9 SPDX header | edits below the header | rename never rewrites a file top-down without its header; `reuse lint` in CI catches a lost header |
-| `CONTRIBUTING.md`, `.github/workflows/ci.yml` | B9: section "Licence headers", job `reuse` | Task 6 (names), Task 11 (job `brand-guard`) | separate sections/jobs |
+| every own file, lines 1–3 | B9 SPDX header (last) | — (rename tasks run before B9 and need no header) | B9 annotates the final tree in one commit |
+| `CONTRIBUTING.md`, `.github/workflows/ci.yml` | B9 (last): section "Licence headers", job `reuse` | Task 6 (names), Task 11 (job `brand-guard`), both earlier | separate sections/jobs |
 | `docs/decisions/register.md` | B1 appends one row | Task 6 appends its rows | append-only; Part B takes the next free `D` label on the synced head (expected **D22**, D21 is #270's) |
 
 **Registries and attestations (the GitLab registry concern).** Attestations are stored as extra manifests (`unknown/unknown`, `vnd.docker.reference.type: attestation-manifest`) in the image index (https://docs.docker.com/build/metadata/attestations/). `docker/build-push-action` adds them only when pushing to a registry, not with `load: true` (https://docs.docker.com/build/ci/github-actions/attestations/). GHCR accepts OCI image indexes (https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry, "Docker Image Manifest V2, Schema 2" and "Open Container Initiative (OCI) Specifications"); Docker Hub's Docker Scout reads SBOM attestations from pushed images (https://docs.docker.com/scout/explore/analysis/: "When an image includes an SBOM attestation, Docker Scout uses it"). Neither page names registries for attestations, so it was **measured on 2026-11-11** with today's workflow (`provenance: true`, `sbom: true`, push by digest + `imagetools create`):
@@ -224,7 +224,7 @@ Load before writing UI code: `taste-skill:design-taste-frontend`, `emil-design-e
 
 ### Task B9: SPDX headers and REUSE compliance
 
-Placed here in the document after B4; the execution order is the rename plan's table. Header-only change to existing files plus REUSE metadata; no behaviour change. Waits for the 1.5.x sync and comes before the first rename task (Ordering).
+Placed here in the document after B4; it runs last (see above). Header-only change to existing files plus REUSE metadata; no behaviour change. The last code task of the milestone: after every Part B and rename task and the last sync, before gate, review and audit (Ordering).
 
 **Decisions:**
 - **Header text:** the two lines of Global Constraints, in the file's comment syntax (`#` for Python, shell, YAML, TOML, Dockerfile, Makefile, `.gitignore`/`.dockerignore`, `.env.example`, `alembic.ini.runtime`; `//` for TS/TSX/JS/MJS/CJS; `/* */` for CSS; `<!-- -->` for Markdown and HTML). Shebang and encoding lines stay first; Python headers go before the module docstring; `frontend/index.html` puts the comment after `<!doctype html>`.
@@ -235,7 +235,7 @@ Placed here in the document after B4; the execution order is the rename plan's t
 - **Generated files stay headed:** `backend/alembic/script.py.mako` emits the header into new migrations (Python part of the template, not a `##` Mako comment).
 - **CI:** `ci.yml` job `reuse` runs `fsfe/reuse-action` (SHA in Global Constraints), hard, no `continue-on-error`. A backend guard test enforces the inline header where comments are possible, because `reuse lint` alone would also accept a `REUSE.toml` entry.
 - **CONTRIBUTING.md** section "Licence headers": the two standard lines with an example per comment syntax; a contributor may add an own `SPDX-FileCopyrightText: <year> <name>` line (voluntary); the year is not bumped; `reuse lint` must pass. No PR-template checkbox, no extra CI hint job (maintainer, 2026-11-11).
-- **`.git-blame-ignore-revs`** lists the B9 commit (added in a follow-up commit, after the SHA exists on the milestone).
+- **One commit** for headers, `REUSE.toml`, `LICENSES/`, the test, the CI job and CONTRIBUTING; then `.git-blame-ignore-revs` with its SHA in a second, one-line commit (a commit cannot name its own SHA).
 
 **Files:**
 - Create: `REUSE.toml`, `LICENSES/*.txt`, `backend/tests/unit/test_spdx_headers.py`, `.git-blame-ignore-revs`
