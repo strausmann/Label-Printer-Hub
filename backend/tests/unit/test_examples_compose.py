@@ -129,9 +129,7 @@ def test_examples_have_no_frontend_service(path: Path) -> None:
     assert "frontend" not in services, f"{path.name}: the hub is one container (D1)"
     for name, service in services.items():
         image = str(service.get("image", ""))
-        assert "-frontend" not in image, (
-            f"{path.name}: {name} uses the frontend image"
-        )
+        assert "-frontend" not in image, f"{path.name}: {name} uses the frontend image"
         build = service.get("build")
         context = build.get("context", "") if isinstance(build, dict) else str(build or "")
         assert "frontend" not in str(context), f"{path.name}: {name} builds the frontend"
@@ -153,9 +151,7 @@ def test_example_variables_carry_the_settings_prefix(path: Path) -> None:
     # Unprefixed names (DATABASE_URL, WEBHOOK_API_KEY, ...) are ignored by the backend.
     allowed = {"PORT", "FORWARDED_ALLOW_IPS"}
     for name in _backend_env(path):
-        assert name in allowed or name.startswith("LABELYARD_"), (
-            f"{path.name}: {name} is not read"
-        )
+        assert name in allowed or name.startswith("LABELYARD_"), f"{path.name}: {name} is not read"
 
 
 @pytest.mark.parametrize(
