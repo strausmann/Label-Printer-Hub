@@ -24,13 +24,8 @@ OLD_URL = "http://old.example.invalid:8000"
 
 
 @pytest.fixture(autouse=True)
-def _clean(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def _clean(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, clean_settings_env: None):
     """No ambient configuration of either prefix, no .env in the working directory."""
-    import os
-
-    for name in list(os.environ):
-        if name.upper().startswith(("LABELYARD_", "PRINTER_HUB_")):
-            monkeypatch.delenv(name)
     monkeypatch.chdir(tmp_path)
     get_settings.cache_clear()
     yield
@@ -69,14 +64,6 @@ def test_new_prefix_wins_over_legacy(monkeypatch: pytest.MonkeyPatch) -> None:
     report = legacy_env_report(os.environ)
     assert report.shadowed == ["PRINTER_HUB_PUBLIC_URL"]
     assert report.used == []
-
-
-def test_empty_legacy_does_not_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LABELYARD_SECRET_KEY", KEY)
-    monkeypatch.setenv("LABELYARD_PUBLIC_URL", URL)
-    monkeypatch.setenv("LABELYARD_LOG_LEVEL", "DEBUG")
-    monkeypatch.setenv("PRINTER_HUB_LOG_LEVEL", "")
-    assert Settings().log_level == "DEBUG"  # type: ignore[call-arg]
 
 
 def test_empty_legacy_alone_is_not_a_value(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -184,14 +171,6 @@ def test_legacy_var_locks_setting(monkeypatch: pytest.MonkeyPatch) -> None:
     assert store.get("integrations.snipeit.url") == "https://snipeit.example.invalid"
 
 
-def test_empty_legacy_does_not_lock(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("LABELYARD_SECRET_KEY", KEY)
-    monkeypatch.setenv("LABELYARD_PUBLIC_URL", URL)
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "")
-    get_settings.cache_clear()
-    assert _store().is_locked("integrations.snipeit.url") is False
-
-
 def test_extra_forbid_kept(monkeypatch: pytest.MonkeyPatch) -> None:
     """Unknown variables in the process environment stay ignored (unchanged behaviour)."""
     monkeypatch.setenv("LABELYARD_SECRET_KEY", KEY)
@@ -220,3 +199,66 @@ def test_dotenv_unknown_own_prefix_unchanged(tmp_path: Path, prefix: str) -> Non
         Settings()  # type: ignore[call-arg]
     assert "extra_forbidden" in str(err.value)
     assert f"{prefix.lower()}no_such_field" in str(err.value)
+
+
+# -- empty values count as "not set" for both prefixes ------------------------------------------
+
+
+def _required(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LABELYARD_SECRET_KEY", KEY)
+    monkeypatch.setenv("LABELYARD_PUBLIC_URL", URL)
+
+
+def test_empty_new_env_does_not_hide_legacy_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`LABELYARD_X: ${LABELYARD_X:-}` next to an old PRINTER_HUB_X must not switch X off."""
+    import os
+
+    _required(monkeypatch)
+    monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "")
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipeit.example.invalid")
+    assert Settings().snipeit_url == "https://snipeit.example.invalid"  # type: ignore[call-arg]
+    report = legacy_env_report(os.environ)
+    assert report.used == ["PRINTER_HUB_SNIPEIT_URL"]
+    assert report.shadowed == []
+
+
+def test_empty_new_env_does_not_hide_legacy_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    _required(monkeypatch)
+    monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "")
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipeit.example.invalid")
+    get_settings.cache_clear()
+    store = _store()
+    assert store.is_locked("integrations.snipeit.url") is True
+    assert store.get("integrations.snipeit.url") == "https://snipeit.example.invalid"
+
+
+def test_empty_new_dotenv_does_not_hide_legacy_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from app.config_legacy import report_from_process
+
+    (tmp_path / ".env").write_text(
+        f"LABELYARD_SECRET_KEY={KEY}\nLABELYARD_PUBLIC_URL={URL}\nLABELYARD_SNIPEIT_URL=\n"
+    )
+    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipeit.example.invalid")
+    assert Settings().snipeit_url == "https://snipeit.example.invalid"  # type: ignore[call-arg]
+    report = report_from_process()
+    assert report.used == ["PRINTER_HUB_SNIPEIT_URL"]
+    assert report.shadowed == []
+
+
+def test_empty_new_env_does_not_hide_legacy_dotenv(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _required(monkeypatch)
+    (tmp_path / ".env").write_text("PRINTER_HUB_LOG_LEVEL=DEBUG\n")
+    monkeypatch.setenv("LABELYARD_LOG_LEVEL", "")
+    assert Settings().log_level == "DEBUG"  # type: ignore[call-arg]
+
+
+def test_empty_required_new_value_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LABELYARD_SECRET_KEY", KEY)
+    monkeypatch.setenv("LABELYARD_PUBLIC_URL", "")
+    with pytest.raises(ValidationError) as err:
+        Settings()  # type: ignore[call-arg]
+    assert "public_url" in str(err.value)

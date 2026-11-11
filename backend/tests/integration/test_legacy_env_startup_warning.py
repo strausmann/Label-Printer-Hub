@@ -22,7 +22,7 @@ def _warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
 
 
 def test_startup_warns_once_with_names_only(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    clean_legacy_env: None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     from app.main import app
 
@@ -36,15 +36,10 @@ def test_startup_warns_once_with_names_only(
 
 
 def test_startup_is_silent_without_legacy_variables(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    clean_legacy_env: None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    import os
-
     from app.main import app
 
-    for name in list(os.environ):
-        if name.upper().startswith("PRINTER_HUB_"):
-            monkeypatch.delenv(name)
     with caplog.at_level(logging.WARNING, logger="app.main"), TestClient(app):
         pass
     assert _warnings(caplog) == []

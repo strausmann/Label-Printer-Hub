@@ -22,15 +22,15 @@ def test_printers_config_field_removed() -> None:
     assert "printers_config" not in Settings.model_fields
 
 
-def test_secret_key_required(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("LABELYARD_SECRET_KEY", raising=False)
+@pytest.mark.usefixtures("clean_settings_env")
+def test_secret_key_required() -> None:
     with pytest.raises(ValidationError) as exc:
         Settings(_env_file=None, public_url=PUBLIC_URL)  # type: ignore[call-arg]
     assert "secret_key" in str(exc.value)
 
 
-def test_public_url_required(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("LABELYARD_PUBLIC_URL", raising=False)
+@pytest.mark.usefixtures("clean_settings_env")
+def test_public_url_required() -> None:
     with pytest.raises(ValidationError) as exc:
         Settings(_env_file=None, secret_key=FAKE_KEY)  # type: ignore[call-arg]
     assert "public_url" in str(exc.value)

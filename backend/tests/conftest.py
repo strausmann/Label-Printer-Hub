@@ -24,6 +24,32 @@ os.environ.setdefault(
 os.environ.setdefault("LABELYARD_PUBLIC_URL", "http://localhost:8000")
 
 
+SETTINGS_ENV_PREFIXES = ("LABELYARD_", "PRINTER_HUB_")
+
+
+def clear_settings_env(monkeypatch: pytest.MonkeyPatch, *prefixes: str) -> None:
+    """Delete every variable with one of the prefixes (both settings prefixes by default).
+
+    Tests that depend on a variable being absent must not depend on what the runner or a
+    developer shell exports, and the old prefix is a valid source since the Labelyard rename.
+    """
+    for name in list(os.environ):
+        if name.upper().startswith(prefixes or SETTINGS_ENV_PREFIXES):
+            monkeypatch.delenv(name)
+
+
+@pytest.fixture
+def clean_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No LABELYARD_* and no PRINTER_HUB_* variable in the environment for this test."""
+    clear_settings_env(monkeypatch)
+
+
+@pytest.fixture
+def clean_legacy_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No PRINTER_HUB_* variable in the environment (the cached settings stay untouched)."""
+    clear_settings_env(monkeypatch, "PRINTER_HUB_")
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--hardware",

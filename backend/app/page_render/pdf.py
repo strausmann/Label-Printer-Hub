@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import os
 import zlib
 from collections.abc import Callable, Sequence
@@ -34,11 +35,23 @@ from app.page_render.transform import (
 
 #: The font shipped inside the package (DejaVu Sans, Bitstream Vera licence, see fonts/).
 BUNDLED_FONT = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
+_log = logging.getLogger(__name__)
 FONT_ENV = "LABELYARD_PDF_FONT"
 #: Deprecated name of the same override, read when ``FONT_ENV`` is unset or empty.
 LEGACY_FONT_ENV = "PRINTHUB_PDF_FONT"
 
 _Anchor = Literal["start", "middle", "end"]
+
+
+_legacy_font_warned = False
+
+
+def _warn_legacy_font_env() -> None:
+    """Log once per process that the deprecated variable is in use (name only, never the path)."""
+    global _legacy_font_warned
+    if not _legacy_font_warned:
+        _legacy_font_warned = True
+        _log.warning("Deprecated variable %s in use, rename it to %s", LEGACY_FONT_ENV, FONT_ENV)
 
 
 class FontNotFoundError(RuntimeError):
@@ -55,6 +68,8 @@ def resolve_font_path() -> Path:
     """
     env_name = FONT_ENV if os.environ.get(FONT_ENV) else LEGACY_FONT_ENV
     override = os.environ.get(env_name)
+    if override and env_name == LEGACY_FONT_ENV:
+        _warn_legacy_font_env()
     if override:
         path = Path(override)
         if not path.is_file():

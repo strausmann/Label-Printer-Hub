@@ -86,10 +86,16 @@ class LegacyReport:
 
 
 def legacy_env_report(environ: Mapping[str, str], dotenv_keys: Iterable[str] = ()) -> LegacyReport:
-    """Classify the ``PRINTER_HUB_*`` variables found in the environment and ``.env`` keys."""
+    """Classify the ``PRINTER_HUB_*`` variables found in the environment and ``.env`` keys.
+
+    ``dotenv_keys`` are the keys of the ``.env`` file that have a non-empty value.
+    """
     env_names = {name.upper(): value for name, value in environ.items()}
     dotenv_names = {name.upper() for name in dotenv_keys}
-    new_names = {n for n in (*env_names, *dotenv_names) if n.startswith(ENV_PREFIX)}
+    # An empty value counts as not set (Settings ignores it), so it shadows nothing.
+    new_names = {n for n, v in env_names.items() if n.startswith(ENV_PREFIX) and v} | {
+        n for n in dotenv_names if n.startswith(ENV_PREFIX)
+    }
 
     used: set[str] = set()
     shadowed: set[str] = set()
@@ -132,3 +138,10 @@ def report_from_process(env_file: str | os.PathLike[str] | None = ".env") -> Leg
 
         keys = [k for k, v in dotenv_values(env_file).items() if v]
     return legacy_env_report(os.environ, keys)
+
+
+def setting_variable_label(field: str, report: LegacyReport) -> str:
+    """Variable to fix for ``field``; names the legacy one when that is the one in use."""
+    name = ENV_PREFIX + field.upper()
+    legacy = LEGACY_ENV_PREFIX + field.upper()
+    return f"{name} (legacy {legacy})" if legacy in report.used else name

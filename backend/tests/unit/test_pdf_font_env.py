@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
+from app.page_render import pdf
 from app.page_render.pdf import BUNDLED_FONT, resolve_font_path
 
 
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(pdf, "_legacy_font_warned", False)
     monkeypatch.delenv("LABELYARD_PDF_FONT", raising=False)
     monkeypatch.delenv("PRINTHUB_PDF_FONT", raising=False)
 
@@ -55,3 +58,27 @@ def test_missing_new_font_names_the_new_variable(
 
 def test_no_override_uses_bundled_font() -> None:
     assert resolve_font_path() == BUNDLED_FONT
+
+
+def test_legacy_font_env_warns_once_with_the_name_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    old = _font(tmp_path, "secret-dir-marker.ttf")
+    monkeypatch.setenv("PRINTHUB_PDF_FONT", str(old))
+    with caplog.at_level(logging.WARNING, logger="app.page_render.pdf"):
+        resolve_font_path()
+        resolve_font_path()
+    messages = [r.getMessage() for r in caplog.records]
+    assert len(messages) == 1
+    assert "PRINTHUB_PDF_FONT" in messages[0]
+    assert "LABELYARD_PDF_FONT" in messages[0]
+    assert "secret-dir-marker" not in messages[0]
+
+
+def test_new_font_env_does_not_warn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("LABELYARD_PDF_FONT", str(_font(tmp_path, "new.ttf")))
+    with caplog.at_level(logging.WARNING, logger="app.page_render.pdf"):
+        resolve_font_path()
+    assert caplog.records == []

@@ -167,3 +167,28 @@ def test_debug_path_never_prints_input_values(tmp_path: Path) -> None:
     assert "webhook_api_key" in result.stderr  # still tells the operator what is wrong
     assert _MARKER not in result.stderr
     assert _MARKER not in result.stdout
+
+
+def test_error_names_the_legacy_variable_when_only_that_is_set(tmp_path: Path) -> None:
+    result = _run_import(
+        {"PRINTER_HUB_WEBHOOK_API_KEY": "too-short"}, tmp_path, required=_LEGACY_REQUIRED
+    )
+    assert result.returncode == 78, result.stderr
+    assert "LABELYARD_WEBHOOK_API_KEY (legacy PRINTER_HUB_WEBHOOK_API_KEY):" in result.stderr, (
+        result.stderr
+    )
+
+
+def test_error_names_only_the_new_variable_when_it_is_set(tmp_path: Path) -> None:
+    result = _run_import({"LABELYARD_WEBHOOK_API_KEY": "too-short"}, tmp_path)
+    assert result.returncode == 78, result.stderr
+    assert "LABELYARD_WEBHOOK_API_KEY:" in result.stderr
+    assert "legacy" not in result.stderr
+
+
+def test_unknown_dotenv_key_is_not_double_prefixed(tmp_path: Path) -> None:
+    (tmp_path / ".env").write_text("LABELYARD_NO_SUCH_FIELD=x\n")
+    result = _run_import({}, tmp_path)
+    assert result.returncode == 78, result.stderr
+    assert "LABELYARD_NO_SUCH_FIELD:" in result.stderr
+    assert "LABELYARD_LABELYARD" not in result.stderr

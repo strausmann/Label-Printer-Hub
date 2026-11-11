@@ -11,9 +11,11 @@ file and no printer-specific setting here.
 
 ``extra="forbid"`` rejects unknown CONSTRUCTOR KWARGS at instantiation time —
 NOT unknown environment variables. pydantic-settings silently ignores unknown
-env vars; leftover variables like the removed ``LABELYARD_QL820_HOST`` etc.
-will be silently dropped on startup. Operators should rely on the changelog
-(or ``Settings(...)``-based init in tests) to detect leftover config.
+process environment variables, so leftovers of removed settings are dropped on
+startup. Operators should rely on the changelog (or ``Settings(...)``-based init
+in tests) to detect leftover config. Unknown keys in a ``.env`` file are different:
+a key with the ``LABELYARD_`` or ``PRINTER_HUB_`` prefix that matches no field is
+rejected at startup.
 
 Usage::
 
@@ -66,6 +68,9 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix=ENV_PREFIX,
+        # An empty value (``${X:-}`` in a compose file) counts as not set for BOTH prefixes,
+        # so an empty LABELYARD_X never hides a PRINTER_HUB_X that is set.
+        env_ignore_empty=True,
         env_file=".env",
         extra="forbid",
     )

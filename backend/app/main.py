@@ -61,11 +61,21 @@ except ValidationError as _cfg_exc:
             for _e in _cfg_exc.errors(include_input=False, include_url=False, include_context=False)
         )
         raise RuntimeError(f"Configuration error (input values omitted):\n{_detail}") from None
+    from app.config_legacy import report_from_process as _report_from_process
+    from app.config_legacy import setting_variable_label as _variable_label
+
+    _report = _report_from_process()
     _lines = ["❌  Configuration error — fix the following before starting:\n"]
     for _err in _cfg_exc.errors():
         _field = ".".join(str(_p) for _p in _err["loc"])
         _msg = _err["msg"]
-        _lines.append(f"   • LABELYARD_{_field.upper()}: {_msg}\n")
+        # An unknown key is already reported under its full variable name.
+        _label = (
+            _field.upper()
+            if _err["type"] == "extra_forbidden"
+            else _variable_label(_field, _report)
+        )
+        _lines.append(f"   • {_label}: {_msg}\n")
     _lines.append("\n")
     _lines.append("Hint: see backend/.env.example for all supported variables.\n")
     sys.stderr.writelines(_lines)

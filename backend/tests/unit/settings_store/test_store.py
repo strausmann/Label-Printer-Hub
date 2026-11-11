@@ -91,7 +91,6 @@ async def test_locked_when_env_set(monkeypatch, store, async_session_factory) ->
 async def test_empty_env_value_does_not_lock(monkeypatch, store, async_session_factory) -> None:
     monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "")
     get_settings.cache_clear()
-    assert "snipeit_url" in get_settings().model_fields_set
     assert store.is_locked("integrations.snipeit.url") is False
     async with async_session_factory() as s:
         await store.set_many(s, {"integrations.snipeit.url": "https://snipeit.example.invalid"})
