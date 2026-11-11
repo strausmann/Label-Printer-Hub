@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -24,6 +24,7 @@ NICK_DASH = "Print-" + "Hub"
 NICK_CAMEL = "Print" + "Hub"
 NICK_FLAT = "printer" + "hub"
 NICK_SPACED = "Label " + "Hub"
+NICK_HYPHEN = "Label-" + "Hub"
 ENV_PREFIX = "PRINTER_" + "HUB_"
 ENV_OTHER = "PRINT" + "HUB_"
 
@@ -93,7 +94,7 @@ class BrandGuardTest(unittest.TestCase):
     # --- nickname ---------------------------------------------------------
 
     def test_nicknames_are_hits(self) -> None:
-        for nick in (NICK_DASH, NICK_CAMEL, NICK_FLAT, NICK_SPACED):
+        for nick in (NICK_DASH, NICK_CAMEL, NICK_FLAT, NICK_SPACED, NICK_HYPHEN):
             with self.subTest(nick=nick):
                 self.add("docs/a.md", f"call it {nick} here\n")
                 self.assertEqual(self.rules(), ["nickname"])
@@ -101,6 +102,11 @@ class BrandGuardTest(unittest.TestCase):
     def test_header_name_allowed(self) -> None:
         self.add("docs/api.md", "send X-Label-Hub-Key: abc\n")
         self.assertEqual(self.rules(), [])
+
+    def test_bare_hyphenated_nickname_is_hit(self) -> None:
+        # counter-test: proves the header allowance is load-bearing
+        self.add("docs/api.md", f"the {NICK_HYPHEN} repo\n")
+        self.assertEqual(self.rules(), ["nickname"])
 
     def test_header_name_does_not_shield_other_nickname(self) -> None:
         self.add("docs/api.md", f"X-Label-Hub-Key and {NICK_DASH}\n")
@@ -207,6 +213,16 @@ class BrandGuardTest(unittest.TestCase):
         with redirect_stdout(out):
             self.assertEqual(brand_guard.main(["--root", str(self.root)]), 1)
         self.assertRegex(out.getvalue(), r"^docs/x\.md:1: display: ")
+
+    def test_missing_git_repo_exits_2(self) -> None:
+        with tempfile.TemporaryDirectory() as plain:
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                code = brand_guard.main(["--root", plain])
+        self.assertEqual(code, 2)
+        self.assertEqual(out.getvalue(), "")
+        self.assertEqual(len(err.getvalue().strip().splitlines()), 1)
+        self.assertIn("brand_guard: error:", err.getvalue())
 
 
 if __name__ == "__main__":

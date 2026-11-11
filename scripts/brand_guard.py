@@ -7,7 +7,7 @@ script finds every other occurrence so the rename can be finished and kept
 finished.
 
 Usage: python3 scripts/brand_guard.py [--root .]
-Exit code: 0 = clean, 1 = hits. Each hit is printed as ``path:line: rule: text``.
+Exit code: 0 = clean, 1 = hits, 2 = --root is not a git work tree. Each hit is printed as ``path:line: rule: text``.
 Files come from ``git ls-files``; stdlib only.
 
 The patterns below spell the last letter of each old name as ``[b]``: the
@@ -184,10 +184,11 @@ RULES: tuple[Rule, ...] = (
         re.compile(r"(?<!(?i:label-))printer-hu[b](?!\.db)"),
         _in_legacy_cli_file,
     ),
-    # Informal short names that were never the product name.
+    # Informal short names that were never the product name. `Label[ -]Hub`
+    # also covers the hyphenated spelling, so the header allowance below is live.
     Rule(
         "nickname",
-        re.compile(r"Print-Hu[b]|PrintHu[b]|printerhu[b]|Label Hu[b]"),
+        re.compile(r"Print-Hu[b]|PrintHu[b]|printerhu[b]|Label[ -]Hu[b]"),
         _nickname_allowed,
     ),
     # The descriptive old name is allowed only as the subtitle beside Labelyard.
@@ -197,16 +198,23 @@ RULES: tuple[Rule, ...] = (
 _MAX_TEXT = 200
 
 
+class NotAGitRepoError(RuntimeError):
+    """`git ls-files` failed: --root is not a git work tree."""
+
+
 # --- Scan -------------------------------------------------------------------
 
 
 def _tracked_files(root: Path) -> list[str]:
-    out = subprocess.run(
-        ["git", "ls-files", "-z"],
-        cwd=root,
-        check=True,
-        capture_output=True,
-    ).stdout
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        ).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError, NotADirectoryError) as exc:
+        raise NotAGitRepoError(f"cannot list files with git in {root}") from exc
     return [p for p in out.decode("utf-8", "surrogateescape").split("\0") if p]
 
 
@@ -240,7 +248,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--root", default=".", help="repository root (default: .)")
     args = parser.parse_args(argv)
-    hits = find_hits(Path(args.root))
+    try:
+        hits = find_hits(Path(args.root))
+    except NotAGitRepoError as exc:
+        print(f"brand_guard: error: {exc}", file=sys.stderr)
+        return 2
     for hit in hits:
         print(f"{hit.path}:{hit.line}: {hit.rule}: {hit.text}")
     return 1 if hits else 0
