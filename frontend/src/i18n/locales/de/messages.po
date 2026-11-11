@@ -30,7 +30,7 @@ msgstr "{0, plural, one {# Spalte} other {# Spalten}}"
 msgid "{0, plural, one {# label} other {# labels}}"
 msgstr "{0, plural, one {# Etikett} other {# Etiketten}}"
 
-#. placeholder {0}: shown.length
+#. placeholder {0}: matches.length
 #: src/features/about/DependencyLicences.tsx
 msgid "{0, plural, one {# package} other {# packages}}"
 msgstr "{0, plural, one {# Paket} other {# Pakete}}"
@@ -76,6 +76,12 @@ msgstr "{0, plural, one {Markierung von # Zelle aufheben} other {Markierung von 
 #: src/features/archive/TypeDetail.tsx
 msgid "{0} has no sheets. Deleting it removes it and all its versions for good."
 msgstr "{0} hat keine Bögen. Beim Löschen verschwinden der Typ und alle seine Versionen endgültig."
+
+#. placeholder {0}: shown.length
+#. placeholder {1}: matches.length
+#: src/features/about/DependencyLicences.tsx
+msgid "{0} of {1} packages"
+msgstr "{0} von {1} Paketen"
 
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/sheets/print/PrinterRow.tsx
@@ -1520,9 +1526,15 @@ msgid "Healthy"
 msgstr "Gesund"
 
 #: src/features/about/DependencyLicences.tsx
+#~ msgctxt "action"
+#~ msgid "Hide licence text"
+#~ msgstr "Lizenztext ausblenden"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
 msgctxt "action"
-msgid "Hide licence text"
-msgstr "Lizenztext ausblenden"
+msgid "Hide licence text of {0}"
+msgstr "Lizenztext von {0} ausblenden"
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Hide used-up sheets"
@@ -1809,6 +1821,16 @@ msgstr "Lizenz"
 msgctxt "column"
 msgid "Licence text"
 msgstr "Lizenztext"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
+msgid "Licence text of {0}"
+msgstr "Lizenztext von {0}"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "licence of a package"
+msgid "Licence unknown"
+msgstr "Lizenz unbekannt"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
@@ -2467,7 +2489,7 @@ msgstr "Paperless-ASN"
 #: src/features/about/DependencyLicences.tsx
 msgctxt "column"
 msgid "Part"
-msgstr "Teil"
+msgstr "Bereich"
 
 #: src/features/jobs/RunControls.tsx
 msgid "Part {done} of {parts} is done. Check the tape, then continue."
@@ -3256,6 +3278,12 @@ msgstr "Bögen"
 msgid "Sheets already made keep printing with the old measurements."
 msgstr "Schon angelegte Bögen drucken weiter mit den alten Maßen."
 
+#. placeholder {0}: matches.length
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Show all {0} packages"
+msgstr "Alle {0} Pakete anzeigen"
+
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Show all {count}"
 msgstr "Alle {count} anzeigen"
@@ -3277,9 +3305,15 @@ msgid "Show fewer"
 msgstr "Weniger anzeigen"
 
 #: src/features/about/DependencyLicences.tsx
+#~ msgctxt "action"
+#~ msgid "Show licence text"
+#~ msgstr "Lizenztext anzeigen"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
 msgctxt "action"
-msgid "Show licence text"
-msgstr "Lizenztext anzeigen"
+msgid "Show licence text of {0}"
+msgstr "Lizenztext von {0} anzeigen"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Show the ID label job"
@@ -3954,6 +3988,10 @@ msgid "The left margin"
 msgstr "Der linke Rand"
 
 #: src/features/about/DependencyLicences.tsx
+msgid "The licence list could not be loaded."
+msgstr "Die Lizenzliste konnte nicht geladen werden."
+
+#: src/features/about/DependencyLicences.tsx
 msgid "The licence list of the server is not included in this build."
 msgstr "Die Lizenzliste des Servers ist in diesem Build nicht enthalten."
 
@@ -4619,6 +4657,11 @@ msgstr "Die Fächer erscheinen, sobald der Drucker geantwortet hat."
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/CameraScanner.tsx
 #: src/i18n/messages.ts
+msgid "Try again"
+msgstr "Erneut versuchen"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
 msgid "Try again"
 msgstr "Erneut versuchen"
 

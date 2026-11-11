@@ -30,7 +30,7 @@ msgstr "{0, plural, one {# column} other {# columns}}"
 msgid "{0, plural, one {# label} other {# labels}}"
 msgstr "{0, plural, one {# label} other {# labels}}"
 
-#. placeholder {0}: shown.length
+#. placeholder {0}: matches.length
 #: src/features/about/DependencyLicences.tsx
 msgid "{0, plural, one {# package} other {# packages}}"
 msgstr "{0, plural, one {# package} other {# packages}}"
@@ -76,6 +76,12 @@ msgstr "{0, plural, one {Un-mark # cell} other {Un-mark # cells}}"
 #: src/features/archive/TypeDetail.tsx
 msgid "{0} has no sheets. Deleting it removes it and all its versions for good."
 msgstr "{0} has no sheets. Deleting it removes it and all its versions for good."
+
+#. placeholder {0}: shown.length
+#. placeholder {1}: matches.length
+#: src/features/about/DependencyLicences.tsx
+msgid "{0} of {1} packages"
+msgstr "{0} of {1} packages"
 
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/sheets/print/PrinterRow.tsx
@@ -1520,9 +1526,15 @@ msgid "Healthy"
 msgstr "Healthy"
 
 #: src/features/about/DependencyLicences.tsx
+#~ msgctxt "action"
+#~ msgid "Hide licence text"
+#~ msgstr "Hide licence text"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
 msgctxt "action"
-msgid "Hide licence text"
-msgstr "Hide licence text"
+msgid "Hide licence text of {0}"
+msgstr "Hide licence text of {0}"
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Hide used-up sheets"
@@ -1809,6 +1821,16 @@ msgstr "Licence"
 msgctxt "column"
 msgid "Licence text"
 msgstr "Licence text"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
+msgid "Licence text of {0}"
+msgstr "Licence text of {0}"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "licence of a package"
+msgid "Licence unknown"
+msgstr "Licence unknown"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
@@ -3256,6 +3278,12 @@ msgstr "Sheets"
 msgid "Sheets already made keep printing with the old measurements."
 msgstr "Sheets already made keep printing with the old measurements."
 
+#. placeholder {0}: matches.length
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Show all {0} packages"
+msgstr "Show all {0} packages"
+
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Show all {count}"
 msgstr "Show all {count}"
@@ -3277,9 +3305,15 @@ msgid "Show fewer"
 msgstr "Show fewer"
 
 #: src/features/about/DependencyLicences.tsx
+#~ msgctxt "action"
+#~ msgid "Show licence text"
+#~ msgstr "Show licence text"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
 msgctxt "action"
-msgid "Show licence text"
-msgstr "Show licence text"
+msgid "Show licence text of {0}"
+msgstr "Show licence text of {0}"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Show the ID label job"
@@ -3954,6 +3988,10 @@ msgid "The left margin"
 msgstr "The left margin"
 
 #: src/features/about/DependencyLicences.tsx
+msgid "The licence list could not be loaded."
+msgstr "The licence list could not be loaded."
+
+#: src/features/about/DependencyLicences.tsx
 msgid "The licence list of the server is not included in this build."
 msgstr "The licence list of the server is not included in this build."
 
@@ -4619,6 +4657,11 @@ msgstr "Trays are listed once the printer has answered."
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/CameraScanner.tsx
 #: src/i18n/messages.ts
+msgid "Try again"
+msgstr "Try again"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
 msgid "Try again"
 msgstr "Try again"
 

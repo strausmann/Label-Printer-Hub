@@ -18,12 +18,13 @@ const SERVER = [
 
 type Reply = { body?: unknown; status?: number; type?: string; raw?: string } | "missing";
 
-function stubLists(web: Reply, server: Reply) {
+function stubLists(web: Reply | "network", server: Reply | "network") {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
       const reply = url === "/licenses/frontend.json" ? web : url === "/licenses/backend.json" ? server : undefined;
       if (reply === undefined) throw new Error(`unexpected fetch ${url}`);
+      if (reply === "network") throw new TypeError("Failed to fetch");
       if (reply === "missing") return new Response("", { status: 404 });
       return new Response(reply.raw ?? JSON.stringify(reply.body), { status: reply.status ?? 200, headers: { "content-type": reply.type ?? "application/json" } });
     }),
@@ -68,12 +69,12 @@ describe("DependencyLicences", () => {
     expect(screen.queryByText("GNU GENERAL PUBLIC LICENSE")).toBeNull();
     const row = screen.getByRole("row", { name: /brother-ql/ });
     const user = userEvent.setup();
-    const button = within(row).getByRole("button", { name: "Show licence text" });
+    const button = within(row).getByRole("button", { name: "Show licence text of brother-ql" });
     expect(button).toHaveAttribute("aria-expanded", "false");
     await user.click(button);
     expect(screen.getByText("GNU GENERAL PUBLIC LICENSE")).toBeInTheDocument();
-    expect(within(row).getByRole("button", { name: "Hide licence text" })).toHaveAttribute("aria-expanded", "true");
-    await user.click(within(row).getByRole("button", { name: "Hide licence text" }));
+    expect(within(row).getByRole("button", { name: "Hide licence text of brother-ql" })).toHaveAttribute("aria-expanded", "true");
+    await user.click(within(row).getByRole("button", { name: "Hide licence text of brother-ql" }));
     expect(screen.queryByText("GNU GENERAL PUBLIC LICENSE")).toBeNull();
   });
 
@@ -100,7 +101,7 @@ describe("DependencyLicences", () => {
     stubLists({ body: [{ name: "evil", version: "1", license: "MIT", licenseText: hostile }] }, { body: [] });
     const { container } = await show();
     const row = await screen.findByRole("row", { name: /evil/ });
-    await userEvent.setup().click(within(row).getByRole("button", { name: "Show licence text" }));
+    await userEvent.setup().click(within(row).getByRole("button", { name: "Show licence text of evil" }));
     expect(screen.getByText(hostile)).toBeInTheDocument();
     expect(container.querySelector("script")).toBeNull();
     expect(container.querySelector("img")).toBeNull();
@@ -151,7 +152,7 @@ describe("DependencyLicences", () => {
     const big = Array.from({ length: 300 }, (_, i) => ({ name: `pkg-${String(i).padStart(3, "0")}`, version: "1.0.0", license: "MIT", licenseText: text }));
     stubLists({ body: big }, { body: [] });
     const { container } = await show();
-    expect(await screen.findByText("300 packages")).toBeInTheDocument();
+    expect(await screen.findByText("50 of 300 packages")).toBeInTheDocument();
     expect(JSON.stringify(big).length).toBeGreaterThan(2_000_000);
     expect(container.querySelectorAll("pre")).toHaveLength(0);
     expect(container.textContent).not.toContain("xxxxxxxxxx");
@@ -168,7 +169,72 @@ describe("DependencyLicences", () => {
     );
     expect(await screen.findByRole("heading", { level: 2, name: "Software von Dritten" })).toBeInTheDocument();
     expect(await screen.findByText("4 Pakete")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Lizenztext anzeigen" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /^Lizenztext von .* anzeigen$/ }).length).toBeGreaterThan(0);
     expect(screen.getByText(/Die Betriebssystempakete des Images stehen in seiner SBOM/)).toBeInTheDocument();
+  });
+
+  it("keeps a package without a licence string and without a text visible as 'Licence unknown'", async () => {
+    stubLists({ body: [{ name: "mystery", version: "1.0.0", licenseText: null }] }, { body: [] });
+    await show();
+    const row = await screen.findByRole("row", { name: /mystery/ });
+    expect(within(row).getByText("Licence unknown")).toBeInTheDocument();
+    expect(within(row).queryByRole("button")).toBeNull();
+    expect(within(row).queryByRole("link")).toBeNull();
+  });
+
+  it("starts with 50 rows, says '50 of 300 packages' and shows all on request", async () => {
+    const many = Array.from({ length: 300 }, (_, i) => ({ name: `pkg-${String(i).padStart(3, "0")}`, version: "1.0.0", license: "MIT", licenseText: "t" }));
+    stubLists({ body: many }, { body: [] });
+    await show();
+    expect(await screen.findByText("50 of 300 packages")).toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(51);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Show all 300 packages" }));
+    expect(screen.getAllByRole("row")).toHaveLength(301);
+    expect(screen.getByText("300 packages")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull();
+  });
+
+  it("searches all records, not only the first 50, and offers no button for 50 or fewer matches", async () => {
+    const many = Array.from({ length: 300 }, (_, i) => ({ name: `pkg-${String(i).padStart(3, "0")}`, version: "1.0.0", license: i === 299 ? "ISC" : "MIT", licenseText: "t" }));
+    stubLists({ body: many }, { body: [] });
+    await show();
+    await screen.findByText("50 of 300 packages");
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("textbox", { name: "Filter packages" }), "isc");
+    expect(await screen.findByText("1 package")).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /pkg-299/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull();
+  });
+
+  it("keeps an opened text when the filter changes and the same package repeats", async () => {
+    stubLists({ body: [{ name: "dup", version: "1", license: "MIT", licenseText: "first" }, { name: "dup", version: "1", license: "MIT", licenseText: "second" }] }, { body: [] });
+    await show();
+    const user = userEvent.setup();
+    const buttons = await screen.findAllByRole("button", { name: "Show licence text of dup" });
+    expect(buttons).toHaveLength(2);
+    await user.click(buttons[1]!);
+    expect(screen.getByText("second")).toBeInTheDocument();
+    expect(screen.queryByText("first")).toBeNull();
+  });
+
+  it("says a network error is not 'not in this build', and tries again on request", async () => {
+    stubLists({ body: WEB }, "network");
+    await show();
+    expect(await screen.findByRole("alert")).toHaveTextContent("The licence list could not be loaded.");
+    expect(screen.queryByText("The licence list of the server is not included in this build.")).toBeNull();
+    expect(screen.getByRole("row", { name: /^react/ })).toBeInTheDocument();
+    stubLists({ body: WEB }, { body: SERVER });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("row", { name: /brother-ql/ })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows hostile name, version and licence as text too", async () => {
+    const bad = "<img src=x onerror=alert(1)>";
+    stubLists({ body: [{ name: bad, version: bad, license: bad, licenseText: null }] }, { body: [] });
+    const { container } = await show();
+    await screen.findByRole("table");
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getAllByText(bad).length).toBeGreaterThanOrEqual(2);
   });
 });

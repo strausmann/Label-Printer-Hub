@@ -56,8 +56,13 @@ describe("fetchLicenceList", () => {
     expect(await fetchLicenceList("/x", "web")).toBe("missing");
   });
 
-  it("test_a_network_error_is_missing", async () => {
+  it("test_a_network_error_is_not_an_answer_about_the_build", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("offline"))));
-    expect(await fetchLicenceList("/x", "web")).toBe("missing");
+    await expect(fetchLicenceList("/x", "web")).rejects.toThrow("offline");
+  });
+
+  it("test_a_server_error_is_not_an_answer_about_the_build", async () => {
+    reply("oops", { status: 503, type: "text/plain" });
+    await expect(fetchLicenceList("/x", "web")).rejects.toThrow("503");
   });
 });

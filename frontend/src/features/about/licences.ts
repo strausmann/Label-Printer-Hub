@@ -36,14 +36,16 @@ export function parseLicenceList(raw: unknown, part: LicenceEntry["part"]): Lice
 }
 
 /**
- * One list. `"missing"` for everything that is not a JSON list the build wrote: a 404, the app shell (`text/html`)
- * that the SPA fallback answers an unknown path with, a body that does not parse, a network error.
+ * One list. `"missing"` for what says "this build has no such file": a 404, the app shell (`text/html`) that the SPA
+ * fallback answers an unknown path with, a body that does not parse. A network error or a server error is not an
+ * answer about the build: it throws, so the page can say it could not load the list and offer a retry.
  */
 export async function fetchLicenceList(url: string, part: LicenceEntry["part"]): Promise<LicenceEntry[] | "missing"> {
+  const response = await fetch(url, { credentials: "same-origin" });
+  if (response.status === 404) return "missing";
+  if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
+  if (!(response.headers.get("content-type") ?? "").toLowerCase().includes("application/json")) return "missing";
   try {
-    const response = await fetch(url, { credentials: "same-origin" });
-    if (!response.ok) return "missing";
-    if (!(response.headers.get("content-type") ?? "").toLowerCase().includes("application/json")) return "missing";
     return parseLicenceList(await response.json(), part);
   } catch {
     return "missing";
@@ -55,7 +57,14 @@ const byName = (a: LicenceEntry, b: LicenceEntry) =>
 
 const PARTS = ["web", "server"] as const;
 
-type Combined = { entries: LicenceEntry[]; missing: Array<LicenceEntry["part"]>; isPending: boolean };
+type Combined = {
+  entries: LicenceEntry[];
+  missing: Array<LicenceEntry["part"]>;
+  /** Lists that could not be loaded (network, server error); `retry` asks for them again. */
+  failed: Array<LicenceEntry["part"]>;
+  isPending: boolean;
+  retry: () => void;
+};
 
 /** Both lists, merged and sorted by package name; which of them the build does not include. */
 export function useLicenceLists(): Combined {
@@ -63,18 +72,21 @@ export function useLicenceLists(): Combined {
     queries: PARTS.map((part) => ({
       queryKey: ["licences", part],
       queryFn: () => fetchLicenceList(LICENCE_URLS[part], part),
-      staleTime: Infinity,
+      staleTime: Infinity, // a loaded list never changes within a build; a failed one is not data and is asked for again
       retry: false,
     })),
     // `combine` is re-run only when a result changes, so typing in the filter does not sort 300 records again.
     combine: (results): Combined => {
       const entries: LicenceEntry[] = [];
       const missing: Array<LicenceEntry["part"]> = [];
+      const failed: Array<LicenceEntry["part"]> = [];
       results.forEach((result, index) => {
-        if (result.data === "missing") missing.push(PARTS[index]!);
+        if (result.isError) failed.push(PARTS[index]!);
+        else if (result.data === "missing") missing.push(PARTS[index]!);
         else if (result.data) entries.push(...result.data);
       });
-      return { entries: entries.sort(byName), missing, isPending: results.some((r) => r.isPending) };
+      const retry = () => results.forEach((result) => result.isError && void result.refetch());
+      return { entries: entries.sort(byName), missing, failed, isPending: results.some((r) => r.isPending), retry };
     },
   });
 }
