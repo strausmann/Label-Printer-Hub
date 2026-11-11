@@ -121,7 +121,6 @@ from app.page_render.test_page import render_test_page
 from app.printer_models.registry import ModelRegistry
 from app.repositories import printers as printers_repo
 from app.schemas.readiness import ReadinessResponse
-from app.services.backend_router import PrinterYAMLConfig
 from app.services.cleanup_task import CleanupTask
 from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
@@ -132,7 +131,7 @@ from app.services.page_jobs import (
     unregister_outcome_handler,
 )
 from app.services.print_queue import PrintQueue, load_manual_pauses
-from app.services.printer_runtime import PrinterRuntime, tape_config
+from app.services.printer_runtime import PrinterRuntime
 from app.services.printer_runtime import shutdown_wait_s as shutdown_wait_s  # re-export
 from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.printer_pause_producer import PrinterPauseProducer
@@ -234,17 +233,6 @@ def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
                 # their own shapes.
                 if status_code == "422" or (sheet and status_code.startswith(("4", "5"))):
                     response["content"] = ref
-
-
-def _build_configs_from_db(
-    db_printers: list[Any],
-) -> list[PrinterYAMLConfig]:
-    """Runtime configs of the stored tape printers (page printers are skipped).
-
-    Phase 5 (#124): the DB is the only source of printer configuration. Missing or empty
-    connection JSON gets defaults (``printer_runtime.tape_config``).
-    """
-    return [tape_config(p) for p in db_printers if p.backend != "ipp"]
 
 
 @asynccontextmanager
@@ -378,10 +366,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await cleanup_task.start()
     if _initially_paused:
         _log.info("Restored %d manual printer pause(s) from the database", len(_initially_paused))
-    # Producers last: each probes once at start (no awaited probe at startup).
-    await runtime.start()
-
     try:
+        # Producers last: each probes once at start (no awaited probe at startup). Inside the
+        # ``try`` so a failing start still reaches ``runtime.stop()`` (265-04).
+        await runtime.start()
         yield
     finally:
         # Producers, then the queue (once, longest attached timeout), then the page clients.

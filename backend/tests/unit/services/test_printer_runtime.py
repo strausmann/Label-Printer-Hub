@@ -11,6 +11,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
@@ -731,3 +732,351 @@ async def test_kind_change_tape_to_page_fails_queued_tape_jobs(env: Env) -> None
         assert row is not None
         assert row.state == DbJobState.FAILED.value
         assert row.error == "recovery_invalid_page_payload"
+
+
+# --- Task 6: stop, locks, key, reconcile tasks, roll tracker, failed attach -----------------
+
+
+async def test_stop_closes_page_clients_when_queue_stop_raises(env: Env) -> None:
+    """263-16: a failing ``queue.stop`` must not leave the page clients open."""
+    await _start(env)
+    await env.runtime.attach(_ipp(slug="page-a"))
+    await env.runtime.attach(_ipp(slug="page-b", uri=URI_2))
+
+    async def _boom(timeout_s: float = 30.0) -> None:
+        raise RuntimeError("queue stop failed")
+
+    with patch.object(env.queue, "stop", _boom), pytest.raises(RuntimeError, match="queue stop"):
+        await env.runtime.stop()
+    assert len(env.transports) == 4
+    assert all(t.closed for t in env.transports)
+
+
+async def test_lock_entry_removed_after_detach(env: Env) -> None:
+    """263-17: the per-printer lock entry does not outlive the printer."""
+    await _start(env)
+    printer = _ipp()
+    await env.runtime.attach(printer)
+    await env.runtime.detach(printer.id)
+    assert printer.id not in env.runtime._locks
+
+
+async def test_lock_entry_kept_while_a_waiter_queues_behind_a_detach(env: Env) -> None:
+    """263-17, interleaving: an attach waiting on the lock of a detach still runs strictly after
+    it (the entry is not dropped under the waiter), and the entry is gone once both finished."""
+    await _start(env)
+    printer = _ipp()
+    await env.runtime.attach(printer)
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+    real_remove = env.queue.remove_printer
+    order: list[str] = []
+
+    async def _remove(printer_id: UUID, timeout_s: float) -> None:
+        order.append("remove-start")
+        entered.set()
+        await gate.wait()
+        await real_remove(printer_id, timeout_s)
+        order.append("remove-end")
+
+    real_add = env.queue.add_page_printer
+
+    async def _add(*args: Any, **kwargs: Any) -> None:
+        order.append("add")
+        await real_add(*args, **kwargs)
+
+    with (
+        patch.object(env.queue, "remove_printer", _remove),
+        patch.object(env.queue, "add_page_printer", _add),
+    ):
+        detach = asyncio.create_task(env.runtime.detach(printer.id))
+        await entered.wait()
+        attach = asyncio.create_task(env.runtime.attach(printer))
+        third = asyncio.create_task(env.runtime.detach(printer.id))
+        try:
+            await asyncio.sleep(0.05)
+            assert order == ["remove-start"]  # both waiters are parked behind the detach
+        finally:
+            gate.set()
+            async with asyncio.timeout(TEST_TIMEOUT_S):
+                await asyncio.gather(detach, attach, third, return_exceptions=True)
+    assert order.index("remove-end") < order.index("add")
+    assert printer.id not in env.runtime._locks
+
+
+def test_wiring_key_changes_when_community_changes() -> None:
+    """263-18: the SNMP community is detected through the connection JSON alone."""
+    printer = _tape(discover=True)
+    other = printer.model_copy(
+        update={
+            "connection": {
+                "host": "192.0.2.10",
+                "port": 9100,
+                "snmp": {"discover": True, "community": "other"},
+            }
+        }
+    )
+    assert wiring_key(other) != wiring_key(printer)
+    toggled = printer.model_copy(
+        update={
+            "connection": {
+                "host": "192.0.2.10",
+                "port": 9100,
+                "snmp": {"discover": False, "community": "public"},
+            }
+        }
+    )
+    assert wiring_key(toggled) != wiring_key(printer)
+    assert len(wiring_key(printer)) == 6  # the duplicate SNMP element is gone
+
+
+def _fail_first_producer_start() -> Any:
+    """A patch under which the first ``IppStatusProducer.start`` raises, later ones work."""
+    from app.services.producers.ipp_status_producer import IppStatusProducer
+
+    real_start = IppStatusProducer.start
+    calls: list[int] = []
+
+    async def _start(self: IppStatusProducer) -> None:
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("start failed")
+        await real_start(self)
+
+    return patch.object(IppStatusProducer, "start", _start)
+
+
+async def test_rename_restarts_a_failed_producer(env: Env) -> None:
+    """263-23: a rename-only update (equal key) re-wires a page printer whose producer is dead."""
+    await _start(env)
+    printer = _ipp()
+    await _store_row(env.factory, printer)
+    with _fail_first_producer_start():
+        await env.runtime.reconcile(printer.id)
+        assert not env.runtime.is_polled(printer.id)  # the start failed
+        await _update_row(env.factory, printer.id, name="Renamed")
+        await env.runtime.reconcile(printer.id)
+    assert env.runtime.is_polled(printer.id)
+    assert env.queue.is_page_printer(printer.id)
+
+
+async def test_rename_keeps_a_tape_printer_without_snmp_wired(env: Env) -> None:
+    """263-23 counter-case: a tape printer that is not polled by design is not re-wired."""
+    await _start(env)
+    printer = _tape(discover=False)
+    await _store_row(env.factory, printer)
+    await env.runtime.reconcile(printer.id)
+    service = env.runtime.print_service_for(printer.id)
+    assert service is not None
+    await _update_row(env.factory, printer.id, name="Renamed")
+    await env.runtime.reconcile(printer.id)
+    assert env.runtime.print_service_for(printer.id) is service
+
+
+async def test_reconcile_tasks_are_per_app(env: Env, async_session_factory: Any) -> None:
+    """263-24: the running reconciles live on the runtime of the app, not in a module set."""
+    import app.api.routes.admin_printers_api as admin_api
+
+    other = await _make_env(async_session_factory)
+    try:
+        env.app.state.printer_runtime = env.runtime
+        other.app.state.printer_runtime = other.runtime
+        gate = asyncio.Event()
+        entered = asyncio.Event()
+
+        async def _reconcile(printer_id: UUID) -> None:
+            entered.set()
+            await gate.wait()
+
+        with patch.object(env.runtime, "reconcile", _reconcile):
+            request: Any = SimpleNamespace(app=env.app)
+            call = asyncio.create_task(admin_api._apply_live(request, uuid4()))
+            try:
+                await entered.wait()
+                assert len(env.runtime.reconciles) == 1
+                assert other.runtime.reconciles == set()
+                assert not hasattr(admin_api, "_RECONCILES")
+            finally:
+                gate.set()
+                async with asyncio.timeout(TEST_TIMEOUT_S):
+                    await call
+        await asyncio.sleep(0)
+        assert env.runtime.reconciles == set()
+    finally:
+        await other.runtime.stop()
+
+
+async def test_overlapping_producers_emit_one_roll_changed(env: Env) -> None:
+    """263-35: every producer gets the runtime's one ``RollTracker``; two producers of the same
+    printer (an old and a re-wired one) report one change between them."""
+    await _start(env)
+    printer = _tape(discover=True)
+    await _store_row(env.factory, printer)
+    events = env.app.state.event_bus.subscribe(f"printer:{printer.id}:tape", "t")
+
+    async def _preflight(*_args: Any, **_kwargs: Any) -> PreflightStatus:
+        return PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12)
+
+    with (
+        patch(
+            "app.services.printer_runtime._resolve_model_id_from_config",
+            AsyncMock(return_value="PT-P750W"),
+        ),
+        patch("app.services.producers.status_probe_producer.query_preflight", _preflight),
+    ):
+        await env.runtime.attach(printer)
+        first = env.runtime._wired[printer.id].producer
+        await env.runtime.attach(printer)  # a re-wire: a second producer for the same printer
+        second = env.runtime._wired[printer.id].producer
+    assert first is not None and second is not None and first is not second
+    tracker = env.runtime.roll_tracker
+    assert first._roll_tracker is tracker  # type: ignore[union-attr]
+    assert second._roll_tracker is tracker  # type: ignore[union-attr]
+    results = await asyncio.gather(
+        first._roll_tracker.observe(printer.id, 12, "12mm"),  # type: ignore[union-attr]
+        second._roll_tracker.observe(printer.id, 12, "12mm"),  # type: ignore[union-attr]
+    )
+    assert [r is not None for r in results].count(True) == 1
+    published = []
+    while not events.empty():
+        event = events.get_nowait()
+        if event is not None and event.event_type == "printer.roll_changed":
+            published.append(event)
+    assert len(published) == 1
+
+
+async def test_failed_attach_leaves_no_worker(env: Env) -> None:
+    """263-77: a failure after the page printer joined the queue takes it out again; tray keys
+    are read before the add, so their failure never reaches the queue at all."""
+    await _start(env)
+    printer = _ipp()
+
+    async def _boom(_pid: UUID) -> list[str]:
+        raise RuntimeError("store down")
+
+    with patch.object(env.runtime, "_tray_keys", _boom), pytest.raises(RuntimeError):
+        await env.runtime.attach(printer)
+    assert not env.queue.is_page_printer(printer.id)
+    assert env.queue.pause_info(printer.id) is None
+    assert printer.id not in env.app.state.ipp_printer_states
+    assert all(t.closed for t in env.transports)  # the client and the producer's client
+
+
+async def test_failed_attach_after_the_add_removes_the_printer(env: Env) -> None:
+    """263-77: any later failure of the attach calls ``queue.remove_printer``."""
+    await _start(env)
+    printer = _ipp()
+
+    def _boom() -> None:
+        raise RuntimeError("late failure")
+
+    with patch.object(env.runtime, "_refresh_backcompat", _boom), pytest.raises(RuntimeError):
+        await env.runtime.attach(printer)
+    assert not env.queue.is_page_printer(printer.id)
+    assert printer.id not in env.app.state.ipp_printer_states
+    assert not env.runtime.is_polled(printer.id)
+    assert all(t.closed for t in env.transports)
+
+
+# --- 265-06: a page printer without a status producer is held, not served blind -----------
+
+
+async def test_dead_producer_pauses_page_printer(env: Env) -> None:
+    await _start(env)
+    printer = _ipp()
+    with _fail_first_producer_start():
+        await env.runtime.attach(printer)
+    info = env.queue.pause_info(printer.id)
+    assert info is not None
+    assert (info.source, info.reason_code) == ("printer_error", "status-unavailable")
+    assert env.queue.is_page_printer(printer.id)  # attached, degraded
+    assert not env.runtime.is_polled(printer.id)
+
+
+async def test_unbuildable_producer_pauses_page_printer_before_the_queue_runs(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """At startup the printer is paused before the queue (and any worker) exists."""
+    from app.services.producers import ipp_status_producer
+
+    e = await _make_env(async_session_factory)
+    printer = _ipp()
+    try:
+        with patch.object(ipp_status_producer.IppStatusProducer, "__init__", _raising_init):
+            await e.runtime.attach(printer, fatal=True)
+        info = e.queue.pause_info(printer.id)
+        assert info is not None and info.reason_code == "status-unavailable"
+        await _start(e)
+    finally:
+        await e.runtime.stop()
+
+
+def _raising_init(self: Any, **_kwargs: Any) -> None:
+    raise RuntimeError("cannot build")
+
+
+async def test_producer_retry_lifts_status_pause(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    e = await _make_env(async_session_factory, interval_s=0.05)
+    try:
+        await _start(e)
+        printer = _ipp()
+        with _fail_first_producer_start():
+            await e.runtime.attach(printer)
+            assert e.queue.pause_info(printer.id) is not None
+            await _until(lambda: _async(e.queue.pause_info(printer.id) is None), timeout_s=5.0)
+        assert e.runtime.is_polled(printer.id)
+    finally:
+        await e.runtime.stop()
+
+
+async def test_producer_retry_keeps_a_user_pause(
+    async_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A successful retry lifts the ``status-unavailable`` pause only, never a user's."""
+    e = await _make_env(async_session_factory, interval_s=0.05)
+    try:
+        await _start(e)
+        printer = _ipp()
+        with _fail_first_producer_start():
+            await e.runtime.attach(printer)
+            await e.queue.pause_printer(printer.id, reason="user", source="user")
+            await _until(lambda: _async(e.runtime.is_polled(printer.id)), timeout_s=5.0)
+        info = e.queue.pause_info(printer.id)
+        assert info is not None and info.source == "user"
+    finally:
+        await e.runtime.stop()
+
+
+async def test_detach_cancels_the_producer_retry(env: Env) -> None:
+    await _start(env)
+    printer = _ipp()
+    with _fail_first_producer_start():
+        await env.runtime.attach(printer)
+    retry = env.runtime._retries.get(printer.id)
+    assert retry is not None and not retry.done()
+    await env.runtime.detach(printer.id)
+    assert retry.done()
+    assert printer.id not in env.runtime._retries
+
+
+async def test_wiring_keeps_only_a_digest_of_its_key(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Carried (#263): the key holds the IPP URI and the SNMP community, so the runtime keeps a
+    SHA-256 digest only, and attach and reconcile log neither."""
+    import re
+
+    await _start(env)
+    secret_uri = "ipp://secret-host.example.invalid/ipp/print"
+    printer = _ipp(uri=secret_uri)
+    await _store_row(env.factory, printer)
+    with caplog.at_level(logging.DEBUG, logger="app.services.printer_runtime"):
+        await env.runtime.attach(printer)
+        await env.runtime.reconcile(printer.id)
+    wiring = env.runtime._wired[printer.id]
+    assert re.fullmatch(r"[0-9a-f]{64}", wiring.key_digest)
+    assert "secret-host" not in repr(vars(wiring).get("key_digest"))
+    assert not any(isinstance(v, tuple) for v in vars(wiring).values())
+    assert all("secret-host" not in r.getMessage() for r in caplog.records)

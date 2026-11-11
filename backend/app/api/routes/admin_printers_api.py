@@ -229,10 +229,6 @@ def _row_to_read(printer: Printer) -> PrinterRead:
     )
 
 
-_RECONCILES: set[asyncio.Task[None]] = set()
-"""Strong references to running reconciles, so a shielded one outlives a cancelled request."""
-
-
 async def _apply_live(request: Request, printer_id: UUID) -> None:
     """Wire the saved row into the running hub (#224); the response still reports the row.
 
@@ -245,8 +241,10 @@ async def _apply_live(request: Request, printer_id: UUID) -> None:
     if runtime is None:  # an app without the lifespan (unit tests of the routes)
         return
     task = asyncio.ensure_future(runtime.reconcile(printer_id))
-    _RECONCILES.add(task)
-    task.add_done_callback(_RECONCILES.discard)
+    # Strong references on the runtime of this app, so a shielded reconcile outlives a
+    # cancelled request.
+    runtime.reconciles.add(task)
+    task.add_done_callback(runtime.reconciles.discard)
     await asyncio.shield(task)
 
 
