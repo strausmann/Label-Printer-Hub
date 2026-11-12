@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 
 import pytest
 from app.page_render.pdf import resolve_font_path
@@ -264,6 +265,18 @@ def test_listing_overflow_is_flagged_truncated() -> None:
         items=tuple(LabelDataItem(item=f"item {i}") for i in range(40)),
     )
     assert _render(ContentType.QR_WITH_LISTING, data).truncated is True
+
+
+def test_listing_overflow_marker_is_language_neutral() -> None:
+    data = _data(
+        qr_payload="x",
+        primary_id="H",
+        items=tuple(LabelDataItem(item=f"item {i}") for i in range(40)),
+    )
+    lines, omitted = RasterCellRenderer()._lines(ContentType.QR_WITH_LISTING, data, 200)
+    assert omitted > 0
+    assert re.fullmatch(r"\+[0-9]+", lines[-1][0]), lines[-1][0]
+    assert lines[-1][0] == f"+{omitted}"
 
 
 @pytest.mark.parametrize(

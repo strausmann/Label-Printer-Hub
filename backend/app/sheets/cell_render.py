@@ -458,7 +458,7 @@ class RasterCellRenderer:
                     shown = [_clean(i.item) for i in data.items]
                 lines = [(primary, starts[0])] + [(t, item_px) for t in shown]
                 if omitted:
-                    lines.append((f"+{omitted} more", item_px))
+                    lines.append((f"+{omitted}", item_px))
                 return lines, omitted
 
     def _draw_text(

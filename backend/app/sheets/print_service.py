@@ -158,6 +158,7 @@ __all__ = [
     "TooManyPreviewsError",
     "create_sheet_with_id_label",
     "id_cell_label",
+    "id_cell_title",
     "margin_check",
     "margin_id_text",
     "page_margin_id_payload",
@@ -236,22 +237,33 @@ def sheet_type_label(vendor: str | None, product_codes: Sequence[str], key: str)
     return product_codes[0] if product_codes else key
 
 
+def id_cell_title(vendor: str | None, product_codes: Sequence[str], key: str) -> str:
+    """The title line of the ID cell: ``"<first product code> <vendor>"``.
+
+    The code comes first, so when the cell is too small the renderer's cut (always at the end of the
+    line) takes the vendor and never the code.
+    """
+    if vendor and product_codes:
+        return f"{product_codes[0]} {vendor}"
+    return sheet_type_label(vendor, product_codes, key)
+
+
 def margin_id_text(code: str, type_label: str) -> str:
     """The text of the margin ID: the code, then the type (spec 10.2)."""
     return f"{code} · {type_label}"
 
 
-def id_cell_label(code: str, type_label: str, scan_payload: str) -> LabelData:
+def id_cell_label(code: str, title: str, scan_payload: str) -> LabelData:
     """The label of the sheet ID cell: `qr_two_lines`, the code and the type (spec 10.2).
 
-    The title is the type label alone (266-10): on a 45.7 x 21.2 mm cell a "· sheet ID" suffix
-    was always cut off. The renderer shortens the label to the cell if needed; the code line
-    comes first and is the part that must be readable.
+    The title is the type alone (266-10): on a 45.7 x 21.2 mm cell a "· sheet ID" suffix was
+    always cut off. Build it with ``id_cell_title`` (product code first, then the vendor): the
+    renderer shortens the title at its end, so on a small cell the vendor goes and the code stays.
     """
     return LabelData(
         source_app="hub",
         primary_id=code,
-        title=type_label,
+        title=title,
         qr_payload=scan_payload,
     )
 
@@ -412,6 +424,7 @@ class _SheetInfo:
     version: int
     type_label: str
     hint: str | None  # the probable code of a sheet that does not exist yet
+    id_title: str  # the title line of the ID cell: the product code first
 
 
 async def _info_of_existing(session: AsyncSession, view: SheetView) -> _SheetInfo:
@@ -419,7 +432,13 @@ async def _info_of_existing(session: AsyncSession, view: SheetView) -> _SheetInf
     v = await session.get(SheetTypeVersion, view.type_version_id)
     if t is None or v is None:  # foreign keys make this unreachable
         raise SheetTypeNotFoundError()
-    return _SheetInfo(t.key, v.version, sheet_type_label(t.vendor, t.product_codes, t.key), None)
+    return _SheetInfo(
+        t.key,
+        v.version,
+        sheet_type_label(t.vendor, t.product_codes, t.key),
+        None,
+        id_cell_title(t.vendor, t.product_codes, t.key),
+    )
 
 
 def _next_hint(code: str, ahead: int) -> str:
@@ -474,7 +493,11 @@ async def _new_view_of(
         code_hint=hint,
     )
     return view, _SheetInfo(
-        t.key, v.version, sheet_type_label(t.vendor, t.product_codes, t.key), hint
+        t.key,
+        v.version,
+        sheet_type_label(t.vendor, t.product_codes, t.key),
+        hint,
+        id_cell_title(t.vendor, t.product_codes, t.key),
     )
 
 
@@ -947,7 +970,7 @@ async def preview(
         mapped_cells: set[int] = set()
         if page.id_cell is not None:
             id_type, _ = map_content_type(ContentType.QR_TWO_LINES, view.allow_qr)
-            id_label = id_cell_label(code, info.type_label, scan(code))
+            id_label = id_cell_label(code, info.id_title, scan(code))
             jobs.append(_CellJob(page.id_cell, id_type, id_label, None))
             purposes[page.id_cell] = (None, ID_CELL_PURPOSE)
         for cell in page.item_cells:
@@ -1154,6 +1177,7 @@ def _placement_request(p: PlacementInModel, version: int | None = None) -> Place
 class _TypeInfo:
     key: str
     label: str
+    id_title: str
     allow_qr: bool
     geometry: Geometry
 
@@ -1172,6 +1196,7 @@ async def _type_info(
     info = _TypeInfo(
         sheet_type.key,
         sheet_type_label(sheet_type.vendor, sheet_type.product_codes, sheet_type.key),
+        id_cell_title(sheet_type.vendor, sheet_type.product_codes, sheet_type.key),
         sheet_type.allow_qr,
         version_geometry(version),
     )
@@ -1218,7 +1243,7 @@ def _page_payload(
     for a in page.assignments:
         if a.item_index is None:
             id_type, mapped = map_content_type(ContentType.QR_TWO_LINES, info.allow_qr)
-            label = id_cell_label(page.sheet_code, info.label, scan(page.sheet_code))
+            label = id_cell_label(page.sheet_code, info.id_title, scan(page.sheet_code))
             id_cell = SheetCellPayload(
                 cell=a.cell,
                 content_type=id_type,

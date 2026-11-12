@@ -1134,9 +1134,11 @@ def test_id_cell_fits_45_7x21_2(monkeypatch: pytest.MonkeyPatch) -> None:
 
     g = Geometry("A4", 21000, 29700, 4570, 2120, 4, 12, 4820, 2120, 2130, 985, None, "rectangle")
     label = print_service.id_cell_label(
-        "L4736-0001", "Avery Zweckform L4736REV", "https://hub.example.invalid/sheet/L4736-0001"
+        "L4736-0001",
+        print_service.id_cell_title("Avery Zweckform", ["L4736REV"], "k"),
+        "https://hub.example.invalid/sheet/L4736-0001",
     )
-    assert label.title == "Avery Zweckform L4736REV"
+    assert label.title == "L4736REV Avery Zweckform"
     shown: dict[str, str] = {}
     real = cell_render._fit_line
 
@@ -1158,4 +1160,53 @@ def test_id_cell_fits_45_7x21_2(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         assert shown["L4736-0001"] == "L4736-0001"  # the code line is never cut
         title = shown[label.title]
-        assert "sheet ID" not in title and title.rstrip("…").startswith("Avery Zweckform")
+        # The product code is whole; it is the vendor that gives way when the cell is small.
+        assert "sheet ID" not in title and title.startswith("L4736REV")
+        assert title.endswith("…") and "Zweckform" not in title
+
+
+def test_id_cell_title_puts_the_product_code_first() -> None:
+    assert (
+        print_service.id_cell_title("Avery Zweckform", ["L4736REV", "L4736"], "k")
+        == "L4736REV Avery Zweckform"
+    )
+    # No vendor, or no code: the plain type label, as the list shows it.
+    assert print_service.id_cell_title(None, ["L4736REV"], "k") == "L4736REV"
+    assert print_service.id_cell_title("Avery", [], "my-key") == "my-key"
+
+
+def test_id_cell_title_keeps_the_code_whole_on_a_small_cell_and_everything_on_a_large_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.sheets import cell_render
+    from app.sheets.cell_render import DEFAULT_CELL_RENDERER
+
+    title = print_service.id_cell_title("Avery Zweckform", ["L4736REV"], "k")
+    label = print_service.id_cell_label(
+        "L4736-0001", title, "https://hub.example.invalid/sheet/L4736-0001"
+    )
+    shown: dict[str, str] = {}
+    real = cell_render._fit_line
+
+    def spy(text: str, *args: Any) -> tuple[str, int, bool]:
+        out = real(text, *args)
+        shown[text] = out[0]
+        return out
+
+    monkeypatch.setattr(cell_render, "_fit_line", spy)
+
+    def drawn(width_mm: float) -> str:
+        shown.clear()
+        DEFAULT_CELL_RENDERER.render(
+            box_w_mm=width_mm,
+            box_h_mm=21.2,
+            dpi=300,
+            content_type=ContentType.QR_TWO_LINES,
+            data=label,
+        )
+        return shown[title]
+
+    small = drawn(45.7)
+    assert small.startswith("L4736REV") and small != title and small.endswith("…")
+    assert "Zweckform" not in small
+    assert drawn(120.0) == title  # room enough: the full text, vendor included
