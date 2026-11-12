@@ -33,6 +33,9 @@ importers:
       '@tanstack/react-router':
         specifier: 1.170.46
         version: 1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      Spoon-Knife:
+        specifier: github:octocat/Spoon-Knife
+        version: https://codeload.github.com/octocat/Spoon-Knife/tar.gz/d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -2038,6 +2041,10 @@ packages:
 
   '@workflow/serde@4.1.0':
     resolution: {integrity: sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ==}
+
+  Spoon-Knife@https://codeload.github.com/octocat/Spoon-Knife/tar.gz/d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9:
+    resolution: {tarball: https://codeload.github.com/octocat/Spoon-Knife/tar.gz/d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9}
+    version: 0.0.0
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -6859,6 +6866,8 @@ snapshots:
       vue: 3.5.45(typescript@6.0.3)
 
   '@workflow/serde@4.1.0': {}
+
+  Spoon-Knife@https://codeload.github.com/octocat/Spoon-Knife/tar.gz/d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9: {}
 
   acorn-jsx@5.3.2(acorn@8.19.0):
     dependencies:
