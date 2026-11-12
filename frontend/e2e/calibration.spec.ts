@@ -39,12 +39,37 @@ async function jobsOf(page: Page, id: string): Promise<string[]> {
 }
 
 /**
+ * Waits until the element has not moved for two checks, each taken two animation frames after the one before.
+ * Playwright's own click check only covers the click; this one is for what happens after it (a popover placed
+ * under the element), so it is asked explicitly.
+ */
+async function waitUntilStill(page: Page, target: Locator) {
+  let previous: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+        const now = JSON.stringify(await target.boundingBox());
+        const still = now !== "null" && now === previous;
+        previous = now;
+        return still;
+      },
+      { message: "the element kept moving", timeout: 10_000, intervals: [50, 100, 200] },
+    )
+    .toBe(true);
+}
+
+/**
  * Chooses the 4 x 12 type in the combobox the way a person does: tap it, type the key. The one option then sits at the
  * top of the list; Playwright would otherwise scroll the page or dialog to reach a far option, and a scroll of anything
  * that contains the field closes the (non-modal) list.
  */
 async function chooseType(page: Page) {
   const box = page.getByRole("combobox", { name: /Sheet type|Bogentyp/ });
+  // The list opens under the field where it stands now. A field that is still moving (the language file and the
+  // data of the page arrive after a reload and reflow the page) leaves the list at its old place; Playwright then
+  // scrolls to reach it, the scroll closes the list and the next step finds none (#292).
+  await waitUntilStill(page, box);
   await box.click();
   // Wait for the list and select the shown label explicitly, so the first character is typed over it and never lost to a
   // late re-selection (263-85); then check what the field holds before picking.
@@ -414,6 +439,8 @@ test.describe.serial("calibration", () => {
           }),
         );
         await page.reload();
+        // The step heading in the page's language is there once the language file has arrived.
+        await expect(page.getByRole("heading", { level: 2, name: de ? "Schritt 1: Kalibrierseite drucken" : "Step 1: Print the calibration page" })).toBeVisible();
         await chooseType(page);
         for (const crossing of ["S1 · Z1", "S3 · Z1", "S1 · Z11", "S3 · Z11"]) {
           await page.getByRole("textbox", { name: new RegExp(`^(Across|Quer) (at|bei) ${crossing} \\(mm\\)$`) }).fill("0,3");
