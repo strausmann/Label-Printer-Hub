@@ -14,7 +14,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient
 
-from tests.integration.api.conftest import INDEX_HTML
+from tests.helpers.spa import INDEX_HTML
 
 CSP = (
     "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; "
