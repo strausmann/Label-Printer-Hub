@@ -467,6 +467,7 @@ async def test_no_db_connection_is_held_while_the_lookups_run(
     }
     url = _url(pid) if route == "preview" else f"/api/v1/print/{pid}/sheet"
     pool = engine_module.engine.pool
+    baseline = pool.checkedout()  # type: ignore[attr-defined]  # before the requests (266-15)
 
     try:
         tasks = [
@@ -483,7 +484,7 @@ async def test_no_db_connection_is_held_while_the_lookups_run(
     finally:
         fastapi_app.dependency_overrides.pop(get_lookup_service, None)
 
-    assert held == 0
+    assert held <= baseline
 
 
 class _GatedLookup:

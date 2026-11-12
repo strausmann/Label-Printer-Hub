@@ -620,14 +620,18 @@ async def test_a_cell_payload_with_unknown_keys_still_loads() -> None:
     assert cell.cell == 1  # a rollback must not strand a stored job
 
 
-async def _until_pool_idle(timeout_s: float = 2.0) -> bool:
-    """Whether the engine's pool is seen with no connection checked out within ``timeout_s``."""
+async def _until_pool_back_to(baseline: int, timeout_s: float = 2.0) -> bool:
+    """Whether the pool is seen with at most *baseline* connections out within ``timeout_s``.
+
+    *baseline* is what the pool handed out when the test started (266-15): the test is about the
+    requests it makes, not about connections other fixtures may hold.
+    """
     import app.db.engine as engine_module
 
     pool = engine_module.engine.pool
     async with asyncio.timeout(timeout_s + 1):
         for _ in range(int(timeout_s / 0.02)):
-            if pool.checkedout() == 0:  # type: ignore[attr-defined]
+            if pool.checkedout() <= baseline:  # type: ignore[attr-defined]
                 return True
             await asyncio.sleep(0.02)
     return False
@@ -650,7 +654,10 @@ async def test_a_retry_holds_no_connection_while_the_service_works(
         await asyncio.sleep(2.5)
         raise PrinterUnavailableError()
 
+    import app.db.engine as engine_module
+
     async with running() as rig:
+        baseline = engine_module.engine.pool.checkedout()  # type: ignore[attr-defined]
         code = await _sheet(used=4)
         first_id, _ = await _fail_cleanly(rig, _body(code, 3))
         monkeypatch.setattr(print_service, "retry_sheet_page", slow)
@@ -659,7 +666,7 @@ async def test_a_retry_holds_no_connection_while_the_service_works(
         async with asyncio.timeout(10):
             while started < 8:
                 await asyncio.sleep(0.02)
-        idle = await _until_pool_idle()
+        idle = await _until_pool_back_to(baseline)
         await asyncio.gather(*tasks)
 
     assert idle
@@ -686,6 +693,7 @@ async def test_no_connection_is_held_while_the_retry_is_submitted(
             other = await rig.client.get("/api/v1/sheets", headers=rig.reader)
         responses = await asyncio.gather(*tasks)
 
-    assert probe.checked_out == 0
+    assert probe.checked_out is not None
+    assert probe.checked_out <= probe.baseline
     assert other.status_code == 200, other.text
     assert {r.status_code for r in responses} == {409}

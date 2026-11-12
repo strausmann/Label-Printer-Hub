@@ -505,15 +505,17 @@ async def test_creating_a_cell_sheet_holds_no_connection_while_the_service_works
         raise PrinterUnavailableError()
 
     async with running() as rig:
+        pool = engine_module.engine.pool
+        # What the pool hands out before the requests: the test is about what they add (266-15).
+        baseline = pool.checkedout()  # type: ignore[attr-defined]
         monkeypatch.setattr(print_service_module, "create_sheet_with_id_label", slow)
         tasks = [asyncio.create_task(_create(rig, _create_body(QR_KEY))) for _ in range(8)]
         async with asyncio.timeout(10):
             while started < 8:
                 await asyncio.sleep(0.02)
-        pool = engine_module.engine.pool
         idle = False
         for _ in range(100):
-            if pool.checkedout() == 0:  # type: ignore[attr-defined]
+            if pool.checkedout() <= baseline:  # type: ignore[attr-defined]
                 idle = True
                 break
             await asyncio.sleep(0.02)
@@ -539,7 +541,8 @@ async def test_no_connection_is_held_while_the_id_job_is_submitted(
             other = await rig.client.get("/api/v1/sheets", headers=rig.reader)
         await asyncio.gather(*tasks)
 
-    assert probe.checked_out == 0
+    assert probe.checked_out is not None
+    assert probe.checked_out <= probe.baseline
     assert other.status_code == 200, other.text
 
 

@@ -685,6 +685,11 @@ class _SubmitProbe:
         self.n = n
         self.inside = 0
         self.checked_out: int | None = None
+        # What the pool already hands out when the probe is made, before any of the requests: the
+        # test asserts the requests add nothing to it, not that the whole pool is idle (266-15).
+        import app.db.engine as engine_module
+
+        self.baseline: int = engine_module.engine.pool.checkedout()  # type: ignore[attr-defined]
         self.everyone_in = asyncio.Event()
 
     async def __call__(self, *_a: Any, **_k: Any) -> UUID:
@@ -717,7 +722,8 @@ async def test_no_connection_is_held_while_page_jobs_are_submitted(
             other = await rig.client.get(f"/api/v1/sheets/{codes[0]}", headers=rig.reader)
         responses = await asyncio.gather(*tasks)
 
-    assert probe.checked_out == 0
+    assert probe.checked_out is not None
+    assert probe.checked_out <= probe.baseline
     assert other.status_code == 200, other.text
     assert {r.status_code for r in responses} == {409}
     assert await _cells() == []
