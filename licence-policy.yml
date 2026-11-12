@@ -73,6 +73,7 @@
     },
     {
       "purl": "pkg:pypi/reportlab",
+      "licence-text-sha256": "ef831761646313921375fc2cb888e8eeaf7da213d0b92852c10c42f3a0b4d138",
       "licence": "BSD-3-Clause",
       "reason": "Metadata only declares 'BSD license'; shipped LICENSE is BSD-3-Clause."
     },

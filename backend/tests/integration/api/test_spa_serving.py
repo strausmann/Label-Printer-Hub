@@ -162,3 +162,23 @@ async def test_known_licence_file_is_served(spa: AsyncClient, dist: Path) -> Non
     assert resp.text == "GNU AFFERO GENERAL PUBLIC LICENSE"
     assert resp.headers["cache-control"] == "no-cache"
     assert "hub-app-shell" not in resp.text
+
+
+async def test_licences_prefix_does_not_escape_to_other_files(spa: AsyncClient, dist: Path) -> None:
+    (dist / "licenses").mkdir()
+    for path in (
+        "/licenses/..%2Fassets%2Fapp.js",
+        "/licenses/..%2Findex.html",
+        "/licenses/..%2Ffavicon.svg",
+    ):
+        resp = await spa.get(path)
+        assert resp.status_code == 404, path
+        assert "console.log" not in resp.text, path
+        assert "hub-app-shell" not in resp.text, path
+
+
+@pytest.mark.parametrize("path", ["/a%00b", "/assets/a%00b.js", "/licenses/a%00b.txt"])
+async def test_nul_byte_in_path_is_404_not_500(spa: AsyncClient, path: str) -> None:
+    resp = await spa.get(path)
+    assert resp.status_code == 404
+    assert "hub-app-shell" not in resp.text

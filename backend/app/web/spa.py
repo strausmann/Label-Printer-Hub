@@ -92,8 +92,18 @@ def mount_spa(app: FastAPI, dist_dir: Path) -> None:
         if _is_reserved(full_path) and not full_path.startswith(_FILE_FIRST_PREFIXES):
             raise HTTPException(status_code=404, detail="Not Found")
         if full_path:
-            candidate = (root / full_path).resolve()
-            if candidate.is_file() and candidate.is_relative_to(root):
+            try:
+                candidate = (root / full_path).resolve()
+                is_file = candidate.is_file()
+            except (ValueError, OSError):  # e.g. a NUL byte in the path
+                raise HTTPException(status_code=404, detail="Not Found") from None
+            # Existing files of a reserved prefix are served only from inside that directory.
+            in_prefix = not _is_reserved(full_path) or any(
+                candidate.is_relative_to(root / prefix.rstrip("/"))
+                for prefix in _FILE_FIRST_PREFIXES
+                if full_path.startswith(prefix)
+            )
+            if is_file and candidate.is_relative_to(root) and in_prefix:
                 request.scope[_SPA_SCOPE_KEY] = True
                 is_asset = candidate.is_relative_to(root / "assets")
                 return FileResponse(

@@ -384,9 +384,9 @@ def test_load_policy_reads_licence_text_sha256(tmp_path: Path) -> None:
 
 def test_shipped_policy_pins_the_python_exceptions() -> None:
     policy = load_policy(REPO_ROOT / "licence-policy.yml")
-    pinned = {
-        purl.removeprefix("pkg:pypi/")
-        for purl, exc in policy.exceptions.items()
-        if purl.startswith("pkg:pypi/") and exc.licence_text_sha256
-    }
-    assert {"pysnmp", "qrcode", "jinja2", "pyusb", "ptouch"} <= pinned
+    pypi = {p: e for p, e in policy.exceptions.items() if p.startswith("pkg:pypi/")}
+    assert {
+        "pkg:pypi/" + n for n in ("pysnmp", "qrcode", "jinja2", "pyusb", "ptouch", "reportlab")
+    } <= set(pypi)
+    unpinned = sorted(p for p, e in pypi.items() if not e.licence_text_sha256)
+    assert unpinned == [], f"pypi exceptions without licence-text-sha256: {unpinned}"
