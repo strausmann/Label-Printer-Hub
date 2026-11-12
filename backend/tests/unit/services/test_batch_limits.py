@@ -556,6 +556,35 @@ def _batch() -> dict[str, Any]:
     return {"items": [{"content_type": "qr_only", "data": {"qr_payload": "https://e.invalid/1"}}]}
 
 
+def _stall_report(queue: PrintQueue, roll: TapeRoll) -> str:
+    """TEMPORARY diagnostics for the CI-only stall of the drain (do not keep)."""
+    import io
+    import sys
+    import traceback
+
+    out = io.StringIO()
+    out.write(f"runs={list(queue._runs)} roll.calls={roll.calls} gate={roll.gate.is_set()}\n")
+    for r in queue._runs.values():
+        out.write(f"run state={r.state} current={r.current} jobs={len(r.job_ids)}\n")
+    out.write(f"jobs states={[j.state.value for j in queue._jobs.values()]}\n")
+    for t in asyncio.all_tasks():
+        out.write(f"TASK {t.get_name()} done={t.done()}\n")
+        for f in t.get_stack(limit=6):
+            out.write(f"   {f.f_code.co_filename}:{f.f_lineno} {f.f_code.co_name}\n")
+    loop = asyncio.get_running_loop()
+    ex = getattr(loop, "_default_executor", None)
+    if ex is not None:
+        out.write(
+            f"executor threads={len(ex._threads)} queued={ex._work_queue.qsize()} "
+            f"max={ex._max_workers}\n"
+        )
+    out.write(f"threads={[t.name for t in threading.enumerate()]}\n")
+    for tid, frame in sys._current_frames().items():
+        if tid != threading.get_ident():
+            out.write(f"THREAD {tid}\n" + "".join(traceback.format_stack(frame, limit=4)))
+    return out.getvalue()
+
+
 async def test_the_route_answers_429_too_many_queued_runs(batch_route: dict[str, Any]) -> None:
     client, queue = batch_route["client"], batch_route["queue"]
     for _ in range(5):
@@ -570,7 +599,10 @@ async def test_the_route_answers_429_too_many_queued_runs(batch_route: dict[str,
     assert len(queue._runs) == 5  # the refused batch was not rendered, stored or queued
     # Release path through the route: the runs print, a new batch is taken.
     batch_route["roll"].gate.set()
-    await _until(lambda: not queue._runs)
+    try:
+        await _until(lambda: not queue._runs)
+    except TimeoutError:
+        raise AssertionError(_stall_report(queue, batch_route["roll"])) from None
     resp = await client.post("/api/v1/print/p/batch", json=_batch())
     assert resp.status_code == 202, resp.text
 
