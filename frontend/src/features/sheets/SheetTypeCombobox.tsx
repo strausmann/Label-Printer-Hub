@@ -252,8 +252,10 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
             // The input gets the focus again when the list opens under the first keystroke: by then there is a query, leave it be.
             if (typedRef.current !== null) return;
             selectAll(input);
+            // Only while the field still has the focus: `select()` takes the focus, so a late call after a Tab would pull it
+            // back from the next control and trap the keyboard in the field.
             setTimeout(() => {
-              if (typedRef.current === null) selectAll(input);
+              if (typedRef.current === null && document.activeElement === input) selectAll(input);
             }, 0);
           }}
           // A tap on a field that already has the focus (the list was closed by a choice or a drag) opens it again.
@@ -267,7 +269,7 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
             trigger.current?.click();
             // A new search, as with a fresh focus; after the click, because opening the list moves the caret.
             const select = () => {
-              if (typedRef.current === null) selectAll(input);
+              if (typedRef.current === null && document.activeElement === input) selectAll(input);
             };
             select();
             setTimeout(select, 0);
