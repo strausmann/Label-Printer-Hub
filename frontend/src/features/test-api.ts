@@ -57,7 +57,8 @@ export const job = (id: string, printerId: string, state: string, over: Record<s
   ...over,
 });
 
-type Handler = (init: RequestInit) => unknown;
+/** A handler gets the request and its URL, so a route can honour the query string the way the server does. */
+type Handler = (init: RequestInit, url: URL) => unknown;
 
 /** A non-200 JSON answer for a mocked route (return it from a handler or use it as the route value). */
 export const respond = (status: number, body: unknown) =>
@@ -87,7 +88,7 @@ export function mockApi(routes: Record<string, Handler | unknown>) {
     if (route === undefined) {
       return new Response(JSON.stringify({ detail: "not mocked" }), { status: 404, headers: { "Content-Type": "application/json" } });
     }
-    const body = typeof route === "function" ? await (route as Handler)(init) : route;
+    const body = typeof route === "function" ? await (route as Handler)(init, url) : route;
     if (body instanceof Response) return body;
     if (body === null) return new Response(null, { status: 204 });
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });

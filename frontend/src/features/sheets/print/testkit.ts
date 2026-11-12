@@ -89,7 +89,9 @@ export function routes(o: RouteOptions = {}): Record<string, unknown> {
     [`GET /api/v1/printers/${P}/status`]: o.status ?? pageStatus(P),
     [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
     "POST /api/v1/render/preview": () => new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { "Content-Type": "image/png" } }),
-    "GET /api/v1/sheet-types": o.types ?? [SHEET_TYPE],
+    // Like the server: an archived type is left out unless the request asks for it (`include_archived=true`).
+    "GET /api/v1/sheet-types": (_init: RequestInit, url: URL) =>
+      (o.types ?? [SHEET_TYPE]).filter((t) => url.searchParams.get("include_archived") === "true" || !(t as { archived_at?: string | null }).archived_at),
     "GET /api/v1/sheets": sheets,
     "GET /api/v1/sheets/next-code": { code: "L4736-0005", hint: "probable" },
     ...Object.fromEntries(sheets.map((s) => [`GET /api/v1/sheets/${s.code}`, sheetRead(s.code, { used: USED_17 }, { used: s.used, free: s.free })])),
