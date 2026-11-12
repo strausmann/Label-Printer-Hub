@@ -140,6 +140,14 @@ class TraysNotAllowedError(Exception):
 # ---------------------------------------------------------------------------
 
 
+class AdminProbeClient(IppClient):
+    """The IPP client of an admin probe (``probe_ipp``).
+
+    It adds nothing to ``IppClient``. The type is the marker that tells a probe from the
+    clients of the printer runtime (a test hub keeps the two sources apart by it).
+    """
+
+
 async def probe_ipp(
     connection: IppConnection,
     *,
@@ -159,7 +167,7 @@ async def probe_ipp(
     timeout_s = min(MAX_PROBE_TIMEOUT_S, float(queue_timeout_s))
     transport = transport_factory(connection.uri) if transport_factory is not None else None
     try:
-        async with IppClient(
+        async with AdminProbeClient(
             connection.uri,
             tls_verify=connection.tls_verify,
             query_timeout_s=timeout_s,

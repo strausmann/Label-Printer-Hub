@@ -7,7 +7,6 @@ keys, so scope checks run as in production. All hosts are ``*.example.invalid``.
 
 from __future__ import annotations
 
-import sys
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -32,6 +31,7 @@ from app.printer_backends.ipp.codec import (
     decode,
     encode,
 )
+from app.services.printer_admin_service import AdminProbeClient
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -113,31 +113,24 @@ def _unreachable_transport() -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
-def _from_runtime() -> bool:
-    """True when the transport factory is called by the printer runtime (live wiring, #224).
-
-    Since #224 a saved printer is wired at once: the runtime builds its own IPP clients and
-    its status producer probes the fake. These tests are about the admin probe, so the hub
-    keeps the two sources apart instead of counting the runtime's requests as probes.
-    """
-    frame = sys._getframe(1)
-    while frame is not None:
-        if frame.f_globals.get("__name__") == "app.services.printer_runtime":
-            return True
-        frame = frame.f_back  # type: ignore[assignment]
-    return False
-
-
 class _Tagged(httpx.AsyncBaseTransport):
-    """Records the IPP operation of every request under its source, then forwards it."""
+    """Records the IPP operation of every request under its source, then forwards it.
 
-    def __init__(self, inner: httpx.AsyncBaseTransport, log: list[str]) -> None:
+    The source is ``admin`` once an ``AdminProbeClient`` has taken the transport (the hub
+    fixture marks it there); every other transport belongs to the printer runtime (live
+    wiring, #224).
+    """
+
+    def __init__(self, inner: httpx.AsyncBaseTransport, uri: str, hub: Hub) -> None:
         self.inner = inner
-        self.log = log
+        self.uri = uri
+        self.hub = hub
+        self.admin = False
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         msg, _ = decode(request.read())
-        self.log.append(OPERATION_NAMES.get(msg.code, hex(msg.code)))
+        log = self.hub.admin_log if self.admin else self.hub.runtime_log
+        log.append(OPERATION_NAMES.get(msg.code, hex(msg.code)))
         return await self.inner.handle_async_request(request)
 
     async def aclose(self) -> None:
@@ -149,13 +142,21 @@ class Hub:
     client: AsyncClient
     fake: FakeIppPrinter
     app: Any
-    uris: list[str] = field(default_factory=list)
-    """URIs the admin routes built a client for (the probe)."""
-    runtime_uris: list[str] = field(default_factory=list)
-    """URIs the printer runtime wired (live wiring, #224)."""
+    transports: list[_Tagged] = field(default_factory=list)
+    """Every transport the factory built, in order."""
     admin_log: list[str] = field(default_factory=list)
     runtime_log: list[str] = field(default_factory=list)
     override: Callable[[str], httpx.AsyncBaseTransport] | None = None
+
+    @property
+    def uris(self) -> list[str]:
+        """URIs the admin routes built a client for (the probe)."""
+        return [t.uri for t in self.transports if t.admin]
+
+    @property
+    def runtime_uris(self) -> list[str]:
+        """URIs the printer runtime wired (live wiring, #224)."""
+        return [t.uri for t in self.transports if not t.admin]
 
     def ops(self) -> list[str]:
         """IPP operations the admin routes sent (the probe), in order."""
@@ -163,8 +164,7 @@ class Hub:
 
     def clear(self) -> None:
         self.fake.received.clear()
-        self.uris.clear()
-        self.runtime_uris.clear()
+        self.transports.clear()
         self.admin_log.clear()
         self.runtime_log.clear()
 
@@ -185,13 +185,22 @@ async def hub() -> AsyncIterator[Hub]:
         h = Hub(client=client, fake=fake, app=app)
 
         def factory(uri: str) -> httpx.AsyncBaseTransport:
-            runtime = _from_runtime()
-            (h.runtime_uris if runtime else h.uris).append(uri)
             inner = h.override(uri) if h.override is not None else httpx.ASGITransport(app=fake)
-            return _Tagged(inner, h.runtime_log if runtime else h.admin_log)
+            tagged = _Tagged(inner, uri, h)
+            h.transports.append(tagged)
+            return tagged
+
+        real_init = AdminProbeClient.__init__
+
+        def init(self: AdminProbeClient, *args: Any, **kwargs: Any) -> None:
+            transport = kwargs.get("transport")
+            if isinstance(transport, _Tagged):
+                transport.admin = True  # the marker: this transport serves an admin probe
+            real_init(self, *args, **kwargs)
 
         app._app.state.ipp_transport_factory = factory
-        yield h
+        with patch.object(AdminProbeClient, "__init__", init):
+            yield h
 
 
 def _trays(*extra: str) -> list[dict[str, Any]]:
@@ -338,16 +347,14 @@ async def test_probe_refuses_bad_uri_without_echo(hub: Hub, uri: str) -> None:
 @pytest.mark.asyncio
 async def test_probe_hands_tls_verify_to_the_client(hub: Hub) -> None:
     seen: list[bool] = []
-    from app.printer_backends.ipp import client as client_module
-
-    real = client_module.IppClient
+    real = AdminProbeClient
 
     def spy(uri: str, **kwargs: Any) -> Any:
         seen.append(kwargs["tls_verify"])
         return real(uri, **kwargs)
 
     headers = await _key(["admin"])
-    with patch("app.services.printer_admin_service.IppClient", side_effect=spy):
+    with patch("app.services.printer_admin_service.AdminProbeClient", side_effect=spy):
         await hub.client.post(PROBE, json={"uri": URI}, headers=headers)
         await hub.client.post(PROBE, json={"uri": URI, "tls_verify": False}, headers=headers)
     assert seen == [True, False]
