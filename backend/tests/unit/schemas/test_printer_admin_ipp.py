@@ -319,7 +319,7 @@ async def test_probe_timeout_is_min_of_five_and_queue_timeout() -> None:
         seen.append(kwargs["query_timeout_s"])
         raise StopError
 
-    with patch.object(svc, "IppClient", side_effect=spy):
+    with patch.object(svc, "AdminProbeClient", side_effect=spy):
         for queue_timeout in (30, 3):
             with pytest.raises(StopError):
                 await svc.probe_ipp(IppConnection(uri=URI), queue_timeout_s=queue_timeout)
