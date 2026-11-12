@@ -145,6 +145,7 @@ from app.sheets.sheet_page import render_sheet_page
 from app.sheets.sweep import SheetReservationSweep
 from app.web.api_docs import mount_api_docs
 from app.web.spa import add_security_headers, mount_spa
+from app.web.version_header import add_version_header
 
 # Per ADR 0011 we pin the OpenAPI version explicitly rather than relying on
 # FastAPI's default, so a FastAPI upgrade can't drift the API contract version.
@@ -691,6 +692,7 @@ def create_app() -> _LifespanManager:
     # D1: the same process serves the web app. Mounted after every router so the
     # catch-all only sees what no API route claimed.
     add_security_headers(app)
+    add_version_header(app, HUB_VERSION)
     mount_api_docs(app, get_settings().web_dist_dir)
     mount_spa(app, get_settings().web_dist_dir)
 

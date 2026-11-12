@@ -79,6 +79,14 @@ AUTH_EXPIRED = "auth.expired"
 _PRINTER_CHANNEL_SUFFIXES = ("queue", "state", "tape")
 
 
+def _hello_frame() -> str:
+    """``event: hello`` with the running hub version (#288)."""
+    # Imported lazily: app.main imports this module.
+    from app.main import HUB_VERSION
+
+    return f"event: hello\ndata: {json.dumps({'version': HUB_VERSION})}\n\n"
+
+
 def printer_channels(printer_id: str | uuid.UUID) -> list[str]:
     return [f"printer:{printer_id}:{suffix}" for suffix in _PRINTER_CHANNEL_SUFFIXES]
 
@@ -302,6 +310,8 @@ async def _event_stream(
         for pid in printer_ids:
             subs.add(printer_channels(pid))
         yield ": connected\n\n"
+        # EventSource cannot read response headers, so the version travels in the stream too.
+        yield _hello_frame()
 
         # Subscriptions are in place before the snapshot, so nothing between the two is lost.
         # Read everything first and yield after the session is closed: a slow client must

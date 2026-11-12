@@ -187,6 +187,9 @@ def _job_event(bus: EventBus, printer_id: UUID, to_state: str = "printing") -> N
 async def _connected(stream: Stream) -> None:
     assert await stream.wait_started() == 200
     assert await stream.frame() == ": connected"
+    # The version greeting follows at once; test_stream_greets_with_the_version checks its content.
+    hello = await stream.frame()
+    assert hello is not None and hello.startswith("event: hello\n")
 
 
 def _key_header(key: str) -> dict[str, str]:
@@ -208,6 +211,22 @@ async def test_stream_requires_auth(hub_app):
     _, client = hub_app
     resp = await client.get(STREAM_PATH)
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_stream_greets_with_the_version(hub_app):
+    from app.main import HUB_VERSION
+
+    app, _ = hub_app
+    key, _ = await _insert_key(["admin"])
+    stream = await _open(app, _key_header(key))
+    try:
+        assert await stream.wait_started() == 200
+        assert await stream.frame() == ": connected"
+        # EventSource cannot read response headers, so the greeting carries the version.
+        assert await stream.frame() == f'event: hello\ndata: {{"version": "{HUB_VERSION}"}}'
+    finally:
+        await stream.close()
 
 
 @pytest.mark.asyncio
