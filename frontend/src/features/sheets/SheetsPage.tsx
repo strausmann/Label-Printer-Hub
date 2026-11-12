@@ -247,7 +247,13 @@ export function SheetsPage() {
   // "Active" still holds the sheets that are full, and there is no server filter for "has room":
   // the page hides the used-up sheets itself. Discarded sheets are asked for only when wanted.
   const list = useSheets({ type: search.type, q: search.q, state: search.discarded ? "all" : "active" });
-  const types = useSheetTypes();
+  // Archived types are listed too: their sheets are still there to be filtered.
+  const types = useSheetTypes({ include_archived: true });
+  // The address always names what the page shows: a type the hub does not know leaves it (the same rule as the calibration page).
+  const unknownType = types.isSuccess && search.type !== undefined && !types.data.some((x) => x.key === search.type);
+  useEffect(() => {
+    if (unknownType) commit({ type: undefined });
+  }, [unknownType, commit]);
 
   const hideUsedUp = search.full !== true;
   const rows = (list.data ?? []).filter((s) => !(hideUsedUp && isUsedUp(s)));

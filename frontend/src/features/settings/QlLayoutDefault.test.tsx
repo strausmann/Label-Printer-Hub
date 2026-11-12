@@ -39,6 +39,26 @@ describe("QL printer form", () => {
     expect(sent).not.toContain("cut_defaults");
   });
 
+  it("QL form does not send half_cut on create either", async () => {
+    const { calls } = mockApi({
+      "GET /api/v1/admin/printers": [],
+      "POST /api/v1/admin/printers": QL_PRINTER(),
+    });
+    await renderApp({ path: "/settings/printers" });
+    await userEvent.click(await screen.findByRole("button", { name: "Add printer" }));
+    await userEvent.click(screen.getByRole("button", { name: /Driver/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Brother QL" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Office QL-820NWB");
+    await userEvent.type(screen.getByRole("textbox", { name: "Slug" }), "office-ql");
+    await userEvent.type(screen.getByRole("textbox", { name: "Host" }), "192.0.2.11");
+    await userEvent.click(screen.getByRole("button", { name: "Create printer" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    const sent = calls.filter((c) => c.method === "POST").at(-1)!.body!;
+    expect(JSON.parse(sent)).toMatchObject({ backend: "brother_ql", slug: "office-ql" });
+    expect(sent).not.toContain("half_cut");
+    expect(sent).not.toContain("cut_defaults");
+  });
+
   it("a P-touch printer keeps the half-cut control", async () => {
     mockApi({ "GET /api/v1/admin/printers": [ADMIN_PRINTER] });
     await renderApp({ path: "/settings/printers" });

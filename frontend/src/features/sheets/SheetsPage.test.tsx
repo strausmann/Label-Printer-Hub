@@ -43,6 +43,22 @@ function setup(rows = ALL, extra: Record<string, unknown> = {}) {
 const sheetCalls = (calls: Call[]) => calls.filter((c) => c.method === "GET" && c.path === "/api/v1/sheets");
 const rowOf = (code: string) => screen.getByRole("link", { name: code }).closest("[role=row]") as HTMLElement;
 
+describe("the type filter in the address", () => {
+  it("unknown type is dropped from the address", async () => {
+    setup();
+    const { router } = await renderApp({ path: "/sheets?type=gone", session: PRINT_SESSION });
+    await screen.findByRole("link", { name: "L4736-0001" });
+    await waitFor(() => expect(router.state.location.search.type).toBeUndefined());
+  });
+
+  it("a known type stays in the address", async () => {
+    setup();
+    const { router } = await renderApp({ path: `/sheets?type=${SHEET_TYPE.key}`, session: PRINT_SESSION });
+    await screen.findByRole("link", { name: "L4736-0001" });
+    expect(router.state.location.search.type).toBe(SHEET_TYPE.key);
+  });
+});
+
 describe("the sheet list", () => {
   it("hides used-up sheets by default and shows them when asked, judged by the rows", async () => {
     const { calls } = setup();

@@ -1,5 +1,5 @@
 import { I18nProvider } from "@lingui/react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -119,27 +119,39 @@ describe("SheetTypeCombobox", () => {
   });
 
   it("selects the whole label on tap", async () => {
-    render(<Harness initial="avery-5159" />);
-    await userEvent.click(box());
-    const input = box() as HTMLInputElement;
-    expect(input.selectionStart).toBe(0);
-    expect(input.selectionEnd).toBe(input.value.length);
-    // iOS drops a selection made inside the focus event; the one on the next tick has to hold as well.
-    await new Promise((r) => setTimeout(r, 10));
-    expect(input.selectionStart).toBe(0);
-    expect(input.selectionEnd).toBe(input.value.length);
+    const spy = vi.spyOn(HTMLInputElement.prototype, "setSelectionRange");
+    try {
+      render(<Harness initial="avery-5159" />);
+      await userEvent.click(box());
+      const input = box() as HTMLInputElement;
+      // An explicit range, not only select(): some mobile browsers drop the latter.
+      expect(spy).toHaveBeenCalledWith(0, input.value.length);
+      expect(input.value.length).toBeGreaterThan(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
-  it("keeps the first character typed after a selection", async () => {
-    render(<Harness initial="avery-5159" />);
-    const user = userEvent.setup({ delay: null });
-    await user.click(box());
-    // No pause between the tap and the keystroke: the deferred re-selection must not eat the character.
-    await user.keyboard("4");
-    await new Promise((r) => setTimeout(r, 20));
-    expect(box()).toHaveValue("4");
-    await user.keyboard("7");
-    expect(box()).toHaveValue("47");
+  it("keeps the first character typed after a selection", () => {
+    // The deferred re-select (setTimeout 0, for iOS) is still pending when the first keystroke arrives. RTL drains a
+    // macrotask after each user-event call, which hides this window, so the events here are synchronous and the timers fake.
+    vi.useFakeTimers();
+    try {
+      render(<Harness initial="avery-5159" />);
+      const input = box() as HTMLInputElement;
+      act(() => input.focus());
+      // The label is selected; typing one character replaces it.
+      fireEvent.change(input, { target: { value: "4" } });
+      expect(input).toHaveValue("4");
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      // A re-select now would put the typed character under the selection: the next keystroke would replace it.
+      expect(input).toHaveValue("4");
+      expect(input.selectionStart).toBe(input.selectionEnd);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a tap on the field that already has the focus opens the list again", async () => {

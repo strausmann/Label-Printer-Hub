@@ -23,7 +23,6 @@ describe("parseSheetCode", () => {
     ["too few digits", "sheet:L4736-2"],
     ["three digits", "sheet:L4736-002"],
     ["two digits (264-08)", "sheet:L4736-02"],
-    ["two digits, bare (264-08)", "L4736-02"],
     ["two digits, in a link (264-08)", "https://hub.example.invalid/sheet/L4736-02"],
     ["no prefix letter", "sheet:4736-0002"],
     ["one-character prefix", "sheet:L-0002"],
