@@ -112,7 +112,7 @@ test.describe.serial("keyboard only", () => {
     ["sheet detail, 189 cells", () => `/sheets/${EDGE}`, /L4731-0001/],
     ["calibration", () => `/calibration?printer=${printer}&tray=main-tray`, /Calibration|Kalibrierung/, /Sheet type|Bogentyp/],
     ["printer", () => `/printers/${printer}`, /.+/],
-    ["cart onto a sheet", () => `/cart?sheet=${PARTLY_USED}`, /.+/],
+    ["cart onto a sheet", () => `/cart?sheet=${PARTLY_USED}`, /.+/, /Sheet type|Bogentyp/],
   ];
 
   for (const lang of ["en", "de"] as const) {
