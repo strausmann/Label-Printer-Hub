@@ -144,6 +144,7 @@ async def test_write_lock_upsert_without_row(session):
     assert (
         await session.execute(text("SELECT seq FROM sheet_write_lock WHERE id = 1"))
     ).scalar() == 1
+    await session.commit()  # the lock is the first statement of its transaction (264-01)
     await acquire_sheet_write_lock(session)
     assert (
         await session.execute(text("SELECT seq FROM sheet_write_lock WHERE id = 1"))

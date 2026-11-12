@@ -132,9 +132,11 @@ async def _seed(database_url: str, *, with_admin_key: bool) -> str | None:
     from app.repositories import api_keys as api_keys_repo
     from app.schemas.printer_admin import PrinterCreatePayload
     from app.services.printer_admin_service import PrinterAdminService
+    from app.sheets.locking import install_statement_counter
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     engine = create_async_engine(database_url, connect_args={"check_same_thread": False})
+    install_statement_counter(engine.sync_engine)  # the sheet write lock needs it (264-01)
     try:
         factory = async_sessionmaker(engine, expire_on_commit=False)
         async with factory() as session:
