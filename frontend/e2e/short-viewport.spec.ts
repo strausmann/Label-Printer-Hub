@@ -329,10 +329,11 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await page.evaluate(() => {
           const w = window as unknown as { __opens: number };
           w.__opens = 0;
+          // An opening is the field saying it is expanded. Counting the list nodes that are added would miss an opening whose
+          // popover was still leaving: the same node then stays and no node is added.
           new MutationObserver((records) => {
-            for (const r of records)
-              for (const n of r.addedNodes) if (n instanceof Element && (n.matches('[role="listbox"]') || n.querySelector('[role="listbox"]'))) w.__opens++;
-          }).observe(document.body, { childList: true, subtree: true });
+            for (const r of records) if (r.target instanceof HTMLInputElement && r.target.getAttribute("aria-expanded") === "true") w.__opens++;
+          }).observe(document.body, { attributes: true, subtree: true, attributeFilter: ["aria-expanded"] });
         });
         // All within 300 ms: Escape closes, the arrow opens, the keyboard scrolls the frame. The arrow opens the list, so the
         // Escape before it must not count when the scroll closes the list again.
