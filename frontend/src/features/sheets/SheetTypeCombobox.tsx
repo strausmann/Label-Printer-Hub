@@ -89,7 +89,7 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
   const cleared = typed !== null && typed === "";
   const trigger = useRef<HTMLButtonElement>(null);
   const hadFocus = useRef(false);
-  // Whether the person has pressed an option or Enter since the list opened: only then is a selection theirs (see onSelectionChange).
+  // Whether the person has pressed one of the options, or pressed Enter or Tab on a chosen one, since the list opened: only then is a selection theirs (see onSelectionChange).
   const pickIntent = useRef(false);
   const typedRef = useRef(typed);
   useEffect(() => {
@@ -137,18 +137,20 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
       state.last = performance.now();
       if (state.armed) settle();
     };
-    // A press on an option, or Enter, is the person choosing; the selection that follows is a pick (see onSelectionChange).
+    // A press on one of this field's options is the person choosing; the selection that follows is a pick (see onSelectionChange).
+    // Mouse and touch select on pointer-up (a touch that turned into a scroll never gets one), a virtual click only sends a click.
+    // The list is in a portal, so these listen on the document, but only count an option of the list this field owns.
     const intend = (event: Event) => {
-      if (event instanceof KeyboardEvent ? event.key === "Enter" : event.target instanceof Element && event.target.closest('[role="option"]')) pickIntent.current = true;
+      const listId = field.current?.querySelector("input")?.getAttribute("aria-controls");
+      const option = event.target instanceof Element ? event.target.closest('[role="option"]') : null;
+      if (listId && option?.closest('[role="listbox"]')?.id === listId) pickIntent.current = true;
     };
     document.addEventListener("scroll", note, true);
-    document.addEventListener("pointerdown", intend, true);
+    document.addEventListener("pointerup", intend, true);
     document.addEventListener("click", intend, true);
-    document.addEventListener("keydown", intend, true);
     return () => {
-      document.removeEventListener("pointerdown", intend, true);
+      document.removeEventListener("pointerup", intend, true);
       document.removeEventListener("click", intend, true);
-      document.removeEventListener("keydown", intend, true);
       document.removeEventListener("scroll", note, true);
       window.clearTimeout(state.timer);
       window.clearTimeout(state.check);
@@ -222,8 +224,8 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
         // (react-stately useComboBoxState.mjs:333). With the selection and the text both controlled, it calls
         // `onSelectionChange(selectedKey)` whenever the text differs from the chosen item's (:262-270). That is not a pick:
         // taken as one it wipes the search (the typed character is lost, the rest is appended to the label) and marks the
-        // close as the person's, so a list a scroll closed is not brought back (#292). A pick has a press on an option or
-        // Enter before it.
+        // close as the person's, so a list a scroll closed is not brought back (#292). A pick has a press on an option, or Enter,
+        // or Tab on an option the person has moved to, before it.
         if (!pickIntent.current) return;
         closedByPerson();
         setTyped(null);
@@ -277,6 +279,8 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
           onKeyDownCapture={(e) => {
             // React Aria undoes a search on Escape by writing the chosen item's text back, read from the filtered list.
             // That list may not hold the chosen type, and the write is then an empty string. Escape means "back to the value".
+            // Enter, and Tab on an option the person has moved to, choose it (react-aria useComboBox: both end in state.commit()).
+            if (e.key === "Enter" || (e.key === "Tab" && e.currentTarget.getAttribute("aria-activedescendant"))) pickIntent.current = true;
             if (e.key === "Escape") {
               closedByPerson();
               setTimeout(() => setTyped(null), 0);

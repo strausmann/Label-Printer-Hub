@@ -154,6 +154,41 @@ describe("SheetTypeCombobox", () => {
     }
   });
 
+  it("ArrowDown to an option and Tab chooses it", async () => {
+    // react-aria's Tab handler commits the option that has the virtual focus, like Enter does.
+    const onChange = vi.fn();
+    render(<Harness initial="my-small" onChange={onChange} />);
+    await userEvent.click(box());
+    await userEvent.keyboard("avery");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{ArrowDown}{Tab}");
+    expect(onChange).toHaveBeenCalledWith("avery-5159");
+  });
+
+  it("a selection that nobody pressed, or chose with Enter or Tab on an option, is not a pick", async () => {
+    // react-aria commits the chosen key on its own (useComboBoxState commitValue -> onSelectionChange(selectedKey)), e.g.
+    // when a scroll closes the list; that must not be taken as a choice (it wipes the search).
+    const onChange = vi.fn();
+    render(<Harness initial="L4736REV" onChange={onChange} />);
+    await userEvent.click(box());
+    await userEvent.keyboard("4736"); // matches the chosen type itself, so its text is still in the list
+    expect(await screen.findByRole("listbox")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}"); // react-aria reverts: commitSelection -> onSelectionChange(selectedKey)
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("a press on an option that never ends (a touch that turns into a scroll) is not a choice", async () => {
+    const onChange = vi.fn();
+    render(<Harness initial="L4736REV" onChange={onChange} />);
+    await userEvent.click(box());
+    await userEvent.keyboard("4736");
+    const option = await screen.findByRole("option", { name: /L4736REV/ });
+    fireEvent.pointerDown(option);
+    fireEvent.pointerCancel(option); // the finger moved: it is a scroll, there is no pointer-up
+    await userEvent.keyboard("{Escape}"); // react-aria reverts and commits the chosen key
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("a tap on the field that already has the focus opens the list again", async () => {
     render(<Harness />);
     await userEvent.click(box());
