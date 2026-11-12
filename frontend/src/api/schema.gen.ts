@@ -1310,7 +1310,7 @@ export interface paths {
         put?: never;
         /**
          * Accept a Grocy product event and print its label
-         * @description Receives a Grocy webhook event for a product stock change and prints the product label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503) and queue nothing.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; ``quantity`` is accepted but not printed.
+         * @description Receives a Grocy webhook event for a product stock change and prints the product label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; ``quantity`` is accepted but not printed.
          */
         post: operations["grocy_webhook_api_v1_webhook_grocy_post"];
         delete?: never;
@@ -1330,7 +1330,7 @@ export interface paths {
         put?: never;
         /**
          * Accept a Spoolman spool event and print its label
-         * @description Receives a Spoolman webhook event for a spool update and prints the spool label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503) and queue nothing.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; ``quantity`` is accepted but not printed.
+         * @description Receives a Spoolman webhook event for a spool update and prints the spool label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; ``quantity`` is accepted but not printed.
          */
         post: operations["spoolman_webhook_api_v1_webhook_spoolman_post"];
         delete?: never;
@@ -3981,7 +3981,7 @@ export interface components {
             /**
              * Job Id
              * Format: uuid
-             * @description UUID of the new print job; poll GET /api/v1/jobs/{job_id} for status
+             * @description UUID of the new print job. Webhook jobs have no owner: an admin or SSO caller can follow it under GET /api/v1/jobs/{job_id}
              */
             job_id: string;
         };

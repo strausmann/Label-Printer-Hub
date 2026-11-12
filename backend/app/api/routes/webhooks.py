@@ -119,7 +119,10 @@ async def _print_label(
         "configured, 401 when the key is wrong, 422 when required payload "
         "fields are missing and 429 above the per-key rate limit.  Printer and lookup "
         "errors (no tape, printer disabled or offline, integration failed) are answered "
-        "as by ``POST /api/v1/print`` (409/422/502/503) and queue nothing.  On success "
+        "as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product "
+        "answers 404 ``app-lookup-not-found`` and an integration that is not configured "
+        "503 ``integration_not_configured`` (both in the problem-detail body shape). "
+        "Nothing is queued.  On success "
         "returns 202 with the new job's UUID; the queue worker prints it.  One label is "
         "printed; ``quantity`` is accepted but not printed."
     ),
@@ -146,7 +149,10 @@ async def spoolman_webhook(
         "configured, 401 when the key is wrong, 422 when required payload "
         "fields are missing and 429 above the per-key rate limit.  Printer and lookup "
         "errors (no tape, printer disabled or offline, integration failed) are answered "
-        "as by ``POST /api/v1/print`` (409/422/502/503) and queue nothing.  On success "
+        "as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product "
+        "answers 404 ``app-lookup-not-found`` and an integration that is not configured "
+        "503 ``integration_not_configured`` (both in the problem-detail body shape). "
+        "Nothing is queued.  On success "
         "returns 202 with the new job's UUID; the queue worker prints it.  One label is "
         "printed; ``quantity`` is accepted but not printed."
     ),

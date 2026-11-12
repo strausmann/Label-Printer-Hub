@@ -15,6 +15,7 @@ Test mapping (Grocy):
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
@@ -531,7 +532,10 @@ async def test_webhook_rate_limit_is_per_key_and_shared(session, route: str, mon
         assert "Retry-After" in over.headers
         # the bucket is named by a hash: neither the key nor its hash is on the wire
         assert _VALID_KEY not in over.text
+        digest = hashlib.sha256(_VALID_KEY.encode()).hexdigest()[:16]
+        assert digest not in over.text
         assert all(_VALID_KEY not in str(k) for k in _rate_limiter._buckets)
+        assert any(digest in str(k) for k in _rate_limiter._buckets)  # the digest is the name
     finally:
         _rate_limiter.clear()
         get_settings.cache_clear()

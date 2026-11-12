@@ -84,7 +84,7 @@ Among the three integrations, only **Grocy** can post webhooks to the hub (and o
 
 1. Grocy posts to `https://printerhub.example.com/api/v1/webhook/grocy`
 2. Reverse proxy routes the webhook subroute **without SSO** to the hub
-3. Backend validates `X-API-Key` and the per-key rate limit (`PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE`, default 120), then submits a `qr_two_lines` label for the product through the print service, the same path as `POST /api/v1/print`: preflight, lookup, render, persist, queue. Printer and lookup errors answer 409/422/502/503 and queue nothing. One label is printed; `quantity` is accepted but not printed yet
+3. Backend validates `X-API-Key` and the per-key rate limit (`PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE`, default 120), then submits a `qr_two_lines` label for the product through the print service, the same path as `POST /api/v1/print`: preflight, lookup, render, persist, queue. Printer and lookup errors answer 409/422/502/503 like the print route, an unknown spool or product 404 `app-lookup-not-found`, and an integration that is not configured 503 `integration_not_configured` (both in the problem-detail body shape); nothing is queued. One label is printed; `quantity` is accepted but not printed yet
 4. Returns `202` with job ID; webhook caller doesn't wait for print completion (webhook jobs have no owner, so only admin or SSO callers see them)
 5. Backend prints; any active SSE consumer sees the live state changes
 
