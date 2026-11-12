@@ -40,6 +40,7 @@
   ],
   "license-check": true,
   "vulnerability-check": false,
+  "x-licence-text-sha256-refresh": "Python exceptions pin the reviewed licence file with licence-text-sha256 (SHA-256 of the pip-licenses LicenseText, UTF-8). When the gate reports 'the licence file has changed', read the new text, confirm the exception still holds, then run from backend/ in a venv with the runtime dependencies: python -c \"import sys; from scripts.licence_report import _collect, licence_text_sha256; [print(e['Name'], licence_text_sha256(e)) for e in _collect(sys.argv[1])]\" <runtime-python>, and replace the hash of that package.",
   "x-licence-exceptions": [
     {
       "purl": "pkg:npm/json-schema@0.4.0",
@@ -48,21 +49,25 @@
     },
     {
       "purl": "pkg:pypi/pysnmp",
+      "licence-text-sha256": "aadf5d3f4d90a949f05e2c185b783b877efbf625874992c361f70a536bed83ee",
       "licence": "BSD-2-Clause",
       "reason": "Metadata says UNKNOWN in every field; the licence file is the BSD 2-clause text."
     },
     {
       "purl": "pkg:pypi/qrcode",
+      "licence-text-sha256": "40dfb903c94ee3f789500131311186548ecba5cefd3557623d7700e2522ab994",
       "licence": "BSD-3-Clause AND MIT",
       "reason": "The classifiers list Other/Proprietary License next to BSD License; the licence file is the BSD 3-clause text and adds the MIT notice of the ported pyqrnative code."
     },
     {
       "purl": "pkg:pypi/jinja2",
+      "licence-text-sha256": "3b49dcee4105eb37bac10faf1be260408fe85d252b8e9df2e0979fc1e094437b",
       "licence": "BSD-3-Clause",
       "reason": "Bare BSD License classifier; the licence file is the BSD 3-clause text."
     },
     {
       "purl": "pkg:pypi/pyusb",
+      "licence-text-sha256": "03e39fdcee9c18f2f9d0c3500a993ddeac050695eb81070ea41347587c76a7fe",
       "licence": "BSD-3-Clause",
       "reason": "Bare BSD License classifier; the licence file is the BSD 3-clause text."
     },
@@ -73,6 +78,7 @@
     },
     {
       "purl": "pkg:pypi/ptouch",
+      "licence-text-sha256": "20c17d8b8c48a600800dfd14f95d5cb9ff47066a9641ddeab48dc54aec96e331",
       "licence": "LGPL-2.1-or-later",
       "reason": "Classifier LGPLv2+; the shipped text is the GNU LGPL version 2.1."
     }

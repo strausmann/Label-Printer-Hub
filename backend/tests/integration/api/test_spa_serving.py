@@ -145,3 +145,20 @@ async def test_old_fragment_stream_gone(spa: AsyncClient, no_spa: AsyncClient) -
         )
         assert resp.status_code == 404
         assert resp.headers["content-type"].startswith("application/json")
+
+
+async def test_unknown_licence_page_is_404(spa: AsyncClient) -> None:
+    for path in ("/licenses/does-not-exist.txt", "/licenses/", "/licenses/deeper/nope"):
+        resp = await spa.get(path)
+        assert resp.status_code == 404, path
+        assert "hub-app-shell" not in resp.text, path
+
+
+async def test_known_licence_file_is_served(spa: AsyncClient, dist: Path) -> None:
+    (dist / "licenses").mkdir()
+    (dist / "licenses" / "agpl-3.0.txt").write_text("GNU AFFERO GENERAL PUBLIC LICENSE")
+    resp = await spa.get("/licenses/agpl-3.0.txt")
+    assert resp.status_code == 200
+    assert resp.text == "GNU AFFERO GENERAL PUBLIC LICENSE"
+    assert resp.headers["cache-control"] == "no-cache"
+    assert "hub-app-shell" not in resp.text
