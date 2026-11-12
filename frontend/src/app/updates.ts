@@ -17,141 +17,144 @@ export type RegisterSW = (options: {
 
 /** How often an open tab asks for a new service worker (it also asks whenever the window gets focus). */
 export const UPDATE_CHECK_INTERVAL_MS = 10 * 60 * 1000;
-/** `sessionStorage` key: the server version the page already reloaded for (loop guard). */
-export const RELOAD_GUARD_KEY = "hub.reloaded-for-version";
+/** How long the Reload button waits for a new service worker to install before it falls back to a plain reload. */
+export const WORKER_WAIT_MS = 5_000;
 
 // A new service worker waits for the person (see pwa.config.ts); true while one does.
 let waitingWorker = false;
-// The server runs another version than this bundle and the page did not (or could not) fix that by reloading.
-let versionBanner = false;
-let reloading = false;
+// The hub runs another version than this bundle.
+let versionMismatch = false;
+let refreshing = false;
 let updateSW: ((reloadPage?: boolean) => Promise<void>) | null = null;
-let stopWatchingDialogs: (() => void) | null = null;
+let registration: SwRegistration | null = null;
+let stopUpdateChecks: (() => void) | null = null;
+// The newest server version the browser was already asked to fetch a worker for.
+let checkedFor: string | null = null;
+// Called when a worker starts waiting; the Reload button waits for it with a time limit.
+const workerWaiters = new Set<() => void>();
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
 /**
  * Starts the service worker. A new version waits (it is not forced on open tabs, whose lazy
- * files would be gone) until the person chooses to reload; then `needRefresh` turns true.
+ * files would be gone) until the person chooses to reload; then the banner shows.
+ * Calling it again replaces the earlier registration (no second focus listener or timer).
  */
 export function startUpdates(register: RegisterSW): void {
+  stopUpdateChecks?.();
   updateSW = register({
     onNeedRefresh() {
       waitingWorker = true;
       emit();
+      workerWaiters.forEach((wake) => wake());
     },
-    onRegisteredSW(_swUrl, registration) {
-      if (registration) scheduleUpdateChecks(registration);
+    onRegisteredSW(_swUrl, reg) {
+      if (!reg) return;
+      registration = reg;
+      scheduleUpdateChecks(reg);
     },
   });
 }
 
-/**
- * The browser looks for a new service worker on navigation only; a tab that stays open for days
- * never would. Ask when the window gets focus and every few minutes.
- */
-function scheduleUpdateChecks(registration: SwRegistration): void {
-  const check = () => void registration.update().catch(() => {});
-  window.addEventListener("focus", check);
-  window.setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+/** Asks for a new worker; a failure (offline, hub restarting) is normal and must never stop the checks. */
+function checkForWorker(reg: SwRegistration): void {
+  try {
+    void reg.update().catch(() => {});
+  } catch {
+    // update() threw before it returned a promise.
+  }
 }
 
-/** Activates the waiting version and reloads the page; without a waiting version it reloads. */
-export function applyUpdate(): void {
-  if (waitingWorker && updateSW) void updateSW(true);
-  else deps.reload();
+/**
+ * The browser looks for a new service worker on navigation only; a tab that stays open for days
+ * never would. Ask when the window gets focus and every few minutes, also after failed attempts
+ * (the hub may be down for a while during an update).
+ */
+function scheduleUpdateChecks(reg: SwRegistration): void {
+  const check = () => checkForWorker(reg);
+  window.addEventListener("focus", check);
+  const timer = window.setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+  stopUpdateChecks = () => {
+    window.removeEventListener("focus", check);
+    window.clearInterval(timer);
+    stopUpdateChecks = null;
+  };
+}
+
+/** Resolves true as soon as a worker waits, false after `ms`. */
+function workerWaits(ms: number): Promise<boolean> {
+  if (waitingWorker) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const finish = (waits: boolean) => {
+      clearTimeout(timer);
+      workerWaiters.delete(wake);
+      resolve(waits);
+    };
+    const wake = () => finish(true);
+    const timer = setTimeout(() => finish(false), ms);
+    workerWaiters.add(wake);
+  });
+}
+
+/**
+ * The banner's button. Applies a waiting worker (it takes over and the page reloads on the new
+ * files); without one it asks the browser for one and waits, bounded and on the outcome (a worker
+ * that starts waiting), before it applies it. Only when none comes does it reload, because a plain
+ * reload alone is answered from the old precache.
+ */
+export async function applyUpdate(): Promise<void> {
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    if (!waitingWorker && registration) {
+      try {
+        await registration.update();
+      } catch {
+        // Offline or the file is gone: the bounded wait below decides.
+      }
+      await workerWaits(deps.workerWaitMs);
+    }
+    if (waitingWorker && updateSW) await updateSW(true);
+    else deps.reload();
+  } catch {
+    // The worker could not take over: the banner stays and the button can be pressed again.
+  } finally {
+    refreshing = false;
+  }
 }
 
 /** What the version check needs from the page (tests replace it). */
 const deps = {
   buildVersion: BUILD_VERSION,
+  workerWaitMs: WORKER_WAIT_MS,
   reload: () => window.location.reload(),
 };
 
-const TEXT_FIELDS = "input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]), textarea";
-
-/** A dialog is open and holds something the person typed. */
-function typedDialogOpen(): boolean {
-  for (const dialog of document.querySelectorAll('[role="dialog"], [role="alertdialog"], dialog[open]')) {
-    for (const field of dialog.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(TEXT_FIELDS)) {
-      if (field.value.trim() !== "") return true;
-    }
-  }
-  return false;
-}
-
-function readGuard(): string | null {
-  try {
-    return window.sessionStorage.getItem(RELOAD_GUARD_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeGuard(version: string | null): void {
-  try {
-    if (version === null) window.sessionStorage.removeItem(RELOAD_GUARD_KEY);
-    else window.sessionStorage.setItem(RELOAD_GUARD_KEY, version);
-  } catch {
-    // Private mode: no guard. The `reloading` flag still stops a second reload in this page.
-  }
-}
-
-function showVersionBanner(): void {
-  if (versionBanner) return;
-  versionBanner = true;
-  emit();
-}
-
-function reloadFor(serverVersion: string): void {
-  if (reloading) return;
-  reloading = true;
-  writeGuard(serverVersion);
-  if (waitingWorker && updateSW) void updateSW(true);
-  else deps.reload();
-}
-
-/** Reload once the dialog with typed input is gone; the banner stays until then. */
-function reloadWhenDialogCloses(serverVersion: string): void {
-  if (stopWatchingDialogs) return;
-  const observer = new MutationObserver(() => {
-    if (typedDialogOpen()) return;
-    stopWatchingDialogs?.();
-    reloadFor(serverVersion);
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-  stopWatchingDialogs = () => {
-    observer.disconnect();
-    stopWatchingDialogs = null;
-  };
-}
-
 /**
- * Called with the version the server reports (the `X-Hub-Version` header of an API response, the
- * `hello` frame of the event stream). A page built for another version reloads once, completely,
- * so the old bundle never keeps talking to a new server (#288).
- *
- * Guards: a page that already reloaded for this version and still differs (the old service worker
- * served the old files again) shows the banner and does not reload again; a dialog with typed
- * input is not thrown away, the banner shows and the reload waits for the dialog to close.
+ * Called with the version the hub reports (the `X-Hub-Version` header of an API response, the
+ * `hello` frame of the event stream, which follows every reconnect). A page built for another
+ * version shows the "New version available" banner; the person reloads (no automatic reload, so
+ * nothing typed is lost). The browser is asked for the new service worker at once, so that the
+ * button usually finds it waiting.
  */
 export function noteServerVersion(serverVersion: string | null | undefined): void {
   if (!serverVersion) return;
   if (serverVersion === deps.buildVersion) {
-    writeGuard(null);
-    if (versionBanner) {
-      versionBanner = false;
+    checkedFor = null;
+    if (versionMismatch) {
+      versionMismatch = false;
       emit();
     }
     return;
   }
-  if (reloading) return;
-  if (readGuard() === serverVersion) return showVersionBanner();
-  if (typedDialogOpen()) {
-    showVersionBanner();
-    return reloadWhenDialogCloses(serverVersion);
+  if (!versionMismatch) {
+    versionMismatch = true;
+    emit();
   }
-  reloadFor(serverVersion);
+  if (checkedFor !== serverVersion && registration) {
+    checkedFor = serverVersion;
+    checkForWorker(registration);
+  }
 }
 
 export function useNeedRefresh(): boolean {
@@ -160,22 +163,27 @@ export function useNeedRefresh(): boolean {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    () => waitingWorker || versionBanner,
+    () => waitingWorker || versionMismatch,
   );
 }
 
 export function resetUpdatesForTest(): void {
   waitingWorker = false;
-  versionBanner = false;
-  reloading = false;
+  versionMismatch = false;
+  refreshing = false;
   updateSW = null;
-  stopWatchingDialogs?.();
+  registration = null;
+  checkedFor = null;
+  stopUpdateChecks?.();
+  workerWaiters.clear();
+  deps.workerWaitMs = WORKER_WAIT_MS;
   deps.buildVersion = BUILD_VERSION;
   deps.reload = () => window.location.reload();
   emit();
 }
 
-export function setVersionCheckForTest(overrides: { buildVersion?: string; reload?: () => void }): void {
+export function setVersionCheckForTest(overrides: { buildVersion?: string; reload?: () => void; workerWaitMs?: number }): void {
+  if (overrides.workerWaitMs !== undefined) deps.workerWaitMs = overrides.workerWaitMs;
   if (overrides.buildVersion !== undefined) deps.buildVersion = overrides.buildVersion;
   if (overrides.reload) deps.reload = overrides.reload;
 }

@@ -38,6 +38,11 @@ class FakeEventSource {
   }
 }
 
+function hello(source: FakeEventSource, payload: unknown) {
+  const listeners = (source as unknown as { listeners: Map<string, ((e: MessageEvent) => void)[]> }).listeners.get("hello") ?? [];
+  for (const fn of listeners) fn(new MessageEvent("hello", { data: JSON.stringify(payload) }));
+}
+
 const last = () => FakeEventSource.instances[FakeEventSource.instances.length - 1]!;
 
 function setup(client = new QueryClient()) {
@@ -74,18 +79,35 @@ describe("useHubEvents", () => {
     expect(result.current.connected).toBe(true);
   });
 
-  it("passes the version of the hello frame to the version check", async () => {
+  it("shows the new-version banner from the hello frame", async () => {
     const updates = await import("../app/updates");
-    const reload = vi.fn();
-    updates.setVersionCheckForTest({ buildVersion: "1.5.0", reload });
-    window.sessionStorage.clear();
+    updates.setVersionCheckForTest({ buildVersion: "1.5.0" });
+    const { result: banner } = renderHook(() => updates.useNeedRefresh());
     setup();
-    for (const fn of (last() as unknown as { listeners: Map<string, ((e: MessageEvent) => void)[]> }).listeners.get("hello") ?? []) {
-      fn(new MessageEvent("hello", { data: JSON.stringify({ version: "1.6.0" }) }));
-    }
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(banner.current).toBe(false);
+    act(() => hello(last(), { version: "1.6.0" }));
+    expect(banner.current).toBe(true);
     updates.resetUpdatesForTest();
-    window.sessionStorage.clear();
+  });
+
+  it("notices a new version after the hub was down for many retries, once it is back", async () => {
+    const updates = await import("../app/updates");
+    updates.setVersionCheckForTest({ buildVersion: "1.5.0" });
+    const { result: banner } = renderHook(() => updates.useNeedRefresh());
+    setup();
+    act(() => last().open());
+    // The hub restarts: the stream fails again and again (delays double up to the 30 s ceiling and stay there).
+    for (let attempt = 0; attempt < 8; attempt++) {
+      act(() => last().fail());
+      act(() => void vi.advanceTimersByTime(31_000));
+    }
+    expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(9);
+    expect(banner.current).toBe(false);
+    // It is back, with the new version: the greeting after the reconnect raises the banner.
+    act(() => last().open());
+    act(() => hello(last(), { version: "1.6.0" }));
+    expect(banner.current).toBe(true);
+    updates.resetUpdatesForTest();
   });
 
   it("ignores a hello frame it cannot read", () => {

@@ -13,7 +13,7 @@ export function UpdatePrompt() {
       </div>
       <button
         type="button"
-        onClick={applyUpdate}
+        onClick={() => void applyUpdate()}
         className="press inline-flex h-11 items-center rounded-r2 border border-line-strong bg-surface px-4 text-small font-bold text-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-link"
       >
         {t`Reload`}
