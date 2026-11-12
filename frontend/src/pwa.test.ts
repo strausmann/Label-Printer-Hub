@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { pwaOptions } from "../pwa.config";
 
@@ -30,17 +28,9 @@ describe("pwa", () => {
     expect(precached.join(" ")).not.toMatch(/\/api\//);
   });
 
-  it("is installable: standalone manifest with icons", () => {
-    // The manifest is a plain file in public/ (served as it is, linked from index.html).
-    const m = JSON.parse(readFileSync(resolve(__dirname, "..", "public", "manifest.webmanifest"), "utf8")) as Record<string, unknown>;
+  it("serves its manifest as a plain file, not a generated one", () => {
+    // The manifest is public/manifest.webmanifest, linked from index.html; what the build really emits
+    // (the built shell and the manifest next to it) is checked in build.test.ts.
     expect(pwaOptions.manifest).toBe(false);
-    expect(readFileSync(resolve(__dirname, "..", "index.html"), "utf8")).toContain('rel="manifest" href="/manifest.webmanifest"');
-    expect(m.display).toBe("standalone");
-    expect(m.start_url).toBe("/");
-    expect(m.scope).toBe("/");
-    const icons = m.icons as Array<{ sizes: string; purpose?: string }>;
-    expect(icons.some((i) => i.sizes === "192x192")).toBe(true);
-    expect(icons.some((i) => i.sizes === "512x512")).toBe(true);
-    expect(icons.some((i) => i.purpose === "maskable")).toBe(true);
   });
 });
