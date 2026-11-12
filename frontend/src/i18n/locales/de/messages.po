@@ -683,6 +683,10 @@ msgstr "Kalibrierung"
 msgid "Calibration for this printer will appear here."
 msgstr "Die Kalibrierung dieses Druckers erscheint hier."
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "Calibration is held until an admin settles the device swap."
+msgstr "Die Kalibrierung ist gesperrt, bis ein Admin den Gerätewechsel entschieden hat."
+
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/model.ts
 #: src/features/jobs/PageJobInfo.tsx
@@ -1151,7 +1155,7 @@ msgstr "Gerätewechsel"
 msgid "Diameter (mm)"
 msgstr "Durchmesser (mm)"
 
-#: src/features/printers/PrinterCard.tsx
+#: src/features/printers/model.ts
 msgid "Different device"
 msgstr "Anderes Gerät"
 
@@ -2353,6 +2357,10 @@ msgstr "Einstellungen › Integrationen öffnen"
 msgid "Open the job"
 msgstr "Auftrag öffnen"
 
+#: src/features/printers/PageStatus.tsx
+msgid "Open the printer settings"
+msgstr "Druckereinstellungen öffnen"
+
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Open the sheet"
 msgstr "Bogen öffnen"
@@ -2585,6 +2593,14 @@ msgstr "Der Drucker ist offline"
 #: src/features/printers/TestPrintButton.tsx
 msgid "Printer is paused"
 msgstr "Der Drucker ist pausiert"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "Printer is stopped"
+msgstr "Drucker ist angehalten"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "Printer is stopped: {reasons}"
+msgstr "Drucker ist angehalten: {reasons}"
 
 #: src/features/printers/TestPrintButton.tsx
 msgid "Printer status unknown"
@@ -2930,6 +2946,7 @@ msgstr "S1, S2 … nummerieren die Lücken zwischen den Spalten (durchgezogene L
 msgid "Same device"
 msgstr "Gleiches Gerät"
 
+#: src/features/printers/RollColourPrompt.tsx
 #: src/features/settings/Integrations.tsx
 #: src/features/settings/SectionForm.tsx
 msgid "Save"
@@ -3604,6 +3621,10 @@ msgstr "Die Adresse oder die Zertifikatseinstellung ist nicht gültig."
 msgid "The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly."
 msgstr "Die Adresse wird weitergeleitet, meist auf eine Anmeldeseite vor der App. Verwende eine Adresse, die die API der App direkt erreicht."
 
+#: src/features/settings/feedback.tsx
+msgid "The address saved for this printer is not valid. Enter the address again and save."
+msgstr "Die für diesen Drucker gespeicherte Adresse ist nicht gültig. Gib die Adresse erneut ein und speichere."
+
 #: src/features/sheets/print/errors.ts
 msgid "The app behind an item did not answer ({code}). Check Settings › Integrations."
 msgstr "Die App hinter einem Eintrag hat nicht geantwortet ({code}). Prüfe Einstellungen › Integrationen."
@@ -3757,6 +3778,10 @@ msgstr "Der Hub kennt keinen Bogen {code}."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The hub does not know a sheet {preselectedSheet}."
 msgstr "Der Hub kennt keinen Bogen {preselectedSheet}."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The hub has no current status for this printer. Turn on status discovery in the printer settings, then try again."
+msgstr "Der Hub hat keinen aktuellen Status dieses Druckers. Schalte die Statuserkennung in den Druckereinstellungen ein und versuche es dann erneut."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The hub restarted while this label waited for the next part. Print it again."
@@ -4093,6 +4118,10 @@ msgstr "Der Drucker ist nicht erreichbar. Prüfe, ob er eingeschaltet und verbun
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The printer is not ready. The pages go into the print queue and print when it is ready again."
 msgstr "Der Drucker ist nicht bereit. Die Seiten kommen in die Druckwarteschlange und werden gedruckt, sobald er wieder bereit ist."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The printer is paused. Resume it, then try again."
+msgstr "Der Drucker ist pausiert. Setze ihn fort und versuche es dann erneut."
 
 #: src/features/printers/TestPrintButton.tsx
 msgid "The printer is switched off in the hub. Switch it on in the printer settings."
@@ -4568,6 +4597,10 @@ msgstr "Erneut versuchen"
 msgid "Turn off the trays you do not use, and mark the one that should be used when none is chosen."
 msgstr "Schalte die Fächer aus, die du nicht nutzt, und markiere das Fach, das gilt, wenn keines gewählt wird."
 
+#: src/features/printers/PageStatus.tsx
+msgid "Turn on status discovery in the printer settings"
+msgstr "Schalte die Statuserkennung in den Druckereinstellungen ein"
+
 #: src/features/sheets/SheetsPage.tsx
 msgid "Type"
 msgstr "Typ"
@@ -4686,6 +4719,10 @@ msgstr "Auftrag ansehen"
 #: src/features/jobs/pageJobText.ts
 msgid "Waiting at the printer"
 msgstr "Wartet beim Drucker"
+
+#: src/features/settings/Printers.tsx
+msgid "Waiting for the current job to finish…"
+msgstr "Warte, bis der laufende Auftrag fertig ist…"
 
 #: src/features/printers/PauseReason.tsx
 msgid "Waiting for the printer's status check"

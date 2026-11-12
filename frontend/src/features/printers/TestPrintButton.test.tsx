@@ -73,6 +73,30 @@ describe("TestPrintButton", () => {
     expect(screen.getByRole("button", { name: "Test print" })).toBeDisabled();
   });
 
+  it("test print disabled when printer stopped: the IPP state reason stands beside the button", async () => {
+    mockApi(
+      routes(
+        PAGE_PRINTER,
+        pageStatus(PAGE_PRINTER.id, {
+          printer_state: "stopped",
+          state_reasons: [{ keyword: "toner-empty", severity: "error", blocking: true }],
+        }),
+      ),
+    );
+    await open(PAGE_PRINTER);
+    expect(await screen.findByText("Printer is stopped: toner empty")).toBeVisible();
+    const button = screen.getByRole("button", { name: "Test print" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription("Printer is stopped: toner empty");
+  });
+
+  it("a stopped printer that names no reason is still refused, without a dangling colon", async () => {
+    mockApi(routes(PAGE_PRINTER, pageStatus(PAGE_PRINTER.id, { printer_state: "stopped", state_reasons: [] })));
+    await open(PAGE_PRINTER);
+    expect(await screen.findByText("Printer is stopped")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Test print" })).toBeDisabled();
+  });
+
   it("is disabled as 'status unknown' while a page printer's status is still loading", async () => {
     // The status never answers: the button must not offer a print it cannot vouch for.
     mockApi(routes(PAGE_PRINTER, new Promise(() => undefined)));
@@ -121,12 +145,27 @@ describe("TestPrintButton", () => {
     ["no-tape-loaded", "No tape is loaded. Put in a tape and try again."],
     ["media-unknown", "The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray."],
     ["printer-disabled", "The printer is switched off in the hub. Switch it on in the printer settings."],
+    ["printer-paused", "The printer is paused. Resume it, then try again."],
+    ["printer-status-unknown", "The hub has no current status for this printer. Turn on status discovery in the printer settings, then try again."],
   ])("explains %s in the app's own words, not the server's English", async (type, words) => {
     const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type, title: "T", status: 409, detail: "server text" } }) };
     mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
     await open(PRINTER_A);
     await userEvent.click(await screen.findByRole("button", { name: "Test print" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(words);
+  });
+
+  it.each([
+    ["printer-paused", "Der Drucker ist pausiert. Setze ihn fort und versuche es dann erneut."],
+    ["printer-status-unknown", "Der Hub hat keinen aktuellen Status dieses Druckers. Schalte die Statuserkennung in den Druckereinstellungen ein und versuche es dann erneut."],
+  ])("refusal texts are localized: %s reads German in a German UI", async (type, words) => {
+    const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type, title: "T", status: 409, detail: "server text" } }) };
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
+    await open(PRINTER_A, SIGNED_IN, "de");
+    await userEvent.click(await screen.findByRole("button", { name: "Testdruck" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(words);
+    expect(alert).not.toHaveTextContent("server text");
   });
 
   it("says the same in German", async () => {

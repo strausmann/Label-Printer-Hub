@@ -1,8 +1,8 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
-import { mockApi, PAGE_PRINTER, PRINTER_A, respond, status } from "../test-api";
+import { mockApi, PAGE_PRINTER, PRINTER_A, pageStatus, respond, status } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -92,6 +92,59 @@ describe("IdentityMismatchBanner", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Same device" }));
     await waitFor(() => expect(screen.queryByText(BANNER)).toBeNull());
     expect(await screen.findByText("Someone has settled this already. The page shows the current state.")).toBeVisible();
+  });
+
+  it("settled notice resets: a swap that comes back is not answered with the note of the last one", async () => {
+    let flagged = true;
+    let posts = 0;
+    mockApi({
+      ...routes(page(swapped), true),
+      [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: () => status(PAGE_PRINTER.id, { identity_mismatch: flagged }),
+      [`POST ${resolveUrl(PAGE_PRINTER.id)}`]: () => {
+        posts += 1;
+        flagged = false;
+        return posts === 1 ? respond(409, { type: "no-identity-mismatch", title: "x", status: 409, detail: "x" }) : page(identity());
+      },
+    });
+    const { queryClient } = await renderApp({ path: `/printers/${PAGE_PRINTER.id}` });
+    const NOTE_SETTLED = "Someone has settled this already. The page shows the current state.";
+    await userEvent.click(await screen.findByRole("button", { name: "Same device" }));
+    expect(await screen.findByText(NOTE_SETTLED)).toBeVisible();
+
+    // The swap comes back: the banner replaces the note …
+    flagged = true;
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["printers", PAGE_PRINTER.id, "status"] });
+    });
+    expect(await screen.findByText(BANNER)).toBeVisible();
+    expect(screen.queryByText(NOTE_SETTLED)).toBeNull();
+
+    // … and when this one is settled properly, the old note stays away.
+    await userEvent.click(screen.getByRole("button", { name: "Same device" }));
+    await waitFor(() => expect(screen.queryByText(BANNER)).toBeNull());
+    expect(screen.queryByText(NOTE_SETTLED)).toBeNull();
+  });
+
+  it("the note does not follow the admin to another printer", async () => {
+    let flagged = true;
+    const other = { ...PRINTER_A, backend: "ipp", observed_id: null };
+    mockApi({
+      ...routes(page(swapped), true),
+      [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: () => status(PAGE_PRINTER.id, { identity_mismatch: flagged }),
+      [`POST ${resolveUrl(PAGE_PRINTER.id)}`]: () => {
+        flagged = false;
+        return respond(409, { type: "no-identity-mismatch", title: "x", status: 409, detail: "x" });
+      },
+      ...routes(other, false),
+    });
+    const { router } = await renderApp({ path: `/printers/${PAGE_PRINTER.id}` });
+    await userEvent.click(await screen.findByRole("button", { name: "Same device" }));
+    expect(await screen.findByText("Someone has settled this already. The page shows the current state.")).toBeVisible();
+    await act(async () => {
+      await router.navigate({ to: "/printers/$printerId", params: { printerId: other.id } });
+    });
+    expect(await screen.findByRole("heading", { level: 1, name: other.name })).toBeVisible();
+    expect(screen.queryByText("Someone has settled this already. The page shows the current state.")).toBeNull();
   });
 
   it("shows an admin both identities, so the decision is informed", async () => {
@@ -245,5 +298,61 @@ describe("the printer card", () => {
     expect(within(flagged).getByText("Different device")).toBeVisible();
     const other = screen.getByText(PRINTER_A.name).closest("a")!;
     expect(within(other).queryByText("Different device")).toBeNull();
+  });
+});
+
+describe("a held printer (263-51)", () => {
+  const P = PAGE_PRINTER.id;
+  const heldRoutes = (held: boolean) => ({
+    "GET /api/v1/printers": [page(identity())],
+    [`GET /api/v1/printers/${P}`]: page(identity(held ? { observed_id: "SN-0002", observed_kind: "serial" } : {})),
+    [`GET /api/v1/printers/${P}/status`]: pageStatus(P, { identity_mismatch: held }),
+    [`GET /api/v1/printers/${P}/queue`]: [],
+    [`GET /api/v1/printers/${P}/calibration`]: [
+      { tray: "main", offset_x_mm: 0.4, offset_y_mm: -0.2, scale_x: 1, scale_y: 1, rotation_deg: 0.1, method: "manual", updated_at: "2026-11-03T10:00:00Z", measured_on: null },
+    ],
+    "GET /api/v1/jobs": [],
+  });
+
+  it("hold shapes headline: the card and the detail page say Different device, not Ready", async () => {
+    mockApi(heldRoutes(true));
+    const list = await renderApp({ path: "/printers" });
+    const card = (await screen.findByRole("link", { name: new RegExp(PAGE_PRINTER.name) })) as HTMLElement;
+    expect(await within(card).findByText("Different device")).toBeVisible();
+    // One badge, not a second one next to "Ready".
+    expect(within(card).getAllByText("Different device")).toHaveLength(1);
+    expect(within(card).queryByText("Ready")).toBeNull();
+    list.unmount();
+
+    await renderApp({ path: `/printers/${P}` });
+    const header = (await screen.findByRole("heading", { level: 1, name: PAGE_PRINTER.name })).closest("header")!;
+    expect(await within(header).findByText("Different device")).toBeVisible();
+    expect(within(header).queryByText("Ready")).toBeNull();
+  });
+
+  it("an ordinary printer still reads Ready", async () => {
+    mockApi(heldRoutes(false));
+    await renderApp({ path: `/printers/${P}` });
+    const header = (await screen.findByRole("heading", { level: 1, name: PAGE_PRINTER.name })).closest("header")!;
+    expect(await within(header).findByText("Ready")).toBeVisible();
+  });
+
+  it("calibrate disabled while held: the buttons are off and the reason stands beside them", async () => {
+    mockApi(heldRoutes(true));
+    await renderApp({ path: `/printers/${P}`, info: { features: { calibration: true } } });
+    const section = await screen.findByRole("region", { name: "Calibration" });
+    const button = await within(section).findByRole("button", { name: "Calibrate Main tray" });
+    expect(button).toBeDisabled();
+    expect(within(section).queryByRole("link", { name: "Calibrate Main tray" })).toBeNull();
+    expect(within(section).getByText("Calibration is held until an admin settles the device swap.")).toBeVisible();
+    expect(button).toHaveAccessibleDescription("Calibration is held until an admin settles the device swap.");
+  });
+
+  it("calibrate stays a link when the printer is not held", async () => {
+    mockApi(heldRoutes(false));
+    await renderApp({ path: `/printers/${P}`, info: { features: { calibration: true } } });
+    const section = await screen.findByRole("region", { name: "Calibration" });
+    expect(await within(section).findByRole("link", { name: "Calibrate Main tray" })).toBeVisible();
+    expect(within(section).queryByText(/held/)).toBeNull();
   });
 });

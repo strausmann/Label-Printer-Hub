@@ -1,4 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
+import { Link } from "@tanstack/react-router";
+import { useSession } from "../../app/session";
 import type { PrinterStatus } from "./api";
 import { MarkerSwatch } from "./MarkerSwatch";
 import { useReasonWord } from "./reasons";
@@ -34,4 +36,23 @@ export function ReasonLine({ reasons }: { reasons: string[] }) {
   const word = useReasonWord();
   if (reasons.length === 0) return null;
   return <span className="min-w-0 break-words text-small text-ink-2">{reasons.map(word).join(" · ")}</span>;
+}
+
+/**
+ * What to do about "Not monitored": the status is never read because status discovery is off. An admin
+ * gets the way to the printer settings; `linked` is false inside a card, which is itself a link.
+ */
+export function NotMonitoredHint({ linked }: { linked: boolean }) {
+  const { t } = useLingui();
+  const admin = useSession().scope === "admin";
+  return (
+    <span className="flex min-w-0 flex-col items-start text-small text-ink-2">
+      <span className="[overflow-wrap:anywhere]">{t`Turn on status discovery in the printer settings`}</span>
+      {linked && admin && (
+        <Link to="/settings/printers" className="inline-flex min-h-11 items-center font-bold text-link underline underline-offset-2">
+          {t`Open the printer settings`}
+        </Link>
+      )}
+    </span>
+  );
 }

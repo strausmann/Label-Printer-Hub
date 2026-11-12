@@ -80,10 +80,10 @@ describe("useHubEvents", () => {
     expect(keys(invalidate)).toEqual([["jobs"], ["printers", "p1", "queue"]]);
   });
 
-  it("printer.status invalidates printers and the printer", () => {
+  it("printer.status invalidates the printers prefix once, which reaches the printer's own queries", () => {
     const { invalidate } = setup();
     act(() => last().emit("printer.status", "p1"));
-    expect(keys(invalidate)).toEqual([["printers"], ["printers", "p1"]]);
+    expect(keys(invalidate)).toEqual([["printers"]]);
   });
 
   it("printer.tape_changed invalidates the printer", () => {
@@ -107,10 +107,10 @@ describe("useHubEvents", () => {
     expect(keys(invalidate)).toEqual([["jobs", "held-runs"]]);
   });
 
-  it("printer.identity_mismatch invalidates the printers and the printer, status included", () => {
+  it("printer.identity_mismatch invalidates the printers prefix once, status included", () => {
     const { invalidate } = setup();
     act(() => last().emit("printer.identity_mismatch", "p1", { mismatch: true, since: "2026-11-09T10:00:00Z" }));
-    expect(keys(invalidate)).toEqual([["printers"], ["printers", "p1"]]);
+    expect(keys(invalidate)).toEqual([["printers"]]);
   });
 
   it("an event without a printer id only invalidates the lists", () => {

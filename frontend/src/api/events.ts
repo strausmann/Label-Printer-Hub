@@ -125,16 +125,16 @@ function invalidate(client: QueryClient, type: EventType, { printerId, data }: F
       break;
     }
     case "printer.status":
+      // The prefix covers the printer's own queries too.
       run(["printers"]);
-      if (printerId) run(["printers", printerId]);
       break;
     case "printer.tape_changed":
       if (printerId) run(["printers", printerId]);
       break;
     case "printer.identity_mismatch":
-      // The cards read the status flag, the detail page the printer (admin: both identities) and its status.
+      // The cards read the status flag, the detail page the printer (admin: both identities) and its status;
+      // the ["printers"] prefix reaches all of them, so the printer's own key needs no second call.
       run(["printers"]);
-      if (printerId) run(["printers", printerId]);
       break;
     case "printer.roll_changed":
       // The roll (and with it the prompt and the colour) is part of the status; both queries are refetched.

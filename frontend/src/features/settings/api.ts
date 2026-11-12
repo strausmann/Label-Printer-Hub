@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useMutationState, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, apiFetch } from "../../api/client";
 import type { components } from "../../api/schema.gen";
 import { INFO_KEY } from "../../app/session";
@@ -48,6 +48,22 @@ export const useAdminPrinters = () =>
   });
 
 /** Create, update or switch a printer; the shell's printer lists refresh too. */
+/** Keys of the printer writes, so a list row can ask which printers have a change in flight (see `usePrintersInFlight`). */
+const PRINTER_UPDATE_KEY = ["admin-printers", "update"] as const;
+const PRINTER_TOGGLE_KEY = ["admin-printers", "toggle"] as const;
+
+/**
+ * The slugs of the printers whose save, enable or disable has been sent and not answered. The hub answers
+ * a disable only after the printer's current job is done, so this can last a while.
+ */
+export function usePrintersInFlight(): ReadonlySet<string> {
+  const slugs = useMutationState({
+    filters: { status: "pending", predicate: (m) => m.options.mutationKey?.[0] === "admin-printers" },
+    select: (m) => (m.state.variables as { slug?: string } | undefined)?.slug,
+  });
+  return new Set(slugs.filter((slug): slug is string => typeof slug === "string"));
+}
+
 export function usePrinterAdmin() {
   const client = useQueryClient();
   const done = () => {
@@ -60,11 +76,13 @@ export function usePrinterAdmin() {
       onSuccess: done,
     }),
     update: useMutation({
+      mutationKey: PRINTER_UPDATE_KEY,
       mutationFn: ({ slug, body }: { slug: string; body: PrinterUpdate }) =>
         apiFetch<AdminPrinter>(`/api/v1/admin/printers/${slug}`, { method: "PUT", json: body }),
       onSuccess: done,
     }),
     toggle: useMutation({
+      mutationKey: PRINTER_TOGGLE_KEY,
       mutationFn: ({ slug, enable }: { slug: string; enable: boolean }) =>
         apiFetch<AdminPrinter>(`/api/v1/admin/printers/${slug}/${enable ? "enable" : "disable"}`, { method: "POST" }),
       onSuccess: done,

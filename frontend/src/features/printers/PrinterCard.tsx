@@ -4,8 +4,8 @@ import { StatusBadge } from "../../shell/StatusBadge";
 import type { Printer, PrinterStatus } from "./api";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
-import { describePrinter, isPagePrinter, statusIsUnknown, tapeWidthOf, useKindLabel } from "./model";
-import { MarkerList, noAnswerYet, ReasonLine } from "./PageStatus";
+import { describePrinter, isPagePrinter, staleAgeSeconds, statusIsUnknown, tapeWidthOf, useKindLabel } from "./model";
+import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine } from "./PageStatus";
 import { TapeSwatch } from "./TapeSwatch";
 
 /** One printer: name, state (shape + word), loaded tape, or supplies for a page printer. The whole card opens the detail page. */
@@ -23,7 +23,7 @@ export function PrinterCard({
   const view = describePrinter(printer, status, printing);
   const page = isPagePrinter(printer, status);
   const unknown = statusIsUnknown(status);
-  const age = view.kind === "stale" ? status?.last_probe_age_s : null;
+  const age = staleAgeSeconds(status);
   const ageWord = typeof age === "number" ? formatAge(age, i18n.locale) : "";
   return (
     <Link
@@ -36,9 +36,9 @@ export function PrinterCard({
         <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{printer.model}</span>
       </span>
       <StatusBadge state={view.badge} label={kinds[view.kind]} />
-      {status?.identity_mismatch === true && <StatusBadge state="warn" label={t`Different device`} />}
       {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
       {view.kind === "paused" && <PauseReason pause={printer.pause} />}
+      {view.kind === "not_polled" && <NotMonitoredHint linked={false} />}
       {typeof age === "number" && (
         <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{t`Last status ${ageWord}`}</span>
       )}

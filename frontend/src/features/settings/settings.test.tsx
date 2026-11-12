@@ -197,6 +197,61 @@ describe("Printers", () => {
     );
   });
 
+  it("shows why buttons are disabled while waiting, on the waiting printer's row only", async () => {
+    const second = { ...ADMIN_PRINTER, id: "33333333-3333-4333-8333-333333333333", slug: "office-ql", name: "Office QL-820NWB" };
+    mockApi({
+      "GET /api/v1/admin/printers": [ADMIN_PRINTER, second],
+      // The hub answers a disable only after the printer's current job is done: this one does not answer.
+      "POST /api/v1/admin/printers/workshop-pt/disable": () => new Promise(() => undefined),
+    });
+    await renderApp({ path: "/settings/printers" });
+    const rowOf = async (name: string) => (await screen.findByText(name)).closest("li") as HTMLElement;
+    const waitingRow = await rowOf(ADMIN_PRINTER.name);
+    const otherRow = await rowOf(second.name);
+    expect(within(waitingRow).queryByText("Waiting for the current job to finish…")).toBeNull();
+    await userEvent.click(within(waitingRow).getByRole("button", { name: `Disable ${ADMIN_PRINTER.name}` }));
+    const why = await within(waitingRow).findByText("Waiting for the current job to finish…");
+    const button = within(waitingRow).getByRole("button", { name: `Disable ${ADMIN_PRINTER.name}` });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription("Waiting for the current job to finish…");
+    expect(why).toBeVisible();
+    // The lock is per printer: the other row has no note and keeps its buttons.
+    expect(within(otherRow).queryByText("Waiting for the current job to finish…")).toBeNull();
+    expect(within(otherRow).getByRole("button", { name: `Disable ${second.name}` })).toBeEnabled();
+    expect(within(otherRow).getByRole("button", { name: `Edit ${second.name}` })).toBeEnabled();
+  });
+
+  it("a save that waits shows the same note on its own row", async () => {
+    const second = { ...ADMIN_PRINTER, id: "33333333-3333-4333-8333-333333333333", slug: "office-ql", name: "Office QL-820NWB" };
+    mockApi({
+      "GET /api/v1/admin/printers": [ADMIN_PRINTER, second],
+      "PUT /api/v1/admin/printers/workshop-pt": () => new Promise(() => undefined),
+    });
+    await renderApp({ path: "/settings/printers" });
+    await userEvent.click(await screen.findByRole("button", { name: `Edit ${ADMIN_PRINTER.name}` }));
+    await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
+    const row = (await screen.findAllByText(ADMIN_PRINTER.name)).map((el) => el.closest("li")).find((li) => li !== null) as HTMLElement;
+    expect(await within(row).findByText("Waiting for the current job to finish…")).toBeVisible();
+    expect(within(row).getByRole("button", { name: `Disable ${ADMIN_PRINTER.name}` })).toBeDisabled();
+    const other = (await screen.findByText(second.name)).closest("li") as HTMLElement;
+    expect(within(other).queryByText("Waiting for the current job to finish…")).toBeNull();
+    expect(within(other).getByRole("button", { name: `Disable ${second.name}` })).toBeEnabled();
+  });
+
+  it("explains an unusable stored connection in the app's words, never with the server's text and its id", async () => {
+    mockApi({
+      "GET /api/v1/admin/printers": [ADMIN_PRINTER],
+      "PUT /api/v1/admin/printers/workshop-pt": () =>
+        respond(409, { detail: { error_code: "stored_connection_invalid", error_message: "The stored connection of printer 11111111-1111-4111-8111-111111111111 is not valid" } }),
+    });
+    await renderApp({ path: "/settings/printers", language: "de" });
+    await userEvent.click(await screen.findByRole("button", { name: `Workshop PT-P750W bearbeiten` }));
+    await userEvent.click(screen.getByRole("button", { name: "Drucker speichern" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Die für diesen Drucker gespeicherte Adresse ist nicht gültig. Gib die Adresse erneut ein und speichere.");
+    expect(alert).not.toHaveTextContent("11111111");
+  });
+
   it("explains a duplicate slug", async () => {
     mockApi({
       "GET /api/v1/admin/printers": [],
