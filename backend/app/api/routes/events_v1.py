@@ -43,7 +43,7 @@ from starlette.background import BackgroundTask
 import app.db.engine as db_engine
 from app.auth import sessions as ui_sessions
 from app.auth.dependencies import AuthContext
-from app.auth.ownership import owner_only
+from app.auth.ownership import owner_key_of, owner_only
 from app.auth.scope_deps import require_read_stream
 from app.config import Settings, get_settings
 from app.models.job import Job
@@ -210,6 +210,10 @@ class _OwnerFilter:
             return cached
         try:
             jid = uuid.UUID(job_id)
+            # A client that disconnects cancels this query mid-flight; CancelledError is not an
+            # Exception, so it propagates and the session closes in __aexit__. In the tests a
+            # cancelled SQLite query can stall the loop's teardown (fix round 1), in uvicorn it
+            # is the same pattern as the credential re-check of this stream.
             async with db_engine.async_session() as db:
                 row = (
                     await db.execute(select(col(Job.api_key_id)).where(col(Job.id) == jid))
@@ -238,7 +242,8 @@ class _OwnerFilter:
             return False
         if created_by is None:
             return False
-        return self._remember(self._runs, run_id, created_by == str(self._key))
+        # Tape batches store the bare key id, sheet batches "key:<uuid>" (#294).
+        return self._remember(self._runs, run_id, owner_key_of(created_by) == str(self._key))
 
 
 class _Subscriptions:

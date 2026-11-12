@@ -52,3 +52,32 @@ def test_admin_keys_sessions_and_sso_see_everything(source: str, scope: str) -> 
 def test_no_auth_context_is_not_restricted_here() -> None:
     """Routes without credentials are refused by the scope dependency, not by this helper."""
     assert not owner_only(None) and may_see(None, None)
+
+
+def test_a_sheet_batch_owner_reads_as_the_key() -> None:
+    """Fix round 2 (I-1): the write actor of a key is ``key:<uuid>``; both forms are the key."""
+    from app.auth.ownership import key_actor, owner_key_of
+
+    ctx = _ctx("api-key", "print")
+    assert key_actor(KEY) == f"key:{KEY}"
+    assert owner_key_of(f"key:{KEY}") == owner_key_of(str(KEY)) == owner_key_of(KEY) == str(KEY)
+    assert may_see(ctx, f"key:{KEY}")
+    assert not may_see(ctx, f"key:{uuid4()}")
+    for not_a_key in ("alice", "pangolin-sso", "session", "key:", "key:not-a-uuid", "user:x"):
+        assert owner_key_of(not_a_key) is None
+        assert not may_see(ctx, not_a_key)
+
+
+@pytest.mark.parametrize("name", [f"key:{KEY}", str(KEY), "system:seed"])
+def test_a_user_name_cannot_pose_as_a_key_or_the_hub(name: str) -> None:
+    """An SSO user whose name looks like a key actor (or the hub) is recorded as ``user:…``,
+    so a batch they print never reads as that key's."""
+    from app.api.routes.sheet_common import actor
+    from app.auth.ownership import owner_key_of
+
+    sso = AuthContext(
+        source="pangolin-sso", scope="admin", api_key_id=None, ip="127.0.0.1", user=name
+    )
+    recorded = actor(sso)
+    assert recorded == f"user:{name}"
+    assert owner_key_of(recorded) is None

@@ -18,6 +18,7 @@ import pytest
 from app.config import get_settings
 from app.models.api_key import ApiKey
 from app.models.job import Job, JobState
+from app.models.print_batch import PrintBatch
 from app.models.printer import Printer
 from sqlalchemy import func, select
 
@@ -341,3 +342,42 @@ async def test_an_admin_key_clears_every_queued_job(api_client_with_seed, world)
     assert resp.status_code == 204, resp.text
     for job in ("own_queued", "foreign_queued", "orphan_queued"):
         assert await _state(world[job]) == JobState.CANCELLED.value
+
+
+async def _batch(printer_id: UUID, created_by: str) -> UUID:
+    async with _factory()() as s:
+        batch = PrintBatch(printer_id=printer_id, job_ids=[], created_by=created_by)
+        s.add(batch)
+        await s.commit()
+        return batch.id
+
+
+async def test_both_stored_owner_forms_of_a_batch_belong_to_the_key(
+    api_client_with_seed, world
+) -> None:
+    """Fix round 2 (I-1): tape batches store the bare key id, sheet batches ``key:<uuid>``.
+    Both read as the key's own, for the header key and for a session signed in with it; a
+    batch of another key in either form, and a user-authored one, stay 404."""
+    c = api_client_with_seed
+    printer, owner, other = world["printer"], world["owner_id"], world["other_id"]
+    tape = await _batch(printer, str(owner))
+    sheet = await _batch(printer, f"key:{owner}")
+    foreign_tape = await _batch(printer, str(other))
+    foreign_sheet = await _batch(printer, f"key:{other}")
+    sso_sheet = await _batch(printer, "alice")
+    missing = b'{"detail":"Batch not found"}'
+
+    async def check(headers: dict[str, str]) -> None:
+        for own in (tape, sheet):
+            resp = await c.get(f"/api/v1/batches/{own}", headers=headers)
+            assert resp.status_code == 200, resp.text
+        for hidden in (foreign_tape, foreign_sheet, sso_sheet):
+            resp = await c.get(f"/api/v1/batches/{hidden}", headers=headers)
+            assert (resp.status_code, resp.content) == (404, missing)
+
+    await check(world["owner"])
+    await _sign_in(c, world["owner_plain"])
+    await check({})
+    for any_batch in (tape, sheet, foreign_tape, foreign_sheet, sso_sheet):
+        resp = await c.get(f"/api/v1/batches/{any_batch}", headers=world["admin"])
+        assert resp.status_code == 200, resp.text

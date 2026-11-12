@@ -299,3 +299,96 @@ async def test_the_snapshot_lists_a_keys_own_active_jobs_only(hub_app) -> None:
     assert await _snapshot_job_ids(app, _key_header(owner), printer) == {mine}
     admin, _ = await _insert_key(["admin"])
     assert await _snapshot_job_ids(app, _key_header(admin), printer) == {mine, foreign, orphan}
+
+
+class _LiveRuns:
+    """A stand-in queue whose tape runs are live: ``run_info`` names their owner key."""
+
+    def __init__(self, owners: dict[str, UUID | None]) -> None:
+        self._owners = owners
+
+    def run_info(self, run_id: UUID):  # returns a duck-typed RunInfo
+        from types import SimpleNamespace
+
+        if str(run_id) not in self._owners:
+            return None
+        return SimpleNamespace(api_key_id=self._owners[str(run_id)])
+
+    def has_job(self, _job_id: UUID) -> bool:
+        return False
+
+
+async def test_a_live_run_is_shown_to_its_key_only(hub_app) -> None:
+    """Fix round 2 (I-2): while a run is in the queue, the queue's owner decides — there is no
+    batch row to fall back on here, so only the live branch can deliver or hide it."""
+    app, _ = hub_app
+    printer, owner, owner_id, other_id = await _world()
+    mine, foreign, keyless = str(uuid4()), str(uuid4()), str(uuid4())
+    inner = app._app
+    original = inner.state.print_queue
+    inner.state.print_queue = _LiveRuns({mine: owner_id, foreign: other_id, keyless: None})
+    stream = await _open(app, _key_header(owner))
+    try:
+        await _connected(stream)
+        _run_event(_bus(app), printer, foreign)
+        _run_event(_bus(app), printer, keyless)
+        _run_event(_bus(app), printer, mine)
+        ev = await _next_job_level(stream)
+        assert (ev["event"], ev["payload"]["data"]["run_id"]) == ("run.state_changed", mine)
+    finally:
+        await stream.close()
+        inner.state.print_queue = original
+
+
+async def test_an_unknown_event_type_on_the_queue_channel_is_not_delivered(hub_app) -> None:
+    """Fail closed: the filter knows two job event types; any other frame on a queue channel is
+    held back from a plain key, even when it names the key's own job."""
+    app, _ = hub_app
+    printer, owner, owner_id, _other_id = await _world()
+    mine = await _job(printer, owner_id)
+    stream = await _open(app, _key_header(owner))
+    try:
+        await _connected(stream)
+        bus = _bus(app)
+        _publish(bus, f"printer:{printer}:queue", "job.progress", {"job_id": mine})
+        _job_event(bus, printer, mine)
+        while True:
+            ev = await stream.event()
+            assert ev is not None
+            assert ev["event"] != "job.progress"
+            if ev["event"] == "job.state_changed" and ev["id"] != "0":
+                break
+    finally:
+        await stream.close()
+
+
+async def test_an_owner_lookup_that_fails_delivers_nothing(hub_app, monkeypatch) -> None:
+    """Fail closed: when the owner of a job or run cannot be looked up, the frame is held back."""
+    import app.api.routes.events_v1 as events_v1
+
+    app, _ = hub_app
+    printer, owner, owner_id, _other_id = await _world()
+    mine = await _job(printer, owner_id)
+    run = await _batch(printer, owner_id)
+
+    def broken(*_a, **_k):
+        raise RuntimeError("lookup unavailable")
+
+    monkeypatch.setattr(events_v1, "col", broken)  # used only by the owner lookups
+    stream = await _open(app, _key_header(owner))
+    try:
+        await _connected(stream)
+        _job_event(_bus(app), printer, mine)
+        _run_event(_bus(app), printer, run)
+        _status_event(_bus(app), printer)
+        # The status frame travels on another channel and may overtake the queue frames, so
+        # keep reading until the stream has been quiet for a while.
+        while True:
+            try:
+                ev = await stream.event(timeout=1.5)
+            except TimeoutError:
+                break
+            assert ev is not None
+            assert ev["event"] not in ("job.state_changed", "run.state_changed") or ev["id"] == "0"
+    finally:
+        await stream.close()

@@ -83,8 +83,8 @@ ends the preview with `HTTP 504` `render-timeout` and fails a page job with
 counts as stuck from the time limit on, even if its caller has gone away.
 
 Each owner holds at most one of the two slots at once, running or stuck: each API key on
-its own, and all callers without a key (browser sessions, SSO users, the hub's own page
-jobs) together as one group. A second render of the same owner waits for its turn, at most
+its own (a browser session signed in with a key counts as that key), and all callers
+without a key (SSO users, the hub's own page jobs) together as one group. A second render of the same owner waits for its turn, at most
 the time limit, and then fails like a full hub (below). While a key has a stuck render, its
 next preview answers 429 `too-many-previews` and its next page job fails with
 `render_timeout` at once. While the group without a key has a stuck render, a preview
@@ -93,10 +93,12 @@ with `render_unavailable` at once. With every slot stuck, every caller gets that
 once.
 
 Accepted residual risk: one party cannot hang both slots, but two different owners together
-can (two keys, or a key and a UI user). Keys are issued by an admin; revoke such a key.
+can (two keys, or a key and an SSO user). Keys are issued by an admin; revoke such a key.
+A stuck drawing thread cannot be stopped from outside: revoking the key ends its further
+requests, but the slot itself is only freed when the thread ends or the hub is restarted.
 Known limitation: the callers without a key share their slot and so block each other (one
-stuck render of one UI user refuses every UI user until it ends or the hub restarts);
-signed-in UI users are trusted, and each of them still previews once at a time.
+stuck render of one SSO user refuses every SSO user until it ends or the hub restarts);
+SSO users are trusted, and each of them still previews once at a time.
 
 `GET /readiness` shows stuck renders in the check `render_slots` (failing when every slot is
 stuck). `/healthz` does not, so restart the hub by hand then.
