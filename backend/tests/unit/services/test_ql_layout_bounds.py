@@ -7,6 +7,7 @@ measuring work and never allocate an image beyond a documented maximum length.
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -177,8 +178,26 @@ def test_rows_left_out_of_the_layout_still_count_in_more() -> None:
     )
     assert len(fields) == 1 + ql_layout.MAX_LISTING_ROWS_ALONG
     lines = ql_layout._along_lines(fields, 2000, 672, hidden, listing=True)
-    shown = len(lines) - 2  # minus the code line and the "+N more" line
-    assert lines[-1].text == f"+{1000 - shown} more"
+    shown = len(lines) - 2  # minus the code line and the "+N" line
+    assert lines[-1].text == f"+{1000 - shown}"
+
+
+def test_overflow_marker_is_language_neutral() -> None:
+    """The marker is printed on the label in whatever language the label is read in: a number, no word."""
+    fields, hidden = ql_layout._fields(
+        ContentType.QR_WITH_LISTING,
+        LabelData(
+            source_app="hangar",
+            primary_id="K1",
+            items=tuple(LabelDataItem(item=f"Box {n}") for n in range(1000)),
+            qr_payload=_QR,
+        ),
+        ql_layout.MAX_LISTING_ROWS_ALONG,
+    )
+    marker = ql_layout._along_lines(fields, 2000, 672, hidden, listing=True)[-1].text
+    assert re.fullmatch(r"\+[0-9]+", marker), marker
+    across = ql_layout._across_lines(ContentType.QR_WITH_LISTING, _worst_schema_label(), next(iter(QlLayoutPreset)))
+    assert re.fullmatch(r"\+[0-9]+", across[-1].text), across[-1].text
 
 
 def test_along_label_length_is_capped_for_a_very_long_line() -> None:
@@ -285,7 +304,7 @@ def test_worst_across_label_stays_within_50mm(preset: QlLayoutPreset) -> None:
         limit = ql_layout.ACROSS_MAX_LENGTH_PX - 2 * ql_layout.ACROSS_PRESETS[preset].margin_px
         assert sum(line.height for line in lines) <= limit
     listing = ql_layout._across_lines(ContentType.QR_WITH_LISTING, data, preset)
-    assert listing[-1].text.startswith("+") and listing[-1].text.endswith(" more")
+    assert re.fullmatch(r"\+[0-9]+", listing[-1].text)
 
 
 def test_across_fit_without_overflow_adds_no_marker() -> None:

@@ -86,7 +86,7 @@ shown and is cut before any measuring."""
 MAX_SECONDARY_LINES: Final = 10
 MAX_LISTING_ROWS_ACROSS: Final = 16
 """Listing rows laid out at all across: more than 50 mm (591 px) holds at the smallest row
-pitch (~33 px); the rest count towards "+N more"."""
+pitch (~33 px); the rest count towards "+N"."""
 MAX_LISTING_ROWS_ALONG: Final = 10
 """Listing rows laid out at all along: more than the 696 px band holds (~80 px rows)."""
 
@@ -373,7 +373,7 @@ def _fields(
     """The text fields of a label, in print order, with the role that picks the font.
 
     Returns the fields and how many listing rows were left out beyond ``max_rows`` (they
-    count towards "+N more"); secondary lines beyond ``MAX_SECONDARY_LINES`` are not shown at
+    count towards "+N"); secondary lines beyond ``MAX_SECONDARY_LINES`` are not shown at
     all. Both bounds keep the layout work independent of the data size.
     """
     code = data.primary_id or ""
@@ -497,7 +497,7 @@ def _fit_blocks(
     1. Wrapped fields lose lines first (the field with the most lines first); the last kept
        line of the field gets the rest and an ellipsis.
     2. A listing (``hidden`` is not ``None``: the rows never laid out) keeps as many rows as
-       fit plus "+N more".
+       fit plus "+N".
     3. Otherwise trailing fields are dropped and the last kept line gets an ellipsis.
     """
     blocks = [list(b) for b in blocks]
@@ -521,7 +521,7 @@ def _fit_blocks(
         head_height = sum(line.height for line in head)
         start = len(rows) if hidden else len(rows) - 1
         for keep in range(start, -1, -1):
-            more = _Line(f"+{len(rows) - keep + hidden} more", more_font)
+            more = _Line(f"+{len(rows) - keep + hidden}", more_font)
             if head_height + prefix[keep] + more.height <= limit:
                 return [*head, *rows[:keep], more]
         return head
@@ -593,7 +593,7 @@ def _along_lines(
     """One line per field at the along font sizes, each cut to ``text_width`` (ellipsis),
     fitted to the band height ``room``.
 
-    A listing keeps as many rows as fit plus "+N more" (N includes the ``hidden`` rows never
+    A listing keeps as many rows as fit plus "+N" (N includes the ``hidden`` rows never
     laid out); any other label drops trailing lines and ends its last kept line with an
     ellipsis (review: ten secondary lines overflowed the band). Text is cut to
     ``2 * LINE_CHAR_BOUND`` characters before measuring, so the work does not grow with the
