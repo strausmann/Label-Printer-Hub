@@ -350,7 +350,7 @@ msgstr "ein neuer Bogen"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "A printer rarely prints exactly where the page says. Measure how far it is off on a real sheet, and the hub moves every print by the opposite."
-msgstr "Ein Drucker druckt selten genau dorthin, wo die Seite es vorgibt. Messen Sie auf einem echten Bogen, wie weit er daneben liegt, und der Hub verschiebt jeden Druck um das Gegenteil."
+msgstr "Ein Drucker druckt selten genau dorthin, wo die Seite es vorgibt. Miss auf einem echten Bogen, wie weit er daneben liegt, und der Hub verschiebt jeden Druck um das Gegenteil."
 
 #. placeholder {0}: MAX.code
 #: src/features/archive/TypeForm.tsx
@@ -495,7 +495,7 @@ msgstr "Alle"
 
 #: src/features/calibration/errors.ts
 msgid "All readings lie on one line. Read crossings that are far apart, in both directions."
-msgstr "Alle Messwerte liegen auf einer Linie. Lesen Sie Kreuzungen ab, die weit auseinander liegen, in beide Richtungen."
+msgstr "Alle Messwerte liegen auf einer Linie. Lies Kreuzungen ab, die weit auseinander liegen, in beide Richtungen."
 
 #: src/features/layout/LayoutPicker.tsx
 msgid "Along"
@@ -585,7 +585,7 @@ msgstr "Anordnung"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Ask an admin to set it up."
-msgstr "Bitten Sie einen Admin, es einzurichten."
+msgstr "Bitte einen Admin, es einzurichten."
 
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Asked the printer to cancel."
@@ -1335,7 +1335,7 @@ msgstr "Gib eine gültige Zahl ein."
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "Enter at least three readings to fit."
-msgstr "Geben Sie mindestens drei Messwerte ein, um zu berechnen."
+msgstr "Gib mindestens drei Messwerte ein, um zu berechnen."
 
 #: src/features/settings/SettingField.tsx
 msgid "Enter it again"
@@ -1347,7 +1347,7 @@ msgstr "Gib die Adresse des Druckers ein."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Enter what the printer did wrong; the hub applies the opposite itself."
-msgstr "Tragen Sie ein, was der Drucker falsch macht; den Ausgleich in die Gegenrichtung übernimmt der Hub selbst."
+msgstr "Trag ein, was der Drucker falsch macht; den Ausgleich in die Gegenrichtung übernimmt der Hub selbst."
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Every sheet is used up."
@@ -2308,7 +2308,7 @@ msgstr "auf {printerName}"
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
-msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, die Messwerte lassen sich daher nicht berechnen. Geben Sie die Werte direkt ein."
+msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, die Messwerte lassen sich daher nicht berechnen. Gib die Werte direkt ein."
 
 #: src/features/sheets/errors.ts
 msgid "One of those cells is already in use. The sheet shows the current state."
@@ -2514,7 +2514,7 @@ msgstr "Kalibrierseite drucken"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Print it onto a real sheet of labels (the sheet is used up). The page is always printed without correction, so what you measure is the printer's own deviation."
-msgstr "Drucken Sie sie auf einen echten Etikettenbogen (der Bogen ist danach verbraucht). Die Seite wird immer ohne Korrektur gedruckt, Sie messen also die eigene Abweichung des Druckers."
+msgstr "Drucke sie auf einen echten Etikettenbogen (der Bogen ist danach verbraucht). Die Seite wird immer ohne Korrektur gedruckt, du misst also die eigene Abweichung des Druckers."
 
 #: src/features/jobs/RunControls.tsx
 msgid "Print labels {from} to {total} again"
@@ -2546,7 +2546,7 @@ msgstr "Testseite drucken"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust."
-msgstr "Drucken Sie dieselbe Seite noch einmal, jetzt mit der Korrektur. Jede Kreuzung sollte dann innerhalb von 0,5 mm liegen. Wenn nicht, messen Sie erneut und passen Sie an."
+msgstr "Drucke dieselbe Seite noch einmal, jetzt mit der Korrektur. Jede Kreuzung sollte dann innerhalb von 0,5 mm liegen. Wenn nicht, miss erneut und passe an."
 
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Print with the new plan"
@@ -2729,7 +2729,7 @@ msgstr "Drucker auslesen"
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "Read the deviation at three or more crossings that are far apart, in both directions. + across = the ink lies to the right, + down = the ink lies below."
-msgstr "Lesen Sie die Abweichung an drei oder mehr weit auseinander liegenden Kreuzungen ab, in beide Richtungen. + quer = die Farbe liegt rechts, + abwärts = die Farbe liegt darunter."
+msgstr "Lies die Abweichung an drei oder mehr weit auseinander liegenden Kreuzungen ab, in beide Richtungen. + quer = die Farbe liegt rechts, + abwärts = die Farbe liegt darunter."
 
 #: src/features/about/AboutPage.tsx
 msgctxt "action"
@@ -2968,7 +2968,7 @@ msgstr "Speichern"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Save a correction first."
-msgstr "Speichern Sie zuerst eine Korrektur."
+msgstr "Speichere zuerst eine Korrektur."
 
 #: src/features/archive/TypeForm.tsx
 msgid "Save details"
@@ -4352,7 +4352,7 @@ msgstr "Design"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "There is no page printer yet. Add one under Settings › Printers."
-msgstr "Es gibt noch keinen Seitendrucker. Fügen Sie unter Einstellungen › Drucker einen hinzu."
+msgstr "Es gibt noch keinen Seitendrucker. Füge unter Einstellungen › Drucker einen hinzu."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "There is no sheet type with at least two columns and two rows."
@@ -4380,7 +4380,7 @@ msgstr "Diese Etiketten gingen an den Drucker, aber niemand hat das Ergebnis bes
 
 #: src/features/calibration/errors.ts
 msgid "These readings cannot be fitted. Check them and add crossings that are further apart."
-msgstr "Aus diesen Messwerten lässt sich nichts berechnen. Prüfen Sie sie und fügen Sie weiter auseinander liegende Kreuzungen hinzu."
+msgstr "Aus diesen Messwerten lässt sich nichts berechnen. Prüfe sie und füge weiter auseinander liegende Kreuzungen hinzu."
 
 #: src/features/scan/CameraScanner.tsx
 msgid "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
@@ -4491,15 +4491,15 @@ msgstr "Dieser Bogen"
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "This sheet has no gap between its columns: the S lines sit on the cuts. Peel every other label (checkerboard) if a cut is hard to see."
-msgstr "Dieser Bogen hat keine Lücke zwischen den Spalten: Die S-Linien liegen auf den Schnitten. Ziehen Sie jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
+msgstr "Dieser Bogen hat keine Lücke zwischen den Spalten: Die S-Linien liegen auf den Schnitten. Ziehe jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "This sheet has no gap between its labels: the lines sit on the cuts. Peel every other label (checkerboard) if a cut is hard to see."
-msgstr "Dieser Bogen hat keine Lücke zwischen den Etiketten: Die Linien liegen auf den Schnitten. Ziehen Sie jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
+msgstr "Dieser Bogen hat keine Lücke zwischen den Etiketten: Die Linien liegen auf den Schnitten. Ziehe jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "This sheet has no gap between its rows: the Z lines sit on the cuts. Peel every other label (checkerboard) if a cut is hard to see."
-msgstr "Dieser Bogen hat keine Lücke zwischen den Zeilen: Die Z-Linien liegen auf den Schnitten. Ziehen Sie jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
+msgstr "Dieser Bogen hat keine Lücke zwischen den Zeilen: Die Z-Linien liegen auf den Schnitten. Ziehe jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
 
 #: src/features/sheets/errors.ts
 msgid "This sheet is discarded."
@@ -4796,7 +4796,7 @@ msgstr "Was schiefgelaufen ist"
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "Where gap line {s} and gap line {z} cross, read the small scales against the middle of the physical gap, in millimetres."
-msgstr "Wo sich die Lückenlinien {s} und {z} kreuzen, lesen Sie die kleinen Skalen gegen die Mitte der echten Lücke ab, in Millimetern."
+msgstr "Wo sich die Lückenlinien {s} und {z} kreuzen, lies die kleinen Skalen gegen die Mitte der echten Lücke ab, in Millimetern."
 
 #: src/features/archive/TypeDetail.tsx
 msgid "Where the numbers come from"
@@ -4877,7 +4877,7 @@ msgstr "Dein neuer Schlüssel"
 
 #: src/i18n/messages.ts
 msgid "Your session has expired. Sign in again."
-msgstr "Ihre Sitzung ist abgelaufen. Bitte erneut anmelden."
+msgstr "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an."
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "Z1, Z2 … number the gaps between rows (dashed lines)."
