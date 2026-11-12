@@ -22,7 +22,7 @@ async function reportNewerHub(page: Page) {
     window.fetch = async (...args: Parameters<typeof fetch>) => {
       const response = await realFetch(...args);
       const url = new URL(typeof args[0] === "string" ? args[0] : args[0] instanceof Request ? args[0].url : String(args[0]), location.href);
-      if (!url.pathname.startsWith("/api/") || sessionStorage.getItem("e2e-mismatch") === "off") return response;
+      if (!url.pathname.startsWith("/api/v1/") || sessionStorage.getItem("e2e-mismatch") === "off") return response;
       const headers = new Headers(response.headers);
       headers.set("x-hub-version", version);
       return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
