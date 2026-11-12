@@ -57,7 +57,6 @@ from app.printer_backends.ipp.attributes import ProbeSummary
 from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.label_layout import LayoutDefault, parse_layout_defaults
 from app.schemas.printer_admin import IppConnection, PrinterCreatePayload, PrinterUpdatePayload
-from app.schemas.problem import ProblemDetail
 from app.services.event_bus import BusEvent, EventBus
 from app.services.printer_admin_service import (
     IPP_BACKEND,
@@ -552,7 +551,8 @@ async def enable_printer(
         "device as the printer and keeps its calibration; ``replaced`` does the same and "
         "deletes every stored calibration of the printer, in one transaction. The held "
         "sheet and calibration jobs are released once the change is committed. 404 for an "
-        "unknown printer, 409 ``no-identity-mismatch`` when no swap is flagged. Admin only."
+        "unknown printer, 409 ``no-identity-mismatch`` when no swap is flagged and 409 "
+        "``identity-changed`` when the flagged device is no longer the one reviewed. Admin only."
     ),
 )
 async def resolve_identity(
@@ -572,14 +572,15 @@ async def resolve_identity(
             expected_observed_kind=body.expected_observed_kind,
         )
     except IdentityChangedError as exc:
-        problem = ProblemDetail(
-            type="identity-changed",
-            title="The flagged device changed since it was reviewed",
-            status=status.HTTP_409_CONFLICT,
-            detail=f"Printer {printer_id}: review the flagged device again before resolving",
-        )
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=problem.model_dump(exclude_none=True)
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "identity-changed",
+                "error_message": (
+                    f"Printer {printer_id}: the flagged device changed since it was reviewed. "
+                    "Review it again before resolving."
+                ),
+            },
         ) from exc
     except PrinterNotFoundError as exc:
         raise HTTPException(

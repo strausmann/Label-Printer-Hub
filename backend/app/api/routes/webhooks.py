@@ -100,7 +100,9 @@ async def _print_label(
                 content_type=ContentType.QR_TWO_LINES,
                 lookup=PrintLookupRequest(app=app, identifier=identifier),
                 options=PrintOptions(),
-            )
+            ),
+            # No API key owns a webhook job, but the audit trail still names the peer.
+            source_ip=request.client.host if request.client else None,
         )
     except SYNC_ERROR_TYPES as exc:
         return print_error_response(exc)

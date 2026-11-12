@@ -43,7 +43,7 @@ def _check_default_printer(http: Request, auth: AuthContext) -> None:
     """403 when the key may not use the default printer these routes act on."""
     printer_id = getattr(http.app.state, "printer_id", None)
     if printer_id is not None:
-        check_printer_access(auth, UUID(str(printer_id)))
+        check_printer_access(auth, UUID(str(printer_id)), default_printer=True)
 
 
 class _PrinterResumeResponse(BaseModel):
@@ -127,7 +127,7 @@ async def resume_printer(
     printer_id = getattr(http.app.state, "printer_id", None)
     if printer_id is None:
         raise HTTPException(status_code=404, detail="no printer configured")
-    check_printer_access(_auth, UUID(str(printer_id)))
+    check_printer_access(_auth, UUID(str(printer_id)), default_printer=True)
     # Same effect as POST /api/v1/printers/{id}/resume: clear the persisted flag too.
     await printer_state_repo.set_paused(session, printer_id, False)
     try:

@@ -77,3 +77,30 @@ def test_tests_never_copied_into_image() -> None:
     assert "COPY" in dockerfile, "the guard reads the wrong file"
     assert "backend/tests" in dockerignore.split(), ".dockerignore no longer excludes the tests"
     assert _copy_offenders(dockerfile, dockerignore) == []
+
+
+@pytest.mark.asyncio
+async def test_e2e_control_route_absent_by_request() -> None:
+    """267-01: ask the production app the way a browser would, not only walk its route table.
+
+    The route walk cannot see a catch-all or a middleware that answers ``/__e2e/``. The app
+    from the production factory (its ASGI application; the lifespan wrapper only starts it)
+    must not answer the control paths with the control JSON (``uri``/``state`` of the fake page
+    printer, ``backends`` of the tape printers). Here, without the web bundle, it is a 404; in
+    the image the SPA shell may answer instead, which is HTML and not the control JSON.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    inner = create_app()._app  # type: ignore[attr-defined]
+    async with AsyncClient(transport=ASGITransport(app=inner), base_url="http://t") as c:
+        for method, path in (
+            ("GET", "/__e2e/page-printer"),
+            ("POST", "/__e2e/page-printer/state"),
+            ("POST", "/__e2e/page-printer/reset"),
+            ("POST", "/__e2e/tape-printer/state"),
+            ("POST", "/__e2e/tape-printer/reset"),
+        ):
+            resp = await c.request(method, path, json={} if method == "POST" else None)
+            where = f"{method} {path}: {resp.status_code} {resp.text[:120]}"
+            assert resp.status_code != 200 or "text/html" in resp.headers["content-type"], where
+            assert '"uri"' not in resp.text and '"backends"' not in resp.text, where

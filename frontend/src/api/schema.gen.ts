@@ -111,7 +111,7 @@ export interface paths {
         put?: never;
         /**
          * Resolve a flagged device swap
-         * @description Ends the device-swap flag of a printer (#231). ``same_device`` accepts the flagged device as the printer and keeps its calibration; ``replaced`` does the same and deletes every stored calibration of the printer, in one transaction. The held sheet and calibration jobs are released once the change is committed. 404 for an unknown printer, 409 ``no-identity-mismatch`` when no swap is flagged. Admin only.
+         * @description Ends the device-swap flag of a printer (#231). ``same_device`` accepts the flagged device as the printer and keeps its calibration; ``replaced`` does the same and deletes every stored calibration of the printer, in one transaction. The held sheet and calibration jobs are released once the change is committed. 404 for an unknown printer, 409 ``no-identity-mismatch`` when no swap is flagged and 409 ``identity-changed`` when the flagged device is no longer the one reviewed. Admin only.
          */
         post: operations["resolve_identity_api_v1_admin_printers__printer_id__identity_resolve_post"];
         delete?: never;

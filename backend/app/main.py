@@ -572,6 +572,9 @@ register_page_renderer("test_page", render_test_page)
 def create_app() -> _LifespanManager:
     """Build the FastAPI app. Kept as a factory so tests can re-instantiate."""
     install_log_buffer()
+    # aiosqlite logs every statement and bound parameter at DEBUG; with the root logger at
+    # DEBUG that would put device serials and key hashes into the log buffer (263-50).
+    logging.getLogger("aiosqlite").setLevel(logging.INFO)
     app = FastAPI(
         lifespan=lifespan,
         title="Label Printer Hub API",

@@ -468,7 +468,8 @@ async def test_webhook_submits_a_two_line_qr_label_for_one_copy(
     assert request.options == PrintOptions()
     assert request.options.copies == 1
     assert r.json()["job_id"] == str(service.submit_print_job.return_value)
-    assert service.submit_print_job.await_args.kwargs == {}  # no owner is invented
+    # no owner key is invented; the audit trail records the peer address only (263-79)
+    assert service.submit_print_job.await_args.kwargs == {"source_ip": "testclient"}
 
 
 @pytest.mark.asyncio

@@ -181,6 +181,16 @@ async def test_webhook_job_payload_is_rerenderable(hub: Hub) -> None:
         assert 200 <= retry.status_code < 300, retry.text
 
 
+async def test_webhook_job_records_the_peer_address_but_no_key(hub: Hub) -> None:
+    """263-79: a webhook job has no API key, but the audit trail still names where it came from."""
+    async with hub.running() as (client, _app):
+        r = await client.post(SPOOLMAN, json=SPOOL_BODY, headers=_headers())
+        assert r.status_code == 202, r.text
+        row = await _row(r.json()["job_id"])
+        assert (row.api_key_id, row.source_ip) == (None, "127.0.0.1")
+        await _done(r.json()["job_id"])
+
+
 async def test_webhook_without_tape_is_409_and_leaves_no_row(hub: Hub) -> None:
     hub.backend._loaded_tape_mm = None  # type: ignore[assignment]
     async with hub.running() as (client, _app):

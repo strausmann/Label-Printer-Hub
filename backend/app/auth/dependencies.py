@@ -468,7 +468,9 @@ def require_scope(
     return _check_own_session if own_session else _check
 
 
-def check_printer_access(auth_context: AuthContext, printer_id: UUID) -> None:
+def check_printer_access(
+    auth_context: AuthContext, printer_id: UUID, *, default_printer: bool = False
+) -> None:
     """Verify the AuthContext allows access to the given printer.
 
     API keys and browser sessions carry ``allowed_printer_ids`` (a session uses
@@ -476,13 +478,17 @@ def check_printer_access(auth_context: AuthContext, printer_id: UUID) -> None:
     contexts have an empty list and are therefore unrestricted.
 
     Raises:
-        HTTPException 403 if the restricted list excludes printer_id.
+        HTTPException 403 if the restricted list excludes printer_id. With ``default_printer``
+        (the routes that act on the default printer without naming it) the answer does not
+        carry the printer id: the caller never named it and may not learn it (263-80).
     """
     if auth_context.allowed_printer_ids and str(printer_id) not in auth_context.allowed_printer_ids:
+        message = (
+            "No access to the default printer"
+            if default_printer
+            else f"These credentials are not authorised for printer {printer_id}."
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "error_code": "printer_not_allowed",
-                "error_message": f"These credentials are not authorised for printer {printer_id}.",
-            },
+            detail={"error_code": "printer_not_allowed", "error_message": message},
         )
