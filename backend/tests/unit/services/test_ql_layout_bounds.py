@@ -183,7 +183,7 @@ def test_rows_left_out_of_the_layout_still_count_in_more() -> None:
 
 
 def test_overflow_marker_is_language_neutral() -> None:
-    """The marker is printed on the label in whatever language the label is read in: a number, no word."""
+    """The marker is printed on the label, whatever language it is read in: a number, no word."""
     fields, hidden = ql_layout._fields(
         ContentType.QR_WITH_LISTING,
         LabelData(
@@ -196,7 +196,8 @@ def test_overflow_marker_is_language_neutral() -> None:
     )
     marker = ql_layout._along_lines(fields, 2000, 672, hidden, listing=True)[-1].text
     assert re.fullmatch(r"\+[0-9]+", marker), marker
-    across = ql_layout._across_lines(ContentType.QR_WITH_LISTING, _worst_schema_label(), next(iter(QlLayoutPreset)))
+    preset = next(iter(QlLayoutPreset))
+    across = ql_layout._across_lines(ContentType.QR_WITH_LISTING, _worst_schema_label(), preset)
     assert re.fullmatch(r"\+[0-9]+", across[-1].text), across[-1].text
 
 
