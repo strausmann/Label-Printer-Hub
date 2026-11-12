@@ -505,6 +505,38 @@ async def test_print_interrupted_logs_cause_type(
     assert qr not in caplog.text
 
 
+async def test_partial_print_interrupted_marks_cells(monkeypatch: pytest.MonkeyPatch) -> None:
+    """267-14: the page job is queued (its row is committed, the printer receives it) and the
+    print then fails before the route has the page: the request answers 502 ``print_interrupted``
+    and names the job, the batch keeps it, and the page is not given up. It prints, and its
+    cells are marked ``used`` instead of being freed under it."""
+    import app.db.engine as eng
+    from app.models.print_batch import PrintBatch
+    from app.sheets import print_service
+
+    from tests.integration.api.test_sheet_print_api import _body, _sheet, _used, running
+
+    def raising(_page: Any) -> Any:
+        raise RuntimeError("the page was queued, then this broke")
+
+    async with running() as rig:
+        code = await _sheet()
+        monkeypatch.setattr(print_service, "_printed_page", raising)
+        resp = await rig.print(_body(code, 3))
+
+        assert resp.status_code == 502, resp.text
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "print_interrupted"
+        (job_id,) = detail["error_detail"]["job_ids"]
+        # The queued page goes on: the fake printer gets the document, the cells end used.
+        await rig.until_sheet(code, _used(1, 2, 3))
+        assert [r.operation for r in rig.fake.received].count("Print-Job") == 1
+        async with eng.async_session() as s:
+            batch = await s.get(PrintBatch, UUID(detail["error_detail"]["batch_id"]))
+        assert batch is not None and batch.job_ids == [job_id]
+        assert (await _row(UUID(job_id))).error is None
+
+
 async def _no_cells(cells: Callable[[], Awaitable[list[Any]]]) -> bool:
     return await cells() == []
 
