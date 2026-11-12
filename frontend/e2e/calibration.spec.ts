@@ -39,37 +39,12 @@ async function jobsOf(page: Page, id: string): Promise<string[]> {
 }
 
 /**
- * Waits until the element has not moved for two checks, each taken two animation frames after the one before.
- * Playwright's own click check only covers the click; this one is for what happens after it (a popover placed
- * under the element), so it is asked explicitly.
- */
-async function waitUntilStill(page: Page, target: Locator) {
-  let previous: string | null = null;
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
-        const now = JSON.stringify(await target.boundingBox());
-        const still = now !== "null" && now === previous;
-        previous = now;
-        return still;
-      },
-      { message: "the element kept moving", timeout: 10_000, intervals: [50, 100, 200] },
-    )
-    .toBe(true);
-}
-
-/**
  * Chooses the 4 x 12 type in the combobox the way a person does: tap it, type the key. The one option then sits at the
  * top of the list; Playwright would otherwise scroll the page or dialog to reach a far option, and a scroll of anything
  * that contains the field closes the (non-modal) list.
  */
 async function chooseType(page: Page) {
   const box = page.getByRole("combobox", { name: /Sheet type|Bogentyp/ });
-  // The list opens under the field where it stands now. A field that is still moving (the language file and the
-  // data of the page arrive after a reload and reflow the page) leaves the list at its old place; Playwright then
-  // scrolls to reach it, the scroll closes the list and the next step finds none (#292).
-  await waitUntilStill(page, box);
   await box.click();
   // Wait for the list and select the shown label explicitly, so the first character is typed over it and never lost to a
   // late re-selection (263-85); then check what the field holds before picking.
@@ -181,11 +156,13 @@ test.describe.serial("calibration", () => {
     expect(await box.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
     await page.keyboard.press("Escape");
     await box.click();
-    // The list scales in for 140 ms; a box measured mid-way is smaller, so poll until it has its size.
+    // Wait for the option to have its size.
     await expect.poll(async () => (await page.getByRole("option").first().boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
 
     // On a phone: no sideways scroll, and the open list ends above the fixed tab bar.
     await page.keyboard.press("Escape");
+    // A popover that is still leaving (it waits for its enter animation to end) keeps the width of the wide window: resize after it is gone.
+    await expect(page.getByRole("listbox")).toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 800 });
     expect(await noSideScroll(page)).toBe(true);
     // Bring the field itself into view first, and let the scroll settle. The heading above it is already visible at 390 px, so
@@ -198,7 +175,7 @@ test.describe.serial("calibration", () => {
     await box.click();
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
-    // The list scales in for 140 ms: wait until its box stopped changing instead of sleeping.
+    // The list fades in for 140 ms: wait until its box stopped changing instead of sleeping.
     await expect
       .poll(async () => {
         const first = await listbox.boundingBox();
