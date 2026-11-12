@@ -14,13 +14,13 @@ import asyncio
 import threading
 import time
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_asyncio
 from app.config import Settings
 from app.models.job import Job as DbJob
 from app.models.printer import Printer
@@ -497,8 +497,16 @@ def _free(queue: PrintQueue, printer_id: UUID) -> bool:
 # ---------------------------------------------------------------------------- 429 at the route
 
 
-@pytest_asyncio.fixture
-async def batch_route(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[dict[str, Any]]:
+@asynccontextmanager
+async def batch_route_rig(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[dict[str, Any]]:
+    """The batch route over a real queue, built inside the test body .
+
+    It was a ``pytest_asyncio`` fixture. The tests of this module run under anyio
+    (``pytest.mark.anyio``), and then the fixture's event loop is not the test's: in the full
+    suite the queue worker lived on the fixture's loop and never ran while the test awaited on
+    its own, so the drain after ``gate.set()`` timed out (CI: worker ``loop=...880``, test
+    ``loop=...312``, worker ``done=False``). Built in the body, the worker and the test share
+    the loop by construction."""
     from app.api.error_handlers import register_error_handlers
     from app.api.routes import batch as batch_module
     from app.auth.dependencies import AuthContext
@@ -556,44 +564,16 @@ def _batch() -> dict[str, Any]:
     return {"items": [{"content_type": "qr_only", "data": {"qr_payload": "https://e.invalid/1"}}]}
 
 
-def _stall_report(queue: PrintQueue, roll: TapeRoll) -> str:
-    """TEMPORARY diagnostics for the CI-only stall of the drain (do not keep)."""
-    import io
-    import sys
-    import traceback
-
-    out = io.StringIO()
-    out.write(f"runs={list(queue._runs)} roll.calls={roll.calls} gate={roll.gate.is_set()}\n")
-    for r in queue._runs.values():
-        out.write(f"run state={r.state} current={r.current} jobs={len(r.job_ids)}\n")
-    out.write(f"jobs states={[j.state.value for j in queue._jobs.values()]}\n")
-    for t in asyncio.all_tasks():
-        out.write(f"TASK {t.get_name()} done={t.done()}\n")
-        for f in t.get_stack(limit=6):
-            out.write(f"   {f.f_code.co_filename}:{f.f_lineno} {f.f_code.co_name}\n")
-    loop = asyncio.get_running_loop()
-    out.write(f"test loop={id(loop)}\n")
-    for pid, worker in queue._workers.items():
-        err = None if (worker.cancelled() or not worker.done()) else worker.exception()
-        out.write(
-            f"WORKER {pid} loop={id(worker.get_loop())} done={worker.done()} "
-            f"cancelled={worker.cancelled()} exception={err!r}\n"
-        )
-    ex = getattr(loop, "_default_executor", None)
-    if ex is not None:
-        out.write(
-            f"executor threads={len(ex._threads)} queued={ex._work_queue.qsize()} "
-            f"max={ex._max_workers}\n"
-        )
-    out.write(f"threads={[t.name for t in threading.enumerate()]}\n")
-    for tid, frame in sys._current_frames().items():
-        if tid != threading.get_ident():
-            out.write(f"THREAD {tid}\n" + "".join(traceback.format_stack(frame, limit=4)))
-    return out.getvalue()
+async def test_the_route_answers_429_too_many_queued_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with batch_route_rig(monkeypatch) as batch_route:
+        await _route_answers_429(batch_route)
 
 
-async def test_the_route_answers_429_too_many_queued_runs(batch_route: dict[str, Any]) -> None:
+async def _route_answers_429(batch_route: dict[str, Any]) -> None:
     client, queue = batch_route["client"], batch_route["queue"]
+    assert queue._workers[batch_route["roll"].id].get_loop() is asyncio.get_running_loop()
     for _ in range(5):
         resp = await client.post("/api/v1/print/p/batch", json=_batch())
         assert resp.status_code == 202, resp.text
@@ -606,31 +586,27 @@ async def test_the_route_answers_429_too_many_queued_runs(batch_route: dict[str,
     assert len(queue._runs) == 5  # the refused batch was not rendered, stored or queued
     # Release path through the route: the runs print, a new batch is taken.
     batch_route["roll"].gate.set()
-    try:
-        await _until(lambda: not queue._runs)
-    except TimeoutError:
-        raise AssertionError(_stall_report(queue, batch_route["roll"])) from None
+    await _until(lambda: not queue._runs)
     resp = await client.post("/api/v1/print/p/batch", json=_batch())
     assert resp.status_code == 202, resp.text
 
 
-async def test_a_refused_batch_stores_no_rows(
-    batch_route: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    client = batch_route["client"]
-    monkeypatch.setenv("PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY", "1")
-    from app.config import get_settings
+async def test_a_refused_batch_stores_no_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    async with batch_route_rig(monkeypatch) as batch_route:
+        client = batch_route["client"]
+        monkeypatch.setenv("PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY", "1")
+        from app.config import get_settings
 
-    get_settings.cache_clear()
-    try:
-        assert (await client.post("/api/v1/print/p/batch", json=_batch())).status_code == 202
-        saved = batch_route["store"].save_queued.await_count
-        resp = await client.post("/api/v1/print/p/batch", json=_batch())
-        assert resp.status_code == 429
-        assert resp.json()["detail"]["error_code"] == "too-many-queued-runs"
-        assert batch_route["store"].save_queued.await_count == saved  # refused before any row
-    finally:
         get_settings.cache_clear()
+        try:
+            assert (await client.post("/api/v1/print/p/batch", json=_batch())).status_code == 202
+            saved = batch_route["store"].save_queued.await_count
+            resp = await client.post("/api/v1/print/p/batch", json=_batch())
+            assert resp.status_code == 429
+            assert resp.json()["detail"]["error_code"] == "too-many-queued-runs"
+            assert batch_route["store"].save_queued.await_count == saved  # refused before any row
+        finally:
+            get_settings.cache_clear()
 
 
 # ---------------------------------------------------------------------------- waiting pictures
