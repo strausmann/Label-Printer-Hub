@@ -6,6 +6,12 @@ Thanks for your interest in contributing! This document explains how to particip
 
 This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By participating, you agree to abide by its terms.
 
+## Contributor License Agreement
+
+[![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/Label-Printer-Hub)](https://cla-assistant.io/strausmann/Label-Printer-Hub)
+
+Contributions need a signed [Contributor License Agreement](CLA.md). You sign it once through [CLA assistant](https://cla-assistant.io/): when you open your first pull request, the bot comments with a link; follow it, sign in with GitHub and accept. The `license/cla` check must pass before a pull request can be merged.
+
 ## Ways to contribute
 
 | Contribution | Where |

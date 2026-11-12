@@ -61,7 +61,7 @@ Both registries receive identical multi-arch images (`linux/amd64`, `linux/arm64
 
 ## Quick Start
 
-See [`examples/README.md`](examples/README.md) for sample compose files (standalone / Traefik / Pangolin / Caddy). Upgrading from the two-container release: [migration notes](docs/migration/v-next-single-container.md).
+See [`examples/README.md`](examples/README.md) for sample compose files (standalone / Traefik / Pangolin / Caddy).
 
 ```bash
 git clone https://github.com/strausmann/Label-Printer-Hub.git
@@ -104,31 +104,6 @@ For the REST API alone, without the web UI, see [`examples/compose.backend-only.
 | `GET` | `/healthz` | Liveness probe for orchestrators | — |
 | `GET` | `/readiness` | Readiness probe — deep check for reverse-proxy routing | — |
 
-### Moved API paths (1.5.0)
-
-Since 1.5.0 every API route lives under `/api/v1/`. There are no aliases and no redirects: update scripts, reverse-proxy rules (the webhook bypass in particular) and bookmarks.
-
-| Before | Now |
-|---|---|
-| `/api/admin/api-keys…` | `/api/v1/admin/api-keys…` |
-| `/api/printers…` (printers, calibration, capabilities) | `/api/v1/printers…` |
-| `/api/jobs…` | `/api/v1/jobs…` |
-| `/api/batches/{batch_id}` | `/api/v1/batches/{batch_id}` |
-| `/api/print/{printer_key}/batch`, `…/sheet`, `…/sheet/preview` | `/api/v1/print/{printer_key}/…` |
-| `/api/render/preview` | `/api/v1/render/preview` |
-| `/api/lookup/{app}/{entity_id}` | `/api/v1/lookup/{app}/{entity_id}` |
-| `/api/sheet-types…`, `/api/sheets…`, `/api/sheet-cells` | `/api/v1/sheet-types…`, `/api/v1/sheets…`, `/api/v1/sheet-cells` |
-| `/api/webhook/spoolman`, `/api/webhook/grocy` | `/api/v1/webhook/spoolman`, `/api/v1/webhook/grocy` |
-| `/api/info` | `/api/v1/info` |
-| `POST /print` | `POST /api/v1/print` |
-| `POST /printer/resume` | `POST /api/v1/printer/resume` |
-| `GET /jobs/{job_id}` | removed: it duplicated `GET /api/v1/jobs/{job_id}`, which reads the stored job and applies the per-key printer ACL |
-| `POST /jobs/{job_id}/resume` | removed: nothing produces a paused job any more (the tape-mismatch pause was removed with the layout engine) |
-
-Unchanged: `/healthz`, `/readiness`, `/openapi.json`, `/docs`, the label links `/loc/…`, `/asset/…`, `/spool/…`, `/product/…`, and `/jobs/{id}`: that path is no longer an API route; where the web app is mounted a browser `GET` returns the web app, and in API-only mode it is a plain 404.
-
-**Installed web app:** the service worker updates the app in the background and asks before switching. A client that has not accepted the update prompt yet keeps calling the old paths until the user accepts, so expect old-path 404s from such clients after the upgrade.
-
 ### Health Probes
 
 The backend exposes two HTTP probes with different semantics:
@@ -143,8 +118,6 @@ The backend exposes two HTTP probes with different semantics:
 The check `render_slots` counts page renders (sheet previews, page jobs) that ran past `PRINTER_HUB_RENDER_TIMEOUT_S` (default 60 s) and whose drawing thread has not ended (`metric.stuck` of `metric.slots`). A thread cannot be stopped, so such a render keeps its slot until it ends; with every slot stuck the check fails and the hub reports `degraded`. `/healthz` does not look at it, so the container healthcheck never restarts the hub for it: restart the hub by hand.
 
 Pangolin's `targets[0].healthcheck.path` can use `/readiness` for deep checks instead of `/healthz`; Docker container healthchecks should stay on `/healthz` to avoid restart loops on transient DB failures.
-
-See `docs/superpowers/specs/2026-05-17-phase-7b-foundation-design.md` for the full check list and rationale.
 
 ### `POST /api/v1/print` request body
 
@@ -195,6 +168,9 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 | `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS` | `false` | Opt in to the `Authorization: Basic` bypass credential |
 | `PRINTER_HUB_WEBHOOK_API_KEY` | _empty_ | Bearer for inbound integration webhooks (≥ 32 chars; generate with `openssl rand -hex 32`) |
 | `PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE` | `120` | Webhook calls per minute and webhook key (Spoolman and Grocy together); above it the webhook answers `429` with `Retry-After` |
+| `PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER` | `5` | Tape runs one printer has queued or printing at once (at least `5`); above it a batch answers `429` `too-many-queued-runs` |
+| `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` | `20` | Tape runs one API key has at once over all printers, held runs included; above it a batch answers `429` `too-many-queued-runs` |
+| `PRINTER_HUB_RENDER_TIMEOUT_S` | `60` | Seconds one page may take to draw (sheet preview, page job); above it the preview answers `504` `render-timeout` and the page job fails `render_timeout` (max `600`) |
 | `PRINTER_HUB_SNIPEIT_URL` | _empty_ | Snipe-IT base URL |
 | `PRINTER_HUB_SNIPEIT_API_KEY` | _empty_ | Snipe-IT bearer token |
 | `PRINTER_HUB_GROCY_URL` | _empty_ | Grocy base URL |

@@ -153,8 +153,6 @@ For Pangolin specifically, the **Two-Resources pattern** is used:
 1. Main UI: SSO-protected, full domain; the resource injects the trust token header the hub requires (`PRINTER_HUB_SSO_TRUST_TOKEN`)
 2. Webhook subroute (`/api/v1/webhook/`): SSO bypass, authenticated by `PRINTER_HUB_WEBHOOK_API_KEY`
 
-Upgrading from the two-container release: [`migration/v-next-single-container.md`](migration/v-next-single-container.md).
-
 ## Where things live
 
 | Need | Location |

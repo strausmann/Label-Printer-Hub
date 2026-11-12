@@ -9,11 +9,11 @@ The PR title MUST follow Conventional Commits — see CONTRIBUTING.md.
 
 ## Contributor License Agreement (CLA)
 
-By opening this pull request you affirm that you have read and agree to the
-project's [Contributor License Agreement](../CLA.md) for the contribution(s)
-included here.
+The [Contributor License Agreement](../CLA.md) is signed once through CLA assistant.
+On your first pull request the bot comments with a link; the `license/cla` check must
+pass before merge.
 
-- [ ] I have read and agree to the [Contributor License Agreement](../CLA.md).
+- [ ] I have signed the CLA via CLA assistant.
 
 ## Linked issue
 

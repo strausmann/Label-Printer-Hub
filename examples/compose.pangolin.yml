@@ -36,7 +36,7 @@ services:
       #   PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER=true       legacy X-Pangolin-User header
       #   PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS=true      Authorization: Basic bypass credential
       #   PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE=true  limit the Basic bypass to a narrower scope
-      # See docs/migration/v-next-single-container.md before enabling any of them.
+      # See docs/site/operations/api-keys.md before enabling any of them.
       - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
       - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY:-}
       - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}

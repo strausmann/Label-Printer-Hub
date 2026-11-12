@@ -200,23 +200,6 @@ def test_readme_has_no_removed_printer_variables() -> None:
     assert "PRINTER_HUB_SECRET_KEY" in text and "PRINTER_HUB_PUBLIC_URL" in text
 
 
-def test_migration_note_covers_the_breaking_changes() -> None:
-    text = (REPO / "docs" / "migration" / "v-next-single-container.md").read_text()
-    for needle in (
-        "PRINTER_HUB_SECRET_KEY",
-        "PRINTER_HUB_PUBLIC_URL",
-        "PRINTER_HUB_SSO_TRUST_TOKEN",
-        "PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER",
-        "PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS",
-        "PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE",
-        "printer-hub admin create-key",
-        "/api/v1/events",
-        "label-printer-hub-backend",
-        "PRINTERS_CONFIG",
-    ):
-        assert needle in text, f"migration note does not mention {needle}"
-
-
 def test_architecture_docs_describe_the_single_process() -> None:
     arch = (REPO / "docs" / "architecture.md").read_text()
     assert "Go web server" not in arch and "oapi-codegen" not in arch
@@ -257,7 +240,6 @@ def test_every_section_6_page_has_an_e2e_spec(page: str) -> None:
 
 def test_create_key_instructions_carry_the_required_flags_and_no_log_claim() -> None:
     files = [*COMPOSE_FILES, EXAMPLES / "README.md", REPO / "README.md"]
-    files.append(REPO / "docs" / "migration" / "v-next-single-container.md")
     for path in files:
         for line in path.read_text().splitlines():
             if "printer-hub admin create-key" in line and "docker" in line:

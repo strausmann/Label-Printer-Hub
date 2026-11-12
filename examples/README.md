@@ -8,7 +8,7 @@ Pre-made deployment recipes for different reverse-proxy stacks. Pick the one tha
 
 The hub ships as **one image**: `ghcr.io/strausmann/label-printer-hub-backend`. A single Python process serves the REST API, the live event stream (`/api/v1/events`) and the web UI (see [ADR 0015](../docs/decisions/0015-single-process-deployment.md)). There is no separate frontend image any more.
 
-Reverse proxies point straight at `backend:8000`. Upgrading from the two-container release: [migration notes](../docs/migration/v-next-single-container.md).
+Reverse proxies point straight at `backend:8000`.
 
 ## Which variant should I use?
 
