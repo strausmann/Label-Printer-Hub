@@ -13,7 +13,7 @@ class FakeEventSource {
   closed = false;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  private listeners = new Map<string, ((e: MessageEvent) => void)[]>();
+  listeners = new Map<string, ((e: MessageEvent) => void)[]>();
 
   constructor(url: string, init?: { withCredentials?: boolean }) {
     this.url = url;
@@ -72,6 +72,27 @@ describe("useHubEvents", () => {
     expect(result.current.connected).toBe(false);
     act(() => last().open());
     expect(result.current.connected).toBe(true);
+  });
+
+  it("passes the version of the hello frame to the version check", async () => {
+    const updates = await import("../app/updates");
+    const reload = vi.fn();
+    updates.setVersionCheckForTest({ buildVersion: "1.5.0", reload });
+    window.sessionStorage.clear();
+    setup();
+    for (const fn of (last() as unknown as { listeners: Map<string, ((e: MessageEvent) => void)[]> }).listeners.get("hello") ?? []) {
+      fn(new MessageEvent("hello", { data: JSON.stringify({ version: "1.6.0" }) }));
+    }
+    expect(reload).toHaveBeenCalledTimes(1);
+    updates.resetUpdatesForTest();
+    window.sessionStorage.clear();
+  });
+
+  it("ignores a hello frame it cannot read", () => {
+    setup();
+    const fns = (last() as unknown as { listeners: Map<string, ((e: MessageEvent) => void)[]> }).listeners.get("hello") ?? [];
+    expect(fns).toHaveLength(1);
+    expect(() => fns[0]!(new MessageEvent("hello", { data: "not json" }))).not.toThrow();
   });
 
   it("job.state_changed invalidates jobs and the printer queue", () => {

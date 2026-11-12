@@ -35,6 +35,9 @@ RUN corepack enable
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
+# The bundle knows the version it was built for; the hub reports its own and a mismatch reloads (#288).
+ARG VERSION=0.0.0-dev
+ENV HUB_VERSION="${VERSION}"
 RUN pnpm build && mkdir /dist && cp -r dist/. /dist/
 
 # -----------------------------------------------------------------------------
