@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from app.auth.dependencies import AuthContext
-from app.auth.ownership import key_actor, owner_key_of
+from app.auth.ownership import key_actor, looks_like_key
 from app.sheets.errors import SheetApiError
 
 SYSTEM_PREFIX = "system:"
@@ -27,6 +27,6 @@ def actor(auth: AuthContext) -> str:
         # "system:" is reserved for the hub itself (the seeder) and "key:<uuid>" / a bare id
         # for a key (#294: a batch's owner key is read back from it); a person with such a
         # name must not be mistaken for either.
-        reserved = auth.user.startswith(SYSTEM_PREFIX) or owner_key_of(auth.user) is not None
+        reserved = auth.user.startswith(SYSTEM_PREFIX) or looks_like_key(auth.user)
         return f"user:{auth.user}" if reserved else auth.user
     return key_actor(auth.api_key_id) if auth.api_key_id else auth.source

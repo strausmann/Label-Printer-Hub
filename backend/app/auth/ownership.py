@@ -27,20 +27,36 @@ def key_actor(key_id: UUID) -> str:
 
 
 def owner_key_of(stored: UUID | str | None) -> str | None:
-    """The key id a stored owner names, in canonical form, or ``None`` when it names no key.
+    """The key id a stored owner names, or ``None`` when it names no key.
 
-    Accepts both forms a batch stores: the bare key id (tape batches) and ``key:<uuid>``
-    (sheet batches). Anything else (a user name, an auth source) names no key.
+    Accepts exactly the two forms the hub writes: the canonical key id (tape batches) and
+    ``key:<canonical id>`` (sheet batches). ``UUID()`` also parses upper case, missing
+    hyphens, braces, ``urn:uuid:`` and non-ASCII digits; a legacy user name spelt like that
+    must not read as a key, so the rest has to equal its own canonical form.
     """
     if stored is None:
         return None
-    text = str(stored)
-    if text.startswith(KEY_ACTOR_PREFIX):
-        text = text[len(KEY_ACTOR_PREFIX) :]
+    if isinstance(stored, UUID):
+        return str(stored)
+    text = stored.removeprefix(KEY_ACTOR_PREFIX)
     try:
-        return str(UUID(text))
+        canonical = str(UUID(text))
     except ValueError:
         return None
+    return canonical if text == canonical else None
+
+
+def looks_like_key(name: str) -> bool:
+    """Whether ``name`` could be read as a key in any spelling ``UUID()`` accepts.
+
+    The lenient check for the write side: a user name like that is stored with a prefix,
+    so it never collides with a key, whatever spelling a later reader accepts.
+    """
+    try:
+        UUID(name.strip().removeprefix(KEY_ACTOR_PREFIX).strip())
+    except ValueError:
+        return False
+    return True
 
 
 def owner_only(auth: AuthContext | None) -> bool:

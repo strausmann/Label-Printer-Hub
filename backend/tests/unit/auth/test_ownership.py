@@ -81,3 +81,43 @@ def test_a_user_name_cannot_pose_as_a_key_or_the_hub(name: str) -> None:
     recorded = actor(sso)
     assert recorded == f"user:{name}"
     assert owner_key_of(recorded) is None
+
+
+_LENIENT = [
+    str(KEY).upper(),
+    str(KEY).replace("-", ""),
+    "{" + str(KEY) + "}",
+    f"urn:uuid:{KEY}",
+    f" {KEY}",
+    f"{KEY} ",
+    str(KEY).translate({ord(d): 0x0660 + int(d) for d in "0123456789"}),  # Arabic-Indic
+    "KEY:" + str(KEY),
+]
+
+
+@pytest.mark.parametrize("variant", _LENIENT + [f"key:{v}" for v in _LENIENT[:7]])
+def test_only_the_canonical_form_reads_as_a_key(variant: str) -> None:
+    """Fix round 3 (N-1): ``UUID()`` accepts many spellings; a stored owner names a key only
+    in the exact form the hub writes, so a legacy user name shaped like a key never passes."""
+    from app.auth.ownership import owner_key_of
+
+    assert owner_key_of(variant) is None
+    assert not may_see(_ctx("api-key", "print"), variant)
+
+
+def test_the_canonical_forms_read_as_the_key() -> None:
+    from app.auth.ownership import owner_key_of
+
+    assert owner_key_of(str(KEY)) == owner_key_of(f"key:{KEY}") == owner_key_of(KEY) == str(KEY)
+
+
+@pytest.mark.parametrize("name", ["{" + str(KEY) + "}", f"urn:uuid:{KEY}", str(KEY).upper()])
+def test_lenient_key_spellings_are_still_reserved_on_write(name: str) -> None:
+    """The write side stays lenient (the safe direction): such a user name is stored as
+    ``user:<name>``."""
+    from app.api.routes.sheet_common import actor
+
+    sso = AuthContext(
+        source="pangolin-sso", scope="admin", api_key_id=None, ip="127.0.0.1", user=name
+    )
+    assert actor(sso) == f"user:{name}"
