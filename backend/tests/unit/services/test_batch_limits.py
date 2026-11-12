@@ -572,6 +572,13 @@ def _stall_report(queue: PrintQueue, roll: TapeRoll) -> str:
         for f in t.get_stack(limit=6):
             out.write(f"   {f.f_code.co_filename}:{f.f_lineno} {f.f_code.co_name}\n")
     loop = asyncio.get_running_loop()
+    out.write(f"test loop={id(loop)}\n")
+    for pid, worker in queue._workers.items():
+        err = None if (worker.cancelled() or not worker.done()) else worker.exception()
+        out.write(
+            f"WORKER {pid} loop={id(worker.get_loop())} done={worker.done()} "
+            f"cancelled={worker.cancelled()} exception={err!r}\n"
+        )
     ex = getattr(loop, "_default_executor", None)
     if ex is not None:
         out.write(
