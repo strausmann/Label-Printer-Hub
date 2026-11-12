@@ -109,7 +109,7 @@ export function SheetPicker({ typeKey, typeLabel, sheets, needed, value, onChang
         >
           <Label className={LABEL}>{t`Sheet`}</Label>
           <Input className={`${FIELD} font-mono`} autoCapitalize="characters" autoCorrect="off" spellCheck={false} />
-          <Popover className="flex w-(--trigger-width) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[popin_140ms_cubic-bezier(0.23,1,0.32,1)]">
+          <Popover className="flex w-(--trigger-width) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[fadein_140ms_cubic-bezier(0.23,1,0.32,1)]">
             <ListBox className="max-h-[inherit] overflow-y-auto overscroll-contain outline-none">
               {shown.map(({ sheet, fits }) => {
                 const free = freeOf(sheet);

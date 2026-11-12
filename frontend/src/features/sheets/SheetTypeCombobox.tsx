@@ -89,6 +89,8 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
   const cleared = typed !== null && typed === "";
   const trigger = useRef<HTMLButtonElement>(null);
   const hadFocus = useRef(false);
+  // Whether the person has pressed an option or Enter since the list opened: only then is a selection theirs (see onSelectionChange).
+  const pickIntent = useRef(false);
   const typedRef = useRef(typed);
   useEffect(() => {
     typedRef.current = typed;
@@ -135,8 +137,18 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
       state.last = performance.now();
       if (state.armed) settle();
     };
+    // A press on an option, or Enter, is the person choosing; the selection that follows is a pick (see onSelectionChange).
+    const intend = (event: Event) => {
+      if (event instanceof KeyboardEvent ? event.key === "Enter" : event.target instanceof Element && event.target.closest('[role="option"]')) pickIntent.current = true;
+    };
     document.addEventListener("scroll", note, true);
+    document.addEventListener("pointerdown", intend, true);
+    document.addEventListener("click", intend, true);
+    document.addEventListener("keydown", intend, true);
     return () => {
+      document.removeEventListener("pointerdown", intend, true);
+      document.removeEventListener("click", intend, true);
+      document.removeEventListener("keydown", intend, true);
       document.removeEventListener("scroll", note, true);
       window.clearTimeout(state.timer);
       window.clearTimeout(state.check);
@@ -195,6 +207,7 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
       onOpenChange={(isOpen) => {
         setOpen(isOpen);
         if (isOpen) {
+          pickIntent.current = false;
           stopReopening();
           // A mark from before this opening (a choice, Escape) belongs to the list that was closed then, not to this one.
           scroll.current.person = -Infinity;
@@ -205,6 +218,13 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
       onSelectionChange={(key) => {
         // Typing makes React Aria let go of the selection; the value only changes when a type is picked.
         if (key === null) return;
+        // Every close of the list, also one a scroll causes (useCloseOnScroll), runs `state.close`, which is `commitValue`
+        // (react-stately useComboBoxState.mjs:333). With the selection and the text both controlled, it calls
+        // `onSelectionChange(selectedKey)` whenever the text differs from the chosen item's (:262-270). That is not a pick:
+        // taken as one it wipes the search (the typed character is lost, the rest is appended to the label) and marks the
+        // close as the person's, so a list a scroll closed is not brought back (#292). A pick has a press on an option or
+        // Enter before it.
+        if (!pickIntent.current) return;
         closedByPerson();
         setTyped(null);
         onChange(String(key));
@@ -309,7 +329,10 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
           {chosenText}
         </p>
       ) : null}
-      <Popover placement={room.placement} maxHeight={room.maxHeight} shouldFlip={false} offset={4} className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[popin_140ms_cubic-bezier(0.23,1,0.32,1)]">
+      <Popover placement={room.placement} maxHeight={room.maxHeight} shouldFlip={false} offset={4} className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[fadein_140ms_cubic-bezier(0.23,1,0.32,1)]">
+        {/* Opacity only, no scale: React Aria scrolls the chosen option into view while the popover enters, from the rect it sees.
+            A scaled popover shows a smaller rect than its layout, the option stays a few pixels short, and the second step
+            (a native scrollIntoView) scrolls the page to make up for it. That scroll closes the list again (#292). */}
         {/* The popover is as tall as the room beside the field; a long list scrolls inside it. */}
         <ListBox
           className="max-h-[inherit] overflow-y-auto overscroll-contain outline-none"
