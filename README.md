@@ -194,6 +194,7 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 | `PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER` | `false` | Opt in to the legacy `X-Pangolin-User` header |
 | `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS` | `false` | Opt in to the `Authorization: Basic` bypass credential |
 | `PRINTER_HUB_WEBHOOK_API_KEY` | _empty_ | Bearer for inbound integration webhooks (≥ 32 chars; generate with `openssl rand -hex 32`) |
+| `PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE` | `120` | Webhook calls per minute and webhook key (Spoolman and Grocy together); above it the webhook answers `429` with `Retry-After` |
 | `PRINTER_HUB_SNIPEIT_URL` | _empty_ | Snipe-IT base URL |
 | `PRINTER_HUB_SNIPEIT_API_KEY` | _empty_ | Snipe-IT bearer token |
 | `PRINTER_HUB_GROCY_URL` | _empty_ | Grocy base URL |

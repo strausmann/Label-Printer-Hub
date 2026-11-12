@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     # Webhook authentication
     webhook_api_key: SecretStr = SecretStr("")
 
+    webhook_limit_per_minute: int = Field(default=120, gt=0)
+    """Webhook calls per minute and webhook key, Spoolman and Grocy together (default 120).
+    Neither app retries a refused call, so a bulk event must fit; over the limit the webhook
+    answers 429 with ``Retry-After``."""
+
     # Snipe-IT integration (optional)
     snipeit_url: str = ""
     snipeit_api_key: SecretStr = SecretStr("")

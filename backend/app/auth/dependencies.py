@@ -25,7 +25,7 @@ from __future__ import annotations
 import base64
 import hmac
 import logging
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Hashable
 from typing import Any, Literal, cast
 from uuid import UUID
 
@@ -158,11 +158,11 @@ def _is_pangolin_bypass(request: Request) -> bool:
         return False
 
 
-def _enforce_key_rate_limit(key_id: UUID, limit_per_minute: int, key_name: str) -> None:
+def enforce_key_rate_limit(key_id: Hashable, limit_per_minute: int, key_name: str) -> None:
     """Consume one token of the key's per-minute bucket; 429 with Retry-After when empty.
 
     Shared by the API key header and by browser sessions derived from a key, so a
-    session cannot be used to get around the key's limit.
+    session cannot be used to get around the key's limit, and by the webhook key.
     """
     allowed, retry_after = _rate_limiter.check_and_consume_with_retry_after(
         key_id, limit_per_minute=limit_per_minute
@@ -286,7 +286,7 @@ async def _validate_api_key(
         )
 
     # Rate limit check — after bcrypt verify to avoid info leak on exhaustion
-    _enforce_key_rate_limit(key_row.id, key_row.rate_limit_per_minute, key_row.name)
+    enforce_key_rate_limit(key_row.id, key_row.rate_limit_per_minute, key_row.name)
 
     # Read before the update: a rollback expires the row's attributes.
     key_id = key_row.id
@@ -347,7 +347,7 @@ def _session_context(
             },
         )
     if row.api_key_id is not None and valid.rate_limit_per_minute is not None:
-        _enforce_key_rate_limit(
+        enforce_key_rate_limit(
             row.api_key_id, valid.rate_limit_per_minute, valid.key_name or str(row.api_key_id)
         )
     return AuthContext(
