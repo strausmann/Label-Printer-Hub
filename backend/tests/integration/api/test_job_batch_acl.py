@@ -148,7 +148,7 @@ async def test_batch_of_foreign_printer_404(api_client_with_seed, world):
 @pytest.mark.asyncio
 async def test_session_job_and_batch_acl(api_client_with_seed, world):
     (pa, ja, ba), (_, jb, bb) = world
-    key = await _insert_key(["print"], [str(pa)])
+    key = await _insert_key(["admin"], [str(pa)])
     signed = await api_client_with_seed.post("/api/v1/auth/session", json={"key": key})
     assert signed.status_code in (200, 201, 204), signed.text
     jobs = await api_client_with_seed.get("/api/v1/jobs?limit=200")

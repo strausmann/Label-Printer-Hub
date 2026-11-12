@@ -70,8 +70,8 @@ without a held run there is refused with 429; smaller batches are always taken.
 
 Only the key that submitted a batch may `continue`, `reprint` or `discard` its run, and
 `GET /api/v1/batches/runs/held` shows a key only its own runs. For any other key the batch
-answers 404, also on `GET /api/v1/batches/{id}`. Browser sessions, SSO users and admin
-keys may see and act on all runs.
+answers 404, also on `GET /api/v1/batches/{id}`. A browser session signed in with a key
+counts as that key. SSO users and admin keys may see and act on all runs.
 
 A sheet preview (`POST /api/v1/print/{printer}/sheet/preview`) runs once per key at a
 time; a second one answers 429 `too-many-previews`.
@@ -101,16 +101,18 @@ signed-in UI users are trusted, and each of them still previews once at a time.
 `GET /readiness` shows stuck renders in the check `render_slots` (failing when every slot is
 stuck). `/healthz` does not, so restart the hub by hand then.
 
-All callers without a key (browser sessions, SSO users) count as **one** key for the
-held-run limits: one UI user's held run lets every UI user pass the held-places check, and
-a UI user's further held run can discard another UI user's oldest one. For previews they
+All callers without a key (SSO users) count as **one** key for the held-run limits: one
+SSO user's held run lets every SSO user pass the held-places check, and an SSO user's
+further held run can discard another SSO user's oldest one. A browser session signed in
+with a key counts as that key. For previews they
 are told apart by source, user and address.
 
 ## Jobs belong to the key that submitted them
 
 Every job records the API key that submitted it (tape labels, batches, sheets, page jobs,
-test prints and retries). An API key without `admin` scope sees and acts on its own
-jobs only:
+test prints and retries), also when it was submitted from a browser session signed in with
+that key. An API key without `admin` scope sees and acts on its own jobs only, and so does
+a browser session signed in with such a key: signing in does not widen what a key may see.
 
 - `GET /api/v1/jobs` lists only the jobs the key submitted.
 - `GET /api/v1/jobs/{id}`, `POST …/cancel`, `…/retry`, `…/pause` and `…/resume` answer
@@ -125,13 +127,13 @@ jobs only:
   printer; `queue_depth` still counts the whole queue of the printer.
 
 A job without an owner key belongs to no API key, so a plain key gets 404 for it. That is
-every job a browser session or an SSO user submitted, every webhook job (the webhook key is
+every job an SSO user submitted, every webhook job (the webhook key is
 not an API key), and every tape job stored by 1.5.0 or earlier: those versions stored tape
 labels, tape batches and tape retries without their key. A job the hub recovers after a
 restart keeps the key it was stored with.
 
-Browser sessions (also one signed in with a print key), SSO users and admin keys keep
-seeing and acting on every job of their printers. If several clients shared one printer's
+SSO users, admin keys and browser sessions signed in with an admin key keep seeing and
+acting on every job of their printers. If several clients shared one printer's
 jobs through different keys, give the client that must see all of them an admin key, or let
 each client follow its own jobs.
 

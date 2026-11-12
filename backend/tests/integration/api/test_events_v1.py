@@ -585,7 +585,7 @@ async def test_open_streams_do_not_pin_db_connections(hub_app):
 async def test_revoked_session_is_noticed_on_a_busy_stream(hub_app, monkeypatch):
     app, client = hub_app
     _set_env(monkeypatch, sse_heartbeat_s="0.2")
-    key, _ = await _insert_key(["print"])
+    key, _ = await _insert_key(["admin"])
     printer_id = await _insert_printer("alpha")
     assert (await _sign_in(client, key)).status_code == 204
     cookie = f"lph_session={client.cookies.get('lph_session')}"

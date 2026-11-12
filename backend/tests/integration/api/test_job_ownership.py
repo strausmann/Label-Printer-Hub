@@ -3,7 +3,8 @@
 A plain API key (no ``admin`` scope) sees and acts on its own jobs only. Another key of the
 same printer, and any key for a job without an owner key (browser sessions, SSO, webhooks,
 recovery, rows from before 1.5.x), gets the same 404 as for a job that does not exist.
-Browser sessions, SSO users and admin keys keep full access. All keys are fake test values.
+A browser session signed in with such a key is bound to the key the same way (fix round 1).
+SSO users, admin keys and admin-key sessions keep full access. All keys are fake test values.
 """
 
 from __future__ import annotations
@@ -224,16 +225,73 @@ async def test_an_admin_key_sees_and_acts_on_every_job(api_client_with_seed, wor
     assert resp.status_code != 404, resp.text
 
 
-async def test_a_browser_session_of_a_key_keeps_full_access(api_client_with_seed, world) -> None:
-    """Unchanged: a signed-in browser (even one signed in with a print key) acts on all jobs
-    of its printers, as for tape runs."""
-    c = api_client_with_seed
-    signed = await c.post("/api/v1/auth/session", json={"key": world["owner_plain"]})
+async def _sign_in(c, plain: str) -> dict[str, str]:
+    """Sign the browser client in with ``plain``; return the CSRF header for its POSTs."""
+    signed = await c.post("/api/v1/auth/session", json={"key": plain})
     assert signed.status_code in (200, 201, 204), signed.text
+    return {"X-CSRF-Token": c.cookies.get("lph_csrf") or ""}
+
+
+async def test_a_session_signed_in_with_a_print_key_is_bound_to_that_key(
+    api_client_with_seed, world
+) -> None:
+    """Fix round 1: a browser session minted from a print key acts as that key, not as a
+    privileged browser user: own jobs only, the missing-job 404 for the others."""
+    c = api_client_with_seed
+    csrf = await _sign_in(c, world["owner_plain"])
+    listed = await c.get(f"/api/v1/jobs?printer_id={world['printer']}")
+    assert {j["id"] for j in listed.json()} == {str(world["own_failed"]), str(world["own_queued"])}
+    assert (await c.get(f"/api/v1/jobs/{world['own_failed']}")).status_code == 200
+    for which in ("foreign", "orphan"):
+        failed, queued = world[f"{which}_failed"], world[f"{which}_queued"]
+        got = await c.get(f"/api/v1/jobs/{failed}")
+        assert (got.status_code, got.content) == (404, _not_found(failed))
+        for action in ("cancel", "retry"):
+            job = queued if action == "cancel" else failed
+            resp = await c.post(f"/api/v1/jobs/{job}/{action}", headers=csrf)
+            assert (resp.status_code, resp.content) == (404, _not_found(job)), action
+        assert await _state(queued) == JobState.QUEUED.value
+    queue = await c.get(f"/api/v1/printers/{world['printer']}/queue")
+    assert {j["id"] for j in queue.json()} == {str(world["own_queued"])}
+    cleared = await c.post(f"/api/v1/printers/{world['printer']}/queue/clear", headers=csrf)
+    assert cleared.status_code == 204, cleared.text
+    assert await _state(world["own_queued"]) == JobState.CANCELLED.value
+    assert await _state(world["foreign_queued"]) == JobState.QUEUED.value
+    assert await _state(world["orphan_queued"]) == JobState.QUEUED.value
+
+
+async def test_a_job_submitted_through_a_key_session_belongs_to_the_key(
+    api_client_with_seed, world
+) -> None:
+    """The session's key is recorded on the jobs it submits, so the user still sees them."""
+    c = api_client_with_seed
+    csrf = await _sign_in(c, world["owner_plain"])
+    before = await _jobs_on(world["printer"])
+    retried = await c.post(f"/api/v1/jobs/{world['own_failed']}/retry", headers=csrf)
+    assert retried.status_code != 404, retried.text
+    assert await _jobs_on(world["printer"]) == before + 1
+    async with _factory()() as s:
+        newest = (
+            await s.execute(
+                select(Job)
+                .where(Job.printer_id == world["printer"])
+                .order_by(Job.created_at.desc())  # type: ignore[attr-defined]
+                .limit(1)
+            )
+        ).scalar_one()
+    assert newest.api_key_id == world["owner_id"]
+    listed = await c.get(f"/api/v1/jobs?printer_id={world['printer']}")
+    assert str(newest.id) in {j["id"] for j in listed.json()}
+
+
+async def test_a_session_signed_in_with_an_admin_key_keeps_full_access(
+    api_client_with_seed, world
+) -> None:
+    c = api_client_with_seed
+    csrf = await _sign_in(c, world["admin"]["X-Label-Hub-Key"])
     listed = await c.get(f"/api/v1/jobs?printer_id={world['printer']}")
     assert {j["id"] for j in listed.json()} == _all(world)
     assert (await c.get(f"/api/v1/jobs/{world['foreign_failed']}")).status_code == 200
-    csrf = {"X-CSRF-Token": c.cookies.get("lph_csrf") or ""}
     for job in ("foreign_queued", "orphan_queued"):
         resp = await c.post(f"/api/v1/jobs/{world[job]}/cancel", headers=csrf)
         assert resp.status_code == 200, resp.text

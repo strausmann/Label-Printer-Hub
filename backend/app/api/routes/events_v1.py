@@ -19,8 +19,9 @@ picked up without reconnecting.
 
 An API key without ``admin`` scope gets the job events of the ``queue`` channel
 (``job.state_changed``, ``run.state_changed``) and the snapshot's job frames only for the
-jobs and tape runs it submitted (#294); printer events stay printer-scoped. Browser
-sessions, SSO users and admin keys see every job of their printers.
+jobs and tape runs it submitted (#294); printer events stay printer-scoped. A browser session
+signed in with such a key is bound to it the same way. SSO users and admin keys (also an
+admin key's session) see every job of their printers.
 """
 
 from __future__ import annotations

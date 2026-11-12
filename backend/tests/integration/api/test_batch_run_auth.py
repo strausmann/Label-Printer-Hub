@@ -202,3 +202,45 @@ async def test_another_key_gets_the_missing_batch_answer_on_read(held: dict[str,
     assert mine.json()["run"]["batch_id"] == held["run"]
     admin = _key(await _insert_key(["admin"]))
     assert (await held["client"].get(url, headers=admin)).json()["run"]["batch_id"] == held["run"]
+
+
+async def _session(client: httpx.AsyncClient, plain: str) -> dict[str, str]:
+    signed = await client.post("/api/v1/auth/session", json={"key": plain})
+    assert signed.status_code in (200, 201, 204), signed.text
+    return {"X-CSRF-Token": client.cookies.get("lph_csrf") or ""}
+
+
+async def test_a_session_of_another_print_key_sees_no_batch(held: dict[str, Any]) -> None:
+    """Fix round 1: a browser session minted from a print key is bound to that key, for the
+    batch routes as for the X-Label-Hub-Key header."""
+    plain = await _insert_key(["print"], [str(held["a"])])
+    csrf = await _session(held["client"], plain)
+    resp = await held["client"].get(f"/api/v1/batches/{held['run']}")
+    assert (resp.status_code, resp.content) == (404, b'{"detail":"Batch not found"}')
+    for action, body in ACTIONS:
+        resp = await _post(held, action, body, csrf)
+        assert resp.status_code == 404, (action, resp.text)
+        assert resp.json() == {"detail": "Batch not found"}
+    listed = await held["client"].get("/api/v1/batches/runs/held")
+    assert listed.status_code == 200 and listed.json() == []
+    assert held["queue"].run_info(UUID(held["run"])).state == "stopped"
+
+
+async def test_the_owners_session_sees_and_acts_on_its_batch(held: dict[str, Any]) -> None:
+    csrf = await _session(held["client"], held["owner"]["X-Label-Hub-Key"])
+    got = await held["client"].get(f"/api/v1/batches/{held['run']}")
+    assert got.status_code == 200 and got.json()["run"]["batch_id"] == held["run"]
+    listed = await held["client"].get("/api/v1/batches/runs/held")
+    assert [r["batch_id"] for r in listed.json()] == [held["run"]]
+    gone = await _post(held, "discard", None, csrf)
+    assert gone.status_code == 204, gone.text
+
+
+async def test_an_admin_key_session_sees_and_acts_on_any_batch(held: dict[str, Any]) -> None:
+    csrf = await _session(held["client"], await _insert_key(["admin"]))
+    got = await held["client"].get(f"/api/v1/batches/{held['run']}")
+    assert got.status_code == 200, got.text
+    listed = await held["client"].get("/api/v1/batches/runs/held")
+    assert [r["batch_id"] for r in listed.json()] == [held["run"]]
+    gone = await _post(held, "discard", None, csrf)
+    assert gone.status_code == 204, gone.text

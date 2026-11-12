@@ -15,9 +15,11 @@ def _ctx(source: str, scope: str, key=KEY) -> AuthContext:
     return AuthContext(source=source, scope=scope, api_key_id=key, ip="127.0.0.1")  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("source", ["api-key", "session"])
 @pytest.mark.parametrize("scope", ["read", "print"])
-def test_a_plain_key_sees_only_its_own(scope: str) -> None:
-    ctx = _ctx("api-key", scope)
+def test_a_plain_key_sees_only_its_own(source: str, scope: str) -> None:
+    """The header key and a browser session signed in with it are bound alike (fix round 1)."""
+    ctx = _ctx(source, scope)
     assert owner_only(ctx)
     assert may_see(ctx, KEY) and may_see(ctx, str(KEY))
     assert not may_see(ctx, uuid4())
@@ -31,10 +33,18 @@ def test_a_plain_key_without_an_id_sees_nothing() -> None:
 
 @pytest.mark.parametrize(
     ("source", "scope"),
-    [("api-key", "admin"), ("session", "print"), ("pangolin-sso", "admin"), ("bootstrap", "admin")],
+    [
+        ("api-key", "admin"),
+        ("session", "admin"),
+        ("pangolin-sso", "admin"),
+        ("pangolin-bypass", "read"),
+        ("bootstrap", "admin"),
+    ],
 )
 def test_admin_keys_sessions_and_sso_see_everything(source: str, scope: str) -> None:
-    ctx = _ctx(source, scope)
+    """Admin scope, or no key behind the caller (SSO, trusted header, bootstrap)."""
+    key = KEY if scope == "admin" and source in ("api-key", "session") else None
+    ctx = _ctx(source, scope, key=key)
     assert not owner_only(ctx)
     assert may_see(ctx, None) and may_see(ctx, uuid4())
 

@@ -142,8 +142,9 @@ async def _get_job_or_404(
         "``done``, ``failed``, ``cancelled``, ``failed_restart``).  "
         "``since`` is an ISO-8601 datetime; only jobs created at or after that "
         "instant are returned.  ``limit`` caps the result (default 50, max 200).  "
-        "An API key without ``admin`` scope sees only the jobs it submitted; browser "
-        "sessions, SSO users and admin keys see every job of their printers."
+        "An API key without ``admin`` scope, and a browser session signed in with one, sees "
+        "only the jobs that key submitted; SSO users and admin keys see every job of their "
+        "printers."
     ),
 )
 async def list_jobs(

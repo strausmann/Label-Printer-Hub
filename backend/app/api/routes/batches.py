@@ -136,9 +136,9 @@ async def get_batch(
     description=(
         "The tape runs (#277) that wait for a confirmation or stopped, oldest first, for the "
         "printers the caller may use; `printer_id` narrows it to one printer. An API key without "
-        "`admin` scope sees only the runs it submitted; browser sessions, SSO and admin keys see "
-        "all. Their actions are `continue`, `reprint` and `discard` on the batch, allowed to the "
-        "same callers (another key gets 404)."
+        "`admin` scope, and a browser session signed in with one, sees only the runs that key "
+        "submitted; SSO users and admin keys see all. Their actions are `continue`, `reprint` "
+        "and `discard` on the batch, allowed to the same callers (another key gets 404)."
     ),
 )
 async def held_runs(
@@ -210,7 +210,7 @@ _HELD_NOTE = (
     "that key's own oldest (`run_discarded_limit`), never another key's. While the five places "
     "are taken, a batch of more than 50 labels from a key without a held run there gets 429 "
     "`too-many-queued-runs`; smaller batches are always taken. All callers without a key "
-    "(browser sessions, SSO) count as one key."
+    "(SSO users) count as one key; a browser session signed in with a key counts as that key."
 )
 
 

@@ -2,8 +2,9 @@
 
 ``job.state_changed`` and ``run.state_changed`` (and the job frames of the snapshot) reach a
 key without ``admin`` scope only for jobs and tape runs it submitted. Printer events
-(``printer.status``, ``printer.tape_changed``) stay printer-scoped. Browser sessions, SSO
-users and admin keys see every job of their printers, as before. All keys are fake.
+(``printer.status``, ``printer.tape_changed``) stay printer-scoped. A browser session signed
+in with such a key is bound to it the same way; SSO users, admin keys and admin-key sessions
+see every job of their printers. All keys are fake.
 """
 
 from __future__ import annotations
@@ -163,19 +164,29 @@ async def test_a_key_gets_run_events_of_its_own_runs_only(hub_app) -> None:
 
 async def test_printer_events_still_reach_every_key_of_the_printer(hub_app) -> None:
     app, _ = hub_app
-    printer, owner, _owner_id, other_id = await _world()
+    printer, owner, owner_id, other_id = await _world()
     foreign = await _job(printer, other_id)
+    mine = await _job(printer, owner_id)
     stream = await _open(app, _key_header(owner))
     try:
         await _connected(stream)
         _job_event(_bus(app), printer, foreign)
         _status_event(_bus(app), printer)
-        while True:
+        # The own job's frame comes after the foreign one's lookup, so no owner lookup is still
+        # running when the stream is closed (a cancelled SQLite query can stall the loop's
+        # teardown in the test).
+        _job_event(_bus(app), printer, mine)
+        seen_status = seen_mine = False
+        while not (seen_status and seen_mine):
             ev = await stream.event()
             assert ev is not None
-            assert ev["event"] != "job.state_changed"
-            if ev["event"] == "printer.status" and ev["id"] != "0":
-                break
+            if ev["id"] == "0":
+                continue  # snapshot
+            if ev["event"] == "printer.status":
+                seen_status = True
+            if ev["event"] == "job.state_changed":
+                assert ev["payload"]["data"]["job_id"] == mine  # never the foreign job
+                seen_mine = True
     finally:
         await stream.close()
 
@@ -197,13 +208,44 @@ async def test_an_admin_key_gets_every_job_event(hub_app) -> None:
         await stream.close()
 
 
-async def test_a_browser_session_gets_every_job_event(hub_app) -> None:
+def _session_cookie(client) -> dict[str, str]:
+    return {"Cookie": f"lph_session={client.cookies.get('lph_session')}"}
+
+
+async def test_a_print_key_session_gets_job_events_of_its_key_only(hub_app) -> None:
+    """Fix round 1: a browser session minted from a print key is bound to that key."""
     app, client = hub_app
-    printer, owner, _owner_id, other_id = await _world()
+    printer, owner, owner_id, other_id = await _world()
+    mine = await _job(printer, owner_id, JobState.QUEUED.value)
+    foreign = await _job(printer, other_id, JobState.QUEUED.value)
+    orphan = await _job(printer, None, JobState.QUEUED.value)
+    my_run = await _batch(printer, owner_id)
+    foreign_run = await _batch(printer, other_id)
+    assert (await _sign_in(client, owner)).status_code == 204
+    assert await _snapshot_job_ids(app, _session_cookie(client), printer) == {mine}
+    stream = await _open(app, _session_cookie(client))
+    try:
+        await _connected(stream)
+        bus = _bus(app)
+        _job_event(bus, printer, foreign)
+        _job_event(bus, printer, orphan)
+        _run_event(bus, printer, foreign_run)
+        _job_event(bus, printer, mine)
+        _run_event(bus, printer, my_run)
+        assert (await _next_job_level(stream))["payload"]["data"]["job_id"] == mine
+        assert (await _next_job_level(stream))["payload"]["data"]["run_id"] == my_run
+    finally:
+        await stream.close()
+
+
+async def test_an_admin_key_session_gets_every_job_event(hub_app) -> None:
+    app, client = hub_app
+    printer, _owner, _owner_id, other_id = await _world()
     foreign = await _job(printer, other_id)
     run = await _batch(printer, other_id)
-    assert (await _sign_in(client, owner)).status_code == 204
-    stream = await _open(app, {"Cookie": f"lph_session={client.cookies.get('lph_session')}"})
+    admin, _ = await _insert_key(["admin"])
+    assert (await _sign_in(client, admin)).status_code == 204
+    stream = await _open(app, _session_cookie(client))
     try:
         await _connected(stream)
         _job_event(_bus(app), printer, foreign)
