@@ -499,7 +499,7 @@ def _free(queue: PrintQueue, printer_id: UUID) -> bool:
 
 @asynccontextmanager
 async def batch_route_rig(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[dict[str, Any]]:
-    """The batch route over a real queue, built inside the test body .
+    """The batch route over a real queue, built inside the test body.
 
     It was a ``pytest_asyncio`` fixture. The tests of this module run under anyio
     (``pytest.mark.anyio``), and then the fixture's event loop is not the test's: in the full
