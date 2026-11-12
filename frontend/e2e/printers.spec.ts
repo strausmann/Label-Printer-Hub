@@ -112,6 +112,12 @@ test.describe("page printer status", () => {
     // The card is rendered before its status arrives: wait for a word that comes with the status.
     await expect(tape.getByText(/Tape not known( yet)?|\d+ mm|No tape loaded/).first()).toBeVisible({ timeout: 15_000 });
     await expect(tape.getByText(/toner|supplies/i)).toHaveCount(0);
+
+    // The one polled tape printer (backend/tests/e2e_app.py: a fake SNMP status writer reports a
+    // 12 mm tape) shows the tape the hub read from it, so the card is checked against a real value.
+    const polled = page.getByRole("link", { name: /Bench PT-P750W/ });
+    await expect(polled.getByText("12 mm", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(polled.getByText(/toner|supplies/i)).toHaveCount(0);
   });
 
   test("an unbreakable tape printer name wraps inside its card at 360 px", async ({ signedInPage: page }) => {

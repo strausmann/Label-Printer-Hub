@@ -30,6 +30,7 @@ import dataclasses
 import os
 import secrets
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,46 @@ E2E_PRINTERS: tuple[dict[str, Any], ...] = (
         "connection": {"host": "192.0.2.11", "port": 9100},
     },
 )
+
+# The one tape printer the hub polls (263-29): its status comes from ``_fake_preflight``.
+E2E_POLLED_TAPE_NAME = "Bench PT-P750W"
+E2E_POLLED_TAPE_SLUG = "bench-pt"
+E2E_POLLED_TAPE_MM = 12
+"""The tape width the fake status writer reports for the polled printer."""
+E2E_POLLED_TAPE_PRINTER: dict[str, Any] = {
+    "name": E2E_POLLED_TAPE_NAME,
+    "slug": E2E_POLLED_TAPE_SLUG,
+    "model": "PT-P750W",
+    "backend": "ptouch",
+    "connection": {
+        "host": "192.0.2.12",
+        "port": 9100,
+        "snmp": {"discover": True, "community": "public"},
+    },
+}
+
+
+async def _fake_preflight(host: str, **_kwargs: Any) -> Any:
+    """The fake SNMP status writer: the polled printer is idle with a 12 mm tape loaded."""
+    from app.printer_backends.snmp_helper import PreflightStatus
+
+    return PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=E2E_POLLED_TAPE_MM, error_flags=[], media_raw=None
+    )
+
+
+async def _fake_model_pjl(host: str, **_kwargs: Any) -> str:
+    """No SNMP agent to ask for the model: the printer falls back to the model it was saved with."""
+    from app.printer_backends.exceptions import SnmpDiscoveryError
+
+    raise SnmpDiscoveryError("e2e: no SNMP agent")
+
+
+async def _fake_identity(host: str, **_kwargs: Any) -> Any:
+    """No hardware identity: the e2e hub has no SNMP agent to ask."""
+    from app.printer_backends.snmp_helper import ObservedIdentity
+
+    return ObservedIdentity()
 
 
 class _FakeIntegration:
@@ -402,7 +443,8 @@ async def _seed_page_printer_and_sheets(uri: str) -> None:
 
     async with async_session() as session:
         # After the two tape printers (created_at order): ``usable[0]`` stays Workshop PT-P750W.
-        await PrinterAdminService(session, "e2e").create_printer(
+        service = PrinterAdminService(session, "e2e")
+        await service.create_printer(
             PrinterCreatePayload.model_validate(
                 {
                     "name": E2E_PAGE_PRINTER_NAME,
@@ -421,6 +463,8 @@ async def _seed_page_printer_and_sheets(uri: str) -> None:
                 }
             )
         )
+        # Last, so every list keeps the first three printers where they were.
+        await service.create_printer(PrinterCreatePayload.model_validate(E2E_POLLED_TAPE_PRINTER))
 
     # Idempotent; the lifespan runs it again afterwards.
     await run_sheet_seed(async_session)
@@ -428,45 +472,36 @@ async def _seed_page_printer_and_sheets(uri: str) -> None:
     def marks(numbers: range, purpose: Any) -> list[MarkedCell]:
         return [MarkedCell(n, purpose(n)) for n in numbers]
 
+    async def _mk_sheet(
+        session: Any, type_key: str, used: range, purpose: Callable[[int], str]
+    ) -> Any:
+        """A sheet of *type_key* with the cells *used* marked, written by ``purpose``."""
+        return await sheet_service.create_sheet(
+            session,
+            type_key=type_key,
+            version=None,
+            used_cells=marks(used, purpose),
+            note=None,
+            actor="e2e",
+        )
+
+    def item(n: int) -> str:
+        return f"item {n}"
+
     async with async_session() as session:
         # 1. L4736-0001: 17 of 48 cells used.
-        await sheet_service.create_sheet(
-            session,
-            type_key=TAPE_L4736,
-            version=None,
-            used_cells=marks(range(1, 18), lambda n: f"item {n}"),
-            note=None,
-            actor="e2e",
-        )
+        await _mk_sheet(session, TAPE_L4736, range(1, 18), item)
         # 2. L4736-0002: full.
-        await sheet_service.create_sheet(
-            session,
-            type_key=TAPE_L4736,
-            version=None,
-            used_cells=marks(range(1, 49), lambda n: f"item {n}"),
-            note=None,
-            actor="e2e",
-        )
+        await _mk_sheet(session, TAPE_L4736, range(1, 49), item)
         # 3. L4736-0003: discarded.
-        discarded = await sheet_service.create_sheet(
-            session,
-            type_key=TAPE_L4736,
-            version=None,
-            used_cells=marks(range(1, 4), lambda n: f"item {n}"),
-            note=None,
-            actor="e2e",
-        )
+        discarded = await _mk_sheet(session, TAPE_L4736, range(1, 4), item)
         await sheet_service.discard_sheet(session, discarded.code, actor="e2e")
         # 4. L4731-0001: the 189-cell edge sheet, 120 used, every purpose 120 characters long.
-        await sheet_service.create_sheet(
+        await _mk_sheet(
             session,
-            type_key=TAPE_L4731,
-            version=None,
-            used_cells=marks(
-                range(1, 121), lambda n: f"cell {n:03d} " + "a" * (120 - len(f"cell {n:03d} "))
-            ),
-            note=None,
-            actor="e2e",
+            TAPE_L4731,
+            range(1, 121),
+            lambda n: f"cell {n:03d} " + "a" * (120 - len(f"cell {n:03d} ")),
         )
         # A custom type whose corner radius is unknown (the "measure it" case).
         await type_service.create_type(
@@ -530,6 +565,13 @@ def build_e2e_app() -> ASGIApp:
         return backend
 
     BackendRouter._build_one = staticmethod(_mock_backend)  # type: ignore[method-assign]
+    # The polled tape printer (263-29): the runtime and the status probe ask these, not the network.
+    from app.services import printer_runtime
+    from app.services.producers import status_probe_producer
+
+    printer_runtime.query_model_pjl = _fake_model_pjl  # type: ignore[assignment]
+    status_probe_producer.query_preflight = _fake_preflight  # type: ignore[assignment]
+    status_probe_producer.query_identity = _fake_identity  # type: ignore[assignment]
     IntegrationRegistry.clear()  # importing app.main discovered the real plugins
     for name, display in (("snipeit", "Snipe-IT"), ("grocy", "Grocy"), ("spoolman", "Spoolman")):
         IntegrationRegistry.register(_FakeIntegration(name, display))  # type: ignore[arg-type]
