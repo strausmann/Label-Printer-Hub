@@ -101,19 +101,22 @@ test.describe.serial("keyboard only", () => {
     await page.context().close();
   });
 
-  const pages: Array<[string, () => string, RegExp]> = [
+  // The last: what is on screen once the page has its data. "Loading…" is gone between two requests as well (the page renders
+  // nothing until the next answer is in), and the tab order is collected at that moment: a page that is not complete then has
+  // one control, and Tab walks into controls the check never saw (the CI failure of the calibration page).
+  const pages: Array<[string, () => string, RegExp, RegExp?]> = [
     ["sheets", () => "/sheets", /^(Sheets|Bögen)$/],
     ["archive", () => "/sheets/archive", /Sheet archive|Bogenarchiv/],
     ["archive type", () => `/sheets/archive?type=${SEED_TYPE}`, /.+/],
     ["sheet detail", () => `/sheets/${PARTLY_USED}`, /L4736-0001/],
     ["sheet detail, 189 cells", () => `/sheets/${EDGE}`, /L4731-0001/],
-    ["calibration", () => `/calibration?printer=${printer}&tray=main-tray`, /Calibration|Kalibrierung/],
+    ["calibration", () => `/calibration?printer=${printer}&tray=main-tray`, /Calibration|Kalibrierung/, /Sheet type|Bogentyp/],
     ["printer", () => `/printers/${printer}`, /.+/],
     ["cart onto a sheet", () => `/cart?sheet=${PARTLY_USED}`, /.+/],
   ];
 
   for (const lang of ["en", "de"] as const) {
-    for (const [name, path, heading] of pages) {
+    for (const [name, path, heading, ready] of pages) {
       test(`${name}, ${lang} at 360 px: Tab reaches every control, each with a visible ring`, async () => {
         await setLanguage(page, lang);
         await page.setViewportSize({ width: 360, height: 780 });
@@ -131,6 +134,7 @@ test.describe.serial("keyboard only", () => {
         await expect(page.getByRole("heading", { level: 1, name: heading }).first()).toBeVisible();
         // Wait for the data: nothing says "Loading…" any more.
         await expect(page.getByText(/^(Loading…|Lädt…)$/)).toHaveCount(0);
+        if (ready) await expect(page.getByRole("combobox", { name: ready })).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
         const report = await tabThrough(page);
         expect(report.candidates, "the page has controls").toBeGreaterThan(0);
