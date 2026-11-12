@@ -171,7 +171,7 @@ describe("IdentityMismatchBanner", () => {
         reads += 1;
         return page(reads > 1 ? identity({ observed_id: "SN-0003", observed_kind: "serial" }) : swapped);
       },
-      [`POST ${resolveUrl(PAGE_PRINTER.id)}`]: () => respond(409, { type: "identity-changed", title: "Changed", status: 409, detail: "changed" }),
+      [`POST ${resolveUrl(PAGE_PRINTER.id)}`]: () => respond(409, { detail: { error_code: "identity-changed", error_message: "changed" } }),
     });
     await renderApp({ path: `/printers/${PAGE_PRINTER.id}` });
     await userEvent.click(await screen.findByRole("button", { name: "Device replaced" }));

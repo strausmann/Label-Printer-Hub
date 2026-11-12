@@ -61,6 +61,9 @@ def _info(row: UiSession) -> SessionInfo:
     )
 
 
+_ULA = ipaddress.IPv6Network("fc00::/7")
+
+
 def _parse_ip(host: str | None) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     try:
         return ipaddress.ip_address((host or "").strip())
@@ -73,7 +76,9 @@ def _limiter_key(host: str | None) -> str:
 
     IPv4 is kept as is. An IPv4-mapped IPv6 address is the IPv4 it wraps (one client, one
     bucket in either spelling). Any other IPv6 address is its ``/64`` network: a subscriber owns
-    the whole /64 and could otherwise mint a bucket per address. A zone (scope) id is dropped.
+    the whole /64 and could otherwise mint a bucket per address. Unique-local (``fc00::/7``) and
+    link-local (``fe80::/10``) addresses keep the exact address: one host, not a subscriber.
+    A zone (scope) id is dropped.
     Anything that is not an IP address shares the bucket ``"unknown"``.
     """
     addr = _parse_ip(host)
@@ -83,6 +88,9 @@ def _limiter_key(host: str | None) -> str:
         return str(addr)
     if addr.ipv4_mapped is not None:
         return str(addr.ipv4_mapped)
+    if addr in _ULA or addr.is_link_local:
+        # A unique-local or link-local host is one machine, not a subscriber's /64.
+        return str(ipaddress.IPv6Address(int(addr)))  # without the scope id
     return str(ipaddress.IPv6Network((int(addr), 64), strict=False))
 
 

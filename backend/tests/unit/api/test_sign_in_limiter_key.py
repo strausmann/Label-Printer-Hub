@@ -28,6 +28,16 @@ def test_mapped_ipv4_equals_ipv4() -> None:
     assert _limiter_key("::ffff:c000:207") == "192.0.2.7"
 
 
+def test_ula_and_link_local_keep_the_exact_address() -> None:
+    """Only global unicast is grouped by /64; a ULA or link-local host is one machine."""
+    assert _limiter_key("fd00:db8:1:2::1") == "fd00:db8:1:2::1"
+    assert _limiter_key("fd00:db8:1:2::2") != _limiter_key("fd00:db8:1:2::1")
+    assert _limiter_key("fc00::7") == "fc00::7"
+    assert _limiter_key("fe80::1") == "fe80::1"
+    assert _limiter_key("fe80::1%eth0") == "fe80::1"  # the scope id is still dropped
+    assert _limiter_key("fe80::1%2") == _limiter_key("fe80::1%eth1")
+
+
 def test_scope_id_dropped() -> None:
     assert _limiter_key("2001:db8:1:2::1%eth0") == _limiter_key("2001:db8:1:2::1")
     assert _limiter_key("2001:db8:1:2::1%2") == "2001:db8:1:2::/64"

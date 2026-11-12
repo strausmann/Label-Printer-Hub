@@ -71,13 +71,13 @@ def _runtime_printer_ids(app_state: Any) -> list[Any]:
     return ids
 
 
-def _check_printer_runtime(app_state: Any) -> CheckStatus:
+def _check_printer_runtime(app_state: Any, *, reveal_printer_id: bool = True) -> CheckStatus:
     ids = _runtime_printer_ids(app_state)
     if not ids:
         return CheckStatus(status="fail", detail="app.state.printer_id is None")
     metric: dict[str, Any] = {}
     pid = getattr(app_state, "printer_id", None)
-    if pid is not None:
+    if pid is not None and reveal_printer_id:
         metric["printer_id"] = str(pid)
     page_printers = len(ids) - (1 if pid is not None else 0)
     if page_printers:
@@ -85,7 +85,9 @@ def _check_printer_runtime(app_state: Any) -> CheckStatus:
     return CheckStatus(status="ok", metric=metric)
 
 
-async def _check_printer_db_sync(session: AsyncSession, app_state: Any) -> CheckStatus:
+async def _check_printer_db_sync(
+    session: AsyncSession, app_state: Any, *, reveal_printer_id: bool = True
+) -> CheckStatus:
     ids = _runtime_printer_ids(app_state)
     if not ids:
         return CheckStatus(status="skipped", detail="No runtime printer")
@@ -93,7 +95,11 @@ async def _check_printer_db_sync(session: AsyncSession, app_state: Any) -> Check
         if await session.get(Printer, pid) is None:
             return CheckStatus(
                 status="fail",
-                detail=f"app.state.printer_id={pid} has no matching DB row",
+                detail=(
+                    f"app.state.printer_id={pid} has no matching DB row"
+                    if reveal_printer_id
+                    else "A runtime printer has no matching DB row"
+                ),
             )
     return CheckStatus(status="ok")
 
@@ -202,13 +208,20 @@ async def build_readiness_response(
     *,
     version: str,
     revision: str,
+    reveal_printer_id: bool = True,
 ) -> ReadinessResponse:
-    """Run all readiness checks and aggregate the result."""
+    """Run all readiness checks and aggregate the result.
+
+    ``reveal_printer_id`` False leaves the default printer's id out of the answer: the caller
+    is a key restricted to other printers and may not learn it (the 403 hides it too).
+    """
     checks: dict[str, CheckStatus] = {
         "database": await _check_database(session),
         "alembic": await _check_alembic(settings),
-        "printer_runtime": _check_printer_runtime(app_state),
-        "printer_db_sync": await _check_printer_db_sync(session, app_state),
+        "printer_runtime": _check_printer_runtime(app_state, reveal_printer_id=reveal_printer_id),
+        "printer_db_sync": await _check_printer_db_sync(
+            session, app_state, reveal_printer_id=reveal_printer_id
+        ),
         "snmp_discovery": await _check_snmp_discovery(session, app_state),
         "print_queue": _check_print_queue(app_state),
         "sse_bus": _check_sse_bus(app_state, settings),

@@ -59,6 +59,8 @@ networks:
 
 The Traefik, Caddy and Pangolin examples trust `X-Forwarded-For` from exactly one peer, your proxy, via `PROXY_IP`. Give the proxy a fixed address on the shared network (`ipv4_address` in the proxy's own stack) and put that address in `.env`. Without it every client looks like the proxy and the per-IP sign-in limit becomes one bucket for everybody. Do not use `*` or a subnet.
 
+The sign-in limit counts IPv6 clients per /64 network (a unique-local or link-local address counts alone), and an IPv4-mapped IPv6 address counts as its IPv4 address. If a trusted proxy forwards a value that is not an IP address, or the request arrives over a unix socket, every such sign-in lands in one shared bucket.
+
 ## Prerequisites
 
 1. **Brother printer** on your network: PT-Series (PT-E550W/P710BT/P750W) or QL-Series (QL-800/810W/820NWB). USB-only models are out of scope at this stage.

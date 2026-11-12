@@ -132,3 +132,24 @@ async def test_default_printer_403_hides_id(hub: dict[str, Any]) -> None:
             "error_code": "printer_not_allowed",
             "error_message": "No access to the default printer",
         }
+
+
+async def test_readiness_names_the_default_printer_only_to_those_who_may_use_it(
+    hub: dict[str, Any],
+) -> None:
+    """The id the 403 hides must not leak through /readiness either (fix round 1)."""
+    c, a_id, b_id = hub["client"], hub["a"], hub["b"]
+
+    async def body(key: dict[str, str]) -> Any:
+        resp = await c.get("/readiness", headers=key)
+        assert resp.status_code in (200, 503), resp.text
+        return resp
+
+    refused = await body(_k(await _insert_key(["read"], [str(b_id)])))
+    assert "printer_id" not in refused.json()["checks"]["printer_runtime"].get("metric", {})
+    assert str(a_id) not in refused.text
+    for allowed in ([str(a_id)], [str(a_id), str(b_id)], []):
+        resp = await body(_k(await _insert_key(["read"], allowed)))
+        assert resp.json()["checks"]["printer_runtime"]["metric"]["printer_id"] == str(a_id)
+    admin = await body(_k(await _insert_key(["admin"])))
+    assert admin.json()["checks"]["printer_runtime"]["metric"]["printer_id"] == str(a_id)

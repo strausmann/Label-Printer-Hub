@@ -569,6 +569,14 @@ register_page_renderer("sheet_page", render_sheet_page)
 register_page_renderer("test_page", render_test_page)
 
 
+def _may_name_default_printer(auth: AuthContext | None, state: Any) -> bool:
+    """Whether the caller may learn the default printer's id (a restricted key may not)."""
+    pid = getattr(state, "printer_id", None)
+    if auth is None or pid is None or not auth.allowed_printer_ids:
+        return True
+    return str(pid) in auth.allowed_printer_ids
+
+
 def create_app() -> _LifespanManager:
     """Build the FastAPI app. Kept as a factory so tests can re-instantiate."""
     install_log_buffer()
@@ -650,6 +658,7 @@ def create_app() -> _LifespanManager:
             get_settings(),
             version=HUB_VERSION,
             revision=HUB_REVISION,
+            reveal_printer_id=_may_name_default_printer(_auth, app.state),
         )
         if body.status == "not-ready":
             response.status_code = 503
