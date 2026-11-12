@@ -26,6 +26,9 @@ async function choose(scope: Locator, select: RegExp, option: RegExp) {
 async function chooseType(scope: Locator, field: RegExp, option: RegExp) {
   const box = scope.getByRole("combobox", { name: field });
   await box.click();
+  // Select the shown label explicitly once the list is up, so the first character is typed over it (263-85).
+  await expect(scope.page().getByRole("listbox")).toBeVisible();
+  await scope.page().keyboard.press("ControlOrMeta+A");
   await scope.page().keyboard.type(option.source);
   await scope.page().getByRole("option", { name: option }).click();
 }

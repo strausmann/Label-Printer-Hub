@@ -173,6 +173,9 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
     targetChoice !== null && (targetChoice.kind === "sheet" ? usable.some((s) => s.code === targetChoice.code) : !archivedType);
   const target = (targetValid ? targetChoice : null) ?? defaultTarget;
   const sheetCode = target?.kind === "sheet" ? target.code : null;
+  // Chosen and skipped cells belong to the sheet they were made on. When the target moves to another sheet by itself (the
+  // labels no longer fit, the list changed), they are dropped for good: they are not brought back when it moves back (267-13).
+  if (cellState && cellState.sheet !== sheetCode) setCellState(null);
   const mine = cellState && sheetCode !== null && cellState.sheet === sheetCode ? cellState : null;
   const chosen = mine?.chosen ?? NO_CELLS;
   const skipped = mine?.skipped ?? NO_CELLS;

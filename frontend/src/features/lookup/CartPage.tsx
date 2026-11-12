@@ -3,10 +3,12 @@ import { useLingui } from "@lingui/react/macro";
 import { getRouteApi, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "react-aria-components";
+import { useSession } from "../../app/session";
 import { FIELD, PRIMARY_BUTTON } from "../../shell/SignIn";
 import { LayoutPicker } from "../layout/LayoutPicker";
 import { tapeMmOfStatus, useLabelLayout, type LayoutOptions } from "../layout/ql";
 import { usePrinters, usePrinterStatus, usePrinterStatuses } from "../printers/api";
+import { HINT } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { useAppName } from "./apps";
 import { useLookup, usePreviewImage, type LookupResult } from "./api";
@@ -48,6 +50,8 @@ export function CartPage() {
   const { t } = useLingui();
   const appName = useAppName();
   const errorText = usePrintErrorText();
+  // A read key fills the cart but may not print it: say so before the press, not with a 403 after it.
+  const readOnly = useSession().scope === "read";
   const cart = useCart();
   const printers = usePrinters();
   const { usable, selected, choose } = usePrinterChoice(printers.data);
@@ -162,7 +166,7 @@ export function CartPage() {
               {/* A page printer prints through the sheet section below. */}
               {/* An emptied cart (a sheet print took everything out) leaves nothing to send. */}
               {!pagePrinter && cart.items.length > 0 && (
-                <Button className={PRIMARY_BUTTON} isDisabled={!selected || busy} onPress={() => void send()}>
+                <Button className={PRIMARY_BUTTON} isDisabled={!selected || busy || readOnly} onPress={() => void send()}>
                   {plural(labels, { one: "Print # label", other: "Print # labels" })}
                 </Button>
               )}
@@ -172,6 +176,7 @@ export function CartPage() {
                 </Button>
               )}
             </div>
+            {readOnly && !pagePrinter && cart.items.length > 0 && <p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
             {outcome?.kind === "failed" && <p role="alert" className="text-bad">{errorText(outcome.error)}</p>}
           </section>
 

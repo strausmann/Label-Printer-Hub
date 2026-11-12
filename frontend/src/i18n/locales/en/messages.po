@@ -373,6 +373,10 @@ msgstr "A sheet type with the key {existingKey} already exists. Add this geometr
 msgid "A sheet type with this key already exists."
 msgstr "A sheet type with this key already exists."
 
+#: src/features/archive/errors.ts
+msgid "A text is too long."
+msgstr "A text is too long."
+
 #: src/features/settings/feedback.tsx
 msgid "A tray is set that the printer does not report. Read the printer again."
 msgstr "A tray is set that the printer does not report. Read the printer again."
@@ -2015,6 +2019,10 @@ msgstr "No camera was found on this device. Choose a photo of the code instead."
 msgid "No cell is in use."
 msgstr "No cell is in use."
 
+#: src/features/archive/TypeForm.tsx
+msgid "No change: the measurements are the same as in the current version."
+msgstr "No change: the measurements are the same as in the current version."
+
 #: src/features/settings/Integrations.tsx
 msgid "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
 msgstr "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
@@ -2636,6 +2644,8 @@ msgid "Printing and marking cells need a print or admin key."
 msgstr "Printing and marking cells need a print or admin key."
 
 #: src/features/calibration/CalibrationPage.tsx
+#: src/features/lookup/CartPage.tsx
+#: src/features/lookup/ItemView.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Printing needs a print or admin key."
 msgstr "Printing needs a print or admin key."
@@ -2868,6 +2878,10 @@ msgstr "Resume"
 #: src/shell/PrintToasts.tsx
 msgid "Retry"
 msgstr "Retry"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Retrying and cancelling need a print or admin key."
+msgstr "Retrying and cancelling need a print or admin key."
 
 #: src/features/jobs/RetryError.tsx
 msgid "Retrying needs a print or admin key."
@@ -3930,10 +3944,12 @@ msgid "The left margin"
 msgstr "The left margin"
 
 #: src/features/lookup/LabelPreview.tsx
+#: src/features/lookup/PrinterPicker.tsx
 msgid "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
 msgstr "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
 
 #: src/features/lookup/LabelPreview.tsx
+#: src/features/lookup/PrinterPicker.tsx
 msgid "The link in the QR code is too long for this layout."
 msgstr "The link in the QR code is too long for this layout."
 
@@ -4349,6 +4365,10 @@ msgstr "There is nothing to print yet."
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "These fitted values are outside the allowed range: {outOfRangeList}. They are not filled in. More than that is a fault of the printer, not something to correct."
 msgstr "These fitted values are outside the allowed range: {outOfRangeList}. They are not filled in. More than that is a fault of the printer, not something to correct."
+
+#: src/features/lookup/PrinterPicker.tsx
+msgid "These labels ask for different directions (along and across). Print them in separate runs."
+msgstr "These labels ask for different directions (along and across). Print them in separate runs."
 
 #: src/features/sheets/print/errors.ts
 msgid "These labels need {pages} pages, and at most {max} pages can be previewed at once. Print fewer labels, or print in two rounds."

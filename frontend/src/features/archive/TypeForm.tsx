@@ -10,7 +10,7 @@ import { invalidGeometry } from "../../api/errorDetail";
 import { useAddVersion, useCreateType, usePatchType, type SheetTypeCreate, type SheetTypeDetail, type SheetTypePatch } from "./api";
 import { useArchiveErrorText } from "./errors";
 import { TextAreaField } from "./fields";
-import { draftOf, EMPTY_DRAFT, geometryOf, type FieldName, type GeometryDraft } from "./geometryDraft";
+import { draftOf, EMPTY_DRAFT, geometryOf, sameGeometry, type FieldName, type GeometryDraft } from "./geometryDraft";
 import { PREFIX, KEY } from "./patterns";
 import { httpUrl } from "./search";
 
@@ -230,6 +230,9 @@ export function TypeForm({ mode, onDone }: { mode: FormMode; onDone: (createdKey
     mode.kind === "create" ? t`New sheet type` : mode.kind === "details" ? t`Edit details of ${mode.type.key}` : t`Measure ${mode.type.key} again`;
   const submitLabel = mode.kind === "create" ? t`Create type` : mode.kind === "details" ? t`Save details` : t`Save new version`;
   const descriptive = mode.kind !== "geometry";
+  // A new version with the measurements of the current one is refused by the server (`unchanged`): say so before the press (267-03).
+  const measured = mode.kind === "geometry" ? geometryOf(draft, mode.type.geometry) : null;
+  const noChange = mode.kind === "geometry" && measured !== null && "geometry" in measured && sameGeometry(measured.geometry, mode.type.geometry);
 
   return (
     <form
@@ -290,9 +293,14 @@ export function TypeForm({ mode, onDone }: { mode: FormMode; onDone: (createdKey
       ) : null}
 
       <div className="flex flex-wrap gap-3">
-        <Button type="submit" isDisabled={pending} className={PRIMARY_BUTTON}>
+        <Button type="submit" isDisabled={pending || noChange} aria-describedby={noChange ? "type-form-no-change" : undefined} className={PRIMARY_BUTTON}>
           {submitLabel}
         </Button>
+        {noChange ? (
+          <p id="type-form-no-change" className="m-0 self-center text-small text-ink-2">
+            {t`No change: the measurements are the same as in the current version.`}
+          </p>
+        ) : null}
         <Button onPress={() => onDone()} className={SECONDARY_BUTTON}>
           {t`Cancel`}
         </Button>

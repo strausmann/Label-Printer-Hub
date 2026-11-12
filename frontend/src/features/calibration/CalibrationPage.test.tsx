@@ -406,6 +406,15 @@ describe("step 2: the readings helper", () => {
     expect(screen.getByText("The values are filled in below. Nothing is saved yet.")).toBeVisible();
   });
 
+  it("the table that scrolls sideways is a named region the keyboard can reach", async () => {
+    await open({ [`POST ${BASE}/main/fit`]: FIT });
+    await fillThree();
+    await userEvent.click(await button("Fit"));
+    const region = await screen.findByRole("region", { name: "Result of the fit" });
+    expect(region).toHaveAttribute("tabindex", "0");
+    expect(within(region).getByRole("table", { name: "Result of the fit" })).toBeVisible();
+  });
+
   it("puts the flag in the cell of the residual it is about, so a phone shows it without scrolling the table sideways", async () => {
     await open({ [`POST ${BASE}/main/fit`]: FIT });
     await fillThree();
@@ -551,6 +560,21 @@ describe("the chosen sheet type lives in the address (#238)", () => {
   it("an unknown or overlong type falls back to the default type", async () => {
     await open(two, SIGNED_IN, `/calibration?printer=${P}&tray=main&type=gone`);
     expect(((await typeBox()) as HTMLInputElement).value).toContain("L4736REV");
+  });
+
+  it("unknown type is dropped from the address", async () => {
+    const { router } = await open(two, SIGNED_IN, `/calibration?printer=${P}&tray=main&type=gone`);
+    await typeBox();
+    await waitFor(() => expect(router.state.location.search.type).toBeUndefined());
+    expect(router.state.location.search).toMatchObject({ printer: P, tray: "main" });
+    expect(((await typeBox()) as HTMLInputElement).value).toContain("L4736REV");
+  });
+
+  it("numeric-looking type key is kept", async () => {
+    const numeric = { ...typeB, key: "4736", prefix: "NN", product_codes: ["NN-1"] };
+    const { router } = await open({ "GET /api/v1/sheet-types": [SHEET_TYPE, numeric] }, SIGNED_IN, `/calibration?printer=${P}&tray=main&type=4736`);
+    expect(((await typeBox()) as HTMLInputElement).value).toContain("4736");
+    expect(router.state.location.search.type).toBe("4736");
   });
 
   it("an overlong type is dropped from the address", async () => {

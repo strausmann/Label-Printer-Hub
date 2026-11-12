@@ -40,6 +40,12 @@ const PERSON = 300;
 /** What a field sits in when it is in a dialog. */
 const DIALOG = '[role="dialog"], [role="alertdialog"]';
 
+/** Selects the whole text. `select()` alone is dropped by some mobile browsers; an explicit range holds. */
+function selectAll(input: HTMLInputElement) {
+  input.select();
+  input.setSelectionRange(0, input.value.length);
+}
+
 /** The label with the part that matched the query marked. Folding drops spaces (around "×"), so the match is mapped back to the label's own offsets. */
 function Highlighted({ text, query }: { text: string; query: string }) {
   const word = foldForSearch(query.trim()).split(/\s+/)[0] ?? "";
@@ -225,9 +231,9 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
             const input = e.currentTarget;
             // The input gets the focus again when the list opens under the first keystroke: by then there is a query, leave it be.
             if (typedRef.current !== null) return;
-            input.select();
+            selectAll(input);
             setTimeout(() => {
-              if (typedRef.current === null) input.select();
+              if (typedRef.current === null) selectAll(input);
             }, 0);
           }}
           // A tap on a field that already has the focus (the list was closed by a choice or a drag) opens it again.
@@ -241,7 +247,7 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
             trigger.current?.click();
             // A new search, as with a fresh focus; after the click, because opening the list moves the caret.
             const select = () => {
-              if (typedRef.current === null) input.select();
+              if (typedRef.current === null) selectAll(input);
             };
             select();
             setTimeout(select, 0);
@@ -296,6 +302,13 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
           </Button>
         </div>
       </div>
+      {/* A cut label has no hover on a touch screen, so the title is no help there: the whole text is written below the field.
+          Hidden where a mouse can hover (the title serves), and while a query is typed (the box then shows the query). */}
+      {!isNone && typed === null && chosenText !== "" ? (
+        <p data-full-label="" className="m-0 text-small text-ink-2 [overflow-wrap:anywhere] [@media(hover:hover)_and_(pointer:fine)]:hidden">
+          {chosenText}
+        </p>
+      ) : null}
       <Popover placement={room.placement} maxHeight={room.maxHeight} shouldFlip={false} offset={4} className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[popin_140ms_cubic-bezier(0.23,1,0.32,1)]">
         {/* The popover is as tall as the room beside the field; a long list scrolls inside it. */}
         <ListBox

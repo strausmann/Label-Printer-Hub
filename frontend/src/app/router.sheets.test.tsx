@@ -56,6 +56,20 @@ describe("typed search parameters", () => {
     expect((await mountAt("/calibration?printer=&tray=")).state.location.search).toEqual({});
   });
 
+  it.each(["4736", "007", "1e3", "12345678901234567890", "true", "null"])("numeric-looking type key is kept: %s", async (key) => {
+    expect((await mountAt(`/calibration?type=${key}`)).state.location.search).toEqual({ type: key });
+    expect((await mountAt(`/sheets?type=${key}`)).state.location.search).toEqual({ type: key });
+  });
+
+  it("writes a type key into the address without quotes, and reads it back", async () => {
+    const router = await mountAt("/calibration");
+    await act(async () => {
+      await router.navigate({ to: "/calibration", search: { type: "4736" } });
+    });
+    expect(router.state.location.searchStr).toBe("?type=4736");
+    expect(router.state.location.search).toEqual({ type: "4736" });
+  });
+
   it("typed links build their address (this also fails the typecheck when a parameter is undeclared)", async () => {
     const router = await mountAt("/");
     expect(router.buildLocation({ to: "/cart", search: { sheet: "L4736-0001" } }).href).toBe("/cart?sheet=L4736-0001");

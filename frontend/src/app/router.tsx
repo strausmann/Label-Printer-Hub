@@ -3,6 +3,8 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  defaultParseSearch,
+  defaultStringifySearch,
   getRouteApi,
   Outlet,
   useLocation,
@@ -241,8 +243,46 @@ const routeTree = rootRoute.addChildren([
   signInRoute,
 ]);
 
+/**
+ * A sheet type key is text, whatever it looks like. The router's own parser decodes every value as JSON, so `?type=4736`
+ * would arrive as the number 4736 and `?type=1e3` as 1000: the key is read from the raw query instead and written without
+ * quotes, so a key such as "007" or "4736" survives the address.
+ */
+const RAW_KEYS = ["type"] as const;
+
+export function parseAppSearch(searchStr: string): Record<string, unknown> {
+  const parsed: Record<string, unknown> = defaultParseSearch(searchStr);
+  const raw = new URLSearchParams(searchStr);
+  for (const key of RAW_KEYS) {
+    const value = raw.get(key);
+    if (value !== null) parsed[key] = value;
+  }
+  return parsed;
+}
+
+export function stringifyAppSearch(search: Record<string, unknown>): string {
+  const rest: Record<string, unknown> = { ...search };
+  const raw = new URLSearchParams();
+  for (const key of RAW_KEYS) {
+    const value = rest[key];
+    delete rest[key];
+    if (typeof value === "string") raw.set(key, value);
+    else if (typeof value === "number" && Number.isFinite(value)) raw.set(key, String(value));
+  }
+  const base = defaultStringifySearch(rest).replace(/^\?/, "");
+  const extra = raw.toString();
+  const all = [base, extra].filter((part) => part !== "").join("&");
+  return all === "" ? "" : `?${all}`;
+}
+
 export function createAppRouter(options: { history?: RouterHistory } = {}) {
-  return createRouter({ routeTree, history: options.history, defaultPreload: "intent" });
+  return createRouter({
+    routeTree,
+    history: options.history,
+    defaultPreload: "intent",
+    parseSearch: parseAppSearch,
+    stringifySearch: stringifyAppSearch,
+  });
 }
 
 declare module "@tanstack/react-router" {

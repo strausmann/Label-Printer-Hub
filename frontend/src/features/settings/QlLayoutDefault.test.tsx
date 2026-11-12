@@ -25,6 +25,20 @@ describe("QL printer form", () => {
     expect(screen.queryByRole("switch", { name: "Half cut by default" })).toBeNull();
   });
 
+  it("QL form does not send half_cut", async () => {
+    const { calls } = mockApi({
+      "GET /api/v1/admin/printers": [QL_PRINTER({ "62": { orientation: "along" } })],
+      "PUT /api/v1/admin/printers/office-ql": QL_PRINTER(),
+    });
+    await renderApp({ path: "/settings/printers" });
+    await userEvent.click(await screen.findByRole("button", { name: "Edit Office QL-820NWB" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
+    const sent = calls.filter((c) => c.method === "PUT").at(-1)!.body!;
+    expect(sent).not.toContain("half_cut");
+    expect(sent).not.toContain("cut_defaults");
+  });
+
   it("a P-touch printer keeps the half-cut control", async () => {
     mockApi({ "GET /api/v1/admin/printers": [ADMIN_PRINTER] });
     await renderApp({ path: "/settings/printers" });

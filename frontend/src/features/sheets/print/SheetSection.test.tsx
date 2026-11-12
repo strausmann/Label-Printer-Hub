@@ -332,6 +332,24 @@ describe("choosing cells and skipping one", () => {
     await waitFor(() => expect(body(previews(calls).at(-1)!).placements).toEqual([{ sheet: "L4736-0001", cells: [30, 31] }]));
   });
 
+  it("target flip clears previous choice", async () => {
+    // A takes 4 labels at most, B takes 18. With 2 labels the fitting sheet with the fewest free cells (A) is the target.
+    const sheets = [sheet("L4736-0001", 44), sheet("L4736-0002", 30)];
+    await itemView(routes({ sheets, preview: previewFor("L4736-0001", [30, 31], USED_17) }), 2);
+    await userEvent.click(await screen.findByRole("radio", { name: "Choose cells" }));
+    await userEvent.click(await screen.findByRole("gridcell", { name: /^Cell 30, free/ }));
+    await userEvent.click(screen.getByRole("gridcell", { name: /^Cell 31, free/ }));
+    expect(await screen.findByText("2 of 2 cells chosen")).toBeVisible();
+    // Six labels do not fit A: the target moves to B by itself, without anyone choosing it.
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Copies" }), { target: { value: "6" } });
+    expect(await screen.findByRole("combobox", { name: "Sheet" })).toHaveValue("L4736-0002");
+    expect(await screen.findByText("0 of 6 cells chosen")).toBeVisible();
+    // Back to two labels: the target is A again, and what was chosen on A before is not brought back.
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Copies" }), { target: { value: "2" } });
+    expect(await screen.findByRole("combobox", { name: "Sheet" })).toHaveValue("L4736-0001");
+    expect(await screen.findByText("0 of 2 cells chosen")).toBeVisible();
+  });
+
   it("tapping a planned cell in the preview skips it", async () => {
     const answer = (init: RequestInit) => {
       const skip = (JSON.parse(String(init.body)) as { placements: Array<{ skip?: number[] }> }).placements[0]?.skip ?? [];

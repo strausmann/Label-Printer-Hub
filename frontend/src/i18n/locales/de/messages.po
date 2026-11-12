@@ -373,6 +373,10 @@ msgstr "Einen Bogentyp mit dem Schlüssel {existingKey} gibt es schon. Füge die
 msgid "A sheet type with this key already exists."
 msgstr "Einen Bogentyp mit diesem Schlüssel gibt es schon."
 
+#: src/features/archive/errors.ts
+msgid "A text is too long."
+msgstr "Ein Text ist zu lang."
+
 #: src/features/settings/feedback.tsx
 msgid "A tray is set that the printer does not report. Read the printer again."
 msgstr "Es ist ein Fach eingestellt, das der Drucker nicht meldet. Lies den Drucker noch einmal aus."
@@ -2015,6 +2019,10 @@ msgstr "Auf diesem Gerät wurde keine Kamera gefunden. Wähle stattdessen ein Fo
 msgid "No cell is in use."
 msgstr "Keine Zelle ist belegt."
 
+#: src/features/archive/TypeForm.tsx
+msgid "No change: the measurements are the same as in the current version."
+msgstr "Keine Änderung: Die Maße sind dieselben wie in der aktuellen Version."
+
 #: src/features/settings/Integrations.tsx
 msgid "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
 msgstr "Noch keine Client-Schlüssel. Lege unter <0>Zugang und Schlüssel</0> einen an, benannt nach dem Client (zum Beispiel „Kept“)."
@@ -2636,6 +2644,8 @@ msgid "Printing and marking cells need a print or admin key."
 msgstr "Zum Drucken und Markieren von Zellen braucht es einen Druck- oder Admin-Schlüssel."
 
 #: src/features/calibration/CalibrationPage.tsx
+#: src/features/lookup/CartPage.tsx
+#: src/features/lookup/ItemView.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Printing needs a print or admin key."
 msgstr "Zum Drucken ist ein Druck- oder Admin-Schlüssel nötig."
@@ -2868,6 +2878,10 @@ msgstr "Fortsetzen"
 #: src/shell/PrintToasts.tsx
 msgid "Retry"
 msgstr "Wiederholen"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Retrying and cancelling need a print or admin key."
+msgstr "Wiederholen und Abbrechen brauchen einen Druck- oder Admin-Schlüssel."
 
 #: src/features/jobs/RetryError.tsx
 msgid "Retrying needs a print or admin key."
@@ -3930,10 +3944,12 @@ msgid "The left margin"
 msgstr "Der linke Rand"
 
 #: src/features/lookup/LabelPreview.tsx
+#: src/features/lookup/PrinterPicker.tsx
 msgid "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
 msgstr "Der Link im QR-Code ist {length} Bytes lang, dieses Layout fasst aber höchstens {max} Bytes. Wähle eine andere Anordnung oder einen kürzeren Link."
 
 #: src/features/lookup/LabelPreview.tsx
+#: src/features/lookup/PrinterPicker.tsx
 msgid "The link in the QR code is too long for this layout."
 msgstr "Der Link im QR-Code ist für dieses Layout zu lang."
 
@@ -4349,6 +4365,10 @@ msgstr "Es gibt noch nichts zu drucken."
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "These fitted values are outside the allowed range: {outOfRangeList}. They are not filled in. More than that is a fault of the printer, not something to correct."
 msgstr "Diese berechneten Werte liegen außerhalb des erlaubten Bereichs: {outOfRangeList}. Sie werden nicht eingetragen. Mehr ist ein Fehler des Druckers, nichts, was man ausgleicht."
+
+#: src/features/lookup/PrinterPicker.tsx
+msgid "These labels ask for different directions (along and across). Print them in separate runs."
+msgstr "Diese Etiketten verlangen verschiedene Richtungen (längs und quer). Drucke sie in getrennten Durchgängen."
 
 #: src/features/sheets/print/errors.ts
 msgid "These labels need {pages} pages, and at most {max} pages can be previewed at once. Print fewer labels, or print in two rounds."

@@ -201,6 +201,29 @@ describe("edit geometry", () => {
     expect(await screen.findByText("1 sheet keeps version 1")).toBeVisible();
   });
 
+  const changeTopMargin = async () => {
+    const top = await screen.findByRole("textbox", { name: /^(Top margin|Oberer Rand) \(mm\)$/ });
+    await userEvent.clear(top);
+    await userEvent.type(top, "21,9");
+  };
+
+  it("save disabled without change", async () => {
+    mockApi(LIST);
+    await renderApp({ path: "/sheets/archive?type=L4736REV" });
+    await userEvent.click(await screen.findByRole("button", { name: "Edit geometry" }));
+    const save = screen.getByRole("button", { name: "Save new version" });
+    expect(save).toBeDisabled();
+    expect(save).toHaveAccessibleDescription("No change: the measurements are the same as in the current version.");
+    await changeTopMargin();
+    expect(save).toBeEnabled();
+    expect(screen.queryByText(/^No change/)).toBeNull();
+    // Typing the old value back is no change again.
+    const top = screen.getByRole("textbox", { name: "Top margin (mm)" });
+    await userEvent.clear(top);
+    await userEvent.type(top, String(DETAIL.geometry.margin_top));
+    expect(save).toBeDisabled();
+  });
+
   it("saves a new version with the change note", async () => {
     const { calls } = mockApi({ ...LIST, "POST /api/v1/sheet-types/L4736REV/versions": { ...VERSION, version: 2 } });
     await renderApp({ path: "/sheets/archive?type=L4736REV" });
@@ -220,6 +243,7 @@ describe("edit geometry", () => {
     const { calls } = mockApi(LIST);
     await renderApp({ path: "/sheets/archive?type=L4736REV" });
     await userEvent.click(await screen.findByRole("button", { name: "Edit geometry" }));
+    await changeTopMargin();
     await userEvent.click(screen.getByRole("button", { name: "Save new version" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Describe what changed.");
     await userEvent.type(screen.getByRole("textbox", { name: "What changed" }), "x");
@@ -238,6 +262,7 @@ describe("edit geometry", () => {
     });
   const saveWithNote = async () => {
     await userEvent.click(await screen.findByRole("button", { name: "Edit geometry" }));
+    await changeTopMargin();
     await userEvent.type(screen.getByRole("textbox", { name: "What changed" }), "x");
     await userEvent.click(screen.getByRole("button", { name: "Save new version" }));
   };
@@ -258,6 +283,7 @@ describe("edit geometry", () => {
     refuseGeometry("pitch_x", "must not be smaller than label_w");
     await renderApp({ path: "/sheets/archive?type=L4736REV", language: "de" });
     await userEvent.click(await screen.findByRole("button", { name: "Maße bearbeiten" }));
+    await changeTopMargin();
     await userEvent.type(screen.getByRole("textbox", { name: "Was sich geändert hat" }), "x");
     await userEvent.click(screen.getByRole("button", { name: "Neue Version speichern" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Der horizontale Abstand darf nicht kleiner sein als die Etikettenbreite.");

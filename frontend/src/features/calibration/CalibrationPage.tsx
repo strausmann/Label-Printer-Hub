@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { useSession } from "../../app/session";
@@ -78,7 +78,11 @@ export function CalibrationPage() {
   // The chosen sheet type belongs to the page, not to one tray: all three keep it in the address.
   const choosePrinter = (id: string) => void navigate({ to: "/calibration", search: { printer: id, tray: undefined, type: search.type }, replace: true });
   const chooseTray = (key: string) => void navigate({ to: "/calibration", search: { printer: printer?.id, tray: key, type: search.type }, replace: true });
-  const chooseType = (key: string) => void navigate({ to: "/calibration", search: { printer: printer?.id, tray, type: key }, replace: true });
+  const printerId = printer?.id;
+  const chooseType = useCallback(
+    (key: string | undefined) => void navigate({ to: "/calibration", search: { printer: printerId, tray, type: key }, replace: true }),
+    [navigate, printerId, tray],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -147,7 +151,8 @@ interface WorkbenchProps {
   stored: CalibrationRead | undefined;
   /** The type key from the address; one that is unknown or archived means the default type. */
   typeChoice: string | undefined;
-  onTypeChange: (key: string) => void;
+  /** `undefined` takes the type out of the address. */
+  onTypeChange: (key: string | undefined) => void;
 }
 
 /** Everything for one printer and tray; it is rebuilt when either changes (the type lives in the address). */
@@ -159,6 +164,11 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
   const types = useSheetTypes();
   const usable = useMemo(() => usableTypes(types.data ?? []), [types.data]);
   const type: SheetTypeRead | undefined = usable.find((x) => x.key === typeChoice) ?? usable[0];
+  // The address always names what the page shows: a type that is gone, archived or too small is taken out of it.
+  const unknownChoice = types.isSuccess && typeChoice !== undefined && !usable.some((x) => x.key === typeChoice);
+  useEffect(() => {
+    if (unknownChoice) onTypeChange(undefined);
+  }, [unknownChoice, onTypeChange]);
 
   // The values of step 2 live here: the form edits them and the readings helper fills them.
   const text = useNumberText();

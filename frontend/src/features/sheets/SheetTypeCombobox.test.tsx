@@ -118,6 +118,30 @@ describe("SheetTypeCombobox", () => {
     expect(within(await screen.findByRole("listbox")).getAllByRole("option")).toHaveLength(1);
   });
 
+  it("selects the whole label on tap", async () => {
+    render(<Harness initial="avery-5159" />);
+    await userEvent.click(box());
+    const input = box() as HTMLInputElement;
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+    // iOS drops a selection made inside the focus event; the one on the next tick has to hold as well.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+  });
+
+  it("keeps the first character typed after a selection", async () => {
+    render(<Harness initial="avery-5159" />);
+    const user = userEvent.setup({ delay: null });
+    await user.click(box());
+    // No pause between the tap and the keystroke: the deferred re-selection must not eat the character.
+    await user.keyboard("4");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(box()).toHaveValue("4");
+    await user.keyboard("7");
+    expect(box()).toHaveValue("47");
+  });
+
   it("a tap on the field that already has the focus opens the list again", async () => {
     render(<Harness />);
     await userEvent.click(box());
@@ -202,6 +226,26 @@ describe("SheetTypeCombobox", () => {
     await userEvent.click(screen.getByRole("button", { name: "Clear the search", hidden: true }) /* React Aria hides everything but the list while it is open */);
     expect(box()).toHaveValue("");
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("select shows full text on touch", () => {
+    const long: Type = { ...AVERY, key: "avery-zweckform-l4736rev", vendor: "Avery Zweckform", product_codes: ["L4736REV"] };
+    render(
+      <I18nProvider i18n={i18n}>
+        <SheetTypeCombobox label="Sheet type" types={[long]} value={long.key} onChange={() => {}} />
+      </I18nProvider>,
+    );
+    // The text below the field is the whole label, product code included; it is hidden for a mouse by CSS, not left out of the page.
+    const full = document.querySelector("[data-full-label]");
+    expect(full).not.toBeNull();
+    expect(full!.textContent).toBe(box().getAttribute("title"));
+    expect(full!.textContent).toContain("Avery Zweckform L4736REV");
+    expect(full!.className).toContain("[@media(hover:hover)_and_(pointer:fine)]:hidden");
+  });
+
+  it("writes no full text below the field for the none option", () => {
+    render(<Harness initial="__any__" noneOption={{ id: "__any__", label: "Any sheet type" }} />);
+    expect(document.querySelector("[data-full-label]")).toBeNull();
   });
 
   it("shows a 64-character key and a long vendor on one line with the full text in the title", async () => {
