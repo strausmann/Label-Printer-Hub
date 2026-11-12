@@ -294,7 +294,7 @@ def _cell_image(g: Geometry, n: int, dpi: int = 150) -> CellImage:
 
 
 def test_preview_png_size_and_mode() -> None:
-    png = render_preview_png(L4736, [(18, _cell_image(L4736, 18))], None)
+    png = render_preview_png(L4736, [(18, _cell_image(L4736, 18))], None, render_dpi=600)
     im = Image.open(io.BytesIO(png))
     assert im.size == (1240, 1754)
     assert im.mode == "1"
@@ -318,7 +318,7 @@ def test_preview_letter_size_and_margin_id() -> None:
         "Letter", 21590, 27940, 4570, 2120, 4, 12, 4820, 2120, 2130, 985, None, "rectangle"
     )
     margin = MarginIdPayload(text="L-1", qr_payload="https://h/s/L-1", usable_hmm=1530)
-    png = render_preview_png(g, [], margin)
+    png = render_preview_png(g, [], margin, render_dpi=600)
     im = Image.open(io.BytesIO(png))
     assert im.size == (1275, 1650)
     inv = Image.eval(im.convert("L"), lambda v: 255 - v)
@@ -328,8 +328,8 @@ def test_preview_letter_size_and_margin_id() -> None:
 
 
 def test_preview_is_never_calibrated() -> None:
-    a = render_preview_png(L4736, [(18, _cell_image(L4736, 18))], None)
-    b = render_preview_png(L4736, [(18, _cell_image(L4736, 18))], None)
+    a = render_preview_png(L4736, [(18, _cell_image(L4736, 18))], None, render_dpi=600)
+    b = render_preview_png(L4736, [(18, _cell_image(L4736, 18))], None, render_dpi=600)
     assert a == b
 
 
@@ -424,7 +424,9 @@ def test_long_margin_text_shrinks_then_is_shortened_inside_the_grid() -> None:
 
 
 def test_preview_text_only_margin_id_draws_inside_the_top_margin() -> None:
-    png = render_preview_png(L4736, [], MarginIdPayload(text="L4736-0001", usable_hmm=700))
+    png = render_preview_png(
+        L4736, [], MarginIdPayload(text="L4736-0001", usable_hmm=700), render_dpi=600
+    )
     inv = Image.eval(Image.open(io.BytesIO(png)).convert("L"), lambda v: 255 - v)
     bbox = inv.getbbox()
     assert bbox is not None
@@ -449,7 +451,9 @@ def _preview_has_qr(margin: MarginIdPayload, g: Geometry = L4736) -> bool:
     """A QR moves the text next to it and fills the square: the page differs from the same
     margin ID without a payload."""
     text_only = margin.model_copy(update={"qr_payload": None, "qr_allowed": None})
-    return render_preview_png(g, [], margin) != render_preview_png(g, [], text_only)
+    return render_preview_png(g, [], margin, render_dpi=600) != render_preview_png(
+        g, [], text_only, render_dpi=600
+    )
 
 
 def test_preview_and_pdf_agree_for_eleven_mm_at_600_dpi() -> None:
@@ -512,7 +516,7 @@ def test_preview_matches_job_on_margin_band_and_qr(
         )
     assert _preview_has_qr(margin, g) == placement.qr
 
-    left, top, right, bottom = _ink_box(render_preview_png(g, [], margin))
+    left, top, right, bottom = _ink_box(render_preview_png(g, [], margin, render_dpi=600))
     s = 150 / 2540
     assert left >= round(x * s) - 1 and right <= round((x + w) * s) + 1
     assert top >= round(y * s) - 1 and bottom <= round((y + h) * s) + 1
@@ -621,10 +625,10 @@ def test_preview_draws_stored_band() -> None:
     bottom = margin_id_payload(
         "L4736-0001", _URL, MarginPlacement("bottom", "bottom_left", 1530, True)
     )
-    _, top, _, low = _ink_box(render_preview_png(L4736, [], bottom))
+    _, top, _, low = _ink_box(render_preview_png(L4736, [], bottom, render_dpi=600))
     assert top >= round(27670 * s) - 1 and low <= round(29200 * s) + 1
     right = margin_id_payload("L4736-0001", _URL, MarginPlacement("right", "top_right", 2000, True))
-    left, _, edge, _ = _ink_box(render_preview_png(WIDE_RIGHT, [], right))
+    left, _, edge, _ = _ink_box(render_preview_png(WIDE_RIGHT, [], right, render_dpi=600))
     assert left >= round(18500 * s) - 1 and edge <= round(20500 * s) + 1
 
 
@@ -712,7 +716,7 @@ def test_text_end_applies_to_the_top_band_only() -> None:
 def test_preview_draws_feed_mark() -> None:
     from app.sheets import sheet_page
 
-    png = render_preview_png(L4736, [], None, feed_mark=_mark())
+    png = render_preview_png(L4736, [], None, feed_mark=_mark(), render_dpi=600)
     ink = _ink(png)
     bbox = ink.getbbox()
     assert bbox is not None
@@ -735,16 +739,16 @@ def test_id_strips_never_cover_the_feed_mark_in_the_preview() -> None:
     # (a) both share the top band, the case the planner produces for L4736REV
     top = margin_id_payload("L4736-0001", _URL, MarginPlacement("top", "top_left", 1530, True),
                             text_end_hmm=17100)  # fmt: skip
-    alone = _black(render_preview_png(L4736, [], None, feed_mark=_mark()))
-    both = _black(render_preview_png(L4736, [], top, feed_mark=_mark()))
+    alone = _black(render_preview_png(L4736, [], None, feed_mark=_mark(), render_dpi=600))
+    both = _black(render_preview_png(L4736, [], top, feed_mark=_mark(), render_dpi=600))
     assert alone and alone <= both
     # (b) a rotated ID, with a stored mark placed where the rotated text's paste would land:
     # the mark's ink must stay even though the turned text is a separate image
     right = margin_id_payload("L4736-0001-" + "x" * 30, _URL,
                               MarginPlacement("right", "top_right", 2000, False))  # fmt: skip
     under = _mark(x_hmm=18600, baseline_y_hmm=WIDE_RIGHT.margin_top + 1500)
-    only_mark = _black(render_preview_png(WIDE_RIGHT, [], None, feed_mark=under))
-    with_id = _black(render_preview_png(WIDE_RIGHT, [], right, feed_mark=under))
+    only_mark = _black(render_preview_png(WIDE_RIGHT, [], None, feed_mark=under, render_dpi=600))
+    with_id = _black(render_preview_png(WIDE_RIGHT, [], right, feed_mark=under, render_dpi=600))
     assert only_mark and only_mark <= with_id
 
 
@@ -760,12 +764,16 @@ async def test_stored_mark_text_wins(
         await store.set_many(s, {"general.language": "de"})
     detail = _detail(cells=(), feed_mark=_mark(text=DE_MARK, x_hmm=16508))
     before_pdf = _pdf(detail)
-    before_png = render_preview_png(L4736, [], None, feed_mark=_mark(text=DE_MARK, x_hmm=16508))
+    before_png = render_preview_png(
+        L4736, [], None, feed_mark=_mark(text=DE_MARK, x_hmm=16508), render_dpi=600
+    )
     async with async_session_factory() as s:
         await store.set_many(s, {"general.language": "en"})
     assert store.get("general.language") == "en"
     assert pi.texts(_pdf(detail)) == [DE_MARK] == pi.texts(before_pdf)
-    again = render_preview_png(L4736, [], None, feed_mark=_mark(text=DE_MARK, x_hmm=16508))
+    again = render_preview_png(
+        L4736, [], None, feed_mark=_mark(text=DE_MARK, x_hmm=16508), render_dpi=600
+    )
     assert again == before_png
 
 
@@ -775,7 +783,7 @@ def test_turned_text_paste_never_erases_ink() -> None:
 
     page = Image.new("1", (300, 300), 0)  # a page that is black everywhere
     lay = sheet_page._MarginLayout(None, "L4736-0001", 10, 10, 8.0, 90)
-    font = sheet_page.load_cell_font(20)
+    font = cell_render.load_cell_font(20)
     sheet_page._paste_turned_text(page, lay, font, (150, 20))
     assert page.getextrema() == (0, 0)  # an opaque white strip would leave white pixels
 
@@ -868,8 +876,62 @@ def test_id_and_mark_never_overlap_over_a_sweep_of_narrow_widths() -> None:
                 continue
             assert x / PT_PER_MM * 100 + text_width_mm(t, 6.0) * 100 <= mark.x_hmm - 200 + 1, page_w
         # Preview: the ID's ink and the mark's ink share no pixel
-        only_mark = _black(render_preview_png(g, [], None, feed_mark=mp))
-        only_id = _black(render_preview_png(g, [], mid, feed_mark=None))
-        both = _black(render_preview_png(g, [], mid, feed_mark=mp))
+        only_mark = _black(render_preview_png(g, [], None, feed_mark=mp, render_dpi=600))
+        only_id = _black(render_preview_png(g, [], mid, feed_mark=None, render_dpi=600))
+        both = _black(render_preview_png(g, [], mid, feed_mark=mp, render_dpi=600))
         assert only_mark and not (only_mark & only_id), page_w
         assert both == only_mark | only_id, page_w
+
+
+# ------------------------------------------------------------------ 266-02, 266-03, 266-05
+
+
+def test_preview_without_qr_draws_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """266-03: a margin ID whose QR cannot be built after all is drawn as text, no crash."""
+    from app.sheets import sheet_page
+
+    margin = MarginIdPayload(text="L4736-0001", qr_payload=_URL, usable_hmm=1100)
+    monkeypatch.setattr(sheet_page, "build_qr_preview", lambda *a, **k: None)
+    png = render_preview_png(L4736, [], margin, render_dpi=600)
+    text_only = MarginIdPayload(text="L4736-0001", usable_hmm=1100)
+    assert png == render_preview_png(L4736, [], text_only, render_dpi=600)
+    left, _, right, bottom = _ink_box(png)
+    assert right - left > 20  # the code is drawn
+    assert bottom <= round(L4736.margin_top * 150 / 2540)
+
+
+def test_preview_margin_text_width_matches_pdf() -> None:
+    """266-05: the preview's margin ID is as long as the PDF's (within 0.2 mm), because the
+    preview uses the fractional font size the PDF uses, not a whole-pixel one.
+
+    The PDF draws the bundled font's outlines at ``size_pt``; their ink is measured from the
+    same font rasterised at 2400 dpi, so side bearings do not count against either side."""
+    from app.page_render.pdf import resolve_font_path
+    from app.sheets.sheet_page import _margin_layout
+    from PIL import ImageDraw, ImageFont
+
+    def pdf_ink_mm(text: str, size_pt: float, dpi: int = 2400) -> float:
+        font = ImageFont.truetype(str(resolve_font_path()), size_pt * dpi / 72)
+        strip = Image.new("L", (round(font.getlength(text)) + 40, round(font.size * 3)), 255)
+        ImageDraw.Draw(strip).text((20, round(font.size * 2)), text, font=font, fill=0, anchor="ls")
+        box = Image.eval(strip, lambda v: 255 - v).getbbox()
+        assert box is not None
+        return (box[2] - box[0]) * 25.4 / dpi
+
+    text = "L4736-0001 · Avery Zweckform L4736REV"
+    for usable in (500, 700, 1100, 1530):
+        margin = MarginIdPayload(text=text, usable_hmm=usable)
+        lay = _margin_layout(L4736, margin, with_qr=False)
+        want_mm = pdf_ink_mm(lay.text, lay.size_pt)
+        left, _, right, _ = _ink_box(render_preview_png(L4736, [], margin, render_dpi=600))
+        got_mm = (right - left) * 25.4 / 150
+        assert abs(got_mm - want_mm) <= 0.2, (usable, lay.size_pt, got_mm, want_mm)
+
+
+def test_render_preview_png_needs_the_render_dpi() -> None:
+    """266-02: no default dpi, so a stored payload is never previewed at a guessed one."""
+    import inspect
+
+    param = inspect.signature(render_preview_png).parameters["render_dpi"]
+    assert param.default is inspect.Parameter.empty
+    assert param.kind is inspect.Parameter.KEYWORD_ONLY

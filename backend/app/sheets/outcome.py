@@ -41,8 +41,8 @@ from app.services.event_bus import EventBus
 from app.services.page_jobs import PagePayload
 from app.sheets.events import SheetTouched, publish_touched
 from app.sheets.geometry import cell_count
-from app.sheets.reservation import HUB_SOURCE
 from app.sheets.sheet_page import SheetPageDetail
+from app.sheets.sheet_service import HUB_SOURCE
 from app.sheets.text import log_value
 from app.sheets.type_service import version_geometry, write_transaction
 

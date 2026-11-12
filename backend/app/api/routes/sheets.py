@@ -1,13 +1,15 @@
 """Sheet API (spec 15): physical sheets, cell marking and the reprint lookup.
 
-Reads need ``read`` scope; every write needs ``print`` (OC-11). Sheets carry no printer
-restriction (OC-37). The routes stay thin: parse, call the sheet service, map ``SheetApiError``
+Reads need ``read`` scope; every write needs ``print`` (OC-11), except discard, which needs
+``admin`` (#264: a discard retires the code for good). Sheets carry no printer restriction
+(OC-37). The routes stay thin: parse, call the sheet service, map ``SheetApiError``
 to the existing error shape. ``GET /sheets/next-code`` is declared before ``/{code}``.
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -16,11 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.identity_hold import ensure_sheet_not_held
 from app.api.routes.sheet_common import actor, mapped
 from app.auth.dependencies import AuthContext, check_printer_access
-from app.auth.scope_deps import require_print, require_read
+from app.auth.scope_deps import require_admin, require_print, require_read
 from app.db import engine as db_engine
 from app.db.session import get_session
 from app.models.printer import Printer
-from app.models.sheet import SheetType
+from app.models.sheet import SheetCell, SheetType
 from app.repositories import printers as printers_repo
 from app.schemas.sheets import (
     CellHitRead,
@@ -50,6 +52,7 @@ router = APIRouter(tags=["sheets"])
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadDep = Annotated[AuthContext, Depends(require_read)]
 PrintDep = Annotated[AuthContext, Depends(require_print)]
+AdminDep = Annotated[AuthContext, Depends(require_admin)]
 CodePath = Annotated[
     str,
     Path(
@@ -78,51 +81,75 @@ def _type_label(t: SheetType) -> str:
     return codes[0] if codes else t.key
 
 
-def _summary_fields(row: ss.SheetListRow | ss.SheetDetail) -> dict[str, object]:
-    return {
-        "code": row.sheet.code,
-        "type_key": row.type.key,
-        "type_label": _type_label(row.type),
-        "version": row.version.version,
-        "label_w": hmm_to_mm(row.version.label_w),
-        "label_h": hmm_to_mm(row.version.label_h),
-        "total": row.total,
-        "used": row.used,
-        "reserved": row.reserved,
-        "unconfirmed": row.unconfirmed,
-        "free": row.free,
-        "state": row.sheet.state,
-        "last_used_at": row.sheet.last_used_at,
-    }
+_CellState = Literal["reserved", "used", "unconfirmed"]
+_CELL_STATES: dict[str, _CellState] = {
+    "reserved": "reserved",
+    "used": "used",
+    "unconfirmed": "unconfirmed",
+}
+_SHEET_STATES: dict[str, Literal["active", "discarded"]] = {
+    "active": "active",
+    "discarded": "discarded",
+}
+_PLACEMENTS: dict[str, Literal["cell", "margin", "manual"]] = {
+    "cell": "cell",
+    "margin": "margin",
+    "manual": "manual",
+}
+
+
+def _cell_state(value: str) -> _CellState:
+    """A stored cell state as the API type; an unknown value is a bug, not a 200."""
+    return _CELL_STATES[value]
+
+
+def _summary(row: ss.SheetListRow | ss.SheetDetail) -> SheetSummary:
+    return SheetSummary(
+        code=row.sheet.code,
+        type_key=row.type.key,
+        type_label=_type_label(row.type),
+        version=row.version.version,
+        label_w=hmm_to_mm(row.version.label_w),
+        label_h=hmm_to_mm(row.version.label_h),
+        total=row.total,
+        used=row.used,
+        reserved=row.reserved,
+        unconfirmed=row.unconfirmed,
+        free=row.free,
+        state=_SHEET_STATES[row.sheet.state],
+        last_used_at=row.sheet.last_used_at,
+    )
+
+
+def _cell_read(c: SheetCell) -> CellRead:
+    return CellRead(
+        cell=c.cell_no,
+        state=_cell_state(c.state),
+        source=c.source,
+        purpose=c.purpose,
+        ref=c.ref,
+        marked_by_hand=c.marked_by_hand,
+        is_id_cell=ss.is_id_cell(c),
+        job_id=c.job_id,
+        updated_at=c.updated_at,
+    )
 
 
 def _read(detail: ss.SheetDetail) -> SheetRead:
-    return SheetRead(**_read_fields(detail))
-
-
-def _read_fields(detail: ss.SheetDetail) -> dict[str, Any]:
-    return dict(
-        **_summary_fields(detail),
-        id_placement=detail.sheet.id_placement,
+    return SheetRead(
+        **dict(_summary(detail)),  # the raw field values, not a serialised dump
+        id_placement=_PLACEMENTS[detail.sheet.id_placement],
         id_printed=detail.sheet.id_printed,
         feed_mark_printed=detail.sheet.feed_mark_printed,
         note=detail.sheet.note,
         geometry=exchange.geometry_to_doc(ts.version_geometry(detail.version)),
-        cells=[
-            CellRead(
-                cell=c.cell_no,
-                state=c.state,  # type: ignore[arg-type]
-                source=c.source,
-                purpose=c.purpose,
-                ref=c.ref,
-                marked_by_hand=c.marked_by_hand,
-                job_id=c.job_id,
-                updated_at=c.updated_at,
-            )
-            for c in detail.cells
-        ],
+        cells=[_cell_read(c) for c in detail.cells],
         discarded_at=detail.sheet.discarded_at,
     )
+
+
+def _created(detail: ss.SheetDetail, job_id: UUID | None) -> SheetCreated:
+    return SheetCreated(**dict(_read(detail)), job_id=job_id)
 
 
 @router.get("/api/v1/sheets", response_model=list[SheetSummary], summary="List sheets")
@@ -140,7 +167,7 @@ async def list_sheets(
         rows = await ss.list_sheets(
             session, type_key=type_key, free_at_least=free_at_least, state=state, q=q
         )
-    return [SheetSummary(**_summary_fields(r)) for r in rows]  # type: ignore[arg-type]
+    return [_summary(r) for r in rows]
 
 
 @router.get(
@@ -270,7 +297,7 @@ async def create_sheet(
             actor=actor(auth),
             bus=_bus(request),
         )
-        return SheetCreated(**_read_fields(await ss.get_sheet(session, sheet.code)), job_id=None)
+        return _created(await ss.get_sheet(session, sheet.code), None)
 
 
 async def _create_with_id_cell(
@@ -313,17 +340,26 @@ async def _create_with_id_cell(
             language=_language(request),
             bus=_bus(request),
         )
-        return SheetCreated(**_read_fields(await ss.get_sheet(session, code)), job_id=job_id)
+        return _created(await ss.get_sheet(session, code), job_id)
 
 
 @router.post(
     "/api/v1/sheets/{code}/discard",
     response_model=SheetRead,
     summary="Discard a sheet; its code is never issued again",
-    responses={**_NOT_FOUND, 409: {"description": "A running job holds cells of the sheet."}},
+    description=(
+        "Needs the `admin` scope (a `print` key gets 403 `insufficient_scope`): a discard "
+        "cannot be undone and the code is never issued again. Marking and resolving cells stay "
+        "with `print`."
+    ),
+    responses={
+        **_NOT_FOUND,
+        403: {"description": "The key lacks the `admin` scope (`insufficient_scope`)."},
+        409: {"description": "A running job holds cells of the sheet."},
+    },
 )
 async def discard_sheet(
-    code: CodePath, request: Request, session: SessionDep, auth: PrintDep
+    code: CodePath, request: Request, session: SessionDep, auth: AdminDep
 ) -> SheetRead:
     with mapped():
         await ss.discard_sheet(session, code, actor=actor(auth), bus=_bus(request))
@@ -399,7 +435,7 @@ async def find_cells(
         CellHitRead(
             code=h.code,
             cell=h.cell,
-            state=h.state,  # type: ignore[arg-type]
+            state=_cell_state(h.state),
             purpose=h.purpose,
             updated_at=h.updated_at,
         )

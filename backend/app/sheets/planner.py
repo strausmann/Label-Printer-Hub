@@ -533,7 +533,10 @@ def _draft(
     if isinstance(p.cells, list):
         # Item i goes to cells[i]: the caller's order is kept.
         items = list(p.cells)
-        available = len(items)
+        # 266-01: with no cell left for the ID, the capacity is what remains for items once the
+        # ID takes one of the listed cells, as a ``first_free`` placement reports it; that cell
+        # is counted here, so ``plan`` adds no second one to the shortfall.
+        available = len(items) - 1 if id_missing and items else len(items)
     else:
         pool = [n for n in free if n not in skip and n != id_cell]
         available = len(pool)
@@ -608,7 +611,11 @@ def plan(
 
     short = [d for d in drafts if d.id_missing or len(d.item_cells) != d.count]
     if short:
-        shortfall = sum(max(0, d.count - d.available) + int(d.id_missing) for d in short)
+        shortfall = sum(
+            max(0, d.count - d.available)
+            + int(d.id_missing and not (isinstance(d.placement.cells, list) and d.placement.cells))
+            for d in short
+        )
         raise InsufficientCellsError(
             [d.available for d in drafts], needed=n_items, shortfall=shortfall
         )

@@ -1124,3 +1124,38 @@ def test_id_cell_fit_check_refuses_a_box_without_room_for_a_line_or_the_qr() -> 
     assert no_qr.value.detail == {"cell": "id", "missing_fields": ["qr_payload"]}
     check(600, allow_qr=False)  # text only: no symbol to fit
     check(2000, allow_qr=True)
+
+
+def test_id_cell_fits_45_7x21_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    """266-10: on a 45.7 x 21.2 mm cell the ID label shows the code in full and the type label
+    as its title (shortened to fit if need be); "sheet ID" is no longer part of the title."""
+    from app.sheets import cell_render
+    from app.sheets.cell_render import DEFAULT_CELL_RENDERER, content_box
+
+    g = Geometry("A4", 21000, 29700, 4570, 2120, 4, 12, 4820, 2120, 2130, 985, None, "rectangle")
+    label = print_service.id_cell_label(
+        "L4736-0001", "Avery Zweckform L4736REV", "https://hub.example.invalid/sheet/L4736-0001"
+    )
+    assert label.title == "Avery Zweckform L4736REV"
+    shown: dict[str, str] = {}
+    real = cell_render._fit_line
+
+    def spy(text: str, *args: Any) -> tuple[str, int, bool]:
+        out = real(text, *args)
+        shown[text] = out[0]
+        return out
+
+    monkeypatch.setattr(cell_render, "_fit_line", spy)
+    box = content_box(g, 1)
+    for dpi in (300, 600):
+        shown.clear()
+        DEFAULT_CELL_RENDERER.render(
+            box_w_mm=box.w / 100,
+            box_h_mm=box.h / 100,
+            dpi=dpi,
+            content_type=ContentType.QR_TWO_LINES,
+            data=label,
+        )
+        assert shown["L4736-0001"] == "L4736-0001"  # the code line is never cut
+        title = shown[label.title]
+        assert "sheet ID" not in title and title.rstrip("…").startswith("Avery Zweckform")

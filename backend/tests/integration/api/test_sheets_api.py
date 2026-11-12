@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import app.models  # noqa: F401
 import pytest
-from app.models.sheet import Sheet, SheetCell
+from app.models.sheet import Sheet, SheetCell, SheetIdCounter
 from sqlalchemy import select
 
 from tests.integration.api.test_sheet_types_api import _body, _factory, _insert_key
@@ -150,7 +150,7 @@ async def test_list_sheets_filters_and_order(ready, printer, reader, admin):
     third = await _sheet(ready, printer, used_cells=[{"cell": n} for n in range(1, 49)])
     other = await _sheet(ready, printer, "zeta-z9")
     assert (
-        await ready.post(f"/api/v1/sheets/{other['code']}/discard", headers=printer)
+        await ready.post(f"/api/v1/sheets/{other['code']}/discard", headers=admin)
     ).status_code == 200
 
     listing = await ready.get("/api/v1/sheets", headers=reader)
@@ -206,7 +206,7 @@ async def test_next_code_is_a_hint_and_not_a_code_lookup(ready, printer, reader)
     assert (await ready.get("/api/v1/sheets/next-code", headers=reader)).status_code == 422
 
 
-async def test_mark_unmark_resolve_discard_flow(ready, printer):
+async def test_mark_unmark_resolve_discard_flow(ready, printer, admin):
     sheet = await _sheet(ready, printer)
     code = sheet["code"]
     marked = await ready.post(
@@ -242,11 +242,11 @@ async def test_mark_unmark_resolve_discard_flow(ready, printer):
     )
     assert 8 not in {c["cell"] for c in freed.json()["cells"]}
 
-    discarded = await ready.post(f"/api/v1/sheets/{code}/discard", headers=printer)
+    discarded = await ready.post(f"/api/v1/sheets/{code}/discard", headers=admin)
     assert discarded.status_code == 200, discarded.text
     assert discarded.json()["state"] == "discarded"
     assert discarded.json()["discarded_at"] is not None
-    again = await ready.post(f"/api/v1/sheets/{code}/discard", headers=printer)
+    again = await ready.post(f"/api/v1/sheets/{code}/discard", headers=admin)
     assert again.status_code == 200
     assert again.json()["discarded_at"] == discarded.json()["discarded_at"]  # idempotent
 
@@ -299,9 +299,9 @@ async def test_other_client_sees_same_cells(ready, admin):
     assert seen["free"] == 47
 
 
-async def test_discarded_lookup_200_unknown_404(ready, printer, reader):
+async def test_discarded_lookup_200_unknown_404(ready, printer, reader, admin):
     sheet = await _sheet(ready, printer, used_cells=[{"cell": 1}])
-    await ready.post(f"/api/v1/sheets/{sheet['code']}/discard", headers=printer)
+    await ready.post(f"/api/v1/sheets/{sheet['code']}/discard", headers=admin)
     found = await ready.get(f"/api/v1/sheets/{sheet['code']}", headers=reader)
     assert found.status_code == 200
     assert found.json()["state"] == "discarded" and len(found.json()["cells"]) == 1
@@ -315,7 +315,9 @@ async def test_discarded_lookup_200_unknown_404(ready, printer, reader):
     assert resp.status_code == 409 and _err(resp)["error_code"] == "sheet_discarded"
 
 
-@pytest.mark.parametrize("code", ["at1-0001", "AT1-01", "AT1-1", "A-0001", "1AT-0001", "AT1_0001"])
+@pytest.mark.parametrize(
+    "code", ["at1-0001", "AT1-01", "AT1-1", "AT1-001", "A-0001", "1AT-0001", "AT1_0001"]
+)
 async def test_code_pattern_rejects_malformed_codes(ready, reader, code):
     resp = await ready.get(f"/api/v1/sheets/{code}", headers=reader)
     assert resp.status_code == 422, code
@@ -382,7 +384,7 @@ async def test_request_bodies_are_checked(ready, printer):
         assert secret not in resp.text
 
 
-async def test_conflicts_name_the_cells(ready, printer):
+async def test_conflicts_name_the_cells(ready, printer, admin):
     sheet = await _sheet(ready, printer, used_cells=[{"cell": 5}])
     code = sheet["code"]
     taken = await ready.post(
@@ -413,9 +415,9 @@ async def test_conflicts_name_the_cells(ready, printer):
     )
     assert unconf.status_code == 409 and _err(unconf)["error_code"] == "cells_not_unconfirmed"
     await _insert_cell(code, 11, "reserved", job_id=uuid4())
-    busy = await ready.post(f"/api/v1/sheets/{code}/discard", headers=printer)
+    busy = await ready.post(f"/api/v1/sheets/{code}/discard", headers=admin)
     assert busy.status_code == 409 and _err(busy)["error_code"] == "sheet_busy"
-    unknown = await ready.post("/api/v1/sheets/AT1-0099/discard", headers=printer)
+    unknown = await ready.post("/api/v1/sheets/AT1-0099/discard", headers=admin)
     assert unknown.status_code == 404 and _err(unknown)["error_code"] == "sheet_not_found"
 
 
@@ -463,23 +465,105 @@ async def test_missing_key_is_401_everywhere(ready):
 
 
 async def test_scope_matrix(ready, printer, reader, admin):
-    """Writes need print (OC-11): a read key gets 403, print and admin keys succeed."""
-    await _sheet(ready, printer)
+    """Writes need print (OC-11), discard needs admin (#264): one exact status per route."""
+    await _sheet(ready, printer)  # AT1-0001, no cell used
     for method, path in _READS:
         resp = await ready.request(method, path, headers=reader)
-        assert resp.status_code in (200, 404), (path, resp.text)  # the read scope is enough
+        assert resp.status_code == 200, (path, resp.text)  # the read scope is enough
     for method, path, payload in _WRITES:
         resp = await ready.request(method, path, json=payload, headers=reader)
         assert resp.status_code == 403, (path, resp.text)
-    created = await ready.post("/api/v1/sheets", json=_WRITES[0][2], headers=printer)
-    assert created.status_code == 201
-    for method, path, payload in _WRITES[2:]:
+        assert resp.json()["detail"]["error_code"] == "insufficient_scope", path
+    expected = {
+        "/api/v1/sheets": 201,
+        "/api/v1/sheets/AT1-0001/discard": 403,  # admin only
+        "/api/v1/sheets/AT1-0001/cells/mark": 200,
+        "/api/v1/sheets/AT1-0001/cells/unmark": 200,  # the cell marked just before
+        "/api/v1/sheets/AT1-0001/cells/resolve": 409,  # cell 1 is not waiting: the state check
+    }
+    for method, path, payload in _WRITES:
         resp = await ready.request(method, path, json=payload, headers=printer)
-        assert 200 <= resp.status_code < 300 or resp.status_code == 409, (path, resp.text)
+        assert resp.status_code == expected[path], (path, resp.text)
+    resolve = await ready.post(_WRITES[4][1], json=_WRITES[4][2], headers=printer)
+    assert _err(resolve)["error_code"] == "cells_not_unconfirmed"
     assert (
         await ready.request("post", "/api/v1/sheets", json=_WRITES[0][2], headers=admin)
     ).status_code == 201
-    assert (await ready.post("/api/v1/sheets/AT1-0001/discard", headers=printer)).status_code == 200
+    assert (await ready.post("/api/v1/sheets/AT1-0001/discard", headers=admin)).status_code == 200
+
+
+async def test_discard_requires_admin(ready, printer, admin, monkeypatch):
+    """264-04: a print key may not retire a sheet; nothing changes and no event goes out."""
+    from app.sheets import sheet_service
+
+    sheet = await _sheet(ready, printer, used_cells=[{"cell": 1}])
+    code = sheet["code"]
+    seen: list[Any] = []
+    real_publish = sheet_service.publish_sheet_updated
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(args)
+        return real_publish(*args, **kwargs)
+
+    monkeypatch.setattr(sheet_service, "publish_sheet_updated", spy)
+    refused = await ready.post(f"/api/v1/sheets/{code}/discard", headers=printer)
+    monkeypatch.setattr(sheet_service, "publish_sheet_updated", real_publish)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["detail"]["error_code"] == "insufficient_scope"
+    assert seen == []
+    after = (await ready.get(f"/api/v1/sheets/{code}", headers=printer)).json()
+    assert after["state"] == "active" and after["discarded_at"] is None
+    async with _factory()() as s:
+        row = (await s.execute(select(Sheet).where(Sheet.code == code))).scalar_one()
+    assert row.state == "active" and row.discarded_by is None
+    done = await ready.post(f"/api/v1/sheets/{code}/discard", headers=admin)
+    assert done.status_code == 200 and done.json()["state"] == "discarded"
+
+
+async def test_restricted_print_key_may_mark_and_resolve(ready, printer):
+    """Sheets are shared (OC-37): a printer-restricted print key marks and resolves cells."""
+    sheet = await _sheet(ready, printer)
+    code = sheet["code"]
+    restricted = {
+        "X-Label-Hub-Key": await _insert_key(["print"], allowed_printer_ids=[str(uuid4())])
+    }
+    marked = await ready.post(
+        f"/api/v1/sheets/{code}/cells/mark", json={"cells": [{"cell": 1}]}, headers=restricted
+    )
+    assert marked.status_code == 200, marked.text
+    await _insert_cell(code, 7, "unconfirmed", job_id=uuid4(), source="grocy", ref="7")
+    resolved = await ready.post(
+        f"/api/v1/sheets/{code}/cells/resolve",
+        json={"cells": [7], "outcome": "printed"},
+        headers=restricted,
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert {c["cell"]: c["state"] for c in resolved.json()["cells"]} == {1: "used", 7: "used"}
+    refused = await ready.post(f"/api/v1/sheets/{code}/discard", headers=restricted)
+    assert refused.status_code == 403  # discard is admin, restriction or not
+
+
+async def test_sheet_list_tie_break_numeric(ready, printer, reader):
+    """264-05: equal free cells sort by code as a number, so 9999 comes before 10000."""
+    async with _factory()() as s:
+        s.add(SheetIdCounter(prefix="AT1", next_value=9999))
+        await s.commit()
+    first = await _sheet(ready, printer)
+    second = await _sheet(ready, printer)
+    assert (first["code"], second["code"]) == ("AT1-9999", "AT1-10000")
+    rows = (await ready.get("/api/v1/sheets", headers=reader)).json()
+    assert [r["code"] for r in rows] == ["AT1-9999", "AT1-10000"]
+
+
+async def test_id_cell_flag(ready, printer, reader):
+    """267-06: the hub says which cell is the ID label; another hub-sourced cell is not."""
+    sheet = await _sheet(ready, printer, used_cells=[{"cell": 3}])
+    code = sheet["code"]
+    await _insert_cell(code, 1, "used", source="hub", purpose="Sheet ID")
+    await _insert_cell(code, 2, "used", source="hub", purpose="Calibration")
+    await _insert_cell(code, 4, "used", source="grocy", purpose="Sheet ID", ref="9")
+    cells = (await ready.get(f"/api/v1/sheets/{code}", headers=reader)).json()["cells"]
+    assert {c["cell"]: c["is_id_cell"] for c in cells} == {1: True, 2: False, 3: False, 4: False}
 
 
 async def test_reads_ignore_printer_restriction(ready, printer):

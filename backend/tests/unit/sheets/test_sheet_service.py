@@ -667,3 +667,17 @@ async def test_sheet_note_keeps_line_breaks_but_a_purpose_does_not(
     detail = await ss.get_sheet(session, sheet.code)
     assert detail.sheet.note == "shelf 2\nleft side"
     assert [c.purpose for c in detail.cells] == ["flour 1 kg"]
+
+
+async def test_too_long_label_code(session: AsyncSession, l4736: str) -> None:
+    """264-12: an over-long text is ``label_too_long``, not ``invalid_geometry``."""
+    sheet = await _create(session)
+    with pytest.raises(InvalidFieldError) as info:
+        await ss.mark_cells(session, sheet.code, [MarkedCell(3, "x" * 121)], actor="tester")
+    assert (info.value.status, info.value.error_code) == (422, "label_too_long")
+    assert info.value.detail == {"field": "purpose", "reason": "too long"}
+    with pytest.raises(InvalidFieldError) as note:
+        await ss.create_sheet(
+            session, type_key=l4736, version=None, used_cells=[], note="n" * 501, actor="t"
+        )
+    assert note.value.error_code == "label_too_long"

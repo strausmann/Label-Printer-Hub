@@ -122,7 +122,6 @@ from app.sheets.planner import (
 )
 from app.sheets.printer_facts import PrinterFacts, load_printer_facts
 from app.sheets.reservation import (
-    ID_CELL_PURPOSE,
     ExpectedPage,
     ItemMeta,
     NewSheetIn,
@@ -144,6 +143,7 @@ from app.sheets.sheet_page import (
     margin_id_payload,
     render_preview_png,
 )
+from app.sheets.sheet_service import ID_CELL_PURPOSE
 from app.sheets.text import sanitise_text
 from app.sheets.type_service import version_geometry
 
@@ -242,11 +242,16 @@ def margin_id_text(code: str, type_label: str) -> str:
 
 
 def id_cell_label(code: str, type_label: str, scan_payload: str) -> LabelData:
-    """The label of the sheet ID cell: `qr_two_lines`, the code and the type (spec 10.2)."""
+    """The label of the sheet ID cell: `qr_two_lines`, the code and the type (spec 10.2).
+
+    The title is the type label alone (266-10): on a 45.7 x 21.2 mm cell a "· sheet ID" suffix
+    was always cut off. The renderer shortens the label to the cell if needed; the code line
+    comes first and is the part that must be readable.
+    """
     return LabelData(
         source_app="hub",
         primary_id=code,
-        title=f"{type_label} · sheet ID",
+        title=type_label,
         qr_payload=scan_payload,
     )
 
@@ -608,6 +613,7 @@ def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi:
             dpi=PREVIEW_DPI,
             content_type=job.content_type,
             data=data,
+            qr_mask=PREVIEW_QR_MASK,  # a picture needs no mask search (266-08)
         )
 
     payload = job.data.qr_payload
@@ -624,7 +630,9 @@ def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi:
         and modules <= PREVIEW_QR_MAX_MODULES
         and _qr_fits_at(payload, w_mm, h_mm, PREVIEW_DPI)
     ):
-        symbol = build_qr_preview(payload, w_mm, h_mm, render_dpi, PREVIEW_DPI)
+        symbol = build_qr_preview(
+            payload, w_mm, h_mm, render_dpi, PREVIEW_DPI, mask=PREVIEW_QR_MASK
+        )
         assert symbol is not None  # the arithmetic above said it fits
         cell.image.paste(symbol, (0, 0))
     else:
@@ -641,26 +649,20 @@ def _draw_page(
     render_dpi: int,
 ) -> _Drawn:
     """Everything CPU-bound for one page (run in a thread)."""
-    token = PREVIEW_QR_MASK.set(0)  # a picture needs no mask search; the job's renderer has it
-    try:
-        images: list[tuple[int, CellImage]] = []
-        truncated: set[int] = set()
-        for job in jobs:
-            try:
-                image = _render_cell(renderer, content_box(geometry, job.cell), job, render_dpi)
-            except ContentTypeDataMismatchError as exc:
-                if job.item_index is None:
-                    raise
-                raise ItemContentMismatchError(job.item_index, exc.missing_fields) from None
-            images.append((job.cell, image))
-            if image.truncated:
-                truncated.add(job.cell)
-        png = render_preview_png(
-            geometry, images, margin, render_dpi=render_dpi, feed_mark=feed_mark
-        )
-        return _Drawn(images, truncated, png)
-    finally:
-        PREVIEW_QR_MASK.reset(token)
+    images: list[tuple[int, CellImage]] = []
+    truncated: set[int] = set()
+    for job in jobs:
+        try:
+            image = _render_cell(renderer, content_box(geometry, job.cell), job, render_dpi)
+        except ContentTypeDataMismatchError as exc:
+            if job.item_index is None:
+                raise
+            raise ItemContentMismatchError(job.item_index, exc.missing_fields) from None
+        images.append((job.cell, image))
+        if image.truncated:
+            truncated.add(job.cell)
+    png = render_preview_png(geometry, images, margin, render_dpi=render_dpi, feed_mark=feed_mark)
+    return _Drawn(images, truncated, png)
 
 
 # ---------------------------------------------------------------------------- preview
@@ -1704,6 +1706,32 @@ def _retry_meta(cell: SheetCellPayload) -> ItemMeta:
     )
 
 
+def _check_retry_fits(detail: SheetPageDetail, render_dpi: int) -> None:
+    """``check_item_fits`` for every stored cell at the retry's fresh render dpi (266-11).
+
+    The printer's resolution may have changed since the first attempt: a QR that fit at the old
+    dpi can be too fine for the new one. Refused here as a 422 naming the item, instead of the
+    runner failing with ``render_failed`` after the cells were reserved again. The content type
+    is the stored, already mapped one; the ID cell is the hub's own label and not checked.
+    """
+    geometry = Geometry(**detail.geometry)
+    for index, cell in enumerate(detail.cells):
+        item = ResolvedItem(
+            label=LabelData(**cell.label_data),
+            content_type=cell.content_type,
+            meta=_retry_meta(cell),
+            lookup=None,
+        )
+        check_item_fits(
+            item,
+            index,
+            allow_qr=detail.allow_qr,
+            geometry=geometry,
+            cell=cell.cell,
+            render_dpi=render_dpi,
+        )
+
+
 async def retry_sheet_page(
     session_factory: async_sessionmaker[AsyncSession],
     queue: PageQueue,
@@ -1738,6 +1766,7 @@ async def retry_sheet_page(
             raise CellsUnconfirmedError(unconfirmed)
         snapshot = await calibration_service.snapshot(session, job.printer_id, payload.tray)
         facts = await load_printer_facts(session, job.printer_id)
+        _check_retry_fits(detail, facts.render_dpi)  # 266-11: before anything is reserved
         margin = MarginContext(
             deviation=snapshot_to_deviation(snapshot),
             scan_payload=scan,

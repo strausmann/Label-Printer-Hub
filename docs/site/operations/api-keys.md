@@ -15,6 +15,22 @@ Basic-Auth bypass.
 
 `admin` supersumes `print` which supersumes `read`.
 
+### Sheets
+
+Sheets are shared physical material: the sheet routes are not limited by a key's printer
+list, and every key sees every sheet.
+
+| Route | Scope |
+|-------|-------|
+| `GET /api/v1/sheets`, `/sheets/{code}`, `/sheets/next-code`, `/sheet-cells` | `read` |
+| `POST /api/v1/sheets` (create), `/sheets/{code}/cells/mark`, `/cells/unmark`, `/cells/resolve` | `print` |
+| `POST /api/v1/sheets/{code}/discard` | `admin` |
+
+**Changed in 1.5.x:** discarding a sheet needs `admin`; before, a `print` key could do it. A
+discard cannot be undone and the code is never issued again, so a key that only prints labels
+should not be able to retire a sheet. A `print` key now gets `403` with `insufficient_scope`.
+Marking and resolving cells stay with `print`, also for keys limited to some printers.
+
 ## Creating a Key
 
 1. Open `/admin/api-keys` in your browser (requires Pangolin SSO login)

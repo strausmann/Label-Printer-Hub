@@ -280,7 +280,7 @@ export function sheetRead(
   const rows: Schemas["CellRead"][] = [];
   for (const state of ["used", "reserved", "unconfirmed"] as const) {
     for (const cell of cells[state] ?? []) {
-      rows.push({ cell, state, source: "hub", ref: null, purpose: null, marked_by_hand: false, job_id: null, updated_at: "2026-11-04T09:00:00Z" });
+      rows.push({ cell, state, source: "hub", ref: null, purpose: null, marked_by_hand: false, is_id_cell: false, job_id: null, updated_at: "2026-11-04T09:00:00Z" });
     }
   }
   rows.sort((a, b) => a.cell - b.cell);

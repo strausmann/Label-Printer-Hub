@@ -23,6 +23,7 @@ from app.models.printer import Printer
 from app.models.printer_tray import PrinterTray
 from app.services.page_jobs import PagePayload
 from app.sheets import print_service
+from app.sheets import sheet_service as ss
 from sqlalchemy import func, select
 
 from tests.integration.api.test_sheet_print_api import (
@@ -369,6 +370,32 @@ async def test_retry_on_a_disabled_printer_is_refused_and_reserves_nothing() -> 
         assert await _cells() == [] and await _job_count() == jobs
 
 
+async def test_retry_refuses_item_that_no_longer_fits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """266-11: the retry checks every item at the fresh render dpi. A QR that fit at 600 dpi
+    but not at the printer's new 100 dpi is a 422 naming the item, before anything is
+    reserved, not a ``render_failed`` job later."""
+    from app.sheets.printer_facts import PrinterFacts
+
+    async with running() as rig:
+        code = await _sheet()
+        body = _body(code, 2)
+        body["items"][1]["data"]["qr_payload"] = "https://r.example.invalid/" + "x" * 274
+        first_id, _ = await _fail_cleanly(rig, body)  # printable at the 600 dpi of the first job
+        jobs = await _job_count()
+
+        async def low_dpi(_session: Any, _printer_id: UUID) -> PrinterFacts:
+            return PrinterFacts(resolutions_dpi=[100], margins_hmm=None, render_dpi=100)
+
+        monkeypatch.setattr(print_service, "load_printer_facts", low_dpi)
+        refused = await _retry(rig, first_id)
+
+        assert refused.status_code == 422, refused.text
+        err = _err(refused)
+        assert err["error_code"] == "content_type_data_mismatch"
+        assert err["error_detail"] == {"item_index": 1, "missing_fields": ["qr_payload"]}
+        assert await _cells() == [] and await _job_count() == jobs
+
+
 async def test_retry_with_a_removed_tray_is_tray_unknown() -> None:
     async with running() as rig:
         code = await _sheet()
@@ -392,8 +419,8 @@ async def test_retry_of_a_discarded_sheet_is_refused() -> None:
     async with running() as rig:
         code = await _sheet()
         first_id, _ = await _fail_cleanly(rig, _body(code, 2))
-        gone = await rig.client.post(f"/api/v1/sheets/{code}/discard", headers=rig.key)
-        assert gone.status_code == 200, gone.text
+        async with _factory()() as s:  # discard needs admin (#264); the rig key prints
+            await ss.discard_sheet(s, code, actor="t")
 
         refused = await _retry(rig, first_id)
 

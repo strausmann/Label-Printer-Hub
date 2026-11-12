@@ -1268,7 +1268,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Discard a sheet; its code is never issued again */
+        /**
+         * Discard a sheet; its code is never issued again
+         * @description Needs the `admin` scope (a `print` key gets 403 `insufficient_scope`): a discard cannot be undone and the code is never issued again. Marking and resolving cells stay with `print`.
+         */
         post: operations["discard_sheet_api_v1_sheets__code__discard_post"];
         delete?: never;
         options?: never;
@@ -1723,6 +1726,11 @@ export interface components {
         CellRead: {
             /** Cell */
             cell: number;
+            /**
+             * Is Id Cell
+             * @description Whether the cell holds the sheet's ID label (the hub fills it). Set by the hub; do not infer it from `source`.
+             */
+            is_id_cell: boolean;
             /** Job Id */
             job_id: string | null;
             /** Marked By Hand */
@@ -3188,10 +3196,9 @@ export interface components {
             /**
              * Id Placement
              * @description Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; the margin ID is printed by the first job that prints onto it. `cell` needs a page printer: it reserves the first free cell for the ID label and queues an ID-only job (`job_id` in the response).
-             * @default margin
              * @enum {string}
              */
-            id_placement: "cell" | "margin" | "manual";
+            id_placement?: "cell" | "margin" | "manual";
             /** Note */
             note?: string | null;
             /**
@@ -7158,6 +7165,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description The key lacks the `admin` scope (`insufficient_scope`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
             /** @description Sheet not found. */

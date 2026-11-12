@@ -110,6 +110,16 @@ class InvalidFieldError(InvalidGeometryError):
         self.args = (self.message,)
 
 
+class TextTooLongError(InvalidFieldError):
+    """A text field is longer than its limit after cleaning (264-12): its own code, not
+    ``invalid_geometry``; status and detail stay as before."""
+
+    error_code = "label_too_long"
+
+    def __init__(self, field: str) -> None:
+        super().__init__(field, "too long")
+
+
 class SheetNotFoundError(SheetApiError):
     status = 404
     error_code = "sheet_not_found"

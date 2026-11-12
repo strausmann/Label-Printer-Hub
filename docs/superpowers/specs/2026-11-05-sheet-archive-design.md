@@ -137,7 +137,7 @@ All lengths are stored as **integer hundredths of a millimetre** and exposed in 
 | `origin` | `seed`, `custom`, `imported` |
 | `source_name`, `source_url`, `notes` | provenance, shown in the archive |
 | `archived_at` | archived types offer no new sheets; existing sheets keep printing |
-| `created_at`, `updated_at`, `created_by` | |
+| `created_at`, `updated_at`, `created_by` | `created_by` is an audit field: stored, not exposed by the API (#264) |
 
 **`sheet_type_versions`** — immutable after insert.
 
@@ -150,7 +150,7 @@ All lengths are stored as **integer hundredths of a millimetre** and exposed in 
 | `corner_radius` | nullable: unknown (L4736REV today) |
 | `shape` | `rectangle` or `round` (OC-6: `round` requires `label_w == label_h`; corner radius ignored) |
 | `geometry_hash` | hash of the normalised geometry, for import identity |
-| `created_at`, `created_by`, `change_note` | |
+| `created_at`, `created_by`, `change_note` | `created_by` is an audit field: stored, not exposed by the API (#264) |
 
 Validation on insert: `pitch_x ≥ label_w`, `pitch_y ≥ label_h`, `cols, rows ≥ 1`, `cols × rows ≤ 400` (OC-7), and the grid fits the page: `margin_left + (cols − 1) × pitch_x + label_w ≤ page_w` and the same downwards. Asymmetric remaining margins are allowed (real on some die-cuts) and shown as a hint, not refused.
 
@@ -168,7 +168,7 @@ Validation on insert: `pitch_x ≥ label_w`, `pitch_y ≥ label_h`, `cols, rows 
 | `id_printed` | for `margin`: set when the first job that carries the margin ID completes; stays false while every job was printed without it because no margin band was wide enough (10.2); for `cell`: set when the ID cell is used |
 | `feed_mark_printed` | set when the first job that carries the feed-direction mark completes (10.2a); independent of `id_printed`, since `manual` sheets never set that. *Added 2026-11-07 (operator decision).* |
 | `note` | optional, plain text |
-| `created_at`, `created_by`, `last_used_at` | |
+| `created_at`, `created_by`, `last_used_at` | `created_by` is an audit field: stored, not exposed by the API (#264); `last_used_at` see section 8 |
 
 **`sheet_cells`** — one row per **non-free** cell. A free cell has no row.
 
@@ -221,7 +221,9 @@ stateDiagram-v2
 - **Unconfirmed (OC-9).** A page printer may have pulled the sheet in before a job is cancelled, aborted or lost. Recording those cells as free risks a second label on top of a printed one; recording them as used risks wasting cells that are empty. The hub does neither: the job ends `failed` with `error_code=interrupted` and its cells become `unconfirmed`, shown on the sheet with two actions ("printed" / "not printed"). The rule is: if the printer ever reported the job as `processing` (or `job-impressions-completed` > 0), the outcome is unknown; otherwise it is clean and the cells go back to free. This refines the maintainer's "a failed or cancelled job leaves them free" for the one case the hub cannot observe (section 24).
 - **`first_free`** means the lowest free cell numbers in ascending (row-major) order. A placement may also carry `skip: [numbers]`: cells the person tapped to leave out of this print (mockup: "tap a cell to skip it"); skipping is not stored (OC-38).
 - **Job retention** may delete old job rows; `sheet_cells.job_id` is therefore not a foreign key that blocks deletion, and a cell keeps its state, source and purpose when its job is gone (OC-39).
-- **Discard** is refused with `409 sheet_busy` while the sheet has reserved cells.
+- **`last_used_at`** (ruling of #264): marking cells by hand and resolving cells as `printed` stamp the time of the request ("now"); a completed job stamps the time the job finished.
+- **The write lock is the first statement** of every sheet write transaction, and this is enforced: the engine counts the statements of each transaction, and the lock refuses with an error when another statement ran before it or when the engine has no counter (#264). A read snapshot that later asks for the lock would otherwise fail with `database is locked`.
+- **Discard** needs the `admin` scope (ruling of #264; marking and resolving stay `print`) and is refused with `409 sheet_busy` while the sheet has reserved cells.
 - **Un-marking** is only for cells marked by hand (to fix a mistake). A cell used by a job stays used; it physically carries a label.
 
 ## 9. Sheet type archive
@@ -291,7 +293,7 @@ The ID shown before creation ("becomes L4736-0004") comes from `GET /api/sheets/
 ### 10.2 The sheet ID label and margin ID
 
 - **Scan payload (OC-15):** the public hub URL `{PRINTER_HUB_PUBLIC_URL}/sheet/{code}` (the public URL is a required setting since the foundation; if it is empty, e.g. in a test setup, the short form is encoded instead). A phone camera opens the hub directly. The scan resolver also accepts the short form `sheet:{code}` so clients and people can type it.
-- **ID label in a cell:** content `qr_two_lines` with `primary_id` = code, `title` = vendor and first product code + "· sheet ID", QR = payload. On types with `allow_qr=false` it becomes `text_two_lines` (maintainer: text only on 25.4 × 10). The cell is reserved with `source=hub`, purpose "Sheet ID".
+- **ID label in a cell:** content `qr_two_lines` with `primary_id` = code, `title` = vendor and first product code (the type label, shortened by the renderer if the cell is too narrow), QR = payload. *Changed in 1.5.x (#266): the title ended in "· sheet ID", which never fitted a 45.7 × 21.2 mm cell.* The API marks this cell with `is_id_cell: true`; clients use that flag, not `source`. On types with `allow_qr=false` it becomes `text_two_lines` (maintainer: text only on 25.4 × 10). The cell is reserved with `source=hub`, purpose "Sheet ID".
 - **ID in the margin (OC-16, OC-45 to OC-52):** drawn once, on the sheet's first job, in the **best of the four margin bands**. Content: the code, the vendor and first product code (as the ID cell's title), and a QR of the payload above where it fits. *Changed 2026-11-07 (operator decision): the margin ID was always drawn in the top margin, and the margin option was refused below 4 mm. It now goes into whichever band fits it largest, and below 4 mm everywhere it is simply not printed.* The rules:
   - **Bands.** The four strips between the label grid and the page edges. With `grid_right = margin_left + (cols − 1) × pitch_x + label_w` and `grid_bottom = margin_top + (rows − 1) × pitch_y + label_h`, each band has a **depth** (its size across, which is the QR edge and the text height) of:
 
@@ -555,7 +557,7 @@ All under `/api`, Pydantic models, complete OpenAPI (ADR 0011), errors in the ex
 | `GET /sheets/margin-check?type=&printer=&tray=` | read + printer access | *added in Plan 3:* the four margin bands of a type on a printer, the band the sheet ID would take, whether the feed-direction mark prints (in the hub's current language) and `printable` |
 | `GET /sheets/{code}` | read | sheet with all non-free cells |
 | `POST /sheets` | print | create (type, version, id placement — `margin` if left out —, cells already used, printer/tray for option 1) |
-| `POST /sheets/{code}/discard` | print | |
+| `POST /sheets/{code}/discard` | admin | *changed in 1.5.x (#264): was `print`*; a print key gets `403 insufficient_scope` |
 | `POST /sheets/{code}/cells/mark` | print | mark cells used by hand (`[{cell, purpose?}]`) |
 | `POST /sheets/{code}/cells/unmark` | print | only cells marked by hand |
 | `POST /sheets/{code}/cells/resolve` | print | unconfirmed → `printed` or `not_printed` |
@@ -591,9 +593,10 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 | `cells_not_unconfirmed` | 409 | resolve of a cell that is not waiting for confirmation; `{cells}` |
 | `cells_taken` | 409 | mark of cells that are not free; nothing is written; `{cells}` |
 | `import_too_large` | 413 | import document above 64 KB, refused before it is read where the length is declared |
-| `invalid_geometry` | 422 | a geometry rule or a field value is wrong (also used for bad text fields); `{field, reason}` |
+| `invalid_geometry` | 422 | a geometry rule or a field value is wrong (also used for bad text fields, except an over-long one); `{field, reason}` |
 | `invalid_import` | 422 | import document is not valid; `{errors}` with field paths, never the input |
 | `invalid_request` | 422 | request validation failed on `/api/sheet-types`, `/api/sheets` or `/api/sheet-cells`; `{errors}` with field paths only, never the input |
+| `label_too_long` | 422 | a text field is longer than its limit after cleaning; `{field, reason: "too long"}`. *Added in 1.5.x (#264): it was answered as `invalid_geometry`* |
 | `prefix_taken` | 409 | prefix used by another type; `{reason: "sheets_exist"}` when sheets already carry this type's prefix |
 | `sheet_type_version_not_found` | 404 | the type exists and the version does not; the type itself unknown is `sheet_type_not_found`. Answered by every route that takes a version: `POST /api/sheets`, `GET /api/sheet-types/{key}/versions/{n}`, the export, and (Plan 2) calibration fit, `PUT` with `measured_on`, and the calibration page routes. Amended in Plan 2: before it, the type routes answered `sheet_type_not_found` for a missing version |
 | `type_in_use` | 409 | delete refused; `{reason}` is `has_sheets` (any sheet, even discarded), `seed_type` or `imported_type` (only custom types are deleted, the others are archived) |
@@ -623,7 +626,7 @@ Admin printer CRUD (`/api/admin/printers…`) accepts `backend: "ipp"` with `con
 
 - `POST …/calibration/{tray}/page` and `POST /api/jobs/{id}/retry` answer a printer the print queue does not know (`409`) in the **ProblemDetail** shape, `detail.type = "printer-unavailable"`, like the other job routes. Retry also answers `job-not-retryable` (`422`) in that shape when the stored payload is invalid. Every other calibration error uses the envelope above.
 - `margin_too_small` (in the list above) is retired. It was not answered by Plan 2 and is not answered by Plan 3 either (*changed 2026-11-07, operator decision*): a sheet whose margins are too narrow is printed without its ID (10.2, OC-49), and the preview and the print say so with `id_not_printed`. The code is never emitted.
-- A *job* that ends `failed` carries its own `error_code`, not an HTTP status: `render_failed`, `ipp_unreachable`, `ipp_busy`, `ipp_rejected` (`{ipp_status}` in `result.error_detail`), `ipp_request_invalid`, `ipp_aborted` (the printer aborted a job that never started), `interrupted` (it may have printed), `recovery_invalid_page_payload` (restart found an unusable payload) and `cancelled`. None carries printer text or the printer's address.
+- A *job* that ends `failed` carries its own `error_code`, not an HTTP status: `render_failed`, `ipp_unreachable`, `ipp_busy`, `ipp_rejected` (`{ipp_status}` in `result.error_detail`), `ipp_request_invalid`, `ipp_aborted` (the printer aborted a job that never started), `interrupted` (it may have printed), `recovery_invalid_page_payload` (restart found an unusable payload), `recovery_refused` (after a restart the page's sheet cells were no longer reserved for it, so it is not printed), `print_interrupted` (the page job's row was written but saving it raised afterwards; it never reached the printer) and `cancelled`. None carries printer text or the printer's address.
 - Check order of the calibration routes with a path and a body: printer and tray first (`tray_unknown`), then the sheet type of `measured_on`/`type` (`sheet_type_not_found`, `sheet_type_version_not_found`), then the value ranges. `fit`, `page` and `PUT` all use it.
 
 *Added 2026-11-07 with printing onto sheets (Plan 3), as built.* Codes of the tables above are not repeated unless Plan 3 changes their meaning. All use the `{error_code, error_message, error_detail}` envelope unless the last column says otherwise. The sheet print routes (`/api/print/{printer_key}/sheet` and `/sheet/preview`) answer a validation error as `invalid_request` with field paths only, like the sheet routes (the request carries label text and purposes, which an error must not repeat).

@@ -205,3 +205,62 @@ async def test_seeder_leaves_type_that_is_not_seed_origin_alone(
     _patched(monkeypatch, "herma-4098")
     report = await run_sheet_seed(async_session_factory)
     assert not report.versions_added
+
+
+async def test_one_bad_seed_entry_keeps_the_others(
+    async_session_factory: Factory,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """264-10: a failing entry is rolled back alone and logged; the other seeds are stored."""
+    real = ts.create_type_locked
+
+    async def failing(session: AsyncSession, fields: ts.TypeFields, *a: object, **kw: object):
+        if fields.key == "herma-4098":
+            await real(session, fields, *a, **kw)  # writes rows, then fails: the savepoint undoes
+            raise RuntimeError("broken entry")
+        return await real(session, fields, *a, **kw)
+
+    monkeypatch.setattr(ts, "create_type_locked", failing)
+    with caplog.at_level(logging.ERROR, logger="app.seed.sheet_seed"):
+        report = await run_sheet_seed(async_session_factory)
+    assert report.skipped == {"herma-4098": "error"}
+    assert len(report.inserted) == 35 and "herma-4098" not in report.inserted
+    assert await _count(async_session_factory, SheetType) == 35
+    assert await _count(async_session_factory, SheetTypeVersion) == 35
+    assert any("herma-4098" in r.getMessage() for r in caplog.records)
+    monkeypatch.setattr(ts, "create_type_locked", real)
+    again = await run_sheet_seed(async_session_factory)
+    assert again.inserted == ["herma-4098"]
+
+
+async def test_older_seed_does_not_add_revert_version(
+    async_session_factory: Factory,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """264-11: after a newer seed added version 2, the older seed (version 1) changes nothing."""
+    await run_sheet_seed(async_session_factory)
+    _, docs = load_seed()
+    original = next(d for d in docs if d.type.key == "herma-4098")
+    g = original.version.geometry
+    newer = original.model_copy(
+        update={"version": original.version.model_copy(
+            update={"version": 2, "geometry": g.model_copy(update={"cols": g.cols - 1})})}
+    )  # fmt: skip
+    monkeypatch.setattr(
+        sheet_seed,
+        "load_seed",
+        lambda: (2, [newer if d.type.key == "herma-4098" else d for d in docs]),
+    )
+    assert (await run_sheet_seed(async_session_factory)).versions_added == ["herma-4098"]
+
+    monkeypatch.setattr(sheet_seed, "load_seed", lambda: (1, docs))  # the hub was downgraded
+    with caplog.at_level(logging.INFO, logger="app.seed.sheet_seed"):
+        report = await run_sheet_seed(async_session_factory)
+    assert not report.versions_added and not report.skipped
+    assert any(r.levelno == logging.INFO and "herma-4098" in r.getMessage() for r in caplog.records)
+    async with async_session_factory() as s:
+        t = await ts.get_type(s, "herma-4098")
+        current = await ts.current_version(s, t.id)
+        assert current.version == 2 and current.cols == g.cols - 1
