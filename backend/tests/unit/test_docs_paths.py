@@ -3,7 +3,7 @@
 What it checks, and where it stops:
 
 * every entry of a fenced *tree block* (a root line such as ``backend/app/`` followed by
-  ``├──`` / ``└──`` lines) in ``docs/architecture.md`` and ``docs/plugin-development.md``;
+  ``├──`` / ``└──`` lines; the fence may be indented, as in a list item) in ``docs/architecture.md`` and ``docs/plugin-development.md``;
 * every inline code span in those two files that starts with a known repository root
   (``backend/``, ``frontend/``, ``docs/``, ``examples/``, ``.github/``).
 
@@ -27,31 +27,38 @@ TREE_CHARS = ("├── ", "└── ")
 INLINE_RE = re.compile(r"`([^`\n]+)`")
 
 
-def _fenced_blocks(text: str) -> list[list[str]]:
-    blocks: list[list[str]] = []
+def _fenced_blocks(text: str) -> list[tuple[int, list[str]]]:
+    """Fenced blocks as ``(line number of the first content line, lines)``.
+
+    A fence may be indented (a list item); the fence's own indentation is stripped from the lines.
+    """
+    blocks: list[tuple[int, list[str]]] = []
     current: list[str] | None = None
-    for line in text.splitlines():
-        if line.startswith("```"):
+    indent = 0
+    start = 0
+    for number, line in enumerate(text.splitlines(), 1):
+        stripped = line.lstrip(" ")
+        if stripped.startswith("```"):
             if current is None:
-                current = []
+                current, indent, start = [], len(line) - len(stripped), number + 1
             else:
-                blocks.append(current)
+                blocks.append((start, current))
                 current = None
         elif current is not None:
-            current.append(line)
+            current.append(line[indent:] if line[:indent].strip() == "" else line)
     return blocks
 
 
-def tree_paths(block: list[str]) -> list[str]:
-    """Return the repository paths a tree block names; ``[]`` when the block is no tree."""
+def tree_entries(block: list[str]) -> list[tuple[int, str]]:
+    """Return ``(index in block, path)`` for a tree block; ``[]`` when the block is no tree."""
     if len(block) < 2 or not block[0].rstrip().endswith("/"):
         return []
     if not any(any(c in line for c in TREE_CHARS) for line in block[1:]):
         return []
     root = block[0].split("#")[0].strip()
     stack: list[str] = [root]
-    paths: list[str] = []
-    for line in block[1:]:
+    paths: list[tuple[int, str]] = []
+    for index, line in enumerate(block[1:], 1):
         marker = next((line.find(c) for c in TREE_CHARS if c in line), -1)
         if marker < 0:
             continue
@@ -61,20 +68,28 @@ def tree_paths(block: list[str]) -> list[str]:
             if not name:
                 continue
             del stack[depth:]
-            full = "".join(stack[:depth]) + name
-            paths.append(full)
+            paths.append((index, "".join(stack[:depth]) + name))
             if name.endswith("/"):
                 stack.append(name)
     return paths
 
 
-def inline_paths(text: str) -> list[str]:
+def tree_paths(block: list[str]) -> list[str]:
+    return [path for _, path in tree_entries(block)]
+
+
+def inline_entries(text: str) -> list[tuple[int, str]]:
     found = []
-    for span in INLINE_RE.findall(text):
-        token = span.split()[0] if span.split() else ""
-        if token.startswith(ROOTS) and not any(ch in token for ch in "<>{}$"):
-            found.append(token.rstrip(".,;:"))
+    for number, line in enumerate(text.splitlines(), 1):
+        for span in INLINE_RE.findall(line):
+            token = span.split()[0] if span.split() else ""
+            if token.startswith(ROOTS) and not any(ch in token for ch in "<>{}$"):
+                found.append((number, token.rstrip(".,;:")))
     return found
+
+
+def inline_paths(text: str) -> list[str]:
+    return [path for _, path in inline_entries(text)]
 
 
 def _exists(path: str) -> bool:
@@ -85,13 +100,13 @@ def _exists(path: str) -> bool:
 
 def _missing(doc: str, *, trees: bool, inline: bool) -> list[str]:
     text = (REPO / doc).read_text(encoding="utf-8")
-    named: list[str] = []
+    named: list[tuple[int, str]] = []
     if trees:
-        for block in _fenced_blocks(text):
-            named.extend(tree_paths(block))
+        for start, block in _fenced_blocks(text):
+            named.extend((start + index, path) for index, path in tree_entries(block))
     if inline:
-        named.extend(inline_paths(text))
-    return [f"{doc}: {p}" for p in named if not _exists(p)]
+        named.extend(inline_entries(text))
+    return [f"{doc}:{line}: {p}" for line, p in named if not _exists(p)]
 
 
 def test_tree_parser_reconstructs_nested_paths() -> None:
@@ -115,10 +130,19 @@ def test_tree_parser_reconstructs_nested_paths() -> None:
     assert tree_paths(["┌──────┐", "│ box  │", "└──────┘"]) == []
 
 
+def test_indented_fence_is_read_and_failures_name_the_line() -> None:
+    text = "intro\n\n- item\n\n  ```\n  backend/app/\n  ├── main.py\n  └── gone_nowhere.py\n  ```\n"
+    blocks = _fenced_blocks(text)
+    assert blocks == [(6, ["backend/app/", "├── main.py", "└── gone_nowhere.py"])]
+    start, block = blocks[0]
+    missing = [(start + i, p) for i, p in tree_entries(block) if not _exists(p)]
+    assert missing == [(8, "backend/app/gone_nowhere.py")]
+
+
 def test_architecture_names_a_real_tree() -> None:
     """The guard is not vacuous: architecture.md holds the backend and frontend trees."""
     text = (REPO / "docs/architecture.md").read_text(encoding="utf-8")
-    named = [p for block in _fenced_blocks(text) for p in tree_paths(block)]
+    named = [p for _, block in _fenced_blocks(text) for p in tree_paths(block)]
     assert len(named) >= 30
     assert "backend/app/services/layout_engine.py" in named
     assert "frontend/src/features/" in named
