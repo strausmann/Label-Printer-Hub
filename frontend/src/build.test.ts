@@ -55,10 +55,11 @@ describe.skipIf(!built)("built output", () => {
 
   it("pwa: the generated service worker never caches /api", () => {
     const sw = readFileSync(join(dist, "sw.js"), "utf8");
-    // The only route is the navigation fallback, and it skips the API, docs and OpenAPI document.
+    // The only route is the navigation fallback, and it skips the API, docs, OpenAPI document and licence texts.
     expect(sw.match(/registerRoute\(/g)).toHaveLength(1);
     expect(sw).toContain('createHandlerBoundToURL("/index.html")');
-    for (const denied of ["/^\\/api\\//", "/^\\/docs(\\/|$)/", "/^\\/openapi\\.json$/"]) expect(sw).toContain(denied);
+    for (const denied of ["/^\\/api\\//", "/^\\/docs(\\/|$)/", "/^\\/openapi\\.json$/", "/^\\/licenses\\//"])
+      expect(sw).toContain(denied);
     // Nothing under /api is precached either.
     expect(sw).not.toMatch(/["']\/?api\//);
   });

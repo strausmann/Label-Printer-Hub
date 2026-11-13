@@ -28,6 +28,19 @@ describe("pwa", () => {
     expect(precached.join(" ")).not.toMatch(/\/api\//);
   });
 
+  it("leaves the licence texts to the server: the About page's licence link opens the text, not the app", () => {
+    // AGPL section 13: the installed app must hand out its licence. /licenses/*.txt is not precached, so
+    // without this entry the navigation fallback answers the About page's link with index.html.
+    const deny = workbox.navigateFallbackDenylist ?? [];
+    for (const path of ["/licenses/agpl-3.0.txt", "/licenses/"]) {
+      expect(
+        deny.some((re) => re.test(path)),
+        path,
+      ).toBe(true);
+    }
+    expect(deny.some((re) => re.test("/licensesx"))).toBe(false);
+  });
+
   it("serves its manifest as a plain file, not a generated one", () => {
     // The manifest is public/manifest.webmanifest, linked from index.html; what the build really emits
     // (the built shell and the manifest next to it) is checked in build.test.ts.
