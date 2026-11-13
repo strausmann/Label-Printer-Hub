@@ -98,6 +98,7 @@ Preconditions (checked at the start of the task that needs them, not up front):
 | 15 | Part B | B6 CycloneDX SBOM of the image as release asset | B5 |
 | 16 | Rename | Task 3 Backend identity | B1 (`backend/Dockerfile`), Task 2 |
 | 17 | Rename | Task 4 Image publishing (rest) | B5, B6; #269 with the 403/404 fix |
+| 17a | Part B | B10 Keyless cosign signature (#311, added 2026-11-13) | Task 4 |
 | 18 | Rename | Task 5 Web app brand (README screenshots regenerated) | Step 12 (1.5.x UI, Task 23a generator), Task 3, B2 |
 | 19 | Rename | Task 7 rest — #20 move, freshness job (and `freshness` added to the deploy job's `needs`), German screenshots | Step 12, Task 5 |
 | 20 | both | Task 10 again if `main` moved since Step 12; **always** (also when `main` did not move) `python3 scripts/brand_guard.py` → exit 0 here | — |
