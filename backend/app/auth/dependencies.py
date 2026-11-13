@@ -210,7 +210,7 @@ async def _validate_api_key(
     key_row = await api_keys_repo.get_by_prefix(session, prefix)
 
     if key_row is None:
-        _log.debug("API key not found for prefix %s", prefix)
+        _log.debug("API key not found for prefix %r", prefix)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error_code": "invalid_key", "error_message": "Invalid or unknown API key"},
@@ -235,7 +235,7 @@ async def _validate_api_key(
             )
 
     if not await verify_api_key_async(key_header, key_row.key_hash):
-        _log.debug("bcrypt mismatch for prefix %s", prefix)
+        _log.debug("bcrypt mismatch for prefix %r", prefix)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error_code": "invalid_key", "error_message": "Invalid or unknown API key"},
