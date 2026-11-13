@@ -17,7 +17,7 @@
 **Constraints:**
 
 - **Conventional Commits** auf Deutsch mit echten Umlauten (ae/oe/ue/ss als Quelltext-Fallback nur wenn ASCII-only Tool noetig)
-- **Git Identity:** `Björn Strausmann <strausmannservices@googlemail.com>` via `-c user.name=/-c user.email=`
+- **Git Identity:** `Björn Strausmann <projects@strausmann.ch>` via `-c user.name=/-c user.email=`
 - **KEIN** `Co-Authored-By: Claude` in Commits
 - **TDD-Pflicht:** Jeder Code-Task hat RED-Test zuerst, dann GREEN-Implementation
 - **Refs-Konvention:** `Refs #93` in jedem Commit
@@ -296,7 +296,7 @@ Expected: alle gruen.
 
 ```bash
 git add backend/app/repositories/jobs.py backend/tests/unit/repositories/test_jobs_phase2.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(repo): jobs_repo Helper fuer Phase 2 JobStore
+git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" commit -m "feat(repo): jobs_repo Helper fuer Phase 2 JobStore
 
 - mark_printing_as_failed_restart(printer_id) — nur PRINTING affected
 - list_active(printer_id=None) — optionaler Filter
@@ -581,7 +581,7 @@ Expected: 5 PASS.
 
 ```bash
 git add backend/app/services/job_store.py backend/tests/unit/services/test_job_store_memory.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(services): JobStore Protocol + MemoryJobStore (Phase 2)
+git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" commit -m "feat(services): JobStore Protocol + MemoryJobStore (Phase 2)
 
 JobStore ist die Persistierungs-Boundary die PrintQueue nutzt um
 Lifecycle-Transitionen zu speichern. MemoryJobStore ist die Test-Impl
@@ -855,7 +855,7 @@ Expected: 7 PASS.
 
 ```bash
 git add backend/app/services/job_store_sqlite.py backend/tests/unit/services/test_job_store_sqlite.py backend/tests/unit/services/conftest.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(services): SQLiteJobStore delegiert an jobs_repo (Phase 2)
+git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" commit -m "feat(services): SQLiteJobStore delegiert an jobs_repo (Phase 2)
 
 Per-operation Sessions via async_sessionmaker. Implementiert das
 gleiche JobStore Protocol wie MemoryJobStore — Protocol-Conformance
@@ -1043,7 +1043,7 @@ Expected: 2 PASS.
 
 ```bash
 git add backend/app/services/print_queue.py backend/tests/unit/services/
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(queue): PrintQueue ruft JobStore bei jeder State-Transition (Phase 2)
+git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" commit -m "feat(queue): PrintQueue ruft JobStore bei jeder State-Transition (Phase 2)
 
 QUEUED -> PRINTING -> DONE/FAILED wird synchron in der DB persistiert.
 Konstruktor bekommt store: JobStore als neuen Pflicht-Parameter.
@@ -1229,7 +1229,7 @@ Expected: alle gruen.
 
 ```bash
 git add backend/app/services/print_service.py backend/app/services/print_queue.py backend/tests/integration/test_print_service_persistence.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(service): PrintService persistiert Job-Row vor queue.submit (Phase 2)
+git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" commit -m "feat(service): PrintService persistiert Job-Row vor queue.submit (Phase 2)
 
 Neue submit_with_id() in PrintQueue erlaubt extern-generierte job_id.
 PrintService legt erst die DB-Row an (store.save_queued) und reicht die
@@ -1430,7 +1430,7 @@ Expected: 2 PASS.
 
 ```bash
 git add backend/app/services/print_queue.py backend/tests/integration/test_print_queue_recovery.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(queue): PrintQueue.start() Recovery (Phase 2)
+git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" commit -m "feat(queue): PrintQueue.start() Recovery (Phase 2)
 
 mark_interrupted(printer_id) markiert verloren-gegangene PRINTING jobs
 als FAILED_RESTART. QUEUED jobs werden aus template_key+payload neu
@@ -1605,7 +1605,7 @@ job_retention_days: int = Field(
 
 ```bash
 git add backend/app/services/cleanup_task.py backend/app/config.py backend/tests/unit/services/test_cleanup_task.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(services): CleanupTask + PRINTER_HUB_JOB_RETENTION_DAYS config (Phase 2)
+git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" commit -m "feat(services): CleanupTask + PRINTER_HUB_JOB_RETENTION_DAYS config (Phase 2)
 
 Background asyncio task laeuft initial bei start() und dann alle 24h,
 ruft store.evict_terminal_older_than(retention). Fail-soft bei
@@ -1912,7 +1912,7 @@ Expected: 4 PASS.
 
 ```bash
 git add backend/app/repositories/jobs.py backend/app/schemas/batch_read.py backend/app/api/routes/batches.py backend/app/main.py backend/tests/integration/test_batch_snapshot_endpoint.py
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(api): GET /api/batches/{id} Snapshot-Endpoint (Phase 2)
+git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" commit -m "feat(api): GET /api/batches/{id} Snapshot-Endpoint (Phase 2)
 
 Liefert Batch-Metadaten + alle Job-States. summary.all_terminal sagt
 Hangar ob noch ein SSE-Stream geoeffnet werden muss. Job-Reihenfolge
@@ -2015,7 +2015,7 @@ Falls integration tests brechen weil sie `print_service` ohne `store` instantiie
 
 ```bash
 git add backend/app/main.py backend/tests
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit -m "feat(lifespan): wire JobStore + CleanupTask in app startup (Phase 2)
+git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" commit -m "feat(lifespan): wire JobStore + CleanupTask in app startup (Phase 2)
 
 SQLiteJobStore aus async_session_factory; CleanupTask laeuft initial
 beim Start + alle 24h. PrintQueue + PrintService bekommen store via
