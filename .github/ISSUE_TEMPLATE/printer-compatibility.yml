@@ -88,6 +88,18 @@ body:
       required: true
 
   - type: textarea
+    id: detection
+    attributes:
+      label: Detection report (optional)
+      description: >-
+        Paste the anonymised report the hub creates when it analyses a printer
+        (protocols found, model strings, capabilities). It is built from a fixed list of fields
+        and contains no serial number, MAC or IP address or host name — check it anyway.
+        Until the hub offers it (#232, #261), you can paste the output of the printer's own
+        status page instead, with the same items removed.
+      render: text
+
+  - type: textarea
     id: details
     attributes:
       label: Details
