@@ -49,10 +49,27 @@ Printers are not configured in `.env`. Open **Settings > Printers** and add one:
 | Slug | a short lower-case name for addresses and the API (3 to 64 letters, digits and dashes); it cannot be changed later |
 | Driver | *P-touch (PT)* for a PT-Series tape printer, *Brother QL* for a QL-Series printer, *Page printer (IPP)* for a printer of sheets of labels (it takes the printer's address and is read once before saving) |
 | Model | tape printers only, required; the form offers the model of the chosen driver |
-| Host and Port | the printer's address and TCP port `9100`, for example `192.0.2.20` |
+| Host and Port | tape printers only: the printer's address and TCP port `9100`, for example `192.0.2.20` |
+| IPP address | page printers only: the printer's IPP address, for example `ipp://printer.example.invalid:631/ipp/print`; **Read printer** reads it once before saving |
+| Verify the printer certificate | page printers only, for an `ipps://` or `https://` address; leave it on unless the printer has no valid certificate |
+| Trays | page printers only, after **Read printer**: turn off the trays you do not use and choose the default tray |
 | Queue timeout (seconds) | how long the queue waits for the printer, 1 to 600 |
 
-The printer appears on the overview with the tape it holds. If it shows as offline, check that the hub's container can reach the printer's address on the port.
+A page printer appears on the overview with its state and supplies, read over IPP. A tape printer added here shows **Not monitored** and **Tape not known** at first: the hub does not read its status until status discovery is on, see [Turn on status discovery](#turn-on-status-discovery). Once it is on and the printer still shows as offline, check that the hub's container can reach the printer's address on the port.
+
+### Turn on status discovery
+
+The hub reads a tape printer's status and tape over SNMP, but only when status discovery is on for that printer. A printer added under **Settings > Printers** has it off, and the form has no switch for it yet ([#296](https://github.com/strausmann/label-printer-hub/issues/296)). Until then, a test print on that printer is refused with "no current status". An admin turns discovery on through the admin API, with the printer's slug and its current host and port (the `connection` object is replaced as a whole):
+
+```bash
+curl -X PUT http://localhost:8000/api/v1/admin/printers/<slug> \
+  -H "X-Label-Hub-Key: $ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"connection": {"host": "192.0.2.20", "port": 9100,
+                      "snmp": {"discover": true, "community": "public"}}}'
+```
+
+`snmp.discover` switches the status reading on; `snmp.community` is the printer's SNMP read community (`public` unless you changed it on the printer, at most 64 characters, required when `discover` is `true`). The hub re-wires the printer before it answers; the overview shows its state after the first reading, within about 30 seconds. The full request body is in the interactive reference at `/docs` on a running hub (`PUT /api/v1/admin/printers/{slug}`).
 
 A tape printer cannot report the tape colour over the network. When the roll changes, the hub asks you once which colour is loaded.
 
