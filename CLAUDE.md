@@ -26,6 +26,7 @@ If you're about to make a non-trivial change without having read those first, st
 | **Print queue mandatory** — never bypass it | [ADR 0005](docs/decisions/0005-print-queue-is-mandatory.md) |
 | **No private network artefacts** — IPs/hostnames/domains/tokens | [`docs/policies/privacy.md`](docs/policies/privacy.md) |
 | **Brother trademark fair use only** | [`docs/policies/trademarks.md`](docs/policies/trademarks.md) |
+| **README screenshots** — a new UI feature gets its screenshot in the same PR; an essential UI change updates the affected ones (`pnpm screenshots`) | [CONTRIBUTING.md](CONTRIBUTING.md#web-ui-screenshots) |
 | **Type hints + mypy --strict** in Python | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **Use `httpx` not `requests`**, `pysnmp` v6+ asyncio API, `logging` not `print()` | — |
 

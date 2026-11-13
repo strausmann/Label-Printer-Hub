@@ -11,6 +11,90 @@
 
 > Self-hosted multi-printer hub for Brother PT-Series and QL-Series label printers. Pull-mode (user scans barcode) and push-mode (Spoolman/Grocy webhooks). Integrates with Snipe-IT, Grocy, Spoolman. Plugin-based architecture for additional printer models. PWA-ready for smartphone use.
 
+## Screenshots
+
+The screenshots follow your colour scheme. They are generated from the end-to-end fixtures by `pnpm screenshots` (see [CONTRIBUTING.md](CONTRIBUTING.md#web-ui-screenshots)).
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
+    <img src="docs/screenshots/overview-light.png" alt="The overview: what is printing, what needs attention, the material in the printers and every printer at a glance.">
+  </picture>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/printers-dark.png">
+    <img src="docs/screenshots/printers-light.png" alt="The printers, each with its status and the tape or paper it holds.">
+  </picture>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/printer-detail-dark.png">
+    <img src="docs/screenshots/printer-detail-light.png" alt="One printer: status, tape roll, connection and queue.">
+  </picture>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/jobs-dark.png">
+    <img src="docs/screenshots/jobs-light.png" alt="The jobs, filtered by state, with the reason of a failed one.">
+  </picture>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheets-dark.png">
+    <img src="docs/screenshots/sheets-light.png" alt="The label sheets in use, with how many cells are used and free.">
+  </picture>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheet-archive-dark.png">
+    <img src="docs/screenshots/sheet-archive-light.png" alt="The archive of sheet types with their measurements and versions.">
+  </picture>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/calibration-dark.png">
+    <img src="docs/screenshots/calibration-light.png" alt="Calibration: measure how far a page printer is off and the hub corrects every print.">
+  </picture>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/print-dialog-dark.png">
+    <img src="docs/screenshots/print-dialog-light.png" alt="Printing one item: preview, printer, layout and copies.">
+  </picture>
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/cart-sheet-dark.png">
+    <img src="docs/screenshots/cart-sheet-light.png" alt="The cart printed onto a partly used sheet of labels.">
+  </picture>
+</p>
+
+On a phone:
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark-phone.png">
+    <img src="docs/screenshots/overview-light-phone.png" alt="The overview on a phone." width="260">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/printer-detail-dark-phone.png">
+    <img src="docs/screenshots/printer-detail-light-phone.png" alt="One printer on a phone." width="260">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheets-dark-phone.png">
+    <img src="docs/screenshots/sheets-light-phone.png" alt="The sheets on a phone." width="260">
+  </picture>
+</p>
+
 ## Status
 
 **Early development.** See [open issues](https://github.com/strausmann/label-printer-hub/issues) for progress and the [master tracking issue #22](https://github.com/strausmann/label-printer-hub/issues/22) for the phase roadmap.

@@ -224,6 +224,21 @@ So, in `frontend/`:
   a keyboard that only covers the visual viewport, and asserts that the field, the first option and the main buttons lie
   inside the visible area.
 
+### Web UI: screenshots
+
+The README shows generated screenshots (`docs/screenshots/`, one light and one dark file per view). A new UI feature gets
+its screenshot in the same PR; an essential UI change updates the affected ones. To render them, run from `frontend/`:
+
+```bash
+pnpm screenshots
+```
+
+It builds the web UI, starts the e2e hub (`backend/tests/e2e_app.py`) on its fixtures and writes the PNGs; two runs on the
+same sources give identical files. Set `E2E_PYTHON` to the backend interpreter (default `.venv/bin/python` in `backend/`).
+The views and their file names are listed at the top of `frontend/e2e/readme-screenshots.spec.ts`; add a view there.
+With [`oxipng`](https://github.com/shssoichiro/oxipng) on `PATH` the files are recompressed; each file must stay under 300 KB.
+The Screenshots workflow renders them on demand and opens a PR when they changed.
+
 ## Dependencies and licences
 
 Every dependency that ships in the container image has to carry a licence the project can redistribute. One file decides: [`licence-policy.yml`](licence-policy.yml) (JSON, which is valid YAML). It holds the allow list (`allow-licenses`) and the reviewed exceptions (`x-licence-exceptions`). Every check reads this file.

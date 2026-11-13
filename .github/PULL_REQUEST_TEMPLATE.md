@@ -63,6 +63,7 @@ Closes #
 - [ ] All commits are signed off (if applicable)
 - [ ] CHANGELOG entry isn't needed (semantic-release generates it)
 - [ ] Documentation updated (if behaviour, API, or config changed)
+- [ ] UI change visible in a README screenshot → ran `pnpm screenshots` and committed the changed PNGs
 - [ ] Changes a recorded decision → ADR added/amended and register updated (`docs/decisions/`)
 - [ ] No private IPs, hostnames, domains, real tokens, or PII in commits
 - [ ] CI is green (will be checked again after CI runs)
