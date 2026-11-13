@@ -3,7 +3,8 @@
 What it checks, and where it stops:
 
 * every entry of a fenced *tree block* (a root line such as ``backend/app/`` followed by
-  ``├──`` / ``└──`` lines; the fence may be indented, as in a list item) in ``docs/architecture.md`` and ``docs/plugin-development.md``;
+  ``├──`` / ``└──`` lines; the fence may be indented, as in a list item) in
+  ``docs/architecture.md`` and ``docs/plugin-development.md``;
 * every inline code span in those two files that starts with a known repository root
   (``backend/``, ``frontend/``, ``docs/``, ``examples/``, ``.github/``).
 
