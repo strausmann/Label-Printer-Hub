@@ -151,3 +151,21 @@ async def test_get_by_id_returns_key(session):
 @pytest.mark.asyncio
 async def test_get_nonexistent_returns_none(session):
     assert await repo.get(session, uuid4()) is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "stored"),
+    [
+        ("2001:db8:0:0:0:0:0:1", "2001:db8::1"),  # a keyed request stores the raw peer host
+        ("2001:DB8::1", "2001:db8::1"),
+        ("192.0.2.10", "192.0.2.10"),
+        ("unknown", "unknown"),  # not an address: kept as it is
+    ],
+)
+async def test_update_last_used_stores_one_spelling_per_address(session, raw, stored):
+    """T13 F6: sign-in stored the canonical form, keyed requests the raw host, so one client
+    showed up in two spellings. Every path writes through here, in canonical form."""
+    key = await repo.create(session, _make_key(name=f"spelling-{raw}"))
+    updated = await repo.update_last_used(session, key.id, ip=raw)
+    assert updated is not None
+    assert updated.last_used_ip == stored
