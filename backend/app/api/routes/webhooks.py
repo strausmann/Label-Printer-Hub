@@ -20,8 +20,8 @@ On a valid request the handler:
 1. Validates the JSON body against the appropriate payload schema — Pydantic
    returns 422 automatically when required fields are missing or have the wrong
    type.
-2. Looks up the first enabled tape printer from the DB (the MVP target; Phase 7 will
-   add per-webhook printer routing) and its ``PrintService``.
+2. Looks up the first enabled tape printer from the DB (a webhook names no printer) and
+   its ``PrintService``.
 3. Submits a ``qr_two_lines`` label for the spool or product through
    ``PrintService.submit_print_job`` — the same path as ``POST /api/v1/print``: preflight,
    lookup, render, persist, queue.
@@ -69,8 +69,8 @@ _WEBHOOK_DEPENDENCIES = [Depends(require_webhook_key), Depends(enforce_webhook_r
 async def _resolve_default_printer_id(session: AsyncSession) -> str:
     """Return the first enabled *tape* printer's ID, or raise 503.
 
-    MVP: webhooks route to the first registered tape printer.  Phase 7 adds
-    per-webhook printer-routing configuration.  A webhook job is a tape label job, and
+    Webhooks go to the first enabled tape printer: the payload names no printer and there is
+    no per-webhook printer setting.  A webhook job is a tape label job, and
     tape jobs are never routed to an IPP page printer (spec 11.4).
     """
     printers = await printers_repo.list_all(session)

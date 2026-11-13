@@ -1,9 +1,10 @@
 """Report the running hub version on every API response (#288).
 
 A browser tab that was opened before an update keeps running the old web app against the new
-server. The web app compares this header with the version it was built for and reloads once on a
-mismatch. Only ``/api/...`` responses carry it: static files and the app shell are cached by
-browsers and proxies, where a stale copy would report a wrong version.
+server. The web app compares this header with the version it was built for and, on a mismatch,
+offers a reload: one click loads the new version, nothing reloads by itself. Only ``/api/...``
+responses carry it: static files and the app shell are cached by browsers and proxies, where a
+stale copy would report a wrong version.
 """
 
 from __future__ import annotations

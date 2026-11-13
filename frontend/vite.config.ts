@@ -45,7 +45,8 @@ function scalarApiReference(): Plugin {
 
 // D1: the backend serves `dist/` — same origin, so the dev server proxies the API.
 // The version this bundle is built for. The hub reports its own version on every API response
-// (`X-Hub-Version`); when the two differ the open page reloads once (src/app/updates.ts). The image
+// (`X-Hub-Version`); when the two differ the open page offers a reload, which loads the new version
+// on one click and never by itself (src/app/updates.ts). The image
 // build passes `HUB_VERSION` (backend/Dockerfile); both sides default to the same "0.0.0-dev".
 const HUB_BUILD_VERSION = process.env.HUB_VERSION || "0.0.0-dev";
 
