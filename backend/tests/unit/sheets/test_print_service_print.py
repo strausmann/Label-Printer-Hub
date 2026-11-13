@@ -64,7 +64,8 @@ from tests.unit.sheets.test_print_service_preview import (
     run_preview,
 )
 
-pytestmark = pytest.mark.asyncio
+# asyncio_mode = "auto" (pyproject.toml) runs the async tests; a module mark would also
+# hit the sync ones.
 
 
 class FakeQueue:
