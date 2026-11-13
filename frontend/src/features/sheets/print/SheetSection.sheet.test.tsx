@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../../test-utils";
 import { CART_KEY, reloadCart } from "../../lookup/cart";
 import { mockApi, PRINTER_A, respond } from "../../test-api";
+import { SHEET_PREVIEW_KEY } from "../keys";
 import { BATCH, JOB, NEW_9, P, USED_17, body, conflict, previewFor, routes, sheet } from "./testkit";
 import { LINE, PRINT, cartView, itemView, pressPrint, previews, printCalls, resetBetweenTests } from "./SheetSection.kit";
 import type * as Debounced from "./useDebounced";
@@ -41,22 +42,27 @@ describe("another computer changes the sheet", () => {
       }
     }
     vi.stubGlobal("EventSource", FakeEventSource);
-    const { calls } = await itemView(routes());
-    await waitFor(() => expect(previews(calls)).toHaveLength(1));
+    const { calls, queryClient } = await itemView(routes());
+    // The request is complete once the item, the copies, the tray and the sheet are known; which of their
+    // queries answers first decides how many previews it takes to get there, so wait for the content, not a count.
+    await waitFor(() => expect(body(previews(calls).at(-1)!)).toMatchObject({ tray: "main", placements: [{ sheet: "L4736-0001" }] }));
+    expect(body(previews(calls).at(-1)!).items).toHaveLength(9);
+    const sheetPreviews = () => queryClient.getQueryCache().findAll({ queryKey: [SHEET_PREVIEW_KEY] });
+    await waitFor(() => expect(sheetPreviews().every((q) => q.state.fetchStatus === "idle")).toBe(true));
     await waitFor(() => expect(sources.length).toBeGreaterThan(0));
     const stream = sources.at(-1)!;
-    await act(async () => {
+    const before = previews(calls).length;
+    act(() => {
       stream.emit("printer.status", P, {});
       stream.emit("sheet.updated", null, { code: "L4736-0099", free: 1, total: 48, changed: [1], state: "active" });
     });
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 100));
-    });
-    expect(previews(calls)).toHaveLength(1);
-    await act(async () => {
+    // The handler invalidates synchronously, so "the preview was not asked again" is a state to read now, not a
+    // wait for a request that might come late.
+    expect(sheetPreviews().some((q) => q.state.isInvalidated || q.state.fetchStatus !== "idle")).toBe(false);
+    act(() => {
       stream.emit("sheet.updated", null, { code: "L4736-0001", free: 30, total: 48, changed: [18], state: "active" });
     });
-    await waitFor(() => expect(previews(calls)).toHaveLength(2));
+    await waitFor(() => expect(previews(calls)).toHaveLength(before + 1));
   });
 
   it.each([
@@ -179,6 +185,11 @@ describe("not enough free cells", () => {
     await userEvent.click(await screen.findByRole("option", { name: /L4736-0001/ }));
     const sheetBox = screen.getByRole("combobox", { name: "Sheet" }) as HTMLInputElement;
     expect(sheetBox.value).toMatch(/L4736-0001/);
+    // Leave the field first. With the menu opening on focus, a late re-render could open the list again while
+    // the field still has focus, and the press on the button below would then only close that list (CI run
+    // 43349587904 announced the options twice and kept L4736-0001). Without focus it cannot open.
+    act(() => sheetBox.blur());
+    expect(screen.queryByRole("listbox")).toBeNull();
     await userEvent.click(await screen.findByRole("button", { name: "Use L4736-0010 instead (28 free)" }));
     // The best fitting sheet is L4736-0010 from the start, so the last preview alone cannot tell
     // whether the button did anything: the field must have moved off L4736-0001 again.

@@ -15,6 +15,15 @@ const QL_PRINTER = (layout_defaults: Record<string, unknown> = {}) => ({
   backend: "brother_ql",
   layout_defaults,
 });
+/**
+ * Puts a whole value into a field in one input event. Typing it key by key re-renders the settings page
+ * per character (about 65 ms each in jsdom), which is not what these tests check and on a loaded machine
+ * pushed the create test past its time limit.
+ */
+async function enter(name: string, value: string) {
+  await userEvent.click(screen.getByRole("textbox", { name }));
+  await userEvent.paste(value);
+}
 const lastPut = (calls: Call[]) => JSON.parse(calls.filter((c) => c.method === "PUT").at(-1)!.body!) as Record<string, unknown>;
 
 describe("QL printer form", () => {
@@ -48,9 +57,9 @@ describe("QL printer form", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Add printer" }));
     await userEvent.click(screen.getByRole("button", { name: /Driver/ }));
     await userEvent.click(await screen.findByRole("option", { name: "Brother QL" }));
-    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Office QL-820NWB");
-    await userEvent.type(screen.getByRole("textbox", { name: "Slug" }), "office-ql");
-    await userEvent.type(screen.getByRole("textbox", { name: "Host" }), "192.0.2.11");
+    await enter("Name", "Office QL-820NWB");
+    await enter("Slug", "office-ql");
+    await enter("Host", "192.0.2.11");
     await userEvent.click(screen.getByRole("button", { name: "Create printer" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
     const sent = calls.filter((c) => c.method === "POST").at(-1)!.body!;
