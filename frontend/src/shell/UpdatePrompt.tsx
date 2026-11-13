@@ -12,12 +12,15 @@ export function UpdatePrompt() {
     <div className="mb-4 flex flex-wrap items-center gap-4">
       <div role="status">
         <StatusBadge state="warn" label={t`New version available`} />
+        {/* A changed button label is not read out; this region says it once. */}
+        <span className="sr-only">{updating ? t`Updating…` : ""}</span>
       </div>
+      {/* aria-disabled, not disabled: a disabled button drops the focus to the page. A second press is ignored by applyUpdate. */}
       <button
         type="button"
         onClick={() => void applyUpdate()}
-        disabled={updating}
-        className="press inline-flex h-11 items-center rounded-r2 border border-line-strong bg-surface px-4 text-small font-bold text-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-link disabled:opacity-60"
+        aria-disabled={updating || undefined}
+        className="press inline-flex h-11 items-center rounded-r2 border border-line-strong bg-surface px-4 text-small font-bold text-ink focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-link aria-disabled:opacity-60"
       >
         {updating ? t`Updating…` : t`Reload`}
       </button>

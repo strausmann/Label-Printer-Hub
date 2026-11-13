@@ -228,16 +228,54 @@ describe("the Reload button ends on the new bundle", () => {
     void needRefresh;
   });
 
-  it("disables the button and says Updating… while it works", async () => {
+  it("marks the button busy and says Updating… while it works, announced, with focus kept on it", async () => {
     vi.useRealTimers();
     setupWorker(300);
     mockApi({});
     await renderApp({ path: "/" });
     await act(async () => noteServerVersion(SERVER));
-    expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled();
-    await act(async () => screen.getByRole("button", { name: "Reload" }).click());
-    expect(screen.getByRole("button", { name: "Updating…" })).toBeDisabled();
-    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled());
+    const button = screen.getByRole("button", { name: "Reload" });
+    expect(button).not.toHaveAttribute("aria-disabled", "true");
+    button.focus();
+    await act(async () => button.click());
+    const busy = screen.getByRole("button", { name: "Updating…" });
+    // Not `disabled`: a disabled button drops the focus to the page, and the person loses their place.
+    expect(busy).toBe(button);
+    expect(busy).toBeEnabled();
+    expect(busy).toHaveAttribute("aria-disabled", "true");
+    expect(document.activeElement).toBe(busy);
+    // The label change alone is not read out; the status region next to it says it.
+    expect(screen.getByRole("status")).toHaveTextContent("Updating…");
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Reload" })).not.toHaveAttribute("aria-disabled", "true"));
+    expect(screen.getByRole("status")).not.toHaveTextContent("Updating…");
+  });
+
+  it("a press while it works does nothing", async () => {
+    vi.useRealTimers();
+    const { updateSW } = setupWorker(300);
+    mockApi({});
+    await renderApp({ path: "/" });
+    await act(async () => noteServerVersion(SERVER));
+    const button = screen.getByRole("button", { name: "Reload" });
+    await act(async () => button.click());
+    await act(async () => button.click());
+    await vi.waitFor(() => expect(updateSW).toHaveBeenCalledTimes(1));
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("an update() that throws at once still ends in the plain reload", async () => {
+    const updateSW = vi.fn(async (reloadPage?: boolean): Promise<void> => void reloadPage);
+    const registration = {
+      update: vi.fn((): Promise<void> => {
+        throw new Error("InvalidStateError");
+      }),
+    };
+    startUpdates((o) => (o.onRegisteredSW?.("/sw.js", registration), updateSW));
+    const done = applyUpdate();
+    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS);
+    await done;
+    expect(registration.update).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("the banner's button runs this path", async () => {

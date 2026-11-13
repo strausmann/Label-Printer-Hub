@@ -112,7 +112,10 @@ export async function applyUpdate(): Promise<void> {
   try {
     if (!waitingWorker && registration) {
       // The check itself is bounded too: a network that swallows the request must not keep the button busy.
-      await withinBudget(registration.update(), deps.workerWaitMs);
+      // Called inside a promise: an update() that throws at once (an invalid state of the
+      // registration) is a failed check like any other, not a reason to skip the reload below.
+      const reg = registration;
+      await withinBudget(Promise.resolve().then(() => reg.update()), deps.workerWaitMs);
       await workerWaits(deps.workerWaitMs);
     }
     if (waitingWorker && updateSW) await updateSW(true);
