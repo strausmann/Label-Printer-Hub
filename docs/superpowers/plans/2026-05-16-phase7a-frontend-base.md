@@ -20,7 +20,7 @@
 - All `go test` runs use `-race`. Coverage ≥ 70% on `frontend/internal/`.
 - Subagents do NOT push. Orchestrator handles push + PR.
 - Run commands from `frontend/` unless stated otherwise.
-- Every commit: `git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" commit`
+- Every commit: `git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" commit`
 
 ---
 
@@ -178,7 +178,7 @@ docker build --platform linux/amd64 . -t lph:t0
 - [ ] **Step 6: Commit**
 
 ```bash
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "build(docker): add Tailwind v4 standalone CLI stage to frontend Dockerfile
 
 Refs #22"
@@ -276,7 +276,7 @@ EOF
 - [ ] **Step 5: Commit**
 
 ```bash
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): vendor HTMX 2.0.4+SSE 2.2.3, add base layout and error templates
 
 Refs #22"
@@ -426,7 +426,7 @@ go test -race ./internal/handlers/... -run TestRenderPage -v 2>&1 | tail -5
 - [ ] **Step 6: Commit**
 
 ```bash
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): handlers base (TemplateData, PageHandler, renderPage) + go:embed
 
 Refs #22"
@@ -676,7 +676,7 @@ go test -race ./internal/api/... -v 2>&1 | tail -5
 - [ ] **Step 7: Commit**
 
 ```bash
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(api): add oapi-codegen config, generate typed client, add wrapper with logging
 
 Refs #22"
@@ -773,7 +773,7 @@ func New(backendURL string) http.Handler {
 
 ```bash
 go test -race ./internal/proxy/... -v 2>&1 | tail -5
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): add reverse proxy with FlushInterval=-1 for SSE pass-through
 
 Refs #22"
@@ -909,7 +909,7 @@ func (h *PageHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 ```bash
 go test -race ./internal/handlers/... -run TestDashboard -v 2>&1 | tail -5
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): dashboard handler and template with 30s HTMX polling
 
 Refs #22"
@@ -1079,7 +1079,7 @@ func (h *PageHandler) PrinterDetailWithID(w http.ResponseWriter, r *http.Request
 
 ```bash
 go test -race ./internal/handlers/... -run TestPrinterDetail -v 2>&1 | tail -5
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): printer detail handler with errgroup parallel fetch and SSE wiring
 
 Refs #22"
@@ -1226,7 +1226,7 @@ func (h *PageHandler) JobsList(w http.ResponseWriter, r *http.Request) {
 
 ```bash
 go test -race ./internal/handlers/... -run TestJobsList -v 2>&1 | tail -5
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): jobs list handler with filter form and cursor-based pagination
 
 Refs #22"
@@ -1395,7 +1395,7 @@ func (h *PageHandler) JobRetryWithID(w http.ResponseWriter, r *http.Request, id 
 
 ```bash
 go test -race ./internal/handlers/... -run "TestJobsList|TestJobDetail|TestJobRetry" -v 2>&1 | tail -5
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): job detail handler with retry PRG (303 See Other to new job)
 
 Refs #22"
@@ -1517,7 +1517,7 @@ func (h *PageHandler) TemplatesList(w http.ResponseWriter, r *http.Request) {
 
 ```bash
 go test -race ./internal/handlers/... -run TestTemplatesList -v 2>&1 | tail -5
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): templates list handler with 60s polling and tile grid
 
 Refs #22"
@@ -1668,7 +1668,7 @@ func (h *PageHandler) TemplateDetailWithKey(w http.ResponseWriter, r *http.Reque
 
 ```bash
 go test -race ./internal/handlers/... -run TestTemplateDetail -v 2>&1 | tail -5
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): template detail with YAML source and base64 PNG preview (2s timeout)
 
 Refs #22"
@@ -1805,7 +1805,7 @@ func (h *PageHandler) LookupDisplayWithParams(w http.ResponseWriter, r *http.Req
 
 ```bash
 go test -race ./internal/handlers/... -run TestLookup -v 2>&1 | tail -5
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): lookup display handler with styled 404 (no raw JSON)
 
 Refs #22"
@@ -1942,7 +1942,7 @@ go test -race ./... 2>&1 | tail -10
 - [ ] **Step 5: Commit**
 
 ```bash
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "feat(ui): wire all routes in main.go + extended /healthz with backend_reachable
 
 Refs #22"
@@ -2010,7 +2010,7 @@ git diff main..HEAD -- '*.go' '*.html' '*.css' '*.yaml' '*.yml' \
 - [ ] **Step 6: Final commit**
 
 ```bash
-git -c user.name="Björn Strausmann" -c user.email="strausmannservices@googlemail.com" \
+git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
   commit -m "ci: add oapi-codegen drift check; docs: add local dev guide to frontend README
 
 Refs #22"
