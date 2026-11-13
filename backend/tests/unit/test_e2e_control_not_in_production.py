@@ -104,3 +104,39 @@ async def test_e2e_control_route_absent_by_request() -> None:
             where = f"{method} {path}: {resp.status_code} {resp.text[:120]}"
             assert resp.status_code != 200 or "text/html" in resp.headers["content-type"], where
             assert '"uri"' not in resp.text and '"backends"' not in resp.text, where
+
+
+@pytest.mark.asyncio
+async def test_e2e_control_route_absent_with_the_web_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T13 F5: the same requests with a web bundle, as in the image. The SPA catch-all answers
+    the GET with the shell (HTML), never with the control JSON; the POSTs reach no handler."""
+    from app.config import get_settings
+    from httpx import ASGITransport, AsyncClient
+
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>shell</title>", encoding="utf-8")
+    monkeypatch.setenv("PRINTER_HUB_WEB_DIST_DIR", str(dist))
+    get_settings.cache_clear()
+    try:
+        inner = create_app()._app  # type: ignore[attr-defined]
+        async with AsyncClient(transport=ASGITransport(app=inner), base_url="http://t") as c:
+            shell = await c.get("/__e2e/page-printer")
+            assert shell.status_code == 200, shell.text[:120]
+            assert "text/html" in shell.headers["content-type"]
+            assert "<title>shell</title>" in shell.text
+            for path in (
+                "/__e2e/page-printer/state",
+                "/__e2e/page-printer/reset",
+                "/__e2e/tape-printer/state",
+                "/__e2e/tape-printer/reset",
+            ):
+                resp = await c.post(path, json={})
+                where = f"POST {path}: {resp.status_code} {resp.text[:120]}"
+                assert resp.status_code in (404, 405), where
+                assert '"uri"' not in resp.text and '"backends"' not in resp.text, where
+    finally:
+        monkeypatch.delenv("PRINTER_HUB_WEB_DIST_DIR")
+        get_settings.cache_clear()
