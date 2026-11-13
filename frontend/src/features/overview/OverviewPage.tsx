@@ -48,7 +48,7 @@ export function OverviewPage() {
   const failed = all.filter((j) => isFailed(j) && jobs.dataUpdatedAt - Date.parse(j.updated_at) < ATTENTION_WINDOW_MS);
   const stuck = list
     .map((p) => ({ printer: p, view: describePrinter(p, statuses.get(p.id), busy.has(p.id)) }))
-    .filter(({ view }) => ["paused", "stale", "offline", "error", "stopped"].includes(view.kind));
+    .filter(({ view }) => ["paused", "different_device", "stale", "offline", "error", "stopped"].includes(view.kind));
   const lowCount = list.filter((p) => runningOut(statuses.get(p.id))).length;
   const recent = [...all].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 8);
 

@@ -109,6 +109,20 @@ describe("Overview", () => {
     expect(await within(section).findByText("Paused by user")).toBeVisible();
   });
 
+  it("lists a printer held because a different device answered at its address", async () => {
+    // The hub holds its sheet and calibration jobs until an admin decides (263-51): it needs a person most.
+    mockApi({
+      "GET /api/v1/printers": [PRINTER_A],
+      [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, { identity_mismatch: true }),
+      "GET /api/v1/jobs": [],
+    });
+    await renderApp({ path: "/" });
+    const section = await screen.findByRole("region", { name: "Needs attention" });
+    expect(await within(section).findByText("Workshop PT-P750W")).toBeVisible();
+    expect(within(section).getByText("Different device")).toBeVisible();
+    expect(within(section).queryByText("Nothing needs attention.")).toBeNull();
+  });
+
   it("paused printer shows Resume", async () => {
     const { calls } = mockApi({ ...base(), [`POST /api/v1/printers/${PRINTER_B.id}/resume`]: null });
     await renderApp({ path: "/" });
