@@ -26,7 +26,7 @@ Examples of unacceptable behavior include:
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project maintainer at bjoern@strausmann.net. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project maintainer at projects@strausmann.ch. All complaints will be reviewed and investigated promptly and fairly.
 
 ## Attribution
 

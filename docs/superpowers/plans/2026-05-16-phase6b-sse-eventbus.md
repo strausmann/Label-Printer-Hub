@@ -352,7 +352,7 @@ Expected: no errors.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 feat(api): EventBus core — BusEvent dataclass, publish/subscribe/unsubscribe, drop-oldest backpressure
 
@@ -510,7 +510,7 @@ Expected: no errors.
 - [ ] **Step 8: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 feat(api): SSE settings fields + EventBus singleton in lifespan + healthz sse_active_subscribers
 
@@ -790,7 +790,7 @@ Expected: no errors.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 feat(queue): PrintQueueProducer + on_state_change callback in PrintQueue._worker
 
@@ -1263,7 +1263,7 @@ Expected: no errors.
 - [ ] **Step 8: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 feat(status): StatusProbeProducer + TapeChangeProducer — SNMP probe loop with change-only publish
 
@@ -1635,7 +1635,7 @@ Expected: no errors.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 feat(api): SSE route skeleton — GET /api/events with 404/429 guards + full stream generator
 
@@ -1742,7 +1742,7 @@ Expected: all 3 tests PASSED.
 - [ ] **Step 4: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 test(api): SSE stream delivery test — event arrives via httpx AsyncClient within 200 ms
 
@@ -1908,7 +1908,7 @@ Expected: all 7 tests PASSED.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 feat(api): SSE fragment templates — job_state, printer_status, tape_status Jinja2 partials
 
@@ -2085,7 +2085,7 @@ Expected: no errors.
 - [ ] **Step 9: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 feat(ui): HTMX SSE wiring on QR landing pages — sse-connect + sse-swap blocks + self-hosted JS
 
@@ -2251,7 +2251,7 @@ Expected: no errors.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 feat(api): Prometheus SSE counters + producers wired into lifespan
 
@@ -2472,7 +2472,7 @@ Expected: PASSED (latency well under 200 ms in-process).
 - [ ] **Step 4: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 test(integration): Phase 6b SSE end-to-end + flush-timing tests
 
@@ -2543,7 +2543,7 @@ Expected: clean (no pending schema changes — Phase 6b adds no DB tables).
 - [ ] **Step 6: Commit**
 
 ```bash
-cd backend && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd backend && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 test(api): bump OpenAPI completeness gate to 23-31 operations for GET /api/events
 
@@ -2673,7 +2673,7 @@ required by the `/api/events` Server-Sent Events endpoint.
 - [ ] **Step 3: Commit**
 
 ```bash
-cd /opt/repos/label-printer-hub && git -c user.name="Björn Strausmann" -c user.email="bjoern@strausmann.net" \
+cd /opt/repos/label-printer-hub && git -c user.name="Björn Strausmann" -c user.email="projects@strausmann.ch" \
   commit -m "$(cat <<'EOF'
 docs(docs): SSE reverse-proxy compat guide — Traefik, Caddy, Nginx, Pangolin flush config
 
